@@ -10,6 +10,8 @@
 //!
 //! Both sides must name each other with `--peer` (configured_only policy).
 
+// The app's runtime controls (fips-v2-android) go unused here.
+#[allow(dead_code)]
 mod stack;
 
 use anyhow::{Context, Result, bail};

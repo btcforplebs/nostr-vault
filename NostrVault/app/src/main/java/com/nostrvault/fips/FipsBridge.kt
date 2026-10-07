@@ -69,13 +69,26 @@ object FipsBridge {
 
     internal fun encodeOptions(options: FipsStartOptions): String = json.encodeToString(options)
 
-    /** Offer a local TCP port on the mesh. 0 on success, negative on failure. */
+    /**
+     * Share a local TCP port on the mesh (sharing on). Returns once a friend
+     * can connect. One port at a time: a different one gives
+     * [ERR_ALREADY_EXPORTED] until [unexport]. 0 on success, negative on failure.
+     */
     fun export(localPort: Int): Int =
         if (!isAvailable) ERR_UNAVAILABLE else nativeExport(localPort)
 
     /**
-     * Open a loopback listener proxying to [npub] over the mesh. Returns the
-     * bound port, or negative on failure. Not implemented yet ([ERR_UNSUPPORTED]).
+     * Stop sharing, without stopping the node. Friends' connections in
+     * progress are cut; reading friends' vaults carries on.
+     */
+    fun unexport(): Int =
+        if (!isAvailable) ERR_UNAVAILABLE else nativeUnexport()
+
+    /**
+     * A loopback port whose connections reach [npub]'s shared relay over the
+     * mesh, or negative on failure. The same npub gets the same port, and it
+     * works while this phone is sharing too. [npub] must be in the peers the
+     * node was started with, or the mesh will not connect to them.
      */
     fun ingress(npub: String): Int =
         if (!isAvailable) ERR_UNAVAILABLE else nativeIngress(npub)
@@ -90,12 +103,14 @@ object FipsBridge {
     const val ERR_NOT_RUNNING = -3
     const val ERR_ALREADY_EXPORTED = -4
     const val ERR_START = -5
+    const val ERR_BAD_NPUB = -6
     const val ERR_UNAVAILABLE = -100
 
     private external fun nativeStart(nsec: String, optionsJson: String): Int
     private external fun nativeGenerateNsec(): String?
     private external fun nativeStatusJSON(): String?
     private external fun nativeExport(localPort: Int): Int
+    private external fun nativeUnexport(): Int
     private external fun nativeIngress(npub: String): Int
     private external fun nativeStop()
 }
@@ -133,8 +148,31 @@ data class FipsStatus(
     val exported: List<Int> = emptyList(),
     /** Npubs of peers currently connected. */
     val peers: List<String> = emptyList(),
+    /** Friends' vaults opened with [FipsBridge.ingress], and their loopback ports. */
+    val reading: List<FipsReading> = emptyList(),
+    val counters: FipsCounters = FipsCounters(),
 ) {
     companion object {
         val stopped = FipsStatus()
     }
 }
+
+@Serializable
+data class FipsReading(val npub: String, val port: Int)
+
+/**
+ * Served = friends reading this phone's relay; read = this phone reading
+ * theirs. `Rx` is bytes from the mesh, `Tx` bytes sent to it. `Open` counts
+ * connections now, `Total` since the node started.
+ */
+@Serializable
+data class FipsCounters(
+    @SerialName("served_open") val servedOpen: Long = 0,
+    @SerialName("served_total") val servedTotal: Long = 0,
+    @SerialName("served_rx") val servedRx: Long = 0,
+    @SerialName("served_tx") val servedTx: Long = 0,
+    @SerialName("read_open") val readOpen: Long = 0,
+    @SerialName("read_total") val readTotal: Long = 0,
+    @SerialName("read_rx") val readRx: Long = 0,
+    @SerialName("read_tx") val readTx: Long = 0,
+)

@@ -20,7 +20,11 @@ import org.junit.Test
 class FipsStatusTest {
 
     @Test fun `a stopped node reports running false and no address`() {
-        val status = FipsBridge.parseStatus("""{"running":false,"uptime_s":0,"exported":[],"peers":[]}""")
+        val status = FipsBridge.parseStatus(
+            """{"running":false,"uptime_s":0,"exported":[],"peers":[],"reading":[],"counters":""" +
+                """{"served_open":0,"served_total":0,"served_rx":0,"served_tx":0,""" +
+                """"read_open":0,"read_total":0,"read_rx":0,"read_tx":0}}"""
+        )
 
         assertFalse(status.running)
         // Null, not "". A blank string would render as an address the user
@@ -44,6 +48,18 @@ class FipsStatusTest {
         assertEquals(93L, status.uptimeSeconds)
         assertEquals(listOf(3355), status.exported)
         assertEquals(1, status.peers.size)
+    }
+
+    @Test fun `reading and counters decode from their snake_case names`() {
+        val status = FipsBridge.parseStatus(
+            """{"running":true,"uptime_s":5,"exported":[],"peers":[],""" +
+                """"reading":[{"npub":"npub1friend","port":40123}],""" +
+                """"counters":{"served_open":1,"served_total":3,"served_rx":10,"served_tx":20,""" +
+                """"read_open":2,"read_total":4,"read_rx":30,"read_tx":40}}"""
+        )
+
+        assertEquals(listOf(FipsReading("npub1friend", 40123)), status.reading)
+        assertEquals(FipsCounters(1, 3, 10, 20, 2, 4, 30, 40), status.counters)
     }
 
     @Test fun `an unknown field does not throw away the whole snapshot`() {
@@ -90,6 +106,7 @@ class FipsStatusTest {
 
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.start("nsec1whatever"))
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.export(8080))
+        assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.unexport())
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.ingress("npub1whatever"))
         assertNull(FipsBridge.generateNsec())
         assertEquals(FipsStatus.stopped, FipsBridge.status())

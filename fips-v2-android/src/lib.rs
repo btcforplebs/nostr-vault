@@ -8,19 +8,18 @@
 //! The Kotlin side is `com.nostrvault.fips.FipsBridge`. Control plane only:
 //! no packet ever crosses JNI.
 
-// Connect mode is unused until step 3 (reading a friend's vault).
+// The probe's single-mode `run` and `Mode` go unused here.
 #[allow(dead_code)]
 #[path = "../../fips-v2/src/stack.rs"]
 mod stack;
 
 use std::net::{Ipv6Addr, SocketAddr};
-use std::sync::Mutex;
-use std::sync::mpsc::Receiver;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use fips::identity::{Identity, encode_nsec};
-use fips::upper::tun::TunOutboundTx;
+use fips::identity::{Identity, PeerIdentity, encode_nsec};
 use fips::{Config, Node};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -52,16 +51,56 @@ struct Status {
     uptime_s: u64,
     exported: Vec<u16>,
     peers: Vec<String>,
+    /// Friends' vaults open for reading, each on a loopback port.
+    reading: Vec<Reading>,
+    counters: CountersOut,
+}
+
+#[derive(Serialize)]
+struct Reading {
+    npub: String,
+    port: u16,
+}
+
+/// Served = friends reading this phone's relay; read = this phone reading
+/// theirs. `_rx` is bytes from the mesh, `_tx` bytes sent to it.
+#[derive(Serialize, Default)]
+struct CountersOut {
+    served_open: u64,
+    served_total: u64,
+    served_rx: u64,
+    served_tx: u64,
+    read_open: u64,
+    read_total: u64,
+    read_rx: u64,
+    read_tx: u64,
+}
+
+impl CountersOut {
+    fn from(c: &stack::Counters) -> Self {
+        let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);
+        Self {
+            served_open: get(&c.served_open),
+            served_total: get(&c.served_total),
+            served_rx: get(&c.served_rx),
+            served_tx: get(&c.served_tx),
+            read_open: get(&c.read_open),
+            read_total: get(&c.read_total),
+            read_rx: get(&c.read_rx),
+            read_tx: get(&c.read_tx),
+        }
+    }
 }
 
 struct Running {
     npub: String,
     address: Ipv6Addr,
-    mtu: usize,
     started: Instant,
-    exported: Vec<u16>,
-    /// Handed to the stack on the first export; `None` once it is running.
-    tun: Option<(TunOutboundTx, Receiver<Vec<u8>>)>,
+    /// The port being shared on the mesh; `None` while sharing is off.
+    exported: Option<u16>,
+    reading: Vec<Reading>,
+    ctl: Arc<stack::Control>,
+    stack_thread: std::thread::JoinHandle<()>,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -78,6 +117,7 @@ pub const ERR_UNSUPPORTED: i32 = -2;
 pub const ERR_NOT_RUNNING: i32 = -3;
 pub const ERR_ALREADY_EXPORTED: i32 = -4;
 pub const ERR_START: i32 = -5;
+pub const ERR_BAD_NPUB: i32 = -6;
 
 fn config_yaml(nsec: &str, opts: &StartOptions) -> Zeroizing<String> {
     let relays = if opts.relays.is_empty() {
@@ -188,48 +228,89 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         .recv_timeout(Duration::from_secs(30))
         .context("node did not report ready")??;
     tracing::info!(%npub, %address, mtu, "fips mesh started");
+
+    // One stack serves and reads over the TUN. It starts with sharing off.
+    let ctl = stack::Control::new();
+    let stack_ctl = ctl.clone();
+    let (to_mesh, from_mesh) = tun;
+    let stack_thread = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
+        if let Err(e) = stack::run_with(address, mtu, to_mesh, from_mesh, &stack_ctl) {
+            tracing::warn!("fips stack stopped: {e:#}");
+        }
+    });
+    let stack_thread = match stack_thread {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = stop_tx.send(());
+            let _ = node_thread.join();
+            return Err(e.into());
+        }
+    };
     *state = Some(Running {
         npub,
         address,
-        mtu,
         started: Instant::now(),
-        exported: Vec::new(),
-        tun: Some(tun),
+        exported: None,
+        reading: Vec::new(),
+        ctl,
+        stack_thread,
         stop: stop_tx,
         node_thread,
     });
     Ok(())
 }
 
-/// Offer a local TCP port (the relay, which also serves Blossom) on mesh :80.
+/// Share a local TCP port (the relay, which also serves Blossom) on mesh :80.
+/// Sharing one port at a time; a different port needs `unexport` first.
 pub fn export(port: u16) -> i32 {
     let mut state = STATE.lock().unwrap();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
-    if run.exported.contains(&port) {
-        return 0;
+    match run.exported {
+        Some(p) if p == port => return 0,
+        Some(_) => return ERR_ALREADY_EXPORTED,
+        None => {}
     }
-    // fips-v2's stack drives one mode per TUN and does not yet take a second
-    // port or a connect listener alongside a serve.
-    let Some((to_mesh, from_mesh)) = run.tun.take() else { return ERR_ALREADY_EXPORTED };
-    let (addr, mtu) = (run.address, run.mtu);
-    let forward = SocketAddr::from(([127, 0, 0, 1], port));
-    let spawned = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
-        if let Err(e) = stack::run(addr, mtu, to_mesh, from_mesh, stack::Mode::Serve { forward }) {
-            tracing::warn!("fips stack stopped: {e:#}");
-        }
-    });
-    if spawned.is_err() {
-        return ERR_START;
-    }
-    run.exported.push(port);
+    run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port))));
+    run.exported = Some(port);
     0
 }
 
-/// Stop the node. The stack thread has no stop signal yet (fips-v2 stack.rs
-/// loops forever); it idles once the node is gone, and is reclaimed with the
-/// process.
+/// Stop sharing. Friends' connections in progress are cut; reading continues.
+pub fn unexport() -> i32 {
+    let mut state = STATE.lock().unwrap();
+    let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
+    run.ctl.set_serve(None);
+    run.exported = None;
+    0
+}
+
+/// A loopback port whose connections reach `npub`'s shared relay over the
+/// mesh. The same npub gets the same port. The friend must be in the
+/// `peers` the node started with, or the mesh will not connect to them.
+pub fn ingress(npub: &str) -> i32 {
+    let mut state = STATE.lock().unwrap();
+    let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
+    let Ok(peer) = PeerIdentity::from_npub(npub) else { return ERR_BAD_NPUB };
+    match run.ctl.connect_port(peer.address().to_ipv6()) {
+        Ok(port) => {
+            if !run.reading.iter().any(|r| r.npub == npub) {
+                run.reading.push(Reading { npub: npub.to_string(), port });
+            }
+            i32::from(port)
+        }
+        Err(e) => {
+            tracing::warn!("mesh ingress {npub}: {e:#}");
+            ERR_START
+        }
+    }
+}
+
+/// Stop the node, and the stack with it.
 pub fn stop() {
     let Some(run) = STATE.lock().unwrap().take() else { return };
+    // Stack first, so its resets still have a node to leave through.
+    run.ctl.stop();
+    let _ = run.stack_thread.join();
     let _ = run.stop.send(());
     let _ = run.node_thread.join();
     tracing::info!("fips mesh stopped");
@@ -245,14 +326,18 @@ pub fn status_json() -> String {
             uptime_s: 0,
             exported: Vec::new(),
             peers: Vec::new(),
+            reading: Vec::new(),
+            counters: CountersOut::default(),
         },
         Some(run) => Status {
             running: true,
             npub: Some(run.npub.clone()),
             address: Some(run.address.to_string()),
             uptime_s: run.started.elapsed().as_secs(),
-            exported: run.exported.clone(),
+            exported: run.exported.into_iter().collect(),
             peers: Vec::new(),
+            reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port }).collect(),
+            counters: CountersOut::from(&run.ctl.counters),
         },
     };
     serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())
@@ -358,14 +443,21 @@ mod jni_api {
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeIngress(
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeUnexport(
         _env: JNIEnv,
         _class: JClass,
-        _npub: JString,
     ) -> jint {
-        // Reading a friend's vault is step 3; it needs connect listeners in
-        // the same stack as the serve.
-        ERR_UNSUPPORTED
+        guarded(ERR_START, unexport)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeIngress(
+        mut env: JNIEnv,
+        _class: JClass,
+        npub: JString,
+    ) -> jint {
+        let Some(npub) = jstr(&mut env, &npub) else { return ERR_BAD_NPUB };
+        guarded(ERR_START, move || ingress(&npub))
     }
 
     #[unsafe(no_mangle)]
@@ -397,6 +489,180 @@ mod tests {
 
     #[test]
     fn status_is_stopped_before_start() {
-        assert_eq!(status_json(), r#"{"running":false,"uptime_s":0,"exported":[],"peers":[]}"#);
+        let v: serde_json::Value = serde_json::from_str(&status_json()).unwrap();
+        assert_eq!(v["running"], false);
+        assert_eq!(v["exported"], serde_json::json!([]));
+        assert_eq!(v["reading"], serde_json::json!([]));
+        assert_eq!(v["counters"]["served_open"], 0);
+        assert_eq!(v["counters"]["read_rx"], 0);
+    }
+
+    #[test]
+    fn ingress_and_unexport_need_a_running_node() {
+        assert_eq!(unexport(), ERR_NOT_RUNNING);
+        assert_eq!(ingress("npub1nope"), ERR_NOT_RUNNING);
+    }
+
+    // Two stacks wired TUN to TUN in-process, no FIPS node: what the stack
+    // does with sharing, reading, counters and stop.
+    mod two_stacks {
+        use crate::stack::{self, Control};
+        use std::io::{Read, Write};
+        use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream};
+        use std::sync::Arc;
+        use std::sync::atomic::Ordering;
+        use std::thread::JoinHandle;
+        use std::time::{Duration, Instant};
+
+        const A: Ipv6Addr = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xa);
+        const B: Ipv6Addr = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xb);
+
+        struct Side {
+            ctl: Arc<Control>,
+            thread: JoinHandle<()>,
+        }
+
+        /// Start stacks at A and B; each one's outbound packets are the other's inbound.
+        fn pair() -> (Side, Side) {
+            let (a_out, mut a_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+            let (b_out, mut b_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+            let (a_in_tx, a_in) = std::sync::mpsc::channel();
+            let (b_in_tx, b_in) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                while let Some(p) = a_out_rx.blocking_recv() {
+                    let _ = b_in_tx.send(p);
+                }
+            });
+            std::thread::spawn(move || {
+                while let Some(p) = b_out_rx.blocking_recv() {
+                    let _ = a_in_tx.send(p);
+                }
+            });
+            let side = |addr, out, inbound| {
+                let ctl = Control::new();
+                let c = ctl.clone();
+                let thread = std::thread::spawn(move || stack::run_with(addr, 1280, out, inbound, &c).unwrap());
+                Side { ctl, thread }
+            };
+            (side(A, a_out, a_in), side(B, b_out, b_in))
+        }
+
+        /// A local "relay" that answers each line with `tag` + the line.
+        fn relay(tag: &'static str) -> SocketAddr {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = l.local_addr().unwrap();
+            std::thread::spawn(move || {
+                for mut s in l.incoming().flatten() {
+                    std::thread::spawn(move || {
+                        let mut buf = [0u8; 4096];
+                        while let Ok(n) = s.read(&mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let mut reply = tag.as_bytes().to_vec();
+                            reply.extend_from_slice(&buf[..n]);
+                            if s.write_all(&reply).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+            });
+            addr
+        }
+
+        fn open(port: u16) -> TcpStream {
+            let s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            s
+        }
+
+        fn ask(s: &mut TcpStream, msg: &str) -> std::io::Result<String> {
+            s.write_all(msg.as_bytes())?;
+            let mut buf = [0u8; 256];
+            let n = s.read(&mut buf)?;
+            if n == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            Ok(String::from_utf8_lossy(&buf[..n]).into_owned())
+        }
+
+        fn wait_for(what: &str, f: impl Fn() -> bool) {
+            let end = Instant::now() + Duration::from_secs(5);
+            while !f() {
+                assert!(Instant::now() < end, "timed out waiting for {what}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        #[test]
+        fn share_read_toggle_count_and_stop() {
+            let (a, b) = pair();
+            a.ctl.set_serve(Some(relay("A:")));
+            b.ctl.set_serve(Some(relay("B:")));
+
+            // Share and read at once: each side reads the other over one TUN.
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let to_a = b.ctl.connect_port(A).unwrap();
+            assert_eq!(a.ctl.connect_port(B).unwrap(), to_b, "same peer, same port");
+            let mut ab = open(to_b);
+            let mut ba = open(to_a);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            assert_eq!(ask(&mut ba, "pong").unwrap(), "A:pong");
+
+            let (ca, cb) = (&a.ctl.counters, &b.ctl.counters);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            assert_eq!((get(&ca.read_total), get(&ca.served_total)), (1, 1));
+            assert_eq!((get(&cb.read_total), get(&cb.served_total)), (1, 1));
+            assert_eq!((get(&ca.read_open), get(&ca.served_open)), (1, 1));
+            assert_eq!(get(&ca.read_tx), 4, "A sent ping");
+            assert_eq!(get(&cb.served_rx), 4, "B received ping");
+            assert_eq!(get(&cb.served_tx), 6, "B answered B:ping");
+            assert_eq!(get(&ca.read_rx), 6, "A received B:ping");
+
+            // B stops sharing: A's open read is cut, a new one is refused, and
+            // B's own read of A carries on.
+            b.ctl.set_serve(None);
+            assert!(ask(&mut ab, "again").is_err(), "open connection survives sharing off");
+            let mut refused = open(to_b);
+            assert!(ask(&mut refused, "knock").is_err(), "new connection while sharing off");
+            assert_eq!(ask(&mut ba, "still").unwrap(), "A:still");
+            wait_for("B served_open = 0", || get(&cb.served_open) == 0);
+
+            // Sharing back on, without restarting anything.
+            b.ctl.set_serve(Some(relay("B2:")));
+            let mut again = open(to_b);
+            assert_eq!(ask(&mut again, "hi").unwrap(), "B2:hi");
+
+            // Stop ends both threads and resets what is open.
+            a.ctl.stop();
+            b.ctl.stop();
+            wait_for("stack threads to end", || a.thread.is_finished() && b.thread.is_finished());
+            a.thread.join().unwrap();
+            b.thread.join().unwrap();
+            assert!(ask(&mut again, "gone").is_err(), "connection survives stop");
+            assert_eq!(get(&ca.read_open) + get(&cb.served_open), 0);
+        }
+
+        #[test]
+        fn read_of_a_silent_peer_gives_up() {
+            let (a, b) = pair();
+            // Nothing answers for this address: B's stack drops what is not its own.
+            let nobody = a.ctl.connect_port(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xc)).unwrap();
+            let mut s = open(nobody);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            wait_for("the read to open", || get(&a.ctl.counters.read_open) == 1);
+            assert!(ask(&mut s, "anyone?").is_err(), "a read to nobody must fail");
+            wait_for("read_open back to 0", || get(&a.ctl.counters.read_open) == 0);
+
+            // An answered read idles past the connect timeout without being cut.
+            b.ctl.set_serve(Some(relay("B:")));
+            let mut ok = open(a.ctl.connect_port(B).unwrap());
+            assert_eq!(ask(&mut ok, "one").unwrap(), "B:one");
+            std::thread::sleep(Duration::from_millis(1500));
+            assert_eq!(ask(&mut ok, "two").unwrap(), "B:two");
+            a.ctl.stop();
+            b.ctl.stop();
+        }
     }
 }
