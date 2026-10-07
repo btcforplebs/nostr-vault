@@ -18,9 +18,9 @@ see "What changed" below.*
   connect directly (UDP hole-punching with STUN). No middle server or "seed" node is needed.
 - The vault's relay and Blossom media server already share one port, so one connection path
   carries both notes and media. The Go relay does not change.
-- **Who can reach you is your choice.** Only friends on your list should be able to connect,
-  and your phone should never carry strangers' traffic. That lock is not finished yet (§6),
-  so "Share my relay" ships **off** by default until it is.
+- **Anyone can reach your vault, but your phone should never carry strangers' traffic.** That
+  needs FIPS's leaf-only mode, which isn't working yet (§6), so "Share my relay" ships **off** by
+  default until it is.
 
 ## 2. What changed since the July plan
 
@@ -73,34 +73,38 @@ Never use background audio, VoIP or location modes to keep it alive. That fails 
 |---|---|---|---|
 | **1. Engine** | Upstream fips + app-owned TUN + smoltcp. Two networks, found through Nostr relays, direct link, no seed. | Tao | **Works.** Cut-off-file bug fixed (`8e2c598`). Branch `feat/fips-v2-upstream`. |
 | 1b | Engine pieces for the app: sharing on/off, share and read at the same time, counters. | Tao | Open |
-| 1c | Friends-only lock (§6). | Tao | Open. **Gates "Share my relay" on by default.** |
-| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). The list picks whom we connect to; it does **not** block anyone else yet (§6). | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
+| 1c | Working leaf-only mode: no forwarding for strangers (§6). Needs upstream work. | Tao | Open. **Gates "Share my relay" on by default.** |
+| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). The list picks whom we connect to. It is not a block list. | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
 | **3. Android reading** | Vault adds its mesh address to its kind 10063 server list. The app reads a friend over FIPS, falls back to normal servers, shows a "via FIPS" badge. | Ted | Not started |
 | **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Needs the engine in the background service first. Run the battery check early. |
 | **5. Mac, then iPhone** | Mac shares like Android. iPhone reads (plus kiosk). | Tao | After Android |
 
-## 6. The friends-only lock
+## 6. Not carrying strangers' traffic
 
-Today, a node that joins FIPS also joins the public mesh. In testing, strangers' nodes connected
-to ours and one became our route parent. They can't read your vault (it's encrypted), but they
-use your battery and data and can see your home address. Two fixes:
+Anyone should be able to reach and read your vault. The real problem is different: today a phone
+that joins FIPS also *forwards* other people's traffic. In testing, strangers' nodes connected to
+ours and one picked our node as its route parent. They can't read your vault (it's encrypted), but
+forwarding uses your battery and data.
 
-1. **Don't relay for strangers:** turn on `node.leaf_only` for phones. It's a setting, no code change.
-2. **Only let friends connect:** FIPS has an allow list (`peers.allow`), but it only reads a fixed
-   system file (`/etc/fips` or `/usr/local/etc/fips`) that an app can't write. We'll add a way to
-   pass the list from the app, send that change upstream, and carry our own patch until it merges.
+The fix is FIPS's "leaf-only" mode: a node that can be reached by anyone, but never forwards
+traffic and is never picked as a route parent. Upstream has designed it but not built it. In
+v0.5.2 and on master, `node.leaf_only` only changes one internal setting, and the node still
+forwards and can still become a route parent. So this needs upstream work (we'll offer to help),
+or a patch we carry until it lands.
 
-Note: `policy: configured_only` only limits whom *we* dial. It does not stop others connecting to us.
+Notes:
+- `policy: configured_only` only limits whom *we* dial. It does not stop others connecting to us.
+- A friends-only allow list is not the goal. It would also block people who should be able to read you.
 
 ## 7. Risks
 
 | Risk | What we'll do |
 |---|---|
-| Strangers connect to or route through your node | Friends-only lock (§6). Sharing off by default until it lands. |
+| Your node forwards strangers' traffic | Working leaf-only mode (§6). Sharing off by default until it lands. |
 | Battery drain from an always-open link | Measure a full day on the moto as soon as sharing works. If it drains badly, the Android design changes. |
 | Slow, lossy links (a hotspot gave ~32 KB/s at 15% loss, 360 ms round trips) | Tune smoltcp buffers and retransmit. The ceiling is the link's own upload speed. |
-| A missed connection offer stalls the connect | `signal_ttl_secs = 30` in the app (default 120, so 2 min). Real fix: re-send our offer when the peer's arrives unanswered. Patch to go upstream. |
-| Same home network fails to punch (router doesn't hairpin) | Share LAN addresses, but only with friends on the allow list. |
+| A missed connection offer stalls the connect | `signal_ttl_secs = 30` in the app (default 120, so 2 min). Real fix: re-send our offer when the peer's arrives unanswered. Reported upstream as jmcorgan/fips#181. |
+| Same home network fails to punch (router doesn't hairpin) | Share LAN addresses, but only with friends on your list. |
 | Upstream is git-only and changing (`fips` 0.6.0-dev on master) | Pin release tags, never master. Keep our patches small and send them upstream. |
 | Upstream on Android was "compiles in CI" only | Now run on a real phone. The iOS build of upstream is still unverified. |
 | App size | Android engine is 13.1 MB uncompressed for arm64, about 6 MB to download. Acceptable. |
