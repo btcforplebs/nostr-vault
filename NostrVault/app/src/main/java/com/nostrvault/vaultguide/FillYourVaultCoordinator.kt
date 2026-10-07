@@ -1,7 +1,6 @@
 package com.nostrvault.vaultguide
 
 import android.content.Context
-import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.FeedService
 import com.nostrvault.tutorials.TutorialCenter
 import com.nostrvault.tutorials.TutorialID
@@ -10,6 +9,7 @@ import com.nostrvault.tutorials.TutorialStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,14 +49,15 @@ object FillYourVaultCoordinator {
         })
     }
 
-    fun start(feedService: FeedService, configStore: ConfigStore) {
+    /** [activeAccount] is the same flow the tutorial cards and Feeds start key on. */
+    fun start(feedService: FeedService, activeAccount: Flow<String>) {
         if (started) return
         started = true
         scope.launch {
             combine(
                 feedService.followedPubkeys,
                 feedService.followListIsKnown,
-                configStore.activeAccountHexPubkey,
+                activeAccount,
             ) { follows, known, account -> Triple(follows, known, account) }
                 .collect { (follows, known, account) -> update(follows, known, account) }
         }

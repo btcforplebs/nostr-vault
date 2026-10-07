@@ -199,7 +199,7 @@ class FeedViewModel @Inject constructor(
 
     init {
         // Starts, or quietly finishes, Fill your vault once the follow list is known.
-        com.nostrvault.vaultguide.FillYourVaultCoordinator.start(feedService, configStore)
+        com.nostrvault.vaultguide.FillYourVaultCoordinator.start(feedService, activeHexPubkey)
     }
 
     init {
