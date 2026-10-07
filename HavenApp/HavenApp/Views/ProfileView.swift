@@ -66,10 +66,18 @@ struct ProfileView: View {
     @State private var followsMe: Bool = false
     @State private var followersCount: Int? = nil
     @State private var followerPubkeys = Set<String>()
+    /// created_at of the kind 0 and kind 3 now shown. Each relay answers with
+    /// its own copy and the answers arrive in any order, so an older copy from
+    /// a slow relay must not replace a newer one already on screen.
+    @State private var shownMetadataAt: Int64 = 0
+    @State private var shownContactsAt: Int64 = 0
 
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
     @State private var isLoadingNotes = false
+    /// Bumped by each opening load, so the fallback timer of an earlier load
+    /// cannot end a later one early.
+    @State private var notesLoadToken = 0
     @State private var profileClients: [WebSocketClient] = []
     @State private var profileCancellables = Set<AnyCancellable>()
     @State private var seenNoteIds = Set<String>()
@@ -341,7 +349,11 @@ struct ProfileView: View {
         .hiddenTopScrollEdge()
         .if(isOwnProfile) { view in
             view.refreshable {
-                await refreshProfile()
+                // Its own task: SwiftUI cancels the refresh task when this
+                // page redraws mid-refresh, which cut every wait inside short
+                // and dropped the spinner at once. Awaiting a separate task
+                // holds the pull open until the load is actually done.
+                await Task { await refreshProfile() }.value
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1713,36 +1725,38 @@ struct ProfileView: View {
 
     // MARK: - Refresh
 
+    /// Pull to refresh. Reloads in place: everything on screen stays until
+    /// something newer replaces it, so the page never blanks and refills. New
+    /// posts are added at the top, counts change only when a new number
+    /// arrives, and the header, Shop and the extra tabs are fetched again.
+    /// The spinner stays until a relay has answered the new load.
     private func refreshProfile() async {
-        nostrService.fetchMissingProfiles(for: [pubkey])
+        let started = Date()
+        nostrService.fetchMissingProfiles(for: [pubkey], force: true)
+        shop.load(pubkey: pubkey, force: true)
+        extras.load(pubkey: pubkey, relays: extrasRelays, force: true)
 
+        // A page of older notes in flight dies with its connection; let the
+        // next scroll to the bottom ask again.
         disconnectClients()
-        profileNotes.removeAll()
-        seenNoteIds.removeAll()
         isLoadingNotes = false
         isLoadingOlderNotes = false
-        hasMoreNotes = true
         olderPageSubId = nil
-        quietOlderPages = 0
-        autoPagedInARow = 0
-        taggedNotes.removeAll()
-        seenTaggedIds.removeAll()
         isLoadingOlderTaggedNotes = false
-        hasMoreTaggedNotes = true
         olderTaggedSubId = nil
-        quietOlderTaggedPages = 0
-        autoPagedTaggedInARow = 0
-        followingCount = nil
-        followsMe = false
-        followersCount = nil
-        followerPubkeys.removeAll()
-        totalNoteCount = nil
-        totalMediaCount = nil
 
         fetchAuthorNotes()
         fetchLocalRelayCounts()
 
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        // Until the first relay has sent everything it has (EOSE), and long
+        // enough that the spinner reads as having done something.
+        while isLoadingNotes, Date().timeIntervalSince(started) < 8 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let shown = Date().timeIntervalSince(started)
+        if shown < 0.6 {
+            try? await Task.sleep(nanoseconds: UInt64((0.6 - shown) * 1_000_000_000))
+        }
     }
 
     // MARK: - Local relay counts (own profile)
@@ -1879,8 +1893,10 @@ struct ProfileView: View {
             client.connect(url: url)
         }
 
+        notesLoadToken += 1
+        let token = notesLoadToken
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-            isLoadingNotes = false
+            if token == notesLoadToken { isLoadingNotes = false }
         }
     }
 
@@ -1896,6 +1912,8 @@ struct ProfileView: View {
 
             // Handle kind 0 (profile metadata) from the target user
             if event.kind == 0, event.pubkey == pubkey {
+                guard event.created_at >= shownMetadataAt else { return }
+                shownMetadataAt = event.created_at
                 if let contentData = event.content.data(using: .utf8),
                    let metadata = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] {
                     var prof = nostrService.profiles[pubkey] ?? FeedProfile(pubkey: pubkey)
@@ -1916,6 +1934,8 @@ struct ProfileView: View {
             if event.kind == 3 {
                 let pTags = event.tags.filter { $0.count >= 2 && $0[0] == "p" }
                 if event.pubkey == pubkey {
+                    guard event.created_at >= shownContactsAt else { return }
+                    shownContactsAt = event.created_at
                     // This user's own contact list → extract following count and followsMe.
                     // followsMe is true if they follow ANY of our accounts (owner or
                     // whitelisted) so the badge is consistent across account switches.
@@ -2724,10 +2744,15 @@ final class ProfileExtrasLoader: ObservableObject {
     @Published private(set) var tracks: [WavlakeTrack] = []
     private var loadedPubkey: String?
 
-    func load(pubkey: String, relays: [URL]) {
-        guard loadedPubkey != pubkey else { return }
+    /// `force` fetches again for the person already shown, keeping their
+    /// tabs on screen until the new answers replace them.
+    func load(pubkey: String, relays: [URL], force: Bool = false) {
+        if loadedPubkey == pubkey {
+            guard force else { return }
+        } else {
+            articles = []; reels = []; tracks = []
+        }
         loadedPubkey = pubkey
-        articles = []; reels = []; tracks = []
         Task { await loadEvents(pubkey: pubkey, relays: relays) }
         Task { await loadMusic(pubkey: pubkey) }
     }
@@ -2739,6 +2764,9 @@ final class ProfileExtrasLoader: ObservableObject {
         ]
         let events = await ZapHistoryService.query(filters: filters, relays: relays, timeout: 8)
         guard loadedPubkey == pubkey else { return }
+        // No answer at all on a refresh is a failed fetch, not proof the tabs
+        // are empty; keep what is shown.
+        if events.isEmpty, !(articles.isEmpty && reels.isEmpty) { return }
         let notes: [FeedNote] = events.compactMap { event in
             guard let id = event["id"] as? String, (event["pubkey"] as? String) == pubkey,
                   let kind = event["kind"] as? Int, let tags = event["tags"] as? [[String]],
