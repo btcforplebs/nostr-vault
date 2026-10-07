@@ -150,6 +150,16 @@ struct HavenConfig: Codable, Equatable {
     /// Blossom servers, instead of posting nostr.build's link.
     var saveGifsToBlossom: Bool = false
 
+    /// Where a brand-new account's photos go when it has no server of its own.
+    /// blossomMirrors is otherwise empty on a fresh install, and with no
+    /// outside server a photo (the profile picture included) lives only on the
+    /// phone and can't be shown to anyone else. Both accepted an upload signed
+    /// by a never-seen key and returned the blob under its own sha256
+    /// (checked 2026-10-07). nostr.build first at Logen's request (its blobs
+    /// are served from blossom.band), Primal second. Only setup's New to
+    /// Nostr path applies this.
+    static let newAccountBlossomMirrors = ["https://blossom.nostr.build", "https://blossom.primal.net"]
+
     /// Former default mirrors that no longer exist (kylezien is NXDOMAIN,
     /// satellite's CDN is dead — verified 2026-07). Configs written by old
     /// builds may still carry them; they fail every upload and add timeout

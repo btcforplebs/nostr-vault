@@ -516,6 +516,9 @@ struct SetupWizardView: View {
             // no-follows path moves a new user to the curated Global feed;
             // Popular is the unfiltered one, which is why it isn't the default.
             configService.config.defaultFeedMode = "FOLLOWING"
+            if configService.config.blossomMirrors.isEmpty {
+                configService.config.blossomMirrors = HavenConfig.newAccountBlossomMirrors
+            }
         default: configService.config.setupMode = "full"
         }
         configService.config.macRelayURL = macRelayURL
