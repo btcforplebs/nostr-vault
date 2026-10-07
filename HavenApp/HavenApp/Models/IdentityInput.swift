@@ -9,7 +9,7 @@ import Foundation
 /// (`Bech32.hasValidChecksum`) and resolves name@domain over the network.
 enum IdentityInput: Equatable {
     case empty
-    /// `npub1…` or `nprofile1…`: read-only.
+    /// `npub1…`: read-only.
     case publicKey(String)
     /// `name@domain` or a bare `domain.tld`: resolves to a public key, read-only.
     case nip05(String)
@@ -38,7 +38,7 @@ enum IdentityInput: Equatable {
             self = .secretKey(lower)
         } else if lower.hasPrefix("ncryptsec1") {
             self = .encryptedSecretKey(lower)
-        } else if lower.hasPrefix("npub1") || lower.hasPrefix("nprofile1") {
+        } else if lower.hasPrefix("npub1") {
             self = .publicKey(lower)
         } else if lower.count == 64, lower.allSatisfy(\.isHexDigit) {
             self = .hexKey

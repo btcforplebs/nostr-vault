@@ -253,7 +253,10 @@ struct SetupWizardView: View {
     let onComplete: () -> Void
 
     enum SetupPath {
-        case none, full, browse, newToNostr
+        /// `useNostr` is iPhone/iPad's "I use Nostr": one key field decides
+        /// read-only vs can-post, so it replaces `full` and `browse` there.
+        /// The Mac keeps those two (Full Setup there is a public relay).
+        case none, full, browse, newToNostr, useNostr
     }
 
     enum TransitionDirection {
@@ -273,10 +276,14 @@ struct SetupWizardView: View {
         case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
         case .newToNostr: return [0, 1, 9, 11, 10, 8] // welcome, path, intro, profile, follows, done
         case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
+        case .useNostr: return [0, 1, 12, 13] // welcome, path, your key, import tour
         }
     }
 
     private var totalVisibleSteps: Int { pathSteps.count }
+
+    /// "I use Nostr" with only a public key: nothing to sign with.
+    private var useNostrIsReadOnly: Bool { signingMode != "nip46" && nsec.isEmpty }
 
     private var currentDotIndex: Int {
         pathSteps.firstIndex(of: currentStep) ?? 0
@@ -419,6 +426,21 @@ struct SetupWizardView: View {
                     }
                 }
             )
+        case 12:
+            UseNostrKeyStep(
+                npub: $npub,
+                nsec: $nsec,
+                nsecPassword: $nsecPassword,
+                signingMode: $signingMode,
+                bunkerURI: $bunkerURI,
+                onContinue: { goForward() }
+            )
+        case 13:
+            ImportTourStep(isReadOnly: useNostrIsReadOnly) { _ in
+                // Kept running or not, the import carries on in
+                // RelayProcessManager; startRelay waits for it.
+                saveAndComplete()
+            }
         case 10:
             InitialFollowsStepView(
                 initiallySelected: Set(pickedNpubs),
@@ -452,6 +474,8 @@ struct SetupWizardView: View {
             if currentStep == 1 && setupPath == .newToNostr {
                 // New to Nostr: go to intro step
                 currentStep = 9
+            } else if currentStep == 1 && setupPath == .useNostr {
+                currentStep = 12
             } else if currentStep == 2 && setupPath == .browse {
                 // Browse mode: skip relay config, go to import step
                 currentStep = 4
@@ -466,6 +490,7 @@ struct SetupWizardView: View {
             }
         }
         // Save intermediate config at key points
+        // The import tour (13) imports with the saved config, so save first.
         if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 10 || currentStep == 11 {
             saveIntermediateConfig()
         }
@@ -474,7 +499,11 @@ struct SetupWizardView: View {
     private func goBack() {
         direction = .backward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 9 {
+            if currentStep == 12 {
+                currentStep = 1 // I use Nostr: back to choose path
+            } else if currentStep == 13 {
+                currentStep = 12 // Import tour: back to your key
+            } else if currentStep == 9 {
                 currentStep = 1 // New to Nostr: back to choose path
             } else if currentStep == 10 {
                 currentStep = 11 // Initial Follows: back to profile
@@ -503,13 +532,16 @@ struct SetupWizardView: View {
     private func saveIntermediateConfig() {
         configService.config.ownerNpub = npub
         // Browse / New to Nostr mode: set default localhost relay URL so the local relay can start
-        configService.config.relayURL = ((setupPath == .browse || setupPath == .newToNostr) && relayURL.isEmpty)
+        configService.config.relayURL = ((setupPath == .browse || setupPath == .newToNostr || setupPath == .useNostr) && relayURL.isEmpty)
             ? "127.0.0.1:\(configService.config.relayPort)"
             : relayURL
         configService.config.dbEngine = "badger"
         configService.config.signingMode = setupPath == .newToNostr ? "local" : signingMode
         switch setupPath {
         case .browse: configService.config.setupMode = "browse"
+        case .useNostr:
+            // What was pasted decided it: a key or signer can post.
+            configService.config.setupMode = useNostrIsReadOnly ? "browse" : "full"
         case .newToNostr:
             configService.config.setupMode = "newuser"
             // Following when people were picked. With none, FeedService's
@@ -843,6 +875,43 @@ private struct ChoosePathStep: View {
                 .offset(y: appeared ? 0 : 16)
                 .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
 
+                #if os(iOS)
+                // I use Nostr card: one key field next decides read-only vs
+                // can-post, so Full Setup and Browse Mode are one choice here.
+                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .useNostr } }) {
+                    WizardGlassCard(isSelected: selectedPath == .useNostr) {
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: "key.fill")
+                                .font(.appSystem(size: 28))
+                                .foregroundColor(selectedPath == .useNostr ? WizardColors.accentPrimary : WizardColors.textSecondary)
+                                .frame(width: 36)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text("I use Nostr")
+                                        .font(.appSystem(size: 18, weight: .semibold))
+                                        .foregroundColor(WizardColors.textPrimary)
+                                    Spacer()
+                                    if selectedPath == .useNostr {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(WizardColors.accentPrimary)
+                                            .transition(.scale.combined(with: .opacity))
+                                    }
+                                }
+                                Text("Bring your account and your notes. Read-only with just your public key, or post with your key or a signer app.")
+                                    .font(.appSystem(size: 14))
+                                    .foregroundColor(WizardColors.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .opacity(selectedPath != .none && selectedPath != .useNostr ? 0.7 : 1.0)
+                }
+                .buttonStyle(.plain)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 16)
+                .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
+                #else
                 // Full Setup card
                 Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .full } }) {
                     WizardGlassCard(isSelected: selectedPath == .full) {
@@ -912,6 +981,7 @@ private struct ChoosePathStep: View {
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 16)
                 .animation(WizardAnimations.springEnter.delay(0.4), value: appeared)
+                #endif
             }
 
             if selectedPath != .none {

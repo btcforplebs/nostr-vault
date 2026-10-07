@@ -6,7 +6,7 @@ final class IdentityInputTests: XCTestCase {
     private let hex = String(repeating: "a", count: 64)
 
     func testPublicKeysAreReadOnly() {
-        for raw in ["npub1abc", "  NPUB1ABC\n", "nostr:npub1abc", "nprofile1qqs"] {
+        for raw in ["npub1abc", "  NPUB1ABC\n", "nostr:npub1abc"] {
             let input = IdentityInput(raw)
             guard case .publicKey = input else { return XCTFail("\(raw) → \(input)") }
             XCTAssertFalse(input.canPost)
@@ -44,7 +44,7 @@ final class IdentityInputTests: XCTestCase {
 
     func testJunkIsNotUsable() {
         for raw in ["", "   ", "hello", "@example.com", "alice@", "alice@example", "a b.com",
-                    "https://example.com", "bunker://notakey", ".com", "example."] {
+                    "https://example.com", "bunker://notakey", ".com", "example.", "nprofile1qqs"] {
             XCTAssertNil(IdentityInput(raw).setupMode, raw)
         }
         XCTAssertEqual(IdentityInput(""), .empty)
