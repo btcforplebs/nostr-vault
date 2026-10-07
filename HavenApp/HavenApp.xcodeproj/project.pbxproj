@@ -176,6 +176,7 @@
 		55297482FC513EA6FB0BA212 /* DestructiveConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E27340575E9D1A230E2BDE /* DestructiveConfirmation.swift */; };
 		55403DCE5A8C2C213E21C620 /* RetryableAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8495489F7284415840FE673 /* RetryableAsyncImage.swift */; };
 		5686CC2CCACE6E4F7B59F892 /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47E52CADA44AC55958A69E64 /* MessageComposerView.swift */; };
+		56CDAAD91FCF7898373661F0 /* TrustWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A7579D4BC164DFC9F4F3D /* TrustWebView.swift */; };
 		57473C93C84432716881F0CD /* SellerListingsLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */; };
 		57E6069BC04523FD3F7A9DA7 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF859BC17F21BAE82F4F75F /* ZapNotificationBanner.swift */; };
 		57EBB30401CBC87C13A7A9B5 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
@@ -303,6 +304,7 @@
 		9311DBEC8D73D7A39BCD6B9A /* ZapFlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073E928415EAF56E0DB8924 /* ZapFlightView.swift */; };
 		9348320A3C53301CF2A5C634 /* Juntos.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B16BA3C0FD98FA86CA181B2C /* Juntos.mp3 */; };
 		93BE6200BD1B5D35735CF2DF /* MediaGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0FC14B3CEA24424481BBA3 /* MediaGalleryView.swift */; };
+		93DCC2A165397C8BA4F00DF6 /* TrustWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A7579D4BC164DFC9F4F3D /* TrustWebView.swift */; };
 		93F72291B6A98E1F385A65CA /* DestructiveConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E27340575E9D1A230E2BDE /* DestructiveConfirmation.swift */; };
 		9420BF6D6250673C8AD372A0 /* FeedLayoutMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */; };
 		96535432E1ED9D8B290B1CF5 /* NotificationSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */; };
@@ -795,6 +797,7 @@
 		DEF0159EC6004E767A239389 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		DF76B5373E734C5934402DBD /* NostrContentFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrContentFormatter.swift; sourceTree = "<group>"; };
 		DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP10Thread.swift; sourceTree = "<group>"; };
+		E11A7579D4BC164DFC9F4F3D /* TrustWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustWebView.swift; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
 		E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFilterEngine.swift; sourceTree = "<group>"; };
 		E3056CC16711F7E38B7FE86D /* HavenConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenConfig.swift; sourceTree = "<group>"; };
@@ -900,6 +903,7 @@
 				B1B4305FF35E5998BE597AC6 /* SetupWizard */,
 				89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */,
 				4EFB53AF0B545D2F574F9F8D /* TrustPathCard.swift */,
+				E11A7579D4BC164DFC9F4F3D /* TrustWebView.swift */,
 				2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */,
 				2C108134DDDCA1A08788B743 /* Vault */,
 				E465CC24BD21C2812171299B /* VaultTypes.swift */,
@@ -1753,6 +1757,7 @@
 				BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */,
 				D11A40BAE7126C3D866D0DBA /* TrustPathCard.swift in Sources */,
 				837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */,
+				93DCC2A165397C8BA4F00DF6 /* TrustWebView.swift in Sources */,
 				1F95FE3EAEC35F682BAF6EDD /* UGCReportingDialog.swift in Sources */,
 				5C0AEAD4DE0514BF0CAD6AF3 /* VaultChangeHandlers.swift in Sources */,
 				02DDC26D86827A85D18DD2BA /* VaultDataProcessing.swift in Sources */,
@@ -2009,6 +2014,7 @@
 				F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */,
 				76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */,
 				673731663A06785AAD5AA6FD /* TrustPathService.swift in Sources */,
+				56CDAAD91FCF7898373661F0 /* TrustWebView.swift in Sources */,
 				D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */,
 				B98B2A4703AA7C738B6B055E /* VaultChangeHandlers.swift in Sources */,
 				F886F6AEE134AD4080106B31 /* VaultDataProcessing.swift in Sources */,
