@@ -121,7 +121,7 @@ We build fixes on `next` in our fork, test them, and offer them to jmcorgan, one
 | # | Gap on `next` | Status |
 |---|---|---|
 | 1 | The 2-min connect stall (same code as v0.5.2). | Ready, branch `next-offer-resend`. **Waiting on Logen's OK on the PR text.** |
-| 2 | A non-routing node with the smallest address gets cut off (upstream lists it as open). | Design under review by Tim and Tron. |
+| 2 | A non-routing node with the smallest address gets cut off (upstream lists it as open). | Split in two: 2a built (`next-recover-skip`), 2b in progress. |
 | 3 | Two phones can't link: `next` needs a "full" node on every link, and friend ↔ friend is usually phone ↔ phone. | Not started. Changes a protocol rule, so needs jmcorgan's agreement most. |
 
 Each change gets unit tests, a run in upstream's multi-node harness, a phone ↔ Mac test, and a
