@@ -1,335 +1,116 @@
-# FIPS-Native Media & Relay for Nostr Vault
+# FIPS for Nostr Vault — Roadmap
 
-**Serving Nostr Vault's relay and Blossom media over the FIPS mesh — no public IP, no domain,
-no TLS certificate, no port forwarding.**
+**Goal: let friends reach your vault's relay and media directly, phone to phone or phone to Mac.
+No public IP, no domain, no TLS certificate, no port forwarding, no VPN.**
 
-*Rewritten 2026-07-27 against `fips-endpoint` 0.4.45 / upstream `fips` v0.4.1. The May 2026
-version of this document was written against FIPS v0.2.0 and was wrong in ways that would
-have sent the implementation down a dead end — see §1.*
-
----
-
-## 0. TL;DR
-
-Nostr Vault already runs an embedded Go relay that serves **both** Nostr (WSS) and Blossom
-media on a single HTTP port. FIPS gives identity-based addressing, where a node's npub *is*
-its address.
-
-We embed the `fips-endpoint` crate directly in the app — no system TUN, no VPN profile, no
-NetworkExtension entitlement — and bridge it to the existing relay with a loopback HTTP
-proxy. macOS and Android become 24/7 providers; iOS consumes, and can host only in an
-explicit kiosk mode.
-
-Because relay and Blossom already share one port, **one byte-transparent proxy covers both,
-with zero changes to the Go relay.**
+*Rewritten 2026-10-07 for "v2", which is built on upstream `jmcorgan/fips` v0.5.2. The July
+2026 version of this file planned everything around `fips-endpoint` (mmalmi's nvpn fork) and
+said upstream FIPS could not be embedded in an app. Testing in September showed the opposite;
+see "What changed" below.*
 
 ---
 
-## 1. What the previous version of this document got wrong
+## 1. The short version
 
-Both errors pointed at an architecture that cannot be built.
+- Each vault runs a small FIPS mesh node inside the app. Your Nostr key is its address.
+- Two vaults find each other by posting short signed messages on ordinary Nostr relays, then
+  connect directly (UDP hole-punching with STUN). No middle server or "seed" node is needed.
+- The vault's relay and Blossom media server already share one port, so one connection path
+  carries both notes and media. The Go relay does not change.
+- **Who can reach you is your choice.** Only friends on your list should be able to connect,
+  and your phone should never carry strangers' traffic. That lock is not finished yet (§6),
+  so "Share my relay" ships **off** by default until it is.
 
-**"`fips-endpoint` has no stable FFI — that's the critical-path blocker."**
-It was never the blocker. `fips-endpoint` is published on crates.io, at 0.4.45 as of
-2026-07-27, and exposes exactly the embedded API we need. The old plan proposed asking
-upstream for `fips_endpoint_dial_tcp` and similar; no such request is needed, and no such
-function is coming, because the API is datagram-based by design.
+## 2. What changed since the July plan
 
-**"A userspace tunnel means no NetworkExtension entitlement is needed."**
-False for upstream `jmcorgan/fips`. That project is a TUN/IP **daemon** — `src/upper/tun.rs`
-creates a real network interface, `fips-gateway` is `#[cfg(target_os = "linux")]`, and there
-is no iOS support at all. mmalmi's nostr-vpn confirms it from the other direction: its iOS
-app ships a `PacketTunnelProvider.swift` with the `packet-tunnel-provider` entitlement,
-precisely because the TUN model requires it.
-
-The route through is **not** upstream `fips`. It is `fips-endpoint`, whose builder exposes
-`without_system_tun()`.
-
-A third correction, less severe but load-bearing: the old plan's `FIPSURLProtocol` shim
-cannot work on Apple platforms. See §4.
-
----
-
-## 2. The transport
-
-### 2.1 `fips-endpoint` is datagram-only
-
-There is no TCP or stream abstraction anywhere in the crate. The surface we use:
-
-```rust
-FipsEndpoint::builder()
-    .identity_nsec(nsec)
-    .discovery_scope(scope)
-    .config(config)            // transports, MTU, discovery relays
-    .without_system_tun()      // the whole reason embedding is possible
-    .bind().await?;
-
-endpoint.register_service_receiver(port).await?;   // 256-258 reserved by FIPS
-endpoint.send_datagram(peer, src_port, dst_port, payload).await?;
-receiver.recv_batch_into(&mut buf, max).await;
-```
-
-Also useful: built-in Nostr-mediated discovery (kind 37195 adverts), `RecentPeersFileStore`
-for restart-safe peer reuse, `update_relays()`, and `ingest_nostr_event()`.
-
-### 2.2 Datagram sizing — measured, not assumed
-
-`crates/fips-bridge-probe` measures this directly. Result on 0.4.45:
-
-```
-API accepted up to:  65525 bytes
-65526 bytes       ->  rejected: ServiceDatagramTooLarge { len: 65526, max: 65525 }
-```
-
-which matches `fips-core`'s `fsp_service_datagram_max_body_len() = u16::MAX - 6 - 4`.
-
-**That ceiling is a trap, not a licence.** FIPS fragments internally
-(`dataplane/direct_transport.rs`: 128 fragments max, 72 KB reassembly, 2000 ms TTL), and
-reassembly is all-or-nothing with **no per-fragment retransmit**. A 64 KB datagram at the
-default 1280-byte UDP MTU is ~54 fragments; at 1% packet loss that datagram fails ~42% of the
-time. It looks flawless on a LAN and collapses on cellular, and it degrades *silently* rather
-than erroring.
-
-So the working unit is one MTU. **The arithmetic below is wrong and is kept only to show what
-was corrected** — see the block that follows.
-
-```
-1280 − 12 (FSP outer) − 16 (AEAD tag) − 6 (inner hdr) − 4 (port hdr) ≈ 1242 bytes usable
-```
-
-> **Corrected 2026-08-06.** That counts the FSP layer and stops. The send path wraps FSP inside
-> FMP, and fips-core states the total itself — `FIPS_OVERHEAD = 106` (`upper/icmp.rs:60-91`),
-> plus `FSP_PORT_HEADER_SIZE` (4) for service datagrams, so **110 bytes**. The four omitted
-> FMP-layer items are the FMP outer header (16), FMP inner header (5), SessionDatagram body
-> (35 — ttl, path_mtu, src, dst) and the second Poly1305 tag (16): 72 bytes, exactly the
-> 1242 − 1170 gap.
->
-> The real budget at underlay 1280 is **1170 usable**, which is *below* quinn's 1200 floor.
-> There was never 42 bytes of thin margin; there was a 30-byte deficit. **Every QUIC packet has
-> been fragmenting into two FIPS fragments since the first commit**, including in every green
-> result cited in §5.
->
-> This cross-checks against nostr-vpn, which derives the same constants independently:
-> 1280 − 106 = 1174, minus their 24-byte cushion for the COORDS warmup tag = 1150, which is
-> their `MESH_TUNNEL_MTU` exactly.
->
-> **Raising the MTU is not the fix.** §6 now records why: nostr-vpn shipped a raise twice and
-> reverted twice, because `Node::adopt_established_traversal` builds NAT-adopted UDP transports
-> from `UdpConfig::default()` at 1280 regardless, so oversize datagrams die at the socket layer
-> the moment a session is promoted onto a traversed link. 1310 is the minimum underlay for
-> single-fragment QUIC, and it is above the only NAT-safe value we have.
->
-> Two things hid this. `quic_e2e` runs in-process, where no path MTU is enforced. And the loss
-> injector in `transport/udp_socket.rs` dropped whole QUIC packets *above* FIPS, so it could not
-> observe a lost fragment by construction. The injector now rolls once per fragment, reproducing
-> FIPS's all-or-nothing `(1-p)^n` reassembly; `FIPS_BRIDGE_LOSS_MODE=packet` still reproduces the
-> old numbers for comparison. Measured cost of the second fragment, 4 MiB transfer, one host:
->
-> | link loss | packet model | fragment model | delta |
-> |---|---|---|---|
-> | 0% | 0.85s | 0.77s | 0.90x |
-> | 1% | 0.85s | 0.81s | 0.96x |
-> | 3% | 0.84s | 1.16s | 1.38x |
-> | 5% | 1.02s | 1.86s | 1.81x |
-> | 10% | 2.29s | 4.96s | 2.16x |
->
-> The §5 exit gate still passes at 3% (4 MiB in 1.16s ≈ 3.5 MB/s, against a ≥500 KB/s bar), so
-> this is a real cost rather than a blocker — but it is loopback, with no RTT and uniform rather
-> than bursty loss. The numbers are pinned as unit tests in `transport/mtu.rs`, and reproduced by
-> `cargo run --release --bin mtu_budget`.
->
-> Open, and gating: whether 2-fragment QUIC is acceptable on a real cellular path. That needs two
-> machines. Options if it is not: the `lan` profile (1452 → 1342 usable, single-fragment, clean
-> direct paths only), or §5's stated WebSocket-transport fallback, which sidesteps datagram
-> fragmentation entirely.
-
-### 2.3 Stream layer: QUIC via quinn
-
-Rejected alternatives: a hand-rolled mini-TCP (the hard part is congestion control, and the
-headline case is video over cellular — bad CC is a permanent quality ceiling, not a fixable
-bug); smoltcp (synthesizes IPv6+TCP headers for ~60 bytes/packet of waste, Reno-class CC, no
-multiplexing); application-level chunked ARQ (reinvents CC, useless for bidirectional WSS).
-
-**`fips-tcp` / `fips-tcp-endpoint` 0.2.0 — evaluated 2026-08-06, rejected.** An earlier version
-of this document did not consider it, which was an omission: it is published on crates.io, rides
-FIPS service datagrams exactly as we need, and nostr-vpn runs it in production
-(`crates/nostr-vpn-core/src/fips_control_tcp.rs`, 863 lines, taking nothing but an
-`Arc<FipsEndpoint>`). Adopting it would have deleted `transport/{udp_socket,quic,tls}.rs` and
-made the MTU question moot.
-
-Reading the source settles it against us. `fips-tcp-0.2.0/src/reno.rs` is textbook TCP Reno —
-slow start, AIMD (`cwnd += mss²/cwnd`), fast recovery, `cwnd = mss` on RTO — over an RFC
-6298-style estimator in `rtt.rs`. There is **no SACK** and **no pacing** anywhere in the crate,
-and the default MSS is 1024. That is precisely the "Reno-class CC" we rejected smoltcp for, with
-the additional problem that without selective ack a single loss costs a full recovery cycle
-rather than one retransmit.
-
-For bulk relay traffic that would be fine. For the headline case — video over cellular, where
-loss is bursty and non-congestive — Reno without SACK or pacing collapses the window on signal
-variation that BBR rides through. We keep quinn. The cost is the SPKI-pinning work in this
-section and the tighter MTU budget in §2.2, both of which are accepted deliberately.
-
-This is not a criticism of `fips-tcp`: nostr-vpn uses it to carry control records, not media, and
-Reno is a reasonable choice for that. Revisit if it gains BBR or SACK.
-
-We run **quinn over a custom `AsyncUdpSocket`** backed by FIPS service datagrams. That buys
-ordered reliable multiplexed streams, BBR congestion control, and keepalive. Configure
-`initial_mtu = 1200`, `min_mtu = 1200`, `mtu_discovery_config = None` (FIPS owns PMTU). Use
-rustls with **`ring`**, not `aws-lc-rs` — the latter needs cmake and a C toolchain per target
-and is a known pain on `aarch64-apple-ios-sim` and the Android NDK.
-
-QUIC's certificate check is redundant here, since FIPS already authenticates `source_peer`
-via Noise IK. Rather than disabling verification outright, derive a self-signed cert from the
-FIPS nsec and pin its SPKI hash to the peer's npub.
-
-### 2.4 The bridge never parses HTTP
-
-`init.go:505-545` mounts Blossom onto `outboxRelay`, and `cshared.go` routes everything
-through `dynamicRelayHandler` on one listener. So the bridge is a byte-transparent
-**TCP↔QUIC-bidi-stream splice** — `copy_bidirectional` at each end, one QUIC stream per TCP
-connection.
-
-Keep-alive, byte ranges, chunked encoding, the WSS `101 Switching Protocols` upgrade, and
-WebSocket frames all pass through as opaque bytes. **The relay scope comes free the moment
-media works**, and the Go relay needs no changes at all.
-
-```
-Consumer                                              Provider (Mac / Android)
-────────                                              ────────────────────────
-URLSession / AVAsset / Coil / ExoPlayer               Go relay + Blossom
-   │ TCP                                                 ▲ TCP
-   ▼                                                     │
-127.0.0.1:<peerPort> ──accept──┐         ┌──connect── 127.0.0.1:3355
-                               │         │
-                        open bidi ─────► accept bidi
-                          ┌────┴─────────┴────┐
-                          │ QUIC (quinn)      │  ordered, reliable, BBR
-                          │ over FIPS datagrams│
-                          └───────────────────┘
-                                   │
-                    fips-endpoint service port (authenticated)
-```
-
----
-
-## 3. Platform roles
-
-| Platform | Serves over FIPS? | Why |
-|---|---|---|
-| **macOS** | Yes, 24/7 | Desktop process, no suspension. Developer-ID distributed, so no App Store review. |
-| **Android** | Yes, 24/7 | The relay already runs in a foreground service; the endpoint lives in the same service. |
-| **iOS** | Consumer by default; opt-in kiosk host | Apps are suspended in the background, so the endpoint dies the moment the app leaves the foreground. |
-
-An iOS-only user cannot casually host — they need a Mac or Android device as their provider.
-**Android is therefore what delivers the goal for users who own no Mac**, and is sequenced
-ahead of iOS.
-
-Do **not** use background-audio/VoIP/location modes to keep the iOS socket alive. That is an
-App Store rejection and a battery disaster.
-
-### 3.1 iOS kiosk host mode
-
-A foregrounded iOS device that never sleeps is never suspended, so it *can* host — an old
-iPhone or iPad on a charger is a legitimate home server. The app enforces it itself with
-`UIApplication.shared.isIdleTimerDisabled = true` (App Store-legitimate; navigation and video
-apps use it routinely).
-
-It stays opt-in and off by default because: any app switch kills it instantly, with no
-graceful degradation; jetsam is a live risk given the app's existing ~1 GB resident footprint
-plus the Go runtime plus tokio/quinn/rustls; and screen-on 24/7 means heat, battery wear and
-OLED burn-in.
-
-Consequently, kind-10063 advertisement is gated on **opt-in plus sustained uptime** (~10
-minutes continuous), a Mac or Android provider should appear in the same list as a fallback,
-and the UI warns when host mode runs unplugged.
-
----
-
-## 4. Client-side addressing
-
-### 4.1 Why `URLProtocol` cannot work on Apple
-
-- `Views/Components/RetryableAsyncImage.swift:38` falls back to bare SwiftUI `AsyncImage`,
-  which uses an internal session and cannot be intercepted.
-- All video and audio goes through `AVURLAsset` (`VideoPlaybackService.swift:248`,
-  `MediaCacheService.swift:751/778`, `AudioPlayerView.swift:103`). AVFoundation does its own
-  CFNetwork I/O below the URLProtocol layer. The only sanctioned hook is
-  `AVAssetResourceLoaderDelegate`, which means hand-implementing byte-range serving per media
-  type.
-- ~10 separately-constructed `URLSession`s would each need `protocolClasses` wired.
-
-### 4.2 Loopback proxy, port-per-peer
-
-ATS is `NSAllowsArbitraryLoads: True` in both `HavenApp-iOS/Info.plist` and
-`HavenApp/App/Info.plist`, so the proxy serves **plain HTTP** — no cert, no trust delegate.
-
-Addressing is **one loopback listener per remote npub**, LRU-bounded (~32) so a hostile feed
-cannot exhaust file descriptors. Path-prefix routing was rejected: it breaks on relative
-`Location:` headers and on Blossom BUD-02 descriptors that embed self-referential URLs, and it
-mangles the sha256 path shape Go's blob regex depends on (`init.go:686`). Host-header routing
-was rejected because after rewriting to `127.0.0.1` every client sends `Host: 127.0.0.1`.
-
-**Persist the npub→port map to disk.** `MediaCacheService`'s disk cache keys on `hash(url:)`
-and Coil's does the same; shuffling ports across launches silently invalidates every cached
-FIPS blob.
-
-### 4.3 Two consequences of rewriting to 127.0.0.1
-
-**Helpful:** the http→https force-upgrade at `BlossomService.swift:395-400, 627-633,
-1084-1091` becomes automatically correct, because `isLocalhost` and `isLocalNetworkHost`
-already match `127.0.0.1` — provided the rewrite happens at config-read time, before those
-functions see the URL.
-
-**Dangerous:** `MediaCacheService.isLocalURL:869` also matches `127.0.0.1`, and
-`fetchData:519-527` uses it to **bypass the disk cache entirely**. That is right for the local
-relay's own blobs and catastrophic for a remote peer's blobs pulled over the mesh. Gate it on
-`url.port == config.relayPort`. This is the single most likely bug to ship unnoticed — it
-shows up as "FIPS video re-downloads on every scroll", never as an error.
-
----
-
-## 5. Phases
-
-| Phase | Scope | Status |
-|---|---|---|
-| **0a** | Rust-only spike: datagram probe, `AsyncUdpSocket`, quinn, loopback e2e, loss testing, six cross-compile targets | Probe landed; rest in progress |
-| **0b** | Rewrite these docs against reality | This document |
-| **1** | macOS, both roles. Build scripts, Xcode wiring, `FIPSBridgeService`, settings, URL rewriting | |
-| **2** | Android, both roles, endpoint owned by the existing relay foreground service | |
-| **3** | iOS consumer, then opt-in kiosk host | |
-| **4** | kind-10063 read path — resolve blobs by sha256 against other users' server lists | |
-
-Phase 0a's exit gate: 20 MB at ≥3 MB/s on LAN and ≥500 KB/s at 3% simulated loss. Below that,
-stop before touching Xcode; the fallback is FIPS's WebSocket transport rather than UDP.
-
----
-
-## 6. Risks
-
-| Risk | Mitigation |
+| July plan said | What we found (Sep 2026) |
 |---|---|
-| Silent fragmentation collapse — oversize datagrams pass on LAN, fail on cellular | Never exceed one MTU; raise `transports.udp.mtu` to 1400; loss-test in Phase 0a |
-| `fips-endpoint` churn — 45 releases on 0.4.x; 0.3→0.4 replaced the entire send/recv model | Pin `=0.4.45`, commit `Cargo.lock`, vendor the crate, confine calls to two files |
-| Wire-protocol churn — provider and consumer must update together or silently cannot talk | Show the FIPS version in Settings; log an explicit mismatch |
-| `isLocalURL` cache bypass | Gate on `url.port == relayPort`; verify blobs reach the disk cache during device testing |
-| iOS kiosk vanishes on any app switch | Opt-in, off by default, uptime-gated advertisement, clearnet fallback in the same 10063 list |
-| Jetsam under memory pressure | Do the deferred Instruments pass *before* shipping kiosk mode; small tokio worker pool |
-| Build fragility — a third toolchain atop Go + Xcode + NDK | All six cross-compile targets green in CI during Phase 0a |
-| Binary size / cold start | `lto="thin"`, `codegen-units=1`, `strip`; keep `FipsBridgeStart` off the launch path |
-| Battery — always-on UDP keeps the radio awake | iOS foreground-only with a 30 s teardown, default off; Android tied to the FGS, measure Doze |
-| `local_rendezvous()` binds 127.0.0.1:21211 exclusively | Contends with a co-installed nostr-vpn Mac app; falls back to an ephemeral socket, but test it |
-| App Store review | No NetworkExtension entitlement, no system-wide routing. Frame as in-process peer-to-peer transport; never say "VPN". Check export compliance — Noise + QUIC may change `ITSAppUsesNonExemptEncryption` |
-| `.fips` is unreachable by non-FIPS clients | `activeBlossomMirrors` already appends it last (clearnet-first, BUD-14). Gate publishing on at least one clearnet mirror also being present |
+| Upstream `fips` is a system daemon and can't run inside an app. Use `fips-endpoint` instead. | Upstream v0.5.2 has `Node::enable_app_owned_tun()`. The app gets the raw packets itself, so no VPN or NetworkExtension is needed, on any platform. |
+| Build a stream layer with QUIC (quinn) over FIPS datagrams. | Not needed. A small in-app TCP/IP stack (smoltcp) runs on those packets. Plain TCP, HTTP and WebSocket just work. |
+| `fips-endpoint` (nvpn fork) is the way through. | The fork only sends connection offers over an *existing* FIPS route, so two phones behind home routers need a seed node to introduce them, and the public seeds dropped data. Upstream sends offers over plain Nostr relays. That is why v2 exists. |
+| Datagram size, fragmentation and MTU budget were the main risk. | Those belonged to the QUIC design. With smoltcp, FIPS clamps TCP segment size itself. |
 
----
+The old bridge (`fips-bridge/`, `FIPS_FFI_PLAN.md`, and Android PR #17) belongs to the July
+design and is being retired.
 
-## 7. References
+## 3. How it fits together
 
-- **fips-endpoint** — https://crates.io/crates/fips-endpoint · https://docs.rs/fips-endpoint
-- **FIPS (upstream daemon)** — https://github.com/jmcorgan/fips
-- **nostr-vpn** — https://github.com/mmalmi/nostr-vpn
-- **Blossom / BUD-03 (kind 10063)** — https://github.com/hzrd149/blossom
-- **RFC 9000 §14** (QUIC datagram size floor) — https://www.rfc-editor.org/rfc/rfc9000
-- **quinn** — https://docs.rs/quinn
+```
+Friend's app (reader)                                  Your app (sharer)
+─────────────────────                                  ─────────────────
+feed / images / video                                  Go relay + Blossom
+   │ plain HTTP / WebSocket                               ▲ plain TCP
+   ▼                                                      │
+127.0.0.1:<port for your npub>                         127.0.0.1:<relay port>
+   │                                                      ▲
+smoltcp TCP  ──────── FIPS session (encrypted) ────────► smoltcp TCP
+   │                                                      ▲
+fips node ◄── find each other via Nostr relays + STUN ──► fips node
+          ◄────────────── direct UDP link ─────────────►
+```
 
-Implementation detail for the bridge crate itself lives in `FIPS_FFI_PLAN.md`.
+- **Engine:** upstream `fips`, pinned to a tag (v0.5.2 today), plus smoltcp, in one Rust core
+  shared by every platform. Code: `fips-v2/` (engine) and `fips-v2-android/` (Android wrapper).
+- **Sharing:** the node accepts mesh connections on port 80 and passes them to the local relay.
+- **Reading:** one local port per friend. The app points that friend's relay and Blossom URLs at
+  `127.0.0.1:<port>`, so URLSession, AVFoundation, Coil and ExoPlayer need no changes.
+
+## 4. Platforms
+
+| Platform | Shares its vault? | Reads friends' vaults? | Notes |
+|---|---|---|---|
+| **Android** | Yes | Yes | Engine runs inside the relay's existing background service. Ships first. |
+| **macOS** | Yes, 24/7 | Yes | Same core. Never suspended, so a good always-on home for your vault. |
+| **iOS** | Only in opt-in "kiosk" mode | Yes | iOS suspends background apps. An old iPhone or iPad on a charger with the app open can host. |
+
+iOS kiosk mode stays off by default: any app switch stops it, and it keeps the screen on.
+Never use background audio, VoIP or location modes to keep it alive. That fails App Review.
+
+## 5. Status and next steps
+
+| Step | What | Who | Status |
+|---|---|---|---|
+| **1. Engine** | Upstream fips + app-owned TUN + smoltcp. Two networks, found through Nostr relays, direct link, no seed. | Tao | **Works.** Cut-off-file bug fixed (`8e2c598`). Branch `feat/fips-v2-upstream`. |
+| 1b | Engine pieces for the app: sharing on/off, share and read at the same time, counters. | Tao | Open |
+| 1c | Friends-only lock (§6). | Tao | Open. **Gates "Share my relay" on by default.** |
+| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
+| **3. Android reading** | Vault adds its mesh address to its kind 10063 server list. The app reads a friend over FIPS, falls back to normal servers, shows a "via FIPS" badge. | Ted | Not started |
+| **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Run the battery check early, as soon as sharing works. |
+| **5. Mac, then iPhone** | Mac shares like Android. iPhone reads (plus kiosk). | Tao | After Android |
+
+## 6. The friends-only lock
+
+Today, a node that joins FIPS also joins the public mesh. In testing, strangers' nodes connected
+to ours and one became our route parent. They can't read your vault (it's encrypted), but they
+use your battery and data and can see your home address. Two fixes:
+
+1. **Don't relay for strangers:** turn on `node.leaf_only` for phones. It's a setting, no code change.
+2. **Only let friends connect:** FIPS has an allow list (`peers.allow`), but it only reads a fixed
+   system file (`/etc/fips` or `/usr/local/etc/fips`) that an app can't write. We'll add a way to
+   pass the list from the app, send that change upstream, and carry our own patch until it merges.
+
+Note: `policy: configured_only` only limits whom *we* dial. It does not stop others connecting to us.
+
+## 7. Risks
+
+| Risk | What we'll do |
+|---|---|
+| Strangers connect to or route through your node | Friends-only lock (§6). Sharing off by default until it lands. |
+| Battery drain from an always-open link | Measure a full day on the moto as soon as sharing works. If it drains badly, the Android design changes. |
+| Slow, lossy links (a hotspot gave ~32 KB/s at 15% loss, 360 ms round trips) | Tune smoltcp buffers and retransmit. The ceiling is the link's own upload speed. |
+| A missed connection offer stalls the connect | `signal_ttl_secs = 30` in the app (default 120, so 2 min). Real fix: re-send our offer when the peer's arrives unanswered. Patch to go upstream. |
+| Same home network fails to punch (router doesn't hairpin) | Share LAN addresses, but only with friends on the allow list. |
+| Upstream is git-only and changing (`fips` 0.6.0-dev on master) | Pin release tags, never master. Keep our patches small and send them upstream. |
+| Upstream on Android was "compiles in CI" only | Now run on a real phone. The iOS build of upstream is still unverified. |
+| App size | Android engine is 13.1 MB uncompressed for arm64, about 6 MB to download. Acceptable. |
+| `MediaCacheService.isLocalURL` skips the disk cache for `127.0.0.1` | Only skip it for the vault's own relay port, or a friend's media re-downloads on every scroll. |
+| A friend's cached media is lost when local ports change | Save the npub → port map to disk. Image and video caches key on the URL. |
+| App Store review | No VPN entitlement and no system-wide routing. Describe it as in-app peer-to-peer, never "VPN". Check the export-compliance answer for the encryption used. |
+| `.fips` addresses can't be reached by non-FIPS clients | Always list a normal (clearnet) Blossom server first in kind 10063. |
+
+## 8. References
+
+- Upstream FIPS: https://github.com/jmcorgan/fips (v0.5.2)
+- smoltcp: https://docs.rs/smoltcp
+- Blossom / BUD-03 (kind 10063): https://github.com/hzrd149/blossom
+- Engine spike and notes: `fips-v2/README.md` on `feat/fips-v2-upstream`
