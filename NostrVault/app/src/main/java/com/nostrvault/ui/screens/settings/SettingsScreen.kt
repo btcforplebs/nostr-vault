@@ -211,6 +211,17 @@ fun SettingsScreen(
                 )
             }
 
+            // ── HELP ──────────────────────────────────────────────
+            item { SettingsSectionHeader("Help") }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Tutorials,
+                    title = "Tutorials",
+                    subtitle = "Replay the guides",
+                    onClick = { onNavigate(Screen.TutorialsSettings) },
+                )
+            }
+
             // ── ABOUT ─────────────────────────────────────────────
             item { SettingsSectionHeader("About") }
             item { AboutSection() }
