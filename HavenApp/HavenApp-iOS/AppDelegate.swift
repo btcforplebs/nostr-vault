@@ -90,6 +90,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Set notification center delegate
         UNUserNotificationCenter.current().delegate = self
 
+        Task { @MainActor in
+            // Posts waiting for an outside media server from an earlier launch.
+            MediaPostQueue.shared.start()
+            // Starts, or quietly finishes, the Fill your feed guide once the
+            // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
+            // in the iOS target; this file is.)
+            FillYourVaultCoordinator.shared.start()
+        }
+
         // Only request local notification permission if the user has already
         // completed setup (has an npub). First-time users will be prompted
         // after the setup wizard finishes. No remote/APNs registration —

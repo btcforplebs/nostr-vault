@@ -244,7 +244,6 @@ struct SetupWizardView: View {
     // New account state: published once setup completes and the key can sign
     @State private var profileName = ""
     @State private var profilePhotoJPEG: Data?
-    @State private var pickedNpubs: [String] = []
 
     // Error state
     @State private var setupError: String?
@@ -271,7 +270,7 @@ struct SetupWizardView: View {
         switch setupPath {
         case .none: return [0, 1, 2] // welcome, path, identity
         case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
-        case .newToNostr: return [0, 1, 9, 11, 10, 8] // welcome, path, intro, profile, follows, done
+        case .newToNostr: return [0, 1, 9, 11, 8] // welcome, path, intro, profile, done (the Fill your feed guide finds people)
         case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
         }
     }
@@ -391,10 +390,10 @@ struct SetupWizardView: View {
                 PushNotificationStep(onContinue: { currentStep = 8 }, onSkip: { currentStep = 8 })
             } else {
                 // macOS browse mode lands here as "complete"
-                CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, newUserFollowCount: pickedNpubs.count, onLaunch: { saveAndComplete() })
+                CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, onLaunch: { saveAndComplete() })
             }
         case 8:
-            CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, newUserFollowCount: pickedNpubs.count, onLaunch: { saveAndComplete() })
+            CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, onLaunch: { saveAndComplete() })
         case 9:
             NostrIntroStep(
                 npub: $npub,
@@ -413,28 +412,6 @@ struct SetupWizardView: View {
                 name: $profileName,
                 photoJPEG: $profilePhotoJPEG,
                 onContinue: {
-                    direction = .forward
-                    withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 10
-                    }
-                }
-            )
-        case 10:
-            InitialFollowsStepView(
-                initiallySelected: Set(pickedNpubs),
-                onContinue: { selectedNpubs in
-                    // Held until setup completes: the follow list is published
-                    // then, as this key's first kind 3. Not whitelistedNpubs,
-                    // which is the list of the user's own accounts.
-                    pickedNpubs = selectedNpubs
-
-                    direction = .forward
-                    withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 8
-                    }
-                },
-                onSkip: {
-                    pickedNpubs = []
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
                         currentStep = 8
@@ -466,7 +443,7 @@ struct SetupWizardView: View {
             }
         }
         // Save intermediate config at key points
-        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 10 || currentStep == 11 {
+        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 11 {
             saveIntermediateConfig()
         }
     }
@@ -476,15 +453,13 @@ struct SetupWizardView: View {
         withAnimation(WizardAnimations.springEnter) {
             if currentStep == 9 {
                 currentStep = 1 // New to Nostr: back to choose path
-            } else if currentStep == 10 {
-                currentStep = 11 // Initial Follows: back to profile
             } else if currentStep == 11 {
                 currentStep = 9 // Profile: back to intro
             } else if currentStep == 4 && setupPath == .browse {
                 currentStep = 2 // Browse: back from import to identity (skip relay config)
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
-                    currentStep = 10 // New to Nostr: back to initial follows
+                    currentStep = 11 // New to Nostr: back to profile
                 } else if setupPath == .browse {
                     currentStep = 4 // Browse: back to import
                 } else if isIOSDevice {
@@ -571,23 +546,20 @@ struct SetupWizardView: View {
     }
 
     /// Publishes what a brand-new account needs to exist for other people:
-    /// its first follow list, a relay list, and a profile. Runs once, after
+    /// a relay list and a profile. Its follow list starts with its first
+    /// follow, in the Fill your feed guide. Runs once, after
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
     /// in this run — a key that cannot have any of these events yet.
     private func publishNewAccount() {
         guard let ownerHex = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
+        FeedService.shared.markFreshAccount(ownerHex)
         let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = profilePhotoJPEG
-        let picks = pickedNpubs
         let configService = self.configService
 
         Task { @MainActor in
             let nostr = NostrService.shared
-
-            FeedService.shared.startNewAccountContactList(
-                ContactManager.newAccountContactTags(ownerHex: ownerHex, pickedNpubs: picks)
-            )
 
             let relayTags = RelayConfiguration.newAccountRelayListTags(
                 broadcastRelays: RelayConfiguration.directBroadcastRelays(
@@ -3056,7 +3028,6 @@ private struct PushNotificationStep: View {
 private struct CompleteStep: View {
     let isBrowseMode: Bool
     var isNewUser: Bool = false
-    var newUserFollowCount: Int = 0
     let onLaunch: () -> Void
     @State private var showContent = false
     @State private var ringScale: CGFloat = 0
@@ -3125,9 +3096,7 @@ private struct CompleteStep: View {
             }
 
             if isNewUser {
-                Text(newUserFollowCount > 0
-                     ? "We'll open your Following feed with posts from the people you picked."
-                     : "We'll start you on the Global feed so you can find people to follow. You can switch feeds anytime.")
+                Text("Next, a short guide helps you find your first people to follow.")
                     .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
                     .multilineTextAlignment(.center)

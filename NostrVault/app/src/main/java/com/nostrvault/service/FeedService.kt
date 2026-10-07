@@ -932,8 +932,10 @@ class FeedService @Inject constructor(
                     Log.w(TAG, "loadContactList: no contact list found (confirmed new account=${fetched?.confirmed == true})")
                     withContext(Dispatchers.Main.immediate) {
                         // Only a genuinely new account (every relay answered,
-                        // none had a list) may follow from empty; a timeout may not.
-                        contactListConfirmed = fetched?.confirmed == true
+                        // none had a list, or a key setup just made) may follow
+                        // from empty; a timeout may not.
+                        contactListConfirmed = fetched?.confirmed == true ||
+                            FreshAccountKeys.isFresh(appContext, nostrService.activeHexPubkey)
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                     }
@@ -1136,6 +1138,15 @@ class FeedService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Extended network (discovery mode)
     // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * How many people the follows bring in: the people they follow, freshly
+     * tallied (an older tally predates the follows just made).
+     */
+    suspend fun countExtendedNetwork(): Int {
+        loadExtendedNetwork()
+        return _extendedNetworkPubkeys.value.size
+    }
 
     /**
      * Builds the discovery feed's author set: the people your follows follow,
@@ -2414,6 +2425,8 @@ class FeedService @Inject constructor(
     }
 
     private fun publishContactList(pubkeys: List<String>) {
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(appContext, nostrService.activeHexPubkey)
         val tags = pubkeys.map { listOf("p", it) }
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a

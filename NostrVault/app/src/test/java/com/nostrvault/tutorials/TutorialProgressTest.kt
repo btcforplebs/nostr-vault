@@ -109,7 +109,7 @@ class TutorialProgressTest {
     @Test fun feedsCardsPointAtThePicker() {
         assertEquals(6, TutorialContent.feeds.size)
         assertTrue(TutorialContent.feeds.all { it.anchor == TutorialContent.FEED_PICKER })
-        assertFalse(TutorialID.FILL_YOUR_VAULT.isAvailable)
+        assertTrue(TutorialID.FILL_YOUR_VAULT.isAvailable) // its guide is FillYourFeedOverlay
         assertTrue(TutorialID.FEEDS.isAvailable)
     }
 }

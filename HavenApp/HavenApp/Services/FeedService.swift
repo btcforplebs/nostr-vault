@@ -1466,6 +1466,14 @@ class FeedService: ObservableObject {
             // Nothing here publishes a contact list — the user's follows stay
             // empty until they choose to follow someone.
             let hasBackup = !(FollowingBackupService.shared.snapshots.last?.pubkeys.isEmpty ?? true)
+            if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup
+                && !InterestListService.shared.hashtags.isEmpty {
+                // Topics picked (the Fill your feed guide) but nobody followed
+                // yet: their topic feed is where they find people, and it
+                // stays put when they follow someone.
+                self.switchMode(.hashtags)
+                return
+            }
             if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup {
                 self.didAutoSwitchToCurated = true
                 self.feedMode = .global
@@ -1633,6 +1641,9 @@ class FeedService: ObservableObject {
 
     func switchMode(_ mode: FeedMode) {
         guard mode != feedMode else { return }
+        // Picking a feed is a choice to stay on it: the first follow no
+        // longer pulls a new account from its topic feed back to Following.
+        didAutoSwitchToCurated = false
         let previous = feedMode
         // Side feeds linger connected for a minute (see sideFeedLinger).
         scheduleSideFeedDisconnect(previous)
@@ -2541,6 +2552,11 @@ class FeedService: ObservableObject {
     /// (e.g. refresh → subscribeToAllRelays); here we only repair live subs.
     private func handleContactLoadResolved() {
         defer { applyPendingFollowActions() }
+        // Every load ends here (answered or timed out). A key setup just
+        // made has no list anywhere, so "none found" is known for it.
+        if followedPubkeys.isEmpty, FreshAccountKeys.isFresh(ConfigService.shared.activeAccountHexPubkey) {
+            contactListConfirmed = true
+        }
         if followedPubkeys.isEmpty {
             let backup = FollowingBackupService.shared
             backup.loadSnapshots(forAccountKey: currentSnapshotKey())
@@ -2738,6 +2754,14 @@ class FeedService: ObservableObject {
     
     private var extendedNetworkTimeout: Timer?
     
+    /// How many people the follows bring in: the people they follow, fresh
+    /// (the cached tally predates the follows just made).
+    func countExtendedNetwork(completion: @escaping (Int) -> Void) {
+        loadExtendedNetwork(forceRefresh: true) { [weak self] in
+            completion(self?.extendedNetworkPubkeys.count ?? 0)
+        }
+    }
+
     private func loadExtendedNetwork(forceRefresh: Bool = false, completion: @escaping () -> Void) {
         guard !followedPubkeys.isEmpty else {
             completion()
@@ -3011,6 +3035,8 @@ class FeedService: ObservableObject {
             #endif
             return
         }
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
@@ -3036,6 +3062,20 @@ class FeedService: ObservableObject {
             contactListCreatedAt: event.created_at,
             forAccountKey: currentSnapshotKey()
         )
+    }
+
+    /// A key setup just generated has no kind 3 anywhere, so its empty follow
+    /// list is known without waiting for every relay to say so. Without this
+    /// one silent relay leaves a new account unable to follow anyone (the
+    /// follow is queued) and the Fill your feed guide never starts.
+    func markFreshAccount(_ hex: String) {
+        guard !hex.isEmpty else { return }
+        FreshAccountKeys.mark(hex)
+        // The first load may already have finished without a list.
+        if hex == ConfigService.shared.activeAccountHexPubkey,
+           hasAttemptedContactLoad, !isLoadingContacts, followedPubkeys.isEmpty {
+            contactListConfirmed = true
+        }
     }
 
     /// Starts the follow list of a key generated in setup, from the people

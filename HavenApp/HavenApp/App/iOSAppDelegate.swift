@@ -21,9 +21,6 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
             // Posts waiting for an outside media server. Started before the
             // relay guards so a queued post is never stranded by a setting.
             MediaPostQueue.shared.start()
-            // Starts, or quietly finishes, the Fill your vault guide once the
-            // follow list is known.
-            FillYourVaultCoordinator.shared.start()
             guard ConfigService.shared.config.autoStartRelay else { return }
             guard ConfigService.shared.config.hasCompletedSetup else { return }
             guard RelayProcessManager.shared.state == .idle else { return }

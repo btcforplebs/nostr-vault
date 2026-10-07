@@ -401,6 +401,7 @@ struct FeedView: View {
     private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
+    @ObservedObject private var fillGuide = FillYourVaultCoordinator.shared
     @State private var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
@@ -1122,6 +1123,18 @@ struct FeedView: View {
 
     // MARK: - Helper Functions
 
+    /// A tapped name or photo in the feed. While the Fill your feed meter is
+    /// up it opens the small profile card, so a new account looks before it
+    /// follows; otherwise the full profile.
+    private func openProfile(_ pubkey: String) {
+        let guide = FillYourVaultCoordinator.shared
+        if FillYourFeedGuide.opensProfileCard(meterShowing: guide.meterShowing) {
+            guide.profileCardPubkey = pubkey
+        } else {
+            showingProfileKey = IdentifiableString(id: pubkey)
+        }
+    }
+
     @ViewBuilder
     private func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool) -> some View {
         FeedNoteRow(
@@ -1134,9 +1147,7 @@ struct FeedView: View {
             onQuote: {
                 composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
             },
-            onProfile: { pubkey in
-                showingProfileKey = IdentifiableString(id: pubkey)
-            },
+            onProfile: { pubkey in openProfile(pubkey) },
             onMedia: { url, urls in
                 showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
             },
@@ -1644,6 +1655,7 @@ struct FeedView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .overlay { FillYourFeedOverlay() }
         .sheet(item: $showingProfileKey) { p in
             ProfileView(pubkey: p.id, onDismiss: { showingProfileKey = nil })
                 .environmentObject(nostrService)
@@ -2626,7 +2638,7 @@ struct FeedView: View {
                 )
             },
             onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
-            onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+            onProfile: { openProfile($0) },
             onMedia: { url, urls in
                 showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
             },
@@ -2895,6 +2907,8 @@ struct FeedView: View {
                     }
                     }
                     .tabBarBottomPadding()
+                    // The last post scrolls clear of the open meter.
+                    .padding(.bottom, fillGuide.meterLift)
                 }
                 // A switched account gets its own scroll view, cross-faded in at
                 // the top. Kept, this one diffed a whole feed of rows into the
@@ -3085,6 +3099,9 @@ struct FeedView: View {
                 .buttonStyle(PressScaleButtonStyle())
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
+                // Post keeps priority over the Fill your feed meter.
+                .padding(.bottom, fillGuide.meterLift)
+                .animation(Motion.chrome, value: fillGuide.meterLift)
                 .hoverEffect(.lift)
             }
             #endif

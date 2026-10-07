@@ -47,7 +47,6 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
-import com.nostrvault.data.model.StarterPacksData
 import com.nostrvault.R
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -97,7 +96,7 @@ private val WizardGradient = Brush.horizontalGradient(
 // ── Enums ────────────────────────────────────────────────────────
 
 enum class WizardStep {
-    WELCOME, CHOOSE_PATH, RELAY_CHOICE, NOSTR_INTRO, INITIAL_FOLLOWS, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
+    WELCOME, CHOOSE_PATH, RELAY_CHOICE, NOSTR_INTRO, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
@@ -220,19 +219,8 @@ class SetupWizardViewModel @Inject constructor(
     val nwcInput = _nwcInput.asStateFlow()
 
 
-    // Starter Packs
-    private val _starterPacks = MutableStateFlow<StarterPacksData?>(null)
-    val starterPacks = _starterPacks.asStateFlow()
-
-    private val _selectedNpubs = MutableStateFlow<Set<String>>(emptySet())
-    val selectedNpubs = _selectedNpubs.asStateFlow()
-
-    private val _expandedPackId = MutableStateFlow<String?>(null)
-    val expandedPackId = _expandedPackId.asStateFlow()
-
     init {
         _isAmberAvailable.value = amberSignerService.isAmberInstalled()
-        loadStarterPacks()
     }
 
     // ── Setters ──────────────────────────────────────────────────
@@ -272,7 +260,8 @@ class SetupWizardViewModel @Inject constructor(
     /** Steps for "New to Nostr" mode. */
     private val newUserSteps = listOf(
         WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE,
-        WizardStep.NOSTR_INTRO, WizardStep.INITIAL_FOLLOWS, WizardStep.COMPLETE,
+        // The Fill your feed guide finds people after setup; nothing here picks them.
+        WizardStep.NOSTR_INTRO, WizardStep.COMPLETE,
     )
 
     /**
@@ -428,7 +417,7 @@ class SetupWizardViewModel @Inject constructor(
                 configStore.update { it.copy(ownerNcryptsec = ncryptsec) }
                 credentialStore.storeKeychainPassword(configStore.config.value.ownerNpub, _passphrase.value)
 
-                _step.value = WizardStep.INITIAL_FOLLOWS
+                _step.value = WizardStep.COMPLETE
             } catch (e: Exception) {
                 _error.value = e.message ?: "Encryption failed"
             }
@@ -920,57 +909,6 @@ class SetupWizardViewModel @Inject constructor(
 
     fun skipWallet() { _step.value = WizardStep.COMPLETE }
 
-    // ── Initial Follows ───────────────────────────────────────────
-
-    private val starterPackJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-
-    private fun loadStarterPacks() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = appContext.resources.openRawResource(R.raw.starter_packs)
-                val json = inputStream.bufferedReader().use { it.readText() }
-                val packs = starterPackJson.decodeFromString<StarterPacksData>(json)
-                _starterPacks.value = packs
-            } catch (e: Exception) {
-                android.util.Log.e("SetupWizard", "Failed to load starter packs", e)
-            }
-        }
-    }
-
-    fun toggleAccountSelection(npub: String) {
-        val current = _selectedNpubs.value.toMutableSet()
-        if (current.contains(npub)) {
-            current.remove(npub)
-        } else {
-            current.add(npub)
-        }
-        _selectedNpubs.value = current
-    }
-
-    fun togglePackExpansion(packId: String) {
-        _expandedPackId.value = if (_expandedPackId.value == packId) null else packId
-    }
-
-    fun advanceFromInitialFollows() {
-        viewModelScope.launch {
-            val npubs = _selectedNpubs.value
-            if (npubs.isNotEmpty()) {
-                // Follow selected accounts
-                val config = configStore.config.value
-                val currentFollows = (config.whitelistedNpubs ?: emptyList()).toMutableList()
-                val newFollows = npubs.filter { it !in currentFollows }
-                if (newFollows.isNotEmpty()) {
-                    configStore.update { it.copy(whitelistedNpubs = currentFollows + newFollows) }
-                }
-            }
-            _step.value = WizardStep.COMPLETE
-        }
-    }
-
-    fun skipInitialFollows() {
-        _step.value = WizardStep.COMPLETE
-    }
-
     // ── Complete ─────────────────────────────────────────────────
 
     fun completeSetup(onComplete: () -> Unit) {
@@ -984,6 +922,10 @@ class SetupWizardViewModel @Inject constructor(
                     val hex = HavenBridge.decodeNpub(npub)
                     if (!hex.isNullOrEmpty()) {
                         configStore.setActiveAccount(hex)
+                        // A key made here has no follow list anywhere yet.
+                        if (_setupPath.value == SetupPath.NEW_TO_NOSTR) {
+                            com.nostrvault.service.FreshAccountKeys.mark(appContext, hex)
+                        }
                     }
                 } catch (_: Exception) {}
             }
@@ -1093,7 +1035,6 @@ fun SetupWizardScreen(
                     WizardStep.CHOOSE_PATH -> ChoosePathStep(viewModel)
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
                     WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
-                    WizardStep.INITIAL_FOLLOWS -> InitialFollowsStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
                     WizardStep.RELAYS -> RelayStep(viewModel)
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)
@@ -2669,254 +2610,6 @@ private fun WizardTabRow(
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-        }
-    }
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Step: Initial Follows
-// ══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun InitialFollowsStep(viewModel: SetupWizardViewModel) {
-    val starterPacks by viewModel.starterPacks.collectAsState()
-    val selectedNpubs by viewModel.selectedNpubs.collectAsState()
-    val expandedPackId by viewModel.expandedPackId.collectAsState()
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        // Header
-        Text(
-            text = "Discover Accounts",
-            color = PrimaryText,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Following accounts helps personalize your feed. Select any that interest you, or skip to explore on your own.",
-            color = SecondaryText,
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
-            textAlign = TextAlign.Center,
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        // Packs list
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            starterPacks?.packs?.forEach { pack ->
-                PackCard(
-                    pack = pack,
-                    isExpanded = expandedPackId == pack.id,
-                    selectedNpubs = selectedNpubs,
-                    onToggleExpand = { viewModel.togglePackExpansion(pack.id) },
-                    onToggleAccount = { viewModel.toggleAccountSelection(it) },
-                )
-                Spacer(Modifier.height(12.dp))
-            } ?: run {
-                Text("Loading packs...", color = SecondaryText)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Selected count badge
-        AnimatedVisibility(visible = selectedNpubs.isNotEmpty()) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(WizardBgCard)
-                    .border(1.dp, WizardAccent, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = WizardAccent,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "${selectedNpubs.size} account${if (selectedNpubs.size == 1) "" else "s"} selected",
-                    color = PrimaryText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Buttons
-        WizardPrimaryButton(
-            text = if (selectedNpubs.isEmpty()) "Skip for Now" else "Follow ${selectedNpubs.size}",
-            onClick = {
-                if (selectedNpubs.isEmpty()) {
-                    viewModel.skipInitialFollows()
-                } else {
-                    viewModel.advanceFromInitialFollows()
-                }
-            },
-        )
-
-        if (selectedNpubs.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = viewModel::skipInitialFollows) {
-                Text("Skip and don't follow", color = SecondaryText, fontSize = 14.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PackCard(
-    pack: com.nostrvault.data.model.StarterPack,
-    isExpanded: Boolean,
-    selectedNpubs: Set<String>,
-    onToggleExpand: () -> Unit,
-    onToggleAccount: (String) -> Unit,
-) {
-    WizardCard {
-        // Pack header
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggleExpand),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = pack.name,
-                    color = PrimaryText,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = pack.description,
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = WizardAccent,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "${pack.accounts.size}",
-                    color = SecondaryText,
-                    fontSize = 11.sp,
-                )
-            }
-        }
-
-        // Expanded accounts list
-        AnimatedVisibility(visible = isExpanded) {
-            Column(modifier = Modifier.padding(top = 12.dp)) {
-                pack.accounts.forEach { account ->
-                    AccountRow(
-                        account = account,
-                        isSelected = selectedNpubs.contains(account.npub),
-                        onToggle = { onToggleAccount(account.npub) },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccountRow(
-    account: com.nostrvault.data.model.RecommendedAccount,
-    isSelected: Boolean,
-    onToggle: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) WizardBgCard else WizardBgElevated)
-            .border(
-                width = if (isSelected) 1.dp else 0.dp,
-                color = if (isSelected) WizardAccent else Color.Transparent,
-                shape = RoundedCornerShape(8.dp),
-            )
-            .clickable(onClick = onToggle)
-            .padding(10.dp),
-    ) {
-        // Checkbox
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(24.dp),
-        ) {
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF6366F1),
-                                    Color(0xFF8B5CF6),
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Selected",
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .border(2.dp, WizardBorderSubtle, CircleShape)
-                        .background(WizardBgElevated),
-                )
-            }
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        // Account info
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = account.name,
-                color = PrimaryText,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = account.about,
-                color = SecondaryText,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
