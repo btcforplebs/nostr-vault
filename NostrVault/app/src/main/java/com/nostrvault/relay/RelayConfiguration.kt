@@ -10,6 +10,12 @@ import java.io.File
  * No Android framework dependencies beyond java.io.File.
  */
 object RelayConfiguration {
+    /** Where features read when the owner has no read relays. */
+    val FALLBACK_RELAYS = listOf("wss://relay.primal.net", "wss://nos.lol")
+
+    /** Where the owner's events go when there are no write relays: the default broadcast list. */
+    val FALLBACK_WRITE_RELAYS = listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social")
+
 
     /** Top-level subdirectories created under the relay data root. */
     val dataSubdirs = listOf("data", "blossom", "cache", "db")
@@ -587,6 +593,21 @@ data class HavenConfig(
             }
             return relays
         }
+
+    /**
+     * The relays features read other people's events from: the feed relays
+     * (Haven relay first), or [RelayConfiguration.FALLBACK_RELAYS] when there
+     * are none. Ask this rather than building a list per feature.
+     */
+    val readRelays: List<String>
+        get() = activeFeedRelays.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }
+
+    /**
+     * The relays the owner's events are sent to: the broadcast relays (Haven
+     * relay first), or [RelayConfiguration.FALLBACK_WRITE_RELAYS] when there are none.
+     */
+    val writeRelays: List<String>
+        get() = activeBlastrRelays.ifEmpty { RelayConfiguration.FALLBACK_WRITE_RELAYS }
 
     /** Active import seed relays, including the Haven relay if configured. */
     val activeImportSeedRelays: List<String>

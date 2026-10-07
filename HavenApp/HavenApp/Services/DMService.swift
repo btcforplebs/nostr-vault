@@ -613,10 +613,7 @@ class DMService: ObservableObject {
 
         let generation = self.switchGeneration
 
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.writeRelays
 
         // Include own DM inbox relays: your sent copies from other devices
         // land there, as do messages to you.
@@ -1545,9 +1542,7 @@ class DMService: ObservableObject {
         }
 
         // Fallback: use common relays where most users have inbox
-        let fallbackRelays = ConfigService.shared.config.activeBlastrRelays.isEmpty
-            ? ["wss://relay.primal.net", "wss://nos.lol"]
-            : ConfigService.shared.config.activeBlastrRelays
+        let fallbackRelays = ConfigService.shared.config.writeRelays
         print("⚠️ No relay list for \(pubkey.prefix(8)), using fallback relays")
         return fallbackRelays
     }

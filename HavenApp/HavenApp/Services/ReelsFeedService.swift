@@ -205,8 +205,7 @@ final class ReelsFeedService: ObservableObject {
             strings += [local, local + "/feed"]
         }
         strings.append(divineRelay)
-        let configured = ConfigService.shared.config.activeFeedRelays
-        strings += configured.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : configured
+        strings += ConfigService.shared.config.readRelays
         var seen = Set<String>()
         return strings.filter { seen.insert($0).inserted }.compactMap { URL(string: $0) }
     }

@@ -538,7 +538,7 @@ struct ArticleReaderView: View {
     private var highlightRelays: [URL] {
         let config = ConfigService.shared.config
         var strings = [config.nostrURL]
-        strings += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        strings += config.readRelays
         strings += nostrService.outboxRelays[note.pubkey] ?? []
         var seen = Set<String>()
         return strings

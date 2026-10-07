@@ -144,7 +144,7 @@ class ZapHistoryService @Inject constructor(
             config.nostrURL?.let { add(it) }
             // Zaps to you land in the local relay's inbox, not its base path.
             config.localInboxURL?.let { add(it) }
-            addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(config.readRelays)
             addAll(nostrService.relayLists.value[me].orEmpty())
         }
         val seen = HashSet<String>()

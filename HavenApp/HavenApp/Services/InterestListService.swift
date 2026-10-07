@@ -132,7 +132,7 @@ final class InterestListService: ObservableObject {
             urls.append(config.nostrURL)
         }
         urls += config.activeFeedRelays + config.activeBlastrRelays
-        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        if urls.isEmpty { urls = HavenConfig.fallbackRelays }
         var seen = Set<String>()
         return urls.filter { seen.insert($0).inserted }.compactMap(URL.init(string:))
     }

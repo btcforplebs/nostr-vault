@@ -1981,10 +1981,7 @@ class NostrService @Inject constructor(
         val config = configStore.config.value
         return buildList {
             config.nostrURL?.let { add(it) }
-            val feed = config.activeFeedRelays.ifEmpty {
-                listOf("wss://relay.primal.net", "wss://nos.lol")
-            }
-            addAll(feed.take(3))
+            addAll(config.readRelays.take(3))
             // NIP-65 outbox model: we're fetching events FROM this user, so query
             // their write/outbox relays (where they actually publish), not their
             // read/inbox relays (where others send things TO them).
@@ -2323,15 +2320,8 @@ class NostrService @Inject constructor(
             // Replies from other users propagate to feed/blastr relays, not just
             // the local + inbox relays. Mirror iOS (NoteDetailView) which queries
             // external feed relays so strangers' replies are actually found.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-            // Public fallback when no external relays are configured.
-            if (config.activeFeedRelays.isEmpty() &&
-                config.activeBlastrRelays.isEmpty() &&
-                config.inboxRelays.isNullOrEmpty()) {
-                add("wss://relay.primal.net")
-                add("wss://nos.lol")
-            }
+            addAll(config.readRelays)
+            addAll(config.writeRelays)
         }.distinct().take(8)
         if (relayUrls.isEmpty()) { onEose(emptyList()); return }
 

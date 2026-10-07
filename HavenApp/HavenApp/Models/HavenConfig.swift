@@ -748,6 +748,30 @@ struct HavenConfig: Codable, Equatable {
         return relays
     }
 
+    // MARK: - Relay roles
+
+    /// Where features read when the owner has no read relays.
+    static let fallbackRelays = ["wss://relay.primal.net", "wss://nos.lol"]
+
+    /// Where the owner's events go when there are no write relays: the
+    /// default broadcast list (`blastrRelays`).
+    static let fallbackWriteRelays = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
+
+    /// The relays features read other people's events from: the feed relays
+    /// (Mac relay first), or `fallbackRelays` when there are none. Ask this
+    /// rather than building a list per feature.
+    var readRelays: [String] {
+        let relays = activeFeedRelays
+        return relays.isEmpty ? Self.fallbackRelays : relays
+    }
+
+    /// The relays the owner's events are sent to: the broadcast relays (Mac
+    /// relay first), or `fallbackWriteRelays` when there are none.
+    var writeRelays: [String] {
+        let relays = activeBlastrRelays
+        return relays.isEmpty ? Self.fallbackWriteRelays : relays
+    }
+
     // MARK: - Protocol Selection Logic
 
     /// Returns the relay URL without any protocol schemes or trailing slashes

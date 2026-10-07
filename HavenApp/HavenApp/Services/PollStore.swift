@@ -41,7 +41,7 @@ final class PollModel: ObservableObject {
     private var relays: [String] {
         let config = ConfigService.shared.config
         var fallback = [config.nostrURL]
-        fallback += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        fallback += config.readRelays
         return NIP88Poll.relays(poll: poll, fallback: fallback,
                                 outbox: NostrService.shared.outboxRelays[poll.pubkey] ?? [])
     }

@@ -197,8 +197,7 @@ class HashtagsFeedViewModel @Inject constructor(
      * by then counts. Signatures are checked, so a relay cannot plant tags.
      */
     private suspend fun fetchFollowsTags(authors: List<String>): List<List<List<String>>> {
-        val relays = configStore.config.value.activeFeedRelays
-            .ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") }
+        val relays = configStore.config.value.readRelays
         val authorSet = authors.toSet()
         val subId = "hashtag-suggest-${System.currentTimeMillis().toString(36)}"
         val req = buildJsonArray {

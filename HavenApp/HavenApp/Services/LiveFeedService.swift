@@ -142,8 +142,7 @@ final class LiveFeedService: ObservableObject {
     /// even when the owner has not configured it, since this feed is
     /// external-only by design.
     static var relayURLs: [URL] {
-        var strings = ConfigService.shared.config.activeFeedRelays
-        if strings.isEmpty { strings = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var strings = ConfigService.shared.config.readRelays
         if !strings.contains(LiveChat.streamRelay) { strings.append(LiveChat.streamRelay) }
         return strings.compactMap { URL(string: $0) }
     }

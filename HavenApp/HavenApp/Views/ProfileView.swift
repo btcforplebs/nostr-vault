@@ -1506,8 +1506,7 @@ struct ProfileView: View {
         if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
             strings.append(configService.config.nostrURL)
         }
-        let feedRelays = configService.config.activeFeedRelays
-        strings += (feedRelays.isEmpty ? ["wss://relay.primal.net", "wss://relay.nos.social"] : feedRelays).prefix(3)
+        strings += configService.config.readRelays.prefix(3)
         strings += (nostrService.outboxRelays[pubkey] ?? []).prefix(3)
         strings.append(ReelsFeedService.divineRelay)
         var seen = Set<String>()
@@ -2064,11 +2063,7 @@ struct ProfileView: View {
                 relayURLs.append(local)
             }
         }
-        let feedRelays = ConfigService.shared.config.activeFeedRelays
-        let externalStrs = feedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://relay.nos.social"
-        ] : feedRelays
+        let externalStrs = ConfigService.shared.config.readRelays
         // Use up to 3 external relays to improve chances of finding the user's data.
         relayURLs.append(contentsOf: externalStrs.prefix(3).compactMap { URL(string: $0) })
 

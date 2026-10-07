@@ -298,8 +298,7 @@ abstract class HashtagNotesViewModel(
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }
             .toSet()
-        val relays = configStore.config.value.activeFeedRelays
-            .ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") }
+        val relays = configStore.config.value.readRelays
         pageContext = PageContext(values, wantedTags, wantedAuthors, blocked, relays)
 
         val subId = "hashtag-${System.currentTimeMillis().toString(36)}"

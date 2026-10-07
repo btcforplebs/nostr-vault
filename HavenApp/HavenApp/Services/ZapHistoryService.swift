@@ -120,7 +120,7 @@ enum ZapHistoryService {
     private static func relayURLs(me: String) -> [URL] {
         let config = ConfigService.shared.config
         var strings = [config.nostrURL]
-        strings += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        strings += config.readRelays
         strings += NostrService.shared.relayLists[me] ?? []
         var seen = Set<String>()
         return strings

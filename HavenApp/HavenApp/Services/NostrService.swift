@@ -232,10 +232,7 @@ class NostrService: ObservableObject {
         profileFetchQueue.removeAll()
 
         // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.writeRelays
         relays += Self.profileIndexRelays
 
         // A lookup that found nothing must be able to run again, or a profile
@@ -347,10 +344,7 @@ class NostrService: ObservableObject {
         relaysInFlight.insert(pubkey)
 
         // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.writeRelays
 
         // Include cached outbox (write) relays for this user — their kind 10002/10050
         // is most likely to be found on their own write relays.
@@ -1211,8 +1205,7 @@ class NostrService: ObservableObject {
     /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
     /// every relay asked answered EOSE for this request without the event.
     func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
-        var urls = ConfigService.shared.config.activeBlastrRelays
-        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var urls = ConfigService.shared.config.writeRelays
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
             urls.append(extra)
         }
@@ -1381,8 +1374,7 @@ class NostrService: ObservableObject {
     func fetchOwnReactionIds(to noteId: String, timeout: TimeInterval = 5) async -> [String] {
         let pubkey = activeHexPubkey
         guard !pubkey.isEmpty else { return [] }
-        var urls = ConfigService.shared.config.activeBlastrRelays
-        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var urls = ConfigService.shared.config.writeRelays
         let own = ConfigService.shared.config.nostrURL
         if !own.isEmpty, !urls.contains(own) { urls.append(own) }
         let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
@@ -1703,10 +1695,7 @@ class NostrService: ObservableObject {
     /// If `onRelayResult` is provided, it's called for each relay with (relayURL, success, message).
     /// `extraRelays` are sent to as well, e.g. diVine's relay for a diVine.
     func broadcastRawEvent(_ eventDict: [String: Any], extraRelays: [String] = [], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.writeRelays
         for extra in extraRelays where !relays.contains(extra) {
             relays.append(extra)
         }
@@ -2486,9 +2475,7 @@ class NostrService: ObservableObject {
 
         let config = ConfigService.shared.config
         var urls = [config.nostrURL].compactMap { URL(string: $0) }
-        let externals = config.activeFeedRelays.isEmpty
-            ? ["wss://relay.primal.net", "wss://nos.lol"]
-            : config.activeFeedRelays
+        let externals = config.readRelays
         urls.append(contentsOf: externals.compactMap { URL(string: $0) })
         guard !urls.isEmpty else { return }
 

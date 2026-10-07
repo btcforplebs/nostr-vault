@@ -137,10 +137,7 @@ extension VaultView {
         // like are mostly other people's, which the embedded relay keeps on
         // /feed. Then the feed relays, then where the authors themselves write.
         var strings = [configService.config.nostrURL, configService.config.nostrURL + "/feed"]
-        strings += configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        strings += configService.config.readRelays
         var authorRelays: [String] = []
         for id in missingIds {
             guard let author = likedAuthor[id], let outbox = nostrService.outboxRelays[author] else { continue }
@@ -181,10 +178,7 @@ extension VaultView {
         // stayed empty. Ask the feed relays for those.
         let owner = nostrService.activeHexPubkey
         guard !owner.isEmpty else { return }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         // Your published inbox too: zaps sent from here ask for receipts there.
         var seen = Set<String>()
         let externalURLs = (externalStrs + (nostrService.relayLists[owner] ?? []))
@@ -274,10 +268,7 @@ extension VaultView {
         #endif
 
         var urls = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         urls.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         nostrService.fetchNotesByIds(missingIds, from: urls)
