@@ -7,10 +7,10 @@ struct TutorialsSettingsView: View {
     var onReplay: (TutorialID) -> Void = { _ in }
 
     @ObservedObject private var center = TutorialCenter.shared
-    @EnvironmentObject private var nostrService: NostrService
+    @ObservedObject private var configService = ConfigService.shared
     @State private var confirmingReset = false
 
-    private var account: String { nostrService.ownerHexPubkey }
+    private var account: String { configService.activeAccountHexPubkey }
     private var tutorials: [TutorialID] { TutorialID.allCases.filter(\.isAvailable) }
 
     var body: some View {

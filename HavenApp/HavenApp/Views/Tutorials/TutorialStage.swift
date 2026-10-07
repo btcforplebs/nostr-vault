@@ -49,7 +49,7 @@ struct TutorialStage: View {
         return step.anchor == nil || step.anchor.flatMap({ center.anchors[$0] }) != nil
     }
 
-    private var account: String { NostrService.shared.ownerHexPubkey }
+    private var account: String { NostrService.shared.activeHexPubkey }
 
     /// A ring around what the card is about. Purely visual: touches go
     /// straight through to the button underneath.

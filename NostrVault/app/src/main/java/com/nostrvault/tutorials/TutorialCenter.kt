@@ -27,6 +27,10 @@ private class PrefsTutorialStore(private val prefs: SharedPreferences) : Tutoria
  *
  * Fill your vault draws its own guide: it shows while
  * `isActive(FILL_YOUR_VAULT)` and calls [finish] or [skip] itself.
+ *
+ * `account` is always the active account's hex pubkey: Fill your vault is
+ * about whose follows you're looking at, and the page tutorials' gate reads
+ * that same account's Fill your vault status.
  */
 @Stable
 object TutorialCenter {
@@ -41,7 +45,8 @@ object TutorialCenter {
     private val _stepIndex = MutableStateFlow(0)
     val stepIndex: StateFlow<Int> = _stepIndex.asStateFlow()
 
-    /** Bumped on every saved status change, so Settings re-reads. */
+    /** Bumped on every saved status change, so Settings re-reads and pages
+     *  re-check their start (Fill your vault marked done quietly). */
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
