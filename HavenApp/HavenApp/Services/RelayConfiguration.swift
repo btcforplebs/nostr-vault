@@ -301,6 +301,26 @@ enum RelayConfiguration {
         return relays
     }
 
+    /// The NIP-65 relay list for a new account whose relay is this device.
+    ///
+    /// The device's own relay can't be reached from outside, so it is not
+    /// advertised; the public relays every event is broadcast to are, which is
+    /// where other clients will actually find this account's notes. No marker,
+    /// so each is both read and write. Loopback and non-wss entries are left out.
+    static func newAccountRelayListTags(broadcastRelays: [String]) -> [[String]] {
+        var seen = Set<String>()
+        var tags: [[String]] = []
+        for relay in broadcastRelays {
+            let url = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let parsed = URL(string: url), parsed.scheme == "wss",
+                  let host = parsed.host?.lowercased(),
+                  host != "localhost", host != "127.0.0.1", host != "0.0.0.0", host != "::1",
+                  seen.insert(url).inserted else { continue }
+            tags.append(["r", url])
+        }
+        return tags
+    }
+
     /// Where events go when no blastr relays are configured.
     static let fallbackBroadcastRelays = ["wss://relay.primal.net", "wss://nos.lol"]
 

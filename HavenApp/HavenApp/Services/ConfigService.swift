@@ -91,6 +91,7 @@ class ConfigService: ObservableObject {
         }
         
         loadRelayLists()
+        removeStarterPackPicksFromAccounts()
         
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -253,12 +254,12 @@ class ConfigService: ObservableObject {
              }
         }
 
-        // Save whitelisted npubs
-        if !config.whitelistedNpubs.isEmpty {
-            let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
-            if let data = try? encoder.encode(config.whitelistedNpubs) {
-                try? data.write(to: npubsURL)
-            }
+        // Save whitelisted npubs. Written even when empty: loadRelayLists reads
+        // this file back over config.json, so skipping the write when the list
+        // is emptied brings the last removed account back on the next launch.
+        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: npubsURL)
         }
         
         // Save blacklisted npubs
@@ -535,6 +536,24 @@ class ConfigService: ObservableObject {
         return nil
     }
     
+    /// Undoes what the old Discover Accounts step did: it saved the people
+    /// picked there as extra accounts instead of following them. Removes those
+    /// starter-pack npubs from the account list unless this device holds a key
+    /// or signer for one, in which case the user added it on purpose.
+    private func removeStarterPackPicksFromAccounts() {
+        let kept = ContactManager.accountsWithoutStarterPackPicks(config.whitelistedNpubs) { npub in
+            hasCredential(forNpub: npub) || hasBunkerConfig(forNpub: npub)
+        }
+        guard kept.count != config.whitelistedNpubs.count else { return }
+        let removed = Set(config.whitelistedNpubs).subtracting(kept)
+        config.whitelistedNpubs = kept
+        if removed.contains(config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            config.activeAccountNpub = ""
+        }
+        // Not RelayProcessManager.addLog: this runs inside ConfigService.init.
+        print("ConfigService: removed \(removed.count) starter-pack account(s) that setup added by mistake")
+    }
+
     /// Returns whether a signing credential is stored for the given npub.
     func hasCredential(forNpub npub: String) -> Bool {
         guard let stored = config.accountCredentials[npub] else { return false }

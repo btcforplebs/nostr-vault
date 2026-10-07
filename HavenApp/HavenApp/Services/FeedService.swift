@@ -3016,6 +3016,34 @@ class FeedService: ObservableObject {
         )
     }
 
+    /// Starts the follow list of a key generated in setup, from the people
+    /// picked on the Discover Accounts step, and opens the Following feed.
+    ///
+    /// `pTags` comes from `ContactManager.newAccountContactTags`. Only setup
+    /// calls this, and only for a key it just generated: such a key has no
+    /// kind 3 anywhere, so there is nothing to fetch first and nothing to
+    /// overwrite. The list counts as confirmed from here on, so following
+    /// someone later doesn't wait for every relay to report that no list exists.
+    /// Publishing goes through `publishContactList` like any other edit.
+    func startNewAccountContactList(_ pTags: [[String]]) {
+        // Owner only = nobody picked. Publish nothing and leave the feed to the
+        // no-follows path in startInitialLoad, which opens the curated feed.
+        guard pTags.count > 1 else { return }
+        contactListPTags = pTags
+        followedPubkeys = pTags.compactMap { $0.count >= 2 ? $0[1] : nil }
+        contactListContent = ""
+        contactListConfirmed = true
+        hasAttemptedContactLoad = true
+        didAutoSwitchToCurated = false
+        publishContactList()
+        if feedMode == .following {
+            recomputeFilteredNotes()
+            resubscribePrimaryIfNeeded()
+        } else {
+            switchMode(.following)
+        }
+    }
+
     /// Restores the contact list from a backup, bypassing the shrinkage safety check.
     /// Used when the user explicitly chooses to restore from a historical Kind 3 event.
     func restoreContactList(pTags: [[String]], content: String) {
