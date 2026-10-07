@@ -57,9 +57,16 @@ extension TutorialID {
         }
     }
 
-    /// Whether it can run in this build: Fill your vault always (it has its
-    /// own guide), the rest once they have cards. Settings lists only these.
-    var isAvailable: Bool { self == .fillYourVault || !steps.isEmpty }
+    /// Whether it can run in this build: the page tutorials once they have
+    /// cards, Fill your vault once its guide (feat/fill-your-vault) is in.
+    /// Settings lists only these, so Replay never starts a tutorial with
+    /// nothing to draw.
+    var isAvailable: Bool {
+        self == .fillYourVault ? Self.fillYourVaultHasGuide : !steps.isEmpty
+    }
+
+    /// Flip to true in the commit that adds the Fill your vault guide.
+    static let fillYourVaultHasGuide = false
 }
 
 enum TutorialContent {
