@@ -507,6 +507,7 @@ struct PostActionNotificationBanner: View {
                 PostActionPill(
                     actionType: actionType,
                     timeRemaining: manager.timeRemaining,
+                    totalTime: manager.totalTime,
                     onUndo: { manager.cancel() },
                     onEdit: actionType.canEdit ? { manager.requestEdit() } : nil,
                     onDismiss: { manager.dismissBanner() }
@@ -580,13 +581,12 @@ struct PostConfirmationPill: View {
 struct PostActionPill: View {
     let actionType: PendingPostManager.ActionType
     let timeRemaining: Double
+    let totalTime: Double
     let onUndo: () -> Void
     let onEdit: (() -> Void)?
     /// Swipe up to get the pill out of the way. The action is NOT cancelled —
     /// it finishes on schedule in the background.
     var onDismiss: (() -> Void)? = nil
-
-    private let totalTime = PendingPostManager.ActionType.countdownDuration
 
     /// Follows the finger on the way up so the gesture feels attached.
     @State private var dragOffset: CGFloat = 0
@@ -607,7 +607,7 @@ struct PostActionPill: View {
                     Capsule().fill(Color.white.opacity(0.3))
                     Capsule()
                         .fill(Color.white)
-                        .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
+                        .frame(width: max(0, geo.size.width * (timeRemaining / max(totalTime, 0.1))))
                         .animation(.linear(duration: 0.1), value: timeRemaining)
                 }
             }

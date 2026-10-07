@@ -52,7 +52,18 @@ class PendingPostManager: ObservableObject {
             }
         }
 
-        static let countdownDuration: Double = 5.0
+        /// The choices offered in Settings. 0 = Off: no pill, no undo.
+        static let countdownChoices: [Double] = [0, 5, 10]
+        static let countdownDefault: Double = 5
+        static let countdownKey = "post.sendDelaySeconds"
+
+        /// The user's send delay, read fresh for each action so a change in
+        /// Settings applies to the next post without a relaunch.
+        static var countdownDuration: Double {
+            let stored = UserDefaults.standard.object(forKey: countdownKey) as? Double
+            guard let stored, countdownChoices.contains(stored) else { return countdownDefault }
+            return stored
+        }
 
         var canEdit: Bool { self != .repost && self != .delete }
 
@@ -91,6 +102,9 @@ class PendingPostManager: ObservableObject {
     @Published var isShowing = false
     @Published var actionType: ActionType?
     @Published var timeRemaining: Double = 5.0
+    /// The length of the countdown in flight, so the pill's bar is scaled to
+    /// the delay this action started with, not whatever Settings says now.
+    @Published var totalTime: Double = 5.0
     @Published var editRequest: EditRequest?
     @Published var confirmation: Confirmation?
 
@@ -131,9 +145,8 @@ class PendingPostManager: ObservableObject {
         pendingDraftId = draftId
         bannerNoteId = event.id
         actionType = type
-        timeRemaining = ActionType.countdownDuration
-        withAnimation(Motion.bannerIn) { isShowing = true }
-        beginCountdown {
+        let duration = showBanner()
+        beginCountdown(duration: duration) {
             let confirmationId = self.beginConfirmation(type)
             nostrService.postEvent(event) { outcome in
                 self.finishConfirmation(confirmationId, outcome: outcome)
@@ -152,8 +165,7 @@ class PendingPostManager: ObservableObject {
         pendingQuoteTo = nil
         bannerNoteId = sourceNote.id
         actionType = .repost
-        timeRemaining = ActionType.countdownDuration
-        withAnimation(Motion.bannerIn) { isShowing = true }
+        let duration = showBanner()
 
         // NIP-18: always repost the ORIGINAL event, not a repost wrapper.
         // For kind 6 notes, repostedEventId points to the original kind 1 event
@@ -164,7 +176,7 @@ class PendingPostManager: ObservableObject {
         let originalPubkey = FeedService.shared.originalNote(for: sourceNote).pubkey
         let originalKind = sourceNote.repostedEventId != nil ? 1 : sourceNote.kind
 
-        beginCountdown {
+        beginCountdown(duration: duration) {
             let confirmationId = self.beginConfirmation(.repost)
             // NIP-18: content SHOULD be the stringified JSON of the reposted event.
             // Look up from FeedService's raw event cache (includes sig for verification).
@@ -208,10 +220,9 @@ class PendingPostManager: ObservableObject {
         pendingQuoteTo = nil
         bannerNoteId = noteId
         actionType = .delete
-        timeRemaining = ActionType.countdownDuration
-        withAnimation(Motion.bannerIn) { isShowing = true }
+        let duration = showBanner()
 
-        beginCountdown {
+        beginCountdown(duration: duration) {
             nostrService.deleteNote(id: noteId)
             feedService.removeNote(id: noteId)
         }
@@ -303,13 +314,25 @@ class PendingPostManager: ObservableObject {
         actionType = nil
     }
 
-    private func beginCountdown(onComplete: @escaping @MainActor () async -> Void) {
+    /// Starts the pill for a new action and returns its delay. With the delay
+    /// Off the pill never appears; the action runs as soon as it is queued.
+    private func showBanner() -> Double {
+        let duration = ActionType.countdownDuration
+        totalTime = duration
+        timeRemaining = duration
+        if duration > 0 {
+            withAnimation(Motion.bannerIn) { isShowing = true }
+        }
+        return duration
+    }
+
+    private func beginCountdown(duration: Double, onComplete: @escaping @MainActor () async -> Void) {
         // Covers the countdown + mine/sign + broadcast that follows it, so the
         // OS doesn't suspend/kill the app mid-post if the user backgrounds it
         // (e.g. locks the phone) right after tapping post — PoW mining can
         // make this window last several seconds.
         beginBackgroundTask()
-        let endTime = Date().addingTimeInterval(ActionType.countdownDuration)
+        let endTime = Date().addingTimeInterval(duration)
         countdown = Task { @MainActor in
             while Date() < endTime {
                 try? await Task.sleep(nanoseconds: 100_000_000)
