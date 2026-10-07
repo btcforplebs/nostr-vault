@@ -59,6 +59,7 @@ struct EventBroadcastSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     summaryCard
+                    TrustPathCard(author: note.pubkey)
                     actionsRow
                     relaysSection
                     detailsSection
