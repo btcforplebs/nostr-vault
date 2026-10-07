@@ -120,7 +120,7 @@ enum TutorialContent {
     static let importTour: [TutorialStep] = [
         TutorialStep(
             anchor: nil,
-            title: "Why import",
+            title: "Your notes, your copy",
             body: "Your notes live on relays you don't own, and any of them can delete them. Importing makes a copy that lives on this device."
         ),
         TutorialStep(
@@ -130,13 +130,13 @@ enum TutorialContent {
         ),
         TutorialStep(
             anchor: nil,
-            title: "Public relays and yours",
+            title: "Public relays vs yours",
             body: "Public relays are shared servers everyone posts to. Yours is your own copy. You post from your vault, and it sends the post out."
         ),
         TutorialStep(
             anchor: nil,
-            title: "Want an address? (optional)",
-            body: "Run Nostr Vault on a Mac with your own domain and it becomes a public relay that's up 24/7. Your phone syncs from it."
+            title: "Want an address?",
+            body: "Run Nostr Vault on a Mac with your own domain and it becomes a public relay that's up 24/7. Your phone syncs from it. Without one, your pocket relay is all you need."
         ),
         TutorialStep(
             anchor: nil,

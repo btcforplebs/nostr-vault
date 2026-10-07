@@ -276,7 +276,7 @@ struct SetupWizardView: View {
         case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
         case .newToNostr: return [0, 1, 9, 11, 10, 8] // welcome, path, intro, profile, follows, done
         case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
-        case .useNostr: return [0, 1, 12, 13] // welcome, path, your key, import tour
+        case .useNostr: return [0, 1, 12, 14, 13] // welcome, path, your key, relay check, import tour
         }
     }
 
@@ -435,6 +435,8 @@ struct SetupWizardView: View {
                 bunkerURI: $bunkerURI,
                 onContinue: { goForward() }
             )
+        case 14:
+            RelayCheckStep(npub: npub) { goForward() }
         case 13:
             ImportTourStep(isReadOnly: useNostrIsReadOnly) { _ in
                 // Kept running or not, the import carries on in
@@ -476,6 +478,10 @@ struct SetupWizardView: View {
                 currentStep = 9
             } else if currentStep == 1 && setupPath == .useNostr {
                 currentStep = 12
+            } else if currentStep == 12 && setupPath == .useNostr {
+                currentStep = 14 // your key → relay check
+            } else if currentStep == 14 {
+                currentStep = 13 // relay check → import tour
             } else if currentStep == 2 && setupPath == .browse {
                 // Browse mode: skip relay config, go to import step
                 currentStep = 4
@@ -501,8 +507,10 @@ struct SetupWizardView: View {
         withAnimation(WizardAnimations.springEnter) {
             if currentStep == 12 {
                 currentStep = 1 // I use Nostr: back to choose path
+            } else if currentStep == 14 {
+                currentStep = 12 // Relay check: back to your key
             } else if currentStep == 13 {
-                currentStep = 12 // Import tour: back to your key
+                currentStep = 14 // Import tour: back to the relay check
             } else if currentStep == 9 {
                 currentStep = 1 // New to Nostr: back to choose path
             } else if currentStep == 10 {
