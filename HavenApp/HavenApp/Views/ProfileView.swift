@@ -78,6 +78,20 @@ struct ProfileView: View {
     /// Bumped by each opening load, so the fallback timer of an earlier load
     /// cannot end a later one early.
     @State private var notesLoadToken = 0
+    /// False until the first load starts, so the first frame reads
+    /// "Loading…" rather than "No notes yet".
+    @State private var notesLoadStarted = false
+    /// Relays of the opening load that have not answered yet (EOSE, CLOSED or
+    /// a failed connection). Loading ends when the last one answers, not the
+    /// first: the phone's own relay always answers first, and for someone
+    /// else it usually has nothing.
+    @State private var openingPending = Set<Int>()
+    /// Notes received but not yet on screen. They go in together a moment
+    /// later, in one sort and one redraw, instead of one of each per event.
+    @State private var pending = PendingProfileNotes()
+    /// The lists the tabs and counts read, worked out once per change to the
+    /// notes rather than many times on every redraw.
+    @State private var buckets = ProfileNoteBuckets()
     @State private var profileClients: [WebSocketClient] = []
     @State private var profileCancellables = Set<AnyCancellable>()
     @State private var seenNoteIds = Set<String>()
@@ -221,20 +235,53 @@ struct ProfileView: View {
 
     // MARK: - Filtered notes for tabs
 
-    private var topNotes: [FeedNote] {
-        profileNotes.filter { !$0.isReply }
+    private var topNotes: [FeedNote] { buckets.top }
+    private var mediaNotes: [FeedNote] { buckets.media }
+    private var replyNotes: [FeedNote] { buckets.replies }
+    private var taggedFilteredNotes: [FeedNote] { buckets.tagged }
+
+    /// Splits the notes into the tab lists. `mediaURLs` scans each note's
+    /// text, so this runs when the notes change, never from `body`.
+    private func rebucket() {
+        var top: [FeedNote] = [], media: [FeedNote] = [], replies: [FeedNote] = []
+        for note in profileNotes {
+            if note.isReply {
+                replies.append(note)
+            } else {
+                top.append(note)
+                if !note.mediaURLs.isEmpty { media.append(note) }
+            }
+        }
+        buckets = ProfileNoteBuckets(
+            top: top,
+            media: media,
+            replies: replies,
+            tagged: taggedNotes.filter { $0.pubkey != pubkey }
+        )
     }
 
-    private var mediaNotes: [FeedNote] {
-        profileNotes.filter { !$0.mediaURLs.isEmpty && !$0.isReply }
+    private func scheduleFlush() {
+        guard !pending.scheduled else { return }
+        pending.scheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { flushPendingNotes() }
     }
 
-    private var replyNotes: [FeedNote] {
-        profileNotes.filter { $0.isReply }
-    }
-
-    private var taggedFilteredNotes: [FeedNote] {
-        taggedNotes.filter { $0.pubkey != pubkey }
+    /// Puts the waiting notes on screen. Anything that reads the lists to
+    /// decide something (paging, end of loading) flushes first.
+    private func flushPendingNotes() {
+        pending.scheduled = false
+        guard !pending.notes.isEmpty || !pending.tagged.isEmpty else { return }
+        if !pending.notes.isEmpty {
+            profileNotes.append(contentsOf: pending.notes)
+            profileNotes.sort(by: Self.newestFirst)
+            pending.notes.removeAll()
+        }
+        if !pending.tagged.isEmpty {
+            taggedNotes.append(contentsOf: pending.tagged)
+            taggedNotes.sort(by: Self.newestFirst)
+            pending.tagged.removeAll()
+        }
+        rebucket()
     }
 
     private var currentSectionNotes: [FeedNote] {
@@ -373,6 +420,7 @@ struct ProfileView: View {
             // return before the first EOSE skips the notes load entirely.
             disconnectClients()
             isLoadingNotes = false
+            openingPending.removeAll()
             isLoadingOlderNotes = false
             olderPageSubId = nil
             isLoadingOlderTaggedNotes = false
@@ -1384,10 +1432,10 @@ struct ProfileView: View {
                 Image(systemName: sectionEmptyIcon)
                     .font(.appSystem(size: 24, weight: .thin))
                     .foregroundColor(.secondary.opacity(0.5))
-                Text(isLoadingNotes ? "Loading…" : "No \(selectedSection.rawValue.lowercased()) yet")
+                Text(isLoadingNotes || !notesLoadStarted ? "Loading…" : "No \(selectedSection.rawValue.lowercased()) yet")
                     .font(.appSystem(size: 12))
                     .foregroundColor(.secondary)
-                if isLoadingNotes {
+                if isLoadingNotes || !notesLoadStarted {
                     ProgressView()
                         .scaleEffect(0.6)
                         .tint(Color.havenPurple)
@@ -1736,7 +1784,7 @@ struct ProfileView: View {
     /// something newer replaces it, so the page never blanks and refills. New
     /// posts are added at the top, counts change only when a new number
     /// arrives, and the header, Shop and the extra tabs are fetched again.
-    /// The spinner stays until a relay has answered the new load.
+    /// The spinner stays until every relay has answered the new load.
     private func refreshProfile() async {
         let started = Date()
         nostrService.fetchMissingProfiles(for: [pubkey], force: true)
@@ -1755,8 +1803,9 @@ struct ProfileView: View {
         fetchAuthorNotes()
         fetchLocalRelayCounts()
 
-        // Until the first relay has sent everything it has (EOSE), and long
-        // enough that the spinner reads as having done something.
+        // Until every relay has answered (EOSE, CLOSED or a failed
+        // connection), 8s at most, and long enough that the spinner reads as
+        // having done something.
         while isLoadingNotes, Date().timeIntervalSince(started) < 8 {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -1811,15 +1860,16 @@ struct ProfileView: View {
     private func fetchAuthorNotes() {
         guard !isLoadingNotes else { return }
         isLoadingNotes = true
+        notesLoadStarted = true
 
         let existing = feedService.notes.filter { $0.pubkey == pubkey }
         for note in existing {
             if !seenNoteIds.contains(note.id) {
                 seenNoteIds.insert(note.id)
-                profileNotes.append(note)
+                pending.notes.append(note)
             }
         }
-        profileNotes.sort(by: Self.newestFirst)
+        flushPendingNotes()
 
         var relayURLs: [URL] = []
         if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
@@ -1848,20 +1898,24 @@ struct ProfileView: View {
             }
         }
 
-        for url in relayURLs {
+        openingPending = Set(relayURLs.indices)
+        for (relay, url) in relayURLs.enumerated() {
             let client = WebSocketClient()
             profileClients.append(client)
 
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { [self] message in
-                    self.handleProfileNoteMessage(message)
+                    self.handleProfileNoteMessage(message, relay: relay)
                 }
                 .store(in: &profileCancellables)
 
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { state in
+                    // A relay that can't be reached has answered too: it
+                    // will send nothing.
+                    if state == .error { openingRelayAnswered(relay) }
                     if state == .connected {
                         let notesFilter: [String: Any] = [
                             "kinds": [1, 6, 30023, NIP88Poll.kind],
@@ -1902,12 +1956,24 @@ struct ProfileView: View {
 
         notesLoadToken += 1
         let token = notesLoadToken
+        if relayURLs.isEmpty { isLoadingNotes = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-            if token == notesLoadToken { isLoadingNotes = false }
+            guard token == notesLoadToken else { return }
+            flushPendingNotes()
+            openingPending.removeAll()
+            isLoadingNotes = false
         }
     }
 
-    private func handleProfileNoteMessage(_ message: String) {
+    private func openingRelayAnswered(_ relay: Int) {
+        guard openingPending.remove(relay) != nil else { return }
+        if openingPending.isEmpty {
+            flushPendingNotes()
+            isLoadingNotes = false
+        }
+    }
+
+    private func handleProfileNoteMessage(_ message: String, relay: Int) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json[0] as? String else { return }
@@ -1978,8 +2044,8 @@ struct ProfileView: View {
                     kind: event.kind
                 )
 
-                taggedNotes.append(note)
-                taggedNotes.sort(by: Self.newestFirst)
+                pending.tagged.append(note)
+                scheduleFlush()
 
                 // Fetch profile for the tagger
                 if nostrService.profiles[event.pubkey] == nil {
@@ -2010,8 +2076,8 @@ struct ProfileView: View {
                 kind: event.kind
             )
 
-            profileNotes.append(note)
-            profileNotes.sort(by: Self.newestFirst)
+            pending.notes.append(note)
+            scheduleFlush()
 
             // Trigger fetch of the original note for empty-content reposts
             if event.kind == 6 && event.content.isEmpty,
@@ -2028,6 +2094,8 @@ struct ProfileView: View {
             // reads identically to an exhausted history from here, and ignoring it
             // left the page hanging on a relay that was never going to answer.
             let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
+            // Page bookkeeping counts the lists, so they must be complete.
+            flushPendingNotes()
             if subId.hasPrefix("older-tagged-") {
                 guard subId == olderTaggedSubId else { return }
                 olderTaggedAnswers += 1
@@ -2043,13 +2111,14 @@ struct ProfileView: View {
             } else {
                 // The opening subscription is deliberately left open — it is also
                 // how new posts reach the profile while it is on screen.
-                isLoadingNotes = false
+                openingRelayAnswered(relay)
             }
         }
     }
 
     private func loadOlderProfileNotes() {
         guard !isLoadingOlderNotes, hasMoreNotes else { return }
+        flushPendingNotes()
         guard let oldest = profileNotes.last else { return }
         guard !profileClients.isEmpty else { return }
         isLoadingOlderNotes = true
@@ -2090,6 +2159,7 @@ struct ProfileView: View {
 
     private func finishOlderPage(token: Int) {
         guard token == olderPageToken, isLoadingOlderNotes else { return }
+        flushPendingNotes()
         isLoadingOlderNotes = false
         if let subId = olderPageSubId {
             closeProfileSubscription(subId)
@@ -2139,6 +2209,7 @@ struct ProfileView: View {
 
     private func loadOlderTaggedNotes() {
         guard !isLoadingOlderTaggedNotes, hasMoreTaggedNotes else { return }
+        flushPendingNotes()
         guard let oldest = taggedNotes.last else { return }
         guard !profileClients.isEmpty else { return }
         isLoadingOlderTaggedNotes = true
@@ -2175,6 +2246,7 @@ struct ProfileView: View {
 
     private func finishOlderTaggedPage(token: Int) {
         guard token == olderTaggedToken, isLoadingOlderTaggedNotes else { return }
+        flushPendingNotes()
         isLoadingOlderTaggedNotes = false
         if let subId = olderTaggedSubId {
             closeProfileSubscription(subId)
@@ -2988,4 +3060,20 @@ private extension View {
             self
         }
     }
+}
+
+/// Notes received by the profile's stream and waiting to go on screen. A
+/// reference, so adding to it does not redraw the page.
+private final class PendingProfileNotes {
+    var notes: [FeedNote] = []
+    var tagged: [FeedNote] = []
+    var scheduled = false
+}
+
+/// The profile's notes split by tab.
+private struct ProfileNoteBuckets {
+    var top: [FeedNote] = []
+    var media: [FeedNote] = []
+    var replies: [FeedNote] = []
+    var tagged: [FeedNote] = []
 }
