@@ -8,32 +8,37 @@
         {
           "npub": "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m",
           "name": "jack",
+          "nip05": "jack@primal.net",
           "about": "Building systems for financial freedom",
-          "picture": "https://nostr.build/i/nostr.build_7ad0e8f8a1c6f4e6e5e3e0e7e5e5e5e5.jpg"
-        },
-        {
-          "npub": "npub1cn4t4cd78nm900qc2hhqte5aa8c9njm6qkfzw95tszufwcwtcnsq7g3vle",
-          "name": "nvk",
-          "about": "Coinkite CEO, Bitcoin maximalist",
-          "picture": "https://nostr.build/i/nostr.build_nvk.jpg"
+          "picture": "https://image.nostr.build/26867ce34e4b11f0a1d083114919a9f4eca699f3b007454c396ef48c43628315.jpg"
         },
         {
           "npub": "npub1az9xj85cmxv8e9j9y80lvqp97crsqdu2fpu3srwthd99qfu9qsgstam8y8",
+          "name": "nvk",
+          "nip05": "nvk@primal.net",
+          "about": "Coinkite CEO, Bitcoin maximalist",
+          "picture": "https://m.primal.net/LwhG.jpg"
+        },
+        {
+          "npub": "npub1a2cww4kn9wqte4ry70vyfwqyqvpswksna27rtxd8vty6c74era8sdcw83a",
           "name": "LynAlden",
+          "nip05": "lyn@primal.net",
           "about": "Investment strategist and Bitcoin analyst",
-          "picture": "https://nostr.build/i/nostr.build_lyn.jpg"
+          "picture": "https://m.primal.net/LtjB.jpg"
         },
         {
-          "npub": "npub1gdu7w6l6w65qhrdeaf6eyywepwe7v7ezqtugsrxy7hl7ypjsvxksd76nak",
+          "npub": "npub1qny3tkh0acurzla8x3zy4nhrjz5zd8l9sy9jys09umwng00manysew95gx",
           "name": "ODELL",
+          "nip05": "odell@primal.net",
           "about": "Bitcoin privacy advocate and podcaster",
-          "picture": "https://nostr.build/i/nostr.build_odell.jpg"
+          "picture": "https://m.primal.net/NcKe.jpg"
         },
         {
-          "npub": "npub1s33sw46p7vpsmak6v8j4x2naxqvqgv5xpep0lmllz9lxm7qds8gs8r5n32",
+          "npub": "npub1guh5grefa7vkay4ps6udxg8lrqxg2kgr3qh9n4gduxut64nfxq0q9y6hjy",
           "name": "MartyBent",
+          "nip05": "marty@primal.net",
           "about": "TFTC founder, Bitcoin podcaster",
-          "picture": "https://nostr.build/i/nostr.build_marty.jpg"
+          "picture": "https://miro.medium.com/max/400/1*dhfvb6QtrA-XDoT2EE4rmA.jpeg"
         }
       ]
     },
@@ -43,28 +48,32 @@
       "description": "Nostr developers and protocol contributors",
       "accounts": [
         {
-          "npub": "npub1l2vyh47mk2p0qlsku7hg0vn29faehy9hy34ygaclpn66ukqp3afqutajft",
+          "npub": "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6",
           "name": "fiatjaf",
+          "nip05": "_@fiatjaf.com",
           "about": "Nostr protocol creator",
-          "picture": "https://nostr.build/i/nostr.build_fiatjaf.jpg"
+          "picture": "https://fiatjaf.com/static/favicon.jpg"
         },
         {
-          "npub": "npub1jlrs53pkdfjnts29kveljul2sm0actt6n8dxrrzqcersttvcuv3qdjynqn",
+          "npub": "npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s",
           "name": "jb55",
+          "nip05": "_@jb55.com",
           "about": "Damus creator, Nostr developer",
-          "picture": "https://nostr.build/i/nostr.build_jb55.jpg"
+          "picture": "https://cdn.jb55.com/img/red-me.jpg"
         },
         {
-          "npub": "npub12vkcxr0luzwp8e673v29eqjhrr7p9vqq8asav85swaepclllj09sylpugg",
+          "npub": "npub16c0nh3dnadzqpm76uctf5hqhe2lny344zsmpm6feee9p5rdxaa9q586nvr",
           "name": "miljan",
+          "nip05": "miljan@primal.net",
           "about": "Primal creator, Nostr developer",
-          "picture": "https://nostr.build/i/nostr.build_miljan.jpg"
+          "picture": "https://blossom.primal.net/15b397e503dd0cc9ab764196399e69665359c06599b0814585f7efecd4152dcb.jpg"
         },
         {
           "npub": "npub1gcxzte5zlkncx26j68ez60fzkvtkm9e0vrwdcvsjakxf9mu9qewqlfnj5z",
           "name": "vitor",
+          "nip05": "_@vitorpamplona.com",
           "about": "Amethyst creator, Android Nostr developer",
-          "picture": "https://nostr.build/i/nostr.build_vitor.jpg"
+          "picture": "https://vitorpamplona.com/images/me_300.jpg"
         }
       ]
     },
@@ -74,22 +83,25 @@
       "description": "Tech news, developers, and innovators",
       "accounts": [
         {
-          "npub": "npub1wjwj5r9ytyhgg7nwmy75t8pqzn7xapg5c5k0q8q9qqk9f1vvv4qsvvxs2w",
+          "npub": "npub1sn0wdenkukak0d9dfczzeacvhkrgz92ak56egt7vdgzn8pv2wfqqhrjdv9",
           "name": "Snowden",
+          "nip05": "Snowden@nostr-check.com",
           "about": "Privacy advocate and technologist",
-          "picture": "https://nostr.build/i/nostr.build_snowden.jpg"
+          "picture": "https://nostr.build/i/p/6838p.jpeg"
         },
         {
-          "npub": "npub1wmr34t36fy03m8hvgl96zl3znndyzyaqhwmwdtshwmtkg03fetaqhjg240",
+          "npub": "npub15dqlghlewk84wz3pkqqvzl2w2w36f97g89ljds8x6c094nlu02vqjllm5m",
           "name": "saylor",
-          "about": "MicroStrategy CEO, Bitcoin advocate",
-          "picture": "https://nostr.build/i/nostr.build_saylor.jpg"
+          "nip05": "saylor@primal.net",
+          "about": "Strategy founder, Bitcoin advocate",
+          "picture": "https://i.postimg.cc/PxHQ0fwp/8t0-DGo6-V-400x400.jpg"
         },
         {
-          "npub": "npub1xnf02f60r9v0e5kty33a404dm79zr7z2eepyrk5gsq3m7pwvsz2sazlpr5",
+          "npub": "npub1trr5r2nrpsk6xkjk5a7p6pfcryyt6yzsflwjmz6r7uj7lfkjxxtq78hdpu",
           "name": "gladstein",
+          "nip05": "gladstein@primal.net",
           "about": "Human Rights Foundation CSO, Bitcoin advocate",
-          "picture": "https://nostr.build/i/nostr.build_gladstein.jpg"
+          "picture": "https://image.nostr.build/b886d4b6aa486fa9a571b9a503c3496365ddd9cea88e346ed4f028d832694add.jpg"
         }
       ]
     },
@@ -99,22 +111,25 @@
       "description": "Journalists, podcasters, and content creators",
       "accounts": [
         {
-          "npub": "npub1h8nk2346qezka5cpm8jjh3yl5j88pf4ly2ptu7s6uu55wcfqy0wq36rpev",
-          "name": "carla",
-          "about": "Bitcoin journalist, independent reporter",
-          "picture": "https://nostr.build/i/nostr.build_carla.jpg"
-        },
-        {
-          "npub": "npub1qny3tkh0acurzla8x3zy4nhrjz5zd8l9sy9jys09umwng00manysew95gx",
-          "name": "preston",
-          "about": "Bitcoin podcaster and analyst",
-          "picture": "https://nostr.build/i/nostr.build_preston.jpg"
-        },
-        {
           "npub": "npub1hu3hdctm5nkzd8gslnyedfr5ddz3z547jqcl5j88g4fame2jd08qh6h8nh",
+          "name": "carla",
+          "nip05": "carla@nostrplebs.com",
+          "about": "Bitcoin journalist, independent reporter",
+          "picture": "https://image.nostr.build/83a4b44f5327500a151851b73bc0553dd4c81feab47c9c461556b221c9f9a65d.jpg"
+        },
+        {
+          "npub": "npub1s5yq6wadwrxde4lhfs56gn64hwzuhnfa6r9mj476r5s4hkunzgzqrs6q7z",
+          "name": "preston",
+          "nip05": "preston@primal.net",
+          "about": "Bitcoin podcaster and analyst",
+          "picture": "https://i.imgur.com/Xf8iV9G.gif"
+        },
+        {
+          "npub": "npub1cj8znuztfqkvq89pl8hceph0svvvqk0qay6nydgk9uyq7fhpfsgsqwrz4u",
           "name": "walker",
+          "nip05": "walker@primal.net",
           "about": "Bitcoin podcast host",
-          "picture": "https://nostr.build/i/nostr.build_walker.jpg"
+          "picture": "https://image.nostr.build/89ad0e9a72ff60b6c8c7dc71bb92800598c56d09cad44a4ff6b700479104811f.jpg"
         }
       ]
     }
