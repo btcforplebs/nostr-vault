@@ -2717,7 +2717,7 @@ fun DashboardScreen(
                 onToggleAutoLoad = { on -> viewModel.configStore.update { it.copy(autoLoadNewPosts = on) } },
                 onManageRelays = {
                     showDashboardSheet = false
-                    onNavigate(Screen.RelayListEditor)
+                    onNavigate(Screen.Relays)
                 },
             )
         }

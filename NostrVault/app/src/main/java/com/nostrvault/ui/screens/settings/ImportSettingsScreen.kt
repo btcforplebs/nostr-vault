@@ -32,17 +32,6 @@ class ImportSettingsViewModel @Inject constructor(
 
     fun setStartDate(date: String) = configStore.update { it.copy(importStartDate = date) }
 
-    fun addSeedRelay(url: String) {
-        val clean = url.trim().let { if (it.startsWith("wss://") || it.startsWith("ws://")) it else "wss://$it" }
-        configStore.update { cfg ->
-            if (clean in cfg.importSeedRelays) cfg
-            else cfg.copy(importSeedRelays = cfg.importSeedRelays + clean)
-        }
-    }
-
-    fun removeSeedRelay(url: String) =
-        configStore.update { it.copy(importSeedRelays = it.importSeedRelays.filter { r -> r != url }) }
-
     fun startImport() = relayImportService.importNotes()
 }
 
@@ -58,8 +47,6 @@ fun ImportSettingsScreen(
     val status by viewModel.statusMessage.collectAsState()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val colors = LocalNostrVaultColors.current
-
-    var newRelay by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -109,40 +96,11 @@ fun ImportSettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            SectionLabel("Seed Relays")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = newRelay,
-                    onValueChange = { newRelay = it },
-                    placeholder = { Text("wss://relay.example.com") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = PrimaryText,
-                        unfocusedTextColor = PrimaryText,
-                        cursorColor = colors.primary,
-                        focusedBorderColor = colors.primary,
-                    ),
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { viewModel.addSeedRelay(newRelay); newRelay = "" },
-                    enabled = newRelay.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                ) { Text("Add") }
-            }
-            Spacer(Modifier.height(8.dp))
-            config.importSeedRelays.forEach { relay ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                ) {
-                    Text(relay, color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.removeSeedRelay(relay) }) {
-                        Icon(NostrVaultIcons.Dismiss, contentDescription = "Remove", tint = ErrorRed)
-                    }
-                }
-            }
+            Text(
+                "Import pulls from the relays with Import on, in Settings > Relays.",
+                color = SecondaryText, fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             Text(
                 "The import fetches your own notes and notes where you are tagged. " +
                     "Make sure your npub is set correctly.",
