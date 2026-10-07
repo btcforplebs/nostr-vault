@@ -682,11 +682,10 @@ struct ProfileView: View {
 
     // MARK: - Banner
 
-    /// A profile with a banner gets a strip a third as tall as it is wide;
-    /// one without gets a short tinted wash, so the avatar still has something
-    /// to sit on and the page has no gray block at the top.
+    /// A strip a third as tall as it is wide, the same with or without a
+    /// banner (a tinted wash stands in), so nothing below it moves when the
+    /// profile or its banner arrives.
     private var bannerHeight: CGFloat {
-        guard profile?.bannerURL != nil else { return 64 }
         let width = viewportWidth > 0 ? viewportWidth : 390
         return min(max(width / 3, 110), 210)
     }
@@ -703,7 +702,6 @@ struct ProfileView: View {
         .overlay(alignment: .top) {
             if showsDismissButton { dismissHeader }
         }
-        .animation(Motion.panel, value: bannerHeight)
     }
 
     private func performDismiss() {
@@ -2784,12 +2782,13 @@ private struct ProfileBannerView: View {
     @State private var tint: Color?
 
     var body: some View {
-        GeometryReader { geo in
-            // Up under the navigation bar at rest, and further as the page is
-            // pulled down, so the stretch never shows a gap.
-            let reach = topInset + max(0, geo.frame(in: .scrollView(axis: .vertical)).minY)
-            ZStack {
-                wash
+        // Up under the navigation bar, then scrolls with the page like any
+        // other row. No stretch on pull: the pull opens plain space above it,
+        // where the refresh spinner shows. The wash sets the size and the
+        // image fills it as an overlay, so a wide banner cannot widen the page.
+        wash
+            .frame(height: height + topInset)
+            .overlay {
                 if let image {
                     Image(platformImage: image)
                         .resizable()
@@ -2797,31 +2796,28 @@ private struct ProfileBannerView: View {
                         .transition(.opacity)
                 }
             }
-            .frame(width: geo.size.width, height: height + reach)
             .clipped()
             .overlay(alignment: .top) {
                 // Keeps the toolbar buttons and close button legible on a
                 // bright banner.
                 LinearGradient(colors: [.black.opacity(0.45), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: min(reach + 56, height + reach))
+                    .frame(height: topInset + 56)
             }
             .overlay(alignment: .bottom) {
                 LinearGradient(colors: [.clear, Color.platformWindowBackground], startPoint: .top, endPoint: .bottom)
                     .frame(height: height * 0.45)
             }
-            .offset(y: -reach)
-        }
-        .frame(height: height)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if image != nil, let bannerURL { onTap(bannerURL) }
-        }
-        .accessibilityElement()
-        .accessibilityLabel(image != nil ? "Profile banner" : "")
-        .accessibilityAddTraits(image != nil ? .isButton : [])
-        .accessibilityHidden(image == nil)
-        .task(id: bannerURL) { await loadBanner() }
-        .task(id: avatarURL) { await loadTint() }
+            .padding(.top, -topInset)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if image != nil, let bannerURL { onTap(bannerURL) }
+            }
+            .accessibilityElement()
+            .accessibilityLabel(image != nil ? "Profile banner" : "")
+            .accessibilityAddTraits(image != nil ? .isButton : [])
+            .accessibilityHidden(image == nil)
+            .task(id: bannerURL) { await loadBanner() }
+            .task(id: avatarURL) { await loadTint() }
     }
 
     private var wash: some View {
