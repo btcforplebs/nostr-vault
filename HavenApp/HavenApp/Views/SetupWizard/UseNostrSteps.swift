@@ -105,6 +105,9 @@ struct UseNostrKeyStep: View {
                 .keyboardType(.asciiCapable)
                 #endif
                 .accessibilityLabel("Your key or name")
+                // The keyboard covers Continue on a phone; Return does the same.
+                .submitLabel(.continue)
+                .onSubmit { if canContinue && !isWorking { handleContinue() } }
             #if os(iOS)
             Button { showingScanner = true } label: {
                 Image(systemName: "qrcode.viewfinder")
@@ -220,6 +223,8 @@ struct UseNostrKeyStep: View {
                 .font(.appSystem(size: 13))
                 .foregroundColor(WizardColors.textSecondary)
             SecureField("Password", text: $password)
+                .submitLabel(.continue)
+                .onSubmit { if canContinue && !isWorking { handleContinue() } }
                 .textFieldStyle(.plain)
                 .foregroundColor(WizardColors.textPrimary)
                 .padding(12)
