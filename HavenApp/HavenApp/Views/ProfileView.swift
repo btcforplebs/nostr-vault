@@ -11,7 +11,11 @@ struct ProfileView: View {
     var onDismiss: (() -> Void)? = nil
 
     @EnvironmentObject var nostrService: NostrService
-    @StateObject private var feedService = FeedService.shared
+    /// Not observed: the main feed changes many times a second while it
+    /// loads, and observing all of it redrew this page each time.
+    /// `feedWatch` redraws only for the parts this page shows.
+    private var feedService: FeedService { .shared }
+    @StateObject private var feedWatch = ProfileFeedWatch()
     @StateObject private var dmService = DMService.shared
     @EnvironmentObject var configService: ConfigService
     @Environment(\.dismiss) private var dismiss
@@ -2936,6 +2940,36 @@ final class ProfileExtrasLoader: ObservableObject {
               let page = await MusicFeedState.shared.artistPage(artist.id) else { return }
         guard loadedPubkey == pubkey else { return }
         tracks = page.tracks
+    }
+}
+
+// MARK: - Feed changes the profile shows
+
+/// Redraws the profile for the main-feed state it reads: who you follow,
+/// your likes, reactions, reposts and zaps on its notes, and fetched
+/// originals of reposted or replied-to notes. Not for the feed's own notes,
+/// paging or connection state, which change constantly and are not shown.
+@MainActor
+final class ProfileFeedWatch: ObservableObject {
+    private var cancellable: AnyCancellable?
+
+    init() {
+        let feed = FeedService.shared
+        // dropFirst: each @Published sends its current value on subscribe.
+        let changes: [AnyPublisher<Void, Never>] = [
+            feed.$followedPubkeys.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$likedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$myReactions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$repostedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$zappedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$parentNotesCache.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+        ]
+        // @Published fires before the value is stored; the throttle delivers
+        // on the next run loop pass, after it is. The first change in a burst
+        // goes through at once, so a like still shows straight away.
+        cancellable = Publishers.MergeMany(changes)
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] in self?.objectWillChange.send() }
     }
 }
 
