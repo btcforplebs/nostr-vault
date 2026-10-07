@@ -666,7 +666,7 @@ struct ImportTourStep: View {
 
 // MARK: - Background pill
 
-/// "Importing in the background · notes from Mar 2024": shown over the app
+/// "Importing · notes from Mar 2024": shown over the app
 /// while an import runs after setup (I use Nostr's "Keep it running", or an
 /// import started from Settings). Not a button, so it takes no touches.
 struct ImportRunningPill: View {
@@ -678,7 +678,7 @@ struct ImportRunningPill: View {
             let stage = ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false)
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small).tint(.white)
-                Text("Importing in the background · \(Self.shortText(stage))")
+                Text("Importing · \(Self.shortText(stage))")
                     .font(.appSystem(size: 13, weight: .medium))
                     .foregroundColor(.white)
                     .lineLimit(1)
