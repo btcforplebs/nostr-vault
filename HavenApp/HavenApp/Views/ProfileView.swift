@@ -997,9 +997,8 @@ struct ProfileView: View {
             }
             statDivider
             statCell(
-                value: displayedFollowersCount.map(shortInt) ?? "∞",
-                label: "FOLLOWERS",
-                tint: displayedFollowersCount == nil ? Color.havenVerified.opacity(0.55) : .primary
+                value: displayedFollowersCount.map(shortInt) ?? "—",
+                label: "FOLLOWERS"
             )
         }
         .padding(.horizontal, 16)
