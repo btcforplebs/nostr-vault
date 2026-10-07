@@ -70,6 +70,23 @@ struct ProfileView: View {
     @State private var followsMe: Bool = false
     @State private var followersCount: Int? = nil
     @State private var followerPubkeys = Set<String>()
+    /// This profile's follows, in contact-list order (other profiles only;
+    /// your own come from the feed's follow list).
+    @State private var followingList: [String] = []
+    /// Follower → created_at of their list naming this profile.
+    @State private var followerSeenAt: [String: Int64] = [:]
+    /// The Following / Followers page, open on the tab that was tapped.
+    @State private var followListTab: FollowListTab?
+    /// The viewer's follower ledger, read when the page opens.
+    @State private var viewerLedger: FollowerSnapshot?
+    /// Older followers, a page at a time, as the Followers list scrolls.
+    @State private var followerPageSubId: String?
+    @State private var followerPageToken = 0
+    @State private var followerPageAnswers = 0
+    @State private var followerPageExpected = 0
+    @State private var followerPageCountBefore = 0
+    @State private var quietFollowerPages = 0
+    @State private var followersExhausted = false
     /// created_at of the kind 0 and kind 3 now shown. Each relay answers with
     /// its own copy and the answers arrive in any order, so an older copy from
     /// a slow relay must not replace a newer one already on screen.
@@ -514,6 +531,9 @@ struct ProfileView: View {
                 .frame(minWidth: 520, minHeight: 560)
                 #endif
         }
+        .modifier(FollowListHost(item: $followListTab) { tab in
+            followListPage(startOn: tab)
+        })
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .hashtagLinks()
         .sheet(isPresented: $showSweep) {
@@ -1130,24 +1150,74 @@ struct ProfileView: View {
             statDivider
             statCell(value: countText(for: .media), label: "MEDIA")
             statDivider
-            if isOwnProfile {
+            Button { openFollowList(.following) } label: {
+                if isOwnProfile {
+                    statCell(
+                        value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
+                        label: "FOLLOWING"
+                    )
+                } else {
+                    statCell(
+                        value: followingCount.map(shortInt) ?? "—",
+                        label: "FOLLOWING"
+                    )
+                }
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            statDivider
+            Button { openFollowList(.followers) } label: {
                 statCell(
-                    value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
-                    label: "FOLLOWING"
-                )
-            } else {
-                statCell(
-                    value: followingCount.map(shortInt) ?? "—",
-                    label: "FOLLOWING"
+                    value: displayedFollowersCount.map(shortInt) ?? "—",
+                    label: "FOLLOWERS"
                 )
             }
-            statDivider
-            statCell(
-                value: displayedFollowersCount.map(shortInt) ?? "—",
-                label: "FOLLOWERS"
-            )
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
         }
         .padding(.horizontal, 16)
+    }
+
+    // MARK: - Follow lists
+
+    private func openFollowList(_ tab: FollowListTab) {
+        let viewer = configService.activeAccountHexPubkey
+        followListTab = tab
+        Task.detached(priority: .userInitiated) {
+            let ledger = FollowerSnapshot.load(owner: viewer)
+            await MainActor.run { viewerLedger = ledger }
+        }
+    }
+
+    private func followListPage(startOn tab: FollowListTab) -> some View {
+        let ledger = viewerLedger
+        let viewerFollowers = ledger.map { Set($0.current.map(\.pubkey)) } ?? []
+        let spam = ledger.map { Set($0.followers.filter(\.isSpam).map(\.pubkey)) } ?? []
+        let following = isOwnProfile
+            ? feedService.followedPubkeys.filter { $0 != pubkey }
+            : followingList
+        // Your own followers come from the relay's ledger, which is complete.
+        // Anyone else's are what relays returned, which may be short.
+        let ownLedger = isOwnProfile ? ledger : nil
+        let followers: [String: Int64] = ownLedger.map { snap in
+            Dictionary(snap.current.map { ($0.pubkey, $0.existing ? $0.listAt : $0.followedAt) }, uniquingKeysWith: max)
+        } ?? followerSeenAt
+        let haveMore = ownLedger == nil && !followersExhausted && (displayedFollowersCount ?? 0) > followers.count
+        return FollowListView(
+            subject: pubkey,
+            subjectName: profile?.bestName ?? shortPubkey,
+            startOn: tab,
+            following: following,
+            followers: followers,
+            followersHaveMore: haveMore,
+            followersTotal: ownLedger == nil ? displayedFollowersCount : nil,
+            isViewersOwnFollowers: ownLedger != nil,
+            followsViewer: viewerFollowers,
+            hidden: spam,
+            onLoadMoreFollowers: ownLedger == nil ? { loadMoreFollowers() } : nil
+        )
+        .environmentObject(nostrService)
+        .environmentObject(configService)
     }
 
     private var statDivider: some View {
@@ -2114,6 +2184,9 @@ struct ProfileView: View {
                     // This user's own contact list → extract following count and followsMe.
                     // followsMe is true if they follow ANY of our accounts (owner or
                     // whitelisted) so the badge is consistent across account switches.
+                    var seenTags = Set<String>()
+                    let list = pTags.map { $0[1] }.filter { $0 != pubkey && seenTags.insert($0).inserted }
+                    self.followingList = list
                     let count = pTags.filter { $0[1] != pubkey }.count
                     self.followingCount = count
                     let ourHexKeys: Set<String> = Set(configService.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString })
@@ -2124,6 +2197,7 @@ struct ProfileView: View {
                     // Someone else's contact list containing this pubkey → they follow this user
                     followerPubkeys.insert(event.pubkey)
                     followersCount = followerPubkeys.count
+                    followerSeenAt[event.pubkey] = max(followerSeenAt[event.pubkey] ?? 0, event.created_at)
                 }
                 return
             }
@@ -2198,7 +2272,13 @@ struct ProfileView: View {
             let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
             // Page bookkeeping counts the lists, so they must be complete.
             flushPendingNotes()
-            if subId.hasPrefix("older-tagged-") {
+            if subId.hasPrefix("followers-page-") {
+                guard subId == followerPageSubId else { return }
+                followerPageAnswers += 1
+                if followerPageAnswers >= followerPageExpected {
+                    finishFollowerPage(token: followerPageToken)
+                }
+            } else if subId.hasPrefix("older-tagged-") {
                 guard subId == olderTaggedSubId else { return }
                 olderTaggedAnswers += 1
                 if olderTaggedAnswers >= olderTaggedExpected {
@@ -2215,6 +2295,42 @@ struct ProfileView: View {
                 // how new posts reach the profile while it is on screen.
                 openingRelayAnswered(relay)
             }
+        }
+    }
+
+    /// Asks every relay for the next 100 lists naming this profile, older
+    /// than the oldest already seen.
+    private func loadMoreFollowers() {
+        guard followerPageSubId == nil, !followersExhausted, !profileClients.isEmpty,
+              let oldest = followerSeenAt.values.min() else { return }
+        followerPageToken &+= 1
+        let token = followerPageToken
+        let subId = "followers-page-\(UUID().uuidString.prefix(6))"
+        followerPageSubId = subId
+        followerPageAnswers = 0
+        followerPageExpected = profileClients.count
+        followerPageCountBefore = followerSeenAt.count
+        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey], "until": Int(oldest) - 1, "limit": 100]
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+              let str = String(data: data, encoding: .utf8) else {
+            followerPageSubId = nil
+            return
+        }
+        for client in profileClients { client.send(text: str) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishFollowerPage(token: token) }
+    }
+
+    private func finishFollowerPage(token: Int) {
+        guard token == followerPageToken, let subId = followerPageSubId else { return }
+        closeProfileSubscription(subId)
+        followerPageSubId = nil
+        if followerSeenAt.count > followerPageCountBefore {
+            quietFollowerPages = 0
+        } else {
+            // Two empty rounds in a row, not one: a single quiet round is more
+            // often a slow relay than the end of the list.
+            quietFollowerPages += 1
+            if quietFollowerPages >= 2 { followersExhausted = true }
         }
     }
 
@@ -3218,4 +3334,18 @@ private struct ProfileNoteBuckets {
     var media: [FeedNote] = []
     var replies: [FeedNote] = []
     var tagged: [FeedNote] = []
+}
+
+/// Full screen on iPhone and iPad, a sized sheet on the Mac.
+private struct FollowListHost<Page: View>: ViewModifier {
+    @Binding var item: FollowListTab?
+    let page: (FollowListTab) -> Page
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(item: $item) { page($0) }
+        #else
+        content.sheet(item: $item) { page($0).frame(minWidth: 520, minHeight: 640) }
+        #endif
+    }
 }

@@ -2910,7 +2910,9 @@ class FeedService: ObservableObject {
     typealias FollowActionError = ContactManager.FollowActionError
 
     @discardableResult
-    func followUser(_ pubkey: String) -> Result<Void, FollowActionError> {
+    /// `onPublishFailed` runs on the main actor if the new list could not be
+    /// signed or every relay refused it; the follow has been rolled back by then.
+    func followUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareFollow(
             pubkey: pubkey,
             currentPTags: contactListPTags,
@@ -2928,9 +2930,10 @@ class FeedService: ObservableObject {
             return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
+            let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
             contactListPTags = result.pTags
             followedPubkeys = result.pubkeys
-            publishContactList()
+            publishContactList(rollback: previous, onFailure: onPublishFailed)
             // Re-filter so already-loaded notes from the newly-followed author
             // surface immediately in the Following feed.
             recomputeFilteredNotes()
@@ -2949,7 +2952,8 @@ class FeedService: ObservableObject {
     }
 
     @discardableResult
-    func unfollowUser(_ pubkey: String) -> Result<Void, FollowActionError> {
+    /// `onPublishFailed`: as for `followUser`.
+    func unfollowUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareUnfollow(
             pubkey: pubkey,
             activeAccountHex: ConfigService.shared.activeAccountHexPubkey,
@@ -2968,9 +2972,10 @@ class FeedService: ObservableObject {
             return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
+            let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
             contactListPTags = result.pTags
             followedPubkeys = result.pubkeys
-            publishContactList()
+            publishContactList(rollback: previous, onFailure: onPublishFailed)
             // Re-filter so the unfollowed author's notes disappear from the
             // Following feed immediately (the filter now excludes non-follows).
             recomputeFilteredNotes()
@@ -2981,7 +2986,13 @@ class FeedService: ObservableObject {
         }
     }
 
-    private func publishContactList() {
+    /// - rollback: the list before this edit. If signing fails or every relay
+    ///   refuses the event, and nothing has changed the list since, it is put
+    ///   back so the screen never shows a follow that was not published.
+    private func publishContactList(
+        rollback: (pTags: [[String]], pubkeys: [String])? = nil,
+        onFailure: (() -> Void)? = nil
+    ) {
         guard !contactListPTags.isEmpty else { return }
         if ContactManager.shouldBlockPublish(currentTagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount) {
             #if DEBUG
@@ -2994,11 +3005,28 @@ class FeedService: ObservableObject {
         // stale relay copy and drop the edit we're about to publish.
         ownContactListAccountKey = currentSnapshotKey()
         ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
+        let attempted = contactListPTags
+        let fail: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            if let rollback, self.contactListPTags == attempted {
+                self.contactListPTags = rollback.pTags
+                self.followedPubkeys = rollback.pubkeys
+                self.recomputeFilteredNotes()
+                self.resubscribePrimaryIfNeeded()
+            }
+            onFailure?()
+        }
         Task { [weak self] in
             guard let self = self else { return }
-            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: self.contactListPTags) else { return }
+            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: attempted) else {
+                fail()
+                return
+            }
             self.recordOwnContactList(event: event)
-            NostrService.shared.postEvent(event)
+            NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
+                guard outcome == .refused else { return }
+                Task { @MainActor in fail() }
+            })
         }
     }
 
