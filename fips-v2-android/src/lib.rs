@@ -98,6 +98,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Zeroizing<String> {
         r#"node:
   identity:
     nsec: "{nsec}"
+  leaf_only: true
   control:
     enabled: false
   rendezvous:
@@ -389,6 +390,7 @@ mod tests {
             let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
             assert!(!cfg.node.control.enabled);
             assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
+            assert!(cfg.node.leaf_only, "a phone must never carry other nodes' traffic");
             assert_eq!(cfg.peers.len(), opts.peers.len());
         }
     }
