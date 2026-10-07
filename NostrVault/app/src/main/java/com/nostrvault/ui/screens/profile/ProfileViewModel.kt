@@ -233,6 +233,7 @@ class ProfileViewModel @Inject constructor(
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
         _followersCount.value = null
+        ownLedgerLoaded = false
         _followingCount.value = null
         _followsMe.value = false
         _hasMoreNotes.value = true
@@ -267,6 +268,9 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    /** Set once your own follower ledger supplied the FOLLOWERS count. */
+    @Volatile private var ownLedgerLoaded = false
+
     /** Bumped by each load so an earlier load's fallback can't end a later one. */
     private var loadToken = 0
 
@@ -290,7 +294,10 @@ class ProfileViewModel @Inject constructor(
                     val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
                     }
-                    if (ledger != null && _pubkey.value == pk) _followersCount.value = ledger.current.size
+                    if (ledger != null && _pubkey.value == pk) {
+                        ownLedgerLoaded = true
+                        _followersCount.value = ledger.current.size
+                    }
                 }
             }
 
@@ -326,7 +333,9 @@ class ProfileViewModel @Inject constructor(
             _followsMe.value = followsMe
         }
         s.onFollower = { followerPk ->
-            if (followerPubkeys.add(followerPk) && !_isOwnProfile.value) {
+            // Your ledger's count is exact; the relay sample only stands in
+            // when the ledger can't be read.
+            if (followerPubkeys.add(followerPk) && !ownLedgerLoaded) {
                 _followersCount.value = followerPubkeys.size
             }
         }

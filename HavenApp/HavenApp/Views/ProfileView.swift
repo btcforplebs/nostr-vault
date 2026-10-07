@@ -87,6 +87,9 @@ struct ProfileView: View {
     @State private var followerPageCountBefore = 0
     @State private var quietFollowerPages = 0
     @State private var followersExhausted = false
+    /// Finished follower pages; the list's loader is keyed on it so it asks
+    /// again after a page that brought nobody new.
+    @State private var followerPagesDone = 0
     /// created_at of the kind 0 and kind 3 now shown. Each relay answers with
     /// its own copy and the answers arrive in any order, so an older copy from
     /// a slow relay must not replace a newer one already on screen.
@@ -1210,6 +1213,7 @@ struct ProfileView: View {
             following: following,
             followers: followers,
             followersHaveMore: haveMore,
+            followerPagesDone: followerPagesDone,
             followersTotal: ownLedger == nil ? displayedFollowersCount : nil,
             isViewersOwnFollowers: ownLedger != nil,
             followsViewer: viewerFollowers,
@@ -2330,14 +2334,9 @@ struct ProfileView: View {
             // Two empty rounds in a row, not one: a single quiet round is more
             // often a slow relay than the end of the list.
             quietFollowerPages += 1
-            if quietFollowerPages >= 2 {
-                followersExhausted = true
-            } else {
-                // The loader keeps its identity when nothing landed, so it
-                // won't ask again; take the second look now.
-                loadMoreFollowers()
-            }
+            if quietFollowerPages >= 2 { followersExhausted = true }
         }
+        followerPagesDone += 1
     }
 
     private func loadOlderProfileNotes() {

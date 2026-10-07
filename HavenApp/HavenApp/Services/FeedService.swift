@@ -285,6 +285,9 @@ class FeedService: ObservableObject {
     /// and re-publish to heal the network. Persisted in the disk snapshot and the
     /// durable following backup so it survives relaunches and the 7-day snapshot TTL.
     private var ownContactListCreatedAt: Int64 = 0
+    /// created_at of a contact list every relay refused and that was rolled
+    /// back. The local relay still holds it, so a reload must not take it.
+    private var refusedContactListCreatedAt: Int64?
     /// Account key `ownContactListCreatedAt` currently belongs to. When the active
     /// account changes the guard is reset so a previous account's (higher)
     /// timestamp never blocks the new account's relay copy.
@@ -2590,7 +2593,8 @@ class FeedService: ObservableObject {
             }
             clients.forEach { $0.disconnect() }
 
-            if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt {
+            if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt,
+               Int64(best.createdAt) != self.refusedContactListCreatedAt {
                 let parsed = ContactManager.parseContactList(
                     pTags: best.pTags,
                     ownerHex: ownerHex,
@@ -3006,9 +3010,10 @@ class FeedService: ObservableObject {
         ownContactListAccountKey = currentSnapshotKey()
         ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
         let attempted = contactListPTags
-        let fail: @MainActor () -> Void = { [weak self] in
+        let fail: @MainActor (_ refusedAt: Int64?) -> Void = { [weak self] refusedAt in
             guard let self else { return }
             if let rollback, self.contactListPTags == attempted {
+                if let refusedAt { self.refusedContactListCreatedAt = refusedAt }
                 self.contactListPTags = rollback.pTags
                 self.followedPubkeys = rollback.pubkeys
                 self.recomputeFilteredNotes()
@@ -3019,13 +3024,13 @@ class FeedService: ObservableObject {
         Task { [weak self] in
             guard let self = self else { return }
             guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: attempted) else {
-                fail()
+                fail(nil)
                 return
             }
             self.recordOwnContactList(event: event)
             NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
                 guard outcome == .refused else { return }
-                Task { @MainActor in fail() }
+                Task { @MainActor in fail(event.created_at) }
             })
         }
     }

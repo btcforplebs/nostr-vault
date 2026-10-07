@@ -512,6 +512,11 @@ class FeedService @Inject constructor(
     // thread (guard prime / sync bump) and the IO publish coroutine.
     @Volatile
     private var ownContactListCreatedAt: Long = 0L
+    /**
+     * created_at of a contact list every relay refused and that was rolled
+     * back. The local relay still holds it, so a reload must not take it.
+     */
+    @Volatile private var refusedContactListCreatedAt: Long? = null
     // Account key `ownContactListCreatedAt` belongs to; reset across account
     // switches so a previous account's timestamp can't block the new account.
     @Volatile
@@ -859,7 +864,9 @@ class FeedService @Inject constructor(
                     Log.d(TAG, "loadContactList: discarding stale result (generation $myGeneration superseded)")
                     return@withContext
                 }
-                if (result != null && result.third >= ownContactListCreatedAt) {
+                if (result != null && result.third >= ownContactListCreatedAt &&
+                    result.third != refusedContactListCreatedAt
+                ) {
                     val (pubkeys, content, createdAt) = result
                     Log.d(TAG, "loadContactList: committing ${pubkeys.size} followed pubkeys (created_at=$createdAt)")
                     withContext(Dispatchers.Main.immediate) {
@@ -2403,9 +2410,10 @@ class FeedService @Inject constructor(
         onFailed: (() -> Unit)? = null,
     ) {
         val tags = pubkeys.map { listOf("p", it) }
-        val fail: () -> Unit = {
+        val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
                 if (rollback != null && _followedPubkeys.value == pubkeys) {
+                    if (refusedAt != null) refusedContactListCreatedAt = refusedAt
                     _followedPubkeys.value = rollback
                     recomputeFilteredNotes()
                     resubscribePrimaryToConnected()
@@ -2426,7 +2434,7 @@ class FeedService @Inject constructor(
                 content = contactListContent,
                 tags = tags,
             ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }.getOrNull()
-            if (event == null) fail()
+            if (event == null) fail(null)
             event?.let {
                 // Record the published list's created_at + a durable backup so a
                 // later relay fetch returning an older copy can't clobber this edit.
@@ -2439,7 +2447,7 @@ class FeedService @Inject constructor(
                     forAccountKey = accountKey,
                 )
                 nostrService.postEvent(it) { outcome ->
-                    if (outcome == BroadcastTally.Outcome.REFUSED) fail()
+                    if (outcome == BroadcastTally.Outcome.REFUSED) fail(it.createdAt)
                 }
             }
         }

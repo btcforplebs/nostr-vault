@@ -157,10 +157,18 @@ class FollowListViewModel @Inject constructor(
     private val _followers = MutableStateFlow<Map<String, Long>>(emptyMap())
     val followers: StateFlow<Map<String, Long>> = _followers.asStateFlow()
 
-    private val _followersExhausted = MutableStateFlow(isOwn)
+    private val _followersExhausted = MutableStateFlow(false)
     val followersExhausted: StateFlow<Boolean> = _followersExhausted.asStateFlow()
 
-    private val _followersTotal = MutableStateFlow(if (isOwn) null else profileFollowersTotal)
+    /** Follower pages finished; keys the loader so it asks again after a page that added nobody. */
+    private val _pagesDone = MutableStateFlow(0)
+    val pagesDone: StateFlow<Int> = _pagesDone.asStateFlow()
+
+    /** True once your own complete follower ledger is the Followers list. */
+    private val _isOwnLedger = MutableStateFlow(false)
+    val isOwnLedger: StateFlow<Boolean> = _isOwnLedger.asStateFlow()
+
+    private val _followersTotal = MutableStateFlow(profileFollowersTotal)
     val followersTotal: StateFlow<Int?> = _followersTotal.asStateFlow()
 
     /** People who follow the viewer, for the "Follows you" tag. */
@@ -188,10 +196,11 @@ class FollowListViewModel @Inject constructor(
 
     init {
         loadTrust()
-        viewModelScope.launch { loadLedger() }
-        if (!isOwn) {
-            viewModelScope.launch { loadFollowing() }
-            pageJob = viewModelScope.launch { loadFollowerPage(until = null) }
+        if (!isOwn) viewModelScope.launch { loadFollowing() }
+        pageJob = viewModelScope.launch {
+            // Your own followers come from the ledger; relays only when it
+            // can't be read.
+            if (!loadLedger() || !isOwn) loadFollowerPage(until = null)
         }
         // A queued tap has landed once the list agrees with it.
         viewModelScope.launch {
@@ -210,9 +219,15 @@ class FollowListViewModel @Inject constructor(
      * Changes the follow at once. If the new list can't be published the feed
      * puts the old one back and the button follows; the pill offers Undo.
      */
-    fun toggle(pubkey: String, offerUndo: Boolean = true) {
-        val follow = !feedService.isFollowing(pubkey)
-        val undo: (() -> Unit)? = if (offerUndo) { { toggle(pubkey, offerUndo = false) } } else null
+    fun toggle(pubkey: String) = set(pubkey, follow = !feedService.isFollowing(pubkey), offerUndo = true)
+
+    /**
+     * Undo names its direction: if the change was already rolled back, it
+     * does nothing rather than flip the follow again.
+     */
+    private fun set(pubkey: String, follow: Boolean, offerUndo: Boolean) {
+        if (feedService.isFollowing(pubkey) == follow) return
+        val undo: (() -> Unit)? = if (offerUndo) { { set(pubkey, follow = !follow, offerUndo = false) } } else null
         val result = if (follow) feedService.followUser(pubkey, undo) else feedService.unfollowUser(pubkey, undo)
         result.exceptionOrNull()?.let { err ->
             if (err is com.nostrvault.service.FollowActionError.ContactsNotLoaded ||
@@ -239,9 +254,10 @@ class FollowListViewModel @Inject constructor(
 
     /** Asks every relay for the next 100 lists naming the subject, older than the oldest seen. */
     fun loadMoreFollowers() {
-        if (isOwn || _followersExhausted.value || pageJob?.isActive == true) return
-        val oldest = _followers.value.values.minOrNull() ?: return
-        pageJob = viewModelScope.launch { loadFollowerPage(until = oldest - 1) }
+        if (_isOwnLedger.value || _followersExhausted.value || pageJob?.isActive == true) return
+        // Nothing yet: the first page again, not the end of the list.
+        val until = _followers.value.values.minOrNull()?.let { it - 1 }
+        pageJob = viewModelScope.launch { loadFollowerPage(until) }
     }
 
     private suspend fun loadFollowerPage(until: Long?) {
@@ -258,14 +274,9 @@ class FollowListViewModel @Inject constructor(
             // Two empty rounds in a row, not one: a single quiet round is more
             // often a slow relay than the end of the list.
             quietPages += 1
-            if (quietPages >= 2 || until == null) {
-                _followersExhausted.value = true
-            } else {
-                // The loader keeps its key when nothing landed, so it won't
-                // ask again; take the second look now.
-                loadFollowerPage(until)
-            }
+            if (quietPages >= 2) _followersExhausted.value = true
         }
+        _pagesDone.value += 1
     }
 
     @Synchronized
@@ -289,16 +300,20 @@ class FollowListViewModel @Inject constructor(
             .distinct()
     }
 
-    private suspend fun loadLedger() {
+    /** False when the ledger can't be read (relay stopped). */
+    private suspend fun loadLedger(): Boolean {
         val snapshot = withContext(Dispatchers.IO) {
-            FollowerSnapshot.parse(HavenBridge.getFollowers(viewer))
-        } ?: return
+            runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(viewer)) }.getOrNull()
+        } ?: return false
         val current = snapshot.current
         _followsViewer.value = current.map { it.pubkey }.toHashSet()
         _hidden.value = snapshot.followers.orEmpty().filter { it.isSpam }.map { it.pubkey }.toHashSet()
         if (isOwn) {
             _followers.value = current.associate { it.pubkey to if (it.existing) it.listAt else it.followedAt }
+            _isOwnLedger.value = true
+            _followersExhausted.value = true
         }
+        return true
     }
 
     private fun loadTrust() {
@@ -329,6 +344,8 @@ fun FollowListScreen(
     val following by viewModel.following.collectAsState()
     val followers by viewModel.followers.collectAsState()
     val exhausted by viewModel.followersExhausted.collectAsState()
+    val pagesDone by viewModel.pagesDone.collectAsState()
+    val isOwnLedger by viewModel.isOwnLedger.collectAsState()
     val followersTotal by viewModel.followersTotal.collectAsState()
     val followsViewer by viewModel.followsViewer.collectAsState()
     val hidden by viewModel.hidden.collectAsState()
@@ -344,7 +361,7 @@ fun FollowListScreen(
     var showOutside by rememberSaveable { mutableStateOf(false) }
     var sorts by remember { mutableStateOf(FollowListSortMemory.sorts.toMap()) }
     val sort = sorts[tab] ?: FollowListSort.TRUSTED
-    val haveMore = !viewModel.isOwn && !exhausted
+    val haveMore = !isOwnLedger && !exhausted
 
     val people = remember(tab, following, followers, profiles) {
         when (tab) {
@@ -434,7 +451,7 @@ fun FollowListScreen(
                             name = p.name,
                             profile = profiles[p.pubkey],
                             followsYou = !isViewer &&
-                                !(tab == FollowListTab.FOLLOWERS && viewModel.isOwn) &&
+                                !(tab == FollowListTab.FOLLOWERS && isOwnLedger) &&
                                 p.pubkey in followsViewer,
                             followState = if (isViewer) null else viewModel.state(p.pubkey, followed, queued),
                             onOpen = {
@@ -449,10 +466,10 @@ fun FollowListScreen(
                 }
             }
             if (tab == FollowListTab.FOLLOWERS && haveMore) {
-                item(key = "more-${followers.size}") {
-                    // A new key per page, so a loader still on screen after a
-                    // page lands asks for the next one.
-                    LaunchedEffect(followers.size) { viewModel.loadMoreFollowers() }
+                item(key = "more-$pagesDone") {
+                    // A new key per finished page, so a loader still on screen
+                    // after a page asks for the next one.
+                    LaunchedEffect(pagesDone) { viewModel.loadMoreFollowers() }
                     Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = SecondaryText, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                     }

@@ -15,6 +15,8 @@ struct FollowListView: View {
     let followers: [String: Int64]
     /// True while the follower list is known to be partial.
     let followersHaveMore: Bool
+    /// Finished follower pages, so the loader can ask again after an empty one.
+    var followerPagesDone = 0
     /// The profile's follower count as its page shows it, which can be ahead
     /// of the list while pages load.
     var followersTotal: Int? = nil
@@ -46,6 +48,7 @@ struct FollowListView: View {
         following: [String],
         followers: [String: Int64],
         followersHaveMore: Bool,
+        followerPagesDone: Int = 0,
         followersTotal: Int? = nil,
         isViewersOwnFollowers: Bool,
         followsViewer: Set<String>,
@@ -57,6 +60,7 @@ struct FollowListView: View {
         self.following = following
         self.followers = followers
         self.followersHaveMore = followersHaveMore
+        self.followerPagesDone = followerPagesDone
         self.followersTotal = followersTotal
         self.isViewersOwnFollowers = isViewersOwnFollowers
         self.followsViewer = followsViewer
@@ -125,9 +129,9 @@ struct FollowListView: View {
                 if tab == .followers, followersHaveMore, let onLoadMoreFollowers {
                     ProgressView()
                         .padding(.vertical, 20)
-                        // A new identity per page, so a loader still on screen
-                        // after a page lands asks for the next one.
-                        .id(followers.count)
+                        // A new identity per finished page, so a loader still
+                        // on screen after a page asks for the next one.
+                        .id(followerPagesDone)
                         .onAppear(perform: onLoadMoreFollowers)
                 }
             }
@@ -500,10 +504,16 @@ final class FollowListFollowWatch: ObservableObject {
 
     /// Changes the follow at once. A refusal leaves the list untouched, so
     /// the button rolls straight back; the banner offers Undo on success.
-    func toggle(_ pubkey: String, name: String, offerUndo: Bool = true) {
+    func toggle(_ pubkey: String, name: String) {
+        set(pubkey, name: name, follow: !followed.contains(pubkey), offerUndo: true)
+    }
+
+    /// Undo names its direction: if the change was already rolled back, it
+    /// does nothing rather than flip the follow again.
+    private func set(_ pubkey: String, name: String, follow: Bool, offerUndo: Bool) {
         let feed = FeedService.shared
         let banner = FollowNotificationManager.shared
-        let follow = !followed.contains(pubkey)
+        guard followed.contains(pubkey) != follow else { return }
         // The list changes now; if the new list cannot be published the feed
         // puts it back and the button follows.
         let failed: () -> Void = {
@@ -515,7 +525,7 @@ final class FollowListFollowWatch: ObservableObject {
         switch result {
         case .success:
             let undo: (() -> Void)? = offerUndo ? { [weak self] in
-                self?.toggle(pubkey, name: name, offerUndo: false)
+                self?.set(pubkey, name: name, follow: !follow, offerUndo: false)
             } : nil
             banner.add(recipientName: name, kind: follow ? .followed : .unfollowed, undo: undo)
         case .failure(.contactsNotLoaded), .failure(.listUnavailable):
