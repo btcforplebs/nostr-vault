@@ -198,6 +198,8 @@ class MainActivity : FragmentActivity() {
                             FullScreenMediaHost()
                             // DMs that arrive while the app is open.
                             InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
+                            // Tutorial cards, over every screen; only the card takes touches.
+                            com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }
                     }
                 }

@@ -21,6 +21,7 @@ struct SettingsView: View {
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
+    @Environment(\.dismiss) private var dismiss
     var isEmbedded: Bool = false
     
     private var appVersion: String {
@@ -53,6 +54,7 @@ struct SettingsView: View {
         case proofOfWork = "Proof of Work"
         case advanced = "Database & Reset"
         case logs = "Logs"
+        case tutorials = "Tutorials"
 
         var id: String { self.rawValue }
 
@@ -95,6 +97,7 @@ struct SettingsView: View {
             case .proofOfWork: return "hammer.fill"
             case .advanced: return "gearshape.2"
             case .logs: return "list.bullet.rectangle"
+            case .tutorials: return "graduationcap"
             }
         }
     }
@@ -118,6 +121,7 @@ struct SettingsView: View {
             ("Notifications", [.pushNotifications]),
             ("Sharing", [.dm, .blastr, .blossom]),
             ("Your Vault Relay", relayTabs),
+            ("Help", [.tutorials]),
             ("Advanced", [.proofOfWork, .advanced, .logs]),
         ]
     }
@@ -535,6 +539,7 @@ struct SettingsView: View {
         case .advanced: return .gray
         case .wallet: return .orange
         case .logs: return .secondary
+        case .tutorials: return .purple
         }
     }
 
@@ -574,6 +579,13 @@ struct SettingsView: View {
             case .advanced: AdvancedSettingsView()
             case .wallet: WalletSettingsView()
             case .logs: LogsView(logStore: relayManager.logStore)
+            case .tutorials:
+                // Close Settings (a sheet on iPhone) and go to the page the
+                // tutorial points at; its card waits there.
+                TutorialsSettingsView { _ in
+                    dismiss()
+                    NotificationCenter.default.post(name: .havenOpenFeed, object: nil)
+                }
             }
         }
         .navigationTitle(tab.title)

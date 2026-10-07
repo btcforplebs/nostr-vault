@@ -58,6 +58,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             ZapFlightStage()
             AppBannerStack()
             ReactionTapbackLayer()
+            TutorialStage { BannerHitRegions.frames["tutorial"] = $0 }
         })
         // While the tapback bar waits for a tap, this window takes every
         // touch, so a tap anywhere else closes the bar instead of reaching
