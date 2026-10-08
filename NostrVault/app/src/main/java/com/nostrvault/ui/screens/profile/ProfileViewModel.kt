@@ -64,6 +64,9 @@ class ProfileViewModel @Inject constructor(
     private val zapSendService: ZapSendService,
     private val configStore: ConfigStore,
     private val engagementStore: com.nostrvault.service.ProfileEngagementStore,
+    private val blossomService: com.nostrvault.service.BlossomService,
+    private val mediaCacheService: com.nostrvault.service.MediaCacheService,
+    private val mediaSaveService: com.nostrvault.service.MediaSaveService,
 ) : ViewModel() {
 
     /**
@@ -106,8 +109,6 @@ class ProfileViewModel @Inject constructor(
     private var engagementForcePending = false
 
     companion object {
-        /** Default zap amount (sats) — no per-user setting on Android yet. */
-        const val DEFAULT_ZAP_SATS = 21
         /** Posts arriving within this long of each other share one count query. */
         private const val ENGAGEMENT_DEBOUNCE_MS = 300L
         private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
@@ -205,7 +206,8 @@ class ProfileViewModel @Inject constructor(
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
 
-    val defaultZapSats: Int = DEFAULT_ZAP_SATS
+    /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
+    val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
 
     val filteredNotes: StateFlow<List<FeedNote>> = combine(
         _profileNotes,
@@ -536,6 +538,95 @@ class ProfileViewModel @Inject constructor(
     fun mediaModerationTarget(author: String): String? =
         com.nostrvault.ui.screens.mediaModerationTarget(author, nostrService.ownerHexPubkey, nostrService.activeHexPubkey)
 
+    // ── Media grid long-press (iOS MediaGridItem's menu) ──
+
+    private val _mediaBusyUrl = MutableStateFlow<String?>(null)
+    /** The tile being saved or mirrored from its menu right now, or null. */
+    val mediaBusyUrl: StateFlow<String?> = _mediaBusyUrl.asStateFlow()
+
+    /** Each Blossom server's answer per blob, so Mirror to Blossom shows once known. */
+    val mirrorPresence = blossomService.mirrorPresence
+
+    /** The menu a tile's long-press opens, given what is known about [url] now. */
+    fun mediaMenu(url: String, author: String, presence: Map<String, Map<String, com.nostrvault.service.BlobPresence>>): List<ProfileMediaAction> {
+        val sha = blossomHashOf(url)
+        val inVault = sha != null && mediaCacheService.isInLocalBlossom(sha)
+        return profileMediaMenu(
+            url = url,
+            inVault = inVault,
+            needsMirror = inVault && sha != null && blossomService.backupSummary(sha, presence)?.needsMirror == true,
+            is404 = mediaCacheService.isKnown404(url),
+            moderationTarget = mediaModerationTarget(author),
+        )
+    }
+
+    /** Asks the Blossom servers about [url]'s blob once, so the menu can offer a mirror. */
+    suspend fun checkMediaBackup(url: String) {
+        val sha = blossomHashOf(url) ?: return
+        if (mediaCacheService.isInLocalBlossom(sha)) blossomService.checkMirrorPresence(sha)
+    }
+
+    fun toggleMedia404(url: String) {
+        if (mediaCacheService.isKnown404(url)) mediaCacheService.unmarkNotFound(url) else mediaCacheService.markNotFound(url)
+    }
+
+    fun saveMediaToPhotos(url: String) {
+        viewModelScope.launch {
+            val result = mediaSaveService.saveToGallery(url, com.nostrvault.service.MediaSaveService.mimeTypeForExtension(url))
+            _toast.value = if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery"
+        }
+    }
+
+    /**
+     * Stores the file in the vault on this phone, then uploads it to any
+     * Blossom server that lacks it. Port of iOS `MediaBackupActions.saveToVault`.
+     */
+    fun saveMediaToVault(url: String) {
+        if (_mediaBusyUrl.value != null) return
+        viewModelScope.launch {
+            _mediaBusyUrl.value = url
+            try {
+                val saved = blossomService.mirrorUrlToLocal(url)
+                if (saved == null) {
+                    _toast.value = "Could not save to your vault"
+                    return@launch
+                }
+                val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
+                    pushMissing(saved).let { it == null || it is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted }
+                _toast.value = if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone"
+            } finally {
+                _mediaBusyUrl.value = null
+            }
+        }
+    }
+
+    /** Uploads a file already on this phone to the servers that lack it (iOS `mirrorMissing`). */
+    fun mirrorMediaToBlossom(url: String) {
+        val sha = blossomHashOf(url) ?: return
+        if (_mediaBusyUrl.value != null) return
+        viewModelScope.launch {
+            _mediaBusyUrl.value = url
+            try {
+                _toast.value = when (val result = pushMissing(sha)) {
+                    null -> "Already on all your Blossom servers"
+                    else -> result.message
+                }
+            } finally {
+                _mediaBusyUrl.value = null
+            }
+        }
+    }
+
+    /** Null when every server already had it; otherwise the push result. Re-checks after. */
+    private suspend fun pushMissing(sha256: String): com.nostrvault.service.BlossomService.MirrorPushResult? {
+        blossomService.checkMirrorPresence(sha256, force = true)
+        val summary = blossomService.backupSummary(sha256)
+        if (summary != null && !summary.needsMirror) return null
+        val result = blossomService.pushLocalToMirrors(sha256, only = summary?.missing)
+        blossomService.checkMirrorPresence(sha256, force = true)
+        return result
+    }
+
     fun reportAuthor(pubkey: String, reason: String, description: String) {
         nostrService.reportUser(pubkey, reason, description.ifBlank { null })
     }
@@ -563,13 +654,14 @@ class ProfileViewModel @Inject constructor(
     /** npub (bech32) for the copy row; null if encoding fails. */
     val npub: String? get() = nostrService.hexToNpub(_pubkey.value)
 
-    fun zap() {
+    /** Zap this profile: [amount] sats, the default unless chosen in the custom sheet. */
+    fun zap(amount: Int = defaultZapSats) {
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         viewModelScope.launch {
-            val result = zapSendService.zapNote(pk, pk, DEFAULT_ZAP_SATS)
+            val result = zapSendService.zapNote(pk, pk, amount)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats" },
+                onSuccess = { "Zapped $amount sats" },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }
@@ -579,12 +671,13 @@ class ProfileViewModel @Inject constructor(
 
     /** Zap a post (default amount) — feedback via [toast]. */
     fun zapNote(noteId: String, notePubkey: String) {
+        val amount = defaultZapSats
         viewModelScope.launch {
-            val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
+            val result = zapSendService.zapNote(noteId, notePubkey, amount)
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats"
+                    "Zapped $amount sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )

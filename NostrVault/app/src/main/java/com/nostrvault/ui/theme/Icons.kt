@@ -76,6 +76,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.PersonSearch
@@ -265,6 +266,7 @@ object NostrVaultIcons {
     val PlayCircle: ImageVector = Icons.Filled.PlayCircle        // play.circle.fill
     val PlayArrow: ImageVector = Icons.Filled.PlayArrow          // play.fill
     val Music: ImageVector = Icons.Filled.MusicNote               // music.note
+    val Waveform: ImageVector = Icons.Filled.GraphicEq            // waveform
     val PauseIcon: ImageVector = Icons.Filled.Pause              // pause.fill
     val Stop: ImageVector = Icons.Filled.Stop                    // stop.fill
     val VolumeUp: ImageVector = Icons.AutoMirrored.Filled.VolumeUp   // speaker.wave.2.fill
