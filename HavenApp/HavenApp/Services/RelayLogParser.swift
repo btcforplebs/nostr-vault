@@ -97,8 +97,10 @@ enum RelayLogParser {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
                 batch.progressDateStr = String(dateStr)
             }
+            // Search for " to" only AFTER "for " — a " to" earlier in the
+            // line would make the slice's end precede its start and trap.
             if let rangeStart = line.range(of: "for ")?.upperBound,
-               let rangeEnd = line.range(of: " to")?.lowerBound {
+               let rangeEnd = line.range(of: " to", range: rangeStart..<line.endIndex)?.lowerBound {
                 batch.importStatusMessage = "Looking through notes from \(line[rangeStart..<rangeEnd])..."
             }
         } else if line.contains("Imported") && line.contains("notes") {
@@ -106,7 +108,7 @@ enum RelayLogParser {
                 batch.progressDateStr = String(dateStr)
             }
             if let rangeStart = line.range(of: "from ")?.upperBound,
-               let rangeEnd = line.range(of: " to")?.lowerBound {
+               let rangeEnd = line.range(of: " to", range: rangeStart..<line.endIndex)?.lowerBound {
                 batch.importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
             } else {
                 batch.importStatusMessage = "Found notes..."
