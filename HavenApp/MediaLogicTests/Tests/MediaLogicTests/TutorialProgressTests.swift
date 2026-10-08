@@ -167,7 +167,12 @@ final class TutorialProgressTests: XCTestCase {
         #endif
         XCTAssertNil(TutorialID.pocketRelay.next)
         XCTAssertNil(TutorialID.importTour.next)
+        // Fill your feed's last card opens Discover and starts Feeds.
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.fillYourVault.next, .feeds)
+        #else
         XCTAssertNil(TutorialID.fillYourVault.next)
+        #endif
     }
 
     /// The import tour teaches Vault and Pocket relay, so finishing it marks

@@ -5,7 +5,7 @@ import CoreGraphics
 /// Applies `FillYourVaultRule` to the active account's follow list: starts the
 /// guide for a new account, marks it done without showing it for an account
 /// that already follows 5, and finishes it when the feed fills. Also keeps
-/// the web of trust (10 follows) once earned, and moves the "Fill your feed" guide between its
+/// the web of trust (5 follows) once built, and moves the "Fill your feed" guide between its
 /// screens (`phase`). `FillYourFeedOverlay` draws what this publishes.
 @MainActor
 final class FillYourVaultCoordinator: ObservableObject {
@@ -13,8 +13,8 @@ final class FillYourVaultCoordinator: ObservableObject {
 
     /// The meter for the active account, rebuilt on every follow change.
     @Published private(set) var meter = VaultMeter(follows: [], owner: "", masterEarned: false)
-    /// Set when this account reaches the web of trust (10 follows) for the first time; the
-    /// meter plays the gold bolt once and clears it.
+    /// Set when this account builds its web of trust for the first time; the
+    /// meter plays the gold bolt once, then shows the "built" card.
     @Published var celebrateVaultMaster = false
     /// Which of the guide's screens is up.
     @Published private(set) var phase: FillYourFeedPhase = .off
@@ -79,6 +79,7 @@ final class FillYourVaultCoordinator: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.loadMeterState() }
             .store(in: &cancellables)
+        }
     }
 
     // MARK: - Guide steps
@@ -107,26 +108,26 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// Hint: "Got it".
     func dismissHint() { phase = .browsing }
 
-    /// "Your feed is ready": go to Following. `keepTopics` false unfollows
-    /// the hashtags picked in this run (and only those).
-    func goToFollowing(keepTopics: Bool) {
+    /// "Your web of trust is built": open Discover to find more people, put
+    /// the meter away and start the Feeds tutorial there. `keepTopics`
+    /// false unfollows the hashtags picked in this run (and only those).
+    func goToDiscover(keepTopics: Bool) {
         if !keepTopics, !pickedTopics.isEmpty {
             let topics = pickedTopics
             Task { await InterestListService.shared.setFollowing(topics, false) }
         }
-        FeedService.shared.switchMode(.following)
-        meterCollapsed = true
-        phase = .browsing
+        FeedService.shared.switchMode(.discovery)
+        closeGuide()
+        let center = TutorialCenter.shared
+        if let next = center.next(after: .fillYourVault) { center.replay(next) }
     }
 
     /// The bolt has crossed the meter: show the web-of-trust card.
-    func showMasterCard() {
+    func showReadyCard() {
         celebrateVaultMaster = false
         meterCollapsed = false
-        phase = .master
+        phase = .ready
     }
-
-    func dismissMasterCard() { phase = .browsing }
 
     /// Skip, "Not now" or "Hide the meter": the guide closes (done past 5,
     /// skipped below) and the meter goes away.
@@ -203,7 +204,8 @@ final class FillYourVaultCoordinator: ObservableObject {
         case .finish:
             center.finish(.fillYourVault, account: account)
             profileCardPubkey = nil
-            phase = .ready
+            // With the meter up, the bolt plays first and opens the card.
+            if !celebrateVaultMaster { phase = .ready }
         }
     }
 }

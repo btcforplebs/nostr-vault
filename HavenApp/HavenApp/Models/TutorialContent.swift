@@ -92,9 +92,10 @@ extension TutorialID {
 
     /// The tutorial a "Next" button on this one's last card starts: the
     /// first available page tutorial after it. Nil when none is built yet,
-    /// so the last card just says Done.
+    /// so the last card just says Done. Fill your feed's last card hands
+    /// over to Feeds.
     var next: TutorialID? {
-        let order: [TutorialID] = [.feeds, .vault, .walletConnect, .pocketRelay]
+        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .walletConnect, .pocketRelay]
         guard let index = order.firstIndex(of: self) else { return nil }
         return order[(index + 1)...].first { $0.isAvailable }
     }

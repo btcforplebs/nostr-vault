@@ -17,22 +17,21 @@ final class VaultMeterTests: XCTestCase {
         XCTAssertEqual(meter.count, 2)
     }
 
-    func testStagesAtFiveAndTen() {
+    // Five builds the web of trust; there is no second goal.
+    func testWebOfTrustIsBuiltAtFive() {
         XCTAssertEqual(VaultMeter(follows: people(4), owner: owner, masterEarned: false).stage, .filling)
-        XCTAssertEqual(VaultMeter(follows: people(5), owner: owner, masterEarned: false).stage, .filled)
-        XCTAssertEqual(VaultMeter(follows: people(9), owner: owner, masterEarned: false).stage, .filled)
-        XCTAssertEqual(VaultMeter(follows: people(10), owner: owner, masterEarned: false).stage, .master)
+        XCTAssertEqual(VaultMeter(follows: people(5), owner: owner, masterEarned: false).stage, .master)
+        XCTAssertEqual(VaultMeter(follows: people(12), owner: owner, masterEarned: false).stage, .master)
     }
 
-    // Gold is a lasting mark: dropping below 10 afterwards keeps it.
+    // Gold is a lasting mark: dropping below 5 afterwards keeps it.
     func testEarnedMasterSurvivesAnUnfollow() {
-        XCTAssertEqual(VaultMeter(follows: people(8), owner: owner, masterEarned: true).stage, .master)
+        XCTAssertEqual(VaultMeter(follows: people(3), owner: owner, masterEarned: true).stage, .master)
     }
 
-    func testProgressTextSwitchesRowsAtFive() {
+    func testProgressTextStaysOnFive() {
         XCTAssertEqual(VaultMeter(follows: people(3), owner: owner, masterEarned: false).progressText, "3 of 5")
-        XCTAssertEqual(VaultMeter(follows: people(7), owner: owner, masterEarned: false).progressText, "7 of 10")
-        XCTAssertEqual(VaultMeter(follows: people(14), owner: owner, masterEarned: false).progressText, "10 of 10")
+        XCTAssertEqual(VaultMeter(follows: people(7), owner: owner, masterEarned: false).progressText, "5 of 5")
         XCTAssertEqual(VaultMeter(follows: people(4), owner: owner, masterEarned: false).compactProgressText, "4/5")
     }
 
@@ -41,15 +40,15 @@ final class VaultMeterTests: XCTestCase {
                        "1 of 5 person followed.")
         XCTAssertEqual(VaultMeter(follows: people(4), owner: owner, masterEarned: false).accessibilityText,
                        "4 of 5 people followed.")
-        XCTAssertEqual(VaultMeter(follows: people(10), owner: owner, masterEarned: false).accessibilityText,
-                       "Web of trust built. 10 of 10 people followed.")
+        XCTAssertEqual(VaultMeter(follows: people(5), owner: owner, masterEarned: false).accessibilityText,
+                       "Web of trust built. 5 of 5 people followed.")
     }
 
-    func testRecentKeepsTheNewestTen() {
+    func testRecentKeepsTheNewestFive() {
         let meter = VaultMeter(follows: people(12), owner: owner, masterEarned: false)
-        XCTAssertEqual(meter.recent.first, "p3")
+        XCTAssertEqual(meter.recent.first, "p8")
         XCTAssertEqual(meter.recent.last, "p12")
-        XCTAssertEqual(meter.recent.count, 10)
+        XCTAssertEqual(meter.recent.count, 5)
     }
 
     func testFiveOrMoreSkipsTheGuide() {
@@ -60,16 +59,16 @@ final class VaultMeterTests: XCTestCase {
     func testCelebrationFiresOncePerAccount() {
         let defaults = UserDefaults(suiteName: "VaultMeterTests.\(UUID().uuidString)")!
         let store = VaultMasterStore(defaults: defaults)
-        let nine = VaultMeter(follows: people(9), owner: owner, masterEarned: false)
-        let ten = VaultMeter(follows: people(10), owner: owner, masterEarned: false)
+        let four = VaultMeter(follows: people(4), owner: owner, masterEarned: false)
+        let five = VaultMeter(follows: people(5), owner: owner, masterEarned: false)
 
-        XCTAssertFalse(store.record(nine, owner: owner))
+        XCTAssertFalse(store.record(four, owner: owner))
         XCTAssertFalse(store.isEarned(owner: owner))
-        XCTAssertTrue(store.record(ten, owner: owner))
-        XCTAssertFalse(store.record(ten, owner: owner), "the bolt must play only once")
+        XCTAssertTrue(store.record(five, owner: owner))
+        XCTAssertFalse(store.record(five, owner: owner), "the bolt must play only once")
         XCTAssertTrue(store.isEarned(owner: owner))
         XCTAssertFalse(store.isEarned(owner: "someone-else"), "earned is per account")
-        XCTAssertFalse(store.record(ten, owner: ""), "no account, nothing to record")
+        XCTAssertFalse(store.record(five, owner: ""), "no account, nothing to record")
     }
 
     func testTopicLists() {
@@ -124,7 +123,7 @@ final class FillYourVaultRuleTests: XCTestCase {
         XCTAssertEqual(act(prev: 3, 4, active: true), .none)
     }
 
-    // A replay opened past 5 stays up so the person can go for 10.
+    // A replay opened past 5 stays up until the person closes it.
     func testReplayPastFiveStaysOpen() {
         XCTAssertEqual(act(prev: nil, 7, .done, active: true), .none)
         XCTAssertEqual(act(prev: 7, 8, .done, active: true), .none)

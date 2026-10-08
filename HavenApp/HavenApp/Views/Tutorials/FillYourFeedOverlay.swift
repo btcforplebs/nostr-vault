@@ -66,9 +66,9 @@ struct FillYourFeedOverlay: View {
         }
     }
 
-    /// Intro, "ready" and the web of trust (10 follows) sit over a dimmed feed; the topic
-    /// picker and the hint leave the feed in view.
-    private var dims: Bool { [.intro, .ready, .master].contains(guide.phase) }
+    /// Intro and "ready" sit over a dimmed feed; the topic picker and the
+    /// hint leave the feed in view.
+    private var dims: Bool { [.intro, .ready].contains(guide.phase) }
 
     private var cardAlignment: Alignment { guide.phase == .hint ? .top : .center }
 
@@ -86,7 +86,6 @@ struct FillYourFeedOverlay: View {
         case .topics: TopicsCard()
         case .hint: HintCard()
         case .ready: ReadyCard()
-        case .master: MasterCard()
         case .off, .browsing: EmptyView()
         }
     }
@@ -250,14 +249,14 @@ struct FillYourFeedOverlay: View {
     private func playBolt() {
         guide.meterCollapsed = false
         if reduceMotion {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { guide.showMasterCard() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { guide.showReadyCard() }
             return
         }
         boltProgress = -0.2
         boltRunning = true
         withAnimation(.timingCurve(0.5, 0, 0.3, 1, duration: 0.9)) { boltProgress = 1.2 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { boltRunning = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { guide.showMasterCard() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { guide.showReadyCard() }
     }
 }
 
@@ -587,7 +586,7 @@ private struct HintCard: View {
     var body: some View {
         GuideCard(step: 3, onSkip: guide.closeGuide) {
             title("Find people you like")
-            bodyText("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five gets your feed going.")
+            bodyText("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five builds your web of trust.")
             HStack {
                 Spacer()
                 PrimaryButton(title: "Got it", action: guide.dismissHint)
@@ -596,8 +595,10 @@ private struct HintCard: View {
     }
 }
 
-// MARK: - 4. Your feed is ready
+// MARK: - 4. Your web of trust is built
 
+/// One card at 5 follows: the web of trust is built, then on to Discover
+/// and the Feeds tutorial (Logen, nostr-vault Tutorial thread 2026-10-08).
 private struct ReadyCard: View {
     @ObservedObject private var guide = FillYourVaultCoordinator.shared
     @ObservedObject private var nostr = NostrService.shared
@@ -605,15 +606,28 @@ private struct ReadyCard: View {
     @State private var reach: Int?
 
     var body: some View {
-        GuideCard {
-            Text("Your feed is ready")
+        GuideCard(border: Gold.mid) {
+            ZStack {
+                Circle()
+                    .fill(RadialGradient(colors: [Gold.light, Gold.mid, Gold.dark], center: UnitPoint(x: 0.35, y: 0.3),
+                                         startRadius: 2, endRadius: 40))
+                    .shadow(color: Gold.mid.opacity(0.45), radius: 12)
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 28, weight: .black))
+                    .foregroundColor(Color(red: 0.23, green: 0.16, blue: 0))
+            }
+            .frame(width: 60, height: 60)
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+            Text(FillYourFeedGuide.readyTitle)
                 .font(.appTitle3.weight(.bold))
-                .foregroundColor(.white)
+                .foregroundColor(Gold.light)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: -10) {
-                ForEach(guide.meter.recent.suffix(VaultMeter.goal), id: \.self) { pubkey in
-                    AvatarView(url: nostr.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 48)
+                ForEach(guide.meter.recent, id: \.self) { pubkey in
+                    AvatarView(url: nostr.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 44)
                         .overlay(Circle().stroke(Color(white: 0.12), lineWidth: 3))
                 }
             }
@@ -636,16 +650,24 @@ private struct ReadyCard: View {
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
+            Text("Find more people on Discover. It shows posts from the people your follows follow.")
+                .font(.appSubheadline)
+                .foregroundColor(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 8) {
                 option(title: "Keep my topics", detail: "Topic posts from people in your web of trust.", on: keepTopics) {
                     keepTopics = true
                 }
-                option(title: "Only my web of trust", detail: "Drop the topics and just see Following.", on: !keepTopics) {
+                option(title: "Drop my topics", detail: "Unfollow the topics you picked.", on: !keepTopics) {
                     keepTopics = false
                 }
             }
-            PrimaryButton(title: "Go to Following", wide: true) {
-                guide.goToFollowing(keepTopics: keepTopics)
+            PrimaryButton(title: FillYourFeedGuide.readyButton, wide: true,
+                          fill: AnyShapeStyle(LinearGradient(colors: [Gold.light, Gold.mid], startPoint: .topLeading, endPoint: .bottomTrailing)),
+                          textColor: Color(red: 0.23, green: 0.16, blue: 0)) {
+                guide.goToDiscover(keepTopics: keepTopics)
             }
         }
         .onAppear {
@@ -673,43 +695,6 @@ private struct ReadyCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-    }
-}
-
-// MARK: - the web of trust (10 follows)
-
-private struct MasterCard: View {
-    @ObservedObject private var guide = FillYourVaultCoordinator.shared
-
-    var body: some View {
-        GuideCard(border: Gold.mid) {
-            ZStack {
-                Circle()
-                    .fill(RadialGradient(colors: [Gold.light, Gold.mid, Gold.dark], center: UnitPoint(x: 0.35, y: 0.3),
-                                         startRadius: 2, endRadius: 60))
-                    .shadow(color: Gold.mid.opacity(0.45), radius: 15)
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 44, weight: .black))
-                    .foregroundColor(Color(red: 0.23, green: 0.16, blue: 0))
-            }
-            .frame(width: 96, height: 96)
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
-            Text(FillYourFeedGuide.masterCardTitle)
-                .font(.appTitle3.weight(.bold))
-                .foregroundColor(Gold.light)
-                .frame(maxWidth: .infinity)
-                .accessibilityAddTraits(.isHeader)
-            Text(FillYourFeedGuide.masterCardBody)
-                .font(.appSubheadline)
-                .foregroundColor(.white.opacity(0.85))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-            PrimaryButton(title: "Done", wide: true,
-                          fill: AnyShapeStyle(LinearGradient(colors: [Gold.light, Gold.mid], startPoint: .topLeading, endPoint: .bottomTrailing)),
-                          textColor: Color(red: 0.23, green: 0.16, blue: 0),
-                          action: guide.dismissMasterCard)
-        }
     }
 }
 
