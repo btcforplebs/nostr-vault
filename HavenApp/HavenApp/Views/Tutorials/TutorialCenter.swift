@@ -113,9 +113,20 @@ final class TutorialCenter: ObservableObject {
         }
     }
 
+    /// The tutorial the last card of `id` hands over to. Wallet Connect is
+    /// passed over once a wallet is linked: its cards point at the empty
+    /// wallet, which isn't there then.
+    func next(after id: TutorialID) -> TutorialID? {
+        guard let next = id.next else { return nil }
+        if next == .walletConnect && !ConfigService.shared.config.nwcURI.isEmpty {
+            return self.next(after: next)
+        }
+        return next
+    }
+
     /// Closes the active tutorial as done and starts the one after it.
     func startNext(account: String) {
-        guard let id = progress.active, let next = id.next else { return }
+        guard let id = progress.active, let next = next(after: id) else { return }
         finish(id, account: account)
         replay(next)
     }

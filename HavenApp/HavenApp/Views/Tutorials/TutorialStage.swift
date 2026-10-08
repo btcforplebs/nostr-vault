@@ -91,7 +91,7 @@ struct TutorialStage: View {
                         .foregroundColor(.white.opacity(0.85))
                 }
                 Spacer()
-                if center.isLastStep, let next = id.next {
+                if center.isLastStep, let next = center.next(after: id) {
                     Button("Next: \(next.title)") { center.startNext(account: account) }
                         .font(.appBody.weight(.semibold))
                         .padding(.horizontal, 18)

@@ -148,7 +148,12 @@ final class TutorialProgressTests: XCTestCase {
         #else
         XCTAssertNil(TutorialID.feeds.next)
         #endif
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.vault.next, .walletConnect)
+        #else
         XCTAssertNil(TutorialID.vault.next)
+        #endif
+        XCTAssertNil(TutorialID.walletConnect.next)
         XCTAssertNil(TutorialID.importTour.next)
         XCTAssertNil(TutorialID.fillYourVault.next)
     }

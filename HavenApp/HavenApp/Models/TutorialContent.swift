@@ -63,8 +63,15 @@ extension TutorialID {
             #else
             return []
             #endif
+        case .walletConnect:
+            // Its anchors are on the iPhone/iPad wallet sheet.
+            #if os(iOS)
+            return TutorialContent.walletConnect
+            #else
+            return []
+            #endif
         case .importTour: return TutorialContent.importTour
-        case .fillYourVault, .walletConnect, .pocketRelay: return []
+        case .fillYourVault, .pocketRelay: return []
         }
     }
 
@@ -139,6 +146,30 @@ enum TutorialContent {
             anchor: vaultRelay,
             title: "Your relay",
             body: "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work."
+        ),
+    ]
+
+    /// The wallet's "No Wallet Connected" card and its Connect button.
+    static let walletEmpty = "wallet.empty"
+    static let walletConnectButton = "wallet.connect"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "3. Wallet Connect".
+    /// Only shown with no wallet linked: its cards point at the empty card.
+    static let walletConnect: [TutorialStep] = [
+        TutorialStep(
+            anchor: walletEmpty,
+            title: "Zaps are bitcoin tips",
+            body: "A zap sends bitcoin straight to the person who posted. Nobody in between takes a cut."
+        ),
+        TutorialStep(
+            anchor: walletEmpty,
+            title: "Your money stays in your wallet",
+            body: "Nostr Vault never holds your bitcoin. You link a wallet app you already use."
+        ),
+        TutorialStep(
+            anchor: walletConnectButton,
+            title: "Link your wallet",
+            body: "In your wallet app, find Nostr Wallet Connect and copy its link. Then tap here and paste it."
         ),
     ]
 

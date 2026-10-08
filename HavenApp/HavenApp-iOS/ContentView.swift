@@ -1394,9 +1394,11 @@ private struct OpensRelayTab: ViewModifier {
                     tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
                 }
             }
-            // Feeds' last card hands over to Your Vault: go to its tab.
+            // A last card's Next goes to the next tutorial's page: Your
+            // Vault is the Relay tab, Wallet Connect the wallet on Profile.
             .onChange(of: tutorialCenter.active) { _, active in
                 if active == .vault { selectedTab = 4 }
+                if active == .walletConnect { selectedTab = 2 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in selectedTab = 4 }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in selectedTab = 4 }
