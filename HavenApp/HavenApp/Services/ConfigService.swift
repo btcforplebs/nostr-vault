@@ -325,6 +325,8 @@ class ConfigService: ObservableObject {
         config = HavenConfig.default
         // The account went with it; services listening for a switch drop its state.
         refreshActiveAccountHex()
+        // The relay's certificate went with its data folder; a new one is coming.
+        LocalTLSTrust.forgetAll()
     }
     
     /// Programmatically quit the application
