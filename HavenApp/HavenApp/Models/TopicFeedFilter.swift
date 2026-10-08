@@ -73,6 +73,8 @@ enum TopicFeedFilter {
 
     /// The `client` tag and a linked site's name agree ("Plebs vs. Zombies"
     /// and plebsvszombies.cc): the app wrote this post, not the person.
+    /// The poster writes the `client` tag, so this only catches apps that
+    /// label themselves honestly. It is housekeeping, not a spam defence.
     static func isAppMade(_ post: Post) -> Bool {
         let clients = post.tags.filter { $0.count >= 2 && $0[0] == "client" }.map { lettersOnly($0[1]) }
             .filter { $0.count >= 4 && !generalClients.contains($0) }
