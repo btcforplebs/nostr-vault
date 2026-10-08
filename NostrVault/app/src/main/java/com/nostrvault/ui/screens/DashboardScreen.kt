@@ -94,6 +94,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
@@ -161,6 +162,8 @@ class DashboardViewModel @Inject constructor(
         private const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
         private const val SNAPSHOT_FILE = "vault_snapshot.json"
         private const val FOLLOWERS_POLL_MS = 60_000L
+        /** One Articles / Highlights "Load older" page, per query. */
+        private const val OLDER_PAGE_SIZE = 50
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -232,6 +235,28 @@ class DashboardViewModel @Inject constructor(
     private val _followersFilter = MutableStateFlow(VaultFollowersFilter.NEW)
     val followersFilter: StateFlow<VaultFollowersFilter> = _followersFilter.asStateFlow()
 
+    /** Notes, Articles or Highlights. Only the Vault tab's mode menu changes it. */
+    private val _noteScope = MutableStateFlow(VaultNoteScope.NOTES)
+    val noteScope: StateFlow<VaultNoteScope> = _noteScope.asStateFlow()
+
+    /** Articles only: just the recipes. */
+    private val _recipesOnly = MutableStateFlow(false)
+    val recipesOnly: StateFlow<Boolean> = _recipesOnly.asStateFlow()
+
+    // ── Articles / Highlights "Load older" ───────────────────────
+
+    private val _isLoadingOlder = MutableStateFlow(false)
+    val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder.asStateFlow()
+
+    /** Scopes whose last older page came back empty: nothing older to load. */
+    private val _noOlderPages = MutableStateFlow<Set<VaultNoteScope>>(emptySet())
+    val noOlderPages: StateFlow<Set<VaultNoteScope>> = _noOlderPages.asStateFlow()
+
+    /** Per scope: the outbox (your posts) and inbox (tagging you) cursors. */
+    private val olderCursors = ConcurrentHashMap<VaultNoteScope, Pair<VaultPageCursor, VaultPageCursor>>()
+    /** Bumped on account switch, so a page still loading for the previous account is dropped. */
+    @Volatile private var olderGeneration = 0
+
     // ── Followers (relay follower ledger, iOS #136) ──────────────
 
     /** Null while the relay is stopped or the ledger hasn't opened yet. */
@@ -241,6 +266,14 @@ class DashboardViewModel @Inject constructor(
     /** Red dot on the Followers mode button: follows since the owner last looked. */
     private val _hasNewFollowers = MutableStateFlow(false)
     val hasNewFollowers: StateFlow<Boolean> = _hasNewFollowers.asStateFlow()
+
+    /**
+     * Modes with something new since you last looked, for the Vault pill's
+     * dot on either half. Followers is the only list Android tracks.
+     */
+    val newModes: StateFlow<Set<VaultMode>> = _hasNewFollowers
+        .map { if (it) setOf(VaultMode.FOLLOWERS) else emptySet() }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
 
     // ── Display data ─────────────────────────────────────────────
 
@@ -452,6 +485,14 @@ class DashboardViewModel @Inject constructor(
             configStore.accountSwitches.collect { resetForAccountSwitch() }
         }
 
+        // Coming back from the Media half to Followers is looking at it: the
+        // dot clears then, not while Media hid the list.
+        viewModelScope.launch {
+            com.nostrvault.ui.navigation.VaultSection.showsMedia.collect {
+                if (watchedMode() == VaultViewMode.FOLLOWERS) markFollowersSeen()
+            }
+        }
+
         // Blocking someone (this tab's Block User, the feed, Settings) drops
         // their notes here on the next pass, as iOS's vault does.
         viewModelScope.launch {
@@ -488,6 +529,10 @@ class DashboardViewModel @Inject constructor(
             _quoteMap.value = emptyMap()
             _followerSnapshot.value = null
             _hasNewFollowers.value = false
+            olderGeneration++
+            olderCursors.clear()
+            _noOlderPages.value = emptySet()
+            _isLoadingOlder.value = false
             refreshFollowers()
             connectToLocalRelay()
         }
@@ -1016,8 +1061,16 @@ class DashboardViewModel @Inject constructor(
     /** Caller must hold [allEventsMutex]. Trims oldest events past the cap. */
     private fun trimAllEventsLocked() {
         if (allEvents.size > MAX_ALL_EVENTS + ALL_EVENTS_TRIM_SLACK) {
-            allEvents.sortByDescending { it.createdAt }
-            allEvents.subList(MAX_ALL_EVENTS, allEvents.size).clear()
+            // Articles and highlights are kept: their "Load older" pages are
+            // the oldest events here by design, and trimming them would throw
+            // a page away as it lands while its cursor moved on past it.
+            val pagedApart = setOf(VaultNoteScope.ARTICLE_KIND, VaultNoteScope.HIGHLIGHT_KIND)
+            val (kept, rest) = allEvents.partition { it.kind in pagedApart }
+            val newest = rest.sortedByDescending { it.createdAt }
+                .take((MAX_ALL_EVENTS - kept.size).coerceAtLeast(0))
+            allEvents.clear()
+            allEvents.addAll(newest)
+            allEvents.addAll(kept)
         }
     }
 
@@ -1156,6 +1209,8 @@ class DashboardViewModel @Inject constructor(
     fun loadMore() {
         Log.d(TAG, "loadMore called: isLoadingMore=${_isLoadingMore.value}, viewMode=${_viewMode.value}, notesCount=${_displayNotes.value.size}")
         if (_isLoadingMore.value) return
+        // Articles and Highlights page by their own button (loadOlderInScope).
+        if (_viewMode.value == VaultViewMode.NOTES && _noteScope.value.pagesByButton) return
         val currentNotes = _displayNotes.value
         if (currentNotes.isEmpty()) return
 
@@ -1240,10 +1295,105 @@ class DashboardViewModel @Inject constructor(
                 fetchMissingZappedNotes()
             }
             VaultViewMode.FOLLOWERS -> {
-                markFollowersSeen()
+                if (watchedMode() == VaultViewMode.FOLLOWERS) markFollowersSeen()
                 viewModelScope.launch { refreshFollowers() }
             }
             else -> {}
+        }
+    }
+
+    /** The Vault pill's pick. Media only flips the tab's half; the lists keep their state. */
+    fun selectMode(mode: VaultMode) {
+        mode.noteScope?.let { setNoteScope(it) }
+        mode.viewMode?.let { if (_viewMode.value != it) setViewMode(it) }
+        com.nostrvault.ui.navigation.VaultSection.show(media = mode == VaultMode.MEDIA)
+    }
+
+    fun setNoteScope(scope: VaultNoteScope) {
+        if (scope != VaultNoteScope.ARTICLES) _recipesOnly.value = false
+        if (_noteScope.value == scope) return
+        _noteScope.value = scope
+        maxDisplayedItems = 50
+        _notesHasLoadedOnce.value = false
+        scheduleUpdateDisplayData()
+    }
+
+    fun toggleRecipesOnly() {
+        if (_noteScope.value != VaultNoteScope.ARTICLES) return
+        _recipesOnly.value = !_recipesOnly.value
+        maxDisplayedItems = 50
+        scheduleUpdateDisplayData()
+    }
+
+    /**
+     * Articles' and Highlights' "Load older": one page of just that kind from
+     * the local relay, older than the oldest one loaded, however far back.
+     * It leaves Notes' paging alone, so Notes can't skip what lies between.
+     * These lists have no display cap (see updateDisplayData), so every row
+     * loaded is already listed.
+     */
+    fun loadOlderInScope() {
+        val scope = _noteScope.value
+        if (_viewMode.value != VaultViewMode.NOTES || !scope.pagesByButton || _isLoadingOlder.value) return
+        val config = configStore.config.value
+        val outboxUrl = config.nostrURL ?: return
+        val inboxUrl = config.localInboxURL
+        val ownerHex = nostrService.activeHexPubkey
+        val authors = buildList {
+            if (ownerHex.isNotEmpty()) add(ownerHex)
+            config.whitelistedNpubs?.forEach { npub -> nostrService.npubToHex(npub)?.let(::add) }
+        }.distinct()
+        if (authors.isEmpty()) return
+        val kind = scope.kinds(RELAY_TAB_NOTE_KINDS).single()
+        val gen = olderGeneration
+        _isLoadingOlder.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val authorSet = authors.toSet()
+            fun mine(e: NostrEvent) = e.kind == kind && e.pubkey in authorSet
+            fun tagged(e: NostrEvent) = e.kind == kind && e.tags.any { it.size >= 2 && it[0] == "p" && it[1] == ownerHex }
+            val loaded = allEventsMutex.withLock { allEvents.filter { it.kind == kind } }
+            val now = System.currentTimeMillis() / 1000
+            val (outCursor, inCursor) = olderCursors[scope] ?: Pair(
+                VaultPageCursor.start(loaded.filter(::mine).map { it.createdAt }, now),
+                // No inbox or no account to be tagged: nothing to page there.
+                VaultPageCursor.start(loaded.filter(::tagged).map { it.createdAt }, now)
+                    .let { if (inboxUrl == null || ownerHex.isEmpty()) it.copy(done = true) else it },
+            )
+
+            suspend fun page(cursor: VaultPageCursor, url: String?, filter: String, label: String, keep: (NostrEvent) -> Boolean): Pair<VaultPageCursor, List<NostrEvent>> {
+                if (cursor.done || url == null) return cursor to emptyList()
+                val answered = java.util.concurrent.atomic.AtomicBoolean(false)
+                val (raw, _) = queryRelayEndpoint(url, filter, label, LOAD_MORE_TIMEOUT_MS, dedupe = false, answered = answered)
+                // A relay that never answered says nothing about what's older.
+                if (!answered.get()) return cursor to emptyList()
+                val page = raw.filter(keep)
+                return cursor.after(page.map { it.createdAt }) to page
+            }
+
+            val authorsJson = authors.joinToString(",") { "\"$it\"" }
+            val (nextOut, outEvents) = page(
+                outCursor, outboxUrl,
+                """{"kinds":[$kind],"authors":[$authorsJson],"until":${outCursor.until},"limit":$OLDER_PAGE_SIZE}""",
+                "older-out", ::mine,
+            )
+            val (nextIn, inEvents) = page(
+                inCursor, inboxUrl,
+                """{"kinds":[$kind],"#p":["$ownerHex"],"until":${inCursor.until},"limit":$OLDER_PAGE_SIZE}""",
+                "older-in", ::tagged,
+            )
+
+            if (gen != olderGeneration) return@launch
+            val added = (outEvents + inEvents).filter { seenIds.add(it.id) }
+            allEventsMutex.withLock {
+                allEvents.addAll(added)
+                trimAllEventsLocked()
+            }
+            olderCursors[scope] = nextOut to nextIn
+            withContext(Dispatchers.Main.immediate) {
+                if (nextOut.done && nextIn.done) _noOlderPages.value = _noOlderPages.value + scope
+                _isLoadingOlder.value = false
+            }
+            scheduleUpdateDisplayData()
         }
     }
 
@@ -1298,13 +1448,18 @@ class DashboardViewModel @Inject constructor(
         } ?: return
         if (owner != nostrService.activeHexPubkey) return
         _followerSnapshot.value = snapshot
-        if (_viewMode.value == VaultViewMode.FOLLOWERS) {
+        if (watchedMode() == VaultViewMode.FOLLOWERS) {
             markFollowersSeen()
         } else {
             _hasNewFollowers.value = snapshot.hasNewSince(followersSeenStore.seenAt(owner))
         }
         fetchFollowerProfiles()
     }
+
+    /** The list in sight; see [VaultDots.watchedMode]. */
+    private fun watchedMode(): VaultViewMode? = VaultDots.watchedMode(
+        com.nostrvault.ui.navigation.VaultSection.showsMedia.value, _viewMode.value, _noteScope.value,
+    )
 
     private fun markFollowersSeen() {
         followersSeenStore.markSeen(nostrService.activeHexPubkey)
@@ -1338,6 +1493,9 @@ class DashboardViewModel @Inject constructor(
                 if (_viewMode.value != VaultViewMode.ZAPS) setViewMode(VaultViewMode.ZAPS)
             }
             VaultViewMode.NOTES -> {
+                // Notes leaves out articles and highlights: land on the list
+                // that holds the target (again once it loads; alignFocusScope).
+                setNoteScope(VaultNoteScope.forKind(focusEvent(request.eventId)?.kind))
                 // A reply from outside your network isn't listed under All.
                 val author = focusEvent(request.eventId)?.pubkey
                 val target = if (author != null && VaultContentFilter.isOutside(
@@ -1354,6 +1512,18 @@ class DashboardViewModel @Inject constructor(
             }
         }
         fetchFocusEventIfMissing(request.eventId)
+    }
+
+    /**
+     * A notification's event can load after the tap picked Notes for it; once
+     * it has, move to the scope that lists it (an article or a highlight).
+     */
+    /** @return true once the event's kind is known: aligned, nothing more to do. */
+    suspend fun alignFocusScope(request: RelayFocusRequest, zapsOnly: Boolean): Boolean {
+        val kind = focusEvent(request.eventId)?.kind ?: return false
+        val scope = NotificationTarget.vaultModeFor(request.type, kind, zapsOnly).noteScope ?: return true
+        if (_viewMode.value == VaultViewMode.NOTES && _noteScope.value != scope) setNoteScope(scope)
+        return true
     }
 
     /**
@@ -1451,6 +1621,8 @@ class DashboardViewModel @Inject constructor(
             VaultViewMode.FOLLOWERS -> Unit
             VaultViewMode.NOTES -> {
                 val currentFilter = _contentFilter.value
+                val scopeKinds = _noteScope.value.kinds(RELAY_TAB_NOTE_KINDS)
+                val recipesOnly = _noteScope.value == VaultNoteScope.ARTICLES && _recipesOnly.value
 
                 val filtered = noteEvents.filter { event ->
                     // Log all events before kind filtering to see what we're dropping
@@ -1465,6 +1637,9 @@ class DashboardViewModel @Inject constructor(
                         }
                         return@filter false
                     }
+                    // Articles and highlights are listed apart in the Vault tab.
+                    if (event.kind !in scopeKinds) return@filter false
+                    if (recipesOnly && !VaultNoteScope.isRecipe(event.tags)) return@filter false
 
                     if (event.pubkey in blocked) return@filter false
 
@@ -1492,17 +1667,22 @@ class DashboardViewModel @Inject constructor(
                 Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
                 notesFilteredCount = filtered.size
 
+                // Articles and Highlights are short and page by button, so
+                // nothing loaded may sit hidden under a cap with no way to
+                // reveal it: they list every row they have.
+                val cap = if (_noteScope.value.pagesByButton) Int.MAX_VALUE else maxDisplayedItems
+
                 // Convert to FeedNote for display
-                val displaySlice = filtered.take(maxDisplayedItems).map { event ->
+                val displaySlice = filtered.take(cap).map { event ->
                     FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
                 }.filter { !it.isNoiseOrSpam() }
 
-                val droppedBySpamFilter = (filtered.size.coerceAtMost(maxDisplayedItems)) - displaySlice.size
+                val droppedBySpamFilter = (filtered.size.coerceAtMost(cap)) - displaySlice.size
                 if (droppedBySpamFilter > 0) {
                     Log.w(TAG, "Spam filter dropped $droppedBySpamFilter notes")
                 }
-                if (filtered.size > maxDisplayedItems) {
-                    Log.w(TAG, "Display limit: showing ${maxDisplayedItems} of ${filtered.size} filtered notes (${filtered.size - maxDisplayedItems} hidden)")
+                if (filtered.size > cap) {
+                    Log.w(TAG, "Display limit: showing ${cap} of ${filtered.size} filtered notes (${filtered.size - maxDisplayedItems} hidden)")
                 }
 
                 val displayedIds = displaySlice.map { it.id }.toSet()
@@ -1980,6 +2160,8 @@ class DashboardViewModel @Inject constructor(
         /** False for lookups that must not mark ids as seen: a seen id is
          *  dropped by the live subscription, so it would never reach the list. */
         dedupe: Boolean = true,
+        /** Set once the relay ends the stored events (EOSE): an empty result is then a real "none". */
+        answered: java.util.concurrent.atomic.AtomicBoolean? = null,
     ): Pair<List<NostrEvent>, List<FeedNote>> {
         val rawEvents = mutableListOf<NostrEvent>()
         val contentNotes = mutableListOf<FeedNote>()
@@ -2031,6 +2213,7 @@ class DashboardViewModel @Inject constructor(
                         }
                         "EOSE" -> {
                             eoseReceived = true
+                            answered?.set(true)
                         }
                     }
                 } catch (e: Exception) {
@@ -2155,6 +2338,8 @@ private fun RelayFilterPill(
     likesFilter: VaultLikesFilter,
     zapsFilter: VaultZapsFilter,
     followersFilter: VaultFollowersFilter,
+    noteScope: VaultNoteScope,
+    recipesOnly: Boolean,
     viewModel: DashboardViewModel,
     labelled: Boolean,
 ) {
@@ -2181,6 +2366,10 @@ private fun RelayFilterPill(
                 }
                 filter(NostrVaultIcons.OutsideNetwork, VaultContentFilter.OUTSIDE.displayName, contentFilter == VaultContentFilter.OUTSIDE) {
                     viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
+                }
+                // Articles only: just the recipes (zapcooking / nostrcooking tags).
+                if (noteScope == VaultNoteScope.ARTICLES) {
+                    filter(NostrVaultIcons.Recipes, "Recipes", recipesOnly) { viewModel.toggleRecipesOnly() }
                 }
             }
             VaultViewMode.LIKES -> {
@@ -2239,31 +2428,25 @@ private fun FirstThatFits(modifier: Modifier = Modifier, vararg variants: @Compo
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    onNavigate: (Screen) -> Unit,
     onNoteClick: (String) -> Unit,
     /** Where a quoted long-form post opens; the note screen shows Markdown source. */
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
-    logStore: com.nostrvault.relay.LogStore,
     feedService: com.nostrvault.service.FeedService,
+    /** The Vault Dashboard, which the Vault tab presents over either half. */
+    onOpenDashboard: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
-    // Stats
-    val totalEvents by viewModel.totalEvents.collectAsState()
-    val storageUsed by viewModel.storageUsed.collectAsState()
-    val noteCount by viewModel.noteCount.collectAsState()
-    val dmCount by viewModel.dmCount.collectAsState()
-    val mediaCount by viewModel.mediaCount.collectAsState()
-    val mediaSize by viewModel.mediaSize.collectAsState()
-    val statsLoading by viewModel.statsLoading.collectAsState()
-
     // Mode & filters
     val viewMode by viewModel.viewMode.collectAsState()
+    val noteScope by viewModel.noteScope.collectAsState()
+    val recipesOnly by viewModel.recipesOnly.collectAsState()
+    val newModes by viewModel.newModes.collectAsState()
     // In Zaps Only mode the Likes tab is hidden — route a stuck selection back to Notes.
     val zapsOnly = LocalZapsOnlyMode.current
     LaunchedEffect(zapsOnly, viewMode) {
         if (zapsOnly && viewMode == VaultViewMode.LIKES) {
-            viewModel.setViewMode(VaultViewMode.NOTES)
+            viewModel.selectMode(VaultMode.NOTES)
         }
     }
     val contentFilter by viewModel.contentFilter.collectAsState()
@@ -2271,16 +2454,6 @@ fun DashboardScreen(
     val zapsFilter by viewModel.zapsFilter.collectAsState()
     val followersFilter by viewModel.followersFilter.collectAsState()
     val followerSnapshot by viewModel.followerSnapshot.collectAsState()
-    val hasNewFollowers by viewModel.hasNewFollowers.collectAsState()
-
-    // Re-read the follower ledger every minute while this tab is on screen and
-    // the app is in front — feeds both the Followers list and its red dot.
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.pollFollowers()
-        }
-    }
 
     // Display data
     val displayNotes by viewModel.displayNotes.collectAsState()
@@ -2314,6 +2487,8 @@ fun DashboardScreen(
     // Connection / loading
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
+    val noOlderPages by viewModel.noOlderPages.collectAsState()
     val connectionColor by viewModel.connectionColor.collectAsState()
     val allProfiles by viewModel.profiles.collectAsState()
     val listState = rememberLazyListState()
@@ -2337,7 +2512,11 @@ fun DashboardScreen(
             if (request.eventId.isEmpty()) return@collectLatest
             // The event can still be arriving from the relay and the lists
             // rebuild on a debounce, so look for up to ~10 s.
+            // Once, when the event's kind is first known; after that a pick
+            // from the pill is yours to keep.
+            var aligned = false
             repeat(40) {
+                if (!aligned) aligned = viewModel.alignFocusScope(request, currentZapsOnly)
                 val id = viewModel.focusCandidates(request).firstOrNull { candidate ->
                     focusShownNotes(viewModel).any { it.id == candidate }
                 }
@@ -2363,10 +2542,6 @@ fun DashboardScreen(
         }
     }
 
-    // Dashboard bottom sheet state
-    var showDashboardSheet by remember { mutableStateOf(false) }
-    val dashboardSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     // Zap sheet state
     var zapNoteId by remember { mutableStateOf<String?>(null) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2380,34 +2555,19 @@ fun DashboardScreen(
             result
         }
     }
-    LaunchedEffect(shouldLoadMore, isRefreshing) {
+    // Articles and Highlights are short: their end is always in sight, so
+    // they page with a button rather than on sight (iOS sparseNotesScope).
+    val pagesByButton = viewMode == VaultViewMode.NOTES && noteScope.pagesByButton
+    LaunchedEffect(shouldLoadMore, isRefreshing, pagesByButton) {
         android.util.Log.d("DashboardScreen", "shouldLoadMore=$shouldLoadMore, isRefreshing=$isRefreshing, items=${listState.layoutInfo.totalItemsCount}")
-        if (shouldLoadMore && !isRefreshing) {
+        if (shouldLoadMore && !isRefreshing && !pagesByButton) {
             android.util.Log.d("DashboardScreen", "Triggering loadMore()")
             viewModel.loadMore()
         }
     }
 
-    // Reconnect to local relay when the app returns to the foreground
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        viewModel.onResume()
-    }
-    // Save snapshot when the app goes to background so next cold launch is instant
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        viewModel.persistSnapshot()
-    }
-
-    // Log polling is owned by RelayForegroundService for the relay's whole lifetime
-    // (so the relay-activity red dot is detected continuously, not just while this
-    // screen is visible). The console just observes logStore.logs below.
-
     // Connection dot color for FAB
-    val dotColor = when (connectionColor) {
-        "green" -> SuccessGreen
-        "yellow", "orange" -> ZapOrange
-        "red" -> ErrorRed
-        else -> SecondaryText
-    }
+    val dotColor = connectionDotColor(connectionColor)
 
     // Where the list is relative to its top: the chrome always shows near it.
     ScrollCondenseEffect(
@@ -2416,33 +2576,17 @@ fun DashboardScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
-    // Your Vault starts the first time the Relay tab shows (after Fill your
-    // vault; see TutorialProgress), and again when a status changes quietly.
+    // Your Vault starts the first time the relay half of the Vault tab shows
+    // (after Fill your vault; see TutorialProgress), and again when a status
+    // changes quietly. Its cards point here, so on the Media half it waits.
     val tutorialRevision by TutorialCenter.revision.collectAsState()
-    val activeTutorial by TutorialCenter.active.collectAsState()
     LaunchedEffect(tutorialRevision) {
         TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
     }
-    // Pocket Relay's cards are on the relay dashboard: open it for them
-    // (Your Vault's "Next", or a replay from Settings).
-    LaunchedEffect(activeTutorial) {
-        if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboardSheet) {
-            viewModel.loadStats()
-            showDashboardSheet = true
-        }
-    }
 
-    // Tapping the Relay tab again goes to the top of the list (iOS #275).
+    // Tapping the Vault tab again goes to the top of the list (iOS #275).
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
-    }
-
-    // Condensed-bar relay antenna opens the dashboard stats sheet (iOS parity).
-    LaunchedEffect(Unit) {
-        feedService.relayDashboardRequest.collect {
-            viewModel.loadStats()
-            showDashboardSheet = true
-        }
     }
 
     GlassScaffold(
@@ -2454,39 +2598,16 @@ fun DashboardScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                // Leading pill: mode switcher (Notes / Likes / Zaps / Followers)
-                GlassPill(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                // Leading: the Vault pill, the mode switcher (iOS VaultModePill).
+                VaultModePill(
+                    mode = VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope),
+                    zapsOnly = zapsOnly,
+                    newModes = newModes,
+                    statusColor = dotColor,
+                    onSelect = viewModel::selectMode,
+                    onOpenDashboard = onOpenDashboard,
                     modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
-                ) {
-                    IconFilterButton(
-                        icon = NostrVaultIcons.Document,
-                        contentDescription = "Notes",
-                        isSelected = viewMode == VaultViewMode.NOTES,
-                        onClick = { viewModel.setViewMode(VaultViewMode.NOTES) },
-                    )
-                    if (!LocalZapsOnlyMode.current) {
-                        IconFilterButton(
-                            icon = NostrVaultIcons.HeartFilled,
-                            contentDescription = "Likes",
-                            isSelected = viewMode == VaultViewMode.LIKES,
-                            onClick = { viewModel.setViewMode(VaultViewMode.LIKES) },
-                        )
-                    }
-                    IconFilterButton(
-                        icon = NostrVaultIcons.Zap,
-                        contentDescription = "Zaps",
-                        isSelected = viewMode == VaultViewMode.ZAPS,
-                        onClick = { viewModel.setViewMode(VaultViewMode.ZAPS) },
-                    )
-                    IconFilterButton(
-                        icon = NostrVaultIcons.People,
-                        contentDescription = if (hasNewFollowers) "Followers, new followers" else "Followers",
-                        isSelected = viewMode == VaultViewMode.FOLLOWERS,
-                        onClick = { viewModel.setViewMode(VaultViewMode.FOLLOWERS) },
-                        showDot = hasNewFollowers,
-                    )
-                }
+                )
 
                 Spacer(Modifier.width(8.dp))
 
@@ -2497,8 +2618,8 @@ fun DashboardScreen(
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                     FirstThatFits(
                         modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_FILTERS),
-                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = true) },
-                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = false) },
+                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = true) },
+                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = false) },
                     )
                 }
             }
@@ -2508,10 +2629,7 @@ fun DashboardScreen(
             val folded by rememberChromeFolded()
             Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
-                    onClick = {
-                        viewModel.loadStats()
-                        showDashboardSheet = true
-                    },
+                    onClick = onOpenDashboard,
                     modifier = Modifier
                         .floatingRowButton()
                         .tutorialAnchor(TutorialContent.VAULT_RELAY),
@@ -2526,14 +2644,14 @@ fun DashboardScreen(
                             .padding(horizontal = 18.dp),
                     ) {
                         Icon(
-                            imageVector = NostrVaultIcons.Relay,
+                            imageVector = NostrVaultIcons.TabVault,
                             contentDescription = null,
                             tint = PrimaryText,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Relay",
+                            text = "Vault",
                             color = PrimaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -2583,6 +2701,10 @@ fun DashboardScreen(
             when (viewMode) {
                 VaultViewMode.NOTES -> NotesContent(
                     notes = displayNotes,
+                    scope = noteScope,
+                    recipesOnly = recipesOnly,
+                    loadOlder = if (pagesByButton && noteScope !in noOlderPages) viewModel::loadOlderInScope else null,
+                    isLoadingOlder = isLoadingOlder,
                     quotedNotes = quotedNotes,
                     reactionMap = reactionMap,
                     zapMap = zapMap,
@@ -2651,102 +2773,6 @@ fun DashboardScreen(
         }
     }
 
-    // Dashboard stats bottom sheet
-    if (showDashboardSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showDashboardSheet = false },
-            sheetState = dashboardSheetState,
-            containerColor = WindowBackground,
-            dragHandle = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = 36.dp, height = 4.dp)
-                            .background(
-                                SecondaryText.copy(alpha = 0.4f),
-                                RoundedCornerShape(2.dp),
-                            ),
-                    )
-                }
-            },
-        ) {
-            val currentRelayStatus by RelayForegroundService.relayStatus.collectAsState()
-            val currentIsLocked by RelayForegroundService.isLocked.collectAsState()
-            val currentIsPortConflict by RelayForegroundService.isPortConflict.collectAsState()
-            val currentLogs by logStore.logs.collectAsState()
-            val currentConfig by viewModel.configStore.config.collectAsState()
-            val context = LocalContext.current
-
-            // The Pocket Relay tutorial starts the first time the dashboard
-            // opens. The sheet is its own window, so it draws its own cards.
-            LaunchedEffect(tutorialRevision) {
-                TutorialCenter.startIfEligible(TutorialID.POCKET_RELAY, viewModel.nostrService.activeHexPubkey)
-            }
-            CompositionLocalProvider(LocalTutorialLayer provides RELAY_DASHBOARD_TUTORIAL_LAYER) {
-            Box {
-            DashboardSheetContent(
-                totalEvents = totalEvents,
-                storageUsed = storageUsed,
-                noteCount = noteCount,
-                dmCount = dmCount,
-                mediaCount = mediaCount,
-                mediaSize = mediaSize,
-                isLoading = statsLoading,
-                relayStatus = currentRelayStatus,
-                relayAddress = currentConfig.nostrURL,
-                isExternalRelay = currentConfig.useExternalRelay,
-                isLocked = currentIsLocked,
-                isPortConflict = currentIsPortConflict,
-                onRefresh = viewModel::loadStats,
-                onBlossomClick = {
-                    showDashboardSheet = false
-                    onNavigate(Screen.BlossomDashboard)
-                },
-                onStartRelay = { RelayForegroundService.start(context) },
-                onStopRelay = { RelayForegroundService.stop(context) },
-                onRestartRelay = {
-                    RelayForegroundService.stop(context)
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        RelayForegroundService.start(context)
-                    }, 1500)
-                },
-                onForceRestart = { RelayForegroundService.forceRestart(context) },
-                onClearLocks = { RelayForegroundService.clearLocksPublic(context) },
-                logs = currentLogs,
-                onViewAllLogs = {
-                    showDashboardSheet = false
-                    onNavigate(Screen.RelayActivity)
-                },
-                statsService = viewModel.statsService,
-                ownerPubkey = viewModel.nostrService.ownerHexPubkey,
-                cacheDir = currentConfig.appSupportDir?.let { "$it/media_cache" },
-                cacheTTLDays = currentConfig.cacheTTLDays,
-                isImporting = viewModel.isImporting.collectAsState().value,
-                importProgress = viewModel.importProgress.collectAsState().value,
-                importStatusMessage = viewModel.importStatusMessage.collectAsState().value,
-                importCompleted = viewModel.importCompleted.collectAsState().value,
-                isExportingJsonl = viewModel.isExportingJsonl.collectAsState().value,
-                isExportingMedia = viewModel.isExportingMedia.collectAsState().value,
-                isImportingBlossom = viewModel.blossomMirrorRun.collectAsState().value.running,
-                onImportNotes = { viewModel.importNotes(context) },
-                onImportBlossom = viewModel::importBlossom,
-                onExportJsonl = { viewModel.exportJsonl(context) },
-                onExportMedia = { viewModel.exportMedia(context) },
-                onDismissImport = viewModel::dismissImport,
-            )
-            TutorialStage(
-                account = { viewModel.nostrService.activeHexPubkey },
-                modifier = Modifier.matchParentSize(),
-                layer = RELAY_DASHBOARD_TUTORIAL_LAYER,
-            )
-            }
-            }
-        }
-    }
-
     // Zap sheet
     if (zapNoteId != null) {
         CustomZapSheet(
@@ -2758,6 +2784,134 @@ fun DashboardScreen(
     }
 }
 
+/** The local relay connection's colour, for the Vault button and the pill's health dot. */
+internal fun connectionDotColor(connectionColor: String): androidx.compose.ui.graphics.Color = when (connectionColor) {
+    "green" -> SuccessGreen
+    "yellow", "orange" -> ZapOrange
+    "red" -> ErrorRed
+    else -> SecondaryText
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Vault Dashboard sheet
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * The Vault Dashboard: the relay's dashboard with Blossom's sections under
+ * it, one sheet for everything the Vault tab stores (iOS
+ * `DashboardView(includesBlossom:)`). The Vault tab presents it over either
+ * half: the pill's last entry, the floating Vault button and the folded
+ * bar's corner button all open it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VaultDashboardSheet(
+    viewModel: DashboardViewModel,
+    logStore: com.nostrvault.relay.LogStore,
+    onNavigate: (Screen) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val totalEvents by viewModel.totalEvents.collectAsState()
+    val storageUsed by viewModel.storageUsed.collectAsState()
+    val noteCount by viewModel.noteCount.collectAsState()
+    val dmCount by viewModel.dmCount.collectAsState()
+    val mediaCount by viewModel.mediaCount.collectAsState()
+    val mediaSize by viewModel.mediaSize.collectAsState()
+    val statsLoading by viewModel.statsLoading.collectAsState()
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = WindowBackground,
+        dragHandle = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(
+                            SecondaryText.copy(alpha = 0.4f),
+                            RoundedCornerShape(2.dp),
+                        ),
+                )
+            }
+        },
+    ) {
+        val currentRelayStatus by RelayForegroundService.relayStatus.collectAsState()
+        val currentIsLocked by RelayForegroundService.isLocked.collectAsState()
+        val currentIsPortConflict by RelayForegroundService.isPortConflict.collectAsState()
+        val currentLogs by logStore.logs.collectAsState()
+        val currentConfig by viewModel.configStore.config.collectAsState()
+        val context = LocalContext.current
+
+        // The Pocket Relay tutorial starts the first time the dashboard
+        // opens. The sheet is its own window, so it draws its own cards.
+        LaunchedEffect(tutorialRevision) {
+            TutorialCenter.startIfEligible(TutorialID.POCKET_RELAY, viewModel.nostrService.activeHexPubkey)
+        }
+        CompositionLocalProvider(LocalTutorialLayer provides RELAY_DASHBOARD_TUTORIAL_LAYER) {
+        Box {
+        DashboardSheetContent(
+            totalEvents = totalEvents,
+            storageUsed = storageUsed,
+            noteCount = noteCount,
+            dmCount = dmCount,
+            mediaCount = mediaCount,
+            mediaSize = mediaSize,
+            isLoading = statsLoading,
+            relayStatus = currentRelayStatus,
+            relayAddress = currentConfig.nostrURL,
+            isExternalRelay = currentConfig.useExternalRelay,
+            isLocked = currentIsLocked,
+            isPortConflict = currentIsPortConflict,
+            onRefresh = viewModel::loadStats,
+            blossomSection = { BlossomDashboardSections() },
+            onStartRelay = { RelayForegroundService.start(context) },
+            onStopRelay = { RelayForegroundService.stop(context) },
+            onRestartRelay = {
+                RelayForegroundService.stop(context)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    RelayForegroundService.start(context)
+                }, 1500)
+            },
+            onForceRestart = { RelayForegroundService.forceRestart(context) },
+            onClearLocks = { RelayForegroundService.clearLocksPublic(context) },
+            logs = currentLogs,
+            onViewAllLogs = {
+                onDismiss()
+                onNavigate(Screen.RelayActivity)
+            },
+            statsService = viewModel.statsService,
+            ownerPubkey = viewModel.nostrService.ownerHexPubkey,
+            cacheDir = currentConfig.appSupportDir?.let { "$it/media_cache" },
+            cacheTTLDays = currentConfig.cacheTTLDays,
+            isImporting = viewModel.isImporting.collectAsState().value,
+            importProgress = viewModel.importProgress.collectAsState().value,
+            importStatusMessage = viewModel.importStatusMessage.collectAsState().value,
+            importCompleted = viewModel.importCompleted.collectAsState().value,
+            isExportingJsonl = viewModel.isExportingJsonl.collectAsState().value,
+            isExportingMedia = viewModel.isExportingMedia.collectAsState().value,
+            isImportingBlossom = viewModel.blossomMirrorRun.collectAsState().value.running,
+            onImportNotes = { viewModel.importNotes(context) },
+            onImportBlossom = viewModel::importBlossom,
+            onExportJsonl = { viewModel.exportJsonl(context) },
+            onExportMedia = { viewModel.exportMedia(context) },
+            onDismissImport = viewModel::dismissImport,
+        )
+        TutorialStage(
+            account = { viewModel.nostrService.activeHexPubkey },
+            modifier = Modifier.matchParentSize(),
+            layer = RELAY_DASHBOARD_TUTORIAL_LAYER,
+        )
+        }
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Notes content
 // ═══════════════════════════════════════════════════════════════════
@@ -2765,6 +2919,12 @@ fun DashboardScreen(
 @Composable
 private fun NotesContent(
     notes: List<FeedNote>,
+    /** Notes, Articles or Highlights, for the empty list's words. */
+    scope: VaultNoteScope,
+    recipesOnly: Boolean,
+    /** Articles' and Highlights' "Load older"; null where the list pages on sight or has nothing older. */
+    loadOlder: (() -> Unit)?,
+    isLoadingOlder: Boolean,
     quotedNotes: Map<String, FeedNote>,
     reactionMap: Map<String, List<Pair<String, String>>>,
     zapMap: Map<String, List<Pair<String, Long>>>,
@@ -2806,16 +2966,20 @@ private fun NotesContent(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "No notes found",
+                    text = emptyNotesTitle(scope, recipesOnly),
                     color = SecondaryText,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "Try changing your filter settings",
+                    text = emptyNotesHint(scope, recipesOnly),
                     color = TertiaryText,
                     fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp),
                 )
+                // Nothing loaded yet may still mean something older on the relay.
+                if (loadOlder != null) LoadOlderButton(isLoadingOlder, loadOlder)
             }
         }
     } else {
@@ -2856,7 +3020,13 @@ private fun NotesContent(
                 )
             }
 
-            if (isLoadingMore) {
+            if (loadOlder != null) {
+                item(key = "load-older") {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
+                        LoadOlderButton(isLoadingOlder, loadOlder)
+                    }
+                }
+            } else if (isLoadingMore) {
                 item {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -2871,6 +3041,51 @@ private fun NotesContent(
                     }
                 }
             }
+        }
+    }
+}
+
+/** The empty list's headline for the scope the Vault menu picked. */
+private fun emptyNotesTitle(scope: VaultNoteScope, recipesOnly: Boolean): String = when (scope) {
+    VaultNoteScope.NOTES -> "No notes found"
+    VaultNoteScope.ARTICLES -> if (recipesOnly) "No recipes found" else "No articles found"
+    VaultNoteScope.HIGHLIGHTS -> "No highlights found"
+}
+
+/**
+ * Articles and highlights are rare: an empty list usually means none were
+ * published, not that a filter hid them.
+ */
+private fun emptyNotesHint(scope: VaultNoteScope, recipesOnly: Boolean): String = when (scope) {
+    VaultNoteScope.NOTES -> "Try changing your filter settings"
+    VaultNoteScope.ARTICLES ->
+        if (recipesOnly) "Recipes are articles tagged zapcooking or nostrcooking"
+        else "Long-form posts you write or are tagged in land here"
+    VaultNoteScope.HIGHLIGHTS -> "Highlights you make or that quote you land here"
+}
+
+/** Articles' and Highlights' pager: one older page per tap (iOS loadOlderButton). */
+@Composable
+private fun LoadOlderButton(isLoading: Boolean, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    Surface(
+        onClick = onClick,
+        enabled = !isLoading,
+        shape = CircleShape,
+        color = colors.primary.copy(alpha = 0.12f),
+        modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.height(36.dp).padding(horizontal = 16.dp),
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(color = colors.primary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+            } else {
+                Icon(NostrVaultIcons.History, contentDescription = null, tint = colors.primary, modifier = Modifier.size(18.dp))
+            }
+            Text("Load older", color = colors.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -3264,7 +3479,8 @@ private fun DashboardSheetContent(
     isLocked: Boolean,
     isPortConflict: Boolean,
     onRefresh: () -> Unit,
-    onBlossomClick: () -> Unit,
+    /** Blossom's dashboard sections, under the relay's (the Vault Dashboard). */
+    blossomSection: @Composable () -> Unit,
     onStartRelay: () -> Unit,
     onStopRelay: () -> Unit,
     onRestartRelay: () -> Unit,
@@ -3306,14 +3522,14 @@ private fun DashboardSheetContent(
                 .padding(bottom = 16.dp),
         ) {
             Icon(
-                imageVector = NostrVaultIcons.Relay,
+                imageVector = NostrVaultIcons.TabVault,
                 contentDescription = null,
                 tint = colors.primary,
                 modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Relay Dashboard",
+                text = "Vault Dashboard",
                 color = PrimaryText,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
@@ -3484,31 +3700,9 @@ private fun DashboardSheetContent(
 
             Spacer(Modifier.height(24.dp))
 
-            // Blossom link
-            Surface(
-                color = SecondaryGroupedBg,
-                shape = RoundedCornerShape(12.dp),
-                onClick = onBlossomClick,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(16.dp),
-                ) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Media,
-                        contentDescription = null,
-                        tint = colors.primary,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Blossom Media", color = PrimaryText, fontWeight = FontWeight.SemiBold)
-                        Text("Manage media servers and mirrors", color = SecondaryText, fontSize = 13.sp)
-                    }
-                    Icon(NostrVaultIcons.Navigate, null, tint = TertiaryText, modifier = Modifier.size(16.dp))
-                }
-            }
+            // Blossom's sections, under the relay's (iOS BlossomDashboardView(embedded:)).
+            HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
+            blossomSection()
         }
     }
 }

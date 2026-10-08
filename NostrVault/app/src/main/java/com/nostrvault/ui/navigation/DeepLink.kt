@@ -18,8 +18,13 @@ data class DeepLinkTarget(
      * before opening [route], so the note screen shows it without a fetch.
      */
     val seedNote: CarriedEvent? = null,
-    /** Paste the clipboard into Blossom once the Media tab shows (`nostrvault://mediapaste`). */
+    /** Paste the clipboard into Blossom once the Vault tab's Media half shows (`nostrvault://mediapaste`). */
     val mediaPaste: Boolean = false,
+    /**
+     * On the Vault tab's route: open its Media half (the gallery). False
+     * opens the relay half, where a notification's list is.
+     */
+    val vaultMedia: Boolean = false,
 )
 
 /**
@@ -74,12 +79,13 @@ object DeepLinkRouter {
             // carries the event id and opens the note.
             "mentions" -> DeepLinkTarget(Screen.Feed.route)
             "compose" -> DeepLinkTarget(Screen.ComposeNote.createRoute())
-            // iOS opens the Media tab and pastes the clipboard into Blossom.
-            "mediapaste" -> DeepLinkTarget(Screen.MediaGallery.route, mediaPaste = true)
+            // iOS opens the Vault tab's Media half and pastes the clipboard into Blossom.
+            "mediapaste" -> DeepLinkTarget(Screen.Dashboard.route, mediaPaste = true, vaultMedia = true)
             "dms" -> DeepLinkTarget(Screen.DMInbox.route)
             "search" -> DeepLinkTarget(Screen.Search.route)
+            // Media and Relay are one Vault tab now; each link opens its half.
             "relay" -> DeepLinkTarget(Screen.Dashboard.route)
-            "media" -> DeepLinkTarget(Screen.MediaGallery.route)
+            "media" -> DeepLinkTarget(Screen.Dashboard.route, vaultMedia = true)
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }

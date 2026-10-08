@@ -77,7 +77,20 @@ class BlossomDashboardViewModel @Inject constructor(
         loadDashboard()
     }
 
+    /** When the last load started, so reopening the Vault Dashboard reloads without a double load on first open. */
+    private var loadedAtMs = 0L
+
+    /**
+     * The Vault Dashboard keeps this view model while the Vault tab lives, so
+     * each time the dashboard opens it reloads, unless a load just started
+     * (the first open, where init already did).
+     */
+    fun reloadIfStale() {
+        if (System.currentTimeMillis() - loadedAtMs > 5_000L) loadDashboard()
+    }
+
     fun loadDashboard() {
+        loadedAtMs = System.currentTimeMillis()
         viewModelScope.launch {
             _isLoadingStats.value = true
 

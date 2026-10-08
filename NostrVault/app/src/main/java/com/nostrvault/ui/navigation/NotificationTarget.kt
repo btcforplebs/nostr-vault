@@ -1,5 +1,7 @@
 package com.nostrvault.ui.navigation
 
+import com.nostrvault.data.model.VaultMode
+import com.nostrvault.data.model.VaultNoteScope
 import com.nostrvault.data.model.VaultViewMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +73,23 @@ object NotificationTarget {
         "zap" -> VaultViewMode.ZAPS
         FOLLOWERS -> VaultViewMode.FOLLOWERS
         else -> VaultViewMode.NOTES
+    }
+
+    /**
+     * The Vault tab's menu entry that holds the event: [viewFor]'s list, and
+     * for Notes the scope of the event's [kind] (an article or a highlight
+     * that tags you is listed apart from Notes). [kind] is null while the
+     * event hasn't loaded, which lands on Notes.
+     */
+    fun vaultModeFor(type: String, kind: Int?, zapsOnly: Boolean): VaultMode = when (viewFor(type, zapsOnly)) {
+        VaultViewMode.LIKES -> VaultMode.LIKES
+        VaultViewMode.ZAPS -> VaultMode.ZAPS
+        VaultViewMode.FOLLOWERS -> VaultMode.FOLLOWERS
+        VaultViewMode.NOTES -> when (VaultNoteScope.forKind(kind)) {
+            VaultNoteScope.NOTES -> VaultMode.NOTES
+            VaultNoteScope.ARTICLES -> VaultMode.ARTICLES
+            VaultNoteScope.HIGHLIGHTS -> VaultMode.HIGHLIGHTS
+        }
     }
 
     private fun eTags(tags: List<List<String>>): List<String> =

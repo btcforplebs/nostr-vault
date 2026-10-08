@@ -32,14 +32,18 @@ class DeepLinkRouterTest {
         assertEquals(Screen.DMInbox.route, route("nostrvault://dms"))
         assertEquals(Screen.Search.route, route("nostrvault://search"))
         assertEquals(Screen.Dashboard.route, route("nostrvault://relay"))
-        assertEquals(Screen.MediaGallery.route, route("nostrvault://media"))
+        // Media and Relay are one Vault tab; the link picks its half.
+        assertEquals(Screen.Dashboard.route, route("nostrvault://media"))
+        assertEquals(true, DeepLinkRouter.fromUri("nostrvault://media", decoder)!!.vaultMedia)
+        assertEquals(false, DeepLinkRouter.fromUri("nostrvault://relay", decoder)!!.vaultMedia)
         assertEquals(Screen.Wallet.route, route("nostrvault://wallet"))
         assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://compose"))
     }
 
-    @Test fun `mediapaste opens the Media tab with a paste request`() {
+    @Test fun `mediapaste opens the Vault tab's Media half with a paste request`() {
         val target = DeepLinkRouter.fromUri("nostrvault://mediapaste", decoder)!!
-        assertEquals(Screen.MediaGallery.route, target.route)
+        assertEquals(Screen.Dashboard.route, target.route)
+        assertEquals(true, target.vaultMedia)
         assertEquals(true, target.mediaPaste)
         assertEquals(false, DeepLinkRouter.fromUri("nostrvault://media", decoder)!!.mediaPaste)
     }

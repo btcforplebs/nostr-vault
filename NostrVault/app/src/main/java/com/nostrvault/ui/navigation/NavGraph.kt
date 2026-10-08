@@ -40,11 +40,8 @@ import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.components.PendingPostBanner
 import com.nostrvault.ui.notification.NotificationOverlay
 import com.nostrvault.ui.components.AccountSwitcherSheet
-import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
-import com.nostrvault.ui.theme.SuccessGreen
-import com.nostrvault.ui.theme.ZapOrange
 import com.nostrvault.relay.LogStore
 import com.nostrvault.ui.screens.ArticleReaderScreen
 import com.nostrvault.ui.screens.*
@@ -87,8 +84,8 @@ private val TOP_LEVEL_ROUTES = setOf(
     Screen.Feed.route,
     Screen.Search.route,
     Screen.Profile.route,
-    Screen.MediaGallery.route,
     Screen.Dashboard.route,
+    Screen.WOT.route,
 )
 
 /** True when both ends of the transition are top-level tabs. */
@@ -124,8 +121,8 @@ fun NostrVaultNavHost(
     val showBottomBar = currentRoute in listOf(
         Screen.Feed.route,
         Screen.Search.route,
-        Screen.MediaGallery.route,
         Screen.Dashboard.route,
+        Screen.WOT.route,
         Screen.Profile.route,
     )
 
@@ -143,10 +140,13 @@ fun NostrVaultNavHost(
 
     // A tutorial whose cards are on another page goes there: a last card's
     // "Next", or Replay in Settings. Your Vault and Pocket Relay are the
-    // Relay tab (which opens its dashboard for Pocket Relay), Wallet Connect
-    // the wallet. A page starting its own tutorial is already on it.
+    // Vault tab (which opens its dashboard for Pocket Relay, over either
+    // half), Wallet Connect the wallet. A page starting its own tutorial is
+    // already on it.
     val activeTutorial by com.nostrvault.tutorials.TutorialCenter.active.collectAsState()
     LaunchedEffect(activeTutorial) {
+        // Your Vault's cards are on the relay half.
+        if (activeTutorial == com.nostrvault.tutorials.TutorialID.VAULT) VaultSection.show(media = false)
         val route = activeTutorial?.let(::tutorialRoute) ?: return@LaunchedEffect
         if (route == Screen.Feed.route || navController.currentDestination?.route == route) return@LaunchedEffect
         navigateToTutorialRoute(navController, route)
@@ -166,17 +166,32 @@ fun NostrVaultNavHost(
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
             ?.let { configStore.switchActiveAccount(it) }
         if (target.mediaPaste) PendingMediaPaste.request()
+        // The Vault tab opens on the half the link names: Media for the
+        // gallery and Magic Paste, the relay's lists for everything else.
+        if (target.route == Screen.Dashboard.route) VaultSection.show(media = target.vaultMedia)
         // A notification's post goes in the note cache first, so the note
         // screen finds it there and shows it at once instead of fetching.
         target.seedNote?.let {
             feedService.cacheNote(FeedNote.fromEvent(it.id, it.pubkey, it.content, it.tags, it.createdAt, it.kind))
         }
         val focus = target.relayFocus
+        if (focus == null && target.route == Screen.Dashboard.route) {
+            // A widget's Media or Relay tap: switch to the Vault tab as the
+            // bottom bar does, so its view models and connection are reused
+            // rather than a second copy pushed on top.
+            navController.navigate(Screen.Dashboard.route) {
+                popUpTo(Screen.Feed.route) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            navController.popBackStack(Screen.Dashboard.route, inclusive = false)
+            return@LaunchedEffect
+        }
         if (focus == null) {
             navController.navigate(target.route) { launchSingleTop = true }
             return@LaunchedEffect
         }
-        // A notification about a post: park the target for the Relay tab, then
+        // A notification about a post: park the target for the Vault tab's relay half, then
         // switch to that tab as the bottom bar does — the same instance, so its
         // loaded events are reused — and drop anything stacked on it (an open
         // thread), so the list the tab scrolls is the one on screen.
@@ -190,11 +205,10 @@ fun NostrVaultNavHost(
         navController.popBackStack(Screen.Dashboard.route, inclusive = false)
     }
 
-    // The bars fold with the scroll on the list tabs (Feed/Media/Relay), following
-    // the finger; tabs without that wiring, and "disable tab bar animation",
-    // keep them shown.
+    // The bars fold with the scroll on the list tabs (Feed, and both halves of
+    // Vault), following the finger; tabs without that wiring, and "disable
+    // tab bar animation", keep them shown.
     val chromeFolds = currentRoute == Screen.Feed.route ||
-        currentRoute == Screen.MediaGallery.route ||
         currentRoute == Screen.Dashboard.route
     val chromeConnection = rememberScrollChromeConnection(
         enabled = chromeFolds && !config.disableTabBarAnimation,
@@ -307,7 +321,8 @@ fun NostrVaultNavHost(
                         onHashtagClick = { navController.navigate(Screen.HashtagFeed.createRoute(it)) },
                         onOpenVault = { target ->
                             // As a notification tap does: park the list for the
-                            // Relay tab, then switch to that tab.
+                            // Vault tab's relay half, then switch to that tab.
+                            VaultSection.show(media = false)
                             when (target) {
                                 com.nostrvault.ui.screens.feed.VaultTarget.ZAPS ->
                                     RelayFocus.request(RelayFocusRequest("zap", ""))
@@ -348,17 +363,10 @@ fun NostrVaultNavHost(
                     )
                 }
 
-                composable(Screen.MediaGallery.route) {
-                    MediaGalleryScreen(
-                        feedService = feedService,
-                        onMediaClick = { index ->
-                            navController.navigate(Screen.MediaViewer.createRoute(index))
-                        },
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                        onBlossomClick = {
-                            navController.navigate(Screen.BlossomDashboard.route)
+                composable(Screen.WOT.route) {
+                    WOTTabScreen(
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
                         },
                     )
                 }
@@ -729,9 +737,9 @@ fun NostrVaultNavHost(
                     )
                 }
 
-                // ── Dashboard ─────────────────────────────────────────
+                // ── Vault ─────────────────────────────────────────────
                 composable(Screen.Dashboard.route) {
-                    DashboardScreen(
+                    VaultTabScreen(
                         onNavigate = { screen -> navController.navigate(screen.route) },
                         onNoteClick = { noteId ->
                             navController.navigate(Screen.NoteDetail.createRoute(noteId))
@@ -742,14 +750,11 @@ fun NostrVaultNavHost(
                         onProfileClick = { pubkey ->
                             navController.navigate(Screen.Profile.createRoute(pubkey))
                         },
+                        onMediaClick = { index ->
+                            navController.navigate(Screen.MediaViewer.createRoute(index))
+                        },
                         logStore = logStore,
                         feedService = feedService,
-                    )
-                }
-
-                composable(Screen.BlossomDashboard.route) {
-                    BlossomDashboardScreen(
-                        onBack = { navController.popBackStack() },
                     )
                 }
 
@@ -801,26 +806,17 @@ fun NostrVaultNavHost(
             val condenseTab = chromeFolds
 
             // Contextual condensed action (icon + tint + click), matching iOS:
-            // compose on Feed, Blossom upload on Media, relay dashboard on Relay
-            // (antenna tinted by live relay status).
+            // compose, or on the Vault tab (either half) the Vault Dashboard,
+            // tinted by live relay status.
             val colors = LocalNostrVaultColors.current
             val relayStatus by RelayForegroundService.relayStatus.collectAsState()
-            val relayColor = when (relayStatus) {
-                RelayForegroundService.RelayStatus.RUNNING -> SuccessGreen
-                RelayForegroundService.RelayStatus.BOOTING,
-                RelayForegroundService.RelayStatus.IMPORTING -> ZapOrange
-                RelayForegroundService.RelayStatus.OFFLINE -> ErrorRed
-            }
-            val condensedActionIcon = when (currentRoute) {
-                Screen.MediaGallery.route -> NostrVaultIcons.Blossom
-                Screen.Dashboard.route -> NostrVaultIcons.Relay
-                else -> NostrVaultIcons.Compose
-            }
-            val condensedActionTint = if (currentRoute == Screen.Dashboard.route) relayColor else colors.primary
-            val onCondensedAction: () -> Unit = when (currentRoute) {
-                Screen.MediaGallery.route -> { { navController.navigate(Screen.BlossomDashboard.route) } }
-                Screen.Dashboard.route -> { { feedService.requestRelayDashboard() } }
-                else -> { { navController.navigate(Screen.ComposeNote.createRoute()) } }
+            val opensVaultDashboard = currentRoute == Screen.Dashboard.route
+            val condensedActionIcon = if (opensVaultDashboard) NostrVaultIcons.TabVault else NostrVaultIcons.Compose
+            val condensedActionTint = if (opensVaultDashboard) relayStatusColor(relayStatus) else colors.primary
+            val onCondensedAction: () -> Unit = if (opensVaultDashboard) {
+                { feedService.requestRelayDashboard() }
+            } else {
+                { navController.navigate(Screen.ComposeNote.createRoute()) }
             }
 
             val density = LocalDensity.current
@@ -861,7 +857,15 @@ fun NostrVaultNavHost(
                     onReselect = { screen ->
                         when (screen) {
                             Screen.Feed -> feedService.requestScrollToTop()
-                            Screen.Dashboard, Screen.MediaGallery -> TabReselect.request(screen)
+                            // The Vault tab's half on screen scrolls to the top;
+                            // the WOT globe goes back to you.
+                            Screen.Dashboard, Screen.WOT -> {
+                                // The relay half's lists in sight again: its activity is seen (iOS).
+                                if (screen == Screen.Dashboard && !VaultSection.showsMedia.value) {
+                                    RelayForegroundService.markRelayViewed()
+                                }
+                                TabReselect.request(screen)
+                            }
                             else -> {
                                 // Other tabs: pop back to root if deep, otherwise no-op for now
                                 navController.popBackStack(screen.route, inclusive = false)
@@ -982,7 +986,7 @@ fun NostrVaultNavHost(
     }
 }
 
-/** The page a tutorial's cards are on. */
+/** The page a tutorial's cards are on. Your Vault's are on the Vault tab's relay half. */
 private fun tutorialRoute(id: com.nostrvault.tutorials.TutorialID): String = when (id) {
     com.nostrvault.tutorials.TutorialID.VAULT,
     com.nostrvault.tutorials.TutorialID.POCKET_RELAY -> Screen.Dashboard.route

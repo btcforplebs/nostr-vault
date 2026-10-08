@@ -72,7 +72,7 @@ import com.nostrvault.ui.theme.ZapOrange
 
 /**
  * Floating pill-shaped bottom navigation bar matching the iOS tab structure.
- * Tab order: Feed | Search | Profile (center, avatar) | Media | Relay
+ * Tab order: Feed | Search | Profile (center, avatar) | Vault | WOT
  *
  * Profile tab shows user avatar with a colored ring and supports
  * long-press to trigger account switching.
@@ -102,8 +102,10 @@ val bottomNavItems = listOf(
     BottomNavItem(Screen.Feed, "Feed", NostrVaultIcons.TabFeed),
     BottomNavItem(Screen.Search, "Search", NostrVaultIcons.Search),
     BottomNavItem(Screen.Profile, "Profile", NostrVaultIcons.Profile), // center
-    BottomNavItem(Screen.MediaGallery, "Media", NostrVaultIcons.TabMedia),
-    BottomNavItem(Screen.Dashboard, "Relay", NostrVaultIcons.TabRelay),
+    // Media and Relay in one (iOS #443); the route keeps the Relay tab's name,
+    // so notification routing still lands here.
+    BottomNavItem(Screen.Dashboard, "Vault", NostrVaultIcons.TabVault),
+    BottomNavItem(Screen.WOT, "WOT", NostrVaultIcons.WebOfTrust),
 )
 
 @Composable
@@ -377,8 +379,8 @@ private fun CondensedNavCluster(
             }
         }
 
-        // Contextual action — compose / Blossom upload / relay dashboard,
-        // depending on the active tab (icon + tint supplied by the caller).
+        // Contextual action — compose, or the Vault Dashboard on the Vault
+        // tab (icon + tint supplied by the caller).
         Box(
             modifier = Modifier
                 .size(36.dp)
