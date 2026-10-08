@@ -91,6 +91,7 @@ import com.nostrvault.ui.components.isVideoUrl
 import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
 import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.CondensedEngagement
 import com.nostrvault.ui.components.RepostPlaceholder
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.ThreadLineAnchor
@@ -871,12 +872,28 @@ fun FeedScreen(
                             val cardProfiles by remember(shownPubkeys) {
                                 derivedStateOf { shownPubkeys.resolveAgainst(allProfiles) }
                             }
+                            // Same derivedStateOf reasoning: only this row's stats recompose it.
+                            val zapsOnly = LocalZapsOnlyMode.current
+                            val statsState = viewModel.noteStats.collectAsState()
+                            val engagement by remember(note.id, zapsOnly) {
+                                derivedStateOf {
+                                    val stats = statsState.value[note.effectiveEventId]
+                                    CondensedEngagement(
+                                        reactions = if (zapsOnly) 0 else stats?.reactions ?: 0,
+                                        reposts = stats?.reposts ?: 0,
+                                    )
+                                }
+                            }
                             CompactNoteCard(
                                 note = shownNote,
                                 profile = cardProfiles[shownNote.pubkey],
                                 profiles = cardProfiles,
-                                repostedByProfile = shownNote.repostedBy?.let { cardProfiles[it] },
                                 repostPlaceholder = repostPlaceholder,
+                                // Read once the original has resolved, which is what recomposes this row.
+                                repostedOriginal = note.repostedEventId
+                                    ?.takeIf { note.isBareRepost && repostPlaceholder == null }
+                                    ?.let { viewModel.parentNotesCache.value[it] },
+                                engagement = engagement,
                                 onNoteClick = { id ->
                                     // Expand inline first instead of navigating
                                     expandedNoteId = id

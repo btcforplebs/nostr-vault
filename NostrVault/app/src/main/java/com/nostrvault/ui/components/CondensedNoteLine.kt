@@ -29,7 +29,7 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThreadGrouping
-import com.nostrvault.data.model.pollSummary
+import com.nostrvault.data.model.condensedTitle
 import com.nostrvault.ui.theme.*
 
 /**
@@ -111,6 +111,8 @@ fun CondensedNoteLine(
     mediaURLs: List<String> = emptyList(),
     engagement: CondensedEngagement = CondensedEngagement.NONE,
     showsMediaThumbnail: Boolean = true,
+    /** A Translate button under the text for posts in another language. */
+    showsTranslate: Boolean = false,
     onProfileClick: (String) -> Unit = {},
     onTap: (() -> Unit)? = null,
     themeColor: Color = LocalNostrVaultColors.current.primary,
@@ -120,8 +122,8 @@ fun CondensedNoteLine(
     val isRoot = depth == 0
     val authorPubkey = displayPubkey ?: note.pubkey
     val displayName = profile?.bestName ?: shortKey(authorPubkey)
-    // A poll's one line is its question, marked as a poll (iOS condensedTitle).
-    val displayContent = contentOverride ?: note.pollSummary ?: note.content
+    // An article's lines go on its title, a poll's on its question (iOS condensedTitle).
+    val displayContent = contentOverride ?: note.condensedTitle ?: note.content
 
     val avatarSize = if (isRoot) 32.dp else 26.dp
     val nameSize = if (isRoot) 13.sp else 12.sp
@@ -191,6 +193,15 @@ fun CondensedNoteLine(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (!profile?.nip05.isNullOrBlank()) {
+                        Spacer(Modifier.width(3.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Verified,
+                            contentDescription = "Verified",
+                            tint = Color(0xFF33CC99),
+                            modifier = Modifier.size(9.dp),
+                        )
+                    }
                     if (note.isFromNostrVault) {
                         Spacer(Modifier.width(3.dp))
                         NostrVaultBadge(size = 9.dp)
@@ -245,14 +256,34 @@ fun CondensedNoteLine(
                 }
                 if (plainText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = plainText,
-                        color = SecondaryText,
-                        fontSize = bodySize,
-                        maxLines = bodyLineLimit,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = (bodySize.value + 4).sp,
-                    )
+                    val line = @Composable {
+                        Text(
+                            text = plainText,
+                            color = SecondaryText,
+                            fontSize = bodySize,
+                            maxLines = bodyLineLimit,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = (bodySize.value + 4).sp,
+                        )
+                    }
+                    if (showsTranslate) {
+                        TranslatableNoteText(
+                            // The note's own text (a poll's whole body, not its
+                            // one-line summary), so the translation cached under
+                            // this key is the one the full card shows too.
+                            noteKey = note.effectiveEventId,
+                            content = contentOverride ?: note.content,
+                            profiles = profiles,
+                            mediaURLs = bodyMedia,
+                            linkURLs = bodyLinks.toSet(),
+                            fontSize = bodySize,
+                            lineHeight = (bodySize.value + 4).sp,
+                            maxLines = bodyLineLimit,
+                            original = line,
+                        )
+                    } else {
+                        line()
+                    }
                 }
 
                 if (bodyLinks.isNotEmpty()) {

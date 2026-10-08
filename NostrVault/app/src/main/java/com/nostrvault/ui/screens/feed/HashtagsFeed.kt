@@ -39,6 +39,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
 import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.CondensedEngagement
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
@@ -316,6 +317,8 @@ internal fun HashtagsFeed(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
+    // Read per row through derivedStateOf: one note's stats recompose one row.
+    val statsState = viewModel.noteStats.collectAsState()
     val toast by viewModel.toast.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val suggestionsLoading by viewModel.suggestionsLoading.collectAsState()
@@ -383,10 +386,21 @@ internal fun HashtagsFeed(
     }
     val noteRow: @Composable (FeedNote) -> Unit = { note ->
         if (isCompact && openNoteId != note.id) {
+            val zapsOnly = LocalZapsOnlyMode.current
+            val engagement by remember(note.id, zapsOnly) {
+                derivedStateOf {
+                    val stats = statsState.value[note.effectiveEventId]
+                    CondensedEngagement(
+                        reactions = if (zapsOnly) 0 else stats?.reactions ?: 0,
+                        reposts = stats?.reposts ?: 0,
+                    )
+                }
+            }
             CompactNoteCard(
                 note = note,
                 profile = profiles[note.pubkey],
                 profiles = profiles,
+                engagement = engagement,
                 onNoteClick = { id -> openNoteId = id },
                 onProfileClick = onProfileClick,
                 // iOS: 8pt sides for a compact row, 12pt between rows.
