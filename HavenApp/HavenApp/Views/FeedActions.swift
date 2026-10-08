@@ -97,7 +97,6 @@ struct FeedActions {
     var blockUser: (String) -> Void = { _ in }
     var followUser: (String) -> Void = { _ in }
     var unfollowUser: (String) -> Void = { _ in }
-    var throttleUser: (String, Int) -> Void = { _, _ in }
 
     // DM
     var dmUser: (String) -> Void = { _ in }
@@ -326,11 +325,6 @@ struct FeedActions {
                 case .failure:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollow failed"))
                 }
-            },
-            throttleUser: { hexPubkey, maxPosts in
-                guard let data = Bech32.hexToData(hexPubkey),
-                      let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-                ConfigService.shared.throttleProfile(npub, maxPosts: maxPosts)
             },
             dmUser: { hexPubkey in
                 NotificationCenter.default.post(

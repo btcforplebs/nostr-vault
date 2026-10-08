@@ -219,9 +219,9 @@ class ConfigStore @Inject constructor(
         _isSwitchingAccount.value = switching
     }
 
-    // ── Blocked / throttle (per active-or-owner account) ──────────────
-    // Mirror of iOS ConfigService.blockProfile/unblockProfile/throttleProfile/
-    // unthrottleProfile. These mutate config only; callers that want the change
+    // ── Blocked (per active-or-owner account) ──────────────
+    // Mirror of iOS ConfigService.blockProfile/unblockProfile.
+    // These mutate config only; callers that want the change
     // reflected on the network should publish the kind-10000 mute list afterwards.
 
     /** Block an npub for the active account. No-op if already blocked. */
@@ -243,29 +243,6 @@ class ConfigStore @Inject constructor(
             val current = cfg.blockedNpubsPerAccount[key] ?: cfg.blockedNpubs ?: emptyList()
             cfg.copy(
                 blockedNpubsPerAccount = cfg.blockedNpubsPerAccount + (key to current.filter { it != npub }),
-            )
-        }
-    }
-
-    /** Throttle an npub to at most [maxPosts] visible posts (1..20). Local-only. */
-    fun throttleProfile(npub: String, maxPosts: Int) {
-        update { cfg ->
-            val key = cfg.activeOrOwnerNpub()
-            val current = cfg.throttledAccountsPerAccount[key] ?: emptyMap()
-            cfg.copy(
-                throttledAccountsPerAccount = cfg.throttledAccountsPerAccount +
-                    (key to (current + (npub to maxPosts.coerceIn(1, 20)))),
-            )
-        }
-    }
-
-    /** Remove a throttle limit for an npub. */
-    fun unthrottleProfile(npub: String) {
-        update { cfg ->
-            val key = cfg.activeOrOwnerNpub()
-            val current = cfg.throttledAccountsPerAccount[key] ?: return@update cfg
-            cfg.copy(
-                throttledAccountsPerAccount = cfg.throttledAccountsPerAccount + (key to (current - npub)),
             )
         }
     }

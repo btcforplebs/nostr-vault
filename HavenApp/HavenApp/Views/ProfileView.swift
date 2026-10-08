@@ -66,6 +66,10 @@ struct ProfileView: View {
 
     // Wallet views
     @State private var showingLightning = false
+
+    // Web of Trust globe
+    @State private var showingTrustWeb = false
+
     @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     // Following / followers count
@@ -238,15 +242,6 @@ struct ProfileView: View {
         let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
         let blockedList = configService.config.blockedNpubsPerAccount[targetNpub] ?? []
         return blockedList.contains(npub)
-    }
-
-    private var isThrottled: Bool {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return false }
-        let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
-        let throttledList = configService.config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        return throttledList[npub] != nil
     }
 
     private var profile: FeedProfile? {
@@ -1031,134 +1026,144 @@ struct ProfileView: View {
 
     // MARK: - Action row
 
-    @ViewBuilder
+    /// One line, never scrolled: the labelled actions share the width and the
+    /// icon-only ones keep a fixed square. When space runs out (small phones,
+    /// large text) Message drops its word first, then Zap.
     private var actionRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                if isOwnProfile {
-                Button(action: { showingCompose = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pencil")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text("Post")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.havenPurple)
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: { showingEditProfile = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text("Edit")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(.havenPurple)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.havenPurple.opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-            } else {
-                Button(action: toggleFollow) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isFollowing ? "person.badge.minus" : "person.badge.plus")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text(isFollowing ? "Unfollow" : "Follow")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(isFollowing ? .white : .havenPurple)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(isFollowing ? Color.havenPurple : Color.havenPurple.opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isFollowing ? "Unfollow" : "Follow")
-
-                Button(action: { showingMessageComposer = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "message.fill")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text("Message")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(.havenPurple)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.havenPurple.opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: toggleBlock) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isBlocked ? "hand.raised.slash" : "hand.raised")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text(isBlocked ? "Unblock" : "Block")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(isBlocked ? .orange : .red)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background((isBlocked ? Color.orange : Color.red).opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isBlocked ? "Unblock user" : "Block user")
-
-                Button(action: toggleThrottle) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isThrottled ? "gauge.open.with.lines.needle.33percent" : "gauge")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text(isThrottled ? "Speed Up" : "Slow Down")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(isThrottled ? .blue : .secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background((isThrottled ? Color.blue : Color.secondary).opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isThrottled ? "Remove speed limit" : "Slow down posts")
-
-                if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bolt.fill")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text("Zap \(defaultZapSats)")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.orange.opacity(0.15))
-                    .cornerRadius(6)
-                    .overlay { ZapBurstView(isAnimating: $showLightning) }
-                    .contentShape(RoundedRectangle(cornerRadius: 6))
-                    .onLongPressGesture {
-                        #if os(iOS)
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        #endif
-                        zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats)
-                    }
-                    .onTapGesture {
-                        if let lud16 = lightningAddress {
-                            Task { await zapProfile(lud16: lud16) }
-                        }
-                    }
-                }
-            }
+        ViewThatFits(in: .horizontal) {
+            actionButtons(compact: 0)
+            actionButtons(compact: 1)
+            actionButtons(compact: 2)
         }
         .padding(.horizontal, 16)
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
+    }
+
+    private static let actionHeight: CGFloat = 32
+
+    private func actionButtons(compact: Int) -> some View {
+        HStack(spacing: 8) {
+            if isOwnProfile {
+                actionPill("Post", icon: "pencil", filled: true) { showingCompose = true }
+                actionPill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
+                trustWebButton
+            } else {
+                actionPill(isFollowing ? "Unfollow" : "Follow",
+                           icon: isFollowing ? "person.badge.minus" : "person.badge.plus",
+                           filled: isFollowing, action: toggleFollow)
+                if compact > 0 {
+                    actionIcon("message.fill") { showingMessageComposer = true }
+                        .accessibilityLabel("Message")
+                } else {
+                    actionPill("Message", icon: "message.fill") { showingMessageComposer = true }
+                }
+                if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
+                    zapPill(showsWord: compact < 2)
+                }
+                trustWebButton
+                moreMenu
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func actionPill(_ title: String, icon: String, filled: Bool = false,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .fixedSize()
+            .foregroundColor(filled ? .white : .havenPurple)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: Self.actionHeight)
+            .background(filled ? Color.havenPurple : Color.havenPurple.opacity(0.12))
+            .cornerRadius(6)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func actionIcon(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { actionIconLabel(icon) }
+            .buttonStyle(.plain)
+    }
+
+    private func actionIconLabel(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.appSystem(size: 13, weight: .semibold))
+            .foregroundColor(.havenPurple)
+            .frame(width: Self.actionHeight + 4, height: Self.actionHeight)
+            .background(Color.havenPurple.opacity(0.12))
+            .cornerRadius(6)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// Tap zaps the default amount; long-press picks one.
+    private func zapPill(showsWord: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "bolt.fill")
+                .font(.appSystem(size: 12, weight: .semibold))
+            Text(showsWord ? "Zap \(defaultZapSats)" : "\(defaultZapSats)")
+                .font(.appSystem(size: 13, weight: .semibold))
+                .lineLimit(1)
+        }
+        .fixedSize()
+        .foregroundColor(.orange)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: Self.actionHeight)
+        .background(Color.orange.opacity(0.15))
+        .cornerRadius(6)
+        .overlay { ZapBurstView(isAnimating: $showLightning) }
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onLongPressGesture {
+            #if os(iOS)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            #endif
+            zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats)
+        }
+        .onTapGesture {
+            if let lud16 = lightningAddress {
+                Task { await zapProfile(lud16: lud16) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Zap \(defaultZapSats) sats")
+        .accessibilityHint("Long-press to choose an amount")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { if let lud16 = lightningAddress { Task { await zapProfile(lud16: lud16) } } }
+    }
+
+    private var trustWebButton: some View {
+        actionIcon("point.3.connected.trianglepath.dotted") { showingTrustWeb = true }
+            .accessibilityLabel("Web of Trust")
+            .accessibilityHint(isOwnProfile ? "Shows your web of trust" : "Shows how you're connected to them")
+    }
+
+    /// The rarer actions, with Block last and apart so it is never a mis-tap
+    /// away from Message.
+    private var moreMenu: some View {
+        Menu {
+            Button(action: copyNpub) {
+                Label("Copy npub", systemImage: "doc.on.doc")
+            }
+            Divider()
+            Button(role: isBlocked ? nil : .destructive, action: toggleBlock) {
+                Label(isBlocked ? "Unblock" : "Block",
+                      systemImage: isBlocked ? "hand.raised.slash" : "hand.raised")
+            }
+        } label: {
+            actionIconLabel("ellipsis")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("More")
     }
 
     // MARK: - Stats block
@@ -2608,17 +2613,6 @@ struct ProfileView: View {
             configService.unblockProfile(npub)
         } else {
             configService.blockProfile(npub)
-        }
-    }
-
-    private func toggleThrottle() {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if isThrottled {
-            configService.unthrottleProfile(npub)
-        } else {
-            // Default to 5 posts visible when throttling
-            configService.throttleProfile(npub, maxPosts: 5)
         }
     }
 

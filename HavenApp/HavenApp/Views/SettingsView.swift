@@ -1958,14 +1958,6 @@ struct BlockedSettingsView: View {
         return configService.config.blockedNpubsPerAccount[targetNpub] ?? []
     }
 
-    var throttledAccounts: [(npub: String, maxPosts: Int)] {
-        let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
-        let dict = configService.config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        return dict.map { (npub: $0.key, maxPosts: $0.value) }
-            .sorted { $0.npub < $1.npub }
-    }
-
     var body: some View {
         Form {
             Section {
@@ -2008,46 +2000,6 @@ struct BlockedSettingsView: View {
                         }
                     }
                 }
-            }
-
-            Section {
-                if throttledAccounts.isEmpty {
-                    Text("No slowed-down accounts.").foregroundColor(.secondary)
-                } else {
-                    ForEach(throttledAccounts, id: \.npub) { entry in
-                        let hex = Bech32.decode(entry.npub)?.hexString ?? ""
-                        let profile = nostrService.profiles[hex]
-                        let displayName = profile?.bestName ?? String(entry.npub.prefix(12)) + "..."
-
-                        HStack {
-                            AvatarView(url: profile?.pictureURL, pubkey: hex, size: 32)
-                            VStack(alignment: .leading) {
-                                Text(displayName).fontWeight(.semibold)
-                                Text("Max \(entry.maxPosts) post\(entry.maxPosts == 1 ? "" : "s") visible")
-                                    .font(.appCaption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Stepper("", value: Binding(
-                                get: { entry.maxPosts },
-                                set: { configService.throttleProfile(entry.npub, maxPosts: $0) }
-                            ), in: 1...20)
-                            .labelsHidden()
-                            .frame(width: 100)
-                            Button {
-                                configService.unthrottleProfile(entry.npub)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            } header: {
-                Text("Slowed Down").settingInfo(.accountSlowed)
-            } footer: {
-                Text("Tap a name in the feed to slow someone down.")
             }
         }
         .groupedFormStyleCompat()

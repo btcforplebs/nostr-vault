@@ -38,11 +38,6 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Blocked",
         "Hides blocked accounts from your feed. For your main account, also blocks them from posting to your relay.",
     ),
-    ACCOUNT_SLOWED(
-        "account.slowed",
-        "Slowed Down",
-        "Limits how many posts from one account show at once (1–20).",
-    ),
     ACCOUNT_FOLLOWING_BACKUP(
         "account.followingBackup",
         "Following Backup",

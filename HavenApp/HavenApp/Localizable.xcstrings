@@ -1562,9 +1562,6 @@
     "No signing key" : {
 
     },
-    "No slowed-down accounts." : {
-
-    },
     "No Wallet Connected" : {
 
     },
@@ -2986,12 +2983,6 @@
 
     },
     "Skip and don't follow" : {
-
-    },
-    "Slowed Down" : {
-
-    },
-    "Slowed-down accounts have a limit on how many of their posts appear in your feed at once. Tap a username in the feed to slow someone down." : {
 
     },
     "Snapshots are saved automatically when your following list changes. Up to 50 are kept." : {

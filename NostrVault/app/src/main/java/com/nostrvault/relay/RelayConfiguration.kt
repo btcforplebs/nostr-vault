@@ -306,12 +306,10 @@ data class HavenConfig(
     val blacklistedNpubsFile: String = "",
     val whitelistedNpubs: List<String>? = null,
     val blockedNpubs: List<String>? = null,
-    // Per-account block/throttle (mirrors iOS blockedNpubsPerAccount /
-    // throttledAccountsPerAccount, keyed by account npub). Throttle is local-only
-    // (never published); blocked accounts are published as a NIP-51 kind-10000
-    // mute list. Default-empty for backward compatibility with old configs.
+    // Per-account block list (mirrors iOS blockedNpubsPerAccount, keyed by
+    // account npub), published as a NIP-51 kind-10000 mute list.
+    // Default-empty for backward compatibility with old configs.
     val blockedNpubsPerAccount: Map<String, List<String>> = emptyMap(),
-    val throttledAccountsPerAccount: Map<String, Map<String, Int>> = emptyMap(),
 
     // Private Relay
     val privateRelayName: String = "Nostr Vault Private",
@@ -741,10 +739,6 @@ data class HavenConfig(
     /** Blocked npubs for the active account, falling back to the legacy flat list. */
     fun blockedForActiveAccount(): List<String> =
         blockedNpubsPerAccount[activeOrOwnerNpub()] ?: blockedNpubs ?: emptyList()
-
-    /** Throttled npub -> max-visible-posts map for the active account (local-only). */
-    fun throttledForActiveAccount(): Map<String, Int> =
-        throttledAccountsPerAccount[activeOrOwnerNpub()] ?: emptyMap()
 
     /** Per-account push preferences, falling back to the global flags. */
     fun pushPrefsFor(npub: String): PushPrefs =

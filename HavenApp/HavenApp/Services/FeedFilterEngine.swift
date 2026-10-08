@@ -50,7 +50,6 @@ enum FeedFilterEngine {
     ///   - wotPubkeys: Web-of-Trust pubkey set (for global feed filtering).
     ///   - popularFilter: Sub-filter for the Popular feed (all / follows / non-follows).
     ///   - popularNoteScores: Popularity scores keyed by note ID (from the DVM).
-    ///   - throttledPubkeys: Authors whose posts are rate-limited (pubkey -> max visible posts).
     /// - Returns: Filtered and sorted array of notes ready for display.
     static func filterFeedNotes(
         notes: [FeedNote],
@@ -66,7 +65,6 @@ enum FeedFilterEngine {
         wotPubkeys: Set<String>,
         popularFilter: PopularFilter,
         popularNoteScores: [String: Double],
-        throttledPubkeys: [String: Int],
         globalLanguages: Set<String> = [],
         globalRequiresTrust: Bool = true,
         languageOf: (FeedNote) -> String? = { _ in nil },
@@ -149,11 +147,6 @@ enum FeedFilterEngine {
             }
         }
 
-        // Apply per-author throttle limits
-        if !throttledPubkeys.isEmpty {
-            filtered = applyThrottleLimits(filtered, throttledPubkeys: throttledPubkeys)
-        }
-
         return filtered
     }
 
@@ -164,7 +157,6 @@ enum FeedFilterEngine {
     ///   - blocked: Hex pubkeys the user has blocked.
     ///   - wotPubkeys: Web-of-Trust pubkey set (for global media filtering).
     ///   - isGlobalMedia: Whether the media tab is in global mode.
-    ///   - throttledPubkeys: Authors whose posts are rate-limited.
     /// - Returns: Notes containing media, sorted by date.
     static func filterMediaNotes(
         notes: [FeedNote],
@@ -172,10 +164,9 @@ enum FeedFilterEngine {
         wotPubkeys: Set<String>,
         isGlobalMedia: Bool,
         globalRequiresTrust: Bool = true,
-        throttledPubkeys: [String: Int],
         authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
-        var media = notes.filter { note in
+        notes.filter { note in
             if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             // Fail closed for the same reason as the Global feed above.
             if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
@@ -184,12 +175,6 @@ enum FeedFilterEngine {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.id > $1.id
         }
-
-        if !throttledPubkeys.isEmpty {
-            media = applyThrottleLimits(media, throttledPubkeys: throttledPubkeys)
-        }
-
-        return media
     }
 
     /// Collapses parameterized-replaceable events to one per `pubkey:d`
@@ -209,20 +194,6 @@ enum FeedFilterEngine {
         return newestByAddress.values.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.id > $1.id
-        }
-    }
-
-    /// For each throttled author, keeps only their N most recent posts.
-    private static func applyThrottleLimits(_ notes: [FeedNote], throttledPubkeys: [String: Int]) -> [FeedNote] {
-        var authorCounts: [String: Int] = [:]
-        return notes.filter { note in
-            guard let maxPosts = throttledPubkeys[note.pubkey] else { return true }
-            let count = authorCounts[note.pubkey, default: 0]
-            if count < maxPosts {
-                authorCounts[note.pubkey] = count + 1
-                return true
-            }
-            return false
         }
     }
 

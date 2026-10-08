@@ -78,7 +78,7 @@ object FeedFilterEngine {
 
     /**
      * Main feed filter: applies blocked list, reply/repost visibility,
-     * WoT membership, popular scoring, and throttle limits.
+     * WoT membership, and popular scoring.
      */
     fun filterFeedNotes(
         notes: List<FeedNote>,
@@ -90,7 +90,6 @@ object FeedFilterEngine {
         wotPubkeys: Set<String>,
         popularFilter: PopularFilter = PopularFilter.ALL,
         popularNoteScores: Map<String, Double> = emptyMap(),
-        throttledPubkeys: Map<String, Int> = emptyMap(),
         globalLanguages: Set<String> = emptySet(),
         globalRequiresTrust: Boolean = true,
         /** Articles/Recipes on Global (trust rule) rather than Following. */
@@ -167,18 +166,6 @@ object FeedFilterEngine {
             filtered.sortedByDescending { it.createdAt }
         }
 
-        // Apply throttle limits per author
-        if (throttledPubkeys.isNotEmpty()) {
-            val authorCounts = mutableMapOf<String, Int>()
-            filtered = filtered.filter { note ->
-                val limit = throttledPubkeys[note.pubkey] ?: return@filter true
-                val count = authorCounts.getOrPut(note.pubkey) { 0 }
-                if (count >= limit) return@filter false
-                authorCounts[note.pubkey] = count + 1
-                true
-            }
-        }
-
         return filtered
     }
 
@@ -191,7 +178,6 @@ object FeedFilterEngine {
         wotPubkeys: Set<String>,
         isGlobalMedia: Boolean,
         globalRequiresTrust: Boolean = true,
-        throttledPubkeys: Map<String, Int> = emptyMap(),
         authorOf: (String) -> String? = { null },
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
@@ -206,17 +192,6 @@ object FeedFilterEngine {
             if (note.isNoise) return@filter false
             true
         }.sortedByDescending { it.createdAt }
-
-        if (throttledPubkeys.isNotEmpty()) {
-            val authorCounts = mutableMapOf<String, Int>()
-            filtered = filtered.filter { note ->
-                val limit = throttledPubkeys[note.pubkey] ?: return@filter true
-                val count = authorCounts.getOrPut(note.pubkey) { 0 }
-                if (count >= limit) return@filter false
-                authorCounts[note.pubkey] = count + 1
-                true
-            }
-        }
 
         return filtered
     }

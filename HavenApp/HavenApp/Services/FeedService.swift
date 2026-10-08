@@ -169,7 +169,6 @@ class FeedService: ObservableObject {
     func recomputeFilteredNotes() {
         rebuildNoteIndex()
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-        let throttled = ConfigService.shared.activeAccountThrottledHexPubkeys
 
         let newFiltered = FeedFilterEngine.filterFeedNotes(
             notes: notes,
@@ -184,7 +183,6 @@ class FeedService: ObservableObject {
             wotPubkeys: wotPubkeys,
             popularFilter: popularFilter,
             popularNoteScores: popularNoteScores,
-            throttledPubkeys: throttled,
             globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             languageOf: { [unowned self] note in self.language(of: note) },
@@ -210,7 +208,6 @@ class FeedService: ObservableObject {
             wotPubkeys: wotPubkeys,
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-            throttledPubkeys: throttled,
             authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         )
 
@@ -238,12 +235,9 @@ class FeedService: ObservableObject {
                     wotPubkeys: wotPubkeys,
                     isGlobalMedia: mediaFeedMode == .global,
                     globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-                    throttledPubkeys: [:],
                     authorOf: authorOf
                 ).count
             } else {
-                // No throttle: it keeps each author's newest posts, and these
-                // are the newest there are.
                 count = FeedFilterEngine.filterFeedNotes(
                     notes: pendingNotes,
                     mode: feedMode,
@@ -257,7 +251,6 @@ class FeedService: ObservableObject {
                     wotPubkeys: wotPubkeys,
                     popularFilter: popularFilter,
                     popularNoteScores: popularNoteScores,
-                    throttledPubkeys: [:],
                     globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
                     globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
                     languageOf: { [unowned self] note in self.language(of: note) },

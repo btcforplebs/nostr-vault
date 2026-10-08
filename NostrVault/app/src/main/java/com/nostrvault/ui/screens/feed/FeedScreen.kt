@@ -1711,7 +1711,6 @@ private fun FeedFullNoteRowContent(
                 isFollowed = viewModel::isFollowing,
                 onFollow = viewModel::followUser,
                 onUnfollow = viewModel::unfollowUser,
-                onSlowDown = viewModel::slowDownUser,
                 onBlock = viewModel::blockUser,
             )
         },

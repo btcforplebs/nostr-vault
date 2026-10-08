@@ -740,49 +740,6 @@ class ConfigService: ObservableObject {
         free(cJSON)
     }
 
-    // MARK: - Throttle (Slow Down)
-
-    /// Returns the active browsing account's throttled hex pubkeys and their max visible post limits.
-    var activeAccountThrottledHexPubkeys: [String: Int] {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-        let throttled = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-
-        var hexMap: [String: Int] = [:]
-        for (npub, limit) in throttled {
-            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
-            if clean.isEmpty { continue }
-            if let decoded = Bech32.decode(clean) {
-                hexMap[decoded.hexString] = limit
-            }
-        }
-        return hexMap
-    }
-
-    func throttleProfile(_ npub: String, maxPosts: Int) {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-
-        var current = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        current[npub] = maxPosts
-        config.throttledAccountsPerAccount[targetNpub] = current
-        save()
-
-        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
-    }
-
-    func unthrottleProfile(_ npub: String) {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-
-        var current = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        current.removeValue(forKey: npub)
-        config.throttledAccountsPerAccount[targetNpub] = current
-        save()
-
-        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
-    }
-
     /// Whether a local URL can be rewritten to an external share link.
     /// Returns true for URLs that are already external, or local URLs when
     /// macRelayHttpsURL or an active Blossom mirror is configured.

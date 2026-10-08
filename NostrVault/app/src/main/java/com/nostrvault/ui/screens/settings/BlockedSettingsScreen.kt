@@ -26,10 +26,9 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 /**
- * Blocked / slowed-down accounts settings.
+ * Blocked accounts settings.
  * Port of iOS BlockedSettingsView: block by npub (published as a NIP-51 kind-10000
- * mute list), unblock, and throttle ("slow down") an account to a max number of
- * visible posts (local-only, never published).
+ * mute list) and unblock.
  */
 @HiltViewModel
 class BlockedSettingsViewModel @Inject constructor(
@@ -60,10 +59,6 @@ class BlockedSettingsViewModel @Inject constructor(
         publishMuteList()
     }
 
-    fun throttle(npub: String, maxPosts: Int) = configStore.throttleProfile(npub, maxPosts)
-
-    fun unthrottle(npub: String) = configStore.unthrottleProfile(npub)
-
     private fun publishMuteList() {
         val cfg = configStore.config.value
         // The list being published is the ACTIVE account's, so it is signed as
@@ -84,10 +79,9 @@ fun BlockedSettingsScreen(
     val colors = LocalNostrVaultColors.current
 
     val blocked = config.blockedForActiveAccount()
-    val throttled = config.throttledForActiveAccount().entries.sortedBy { it.key }
 
-    LaunchedEffect(blocked, throttled) {
-        viewModel.ensureProfiles(blocked + throttled.map { it.key })
+    LaunchedEffect(blocked) {
+        viewModel.ensureProfiles(blocked)
     }
 
     var input by remember { mutableStateOf("") }
@@ -175,41 +169,6 @@ fun BlockedSettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
-
-            // ── Slowed Down ───────────────────────────────────────
-            SectionLabel("Slowed Down")
-            if (throttled.isEmpty()) {
-                EmptyRow("No slowed-down accounts.")
-            } else {
-                throttled.forEach { (npub, maxPosts) ->
-                    val profile = viewModel.profileFor(npub)
-                    AccountRow(
-                        npub = npub,
-                        hex = viewModel.hexFor(npub),
-                        displayName = profile?.bestName ?: (npub.take(12) + "..."),
-                        pictureURL = profile?.pictureURL,
-                        secondaryLine = "Max $maxPosts post${if (maxPosts == 1) "" else "s"} visible",
-                    ) {
-                        Stepper(
-                            value = maxPosts,
-                            range = 1..20,
-                            onChange = { viewModel.throttle(npub, it) },
-                        )
-                        IconButton(onClick = { viewModel.unthrottle(npub) }) {
-                            Icon(NostrVaultIcons.Dismiss, contentDescription = "Remove", tint = ErrorRed)
-                        }
-                    }
-                }
-            }
-            Text(
-                text = "Slowed-down accounts have a limit on how many of their posts appear " +
-                    "in your feed at once.",
-                color = SecondaryText,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -260,21 +219,5 @@ private fun AccountRow(
             )
         }
         trailing()
-    }
-}
-
-@Composable
-private fun Stepper(value: Int, range: IntRange, onChange: (Int) -> Unit) {
-    val colors = LocalNostrVaultColors.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-            onClick = { if (value > range.first) onChange(value - 1) },
-            enabled = value > range.first,
-        ) { Text("−", color = colors.primary, fontSize = 20.sp) }
-        Text("$value", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.widthIn(min = 20.dp))
-        IconButton(
-            onClick = { if (value < range.last) onChange(value + 1) },
-            enabled = value < range.last,
-        ) { Text("+", color = colors.primary, fontSize = 20.sp) }
     }
 }
