@@ -266,7 +266,7 @@ struct TrustWebView: View {
                 Text("\(frame.ring.count.formatted()) \(frame.center == me ? "you follow" : "\(name(frame.center)) follows")")
                 Spacer(minLength: 8)
                 if !frame.bridges.isEmpty {
-                    legendDot(.havenPurple)
+                    legendDot(.orange)
                     Text("\(countText(frame)) follow \(name(author))")
                         .foregroundColor(.havenPurple)
                 }
@@ -660,7 +660,7 @@ private struct TrustWebPresentation: ViewModifier {
 
 /// Deep space behind the globe.
 struct GlobeSpace: View {
-    static let edge = Color(red: 0.03, green: 0.035, blue: 0.06)
+    static let edge = Color.black
 
     var body: some View {
         RadialGradient(colors: [Color(red: 0.07, green: 0.08, blue: 0.13), Self.edge],
@@ -725,7 +725,7 @@ struct TrustGlobeCanvas: View {
             TimelineView(.animation(minimumInterval: nil, paused: !scene.awake || !running || !appIsActive)) { timeline in
                 Canvas { context, size in
                     scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)
-                    scene.draw(in: &context, size: size, accent: .havenPurple, name: name)
+                    scene.draw(in: &context, size: size, accent: .orange, name: name)
                 } symbols: {
                     ForEach(scene.faceKeys, id: \.self) { key in
                         avatar(key, GlobeScene.pictureSize).tag(key)
@@ -1091,9 +1091,12 @@ final class GlobeScene: ObservableObject {
 
     private static let ringColor = Color(red: 0.72, green: 0.82, blue: 1)
     private static let hazeColor = Color(red: 0.62, green: 0.55, blue: 0.9)
+    /// Warm amber for the threads, lighter than the glow behind them.
+    private static let threadColor = Color(red: 1, green: 0.66, blue: 0.3)
     /// Star brightness is rounded to this many steps, so each kind of star
-    /// is a handful of fills however many people there are.
-    private static let levels = 10
+    /// is a handful of fills however many people there are. Fine enough that
+    /// the faint haze keeps its front-to-back depth.
+    private static let levels = 40
 
     func draw(in context: inout GraphicsContext, size: CGSize, accent: Color, name: (String) -> String) {
         guard hasLoaded, let centerIndex = index[center] else { return }
@@ -1152,7 +1155,7 @@ final class GlobeScene: ObservableObject {
         if let authorP {
             let t = threadProgress
             let leg1 = min(1, t * 2), leg2 = max(0, t * 2 - 1)
-            var glow = Path(), dashed = Path()
+            var glow = Array(repeating: Path(), count: 4), dashed = Path()
             var strong = Array(repeating: Path(), count: 4), faint = Array(repeating: Path(), count: 4)
             func band(_ front: Double) -> Int { min(3, Int(front * 4)) }
             if direct {
@@ -1160,7 +1163,7 @@ final class GlobeScene: ObservableObject {
                 p.move(to: core.point)
                 p.addLine(to: lerp(core.point, authorP.point, t))
                 strong[3].addPath(p)
-                glow.addPath(p)
+                glow[3].addPath(p)
             }
             for key in bridges {
                 guard let i = index[key], alpha[i] > 0.05, let b = project(dirs[i] * radius[i]) else { continue }
@@ -1175,8 +1178,8 @@ final class GlobeScene: ObservableObject {
                     strong[band(b.front)].addPath(outer)
                 }
                 if b.front > 0.62 {
-                    glow.addPath(inner)
-                    glow.addPath(outer)
+                    glow[band(b.front)].addPath(inner)
+                    glow[band(b.front)].addPath(outer)
                 }
             }
             if t >= 1 {
@@ -1188,24 +1191,30 @@ final class GlobeScene: ObservableObject {
                     dashed.addLine(to: authorP.point)
                 }
             }
-            if !glow.isEmpty {
+            // Glow brightens toward the front, still in one blurred layer.
+            func bandAlpha(_ level: Int) -> Double {
+                let front = (Double(level) + 0.5) / 4
+                return 0.10 + 0.75 * front * front
+            }
+            if glow.contains(where: { !$0.isEmpty }) {
                 context.drawLayer { layer in
                     layer.addFilter(.blur(radius: 5))
-                    layer.stroke(glow, with: .color(accent.opacity(0.45)), lineWidth: 3)
+                    for level in 0..<4 where !glow[level].isEmpty {
+                        layer.stroke(glow[level], with: .color(accent.opacity(bandAlpha(level) * 0.6)), lineWidth: 3)
+                    }
                 }
             }
             for level in 0..<4 {
-                let front = (Double(level) + 0.5) / 4
-                let a = 0.10 + 0.75 * front * front
+                let a = bandAlpha(level)
                 if !faint[level].isEmpty {
-                    context.stroke(faint[level], with: .color(accent.opacity(a * 0.45)), lineWidth: 0.8)
+                    context.stroke(faint[level], with: .color(Self.threadColor.opacity(a * 0.45)), lineWidth: 0.8)
                 }
                 if !strong[level].isEmpty {
-                    context.stroke(strong[level], with: .color(accent.opacity(a)), lineWidth: 1.3)
+                    context.stroke(strong[level], with: .color(Self.threadColor.opacity(a)), lineWidth: 1.3)
                 }
             }
             if !dashed.isEmpty {
-                context.stroke(dashed, with: .color(accent.opacity(0.7)),
+                context.stroke(dashed, with: .color(Self.threadColor.opacity(0.7)),
                                style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round, dash: [5, 4]))
             }
         }
@@ -1216,7 +1225,7 @@ final class GlobeScene: ObservableObject {
         for key in faces {
             if let p = position(key, project) { drawn.append((key, p, accent, 15)) }
         }
-        if let authorP { drawn.append((author, authorP, .white, 24)) }
+        if let authorP { drawn.append((author, authorP, .yellow, 24)) }
         drawn.sort { $0.p.depth < $1.p.depth }
 
         // Labels: front-most first, skipping any that would cover one placed.
@@ -1242,7 +1251,7 @@ final class GlobeScene: ObservableObject {
                              with: .color(accent.opacity(dim)))
                 continue
             }
-            drawFace(&context, key: face.key, at: face.p.point, r: r, tint: face.tint, glow: accent, opacity: dim)
+            drawFace(&context, key: face.key, at: face.p.point, r: r, tint: face.tint, opacity: dim, name: name)
             if showLabel.contains(face.key) {
                 let text = context.resolve(Text(name(face.key))
                     .font(.system(size: face.key == author ? 14 : 11, weight: .semibold))
@@ -1264,24 +1273,29 @@ final class GlobeScene: ObservableObject {
         }
 
         // The core last: it is always in front of its own shell.
-        drawFace(&context, key: center, at: core.point, r: coreR, tint: center == me ? .white : accent,
-                 glow: accent, opacity: 1)
+        drawFace(&context, key: center, at: core.point, r: coreR, tint: center == me ? accent : .white,
+                 opacity: 1, name: name)
         let label = context.resolve(Text(name(center)).font(.system(size: 13, weight: .bold)).foregroundColor(.white))
         context.draw(label, at: CGPoint(x: core.point.x, y: core.point.y + coreR + 11))
     }
 
     private func drawFace(_ context: inout GraphicsContext, key: String, at p: CGPoint, r: Double,
-                          tint: Color, glow: Color, opacity: Double) {
+                          tint: Color, opacity: Double, name: (String) -> String) {
         var c = context
         c.opacity = opacity
         let rect = CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)
         c.fill(Path(ellipseIn: rect.insetBy(dx: -r * 0.9, dy: -r * 0.9)),
-               with: .radialGradient(Gradient(colors: [glow.opacity(0.35), .clear]),
+               with: .radialGradient(Gradient(colors: [tint.opacity(0.35), .clear]),
                                      center: p, startRadius: r * 0.6, endRadius: r * 1.9))
         if let picture = c.resolveSymbol(id: key) {
             c.draw(picture, in: rect)
         } else {
-            c.fill(Path(ellipseIn: rect), with: .color(Color(white: 0.25)))
+            // No picture yet: a colour of their own and their first initial.
+            let hue = index[key].map { (dirs[$0].x + 1) / 2 } ?? 0
+            c.fill(Path(ellipseIn: rect), with: .color(Color(hue: hue, saturation: 0.45, brightness: 0.62)))
+            let initial = c.resolve(Text(String(name(key).prefix(1)))
+                .font(.system(size: r * 0.95, weight: .bold, design: .rounded)).foregroundColor(.white))
+            c.draw(initial, at: p)
         }
         c.stroke(Path(ellipseIn: rect), with: .color(tint), lineWidth: max(1.2, r * 0.12))
     }
