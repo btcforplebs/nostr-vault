@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
 # headed upstream. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "a46b0b52" }
+fips = { git = "https://github.com/btcforplebs/fips", rev = "c18f5c0b" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"

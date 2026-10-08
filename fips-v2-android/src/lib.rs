@@ -296,6 +296,8 @@ pub fn unexport() -> i32 {
 /// A loopback port whose connections reach `npub`'s shared relay over the
 /// mesh. The same npub gets the same port. Any npub works: one the node did
 /// not start with is added as a peer, found through its Nostr advert.
+/// Blocks until the node answers: call it off the UI thread, and never
+/// from inside a tokio runtime.
 pub fn ingress(npub: &str) -> i32 {
     let control = match STATE.lock().unwrap().as_ref() {
         Some(run) => run.control.clone(),
