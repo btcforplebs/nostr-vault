@@ -602,7 +602,6 @@ private struct HintCard: View {
 private struct ReadyCard: View {
     @ObservedObject private var guide = FillYourVaultCoordinator.shared
     @ObservedObject private var nostr = NostrService.shared
-    @State private var keepTopics = true
     @State private var reach: Int?
 
     var body: some View {
@@ -656,45 +655,15 @@ private struct ReadyCard: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 8) {
-                option(title: "Keep my topics", detail: "Topic posts from people in your web of trust.", on: keepTopics) {
-                    keepTopics = true
-                }
-                option(title: "Drop my topics", detail: "Unfollow the topics you picked.", on: !keepTopics) {
-                    keepTopics = false
-                }
-            }
             PrimaryButton(title: FillYourFeedGuide.readyButton, wide: true,
                           fill: AnyShapeStyle(LinearGradient(colors: [Gold.light, Gold.mid], startPoint: .topLeading, endPoint: .bottomTrailing)),
                           textColor: Color(red: 0.23, green: 0.16, blue: 0)) {
-                guide.goToDiscover(keepTopics: keepTopics)
+                guide.goToDiscover()
             }
         }
         .onAppear {
             FeedService.shared.countExtendedNetwork { count in reach = count }
         }
-    }
-
-    private func option(title: String, detail: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: on ? "largecircle.fill.circle" : "circle")
-                    .font(.appBody)
-                    .foregroundColor(on ? .havenPurple : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.appSubheadline.weight(.semibold)).foregroundColor(.white)
-                    Text(detail).font(.appFootnote).foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 14).fill(on ? Color.havenPurple.opacity(0.18) : Color(white: 0.18)))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(on ? Color.havenPurple : Color.white.opacity(0.1), lineWidth: 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

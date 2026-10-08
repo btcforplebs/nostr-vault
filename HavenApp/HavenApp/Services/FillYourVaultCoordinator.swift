@@ -27,8 +27,6 @@ final class FillYourVaultCoordinator: ObservableObject {
     @Published var meterHeight: CGFloat = 0
     /// The person whose small profile card is open.
     @Published var profileCardPubkey: String?
-    /// Topics picked in this run, so "Only my web of trust" drops just those.
-    private(set) var pickedTopics: [String] = []
 
     private let masterStore = VaultMasterStore()
     private let meterStore = FeedMeterStore(store: UserDefaultsTutorialStore())
@@ -79,7 +77,6 @@ final class FillYourVaultCoordinator: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.loadMeterState() }
             .store(in: &cancellables)
-        }
     }
 
     // MARK: - Guide steps
@@ -95,7 +92,6 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// Topics: "Show posts". Follows the picked hashtags (one published
     /// list) and opens the topic feed behind the hint.
     func showPosts(topics: [String]) {
-        pickedTopics = topics
         let interests = InterestListService.shared
         let new = topics.filter { !interests.isFollowing($0) }
         if !new.isEmpty {
@@ -109,13 +105,9 @@ final class FillYourVaultCoordinator: ObservableObject {
     func dismissHint() { phase = .browsing }
 
     /// "Your web of trust is built": open Discover to find more people, put
-    /// the meter away and start the Feeds tutorial there. `keepTopics`
-    /// false unfollows the hashtags picked in this run (and only those).
-    func goToDiscover(keepTopics: Bool) {
-        if !keepTopics, !pickedTopics.isEmpty {
-            let topics = pickedTopics
-            Task { await InterestListService.shared.setFollowing(topics, false) }
-        }
+    /// the meter away and start the Feeds tutorial there. The picked topics
+    /// stay followed (Logen: keep them, don't ask).
+    func goToDiscover() {
         FeedService.shared.switchMode(.discovery)
         closeGuide()
         let center = TutorialCenter.shared
@@ -163,7 +155,6 @@ final class FillYourVaultCoordinator: ObservableObject {
             let active = TutorialCenter.shared.isActive(.fillYourVault)
             defer { self.wasActive = active }
             guard active, !self.wasActive else { return }
-            self.pickedTopics = []
             let entry = FillYourFeedGuide.entryPhase(meterOn: self.meterOn)
             self.phase = entry
             // Back mid-guide after a relaunch: their topic feed, where they
