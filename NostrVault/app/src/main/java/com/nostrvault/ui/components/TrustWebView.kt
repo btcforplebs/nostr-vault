@@ -118,6 +118,7 @@ import com.nostrvault.ui.theme.Surface1
 import com.nostrvault.ui.theme.Surface2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -259,8 +260,15 @@ private fun TrustWebContent(
     fun name(pubkey: String): String =
         if (pubkey == me) "You" else profiles[pubkey]?.bestName ?: "npub…${pubkey.takeLast(6)}"
 
+    val trustGraphUpdate by trust.trustGraphUpdates.collectAsState()
+
     LaunchedEffect(Unit) {
         nostrService.fetchMissingProfiles(listOf(me, author) + path.bridges)
+    }
+
+    // Again when the trust graph lands: on a cold start it's still loading, and
+    // a haze computed then stays empty all session.
+    LaunchedEffect(trustGraphUpdate) {
         val graph = trust.myTrustGraph()
         val inner = myFollows + me + author
         haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner) }
@@ -936,6 +944,11 @@ private fun TrustGlobe(
         if (scene.hasLoaded && center != scene.center) scene.turn(center)
     }
 
+    // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
+    LaunchedEffect(scene) {
+        Motion.reducedUpdates.drop(1).collect { scene.reduceMotionChanged() }
+    }
+
     val loadKey = frame?.let {
         LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size)
     }
@@ -1258,6 +1271,12 @@ private class GlobeScene {
             lastTick = null
             awake = true
         }
+    }
+
+    /** iOS `onChange(of: reduceMotion)`: drop any spin and redraw once. */
+    fun reduceMotionChanged() {
+        camera.spin = Vec3.ZERO
+        wake()
     }
 
     // ── Frame clock ──────────────────────────────────────────────────
