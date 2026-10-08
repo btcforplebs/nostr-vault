@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
@@ -278,7 +279,7 @@ class NostrService @Inject constructor(
     }
 
     fun initialize() {
-        Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
         loadProfilesFromDisk()
         observeAccountSwitch()
     }
@@ -539,7 +540,7 @@ class NostrService @Inject constructor(
                 "NOTICE" -> {
                     if (parsed.size >= 2) {
                         val notice = parsed[1].jsonPrimitive.contentOrNull
-                        Log.d(TAG, "NOTICE from $relayUrl: $notice")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "NOTICE from $relayUrl: $notice")
                     }
                 }
                 "AUTH" -> {
@@ -1232,7 +1233,7 @@ class NostrService @Inject constructor(
         forceOwner: Boolean,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
-        Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
 
         // Owner-forced events while another account is active go to the
         // OWNER's own signer (#168 parity), never the active account's.
@@ -1640,7 +1641,7 @@ class NostrService @Inject constructor(
             configStore.updateAsync {
                 it.copy(dmRelays = published.ifEmpty { it.dmRelays }, dmRelaysUpdatedAt = newest.second)
             }
-            Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
+            if (BuildConfig.DEBUG) Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
             // This device may still hold more than was published (its own
             // Haven inbox, or loopback entries dropped).
             action = DMInbox.syncAction(configStore.config.value.dmInboxRelays, newest.second, newest.first, newest.second)
