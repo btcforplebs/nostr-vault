@@ -141,6 +141,17 @@ fun NostrVaultNavHost(
     val unreadDMs by dmUnreadCount.collectAsState()
     val relayActivity by hasNewRelayActivity.collectAsState()
 
+    // A tutorial whose cards are on another page goes there: a last card's
+    // "Next", or Replay in Settings. Your Vault and Pocket Relay are the
+    // Relay tab (which opens its dashboard for Pocket Relay), Wallet Connect
+    // the wallet. A page starting its own tutorial is already on it.
+    val activeTutorial by com.nostrvault.tutorials.TutorialCenter.active.collectAsState()
+    LaunchedEffect(activeTutorial) {
+        val route = activeTutorial?.let(::tutorialRoute) ?: return@LaunchedEffect
+        if (route == Screen.Feed.route || navController.currentDestination?.route == route) return@LaunchedEffect
+        navigateToTutorialRoute(navController, route)
+    }
+
     // A tap from outside the app — widget, notification, nostr: link — lands in
     // PendingDeepLink; this is the only place that can act on it. Setup has to
     // be finished first: navigating away from the wizard would strand a
@@ -633,14 +644,8 @@ fun NostrVaultNavHost(
                     com.nostrvault.tutorials.TutorialsSettingsScreen(
                         account = nostrService.activeHexPubkey,
                         onBack = { navController.popBackStack() },
-                        // Back to the feed, where the replayed card waits.
-                        onReplay = {
-                            navController.navigate(Screen.Feed.route) {
-                                popUpTo(Screen.Feed.route) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        // To the tutorial's page, where the replayed card waits.
+                        onReplay = { id -> navigateToTutorialRoute(navController, tutorialRoute(id)) },
                     )
                 }
 
@@ -975,4 +980,28 @@ fun NostrVaultNavHost(
             onDismiss = { showAccountSwitcher = false },
         )
     }
+}
+
+/** The page a tutorial's cards are on. */
+private fun tutorialRoute(id: com.nostrvault.tutorials.TutorialID): String = when (id) {
+    com.nostrvault.tutorials.TutorialID.VAULT,
+    com.nostrvault.tutorials.TutorialID.POCKET_RELAY -> Screen.Dashboard.route
+    com.nostrvault.tutorials.TutorialID.WALLET_CONNECT -> Screen.Wallet.route
+    else -> Screen.Feed.route
+}
+
+/** Tabs open as the bottom bar opens them, then drop anything their saved
+ *  stack brings back (a thread, or the wallet an earlier card opened), so
+ *  the tab itself is on screen for its cards. The wallet goes on top. */
+private fun navigateToTutorialRoute(navController: androidx.navigation.NavHostController, route: String) {
+    if (route == Screen.Wallet.route) {
+        navController.navigate(route) { launchSingleTop = true }
+        return
+    }
+    navController.navigate(route) {
+        popUpTo(Screen.Feed.route) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+    navController.popBackStack(route, inclusive = false)
 }

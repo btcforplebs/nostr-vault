@@ -1905,7 +1905,10 @@ private fun FeedTopBar(
             visible = !(collapsed && feedMode == FeedMode.REELS),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
-        ) { GlassPill(horizontalArrangement = Arrangement.Start) {
+        ) { GlassPill(
+            horizontalArrangement = Arrangement.Start,
+            modifier = Modifier.tutorialAnchor(com.nostrvault.tutorials.TutorialContent.FEED_TOOLBAR),
+        ) {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
             // Reels is one video per screen — there is no layout to switch.
             if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
