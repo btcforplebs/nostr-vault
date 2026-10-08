@@ -18,32 +18,21 @@ enum LocalTLSTrust {
     static let certificateChanged = Notification.Name("LocalTLSCertificateChanged")
 
     private static let pinsKey = "localTLSPins"
-    private static let lock = NSLock()
-    private static var refused: Set<String> = []
+    private static let pins = LocalTLSPins(
+        load: { UserDefaults.standard.dictionary(forKey: pinsKey) as? [String: String] ?? [:] },
+        save: { pins in
+            if let pins { UserDefaults.standard.set(pins, forKey: pinsKey) }
+            else { UserDefaults.standard.removeObject(forKey: pinsKey) }
+        })
 
     /// host:port of relays refused this session for a changed certificate.
-    static var refusedHosts: [String] {
-        lock.lock(); defer { lock.unlock() }
-        return refused.sorted()
-    }
+    static var refusedHosts: [String] { pins.refusedHosts }
 
     /// Forgets the saved certificate for `hostPort`; the next one is trusted.
-    static func forget(_ hostPort: String) {
-        lock.lock()
-        var pins = UserDefaults.standard.dictionary(forKey: pinsKey) as? [String: String] ?? [:]
-        pins[hostPort] = nil
-        UserDefaults.standard.set(pins, forKey: pinsKey)
-        refused.remove(hostPort)
-        lock.unlock()
-    }
+    static func forget(_ hostPort: String) { pins.forget(hostPort) }
 
     /// Forgets every saved certificate (Reset App).
-    static func forgetAll() {
-        lock.lock()
-        UserDefaults.standard.removeObject(forKey: pinsKey)
-        refused.removeAll()
-        lock.unlock()
-    }
+    static func forgetAll() { pins.forgetAll() }
 
     static func handle(_ challenge: URLAuthenticationChallenge,
                        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -64,17 +53,8 @@ enum LocalTLSTrust {
                 return
             }
             let key = "\(space.host.lowercased()):\(space.port)"
-            lock.lock()
-            var pins = UserDefaults.standard.dictionary(forKey: pinsKey) as? [String: String] ?? [:]
-            let decision = LocalTLSPolicy.decide(pinned: pins[key], presented: fingerprint)
-            if decision == .acceptAndPin {
-                pins[key] = fingerprint
-                UserDefaults.standard.set(pins, forKey: pinsKey)
-            }
-            let isNewRefusal = decision == .reject && refused.insert(key).inserted
-            lock.unlock()
-            if decision == .reject {
-                if isNewRefusal {
+            if case .refused(let firstTime) = pins.check(key, fingerprint: fingerprint) {
+                if firstTime {
                     RelayProcessManager.shared.addLog(
                         "Refused \(key): its certificate is not the one this app saved. If that relay was reset or reinstalled, trust the new one in Settings › Relays › Fixes.",
                         level: "WARN")
