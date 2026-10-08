@@ -22,6 +22,9 @@ struct NoteDetailView: View {
     @State private var parentNotes: [FeedNote] = []
     @State private var isLoadingParents = false
     @State private var threadClient: WebSocketClient?
+    /// The reply subscriptions, kept open while the page is on screen so a
+    /// reply that lands later (yours once it broadcasts, or anyone's) shows up.
+    @State private var replyClients: [WebSocketClient] = []
     @State private var cancellables = Set<AnyCancellable>()
     @State private var showingProfilePubkey: String?
     @State private var showingNoteId: String?
@@ -145,14 +148,6 @@ struct NoteDetailView: View {
         Set([note.id, focusedNote.id] + dynamicParents.map(\.id))
     }
 
-    /// The thread pool the views draw from: the opened note, the notes above
-    /// it, and the replies under it that pass `threadReplies`.
-    private var threadPool: [FeedNote] {
-        let all = allThreadNotes
-        let context = contextNoteIds
-        return all.filter { context.contains($0.id) } + threadReplies(in: all).visible
-    }
-
     /// Replies under the opened note, at any depth. `feedService.notes` holds
     /// every note in memory, Global's firehose included, and none of it was
     /// filtered here, so blocked people and spam showed up as replies. Replies
@@ -190,17 +185,6 @@ struct NoteDetailView: View {
 
     private var replyTargetId: String {
         (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
-    }
-
-    private var dynamicReplies: [FeedNote] {
-        let targetId = replyTargetId
-        return threadPool.filter { $0.parentEventId == targetId }
-            .sorted(by: { $0.createdAt < $1.createdAt })
-    }
-
-    /// Replies under the opened note that are folded as outside your network.
-    private var outsideReplyCount: Int {
-        threadReplies(in: allThreadNotes).outside
     }
 
     /// Puts the note you opened at the top, with the posts it answers
@@ -423,9 +407,8 @@ struct NoteDetailView: View {
             if expandedEngagement {
                 fetchAllThreadEngagement()
             }
-            detailedReactions.removeAll()
-            detailedReposts.removeAll()
-            detailedZaps.removeAll()
+            // Coming back to the page keeps what it already showed; the
+            // fetch below adds to it (each list skips ids it already has).
             if focusedNoteId.isEmpty {
                 focusedNoteId = note.id
             }
@@ -442,6 +425,8 @@ struct NoteDetailView: View {
         }
         .onDisappear {
             threadClient?.disconnect()
+            replyClients.forEach { $0.disconnect() }
+            replyClients.removeAll()
             cancellables.removeAll()
         }
         .sheet(item: Binding<IdentifiableString?>(
@@ -671,11 +656,24 @@ struct NoteDetailView: View {
     }
 
     private func repliesSection(proxy: ScrollViewProxy) -> some View {
-        let currentReplies = dynamicReplies
-        let pool = threadPool
+        // One pass over everything in memory per redraw; this used to run
+        // four times (replies, pool, and the outside count twice), each a
+        // full scan of up to 10,000 notes, every time the live feed changed.
+        let all = allThreadNotes
+        let split = threadReplies(in: all)
+        let context = contextNoteIds
+        // What the views draw from: the opened note, the notes above it, and
+        // the replies under it that pass `threadReplies`.
+        let pool = all.filter { context.contains($0.id) } + split.visible
+        let targetId = replyTargetId
+        let currentReplies = pool.filter { $0.parentEventId == targetId }
+            .sorted(by: { $0.createdAt < $1.createdAt })
+        let outsideCount = split.outside
 
         return VStack(alignment: .leading, spacing: 12) {
-            if isLoadingReplies {
+            // Replies already in memory — the one you just posted included —
+            // show at once. The spinner is only for an empty page.
+            if isLoadingReplies && currentReplies.isEmpty && outsideCount == 0 {
                 // Subtle loading indicator — replies are being buffered
                 HStack(spacing: 8) {
                     ProgressView()
@@ -688,7 +686,7 @@ struct NoteDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .transition(.opacity)
-            } else if currentReplies.isEmpty && outsideReplyCount == 0 {
+            } else if currentReplies.isEmpty && outsideCount == 0 {
                 Text("No replies yet")
                     .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -706,13 +704,12 @@ struct NoteDetailView: View {
 
                 repliesList(currentReplies, pool: pool, proxy: proxy)
             }
-            outsideRepliesButton
+            outsideRepliesButton(count: outsideCount)
         }
     }
 
     @ViewBuilder
-    private var outsideRepliesButton: some View {
-        let count = outsideReplyCount
+    private func outsideRepliesButton(count: Int) -> some View {
         if !isLoadingReplies && count > 0 {
             Button {
                 withAnimation(Motion.fade) { showsOutsideReplies = true }
@@ -871,6 +868,9 @@ struct NoteDetailView: View {
     private func fetchReplies() {
         guard !isLoadingReplies else { return }
         isLoadingReplies = true
+        // A refresh replaces the live subscriptions rather than doubling them.
+        replyClients.forEach { $0.disconnect() }
+        replyClients.removeAll()
 
         // Try local relay AND external relays to find replies
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
@@ -931,12 +931,11 @@ struct NoteDetailView: View {
 
             client.connect(url: url)
         }
-        
-        // Auto-disconnect and flush any remaining buffered replies after 6 seconds
+        replyClients = activeClients
+
+        // Reveal whatever has arrived after 6 seconds even if no relay has
+        // finished. The subscriptions stay open: later replies stream in.
         DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
-            for client in activeClients {
-                client.disconnect()
-            }
             if self.isLoadingReplies {
                 self.flushPendingReplies()
             }
@@ -1053,7 +1052,7 @@ struct NoteDetailView: View {
                 }
             }
         } else if type == "EOSE" {
-            client.disconnect()
+            // Stored replies are all in; stay subscribed for new ones.
             if isLoadingReplies {
                 flushPendingReplies()
             }
@@ -1514,7 +1513,7 @@ struct NoteDetailView: View {
                 parentNotes.sort { $0.createdAt < $1.createdAt }
             }
 
-            // Also store in feedService so focusedNote / dynamicReplies can resolve them
+            // Also store in feedService so focusedNote and the replies section can resolve them
             if feedService.findNote(id: id) == nil {
                 feedService.parentNotesCache[id] = parent
             }
