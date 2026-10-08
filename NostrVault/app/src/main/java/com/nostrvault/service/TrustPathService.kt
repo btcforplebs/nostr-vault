@@ -8,6 +8,7 @@ import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -37,6 +38,13 @@ class TrustPathService @Inject constructor(
 
     /** Your trust graph plus your follows; empty until the graph has loaded. */
     fun myTrustGraph(): Set<String> = feedService.relayTabTrustedPubkeys()
+
+    /**
+     * The relay's trust graph as it loads. Android reads it from disk off the
+     * main thread, so [myTrustGraph] can be empty on a cold start; key on this
+     * to pick it up when it lands. iOS reads it from cache synchronously.
+     */
+    val trustGraphUpdates: StateFlow<Set<String>> get() = feedService.wotPubkeys
 
     suspend fun path(author: String): TrustPath = path(author, me, myFollows(), myTrustGraph())
 

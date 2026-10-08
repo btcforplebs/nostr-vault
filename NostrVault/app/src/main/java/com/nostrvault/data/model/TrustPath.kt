@@ -6,9 +6,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * A signed follow list (kind 3) as the Trust Path reads it. Built from a
@@ -131,7 +128,7 @@ data class TrustPath(
 
         /**
          * Every bridge in [contactLists], sorted by key, by the same rules as
-         * [resolve]. The map uses it to light all of them, not just the card's 5.
+         * [resolve]. The globe uses it to light all of them, not just the card's 5.
          */
         fun allBridges(
             author: String,
@@ -164,147 +161,7 @@ data class TrustPath(
     }
 }
 
-/**
- * The pure parts of the Web of Trust map: where each person sits, which
- * follow lists to ask for next, and the 3-hop "look deeper" chains. No layout
- * is ever iterated: a person's spot comes straight from their key, so the same
- * person sits in the same place every time the map opens.
- *
- * Port of iOS Models/TrustMap.swift.
- */
-object TrustMap {
-    /** Follow lists asked for per "show everyone" batch (~2 MB a batch). */
-    const val BATCH_SIZE = 20
-    /** Stop "show everyone" here (~9 MB). Past it the button asks again. */
-    const val MAX_BATCHED_LISTS = 100
-    /** Lists tagging the author fetched from anyone for "look deeper". */
-    const val DEEPER_SEEDS = 30
-    /** Lists from your follows that tag one of those seeds. */
-    const val DEEPER_LINKS = 12
-    /** Faces drawn for 3-hop chains; the rest stay dots. */
-    const val SHOWN_CHAINS = 12
-
-    /** How far a dot may sit in or out of the ring, in ring radii. */
-    const val BAND_WIDTH = 0.08
-
-    /**
-     * Where someone sits on a ring, in degrees from 0 up to 360, from the first
-     * 8 hex digits of their key. The key is already uniformly random, so its
-     * leading bits spread people evenly.
-     */
-    fun angle(pubkey: String): Double = fraction(pubkey, 0) * 360
-
-    /** −1…1 from the next 8 hex digits: a small in-or-out nudge so dots form a band. */
-    fun band(pubkey: String): Double = fraction(pubkey, 8) * 2 - 1
-
-    private fun fraction(pubkey: String, offset: Int): Double {
-        val hex = pubkey.drop(offset).take(8)
-        if (hex.length == 8 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
-            return hex.toLong(16) / 4_294_967_296.0
-        }
-        // Not hex (only in tests or a malformed tag): FNV-1a, still stable.
-        var hash = 2_166_136_261u
-        for (byte in pubkey.encodeToByteArray().drop(offset)) {
-            hash = (hash xor byte.toUByte().toUInt()) * 16_777_619u
-        }
-        return hash.toDouble() / 4_294_967_296.0
-    }
-
-    /** A point at [degrees] (0 = up, clockwise) and radius [r], in ring units. */
-    fun polar(degrees: Double, r: Double): Pair<Double, Double> {
-        val rad = (degrees - 90) * PI / 180
-        return r * cos(rad) to r * sin(rad)
-    }
-
-    /** A ring member's spot, from their key alone. */
-    fun dot(pubkey: String): Pair<Double, Double> = polar(angle(pubkey), 1 + BAND_WIDTH * band(pubkey))
-
-    /**
-     * Up to [count] of [sorted], evenly spaced through it. Keys sort in ring
-     * order, so taking the first few would bunch every face on one arc.
-     */
-    fun spread(sorted: List<String>, count: Int): List<String> {
-        if (sorted.size <= count || count <= 0) return sorted
-        return (0 until count).map { sorted[it * sorted.size / count] }
-    }
-
-    /**
-     * The next "show everyone" filters: follows whose lists haven't come back
-     * yet, tagging the author, chunked for relays that cap a request's size.
-     * Empty once every follow has been asked about.
-     */
-    fun nextBatch(
-        author: String,
-        follows: List<String>,
-        seen: Set<String>,
-        chunkSize: Int = 1000,
-    ): List<FollowListFilter> =
-        follows.filter { it != author && it !in seen }.chunked(chunkSize).map {
-            FollowListFilter(authors = it, tagged = listOf(author), limit = BATCH_SIZE)
-        }
-
-    /**
-     * The p-tags of the newest follow list [owner] signed: who they follow.
-     * Lists from anyone else are ignored. Null when no list came back.
-     */
-    fun follows(owner: String, lists: List<ContactList>): List<String>? {
-        val best = lists.filter { it.kind == 3 && it.pubkey == owner }
-            .fold(null as ContactList?) { newest, list -> if (newest != null && newest.createdAt >= list.createdAt) newest else list }
-            ?: return null
-        val seen = HashSet<String>()
-        return best.tags.mapNotNull { tag ->
-            if (tag.size >= 2 && tag[0] == "p" && tag[1].length == 64 && tag[1] != owner && seen.add(tag[1])) tag[1] else null
-        }
-    }
-
-    /** One 3-hop route: you follow [bridge], who follows [via], who follows the author. */
-    data class Chain(val bridge: String, val via: String)
-
-    /** Step 1 of "look deeper": anyone's follow list that tags the author. */
-    fun deeperSeedFilter(author: String) = FollowListFilter(authors = null, tagged = listOf(author), limit = DEEPER_SEEDS)
-
-    /**
-     * Who the seed lists say follows the author, minus you, your follows and
-     * the author: the possible middle steps. People already in your trust
-     * graph come first, since your follows most likely follow them.
-     */
-    fun deeperVia(
-        author: String,
-        me: String,
-        follows: Set<String>,
-        trustGraph: Set<String>,
-        seeds: List<ContactList>,
-    ): List<String> {
-        val candidates = TrustPath.allBridges(author, me, seeds.mapTo(HashSet()) { it.pubkey }, seeds)
-            .filter { it !in follows }
-        if (trustGraph.isEmpty()) return candidates
-        return candidates.filter { it in trustGraph } + candidates.filter { it !in trustGraph }
-    }
-
-    /** Step 2: lists from your follows that tag any of the middle steps. */
-    fun deeperLinkFilters(follows: List<String>, via: List<String>, chunkSize: Int = 1000): List<FollowListFilter> {
-        if (via.isEmpty()) return emptyList()
-        return follows.chunked(chunkSize).map { FollowListFilter(authors = it, tagged = via, limit = DEEPER_LINKS) }
-    }
-
-    /**
-     * Every route the link lists show, sorted by middle step then bridge. Only
-     * each follow's newest list counts, as in [TrustPath.resolve].
-     */
-    fun chains(me: String, follows: Set<String>, via: List<String>, links: List<ContactList>): List<Chain> {
-        val viaSet = via.toSet()
-        val routes = HashSet<Chain>()
-        val bridges = links.map { it.pubkey }.distinct().filter { it in follows && it != me }.sorted()
-        for (bridge in bridges) {
-            for (target in follows(bridge, links).orEmpty()) {
-                if (target in viaSet) routes += Chain(bridge, target)
-            }
-        }
-        return routes.sortedWith(compareBy({ it.via }, { it.bridge }))
-    }
-}
-
-/** The one-line summary shared by the card and the map. */
+/** The one-line summary shared by the card and the globe. */
 object TrustPathText {
     fun label(path: TrustPath?, name: (String) -> String): String {
         if (path == null) return "Tracing how they reach you…"

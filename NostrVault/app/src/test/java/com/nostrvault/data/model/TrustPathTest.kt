@@ -8,7 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Port of iOS TrustPathTests and TrustMapTests. */
+/** Port of iOS TrustPathTests. */
 class TrustPathTest {
 
     private val me = "me"
@@ -90,90 +90,5 @@ class TrustPathTest {
         assertEquals("Followed by A, B + more you follow · 2 hops",
             TrustPathText.label(TrustPath(TrustPath.Reach.BRIDGED, listOf("a", "b", "c"), false), name))
         assertEquals("Tracing how they reach you…", TrustPathText.label(null, name))
-    }
-}
-
-class TrustMapTest {
-
-    private val me = "0".repeat(64)
-    private val author = "a".repeat(64)
-
-    private fun key(n: Int) = String.format("%064x", n.toLong() * 0x1234567 + 1)
-
-    private fun list(signer: String, tags: List<String>, at: Long = 0) =
-        ContactList(signer, at, tags.map { listOf("p", it) })
-
-    @Test fun `angle comes from the key and stays put`() {
-        assertEquals(0.0, TrustMap.angle("00000000" + "f".repeat(56)), 0.0)
-        assertEquals(180.0, TrustMap.angle("80000000" + "f".repeat(56)), 0.0)
-        val k = key(42)
-        assertEquals(TrustMap.angle(k), TrustMap.angle(k), 0.0)
-        val odd = TrustMap.angle("not-a-key")
-        assertEquals(odd, TrustMap.angle("not-a-key"), 0.0)
-        assertTrue(odd >= 0 && odd < 360)
-    }
-
-    @Test fun `band stays within one`() {
-        for (n in 0 until 200) assertTrue(TrustMap.band(key(n)) in -1.0..1.0)
-    }
-
-    @Test fun `spread picks evenly through the list`() {
-        val keys = (0 until 48).map(::key)
-        assertEquals(listOf(keys[0], keys[12], keys[24], keys[36]), TrustMap.spread(keys, 4))
-        assertEquals(keys.take(3), TrustMap.spread(keys.take(3), 12))
-        assertEquals(keys, TrustMap.spread(keys, 0))
-    }
-
-    @Test fun `next batch skips seen and the author`() {
-        val filters = TrustMap.nextBatch(author, listOf(key(1), key(2), author, key(3)), setOf(key(2)))
-        assertEquals(1, filters.size)
-        assertEquals(listOf(key(1), key(3)), filters[0].authors)
-        assertEquals(listOf(author), filters[0].tagged)
-        assertEquals(TrustMap.BATCH_SIZE, filters[0].limit)
-        assertTrue(TrustMap.nextBatch(author, listOf(key(1), author), setOf(key(1))).isEmpty())
-        val many = (1..2500).map(::key)
-        assertEquals(listOf(1000, 1000, 500), TrustMap.nextBatch(author, many, emptySet(), 1000).map { it.authors!!.size })
-    }
-
-    @Test fun `follows of uses only the owner's newest list`() {
-        val owner = key(7)
-        val lists = listOf(
-            list(owner, listOf(key(1)), at = 100),
-            list(owner, listOf(key(2), key(2), owner, "short"), at = 200),
-            list(key(8), listOf(key(9)), at = 300),
-        )
-        assertEquals(listOf(key(2)), TrustMap.follows(owner, lists))
-        assertNull(TrustMap.follows(key(5), lists))
-    }
-
-    @Test fun `all bridges is uncapped`() {
-        val follows = (1..9).map(::key).toSet()
-        val lists = follows.map { list(it, listOf(author)) }
-        val all = TrustPath.allBridges(author, me, follows, lists)
-        assertEquals(follows.sorted(), all)
-        assertEquals(all.take(5), TrustPath.resolve(author, me, follows, setOf("x"), lists).bridges)
-    }
-
-    @Test fun `deeper chains`() {
-        val bridge = key(1); val other = key(2); val via = key(3); val stranger = key(4)
-        val follows = setOf(bridge, other)
-        // A follow's list is not a middle step (that's 2 hops), and neither is your own.
-        val seeds = listOf(list(via, listOf(author)), list(stranger, listOf(author)),
-            list(bridge, listOf(author)), list(me, listOf(author)))
-        val viaList = TrustMap.deeperVia(author, me, follows, setOf(stranger), seeds)
-        assertEquals("people in your graph come first", listOf(stranger, via), viaList)
-
-        val filters = TrustMap.deeperLinkFilters(follows.sorted(), viaList)
-        assertEquals(1, filters.size)
-        assertEquals(viaList, filters[0].tagged)
-
-        // A stranger's list can't invent a route; only your follows' lists count.
-        val links = listOf(list(bridge, listOf(via, key(9))), list(other, listOf(stranger, via)), list(key(5), listOf(via)))
-        assertEquals(
-            listOf(TrustMap.Chain(other, stranger), TrustMap.Chain(bridge, via), TrustMap.Chain(other, via))
-                .sortedWith(compareBy({ it.via }, { it.bridge })),
-            TrustMap.chains(me, follows, viaList, links),
-        )
-        assertTrue(TrustMap.deeperLinkFilters(listOf(bridge), emptyList()).isEmpty())
     }
 }
