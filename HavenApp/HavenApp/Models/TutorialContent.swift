@@ -117,17 +117,17 @@ enum TutorialContent {
         TutorialStep(
             anchor: feedPicker,
             title: "Pick your feed",
-            body: "Tap here to switch feeds. Nostr has no algorithm, so you choose what you see."
+            body: "Tap here to switch feeds. Nostr has no algorithm, so you decide what you see."
         ),
         TutorialStep(
             anchor: feedToolbar,
             title: "Tune this feed",
-            body: "These buttons change what this feed shows, like reposts and replies. They're different on each feed."
+            body: "These buttons change what this feed shows, like reposts and replies. Each feed has its own set."
         ),
         TutorialStep(
             anchor: feedToolbar,
-            title: "Following, Global and trust",
-            body: "On wider feeds you'll see a globe for Global. It shows people your follows follow, your web of trust, so spam stays out. The shield opens it to everyone."
+            title: "Global and your web of trust",
+            body: "On Global, a shield shows up here. It keeps Global to your web of trust: people you follow and the people they follow, so spam stays out. Tap the shield to see everyone."
         ),
     ]
 
@@ -143,12 +143,12 @@ enum TutorialContent {
         TutorialStep(
             anchor: vaultModes,
             title: "Your vault",
-            body: "Your posts, likes, zaps and followers. It's all kept on this phone, not on someone else's server."
+            body: "Switch between your posts, likes, zaps and followers. All of it is kept on this phone, not on someone else's server."
         ),
         TutorialStep(
             anchor: vaultFilters,
             title: "Narrow it down",
-            body: "These change with each tab. On Notes: everything, just yours, posts that mention you, and replies from outside your network."
+            body: "Filters for the tab you're on. On Notes you can show everything, just your posts, posts that mention you, or replies from people outside your network."
         ),
         TutorialStep(
             anchor: vaultRelay,
@@ -167,17 +167,17 @@ enum TutorialContent {
         TutorialStep(
             anchor: walletEmpty,
             title: "Zaps are bitcoin tips",
-            body: "A zap sends bitcoin straight to the person who posted. Nobody in between takes a cut."
+            body: "A zap sends bitcoin straight to the person who posted. Nobody in the middle takes a cut."
         ),
         TutorialStep(
             anchor: walletEmpty,
             title: "Your money stays in your wallet",
-            body: "Nostr Vault never holds your bitcoin. You link a wallet app you already use."
+            body: "Nostr Vault never holds your bitcoin. It connects to a wallet app you already use."
         ),
         TutorialStep(
             anchor: walletConnectButton,
             title: "Link your wallet",
-            body: "In your wallet app, find Nostr Wallet Connect and copy its link. Then tap here and paste it."
+            body: "In your wallet app, look for Nostr Wallet Connect (NWC) and copy the connection link. Then tap here and paste it."
         ),
     ]
 
@@ -194,7 +194,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayStatus,
             title: "Your pocket relay",
-            body: "A real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
+            body: "This is a real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
         ),
         TutorialStep(
             anchor: relayActivity,
@@ -204,7 +204,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayAddress,
             title: "Pocket vs public",
-            body: "This address only works on this phone, so nobody on the network can connect to it. Want a public address? Run Nostr Vault on a Mac with your own domain. That's optional: your pocket relay works fine on its own."
+            body: "This address only works on this phone, so nobody else can connect to it. For a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
         ),
     ]
 
@@ -217,27 +217,27 @@ enum TutorialContent {
         TutorialStep(
             anchor: nil,
             title: "Your notes, your copy",
-            body: "Your notes live on relays you don't own, and any of them can delete them. Importing makes a copy that lives on this device."
+            body: "Your notes sit on relays you don't own, and any of them can delete them. Importing saves your own copy on this device."
         ),
         TutorialStep(
             anchor: nil,
             title: "A relay in your pocket",
-            body: "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nothing on the network can reach in."
+            body: "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it."
         ),
         TutorialStep(
             anchor: nil,
             title: "Public relays vs yours",
-            body: "Public relays are shared servers everyone posts to. Yours is your own copy. You post from your vault, and it sends the post out."
+            body: "Public relays are shared servers that everyone posts to. Your vault belongs to you alone. You post to your vault, and it sends the post out to them."
         ),
         TutorialStep(
             anchor: nil,
-            title: "Want an address?",
-            body: "Run Nostr Vault on a Mac with your own domain and it becomes a public relay that's up 24/7. Your phone syncs from it. Without one, your pocket relay is all you need."
+            title: "Want a public address?",
+            body: "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your pocket relay works fine on its own."
         ),
         TutorialStep(
             anchor: nil,
             title: "Your feed, your rules",
-            body: "No algorithm. Your feeds are filtered by the people you follow, so spam stays out."
+            body: "No algorithm picks for you. Your feeds are filtered through the people you follow, so spam stays out."
         ),
     ]
 }
