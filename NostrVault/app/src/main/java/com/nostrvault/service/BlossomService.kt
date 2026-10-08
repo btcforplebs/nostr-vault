@@ -328,7 +328,12 @@ class BlossomService @Inject constructor(
         }
     }
 
-    /** One concurrent upload pass over all mirrors; returns the first mirror URL that accepted the blob. */
+    /**
+     * One concurrent upload pass over all mirrors; returns the URL from the
+     * first mirror IN CONFIGURED ORDER that accepted the blob — not the first
+     * to answer. The list order is the user's preference; fastest-first made
+     * the posted link whichever server won the race that time. Same as iOS.
+     */
     private suspend fun mirrorUploadPass(
         source: UploadSource,
         mirrors: List<String>,
@@ -336,25 +341,23 @@ class BlossomService @Inject constructor(
         contentType: String,
         authHeader: String,
     ): String? = coroutineScope {
-        val firstExternalUrl = java.util.concurrent.atomic.AtomicReference<String?>(null)
         val jobs = mirrors.map { mirrorUrl ->
             async {
                 try {
-                    val url = uploadToServer(
+                    uploadToServer(
                         source = source,
                         serverUrl = mirrorUrl,
                         sha256 = sha256,
                         contentType = contentType,
                         authHeader = authHeader,
                     )
-                    firstExternalUrl.compareAndSet(null, url)
                 } catch (e: Exception) {
                     Log.w(TAG, "Mirror to $mirrorUrl failed: ${e.message}")
+                    null
                 }
             }
         }
-        jobs.awaitAll()
-        firstExternalUrl.get()
+        jobs.awaitAll().firstOrNull { it != null }
     }
 
     /**

@@ -239,11 +239,11 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    private val _feedMode = MutableStateFlow(
-        configStore.config.value.defaultFeedMode
-            .let { name -> FeedMode.entries.find { it.name == name } }
-            ?: FeedMode.FOLLOWING
-    )
+    // Starts from the service's mode, not a second read of defaultFeedMode.
+    // The service is a singleton built before setup runs, so on a fresh
+    // install the two reads disagreed: the tab said what setup chose while
+    // the service loaded the default, and picking that tab again did nothing.
+    private val _feedMode = MutableStateFlow(feedService.feedMode.value)
     val feedMode: StateFlow<FeedMode> = _feedMode.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)

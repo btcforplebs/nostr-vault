@@ -14,6 +14,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +78,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var mediaUploadManager: MediaUploadManager
     @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
+    @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result ignored */ }
@@ -124,7 +128,11 @@ class MainActivity : FragmentActivity() {
                     // so reading it once here is enough.
                     if (config.useExternalRelay) {
                         RelayForegroundService.useExternalRelay(this@MainActivity)
-                    } else {
+                    } else if (!relayImportService.isImporting.value) {
+                        // Setup's import tour can finish with the import still
+                        // running ("Keep it running in the background"). The
+                        // import holds the relay's database and restarts the
+                        // relay itself when it's done.
                         RelayForegroundService.start(this@MainActivity)
                     }
 
@@ -199,6 +207,16 @@ class MainActivity : FragmentActivity() {
                             FullScreenMediaHost()
                             // DMs that arrive while the app is open.
                             InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
+                            // An import still running after setup, or started in Settings.
+                            com.nostrvault.setup.ImportRunningPill(
+                                isImporting = relayImportService.isImporting,
+                                statusMessage = relayImportService.importStatusMessage,
+                                hasCompletedSetup = config.hasCompletedSetup,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .statusBarsPadding()
+                                    .padding(top = 60.dp),
+                            )
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }
@@ -384,6 +402,10 @@ class MainActivity : FragmentActivity() {
         mediaPostQueue.retryAll("foreground")
         // Restore the snapshot for instant UI, then reconnect in the background.
         if (configStore.config.value.hasCompletedSetup) {
+            // An import that ended while we were away couldn't restart the relay.
+            if (relayImportService.takeRelayRestartPending() && !configStore.config.value.useExternalRelay) {
+                RelayForegroundService.start(this)
+            }
             feedService.resumeFeed()
             // Start DM listeners once, then catch up from external relays each
             // time the app returns to the foreground.

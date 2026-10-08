@@ -1,6 +1,7 @@
 package com.nostrvault.data.local
 
 import android.content.Context
+import android.util.Log
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -8,6 +9,7 @@ import com.nostrvault.relay.RelayConfigApplier
 import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.service.ContactManager
 import com.nostrvault.service.NIP46Service
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -109,7 +111,27 @@ class ConfigStore @Inject constructor(
             )
         }
 
+        // Undo what the old Discover Accounts step did: it saved the people
+        // picked there into whitelistedNpubs, which the account switcher lists,
+        // instead of following them. Remove those starter-pack npubs unless
+        // this device can sign for one, i.e. it was added on purpose.
+        var removedStarterPicks = false
+        val whitelisted = loaded.whitelistedNpubs
+        if (!whitelisted.isNullOrEmpty()) {
+            val kept = ContactManager.accountsWithoutStarterPackPicks(whitelisted) { npub ->
+                npub in loaded.accountNpubs ||
+                    loaded.accountBunkerConfigs[npub] != null ||
+                    deviceHoldsKey(npub)
+            }
+            if (kept.size != whitelisted.size) {
+                loaded = loaded.copy(whitelistedNpubs = kept)
+                Log.i("ConfigStore", "removed ${whitelisted.size - kept.size} starter-pack account(s) that setup added by mistake")
+                removedStarterPicks = true
+            }
+        }
+
         _config.value = loaded
+        if (removedStarterPicks) CoroutineScope(Dispatchers.IO).launch { save() }
 
         // Restore active account hex pubkey from persisted ownerNpub so that
         // profile navigation works on subsequent app launches (not just setup).
@@ -121,6 +143,19 @@ class ConfigStore @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Whether a key for [npub] is stored on this device. A store that can't be
+     * read counts as holding one, so the starter-pack cleanup never removes an
+     * account it couldn't check.
+     */
+    private fun deviceHoldsKey(npub: String): Boolean = try {
+        val hex = HavenBridge.decodeNpub(npub)
+        CredentialStore.getCredentialHexKey(npub) != null ||
+            (hex != null && CredentialStore.getNsec(hex) != null)
+    } catch (_: Throwable) {
+        true
     }
 
     /** Persist current config to disk. */

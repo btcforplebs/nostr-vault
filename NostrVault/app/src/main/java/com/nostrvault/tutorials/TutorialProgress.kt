@@ -10,7 +10,10 @@ enum class TutorialID(val key: String) {
     FEEDS("feeds"),
     VAULT("vault"),
     WALLET_CONNECT("wallet-connect"),
-    POCKET_RELAY("pocket-relay");
+    POCKET_RELAY("pocket-relay"),
+    /** The cards shown while "I already use Nostr" imports your notes. They
+     *  teach what Vault and Pocket relay would, so finishing them covers those. */
+    IMPORT_TOUR("import-tour");
 
     /** Fill your vault is about one account's follows, so a second account
      *  gets it again. The page tutorials teach the app, so one run covers
@@ -21,6 +24,13 @@ enum class TutorialID(val key: String) {
      *  should see the new one once. A status from an older version reads as
      *  [TutorialStatus.NOT_STARTED]. */
     val version: Int get() = 1
+
+    /** Tutorials whose lessons this one already gave. Finishing it marks
+     *  them done too, so nobody hears the same thing twice. */
+    val covers: List<TutorialID> get() = if (this == IMPORT_TOUR) listOf(VAULT, POCKET_RELAY) else emptyList()
+
+    /** Runs inside setup, before there's a feed or a Fill your vault to wait for. */
+    val runsDuringSetup: Boolean get() = this == IMPORT_TOUR
 }
 
 enum class TutorialStatus(val raw: String) {
@@ -64,7 +74,7 @@ class TutorialProgress(private val store: TutorialStore) {
     fun isEligible(id: TutorialID, account: String): Boolean {
         if (account.isEmpty() || active != null || autoStartedThisLaunch) return false
         if (status(id, account) != TutorialStatus.NOT_STARTED) return false
-        if (id != TutorialID.FILL_YOUR_VAULT) {
+        if (id != TutorialID.FILL_YOUR_VAULT && !id.runsDuringSetup) {
             return status(TutorialID.FILL_YOUR_VAULT, account) != TutorialStatus.NOT_STARTED
         }
         return true
@@ -83,7 +93,14 @@ class TutorialProgress(private val store: TutorialStore) {
         active = id
     }
 
-    fun finish(id: TutorialID, account: String) = close(id, TutorialStatus.DONE, account)
+    /** Done, and so is everything it covers. Only call this when the cards
+     *  were actually seen; closing early is [skip]. */
+    fun finish(id: TutorialID, account: String) {
+        close(id, TutorialStatus.DONE, account)
+        for (covered in id.covers) {
+            if (status(covered, account) == TutorialStatus.NOT_STARTED) close(covered, TutorialStatus.DONE, account)
+        }
+    }
 
     fun skip(id: TutorialID, account: String) = close(id, TutorialStatus.SKIPPED, account)
 
