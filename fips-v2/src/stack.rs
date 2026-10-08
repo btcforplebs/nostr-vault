@@ -284,6 +284,9 @@ struct Gate {
     buf: Vec<u8>,
     /// Where the search for the head's end resumes (no rescan per read).
     scanned: usize,
+    /// Read at least once. Only a gate that was read and had sent nothing may
+    /// be evicted; a fresh one has not had its chance yet.
+    pumped: bool,
     until: std::time::Instant,
 }
 
@@ -292,9 +295,10 @@ struct Gate {
 const HEAD_MAX: usize = 8 * 1024;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 5 });
 /// Local connections waiting on their head, per listener and in all. Past
-/// either, the oldest waiting one goes: the app's own head arrives at once,
-/// so a connection still silent is the likeliest squatter, and refusing the
-/// newest instead would let 64 idle sockets lock the app out of every vault.
+/// either, the oldest one that was read and had sent nothing goes: the app's
+/// own head arrives at once, so a connection still silent is the likeliest
+/// squatter. If none qualifies the newcomer is refused, so a connect loop
+/// cannot push the app's fresh connection out before it is read.
 const GATES_PER_LISTENER: usize = 8;
 const GATES_MAX: usize = 64;
 
@@ -552,7 +556,11 @@ pub fn run_with(
         };
 
         for conn in &connects {
-            while let Ok((stream, from)) = conn.listener.accept() {
+            // A bounded take per poll: a connect loop must not keep this
+            // drain going forever, or the gates are never read and every
+            // splice starves. Once read, a whole take's worth is evictable.
+            for _ in 0..GATES_PER_LISTENER {
+                let Ok((stream, from)) = conn.listener.accept() else { break };
                 // A failure here costs this one connection (the local client
                 // sees it closed), never the stack.
                 if let Err(e) = local_ready(&stream) {
@@ -567,17 +575,29 @@ pub fn run_with(
                     continue;
                 };
                 let Ok(port) = conn.listener.local_addr().map(|a| a.port()) else { continue };
-                // `gates` is oldest first: drop the oldest of this listener, or of all.
-                if gates.iter().filter(|g| g.port == port).count() >= GATES_PER_LISTENER {
-                    let i = gates.iter().position(|g| g.port == port).unwrap();
-                    gates.remove(i);
-                    eprintln!("local read refused: still silent");
+                // `gates` is oldest first. Over a budget, the oldest silent gate
+                // in that budget makes room, or the newcomer is turned away.
+                let silent = |g: &Gate| g.pumped && g.buf.is_empty();
+                let victim = if gates.iter().filter(|g| g.port == port).count() >= GATES_PER_LISTENER {
+                    Some(gates.iter().position(|g| g.port == port && silent(g)))
                 } else if gates.len() >= GATES_MAX {
-                    gates.remove(0);
-                    eprintln!("local read refused: still silent");
+                    Some(gates.iter().position(silent))
+                } else {
+                    None
+                };
+                match victim {
+                    Some(Some(i)) => {
+                        gates.remove(i);
+                        eprintln!("local read refused: still silent");
+                    }
+                    Some(None) => {
+                        eprintln!("local read refused: too many waiting");
+                        continue;
+                    }
+                    None => {}
                 }
                 let until = std::time::Instant::now() + HEAD_TIMEOUT;
-                gates.push(Gate { stream, peer, token, port, buf: Vec::new(), scanned: 0, until });
+                gates.push(Gate { stream, peer, token, port, buf: Vec::new(), scanned: 0, pumped: false, until });
             }
         }
 
@@ -586,6 +606,7 @@ pub fn run_with(
         while i < gates.len() {
             let g = &mut gates[i];
             let mut verdict = None;
+            g.pumped = true;
             match g.stream.read(&mut buf[..HEAD_MAX + 1]) {
                 Ok(0) => verdict = Some(Err("closed before the head")),
                 Ok(n) => {

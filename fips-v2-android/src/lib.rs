@@ -993,6 +993,42 @@ mod tests {
         }
 
         #[test]
+        fn a_connect_loop_does_not_push_out_the_app() {
+            let (a, b) = pair();
+            let (addr, heads) = relay_heads("B:");
+            b.ctl.set_serve(Some(addr));
+            let r = a.ctl.connect_port(B).unwrap();
+
+            // Another app connecting as fast as it can, never sending a byte.
+            let stop = Arc::new(AtomicBool::new(false));
+            let flood = {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let mut held = Vec::new();
+                    while !stop.load(Ordering::Relaxed) {
+                        if let Ok(s) = TcpStream::connect(("127.0.0.1", r.port)) {
+                            held.push(s);
+                        }
+                    }
+                })
+            };
+            std::thread::sleep(Duration::from_millis(200));
+
+            // The app's one request still gets through.
+            let mut s = connect(r);
+            s.write_all(format!("GET /{}/abc HTTP/1.1\r\n\r\n", token(&r)).as_bytes()).unwrap();
+            let end = Instant::now() + Duration::from_secs(5);
+            while heads.lock().unwrap().is_empty() {
+                assert!(Instant::now() < end, "the app was locked out by a connect loop");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            stop.store(true, Ordering::Relaxed);
+            flood.join().unwrap();
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
         fn read_of_a_silent_peer_gives_up() {
             let (a, b) = pair();
             // Nothing answers for this address: B's stack drops what is not its own.
