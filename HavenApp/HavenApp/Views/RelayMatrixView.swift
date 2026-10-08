@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// Settings > Relays: every relay the owner uses on one screen. Each row is a
-/// relay; the Read, Write and DMs columns are its jobs, tapped on and off.
-/// Search and Import live in the relay's detail and show as a tag under its
-/// name. The owner's own relay is pinned on top. The Recommended page has
+/// relay; the Read, Write, DMs and Search columns are its jobs, tapped on and
+/// off. Import lives in the relay's detail and shows as a tag under its name. The owner's own relay is pinned on top. The Recommended page has
 /// the fixes, relays the owner's follows write to and the fastest relays from
 /// this device. See `RelayMatrix`.
 struct RelayMatrixView: View {
@@ -28,7 +27,7 @@ struct RelayMatrixView: View {
     @State private var dmPublishTask: Task<Void, Never>?
     @State private var relayListPublishTask: Task<Void, Never>?
 
-    private static let columnWidth: CGFloat = 46
+    private static let columnWidth: CGFloat = 42
 
     // MARK: - Lists
 
@@ -56,7 +55,7 @@ struct RelayMatrixView: View {
             scheduleDMPublish()
         }
         if new.read != old.read || new.write != old.write { scheduleRelayListPublish() }
-        probe.probe(rows.map(\.url))
+        probe.probe(RelayMatrix.needingProbe(rows.map(\.url), known: Set(probe.results.keys)))
     }
 
     private var blocked: [String] { configService.config.blockedRelays }
@@ -298,11 +297,14 @@ struct RelayMatrixView: View {
                 Text("Relay")
                 Spacer()
                 ForEach(RelayMatrix.Job.columns) { job in
-                    Text(job.title).frame(width: Self.columnWidth)
+                    Text(job.title)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(width: Self.columnWidth)
                 }
             }
         } footer: {
-            Text("Read + Write are your public relay list (10002). DMs are your DM inbox (10050). Tap a relay's name for Search and Import.")
+            Text("Read + Write are your public relay list (10002). DMs are your DM inbox (10050). Search is where searches go. Tap a relay's name for Import.")
         }
     }
 
@@ -325,13 +327,14 @@ struct RelayMatrixView: View {
                         .background(RoundedRectangle(cornerRadius: 3).fill(Color.havenPurple.opacity(0.15)))
                 }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(RelayMatrix.label(ownRelay)), your relay. Always used for reading and writing.")
             Spacer(minLength: 4)
             lockedDot(true)
             lockedDot(true)
             lockedDot(!configService.config.ownHavenDMInboxURL.isEmpty)
+            dot(ownRelay, .search, on: searchRelays.contains { RelayMatrix.key($0) == RelayMatrix.key(ownRelay) })
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(RelayMatrix.label(ownRelay)), your relay. Always used for reading and writing.")
     }
 
     private func relayRow(_ row: RelayMatrix.Row) -> some View {
@@ -362,9 +365,12 @@ struct RelayMatrixView: View {
     }
 
     private func jobDot(_ row: RelayMatrix.Row, _ job: RelayMatrix.Job) -> some View {
-        let on = row.has(job)
-        return Button {
-            apply(RelayMatrix.setting(job, !on, for: row.url, in: lists))
+        dot(row.url, job, on: row.has(job))
+    }
+
+    private func dot(_ url: String, _ job: RelayMatrix.Job, on: Bool) -> some View {
+        Button {
+            apply(RelayMatrix.setting(job, !on, for: url, in: lists))
         } label: {
             Circle()
                 .fill(on ? Color.havenPurple : Color.clear)
@@ -374,7 +380,7 @@ struct RelayMatrixView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(job.title), \(RelayMatrix.label(row.url))")
+        .accessibilityLabel("\(job.title), \(RelayMatrix.label(url))")
         .accessibilityValue(on ? "On" : "Off")
     }
 

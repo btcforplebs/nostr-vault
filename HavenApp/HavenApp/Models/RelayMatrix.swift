@@ -40,8 +40,14 @@ enum RelayMatrix {
 
         /// The jobs shown as grid columns; the rest are tags under the name
         /// and switches in the relay's detail.
-        static let columns: [Job] = [.read, .write, .dms]
-        static let advanced: [Job] = [.search, .importing]
+        static let columns: [Job] = [.read, .write, .dms, .search]
+        static let advanced: [Job] = [.importing]
+    }
+
+    /// The relays in `urls` with no speed yet. An edit probes only these, so
+    /// the rows already timed keep their dots instead of all going grey.
+    static func needingProbe(_ urls: [String], known: Set<String>) -> [String] {
+        urls.filter { !$0.isEmpty && !known.contains(key($0)) }
     }
 
     /// The lists the matrix edits, as stored.
