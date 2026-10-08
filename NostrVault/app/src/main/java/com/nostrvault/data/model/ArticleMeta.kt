@@ -76,3 +76,10 @@ data class ArticleMeta(
         }
     }
 }
+
+/**
+ * What a condensed row shows instead of the note body: an article's title, or
+ * a poll's question. Null for any other note. iOS: `FeedNote.condensedTitle`.
+ */
+val FeedNote.condensedTitle: String?
+    get() = if (kind == ArticleMeta.KIND) ArticleMeta.from(this).title else pollSummary
