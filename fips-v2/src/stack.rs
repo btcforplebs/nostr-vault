@@ -63,6 +63,8 @@ pub struct Control {
     new_connects: Mutex<Vec<(TcpListener, Ipv6Addr)>>,
     /// Loopback port per peer, so a second ask for the same peer reuses it.
     connect_ports: Mutex<HashMap<Ipv6Addr, u16>>,
+    /// Loopback ports whose listener the stack should drop (`close_connect`).
+    closed_connects: Mutex<Vec<u16>>,
     stop: AtomicBool,
     /// Sockets the stack holds, listeners included; a leak shows up here.
     sockets: AtomicU64,
@@ -116,6 +118,14 @@ impl Control {
         }
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind loopback")?;
         self.add_connect(listener, peer)
+    }
+
+    /// Stop listening for `peer`. Connections already spliced keep running;
+    /// a later `connect_port` opens a fresh listener.
+    pub fn close_connect(&self, peer: Ipv6Addr) {
+        if let Some(port) = self.connect_ports.lock().unwrap().remove(&peer) {
+            self.closed_connects.lock().unwrap().push(port);
+        }
     }
 
     pub fn connect_ports(&self) -> Vec<(Ipv6Addr, u16)> {
@@ -330,7 +340,15 @@ pub fn run_with(
             connects.clear();
             ctl.connect_ports.lock().unwrap().clear();
         } else {
+            // By port, not peer: a peer closed and reopened before this poll
+            // drops only its old listener.
             connects.append(&mut ctl.new_connects.lock().unwrap());
+            let closed = std::mem::take(&mut *ctl.closed_connects.lock().unwrap());
+            if !closed.is_empty() {
+                connects.retain(|(l, _)| {
+                    l.local_addr().is_ok_and(|a| !closed.contains(&a.port()))
+                });
+            }
         }
 
         let now = Instant::now();

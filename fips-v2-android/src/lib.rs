@@ -296,8 +296,8 @@ pub fn unexport() -> i32 {
 /// A loopback port whose connections reach `npub`'s shared relay over the
 /// mesh. The same npub gets the same port. Any npub works: one the node did
 /// not start with is added as a peer, found through its Nostr advert.
-/// Blocks until the node answers: call it off the UI thread, and never
-/// from inside a tokio runtime.
+/// Waits up to 10 s for the node: call it off the UI thread. At most 32
+/// vaults stay open; opening one more closes the least recently read.
 pub fn ingress(npub: &str) -> i32 {
     let control = match STATE.lock().unwrap().as_ref() {
         Some(run) => run.control.clone(),
@@ -313,8 +313,15 @@ pub fn ingress(npub: &str) -> i32 {
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     match run.ctl.connect_port(peer.address().to_ipv6()) {
         Ok(port) => {
-            if !run.reading.iter().any(|r| r.npub == npub) {
-                run.reading.push(Reading { npub: npub.to_string(), port });
+            // Most recently read last; past the cap the stalest listener goes,
+            // matching the node's own cap on peers added this way.
+            run.reading.retain(|r| r.npub != npub);
+            run.reading.push(Reading { npub: npub.to_string(), port });
+            while run.reading.len() > MAX_READING {
+                let old = run.reading.remove(0);
+                if let Ok(id) = PeerIdentity::from_npub(&old.npub) {
+                    run.ctl.close_connect(id.address().to_ipv6());
+                }
             }
             i32::from(port)
         }
@@ -325,6 +332,12 @@ pub fn ingress(npub: &str) -> i32 {
     }
 }
 
+/// Vaults open for reading at once (the node keeps as many runtime peers).
+const MAX_READING: usize = 32;
+
+/// How long `ingress` waits for the node to take a new peer.
+const ADD_PEER_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Ask the node to dial `npub` through its advert. A known peer is a no-op.
 fn add_peer(
     control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
@@ -334,9 +347,19 @@ fn add_peer(
         command: "add_peer".into(),
         params: Some(serde_json::json!({ "npub": npub })),
     };
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    control.blocking_send((request, tx)).context("node stopped")?;
-    let response = rx.blocking_recv().context("node stopped")?;
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    control.try_send((request, tx)).map_err(|e| anyhow::anyhow!("node busy or stopped: {e}"))?;
+    let end = Instant::now() + ADD_PEER_TIMEOUT;
+    let response = loop {
+        match rx.try_recv() {
+            Ok(response) => break response,
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => anyhow::bail!("node stopped"),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) if Instant::now() < end => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => anyhow::bail!("node did not answer in {ADD_PEER_TIMEOUT:?}"),
+        }
+    };
     anyhow::ensure!(response.status == "ok", "{}", response.message.unwrap_or_default());
     Ok(())
 }
@@ -531,6 +554,20 @@ mod tests {
         assert_eq!(v["reading"], serde_json::json!([]));
         assert_eq!(v["counters"]["served_open"], 0);
         assert_eq!(v["counters"]["read_rx"], 0);
+    }
+
+    #[test]
+    fn a_closed_read_port_is_reopened_fresh() {
+        let ctl = stack::Control::new();
+        let peer: Ipv6Addr = "fd00::1".parse().unwrap();
+        let first = ctl.connect_port(peer).unwrap();
+        assert_eq!(ctl.connect_port(peer).unwrap(), first, "reused while open");
+        ctl.close_connect(peer);
+        assert!(ctl.connect_ports().is_empty());
+        let second = ctl.connect_port(peer).unwrap();
+        assert_ne!(second, first, "a fresh listener, not the closed one");
+        ctl.close_connect("fd00::2".parse().unwrap()); // never opened: no-op
+        assert_eq!(ctl.connect_ports(), vec![(peer, second)]);
     }
 
     #[test]
