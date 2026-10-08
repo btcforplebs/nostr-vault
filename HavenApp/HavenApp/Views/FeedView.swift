@@ -395,6 +395,7 @@ struct FeedView: View {
     /// The diVine, article or recipe composer, when the post button opens one.
     @State private var modeComposer: ModeComposer?
     @State private var showingFeedMenuEditor = false
+    @State private var showingDashboard = false
     @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
     @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
     private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
@@ -652,7 +653,8 @@ struct FeedView: View {
             isCompactWidth: isCompactWidth,
             modes: menuModes,
             onSelect: { feedService.switchMode($0) },
-            onEdit: { showingFeedMenuEditor = true }
+            onEdit: { showingFeedMenuEditor = true },
+            onDashboard: { showingDashboard = true }
         )
         .equatable()
         // The Feeds tutorial points here, and starts here the first time
@@ -1746,6 +1748,15 @@ struct FeedView: View {
             pendingManager.editRequest = nil
         }
         #endif
+        .sheet(isPresented: $showingDashboard) {
+            FeedDashboardView(
+                onOpenFeed: { mode in
+                    showingDashboard = false
+                    FeedDashboardStore.openOnFollowing(mode)
+                },
+                onDismiss: { showingDashboard = false }
+            )
+        }
         .sheet(isPresented: $showingFeedMenuEditor) {
             FeedMenuEditor(onDismiss: { showingFeedMenuEditor = false })
                 #if os(macOS)
@@ -2711,7 +2722,7 @@ struct FeedView: View {
             onShowGlobal: { reelsService.setScope(.global) },
             onPost: { modeComposer = .divine },
             isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
-                || showingMediaUrl != nil
+                || showingMediaUrl != nil || showingDashboard
         )
         // feedList is not on screen in diVines, so the collapsed tab bar's
         // compose button is answered here.
@@ -5085,6 +5096,7 @@ struct FeedPickerMenu: View, Equatable {
     let modes: [FeedMode]
     let onSelect: (FeedMode) -> Void
     let onEdit: () -> Void
+    let onDashboard: () -> Void
 
     static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
         lhs.mode == rhs.mode
@@ -5111,6 +5123,11 @@ struct FeedPickerMenu: View, Equatable {
             .pickerStyle(.inline)
 
             Divider()
+
+            // Your network's day. Activity only; feed settings are in Settings > Feed.
+            Button(action: onDashboard) {
+                Label("Dashboard", systemImage: "square.grid.2x2")
+            }
 
             // Last, at the bottom of the list it edits.
             Button(action: onEdit) {

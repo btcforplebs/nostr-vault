@@ -283,6 +283,34 @@ fun NostrVaultNavHost(
                         onQuote = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
                         },
+                        onOpenDashboard = { navController.navigate(Screen.FeedDashboard.route) },
+                    )
+                }
+
+                composable(Screen.FeedDashboard.route) {
+                    com.nostrvault.ui.screens.feed.FeedDashboardScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenFeed = { navController.popBackStack(Screen.Feed.route, inclusive = false) },
+                        onProfileClick = { navController.navigate(Screen.Profile.createRoute(it)) },
+                        onNoteClick = { navController.navigate(Screen.NoteDetail.createRoute(it)) },
+                        onHashtagClick = { navController.navigate(Screen.HashtagFeed.createRoute(it)) },
+                        onOpenVault = { target ->
+                            // As a notification tap does: park the list for the
+                            // Relay tab, then switch to that tab.
+                            when (target) {
+                                com.nostrvault.ui.screens.feed.VaultTarget.ZAPS ->
+                                    RelayFocus.request(RelayFocusRequest("zap", ""))
+                                com.nostrvault.ui.screens.feed.VaultTarget.FOLLOWERS ->
+                                    RelayFocus.request(RelayFocusRequest(NotificationTarget.FOLLOWERS, ""))
+                                com.nostrvault.ui.screens.feed.VaultTarget.VAULT -> Unit
+                            }
+                            RelayForegroundService.markRelayViewed()
+                            navController.navigate(Screen.Dashboard.route) {
+                                popUpTo(Screen.Feed.route) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                     )
                 }
 
