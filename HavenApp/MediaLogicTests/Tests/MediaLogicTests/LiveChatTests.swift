@@ -208,6 +208,17 @@ final class LiveChatTests: XCTestCase {
                                         content: "", tags: tags)?.zapSats, 250_000)
     }
 
+    /// Note detail and the Relay tab total receipts with no request in hand:
+    /// an invoice-only receipt must count its sats, not 0.
+    func testReceiptOnlyAmountReadsTheRequestThenTheInvoice() {
+        let invoiceOnly = [["bolt11", "lnbc2500u1pvjluezpp5abcdef"],
+                           ["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: nil)]]
+        XCTAssertEqual(LiveChat.zapAmountSats(receiptTags: invoiceOnly), 250_000)
+        let tagged = [["bolt11", "lnbc2500u1pvjluezpp5abcdef"],
+                      ["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: "21000")]]
+        XCTAssertEqual(LiveChat.zapAmountSats(receiptTags: tagged), 21)
+    }
+
     func testBolt11Multipliers() {
         XCTAssertEqual(LiveChat.satsFromBolt11("lnbc2500u1pvjluez"), 250_000)
         XCTAssertEqual(LiveChat.satsFromBolt11("lnbc10n1pvjluez"), 1)
