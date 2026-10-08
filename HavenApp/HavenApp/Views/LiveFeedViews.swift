@@ -271,7 +271,7 @@ struct LiveStreamPlayerView: View {
         }
         .background(Color.platformWindowBackground)
         .onAppear {
-            nostrService.fetchMissingProfiles(for: [stream.hostPubkey, stream.zapPubkey])
+            nostrService.fetchMissingProfiles(for: [stream.hostPubkey])
             chat.connect(to: stream)
         }
         .onDisappear {
@@ -571,7 +571,7 @@ struct LiveStreamPlayerView: View {
     /// A stream zap pays the host named in the event, and carries the stream's
     /// address so the receipt lands in this chat rather than nowhere.
     private func sendZap(amountSats: Int) {
-        guard let lud16 = lightningAddress(for: stream.zapPubkey) else {
+        guard let lud16 = lightningAddress(for: stream.hostPubkey) else {
             noLightningAddress = true
             return
         }
@@ -581,7 +581,7 @@ struct LiveStreamPlayerView: View {
             do {
                 try await ZapService.shared.zapNote(
                     noteId: stream.eventId,
-                    notePubkey: stream.zapPubkey,
+                    notePubkey: stream.hostPubkey,
                     lud16: lud16,
                     amountSats: amountSats,
                     message: comment.isEmpty ? "Zap from Nostr Vault" : comment,

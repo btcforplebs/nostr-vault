@@ -80,8 +80,10 @@ enum LiveChat {
     }
 
     /// The `a` tag every chat message and stream zap is addressed to.
-    static func address(hostPubkey: String, identifier: String) -> String {
-        "30311:\(hostPubkey):\(identifier)"
+    /// Built from the event's author, which is the service (not the host)
+    /// when a service signs on the host's behalf.
+    static func address(authorPubkey: String, identifier: String) -> String {
+        "30311:\(authorPubkey):\(identifier)"
     }
 
     /// Who a zap for this stream should pay.
