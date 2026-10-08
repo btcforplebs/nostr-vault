@@ -75,7 +75,7 @@ enum TopicFeedFilter {
     /// and plebsvszombies.cc): the app wrote this post, not the person.
     static func isAppMade(_ post: Post) -> Bool {
         let clients = post.tags.filter { $0.count >= 2 && $0[0] == "client" }.map { lettersOnly($0[1]) }
-            .filter { $0.count >= 4 }
+            .filter { $0.count >= 4 && !generalClients.contains($0) }
         guard !clients.isEmpty else { return false }
         let sites = linkDomains(post.content).map { host -> String in
             let labels = host.split(separator: ".")
@@ -83,6 +83,14 @@ enum TopicFeedFilter {
         }.filter { $0.count >= 4 }
         return clients.contains { client in sites.contains { client.contains($0) || $0.contains(client) } }
     }
+
+    /// Everyday Nostr apps. Sharing a note's web link from the app you're in
+    /// (Damus and damus.io) is a person posting, not the app (Tron, 2026-10-08).
+    static let generalClients: Set<String> = [
+        "damus", "primal", "primalandroid", "primalios", "snort", "coracle", "yakihonne",
+        "nostrudel", "amethyst", "iris", "nostrich", "jumble", "ditto", "olas", "nostur",
+        "nostrapp", "habla", "highlighter", "zapstore", "nostrvault", "haven",
+    ]
 
     private static func lettersOnly(_ text: String) -> String {
         String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) && $0.isASCII }.map(Character.init))
@@ -99,6 +107,18 @@ enum TopicFeedFilter {
         let answered = ids.filter { (responders[$0] ?? 0) >= minResponders }
         let rest = ids.filter { (responders[$0] ?? 0) < minResponders }
         return answered + rest
+    }
+
+    /// Who responded. A zap receipt (9735) is signed by the zap service, so
+    /// the person is its `P` tag or the pubkey of the request inside it.
+    static func responder(_ ev: [String: Any]) -> String? {
+        guard (ev["kind"] as? Int) == 9735 else { return ev["pubkey"] as? String }
+        let tags = ev["tags"] as? [[String]] ?? []
+        if let sender = tags.first(where: { $0.count >= 2 && $0[0] == "P" })?[1] { return sender }
+        guard let description = tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
+              let data = description.data(using: .utf8),
+              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return request["pubkey"] as? String
     }
 
     static func hashtagCount(_ tags: [[String]]) -> Int {

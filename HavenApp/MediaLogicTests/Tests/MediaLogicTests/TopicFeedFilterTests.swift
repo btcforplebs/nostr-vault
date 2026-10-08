@@ -60,6 +60,9 @@ final class TopicFeedFilterTests: XCTestCase {
         XCTAssertTrue(TopicFeedFilter.isAppMade(game))
         XCTAssertFalse(TopicFeedFilter.isAppMade(person))
         XCTAssertFalse(TopicFeedFilter.isAppMade(photo), "image links are not sites")
+        let damus = TopicFeedFilter.Post(id: "d", pubkey: "s", content: "look https://damus.io/note1abc",
+                                         tags: [["client", "Damus"]])
+        XCTAssertFalse(TopicFeedFilter.isAppMade(damus), "a person sharing a link from their own app")
         XCTAssertEqual(TopicFeedFilter.shown([game, person, photo], followCounts: ["p": 50, "q": 50, "r": 50]), ["h", "i"])
     }
 
@@ -69,6 +72,18 @@ final class TopicFeedFilterTests: XCTestCase {
         XCTAssertEqual(TopicFeedFilter.ordered(ids, responders: ["liked": 2, "one": 1, "loved": 9]),
                        ["liked", "loved", "new", "one", "older"])
         XCTAssertEqual(TopicFeedFilter.ordered(ids, responders: [:]), ids)
+    }
+
+    /// A zap counts as the person who zapped, not the wallet that signed it.
+    func testZapResponderIsTheSender() {
+        let withP: [String: Any] = ["kind": 9735, "pubkey": "wallet", "tags": [["P", "alice"], ["e", "x"]]]
+        let request = #"{"kind":9734,"pubkey":"bob","tags":[]}"#
+        let withDescription: [String: Any] = ["kind": 9735, "pubkey": "wallet", "tags": [["description", request]]]
+        let like: [String: Any] = ["kind": 7, "pubkey": "carol", "tags": [["e", "x"]]]
+        XCTAssertEqual(TopicFeedFilter.responder(withP), "alice")
+        XCTAssertEqual(TopicFeedFilter.responder(withDescription), "bob")
+        XCTAssertEqual(TopicFeedFilter.responder(like), "carol")
+        XCTAssertNil(TopicFeedFilter.responder(["kind": 9735, "pubkey": "wallet", "tags": [[String]]()]))
     }
 
     func testLinkDomains() {

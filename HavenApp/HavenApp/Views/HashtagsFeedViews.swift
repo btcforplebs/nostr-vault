@@ -37,6 +37,12 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     /// nothing, the topic feed opens to everyone and says so: it is where a
     /// new account finds its first people.
     private var unfilteredForNewAccount: Bool { !everyone && feedService.hasNoWebOfTrustYet }
+    /// Once the open list is being screened it stays screened while this
+    /// view lives: the empty web of trust is rebuilt every 2 minutes, and the
+    /// moment the guide's follows give it names, flipping to the network
+    /// feed wiped the list under the reader (Tron, 2026-10-08).
+    @State private var screenLatched = false
+    private var screened: Bool { !everyone && (unfilteredForNewAccount || screenLatched) }
     private var shownTags: [String] {
         if let selected, interests.hashtags.contains(selected) { return [selected] }
         return interests.hashtags
@@ -48,7 +54,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 noTagsState
             } else {
                 chipRow
-                if unfilteredForNewAccount { unfilteredBanner }
+                if screened { unfilteredBanner }
                 if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                     noPostsState
                 }
@@ -64,7 +70,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                             if model.loadingOlder == .follows { olderSpinner }
                         }
                         if !model.fromOthers.isEmpty {
-                            if !everyone && !unfilteredForNewAccount { sectionHeader("More from your network") }
+                            if !everyone && !screened { sectionHeader("More from your network") }
                             ForEach(model.fromOthers) { note in
                                 row(note).onAppear { model.rowAppeared(note, in: .others) }
                             }
@@ -106,10 +112,12 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             suggestions.load(follows: Set(feedService.followedPubkeys), excluding: [])
             return
         }
-        let trust = unfilteredForNewAccount ? nil : feedService.globalTrustSet()
+        if unfilteredForNewAccount { screenLatched = true }
+        if everyone { screenLatched = false }
+        let trust = screened ? nil : feedService.globalTrustSet()
         // No web of trust yet: the open list is screened for bots and farms
         // (TopicFeedFilter) rather than shown raw.
-        model.start(tags: shownTags, follows: follows, trust: trust, screen: unfilteredForNewAccount)
+        model.start(tags: shownTags, follows: follows, trust: trust, screen: screened)
     }
 
     private var unfilteredBanner: some View {
@@ -277,7 +285,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 if model.loadingOlder == .follows { olderSpinner }
             }
             if !rest.isEmpty {
-                if !everyone && !unfilteredForNewAccount { sectionHeader("More from your network") }
+                if !everyone && !screened { sectionHeader("More from your network") }
                 ForEach(rest) { thread in
                     threadRow(thread).onAppear {
                         if thread.id == rest.last?.id { model.reachedEnd(of: .others) }
