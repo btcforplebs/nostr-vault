@@ -40,3 +40,62 @@ enum LocalTLSPolicy {
         return pinned == presented ? .accept : .reject
     }
 }
+
+/// The saved certificate per LAN relay (host:port → SHA-256 of the leaf) and
+/// the relays refused this session because theirs changed. Storage is passed
+/// in, so the save → refuse → Trust New sequence is unit-tested; the app
+/// keeps it in UserDefaults (`LocalTLSTrust`).
+final class LocalTLSPins {
+    private let load: () -> [String: String]
+    private let save: ([String: String]?) -> Void
+    private let lock = NSLock()
+    private var refused: Set<String> = []
+
+    /// `save(nil)` removes the stored pins.
+    init(load: @escaping () -> [String: String], save: @escaping ([String: String]?) -> Void) {
+        self.load = load
+        self.save = save
+    }
+
+    enum Outcome: Equatable {
+        case accepted
+        /// Refused; `firstTime` is true the first time this session.
+        case refused(firstTime: Bool)
+    }
+
+    func check(_ hostPort: String, fingerprint: String) -> Outcome {
+        lock.lock(); defer { lock.unlock() }
+        var pins = load()
+        switch LocalTLSPolicy.decide(pinned: pins[hostPort], presented: fingerprint) {
+        case .acceptAndPin:
+            pins[hostPort] = fingerprint
+            save(pins)
+            return .accepted
+        case .accept:
+            return .accepted
+        case .reject:
+            return .refused(firstTime: refused.insert(hostPort).inserted)
+        }
+    }
+
+    var refusedHosts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return refused.sorted()
+    }
+
+    /// Trust New: forgets `hostPort`'s certificate; the next one is saved.
+    func forget(_ hostPort: String) {
+        lock.lock(); defer { lock.unlock() }
+        var pins = load()
+        pins[hostPort] = nil
+        save(pins)
+        refused.remove(hostPort)
+    }
+
+    /// Reset App: forgets every certificate.
+    func forgetAll() {
+        lock.lock(); defer { lock.unlock() }
+        save(nil)
+        refused.removeAll()
+    }
+}

@@ -29,4 +29,52 @@ final class LocalTLSPolicyTests: XCTestCase {
         XCTAssertEqual(LocalTLSPolicy.decide(pinned: "aa", presented: "aa"), .accept)
         XCTAssertEqual(LocalTLSPolicy.decide(pinned: "aa", presented: "bb"), .reject)
     }
+
+    // MARK: - Saved certificates
+
+    private final class Storage {
+        var pins: [String: String]? = nil
+    }
+
+    private func store(_ storage: Storage) -> LocalTLSPins {
+        LocalTLSPins(load: { storage.pins ?? [:] }, save: { storage.pins = $0 })
+    }
+
+    /// The sequence that can lock a phone out of its relay, and the way back.
+    func testSaveThenRefuseThenTrustNew() {
+        let storage = Storage()
+        let pins = store(storage)
+        XCTAssertEqual(pins.check("192.168.1.20:4869", fingerprint: "aa"), .accepted)
+        XCTAssertEqual(storage.pins, ["192.168.1.20:4869": "aa"])
+        XCTAssertEqual(pins.check("192.168.1.20:4869", fingerprint: "aa"), .accepted)
+
+        XCTAssertEqual(pins.check("192.168.1.20:4869", fingerprint: "bb"), .refused(firstTime: true))
+        XCTAssertEqual(pins.check("192.168.1.20:4869", fingerprint: "bb"), .refused(firstTime: false))
+        XCTAssertEqual(pins.refusedHosts, ["192.168.1.20:4869"])
+        XCTAssertEqual(storage.pins, ["192.168.1.20:4869": "aa"], "a refusal must not overwrite the saved one")
+
+        pins.forget("192.168.1.20:4869")
+        XCTAssertTrue(pins.refusedHosts.isEmpty)
+        XCTAssertEqual(pins.check("192.168.1.20:4869", fingerprint: "bb"), .accepted)
+        XCTAssertEqual(storage.pins, ["192.168.1.20:4869": "bb"])
+    }
+
+    func testPinsSurviveARestart() {
+        let storage = Storage()
+        XCTAssertEqual(store(storage).check("macbook.local:4869", fingerprint: "aa"), .accepted)
+        XCTAssertEqual(store(storage).check("macbook.local:4869", fingerprint: "bb"), .refused(firstTime: true))
+    }
+
+    /// Reset App: the relay comes back with a new certificate, which must be accepted.
+    func testForgetAllClearsEveryPin() {
+        let storage = Storage()
+        let pins = store(storage)
+        _ = pins.check("10.0.0.5:4869", fingerprint: "aa")
+        _ = pins.check("10.0.0.5:4869", fingerprint: "bb")
+        pins.forgetAll()
+        XCTAssertNil(storage.pins)
+        XCTAssertTrue(pins.refusedHosts.isEmpty)
+        XCTAssertEqual(pins.check("10.0.0.5:4869", fingerprint: "bb"), .accepted)
+    }
 }
+
