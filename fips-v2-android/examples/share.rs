@@ -5,6 +5,8 @@
 //! so a phone can be tested without anything else listening on it.
 //! With --read, also opens the peer's share on a loopback port (printed), and
 //! prints the status every 10 s.
+//! With --no-peers, starts with an empty peer list: --read then has to add
+//! the peer at runtime, the way the app reaches a vault it was not told about.
 use std::io::{Read, Write};
 
 fn serve_file(port: u16, path: String) {
@@ -40,7 +42,7 @@ fn main() {
         std::thread::spawn(move || serve_file(port, path));
     }
     let opts = nvfips::StartOptions {
-        peers: vec![args[1].clone()],
+        peers: if args.iter().any(|a| a == "--no-peers") { Vec::new() } else { vec![args[1].clone()] },
         lan: args.iter().any(|a| a == "--lan"),
         relays: args.windows(2).filter(|w| w[0] == "--relay").map(|w| w[1].clone()).collect(),
         ..Default::default()

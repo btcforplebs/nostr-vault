@@ -31,7 +31,8 @@ pub const MESH_PORT: u16 = 80;
 #[derive(Deserialize, Default)]
 #[serde(default)]
 pub struct StartOptions {
-    /// Npubs allowed to reach this device (configured_only policy).
+    /// Npubs dialed at start. Anyone can reach this device; `ingress` adds
+    /// any other npub on demand.
     pub peers: Vec<String>,
     /// Advert and signaling relays. Empty keeps upstream's defaults.
     pub relays: Vec<String>,
@@ -100,6 +101,8 @@ struct Running {
     exported: Option<u16>,
     reading: Vec<Reading>,
     ctl: Arc<stack::Control>,
+    /// Commands into the node's rx loop (adding a peer at runtime).
+    control: tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
     stack_thread: std::thread::JoinHandle<()>,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
@@ -202,6 +205,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
                     }
                 };
                 let tun = node.enable_app_owned_tun();
+                let control = node.enable_embedded_control();
                 let npub = node.npub();
                 let address = node.identity().address().to_ipv6();
                 let mtu = node.effective_ipv6_mtu() as usize;
@@ -209,7 +213,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
                     let _ = ready_tx.send(Err(anyhow::anyhow!("start: {e}")));
                     return;
                 }
-                let _ = ready_tx.send(Ok((npub, address, mtu, tun)));
+                let _ = ready_tx.send(Ok((npub, address, mtu, tun, control)));
                 if let Err(e) = node
                     .run_rx_loop_with_shutdown(async {
                         let _ = stop_rx.await;
@@ -224,7 +228,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
             });
         })?;
 
-    let (npub, address, mtu, tun) = ready_rx
+    let (npub, address, mtu, tun, control) = ready_rx
         .recv_timeout(Duration::from_secs(30))
         .context("node did not report ready")??;
     tracing::info!(%npub, %address, mtu, "fips mesh started");
@@ -253,6 +257,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         exported: None,
         reading: Vec::new(),
         ctl,
+        control,
         stack_thread,
         stop: stop_tx,
         node_thread,
@@ -289,12 +294,21 @@ pub fn unexport() -> i32 {
 }
 
 /// A loopback port whose connections reach `npub`'s shared relay over the
-/// mesh. The same npub gets the same port. The friend must be in the
-/// `peers` the node started with, or the mesh will not connect to them.
+/// mesh. The same npub gets the same port. Any npub works: one the node did
+/// not start with is added as a peer, found through its Nostr advert.
 pub fn ingress(npub: &str) -> i32 {
+    let control = match STATE.lock().unwrap().as_ref() {
+        Some(run) => run.control.clone(),
+        None => return ERR_NOT_RUNNING,
+    };
+    let Ok(peer) = PeerIdentity::from_npub(npub) else { return ERR_BAD_NPUB };
+    // Outside the state lock: the rx loop answers, and never takes that lock.
+    if let Err(e) = add_peer(&control, npub) {
+        tracing::warn!("mesh add peer {npub}: {e:#}");
+        return ERR_START;
+    }
     let mut state = STATE.lock().unwrap();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
-    let Ok(peer) = PeerIdentity::from_npub(npub) else { return ERR_BAD_NPUB };
     match run.ctl.connect_port(peer.address().to_ipv6()) {
         Ok(port) => {
             if !run.reading.iter().any(|r| r.npub == npub) {
@@ -307,6 +321,22 @@ pub fn ingress(npub: &str) -> i32 {
             ERR_START
         }
     }
+}
+
+/// Ask the node to dial `npub` through its advert. A known peer is a no-op.
+fn add_peer(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    npub: &str,
+) -> Result<()> {
+    let request = fips::control::protocol::Request {
+        command: "add_peer".into(),
+        params: Some(serde_json::json!({ "npub": npub })),
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    control.blocking_send((request, tx)).context("node stopped")?;
+    let response = rx.blocking_recv().context("node stopped")?;
+    anyhow::ensure!(response.status == "ok", "{}", response.message.unwrap_or_default());
+    Ok(())
 }
 
 /// Stop the node, and the stack with it.
