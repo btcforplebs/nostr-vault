@@ -107,7 +107,7 @@ class FipsStatusTest {
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.start("nsec1whatever"))
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.export(8080))
         assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.unexport())
-        assertEquals(FipsBridge.ERR_UNAVAILABLE, FipsBridge.ingress("npub1whatever"))
+        assertEquals(FipsIngress(error = FipsBridge.ERR_UNAVAILABLE), FipsBridge.ingress("npub1whatever"))
         assertNull(FipsBridge.generateNsec())
         assertEquals(FipsStatus.stopped, FipsBridge.status())
         FipsBridge.stop()

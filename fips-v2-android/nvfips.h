@@ -12,8 +12,10 @@ char *NvFipsGenerateNsec(void);
 char *NvFipsStatusJSON(void);
 int32_t NvFipsExport(uint16_t port);
 int32_t NvFipsUnexport(void);
-// Blocks up to 10 s: call off the main thread. Returns a loopback port.
-int32_t NvFipsIngress(const char *npub);
+// Blocks up to 10 s: call off the main thread. On 0, *url_out is a URL base,
+// http://127.0.0.1:<port>/<token>; append the path. The token keeps other
+// apps out: never log it.
+int32_t NvFipsIngress(const char *npub, char **url_out);
 void NvFipsStop(void);
 void NvFipsFreeString(char *s);
 

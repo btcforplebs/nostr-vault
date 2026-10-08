@@ -85,13 +85,18 @@ object FipsBridge {
         if (!isAvailable) ERR_UNAVAILABLE else nativeUnexport()
 
     /**
-     * A loopback port whose connections reach [npub]'s shared relay over the
-     * mesh, or negative on failure. The same npub gets the same port, and it
-     * works while this phone is sharing too. [npub] must be in the peers the
-     * node was started with, or the mesh will not connect to them.
+     * A URL base, `http://127.0.0.1:<port>/<token>`, whose requests reach
+     * [npub]'s shared relay over the mesh: append `/<sha256>` for a blob. The
+     * same npub gets the same URL, and it works while this phone is sharing
+     * too. Any npub works; one the node did not start with is added as a peer.
+     * The token keeps other apps on the phone out: never log the URL.
+     * Blocks up to 10 s: call it off the main thread.
      */
-    fun ingress(npub: String): Int =
-        if (!isAvailable) ERR_UNAVAILABLE else nativeIngress(npub)
+    fun ingress(npub: String): FipsIngress {
+        if (!isAvailable) return FipsIngress(error = ERR_UNAVAILABLE)
+        val result = nativeIngress(npub) ?: return FipsIngress(error = ERR_START)
+        return result.toIntOrNull()?.let { FipsIngress(error = it) } ?: FipsIngress(url = result)
+    }
 
     fun stop() {
         if (isAvailable) nativeStop()
@@ -111,9 +116,13 @@ object FipsBridge {
     private external fun nativeStatusJSON(): String?
     private external fun nativeExport(localPort: Int): Int
     private external fun nativeUnexport(): Int
-    private external fun nativeIngress(npub: String): Int
+    // The URL, or the negative code as text.
+    private external fun nativeIngress(npub: String): String?
     private external fun nativeStop()
 }
+
+/** [FipsBridge.ingress]: a [url] base on success, else a negative [error]. */
+data class FipsIngress(val url: String? = null, val error: Int = 0)
 
 /** What [FipsBridge.start] passes to the library, as JSON. */
 @Serializable
@@ -148,7 +157,7 @@ data class FipsStatus(
     val exported: List<Int> = emptyList(),
     /** Npubs of peers currently connected. */
     val peers: List<String> = emptyList(),
-    /** Friends' vaults opened with [FipsBridge.ingress], and their loopback ports. */
+    /** Friends' vaults opened with [FipsBridge.ingress], and their loopback ports (no tokens). */
     val reading: List<FipsReading> = emptyList(),
     val counters: FipsCounters = FipsCounters(),
 ) {

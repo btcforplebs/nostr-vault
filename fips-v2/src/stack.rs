@@ -35,6 +35,45 @@ enum Kind {
     Read,
 }
 
+/// A secret in the path of every read through a connect listener. Loopback
+/// TCP is not per-app, so without it any process on the phone could read a
+/// friend's vault through our listener, as us.
+pub type Token = [u8; 16];
+
+pub fn new_token() -> Result<Token> {
+    let mut t = [0u8; 16];
+    getrandom::fill(&mut t).map_err(|e| anyhow::anyhow!("random token: {e}"))?;
+    Ok(t)
+}
+
+fn token_hex(t: &Token) -> String {
+    t.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// A connect listener: where it listens, and what a request must carry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reader {
+    pub port: u16,
+    token: Option<Token>,
+}
+
+impl Reader {
+    /// What a client puts in front of the path: `http://127.0.0.1:<port>/<token>`.
+    pub fn url(&self) -> String {
+        match &self.token {
+            Some(t) => format!("http://127.0.0.1:{}/{}", self.port, token_hex(t)),
+            None => format!("http://127.0.0.1:{}", self.port),
+        }
+    }
+}
+
+struct Connect {
+    listener: TcpListener,
+    peer: Ipv6Addr,
+    /// `None` splices whatever connects (the probe's explicit --listen).
+    token: Option<Token>,
+}
+
 /// Live counters, readable from any thread while the stack runs.
 #[derive(Default)]
 pub struct Counters {
@@ -60,9 +99,9 @@ pub struct Control {
     serve_gen: AtomicU64,
     serve_applied: AtomicU64,
     /// Connect listeners not yet picked up by the stack.
-    new_connects: Mutex<Vec<(TcpListener, Ipv6Addr)>>,
-    /// Loopback port per peer, so a second ask for the same peer reuses it.
-    connect_ports: Mutex<HashMap<Ipv6Addr, u16>>,
+    new_connects: Mutex<Vec<Connect>>,
+    /// Listener per peer, so a second ask for the same peer reuses it.
+    connect_ports: Mutex<HashMap<Ipv6Addr, Reader>>,
     /// Loopback ports whose listener the stack should drop (`close_connect`).
     closed_connects: Mutex<Vec<u16>>,
     stop: AtomicBool,
@@ -102,34 +141,36 @@ impl Control {
         (*serve, self.serve_gen.load(Ordering::SeqCst))
     }
 
-    /// Splice connections accepted on `listener` to `peer`:MESH_PORT.
-    pub fn add_connect(&self, listener: TcpListener, peer: Ipv6Addr) -> Result<u16> {
+    /// Splice connections accepted on `listener` to `peer`:MESH_PORT. With a
+    /// token, only HTTP requests whose path starts with it are spliced.
+    pub fn add_connect(&self, listener: TcpListener, peer: Ipv6Addr, token: Option<Token>) -> Result<Reader> {
         listener.set_nonblocking(true)?;
-        let port = listener.local_addr()?.port();
-        self.connect_ports.lock().unwrap().insert(peer, port);
-        self.new_connects.lock().unwrap().push((listener, peer));
-        Ok(port)
+        let reader = Reader { port: listener.local_addr()?.port(), token };
+        self.connect_ports.lock().unwrap().insert(peer, reader);
+        self.new_connects.lock().unwrap().push(Connect { listener, peer, token });
+        Ok(reader)
     }
 
-    /// A loopback port that reaches `peer`:MESH_PORT, opening one if needed.
-    pub fn connect_port(&self, peer: Ipv6Addr) -> Result<u16> {
-        if let Some(port) = self.connect_ports.lock().unwrap().get(&peer) {
-            return Ok(*port);
+    /// A loopback listener that reaches `peer`:MESH_PORT, opening one (with a
+    /// fresh token) if needed.
+    pub fn connect_port(&self, peer: Ipv6Addr) -> Result<Reader> {
+        if let Some(reader) = self.connect_ports.lock().unwrap().get(&peer) {
+            return Ok(*reader);
         }
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind loopback")?;
-        self.add_connect(listener, peer)
+        self.add_connect(listener, peer, Some(new_token()?))
     }
 
     /// Stop listening for `peer`. Connections already spliced keep running;
     /// a later `connect_port` opens a fresh listener.
     pub fn close_connect(&self, peer: Ipv6Addr) {
-        if let Some(port) = self.connect_ports.lock().unwrap().remove(&peer) {
-            self.closed_connects.lock().unwrap().push(port);
+        if let Some(reader) = self.connect_ports.lock().unwrap().remove(&peer) {
+            self.closed_connects.lock().unwrap().push(reader.port);
         }
     }
 
     pub fn connect_ports(&self) -> Vec<(Ipv6Addr, u16)> {
-        self.connect_ports.lock().unwrap().iter().map(|(a, p)| (*a, *p)).collect()
+        self.connect_ports.lock().unwrap().iter().map(|(a, r)| (*a, r.port)).collect()
     }
 
     pub fn socket_count(&self) -> u64 {
@@ -220,14 +261,112 @@ struct Splice {
     kind: Kind,
     /// mesh -> local bytes the local stream has not accepted yet.
     pending: Vec<u8>,
+    /// local -> mesh bytes read before the splice existed (a checked request
+    /// head), sent ahead of anything else.
+    head: Vec<u8>,
     local_eof: bool,
     local_shut: bool,
 }
 
 impl Splice {
     fn new(handle: SocketHandle, stream: TcpStream, kind: Kind) -> Self {
-        Self { handle, stream, kind, pending: Vec::new(), local_eof: false, local_shut: false }
+        Self { handle, stream, kind, pending: Vec::new(), head: Vec::new(), local_eof: false, local_shut: false }
     }
+}
+
+/// A local connection whose request head is still arriving.
+struct Gate {
+    stream: TcpStream,
+    peer: Ipv6Addr,
+    token: Token,
+    /// The listener it came through, for its budget and its close.
+    port: u16,
+    buf: Vec<u8>,
+    /// Where the search for the head's end resumes (no rescan per read).
+    scanned: usize,
+    until: std::time::Instant,
+}
+
+/// The most a request head may take, in bytes and in time, before the
+/// connection is dropped unspliced.
+const HEAD_MAX: usize = 8 * 1024;
+const HEAD_TIMEOUT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 5 });
+/// Local connections waiting on their head, per listener and in all. Past
+/// either, the oldest waiting one goes: the app's own head arrives at once,
+/// so a connection still silent is the likeliest squatter, and refusing the
+/// newest instead would let 64 idle sockets lock the app out of every vault.
+const GATES_PER_LISTENER: usize = 8;
+const GATES_MAX: usize = 64;
+
+/// What goes to the mesh for `buf`: `None` until the head is complete,
+/// `Some(Err)` to refuse, `Some(Ok(bytes))` to splice. The request line must
+/// be `<method> /<token>[/...|?...] <version>`; the token is removed from the
+/// path. Every request gets `Connection: close` (its own Connection and
+/// Keep-Alive headers dropped), so a reused connection cannot send a second
+/// request past the check. The one exception is a WebSocket upgrade
+/// (`Upgrade: websocket` and `Connection: ...upgrade...`), left as is, since
+/// no HTTP follows its 101. The end of the head is searched from `from`.
+fn check_head(buf: &[u8], from: usize, token: &Token) -> Option<std::result::Result<Vec<u8>, &'static str>> {
+    let Some(end) = buf[from.min(buf.len())..].windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + from) else {
+        return (buf.len() > HEAD_MAX).then_some(Err("head too long"));
+    };
+    if end > HEAD_MAX {
+        return Some(Err("head too long"));
+    }
+    let head = &buf[..end];
+    let rest = &buf[end + 4..];
+    let mut lines = head.split(|&b| b == b'\n').map(|l| l.strip_suffix(b"\r").unwrap_or(l));
+    let line = lines.next().unwrap_or_default();
+    let mut parts = line.splitn(3, |&b| b == b' ');
+    let (Some(method), Some(target), Some(version)) = (parts.next(), parts.next(), parts.next()) else {
+        return Some(Err("not a request line"));
+    };
+    let want = token_hex(token);
+    let Some(given) = target.strip_prefix(b"/").and_then(|t| t.get(..want.len())) else {
+        return Some(Err("no token"));
+    };
+    // Constant time: the token is the only secret here.
+    let diff = given.iter().zip(want.as_bytes()).fold(0u8, |d, (a, b)| d | (a ^ b));
+    if diff != 0 {
+        return Some(Err("wrong token"));
+    }
+    let after = &target[1 + want.len()..];
+    let path = match after.first() {
+        None => b"/".to_vec(),
+        Some(b'/') => after.to_vec(),
+        Some(b'?') => [b"/".as_slice(), after].concat(),
+        Some(_) => return Some(Err("wrong token")),
+    };
+    let headers: Vec<&[u8]> = lines.collect();
+    let name_is = |h: &[u8], n: &str| {
+        h.split(|&b| b == b':').next().is_some_and(|k| k.trim_ascii().eq_ignore_ascii_case(n.as_bytes()))
+    };
+    // The value, split on commas, has `want` as one of its tokens.
+    let lists = |h: &[u8], want: &str| {
+        h.splitn(2, |&b| b == b':')
+            .nth(1)
+            .is_some_and(|v| v.split(|&b| b == b',').any(|t| t.trim_ascii().eq_ignore_ascii_case(want.as_bytes())))
+    };
+    let upgrade = headers.iter().any(|h| name_is(h, "upgrade") && lists(h, "websocket"))
+        && headers.iter().any(|h| name_is(h, "connection") && lists(h, "upgrade"));
+    let mut out = Vec::with_capacity(buf.len() + 19);
+    let line: [&[u8]; 6] = [method, b" ", &path, b" ", version, b"\r\n"];
+    for part in line {
+        out.extend_from_slice(part);
+    }
+    for h in headers {
+        if !upgrade && (name_is(h, "connection") || name_is(h, "keep-alive")) {
+            continue;
+        }
+        out.extend_from_slice(h);
+        out.extend_from_slice(b"\r\n");
+    }
+    if !upgrade {
+        out.extend_from_slice(b"Connection: close\r\n");
+    }
+    out.extend_from_slice(b"\r\n");
+    out.extend_from_slice(rest);
+    Some(Ok(out))
 }
 
 /// How long a read waits for a friend to answer before the local client is
@@ -274,7 +413,7 @@ pub fn run(
         Mode::Connect { listen, peer } => {
             let l = TcpListener::bind(listen).with_context(|| format!("bind {listen}"))?;
             println!("listening on {listen} -> peer [..]:{MESH_PORT}");
-            ctl.add_connect(l, peer)?;
+            ctl.add_connect(l, peer, None)?;
         }
     }
     run_with(my_addr, mtu, to_mesh, from_mesh, &ctl)
@@ -297,7 +436,8 @@ pub fn run_with(
 
     let mut sockets = SocketSet::new(vec![]);
     let mut listeners: Vec<SocketHandle> = Vec::new();
-    let mut connects: Vec<(TcpListener, Ipv6Addr)> = Vec::new();
+    let mut connects: Vec<Connect> = Vec::new();
+    let mut gates: Vec<Gate> = Vec::new();
     let mut splices: Vec<Splice> = Vec::new();
     // Aborted sockets, kept for one poll so their RST goes out.
     let mut dying: Vec<SocketHandle> = Vec::new();
@@ -338,6 +478,7 @@ pub fn run_with(
         ctl.serve_applied.store(generation, Ordering::SeqCst);
         if stopping {
             connects.clear();
+            gates.clear();
             ctl.connect_ports.lock().unwrap().clear();
         } else {
             // By port, not peer: a peer closed and reopened before this poll
@@ -345,9 +486,11 @@ pub fn run_with(
             connects.append(&mut ctl.new_connects.lock().unwrap());
             let closed = std::mem::take(&mut *ctl.closed_connects.lock().unwrap());
             if !closed.is_empty() {
-                connects.retain(|(l, _)| {
-                    l.local_addr().is_ok_and(|a| !closed.contains(&a.port()))
+                connects.retain(|c| {
+                    c.listener.local_addr().is_ok_and(|a| !closed.contains(&a.port()))
                 });
+                // A closed listener's waiting connections go with it.
+                gates.retain(|g| !closed.contains(&g.port));
             }
         }
 
@@ -392,26 +535,85 @@ pub fn run_with(
             }
         }
 
-        for (l, peer) in &connects {
-            while let Ok((stream, from)) = l.accept() {
+        // Dial `peer` for a local stream; `head` goes to the mesh first.
+        let mut dial = |stream: TcpStream, peer: Ipv6Addr, head: Vec<u8>, sockets: &mut SocketSet<'static>| {
+            let mut s = new_socket();
+            s.set_timeout(Some(CONNECT_TIMEOUT.into()));
+            next_port = if next_port == u16::MAX { 49152 } else { next_port + 1 };
+            let to = (IpAddress::Ipv6(peer), MESH_PORT);
+            if let Err(e) = s.connect(iface.context(), to, next_port) {
+                eprintln!("mesh connect [{peer}]: {e}");
+                return;
+            }
+            c.read_total.fetch_add(1, Ordering::Relaxed);
+            let mut sp = Splice::new(sockets.add(s), stream, Kind::Read);
+            sp.head = head;
+            splices.push(sp);
+        };
+
+        for conn in &connects {
+            while let Ok((stream, from)) = conn.listener.accept() {
                 // A failure here costs this one connection (the local client
                 // sees it closed), never the stack.
                 if let Err(e) = local_ready(&stream) {
                     eprintln!("local accept {from}: {e}");
                     continue;
                 }
-                let mut s = new_socket();
-                s.set_timeout(Some(CONNECT_TIMEOUT.into()));
-                next_port = if next_port == u16::MAX { 49152 } else { next_port + 1 };
-                let to = (IpAddress::Ipv6(*peer), MESH_PORT);
-                if let Err(e) = s.connect(iface.context(), to, next_port) {
-                    eprintln!("mesh connect [{peer}]: {e}");
-                    continue;
-                }
-                println!("local accept {from} -> mesh [{peer}]:{MESH_PORT}");
-                c.read_total.fetch_add(1, Ordering::Relaxed);
-                splices.push(Splice::new(sockets.add(s), stream, Kind::Read));
                 busy = true;
+                let peer = conn.peer;
+                let Some(token) = conn.token else {
+                    println!("local accept {from} -> mesh [{peer}]:{MESH_PORT}");
+                    dial(stream, peer, Vec::new(), &mut sockets);
+                    continue;
+                };
+                let Ok(port) = conn.listener.local_addr().map(|a| a.port()) else { continue };
+                // `gates` is oldest first: drop the oldest of this listener, or of all.
+                if gates.iter().filter(|g| g.port == port).count() >= GATES_PER_LISTENER {
+                    let i = gates.iter().position(|g| g.port == port).unwrap();
+                    gates.remove(i);
+                    eprintln!("local read refused: still silent");
+                } else if gates.len() >= GATES_MAX {
+                    gates.remove(0);
+                    eprintln!("local read refused: still silent");
+                }
+                let until = std::time::Instant::now() + HEAD_TIMEOUT;
+                gates.push(Gate { stream, peer, token, port, buf: Vec::new(), scanned: 0, until });
+            }
+        }
+
+        // Nothing reaches the mesh until the request carries the token.
+        let mut i = 0;
+        while i < gates.len() {
+            let g = &mut gates[i];
+            let mut verdict = None;
+            match g.stream.read(&mut buf[..HEAD_MAX + 1]) {
+                Ok(0) => verdict = Some(Err("closed before the head")),
+                Ok(n) => {
+                    busy = true;
+                    g.buf.extend_from_slice(&buf[..n]);
+                    verdict = check_head(&g.buf, g.scanned, &g.token);
+                    // The end marker may straddle this read and the next.
+                    g.scanned = g.buf.len().saturating_sub(3);
+                }
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {}
+                Err(_) => verdict = Some(Err("read failed")),
+            }
+            if verdict.is_none() && std::time::Instant::now() > g.until {
+                verdict = Some(Err("head timed out"));
+            }
+            match verdict {
+                None => i += 1,
+                Some(v) => {
+                    let g = gates.remove(i);
+                    match v {
+                        Ok(head) => {
+                            println!("local read -> mesh [{}]:{MESH_PORT}", g.peer);
+                            dial(g.stream, g.peer, head, &mut sockets);
+                        }
+                        // Never log the head: it holds the token.
+                        Err(why) => eprintln!("local read refused: {why}"),
+                    }
+                }
             }
         }
 
@@ -450,8 +652,16 @@ pub fn run_with(
                 }
             }
 
-            // local -> mesh
-            if !sp.local_eof && s.may_send() && s.send_capacity() > s.send_queue() {
+            // local -> mesh: the checked head first, then the stream.
+            if !sp.head.is_empty()
+                && s.may_send()
+                && let Ok(n) = s.send_slice(&sp.head)
+            {
+                sp.head.drain(..n);
+                tx.fetch_add(n as u64, Ordering::Relaxed);
+                busy |= n > 0;
+            }
+            if sp.head.is_empty() && !sp.local_eof && s.may_send() && s.send_capacity() > s.send_queue() {
                 let room = (s.send_capacity() - s.send_queue()).min(buf.len());
                 match sp.stream.read(&mut buf[..room]) {
                     Ok(0) => {
@@ -510,5 +720,60 @@ pub fn run_with(
                 .min(Duration::from_millis(2));
             std::thread::sleep(wait);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const T: Token = [0xab; 16];
+
+    fn check(head: &str) -> Option<std::result::Result<String, &'static str>> {
+        check_head(head.as_bytes(), 0, &T).map(|r| r.map(|b| String::from_utf8(b).unwrap()))
+    }
+
+    #[test]
+    fn the_token_is_checked_and_taken_out_of_the_path() {
+        let tok = token_hex(&T);
+        assert_eq!(check(&format!("GET /{tok}/abc HTTP/1.1\r\nHost: x")), None, "head not complete yet");
+        assert_eq!(
+            check(&format!("GET /{tok}/abc HTTP/1.1\r\nHost: x\r\nconnection: keep-alive\r\nKeep-Alive: 5\r\n\r\nbody")),
+            Some(Ok("GET /abc HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\nbody".into())),
+            "plain request: one per connection, body kept"
+        );
+        assert_eq!(check(&format!("GET /{tok} HTTP/1.1\r\n\r\n")), Some(Ok("GET / HTTP/1.1\r\nConnection: close\r\n\r\n".into())));
+        assert_eq!(check(&format!("GET /{tok}?x=1 HTTP/1.1\r\n\r\n")), Some(Ok("GET /?x=1 HTTP/1.1\r\nConnection: close\r\n\r\n".into())));
+        let ws = "Upgrade: websocket\r\nConnection: keep-alive, Upgrade\r\n\r\n";
+        assert_eq!(check(&format!("GET /{tok} HTTP/1.1\r\n{ws}")), Some(Ok(format!("GET / HTTP/1.1\r\n{ws}"))), "websocket untouched");
+        // Any other Upgrade, or one the Connection header does not name, is a
+        // plain request: still one per connection.
+        for other in ["Upgrade: test\r\nConnection: Upgrade", "Upgrade: websocket"] {
+            assert_eq!(
+                check(&format!("GET /{tok} HTTP/1.1\r\n{other}\r\n\r\n")),
+                Some(Ok("GET / HTTP/1.1\r\nUpgrade: ".to_string() + other.lines().next().unwrap().trim_start_matches("Upgrade: ") + "\r\nConnection: close\r\n\r\n")),
+                "{other:?}"
+            );
+        }
+        // Resuming the search mid-buffer still finds an end that straddles reads.
+        let whole = format!("GET /{tok} HTTP/1.1\r\n\r\n");
+        // Last read ended one byte short ("..\r\n\r"), so the scan resumes at that length - 3.
+        let resume = (whole.len() - 1) - 3;
+        assert_eq!(check_head(&whole.as_bytes()[..whole.len() - 1], 0, &T), None);
+        assert!(matches!(check_head(whole.as_bytes(), resume, &T), Some(Ok(_))));
+
+        for bad in [
+            "GET / HTTP/1.1\r\n\r\n".to_string(),
+            "GET /abc HTTP/1.1\r\n\r\n".to_string(),
+            format!("GET /{} HTTP/1.1\r\n\r\n", token_hex(&[0xac; 16])),
+            format!("GET /{}x HTTP/1.1\r\n\r\n", tok),
+            format!("GET /{} HTTP/1.1\r\n\r\n", tok.to_uppercase()),
+            format!("GET /{} HTTP/1.1\r\n\r\n", &tok[..31]),
+            format!("/{tok}\r\n\r\n"),
+        ] {
+            assert!(matches!(check(&bad), Some(Err(_))), "refused: {bad:?}");
+        }
+        let long = format!("GET /{tok} HTTP/1.1\r\nX: {}", "a".repeat(HEAD_MAX));
+        assert_eq!(check(&long), Some(Err("head too long")), "no end in sight");
     }
 }

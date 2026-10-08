@@ -57,9 +57,9 @@ fn main() {
     nvfips::start(nsec.trim(), &opts).expect("start");
     assert_eq!(nvfips::export(port), 0);
     if args.iter().any(|a| a == "--read") {
-        let read_port = nvfips::ingress(&args[1]);
-        assert!(read_port > 0, "ingress: {read_port}");
-        println!("reading {} on 127.0.0.1:{read_port}", args[1]);
+        let url = nvfips::ingress(&args[1]).unwrap_or_else(|code| panic!("ingress: {code}"));
+        // A dev console: the token is printed so curl can use it. The app never does this.
+        println!("reading {} at {url}/<path>", args[1]);
     }
     println!("{}", nvfips::status_json());
     loop {

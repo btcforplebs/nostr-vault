@@ -305,26 +305,29 @@ pub fn unexport() -> i32 {
     0
 }
 
-/// A loopback port whose connections reach `npub`'s shared relay over the
-/// mesh. The same npub gets the same port. Any npub works: one the node did
+/// A loopback URL base, `http://127.0.0.1:<port>/<token>`, whose requests
+/// reach `npub`'s shared relay over the mesh: append the path (`/<sha256>`,
+/// or nothing for the relay). The token keeps other apps on the phone out, so
+/// it is never logged or put in `status_json`. The same npub gets the same URL. Any npub works: one the node did
 /// not start with is added as a peer, found through its Nostr advert.
 /// Waits up to 10 s for the node: call it off the UI thread. At most 32
 /// vaults stay open; opening one more closes the least recently read.
-pub fn ingress(npub: &str) -> i32 {
+pub fn ingress(npub: &str) -> Result<String, i32> {
     let control = match state().as_ref() {
         Some(run) => run.control.clone(),
-        None => return ERR_NOT_RUNNING,
+        None => return Err(ERR_NOT_RUNNING),
     };
-    let Ok(peer) = PeerIdentity::from_npub(npub) else { return ERR_BAD_NPUB };
+    let Ok(peer) = PeerIdentity::from_npub(npub) else { return Err(ERR_BAD_NPUB) };
     // Outside the state lock: the rx loop answers, and never takes that lock.
     if let Err(e) = add_peer(&control, npub) {
         tracing::warn!("mesh add peer {npub}: {e:#}");
-        return ERR_START;
+        return Err(ERR_START);
     }
     let mut state = state();
-    let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
+    let Some(run) = state.as_mut() else { return Err(ERR_NOT_RUNNING) };
     match run.ctl.connect_port(peer.address().to_ipv6()) {
-        Ok(port) => {
+        Ok(reader) => {
+            let port = reader.port;
             // Most recently read last; past the cap the stalest listener goes,
             // matching the node's own cap on peers added this way.
             run.reading.retain(|r| r.npub != npub);
@@ -335,11 +338,11 @@ pub fn ingress(npub: &str) -> i32 {
                     run.ctl.close_connect(id.address().to_ipv6());
                 }
             }
-            i32::from(port)
+            Ok(reader.url())
         }
         Err(e) => {
             tracing::warn!("mesh ingress {npub}: {e:#}");
-            ERR_START
+            Err(ERR_START)
         }
     }
 }
@@ -516,10 +519,22 @@ mod c_api {
         guarded(ERR_START, unexport)
     }
 
+    /// 0 and `*url_out` set (free it with `NvFipsFreeString`), or a negative
+    /// code and `*url_out` left alone.
     #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsIngress(npub: *const c_char) -> i32 {
+    pub extern "C" fn NvFipsIngress(npub: *const c_char, url_out: *mut *mut c_char) -> i32 {
+        if url_out.is_null() {
+            return ERR_CONFIG;
+        }
         let Some(npub) = arg(npub) else { return ERR_BAD_NPUB };
-        guarded(ERR_START, move || ingress(&npub))
+        match guarded(Err(ERR_START), move || ingress(&npub)) {
+            Ok(url) => {
+                // SAFETY: checked non-null above; the caller owns the slot.
+                unsafe { *url_out = out(url) };
+                0
+            }
+            Err(code) => code,
+        }
     }
 
     #[unsafe(no_mangle)]
@@ -630,13 +645,17 @@ mod jni_api {
     }
 
     #[unsafe(no_mangle)]
+    /// The URL base, or the negative code as text ("-3"): JNI has no out-params.
     pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeIngress(
         mut env: JNIEnv,
         _class: JClass,
         npub: JString,
-    ) -> jint {
-        let Some(npub) = jstr(&mut env, &npub) else { return ERR_BAD_NPUB };
-        guarded(ERR_START, move || ingress(&npub))
+    ) -> jstring {
+        let result = match jstr(&mut env, &npub) {
+            Some(npub) => guarded(Err(ERR_START), move || ingress(&npub)),
+            None => Err(ERR_BAD_NPUB),
+        };
+        out(&mut env, result.unwrap_or_else(|code| code.to_string()))
     }
 
     #[unsafe(no_mangle)]
@@ -719,7 +738,12 @@ mod tests {
         assert_eq!(c_api::NvFipsStart(key.as_ptr(), bad.as_ptr()), ERR_CONFIG);
         let empty = CString::new("").unwrap();
         assert_eq!(c_api::NvFipsStart(key.as_ptr(), empty.as_ptr()), ERR_CONFIG, "bad nsec is a config error");
-        assert_eq!(c_api::NvFipsIngress(std::ptr::null()), ERR_BAD_NPUB);
+        let mut url = std::ptr::null_mut();
+        assert_eq!(c_api::NvFipsIngress(std::ptr::null(), &mut url), ERR_BAD_NPUB);
+        let npub = CString::new("npub1nope").unwrap();
+        assert_eq!(c_api::NvFipsIngress(npub.as_ptr(), std::ptr::null_mut()), ERR_CONFIG);
+        assert_eq!(c_api::NvFipsIngress(npub.as_ptr(), &mut url), ERR_NOT_RUNNING);
+        assert!(url.is_null(), "no URL on failure");
         assert_eq!(c_api::NvFipsExport(4869), ERR_NOT_RUNNING);
     }
 
@@ -732,15 +756,16 @@ mod tests {
         ctl.close_connect(peer);
         assert!(ctl.connect_ports().is_empty());
         let second = ctl.connect_port(peer).unwrap();
-        assert_ne!(second, first, "a fresh listener, not the closed one");
+        assert_ne!(second.port, first.port, "a fresh listener, not the closed one");
+        assert_ne!(second.url(), first.url(), "and a fresh token");
         ctl.close_connect("fd00::2".parse().unwrap()); // never opened: no-op
-        assert_eq!(ctl.connect_ports(), vec![(peer, second)]);
+        assert_eq!(ctl.connect_ports(), vec![(peer, second.port)]);
     }
 
     #[test]
     fn ingress_and_unexport_need_a_running_node() {
         assert_eq!(unexport(), ERR_NOT_RUNNING);
-        assert_eq!(ingress("npub1nope"), ERR_NOT_RUNNING);
+        assert_eq!(ingress("npub1nope"), Err(ERR_NOT_RUNNING));
     }
 
     // Two stacks wired TUN to TUN in-process, no FIPS node: what the stack
@@ -797,13 +822,31 @@ mod tests {
             (side(A, a_out, a_in), side(B, b_out, b_in))
         }
 
-        /// A local "relay" that answers each line with `tag` + the line.
+        /// A local "relay" that takes an HTTP head, then answers each line
+        /// with `tag` + the line.
         fn relay(tag: &'static str) -> SocketAddr {
+            relay_heads(tag).0
+        }
+
+        /// `relay`, and the heads it received, as the mesh delivered them.
+        fn relay_heads(tag: &'static str) -> (SocketAddr, Arc<std::sync::Mutex<Vec<String>>>) {
             let l = TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = l.local_addr().unwrap();
+            let heads = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen = heads.clone();
             std::thread::spawn(move || {
                 for mut s in l.incoming().flatten() {
+                    let seen = seen.clone();
                     std::thread::spawn(move || {
+                        let mut head = Vec::new();
+                        let mut byte = [0u8; 1];
+                        while !head.ends_with(b"\r\n\r\n") {
+                            match s.read(&mut byte) {
+                                Ok(1) => head.push(byte[0]),
+                                _ => return,
+                            }
+                        }
+                        seen.lock().unwrap().push(String::from_utf8_lossy(&head).into_owned());
                         let mut buf = [0u8; 4096];
                         while let Ok(n) = s.read(&mut buf) {
                             if n == 0 {
@@ -818,12 +861,27 @@ mod tests {
                     });
                 }
             });
-            addr
+            (addr, heads)
         }
 
-        fn open(port: u16) -> TcpStream {
-            let s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        /// What `open` sends, and what the relay gets once the token is out.
+        const UPGRADE: &str = "GET /{token} HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+        const SENT_HEAD: &str = "GET / HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+
+        fn token(r: &stack::Reader) -> String {
+            r.url().rsplit('/').next().unwrap().to_string()
+        }
+
+        fn connect(r: stack::Reader) -> TcpStream {
+            let s = TcpStream::connect(("127.0.0.1", r.port)).unwrap();
             s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            s
+        }
+
+        /// A raw stream to the peer behind `r`, past the token check.
+        fn open(r: stack::Reader) -> TcpStream {
+            let mut s = connect(r);
+            s.write_all(UPGRADE.replace("{token}", &token(&r)).as_bytes()).unwrap();
             s
         }
 
@@ -865,8 +923,9 @@ mod tests {
             assert_eq!((get(&ca.read_total), get(&ca.served_total)), (1, 1));
             assert_eq!((get(&cb.read_total), get(&cb.served_total)), (1, 1));
             assert_eq!((get(&ca.read_open), get(&ca.served_open)), (1, 1));
-            assert_eq!(get(&ca.read_tx), 4, "A sent ping");
-            assert_eq!(get(&cb.served_rx), 4, "B received ping");
+            let h = SENT_HEAD.len() as u64;
+            assert_eq!(get(&ca.read_tx), h + 4, "A sent the head and ping");
+            assert_eq!(get(&cb.served_rx), h + 4, "B received the head and ping");
             assert_eq!(get(&cb.served_tx), 6, "B answered B:ping");
             assert_eq!(get(&ca.read_rx), 6, "A received B:ping");
 
@@ -892,6 +951,45 @@ mod tests {
             b.thread.join().unwrap();
             assert!(ask(&mut again, "gone").is_err(), "connection survives stop");
             assert_eq!(get(&ca.read_open) + get(&cb.served_open), 0);
+        }
+
+        #[test]
+        fn only_a_request_with_the_token_reaches_the_mesh() {
+            let (a, b) = pair();
+            let (addr, heads) = relay_heads("B:");
+            b.ctl.set_serve(Some(addr));
+            let r = a.ctl.connect_port(B).unwrap();
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            let refused = |mut s: TcpStream| {
+                let mut buf = [0u8; 64];
+                assert!(matches!(s.read(&mut buf), Ok(0) | Err(_)), "closed unanswered");
+            };
+
+            // Another app on the phone: no token, a wrong one, or nothing at all.
+            for head in ["GET / HTTP/1.1\r\n\r\n".to_string(), format!("GET /{} HTTP/1.1\r\n\r\n", "0".repeat(32))] {
+                let mut s = connect(r);
+                s.write_all(head.as_bytes()).unwrap();
+                refused(s);
+            }
+            refused(connect(r)); // silent until the head timeout
+            assert_eq!(get(&a.ctl.counters.read_total), 0, "nothing was dialled");
+
+            // Squatters: idle connections past the budget push out the oldest,
+            // so the app's own request still gets through.
+            let squat: Vec<TcpStream> = (0..20).map(|_| connect(r)).collect();
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(get(&b.ctl.counters.served_total), 0);
+
+            // The app, with the token: the relay sees a clean path, one request.
+            let mut s = connect(r);
+            let head = format!("GET /{}/abc HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n", token(&r));
+            s.write_all(head.as_bytes()).unwrap();
+            wait_for("the relay to get the head", || !heads.lock().unwrap().is_empty());
+            assert_eq!(heads.lock().unwrap()[0], "GET /abc HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+            assert_eq!(get(&a.ctl.counters.read_total), 1);
+            drop(squat);
+            a.ctl.stop();
+            b.ctl.stop();
         }
 
         #[test]
