@@ -35,13 +35,19 @@ import kotlinx.coroutines.launch
 
 /**
  * GIF picker backed by the official nostr.build GIF API. Search, tap a GIF,
- * and its nostr.build link goes into the note (the API's terms: link the GIF
- * where it is, never re-host it). Shows the required "GIFs from nostr.build"
- * attribution. iOS: GifPickerSheet.
+ * and its nostr.build link goes into the note, or, with "Save to my Blossom"
+ * on, the GIF is attached and uploaded to your own Blossom servers with the
+ * note. Shows the required "GIFs from nostr.build" attribution, linked to
+ * nostr.build (https://gifs.nostr.build/developers/reference). iOS: GifPickerSheet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GifPickerSheet(onPick: (NostrBuildGif) -> Unit, onDismiss: () -> Unit) {
+fun GifPickerSheet(
+    onPick: (NostrBuildGif) -> Unit,
+    onDismiss: () -> Unit,
+    saveToBlossom: Boolean,
+    onSaveToBlossomChange: (Boolean) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     var query by remember { mutableStateOf("") }
@@ -84,12 +90,20 @@ fun GifPickerSheet(onPick: (NostrBuildGif) -> Unit, onDismiss: () -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                text = "GIFs from nostr.build",
-                color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(vertical = 8.dp)
-                    .clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nostr.build"))) },
-            )
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "GIFs from nostr.build",
+                    color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                        .clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nostr.build"))) },
+                )
+                Spacer(Modifier.weight(1f))
+                // nostr.build GIFs are already hosted; this decides whether
+                // picking one also copies it to your own Blossom servers.
+                Text("Save to my Blossom", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = saveToBlossom, onCheckedChange = onSaveToBlossomChange)
+            }
             when {
                 error != null -> Text(error!!, color = SecondaryText, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
                 !loading && searched.isNotEmpty() && gifs.isEmpty() ->

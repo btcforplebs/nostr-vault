@@ -1719,15 +1719,15 @@ private fun HeroNoteCard(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // One card per link: the URLs are out of the text above (#170).
-            for (link in note.cardLinkURLs) {
-                LinkPreviewCard(url = link)
+            // Media, then links, then quotes, as on iOS.
+            if (note.mediaURLs.isNotEmpty()) {
+                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Media
-            if (note.mediaURLs.isNotEmpty()) {
-                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
+            // One card per link: the URLs are out of the text above (#170).
+            for (link in note.cardLinkURLs) {
+                LinkPreviewCard(url = link)
                 Spacer(Modifier.height(12.dp))
             }
 

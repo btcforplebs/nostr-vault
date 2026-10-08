@@ -73,6 +73,54 @@ object NostrBuildGifs {
         }
     }
 
+    /** iOS NostrBuildGifService.maxDownloadBytes. */
+    const val MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
+
+    sealed class DownloadError(message: String) : Exception(message) {
+        object TooLarge : DownloadError("GIF is too large to attach")
+        object NotAGif : DownloadError("nostr.build did not return a GIF")
+        class Unavailable(code: Int) : DownloadError("Could not fetch GIF ($code)")
+    }
+
+    /**
+     * The MIME type of a downloaded GIF from its first bytes: `image/gif` for
+     * GIF87a/GIF89a, `image/webp` for an animated WebP, null for anything else.
+     */
+    fun gifMimeType(bytes: ByteArray): String? {
+        fun ascii(from: Int, to: Int) = if (bytes.size >= to) String(bytes, from, to - from, Charsets.US_ASCII) else ""
+        return when {
+            ascii(0, 6) == "GIF87a" || ascii(0, 6) == "GIF89a" -> "image/gif"
+            ascii(0, 4) == "RIFF" && ascii(8, 12) == "WEBP" -> "image/webp"
+            else -> null
+        }
+    }
+
+    /**
+     * Downloads [url] for "Save to my Blossom", so it posts like any other
+     * attachment. Capped at 25 MB and checked to really be a GIF, as on iOS.
+     */
+    suspend fun download(url: String): Pair<ByteArray, String> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).build()
+        client.newBuilder().readTimeout(30, TimeUnit.SECONDS).build().newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw DownloadError.Unavailable(resp.code)
+            val body = resp.body ?: throw DownloadError.NotAGif
+            if (body.contentLength() > MAX_DOWNLOAD_BYTES) throw DownloadError.TooLarge
+            val out = java.io.ByteArrayOutputStream()
+            body.byteStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_DOWNLOAD_BYTES) throw DownloadError.TooLarge
+                }
+            }
+            val bytes = out.toByteArray()
+            val mime = gifMimeType(bytes) ?: throw DownloadError.NotAGif
+            bytes to mime
+        }
+    }
+
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull
     private fun JsonObject.int(k: String) = (this[k] as? JsonPrimitive)?.intOrNull ?: 0
 

@@ -63,6 +63,9 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // Is the relay on this phone running, and where (iOS RelayStatusCard).
+            item { RelayStatusCard() }
+
             // ── PROFILE ───────────────────────────────────────────
             item { SettingsSectionHeader("Profile") }
             item {

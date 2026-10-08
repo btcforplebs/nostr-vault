@@ -661,6 +661,27 @@ object RecipeTopics {
             .map { it.key }
     }
 
+    private val TIMESTAMP_IN_TITLE = Regex("\\b1[6-9][0-9]{8}\\b")
+    private val WHITESPACE = Regex("\\s+")
+
+    /**
+     * Client test publishes, not recipes. iOS: RecipeFeedService.looksLikeTestPost.
+     *
+     * Measured against 500 live zapcooking/nostrcooking events on 2026-09-05:
+     * these two rules drop 20 events, and every one of them is a test post
+     * ("iOS 2.3 Live Publish 1788113645", "E2E Curry", "Ppp"). Deliberately
+     * narrow: an Ingredients-heading rule also dropped real recipes.
+     */
+    fun looksLikeTestPost(tags: List<List<String>>, content: String): Boolean {
+        val title = tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) ?: ""
+        // A unix timestamp in the title means a machine generated it. Real
+        // recipe names do not carry a 10-digit number starting with 16-19.
+        if (TIMESTAMP_IN_TITLE.containsMatchIn(title)) return true
+        // A recipe needs ingredients and directions. Under 30 words is not
+        // one; the shortest real recipe in the sample was 39.
+        return content.split(WHITESPACE).count { it.isNotEmpty() } < 30
+    }
+
     /** Recipes in [category], or all of them for null. */
     fun filter(recipes: List<FeedNote>, category: String?): List<FeedNote> =
         if (category == null) recipes else recipes.filter { category in categoriesOf(it.tags) }
