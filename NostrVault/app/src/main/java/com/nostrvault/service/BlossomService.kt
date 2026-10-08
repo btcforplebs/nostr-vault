@@ -4,6 +4,7 @@ import android.util.Base64
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.BlossomClient
+import com.nostrvault.data.remote.LocalTls
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,14 +19,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
-import java.security.cert.X509Certificate
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 /**
  * Full Blossom media service.
@@ -1068,21 +1065,9 @@ class BlossomService @Inject constructor(
         }
     }
 
-    /** Trust self-signed certs for localhost connections. */
+    /** This device's relay and LAN relays: trust follows [LocalTls]. */
     private fun OkHttpClient.Builder.applyLocalhostTrust(): OkHttpClient.Builder {
-        val trustManager = object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        }
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf<TrustManager>(trustManager), null)
-        sslSocketFactory(sslContext.socketFactory, trustManager)
-        hostnameVerifier { hostname, _ ->
-            hostname == "127.0.0.1" || hostname == "localhost" ||
-                hostname.startsWith("192.168.") || hostname.startsWith("10.")
-        }
-        return this
+        return with(LocalTls) { localTrust() }
     }
 
     sealed class UploadSource {

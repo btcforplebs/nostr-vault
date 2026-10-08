@@ -2,6 +2,7 @@ package com.nostrvault.data.local
 
 import android.content.Context
 import android.util.Log
+import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -46,6 +47,7 @@ class ConfigStore @Inject constructor(
 
     init {
         RelayBlocklist.source = { _config.value.blockedRelays }
+        LocalTls.pinFile = File(context.filesDir, "local_tls_pins.json")
     }
 
     private val _activeAccountHexPubkey = MutableStateFlow("")
@@ -329,6 +331,8 @@ class ConfigStore @Inject constructor(
     /** Factory reset -- delete config and all data. */
     suspend fun resetApp() = withContext(Dispatchers.IO) {
         configFile.delete()
+        // The relay's certificate goes with its data; a new one is coming.
+        LocalTls.forgetAll()
         _config.value = HavenConfig()
         _activeAccountHexPubkey.value = ""
     }
