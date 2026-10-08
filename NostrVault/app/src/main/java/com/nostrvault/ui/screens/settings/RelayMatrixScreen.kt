@@ -148,7 +148,8 @@ class RelayMatrixViewModel @Inject constructor(
         configStore.update { RelayMatrix.applying(new, it) }
         if (new.dms != old.dms) scheduleDM()
         if (new.read != old.read || new.write != old.write) scheduleRelayList()
-        probe(RelayMatrix.rows(new).map { it.url })
+        // Only relays with no speed yet, so the timed rows keep their dots.
+        probe(RelayMatrix.needingProbe(RelayMatrix.rows(new).map { it.url }, _results.value.keys))
     }
 
     fun resetSearch() = configStore.update { it.copy(searchRelays = null) }
@@ -252,7 +253,7 @@ class RelayMatrixViewModel @Inject constructor(
     }
 }
 
-private val ColumnWidth = 48.dp
+private val ColumnWidth = 42.dp
 private val SlowAmber = ZapOrange
 
 private fun healthColor(result: RelayProbeResult?): Color = when (result) {
@@ -442,9 +443,13 @@ fun RelayMatrixScreen(
                         Text("RELAY", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f))
                         Job.columns.forEach {
-                            Text(it.title.uppercase(), color = SecondaryText, fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold, modifier = Modifier.width(ColumnWidth),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            // "SEARCH" is a hair wider than its column; let it spill
+                            // evenly into the gaps rather than wrap or clip.
+                            Box(Modifier.width(ColumnWidth), contentAlignment = Alignment.Center) {
+                                Text(it.title.uppercase(), color = SecondaryText, fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false,
+                                    modifier = Modifier.wrapContentWidth(unbounded = true))
+                            }
                         }
                     }
                 }
@@ -462,6 +467,10 @@ fun RelayMatrixScreen(
                             LockedDot(true, accent)
                             LockedDot(true, accent)
                             LockedDot(cfg.ownHavenDMInboxURL.isNotEmpty(), accent)
+                            val searching = lists.search.any { RelayMatrix.key(it) == RelayMatrix.key(ownRelay) }
+                            JobDot(searching, accent, "${Job.SEARCH.title}, ${RelayMatrix.label(ownRelay)}") {
+                                viewModel.apply(RelayMatrix.setting(Job.SEARCH, !searching, ownRelay, lists))
+                            }
                         }
                     }
                 }
@@ -490,7 +499,7 @@ fun RelayMatrixScreen(
                 item {
                     Text(
                         "Read + Write are your public relay list (10002). DMs are your DM inbox (10050). " +
-                            "Tap a relay's name for Search and Import.",
+                            "Search is where searches go. Tap a relay's name for Import.",
                         color = SecondaryText, fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )

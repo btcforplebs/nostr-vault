@@ -581,6 +581,9 @@ fun NoteDetailScreen(
     var zapTargetNote by remember { mutableStateOf<FeedNote?>(null) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var broadcastTargetNote by remember { mutableStateOf<FeedNote?>(null) }
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    val openTrustWeb: (String) -> Unit = { author -> trustWebAuthor = author }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Moderation confirmations. These hold the note they were opened for rather
@@ -939,6 +942,7 @@ fun NoteDetailScreen(
                             onReply = onReply,
                             onZap = { zapTargetNote = parent },
                             onBroadcast = { broadcastTargetNote = parent },
+                            onTrustWeb = if (viewModel.isOwnNote(parent.effectiveAuthor)) null else openTrustWeb,
                             isOwnNote = viewModel.isOwnNote(parent.pubkey),
                             onReport = { reportTarget = parent },
                             onBlock = { blockTarget = parent },
@@ -997,6 +1001,9 @@ fun NoteDetailScreen(
                         onZap = { zapTargetNote = focusedNote },
                         onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
+                        onTrustWeb = focusedNote!!.effectiveAuthor.let { author ->
+                            if (viewModel.isOwnNote(author)) null else ({ openTrustWeb(author) })
+                        },
                     )
                 }
 
@@ -1070,6 +1077,7 @@ fun NoteDetailScreen(
                         onQuote = onQuote,
                         onZapNote = { zapTargetNote = it },
                         onBroadcastNote = { broadcastTargetNote = it },
+                        onTrustWeb = openTrustWeb,
                         onModerateNote = { note, action ->
                             when (action) {
                                 Moderation.REPORT -> reportTarget = note
@@ -1211,6 +1219,15 @@ fun NoteDetailScreen(
             onProfileClick = { broadcastTargetNote = null; onProfileClick(it) },
         )
     }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = onProfileClick,
+            onDismiss = { trustWebAuthor = null },
+        )
+    }
 }
 
 // ── Inline loading row (iOS "Loading thread…" / "Loading replies…") ──
@@ -1344,6 +1361,8 @@ private fun ThreadedReplyNode(
     onQuote: (String) -> Unit,
     onZapNote: (FeedNote) -> Unit,
     onBroadcastNote: (FeedNote) -> Unit,
+    /** Opens the Web of Trust map for an author. */
+    onTrustWeb: (String) -> Unit,
     onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
     /** A pill in a note's engagement row: open that list for that note. */
@@ -1382,6 +1401,7 @@ private fun ThreadedReplyNode(
             onReply = onReply,
             onZap = { onZapNote(reply) },
             onBroadcast = { onBroadcastNote(reply) },
+            onTrustWeb = if (viewModel.isOwnNote(reply.effectiveAuthor)) null else onTrustWeb,
             isOwnNote = viewModel.isOwnNote(reply.pubkey),
             onReport = { onModerateNote(reply, Moderation.REPORT) },
             onBlock = { onModerateNote(reply, Moderation.BLOCK) },
@@ -1465,6 +1485,7 @@ private fun ThreadedReplyNode(
                             onQuote = onQuote,
                             onZapNote = onZapNote,
                             onBroadcastNote = onBroadcastNote,
+                            onTrustWeb = onTrustWeb,
                             onModerateNote = onModerateNote,
                             onLongPressLikeNote = onLongPressLikeNote,
                             onEngagementClick = onEngagementClick,
@@ -1513,6 +1534,8 @@ private fun HeroNoteCard(
     onZap: () -> Unit,
     onShare: () -> Unit,
     onBroadcast: () -> Unit,
+    /** Web of Trust for the author; null on your own notes. */
+    onTrustWeb: (() -> Unit)? = null,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
     val heroContext = LocalContext.current
@@ -1811,6 +1834,7 @@ private fun HeroNoteCard(
                 onLike = { onLike() },
                 onZap = { onZap() },
                 onLongPressLike = { onLongPressLike() },
+                onTrustWeb = onTrustWeb,
             )
         }
     }

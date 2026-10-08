@@ -51,6 +51,7 @@ import com.nostrvault.data.model.NoteStats
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.navigation.HashtagLink
 import com.nostrvault.ui.navigation.LocalOpenHashtag
 import androidx.compose.foundation.text.KeyboardActions
@@ -156,6 +157,9 @@ class SearchViewModel @Inject constructor(
     val toast = _toast.asStateFlow()
 
     fun clearToast() { _toast.value = null }
+
+    /** Your own notes have no trust path, so they get no Web of Trust button. */
+    fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
 
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
@@ -489,6 +493,8 @@ fun SearchScreen(
     val repostedIds by viewModel.repostedEventIds.collectAsState()
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
 
     // Hashtags and links are read out of the matching notes, as on the iPhone.
     val hashtagResults = remember(results.notes, query) { SearchResultSections.hashtags(results.notes, query) }
@@ -879,6 +885,7 @@ fun SearchScreen(
                             onReply = onReply,
                             onQuote = onQuote,
                             onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                            onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }
@@ -946,6 +953,15 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = onProfileClick,
+            onDismiss = { trustWebAuthor = null },
+        )
     }
 }
 
