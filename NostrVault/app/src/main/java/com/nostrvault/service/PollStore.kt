@@ -73,7 +73,7 @@ class PollModel internal constructor(
         val config = configStore.config.value
         val fallback = buildList {
             config.nostrURL?.let { add(it) }
-            addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(config.readRelays)
             addAll(nostrService.outboxRelays.value[poll.pubkey].orEmpty())
         }
         return NIP88Poll.relays(poll, fallback)

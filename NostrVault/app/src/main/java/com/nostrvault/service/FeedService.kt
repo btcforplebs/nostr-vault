@@ -1396,14 +1396,8 @@ class FeedService @Inject constructor(
             // Follows publish to feed/blastr relays, not just the local + inbox
             // set. Mirror iOS (externalRelayURLs) and the fetchReplies fix so
             // follows who post elsewhere actually appear in the feed.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-            if (config.activeFeedRelays.isEmpty() &&
-                config.activeBlastrRelays.isEmpty() &&
-                config.inboxRelays.isNullOrEmpty()) {
-                add("wss://relay.primal.net")
-                add("wss://nos.lol")
-            }
+            addAll(config.readRelays)
+            addAll(config.writeRelays)
         }.distinct()
     }
 
@@ -3369,7 +3363,7 @@ class FeedService @Inject constructor(
             }
             val config = configStore.config.value
             val relays = (listOfNotNull(config.nostrURL) +
-                config.activeFeedRelays.ifEmpty { RelayGiven.FALLBACK_FEED_RELAYS }).distinct()
+                config.readRelays).distinct()
             val events = nostrService.queryRawEvents(
                 filters = listOf(FeedThreadReplies.filter(chunk)),
                 relayUrls = relays,
@@ -3628,7 +3622,7 @@ class FeedService @Inject constructor(
             // The account's relay and the feed relays, as iOS asks.
             val relayUrls = buildList {
                 config.nostrURL?.let { add(it) }
-                addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+                addAll(config.readRelays)
             }.distinctBy { LookupSocketPool.relayKey(it) }
 
             val seenIds = ConcurrentHashMap.newKeySet<String>()
@@ -4086,7 +4080,7 @@ class FeedService @Inject constructor(
         if (pubkey.isEmpty()) return@withContext emptyList()
         val config = configStore.config.value
         val urls = buildList {
-            addAll(config.activeBlastrRelays.ifEmpty { listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social") })
+            addAll(config.writeRelays)
             config.nostrURL?.takeIf { it.isNotBlank() }?.let { add(it) }
         }.filterNot { NostrService.isLoopbackRelay(it) }.distinctBy { LookupSocketPool.relayKey(it) }
         val ids = java.util.Collections.synchronizedSet(mutableSetOf<String>())

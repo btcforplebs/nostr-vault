@@ -97,26 +97,10 @@ fun SettingsScreen(
             item { SettingsSectionHeader("Relay Configuration") }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Feed,
-                    title = "Feed Relays",
-                    subtitle = "Configure external relay sources",
-                    onClick = { onNavigate(Screen.RelayListEditor) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.DMs,
-                    title = "DM Relays",
-                    subtitle = "Where people send your DMs",
-                    onClick = { onNavigate(Screen.DMRelaysSettings) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Blastr,
-                    title = "Blastr",
-                    subtitle = "Broadcast notes to public relays",
-                    onClick = { onNavigate(Screen.BlastrSettings) },
+                    icon = NostrVaultIcons.Relay,
+                    title = "Relays",
+                    subtitle = "Read, Write, DMs, Search and Import, in one place",
+                    onClick = { onNavigate(Screen.Relays) },
                 )
             }
             item {
@@ -131,16 +115,8 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Import,
                     title = "Import",
-                    subtitle = "Fetch notes from seed relays",
+                    subtitle = "Fetch your notes from the relays with Import on",
                     onClick = { onNavigate(Screen.ImportSettings) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Search,
-                    title = "Search Relays",
-                    subtitle = "NIP-50 relays used by Global search",
-                    onClick = { onNavigate(Screen.SearchRelaySettings) },
                 )
             }
             item {

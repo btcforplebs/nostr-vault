@@ -60,17 +60,14 @@ import com.nostrvault.ui.screens.settings.AccountSettingsScreen
 import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
 import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
-import com.nostrvault.ui.screens.settings.BlastrSettingsScreen
-import com.nostrvault.ui.screens.settings.DMRelaysSettingsScreen
 import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
 import com.nostrvault.ui.screens.settings.ImportSettingsScreen
-import com.nostrvault.ui.screens.settings.SearchRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
 import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
-import com.nostrvault.ui.screens.settings.RelayListEditorScreen
+import com.nostrvault.ui.screens.settings.RelayMatrixScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.flow.StateFlow
 
@@ -651,33 +648,16 @@ fun NostrVaultNavHost(
                     )
                 }
 
-                composable(Screen.SearchRelaySettings.route) {
-                    SearchRelaySettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
                 composable(Screen.BackupSettings.route) {
                     BackupSettingsScreen(
                         onBack = { navController.popBackStack() },
                     )
                 }
 
-                composable(Screen.RelayListEditor.route) {
-                    RelayListEditorScreen(
+                composable(Screen.Relays.route) {
+                    RelayMatrixScreen(
                         onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.BlastrSettings.route) {
-                    BlastrSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.DMRelaysSettings.route) {
-                    DMRelaysSettingsScreen(
-                        onBack = { navController.popBackStack() },
+                        onOpenMediaServers = { navController.navigate(Screen.BlossomSettings.route) },
                     )
                 }
 

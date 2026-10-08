@@ -874,10 +874,7 @@ struct NoteDetailView: View {
 
         // Try local relay AND external relays to find replies
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "replies-\(UUID().uuidString.prefix(8))"
@@ -1078,10 +1075,7 @@ struct NoteDetailView: View {
     /// reference this specific note and not the root (e.g. legacy clients).
     private func fetchRepliesForNote(_ noteId: String) {
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "focus-replies-\(UUID().uuidString.prefix(8))"
@@ -1159,10 +1153,7 @@ struct NoteDetailView: View {
         detailedZaps.removeAll()
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "eng-\(eventId.prefix(6))-\(UUID().uuidString.prefix(4))"
@@ -1226,10 +1217,7 @@ struct NoteDetailView: View {
         isLoadingExpandedEngagement = true
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         // One request per small batch of notes, sent one after another on
@@ -1438,10 +1426,7 @@ struct NoteDetailView: View {
         isLoadingParents = true
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "thread-\(UUID().uuidString.prefix(8))"
@@ -2114,8 +2099,8 @@ struct NoteDetailViewWrapper: View {
         }
 
         // The inbox too: mentions, replies, likes and zaps on this device are stored there.
-        let relays = [configService.config.nostrURL, configService.config.nostrURL + "/inbox",
-                      "wss://relay.primal.net"].compactMap { URL(string: $0) }
+        let relays = ([configService.config.nostrURL, configService.config.nostrURL + "/inbox"]
+                      + configService.config.readRelays).compactMap { URL(string: $0) }
         guard !relays.isEmpty else { return }
 
         for url in relays {

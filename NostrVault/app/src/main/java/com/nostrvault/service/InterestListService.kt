@@ -5,6 +5,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -54,7 +55,6 @@ class InterestListService @Inject constructor(
         private const val TAG = "InterestList"
         private const val PREFS_NAME = "interest_lists"
         private const val FETCH_TIMEOUT_MS = 6_000L
-        private val FALLBACK_RELAYS = listOf("wss://relay.primal.net", "wss://nos.lol")
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -195,7 +195,7 @@ class InterestListService @Inject constructor(
             config.nostrURL?.takeIf { relayUp }?.let(::add)
             addAll(config.activeFeedRelays)
             addAll(config.activeBlastrRelays)
-        }.ifEmpty { FALLBACK_RELAYS }
+        }.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }
         val seen = HashSet<String>()
         return urls.filter { it.isNotBlank() && seen.add(LookupSocketPool.relayKey(it)) }
     }

@@ -500,7 +500,7 @@ private fun AccountDetail(
 
         // NIP-65 publish toggle
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-            Text("Publish Inbox Relay (NIP-65)", color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("Publish Relay List (NIP-65)", color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(
                 checked = cfg.publishRelayListPerAccount[npub] ?: false,
                 onCheckedChange = { viewModel.togglePublishRelayList(npub, it) },

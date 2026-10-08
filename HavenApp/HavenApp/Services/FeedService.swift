@@ -440,15 +440,9 @@ class FeedService: ObservableObject {
         return URL(string: ConfigService.shared.config.nostrURL + "/feed")
     }
 
-    /// Public relays used to supplement the local relay.
-    /// Uses Blastr relays if configured, otherwise well-known defaults.
+    /// Public relays used to supplement the local relay: the read relays.
     private var externalRelayURLs: [URL] {
-        let configured = ConfigService.shared.config.activeFeedRelays
-        let strs = configured.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configured
-        return strs.compactMap { URL(string: $0) }
+        ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
     }
 
     /// Follows the feed relays don't reach, asked on their own write relays:
@@ -1614,7 +1608,7 @@ class FeedService: ObservableObject {
         threadRepliesRequested.formUnion(wanted)
         let generation = threadRepliesGeneration
         let config = ConfigService.shared.config
-        let feedRelays = config.activeFeedRelays.isEmpty ? RelayConfiguration.fallbackBroadcastRelays : config.activeFeedRelays
+        let feedRelays = config.readRelays
         let relays = ([config.nostrURL] + feedRelays).compactMap { URL(string: $0) }
         let roots = Set(wanted)
         Task { @MainActor [weak self] in

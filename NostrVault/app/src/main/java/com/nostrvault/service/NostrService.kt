@@ -786,7 +786,7 @@ class NostrService @Inject constructor(
         }
         if (pubkeys.isEmpty()) return
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
+        val readRelays = configStore.config.value.readRelays
 
         // Record the dispatch time so these pubkeys are negatively-cached for
         // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
@@ -813,9 +813,9 @@ class NostrService @Inject constructor(
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
         // widely replicated) instead of opening fresh sockets per flush. A stable
         // sub id means each flush just replaces the filter on the open sockets.
-        // The user's own relay (first in blastrRelays when configured) leads,
+        // The user's own relay (first in readRelays when configured) leads,
         // then the profile relays, then the rest of Blastr.
-        val relays = (blastrRelays.take(1) + PROFILE_RELAYS + blastrRelays)
+        val relays = (readRelays.take(1) + PROFILE_RELAYS + readRelays)
             .distinct()
             .filter { isValidRelayUrl(it) }
             .take(METADATA_POOL_SIZE)
@@ -1099,8 +1099,8 @@ class NostrService @Inject constructor(
             put("limit", 2)
         }
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
-        for (relayUrl in blastrRelays.take(3)) {
+        val readRelays = configStore.config.value.readRelays
+        for (relayUrl in readRelays.take(3)) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
                 lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
@@ -1119,7 +1119,7 @@ class NostrService @Inject constructor(
      */
     fun fetchRelayLists(pubkeys: List<String>) {
         if (pubkeys.isEmpty()) return
-        val relays = (configStore.config.value.activeBlastrRelays.take(1) + PROFILE_RELAYS)
+        val relays = (configStore.config.value.readRelays.take(1) + PROFILE_RELAYS)
             .distinct()
             .filter { isValidRelayUrl(it) }
         for (chunk in pubkeys.distinct().chunked(RELAY_LIST_CHUNK)) {
@@ -1587,9 +1587,8 @@ class NostrService @Inject constructor(
             Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
             return
         }
-        val config = configStore.config.value
-        val relays = config.inboxRelays ?: return
-        val tags = relays.map { listOf("r", it) }
+        val tags = configStore.config.value.publicRelayListTags
+        if (tags.isEmpty()) return
         signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
     }
 
@@ -1981,10 +1980,7 @@ class NostrService @Inject constructor(
         val config = configStore.config.value
         return buildList {
             config.nostrURL?.let { add(it) }
-            val feed = config.activeFeedRelays.ifEmpty {
-                listOf("wss://relay.primal.net", "wss://nos.lol")
-            }
-            addAll(feed.take(3))
+            addAll(config.readRelays.take(3))
             // NIP-65 outbox model: we're fetching events FROM this user, so query
             // their write/outbox relays (where they actually publish), not their
             // read/inbox relays (where others send things TO them).
@@ -2323,15 +2319,8 @@ class NostrService @Inject constructor(
             // Replies from other users propagate to feed/blastr relays, not just
             // the local + inbox relays. Mirror iOS (NoteDetailView) which queries
             // external feed relays so strangers' replies are actually found.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-            // Public fallback when no external relays are configured.
-            if (config.activeFeedRelays.isEmpty() &&
-                config.activeBlastrRelays.isEmpty() &&
-                config.inboxRelays.isNullOrEmpty()) {
-                add("wss://relay.primal.net")
-                add("wss://nos.lol")
-            }
+            addAll(config.readRelays)
+            addAll(config.writeRelays)
         }.distinct().take(8)
         if (relayUrls.isEmpty()) { onEose(emptyList()); return }
 

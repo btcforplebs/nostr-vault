@@ -33,7 +33,7 @@ class ZapService: ObservableObject {
         let config = ConfigService.shared.config
         let lists = NostrService.shared.relayLists
         var candidates = extra + [config.nostrURL]
-        candidates += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        candidates += config.readRelays
         candidates += lists[me] ?? []
         candidates += (lists[recipient] ?? []).prefix(3)
         var seen = Set<String>()

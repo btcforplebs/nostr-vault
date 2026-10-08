@@ -35,7 +35,6 @@ final class EventInspector: ObservableObject {
 
     /// How long one relay gets to answer before it counts as failed.
     static let relayTimeout: TimeInterval = 6
-    private static let fallbackRelays = ["wss://relay.primal.net", "wss://nos.lol"]
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
@@ -51,8 +50,7 @@ final class EventInspector: ObservableObject {
 
     /// Where Re-Broadcast sends by default: the blastr relays, as before.
     var defaultBroadcastRelays: [String] {
-        let blastr = ConfigService.shared.config.activeBlastrRelays
-        return blastr.isEmpty ? Self.fallbackRelays : blastr
+        ConfigService.shared.config.writeRelays
     }
 
     /// "This device" for the local relay's paths, the bare host for the rest.
@@ -79,7 +77,7 @@ final class EventInspector: ObservableObject {
 
         let config = ConfigService.shared.config
         let base = config.nostrURL
-        let feed = config.activeFeedRelays.isEmpty ? Self.fallbackRelays : config.activeFeedRelays
+        let feed = config.readRelays
         var ordered: [String] = []
         for relay in [base, base + "/inbox"] + feed + defaultBroadcastRelays
         where !relay.isEmpty && !ordered.contains(relay) {

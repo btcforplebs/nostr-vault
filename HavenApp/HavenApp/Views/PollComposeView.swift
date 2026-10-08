@@ -60,11 +60,11 @@ struct PollComposeView: View {
         return nil
     }
 
-    /// The relays the poll names for its votes: your outside (blastr) relays,
+    /// The relays the poll names for its votes: your outside Write relays,
     /// where it is sent, so voters and counters look where it lives.
     private var pollRelays: [String] {
-        let blastr = configService.config.activeBlastrRelays.filter { $0.hasPrefix("wss://") }
-        return blastr.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : blastr
+        let write = configService.config.writeRelays.filter { $0.hasPrefix("wss://") }
+        return write.isEmpty ? HavenConfig.fallbackWriteRelays : write
     }
 
     var body: some View {

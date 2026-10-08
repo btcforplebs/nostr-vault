@@ -201,9 +201,7 @@ final class RecipeFeedService: ObservableObject {
     /// Relays to ask. Recipe authors are strangers, so the owner's own relay
     /// has nothing to contribute here and is deliberately not queried.
     private static var relayURLs: [URL] {
-        let configured = ConfigService.shared.config.activeFeedRelays
-        let strings = configured.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : configured
-        return strings.compactMap { URL(string: $0) }
+        ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
     }
 
     private func handle(message: String, blocked: Set<String>) {

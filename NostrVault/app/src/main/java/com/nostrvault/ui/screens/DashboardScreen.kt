@@ -1910,15 +1910,7 @@ class DashboardViewModel @Inject constructor(
     private fun buildExternalRelayUrls(): List<String> {
         val urls = mutableListOf<String>()
         configStore.config.value.nostrURL?.let { urls.add(it) }
-        val feedRelays = configStore.config.value.activeFeedRelays
-        if (feedRelays.isNotEmpty()) {
-            urls.addAll(feedRelays)
-        } else {
-            urls.addAll(listOf(
-                "wss://relay.primal.net",
-                "wss://nos.lol",
-            ))
-        }
+        urls.addAll(configStore.config.value.readRelays)
         return urls
     }
 
@@ -2727,7 +2719,7 @@ fun DashboardScreen(
                 onToggleAutoLoad = { on -> viewModel.configStore.update { it.copy(autoLoadNewPosts = on) } },
                 onManageRelays = {
                     showDashboardSheet = false
-                    onNavigate(Screen.RelayListEditor)
+                    onNavigate(Screen.Relays)
                 },
             )
         }

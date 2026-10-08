@@ -231,11 +231,8 @@ class NostrService: ObservableObject {
         let pubkeys = Array(profileFetchQueue)
         profileFetchQueue.removeAll()
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
         relays += Self.profileIndexRelays
 
         // A lookup that found nothing must be able to run again, or a profile
@@ -248,7 +245,7 @@ class NostrService: ObservableObject {
         }
 
         #if DEBUG
-        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Blastr relays")
+        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Read relays")
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
@@ -346,11 +343,8 @@ class NostrService: ObservableObject {
         guard (relayLists[pubkey] == nil || dmRelayLists[pubkey] == nil) && !relaysInFlight.contains(pubkey) else { return }
         relaysInFlight.insert(pubkey)
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
 
         // Include cached outbox (write) relays for this user — their kind 10002/10050
         // is most likely to be found on their own write relays.
@@ -1211,8 +1205,7 @@ class NostrService: ObservableObject {
     /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
     /// every relay asked answered EOSE for this request without the event.
     func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
-        var urls = ConfigService.shared.config.activeBlastrRelays
-        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var urls = ConfigService.shared.config.writeRelays
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
             urls.append(extra)
         }
@@ -1381,8 +1374,7 @@ class NostrService: ObservableObject {
     func fetchOwnReactionIds(to noteId: String, timeout: TimeInterval = 5) async -> [String] {
         let pubkey = activeHexPubkey
         guard !pubkey.isEmpty else { return [] }
-        var urls = ConfigService.shared.config.activeBlastrRelays
-        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var urls = ConfigService.shared.config.writeRelays
         let own = ConfigService.shared.config.nostrURL
         if !own.isEmpty, !urls.contains(own) { urls.append(own) }
         let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
@@ -1457,27 +1449,17 @@ class NostrService: ObservableObject {
         }
     }
 
-    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event advertising this relay
-    /// as the account's inbox. Call when the user enables the toggle or on app launch.
+    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event: the owner's
+    /// own relays plus the Read and Write relays (`HavenConfig.publicRelayListTags`).
+    /// Call when the user enables the toggle or on app launch.
     @MainActor
     func publishRelayList(forNpub accountNpub: String) {
-        let config = ConfigService.shared.config
-        guard !config.isLocal else {
+        let tags = ConfigService.shared.config.publicRelayListTags
+        guard !tags.isEmpty else {
             #if DEBUG
-            print("NostrService: Relay is local-only, skipping Kind 10002 publish")
+            print("NostrService: No public relays to list, skipping Kind 10002 publish")
             #endif
             return
-        }
-
-        let publicURL = "wss://\(config.sanitizedRelayURL)"
-
-        // Build NIP-65 tags: no marker means both read and write
-        var tags: [[String]] = [["r", publicURL]]
-
-        // Include the Mac relay in the relay list if configured (both platforms)
-        let macRelay = config.macRelayWssURL
-        if !macRelay.isEmpty {
-            tags.append(["r", macRelay])
         }
 
         Task {
@@ -1498,7 +1480,6 @@ class NostrService: ObservableObject {
     @MainActor
     func publishRelayListsForEnabledAccounts() {
         let config = ConfigService.shared.config
-        guard !config.isLocal else { return }
 
         let enabledAccounts = config.publishRelayListPerAccount.filter { $0.value }.map { $0.key }
         guard !enabledAccounts.isEmpty else { return }
@@ -1703,10 +1684,7 @@ class NostrService: ObservableObject {
     /// If `onRelayResult` is provided, it's called for each relay with (relayURL, success, message).
     /// `extraRelays` are sent to as well, e.g. diVine's relay for a diVine.
     func broadcastRawEvent(_ eventDict: [String: Any], extraRelays: [String] = [], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.writeRelays
         for extra in extraRelays where !relays.contains(extra) {
             relays.append(extra)
         }
@@ -2486,9 +2464,7 @@ class NostrService: ObservableObject {
 
         let config = ConfigService.shared.config
         var urls = [config.nostrURL].compactMap { URL(string: $0) }
-        let externals = config.activeFeedRelays.isEmpty
-            ? ["wss://relay.primal.net", "wss://nos.lol"]
-            : config.activeFeedRelays
+        let externals = config.readRelays
         urls.append(contentsOf: externals.compactMap { URL(string: $0) })
         guard !urls.isEmpty else { return }
 

@@ -1,5 +1,6 @@
 package com.nostrvault.util
 
+import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.service.NostrEvent
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -17,7 +18,7 @@ import java.net.URI
  * receipt relays).
  */
 object RelayGiven {
-    val FALLBACK_FEED_RELAYS = listOf("wss://relay.primal.net", "wss://nos.lol")
+    val FALLBACK_FEED_RELAYS = RelayConfiguration.FALLBACK_RELAYS
 
     /** Liked authors' own write relays asked at most, two per author. */
     private const val MAX_AUTHOR_RELAYS = 6

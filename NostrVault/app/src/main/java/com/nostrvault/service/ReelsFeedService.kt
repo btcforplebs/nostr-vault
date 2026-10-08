@@ -317,7 +317,7 @@ class ReelsFeedService @Inject constructor(
                 config.localRelayURL("feed")?.let(::add)
             }
             add(Reel.DIVINE_RELAY)
-            addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(config.readRelays)
         }.distinct()
     }
 

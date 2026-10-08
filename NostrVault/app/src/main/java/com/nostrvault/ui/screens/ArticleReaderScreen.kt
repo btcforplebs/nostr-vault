@@ -180,7 +180,7 @@ class ArticleReaderViewModel @Inject constructor(
         val config = configStore.config.value
         val candidates = buildList {
             config.nostrURL?.let { add(it) }
-            addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(config.readRelays)
             addAll(nostrService.outboxRelays.value[note.pubkey].orEmpty())
         }
         return candidates.map { it.trim() }

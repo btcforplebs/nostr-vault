@@ -4,6 +4,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.Reel
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.screens.music.MusicFeedState
 import kotlinx.coroutines.CoroutineScope
@@ -131,7 +132,7 @@ object ProfileExtras {
      */
     fun relays(ownRelay: String?, feedRelays: List<String>, outbox: List<String>): List<String> = buildList {
         ownRelay?.let { add(it) }
-        addAll(feedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://relay.nos.social") }.take(3))
+        addAll(feedRelays.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }.take(3))
         addAll(outbox.take(3))
         add(Reel.DIVINE_RELAY)
     }.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
