@@ -2739,6 +2739,8 @@ struct BackupSettingsView: View {
 /// one in either place flips both.
 struct FeedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @AppStorage(PendingPostManager.ActionType.countdownKey)
+    private var sendDelay: Double = PendingPostManager.ActionType.countdownDefault
 
     var body: some View {
         Form {
@@ -2754,6 +2756,23 @@ struct FeedSettingsView: View {
                 }
             } header: {
                 Text("What You See")
+            }
+
+            Section {
+                Picker(selection: $sendDelay) {
+                    ForEach(PendingPostManager.ActionType.countdownChoices, id: \.self) { seconds in
+                        Text(seconds == 0 ? "Off" : "\(Int(seconds))s").tag(seconds)
+                    }
+                } label: {
+                    Text("Send Delay").settingInfo(.postSendDelay)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Posting")
+            } footer: {
+                Text(sendDelay == 0
+                     ? "Posts go out as soon as you tap. There's no undo."
+                     : "Posts wait \(Int(sendDelay)) seconds before going out, so you can undo or edit them.")
             }
 
             Section {

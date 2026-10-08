@@ -44,6 +44,7 @@ fun PendingPostBanner(
     val isShowing by pendingPostManager.isShowing.collectAsState()
     val actionType by pendingPostManager.actionType.collectAsState()
     val timeRemaining by pendingPostManager.timeRemaining.collectAsState()
+    val totalSeconds by pendingPostManager.totalSeconds.collectAsState()
     val confirmation by pendingPostManager.confirmation.collectAsState()
     val colors = LocalNostrVaultColors.current
 
@@ -103,7 +104,7 @@ fun PendingPostBanner(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 // Progress arc via LinearProgressIndicator
-                val progress = timeRemaining / (PendingPostManager.COUNTDOWN_DURATION_MS / 1000f)
+                val progress = timeRemaining / totalSeconds.coerceAtLeast(0.1f)
                 CircularProgressIndicator(
                     progress = { progress },
                     color = colors.primary,

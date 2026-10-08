@@ -24,6 +24,7 @@ import com.nostrvault.service.FeedLanguage
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NoteTranslationPolicy
 import com.nostrvault.service.NoteTranslator
+import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.components.deviceLanguageTags
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,7 +48,13 @@ class AppearanceViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val noteTranslator: NoteTranslator,
+    private val pendingPostManager: PendingPostManager,
 ) : ViewModel() {
+
+    /** How long posts wait before going out: 0 (Off), 5 or 10 seconds. */
+    val sendDelaySeconds = pendingPostManager.sendDelaySeconds
+
+    fun setSendDelaySeconds(seconds: Int) = pendingPostManager.setSendDelaySeconds(seconds)
 
     /** The Translate button under notes in another language. */
     val showTranslateButton = configStore.config
@@ -187,6 +194,7 @@ fun AppearanceSettingsScreen(
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
+    val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
 
     Scaffold(
         topBar = {
@@ -343,6 +351,61 @@ fun AppearanceSettingsScreen(
                         checkedTrackColor = LocalNostrVaultColors.current.primary,
                     ),
                 )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // Send delay: the undo window before a post goes out
+            Text(
+                text = "Send Delay",
+                color = PrimaryText,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = if (sendDelaySeconds == 0) {
+                    "Posts go out as soon as you tap. There's no undo."
+                } else {
+                    "Posts wait $sendDelaySeconds seconds before going out, so you can undo or edit them."
+                },
+                color = SecondaryText,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                PendingPostManager.SEND_DELAY_CHOICES.forEach { seconds ->
+                    val isSelected = sendDelaySeconds == seconds
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) LocalNostrVaultColors.current.primary.copy(alpha = 0.2f)
+                                else TertiaryGroupedBg,
+                            )
+                            .then(
+                                if (isSelected) Modifier.border(
+                                    2.dp,
+                                    LocalNostrVaultColors.current.primary,
+                                    RoundedCornerShape(10.dp),
+                                )
+                                else Modifier
+                            )
+                            .clickable { viewModel.setSendDelaySeconds(seconds) },
+                    ) {
+                        Text(
+                            text = if (seconds == 0) "Off" else "${seconds}s",
+                            color = PrimaryText,
+                            fontSize = 15.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(32.dp))
