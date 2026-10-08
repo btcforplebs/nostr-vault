@@ -366,12 +366,13 @@ internal fun HashtagsFeed(
     // Both sections grouped in one pass, so replies from a follow and from
     // your network land in the same card. A card goes on top when anyone you
     // follow posted in it: follows first still holds, nothing is split.
-    val threadSections = remember(isThreaded, fromFollows, fromOthers) {
+    val threadSections = remember(isThreaded, fromFollows, fromOthers, unfiltered) {
         if (!isThreaded) null else {
             val followIds = fromFollows.mapTo(HashSet()) { it.id }
             val blocked = viewModel.blockedPubkeys()
             val threads = FeedThreadGrouping.withoutBlocked(
-                FeedThreadGrouping.build(fromFollows + fromOthers) { id ->
+                // Screened, the order is the ranking (posts people responded to first).
+                FeedThreadGrouping.build(fromFollows + fromOthers, keepFeedOrder = unfiltered) { id ->
                     viewModel.findNote(id)?.takeIf { it.pubkey !in blocked }
                 },
                 blocked,

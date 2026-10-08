@@ -33,6 +33,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.TopicFeedScreener
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.InterestList
@@ -49,6 +50,9 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,6 +106,8 @@ abstract class HashtagNotesViewModel(
         const val MAX_TAGS = 100
         /** Never spin forever if every relay is slow or down. */
         private const val LOADING_TIMEOUT_MS = 8_000L
+        /** A screening lookup gives up on relays that haven't answered by then. */
+        private const val LOOKUP_TIMEOUT_MS = 6_000L
         private const val DEFAULT_ZAP_SATS = SearchViewModel.DEFAULT_ZAP_SATS
 
         /**
@@ -200,9 +206,33 @@ abstract class HashtagNotesViewModel(
      */
     protected open val opensWithoutWebOfTrust: Boolean = false
 
-    /** True while this feed is showing everyone because there's no Web of Trust yet. */
+    /**
+     * True while this feed is open to everyone because there's no Web of
+     * Trust yet. Those posts are screened for bots and farms
+     * ([TopicFeedScreener]) rather than shown raw, and in that order: posts
+     * people responded to first.
+     */
     private val _unfilteredForNewAccount = MutableStateFlow(false)
     val unfilteredForNewAccount: StateFlow<Boolean> = _unfilteredForNewAccount.asStateFlow()
+
+    /**
+     * Once the open list is being screened it stays screened while this
+     * model lives: the empty web of trust is rebuilt every 2 minutes, and the
+     * moment the guide's follows gave it names, flipping to the network feed
+     * wiped the list under the reader (iOS `screenLatched`).
+     */
+    private var screenLatched = false
+    @Volatile private var screening = false
+    private val screener = TopicFeedScreener(
+        scope = viewModelScope,
+        query = ::lookupQuery,
+        isValid = HavenBridge::verifyEvent,
+        onShown = { notes ->
+            _fromOthers.value = notes
+            if (notes.isNotEmpty()) _isLoading.value = false
+            nostrService.fetchMissingProfiles(notes.map { it.pubkey }.distinct())
+        },
+    )
 
     protected fun observe(tags: Flow<List<String>>, active: Flow<Boolean> = flowOf(true)) {
         observing?.cancel()
@@ -241,21 +271,33 @@ abstract class HashtagNotesViewModel(
             configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }?.let(::add)
         }
         // Null is everyone; empty is nobody (no Web of Trust yet fails closed, like Global).
-        val unfiltered = opensWithoutWebOfTrust && !globalShowsEveryone.value && feedService.hasNoWebOfTrustYet()
-        _unfilteredForNewAccount.value = unfiltered
-        val trust = if (unfiltered) null else feedService.globalTrustSet()
+        val everyone = globalShowsEveryone.value
+        val unfiltered = opensWithoutWebOfTrust && !everyone && feedService.hasNoWebOfTrustYet()
+        if (unfiltered) screenLatched = true
+        if (everyone) screenLatched = false
+        val screen = !everyone && (unfiltered || screenLatched)
+        _unfilteredForNewAccount.value = screen
+        val trust = if (screen) null else feedService.globalTrustSet()
         val values = tagFilterValues(tags)
         // Matched locally in lowercase; only the tags actually asked for.
         val wantedTags = values.map { it.lowercase() }.toSet()
         // Same feed as last time (back from a note): keep the posts so the
         // list, and the scroll position on it, survive; the reopened
         // subscription only adds what is new.
-        val resuming = tags == shownTags && followSet == follows && trust == shownTrust &&
+        // Screened (Fill your feed), follows don't change what's shown: a
+        // follow from the guide must not wipe and reload the list under the
+        // reader.
+        val switchingScreen = screen != screening
+        val sameFollows = followSet == follows || (screen && trust == null)
+        val resuming = !switchingScreen && tags == shownTags && sameFollows && trust == shownTrust &&
             (_fromFollows.value.isNotEmpty() || _fromOthers.value.isNotEmpty())
         shownTags = tags
         shownTrust = trust
         val gen = synchronized(lock) {
             generation += 1
+            // After the bump, so a post from the old subscription can't reach the new pool.
+            screening = screen
+            if (!resuming) screener.reset()
             if (!resuming) seen.clear()
             follows = followSet
             topGroup = if (trust == null) emptySet() else followSet
@@ -271,6 +313,8 @@ abstract class HashtagNotesViewModel(
             _fromOthers.value = emptyList()
             _isLoading.value = true
         }
+        // stop() dropped any lookups in flight; ask again for what's on hand.
+        if (resuming && screen) screener.resume()
 
         if (values.isEmpty()) {
             _isLoading.value = false
@@ -342,6 +386,7 @@ abstract class HashtagNotesViewModel(
     }
 
     private fun stop() {
+        screener.stop()
         jobs.forEach { it.cancel() }
         jobs.clear()
         clients.forEach { it.disconnect() }
@@ -375,10 +420,14 @@ abstract class HashtagNotesViewModel(
     fun reachedEnd(section: Section) = loadOlder(section)
 
     private fun loadOlder(section: Section) {
-        val list = if (section == Section.FOLLOWS) _fromFollows.value else _fromOthers.value
         val base = if (section == Section.FOLLOWS) followsFilters else othersFilters
         val context = pageContext ?: return
-        val oldest = list.lastOrNull() ?: return
+        // Screened, the oldest post asked for is in the pool, not the list.
+        val oldest = when {
+            section == Section.FOLLOWS -> _fromFollows.value.lastOrNull()
+            screening -> screener.oldest()
+            else -> _fromOthers.value.lastOrNull()
+        } ?: return
         if (_loadingOlder.value != null || section in exhausted || base.isEmpty()) return
         // Inclusive, so posts sharing the oldest second are not skipped; seen drops repeats.
         val until = oldest.createdAt.time / 1000
@@ -460,6 +509,65 @@ abstract class HashtagNotesViewModel(
     }
 
     /**
+     * One REQ to the feed relays for the screener. Returns when every relay
+     * has answered (EOSE or CLOSED, counted per relay) or after
+     * [LOOKUP_TIMEOUT_MS]; its sockets close then. Only verified events.
+     */
+    private suspend fun lookupQuery(filters: List<JsonObject>, onEvent: (JsonObject) -> Unit) {
+        val relays = configStore.config.value.readRelays
+        if (relays.isEmpty() || filters.isEmpty()) return
+        val subId = "screen-${System.nanoTime().toString(36)}"
+        val req = buildJsonArray {
+            add(JsonPrimitive("REQ"))
+            add(JsonPrimitive(subId))
+            filters.forEach { add(it) }
+        }.toString()
+        val answered = HashSet<String>()
+        val done = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val clients = mutableListOf<WebSocketClient>()
+        val lookupJobs = mutableListOf<Job>()
+        try {
+            coroutineScope {
+                for (url in relays) {
+                    // Big buffer: a responder lookup can return thousands of frames,
+                    // and a dropped EOSE would hold it to the timeout.
+                    val client = WebSocketClient(url, viewModelScope, autoReconnect = false, messageBuffer = 4096)
+                    clients += client
+                    lookupJobs += launch(Dispatchers.Default) {
+                        client.messages.collect { raw ->
+                            val array = try {
+                                json.parseToJsonElement(raw) as? JsonArray
+                            } catch (e: Exception) {
+                                null
+                            } ?: return@collect
+                            if (array.size < 2 || (array[1] as? JsonPrimitive)?.contentOrNull != subId) return@collect
+                            when ((array[0] as? JsonPrimitive)?.contentOrNull) {
+                                "EVENT" -> {
+                                    val event = array.getOrNull(2) as? JsonObject ?: return@collect
+                                    if (HavenBridge.verifyEvent(event.toString())) onEvent(event)
+                                }
+                                "EOSE", "CLOSED" -> {
+                                    val all = synchronized(answered) { answered.add(url); answered.size >= relays.size }
+                                    if (all) done.complete(Unit)
+                                }
+                            }
+                        }
+                    }
+                    lookupJobs += launch {
+                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                        client.send(req)
+                    }
+                    client.connect()
+                }
+                withTimeoutOrNull(LOOKUP_TIMEOUT_MS) { done.await() }
+                lookupJobs.forEach { it.cancel() }
+            }
+        } finally {
+            clients.forEach { it.disconnect() }
+        }
+    }
+
+    /**
      * Runs off Main. Only what was asked for: a relay can send validly signed
      * posts that lack the tag, or come from people outside the requested
      * authors, and any event under any author, so every signature is checked.
@@ -525,6 +633,10 @@ abstract class HashtagNotesViewModel(
     private fun insert(note: FeedNote, gen: Int): Boolean {
         val updated = synchronized(lock) {
             if (gen != generation || !seen.add(note.id)) return false
+            if (screening && note.pubkey !in topGroup) {
+                screener.add(note)
+                return true
+            }
             val target = if (note.pubkey in topGroup) _fromFollows else _fromOthers
             val current = target.value
             val index = current.indexOfFirst { it.createdAt < note.createdAt }.let { if (it < 0) current.size else it }
