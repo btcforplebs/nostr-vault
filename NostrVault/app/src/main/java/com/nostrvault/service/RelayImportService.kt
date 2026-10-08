@@ -100,10 +100,14 @@ class RelayImportService @Inject constructor(
                 val config = configStore.config.value
                 val relayDataDir = File(context.filesDir, "relay_data")
                 RelayConfiguration.ensureDirectories(relayDataDir)
-                val envDict = RelayConfiguration.generateEnvDictionary(config, relayDataDir)
-                envDict.forEach { (key, value) ->
+                val inputs = RelayConfiguration.launchInputs(config, relayDataDir)
+                inputs.env.forEach { (key, value) ->
                     HavenBridge.setEnv(key, value)
                 }
+                // The env above names the relay lists by bare filename, which
+                // Go can't open from the app's working directory, and on a
+                // first-run import (setup) the files don't exist yet.
+                RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)
 
                 // 3. Start relay in import mode on IO thread
                 _importStatusMessage.value = "Importing notes from seed relays..."
@@ -137,7 +141,12 @@ class RelayImportService @Inject constructor(
                 // 4. Restart relay in normal mode
                 _importStatusMessage.value = "Restarting relay..."
                 delay(1000)
-                RelayForegroundService.start(context)
+                // Setup's import tour can leave the app before a long import
+                // ends, and a foreground service can't be started from the
+                // background (Android 12+). The relay then starts at the next
+                // launch rather than taking the app down with it.
+                runCatching { RelayForegroundService.start(context) }
+                    .onFailure { Log.w(TAG, "Relay restart after import failed: ${it.message}") }
             }
         }
     }

@@ -144,12 +144,16 @@ object RelayLogParser {
                 }
             }
             line.contains("No notes found") -> {
+                // An empty 10-day window (import.go): still progress through
+                // the history, so the bar and the import tour's "Looking
+                // through <month>" line keep moving for someone with gaps (or
+                // a key with no notes at all). Same as iOS.
                 val dateStr = line.substringAfterLast("to ", "").take(10)
                 if (dateStr.isNotEmpty()) {
                     batch.progressDateStr = dateStr
                     val fromIndex = line.substringAfterLast("for ", "").take(10)
                     if (fromIndex.isNotEmpty()) {
-                        batch.importStatusMessage = "Checking $fromIndex... (No notes found)"
+                        batch.importStatusMessage = "Looking through notes from $fromIndex..."
                     }
                 } else {
                     batch.progressBump = true

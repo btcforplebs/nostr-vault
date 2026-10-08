@@ -205,6 +205,25 @@ object RelayConfiguration {
         dmRelays = config.dmRelays,
     )
 
+    /**
+     * Writes the relay lists the Go relay reads from files and points their
+     * env vars at them by absolute path: Go opens the bare filename, but the
+     * app's working directory is not the relay data dir. Rewritten every
+     * time, because config is the source of truth. Call after the env from
+     * [launchInputs] is set, since that sets these vars to bare names.
+     */
+    fun writeRelayListFiles(config: HavenConfig, inputs: LaunchInputs, relayDataDir: File) {
+        fun write(envKey: String, fileName: String, content: List<String>) {
+            if (fileName.isEmpty()) return
+            val file = File(relayDataDir, fileName)
+            file.writeText("[" + content.joinToString(",") { "\"$it\"" } + "]")
+            HavenBridge.setEnv(envKey, file.absolutePath)
+        }
+        write("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, inputs.importSeedRelays)
+        write("BLASTR_RELAYS_FILE", config.blastrRelaysFile, inputs.blastrRelays)
+        write("DM_RELAYS_FILE", DM_RELAYS_FILE_NAME, inputs.dmRelays)
+    }
+
     /** Format an environment dictionary as a .env file string. */
     fun formatEnvFile(envDict: Map<String, String>): String = buildString {
         for ((key, value) in envDict.toSortedMap()) {
@@ -218,6 +237,34 @@ object RelayConfiguration {
             }
         }
     }
+
+    /**
+     * The NIP-65 relay list for a new account whose relay is this device.
+     * The device's own relay can't be reached from outside, so it is not
+     * advertised; the public relays every event is broadcast to are. No
+     * marker, so each is both read and write. Loopback and non-wss entries
+     * are left out. Same as iOS.
+     */
+    fun newAccountRelayListTags(broadcastRelays: List<String>): List<List<String>> {
+        val loopback = setOf("localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]")
+        return broadcastRelays.map { it.trim() }
+            .filter { url ->
+                val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return@filter false
+                uri.scheme == "wss" && !uri.host.isNullOrEmpty() && uri.host.lowercase() !in loopback
+            }
+            .distinct()
+            .map { listOf("r", it) }
+    }
+
+    /**
+     * Where a brand-new account's photos go when it has no server of its
+     * own: blossomMirrors is empty on a fresh install, and with no outside
+     * server a photo (the profile picture included) can't be shown to anyone
+     * else. Both accepted an upload signed by a never-seen key (2026-10-07).
+     * nostr.build first at Logen's request. Only setup's New to Nostr path
+     * applies this. Same as iOS.
+     */
+    val newAccountBlossomMirrors = listOf("https://blossom.nostr.build", "https://blossom.primal.net")
 }
 
 /**

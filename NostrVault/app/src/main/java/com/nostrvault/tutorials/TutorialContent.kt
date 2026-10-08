@@ -11,6 +11,7 @@ val TutorialID.title: String
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
         TutorialID.POCKET_RELAY -> "Pocket Relay vs Public Relay"
+        TutorialID.IMPORT_TOUR -> "How Your Vault Works"
     }
 
 /** The cards, in order. Empty for Fill your vault, which draws its own
@@ -18,6 +19,7 @@ val TutorialID.title: String
 val TutorialID.steps: List<TutorialStep>
     get() = when (this) {
         TutorialID.FEEDS -> TutorialContent.feeds
+        TutorialID.IMPORT_TOUR -> TutorialContent.importTour
         else -> emptyList()
     }
 
@@ -31,6 +33,33 @@ object TutorialContent {
     const val FILL_YOUR_VAULT_HAS_GUIDE = true
 
     const val FEED_PICKER = "feeds.picker"
+
+    /** Shown while "I already use Nostr" imports. No anchors: in setup
+     *  they're the screen's own cards, and a replay from Settings shows them
+     *  low and centred. The last "Ready" card with real counts belongs to the
+     *  setup screen only. Same wording as iOS `TutorialContent.importTour`. */
+    val importTour = listOf(
+        TutorialStep(
+            null, "Your notes, your copy",
+            "Your notes live on relays you don't own, and any of them can delete them. Importing makes a copy that lives on this device.",
+        ),
+        TutorialStep(
+            null, "A relay in your pocket",
+            "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nothing on the network can reach in.",
+        ),
+        TutorialStep(
+            null, "Public relays vs yours",
+            "Public relays are shared servers everyone posts to. Yours is your own copy. You post from your vault, and it sends the post out.",
+        ),
+        TutorialStep(
+            null, "Want an address?",
+            "Run Nostr Vault on a Mac with your own domain and it becomes a public relay that's up 24/7. Your phone syncs from it. Without one, your pocket relay is all you need.",
+        ),
+        TutorialStep(
+            null, "Your feed, your rules",
+            "No algorithm. Your feeds are filtered by the people you follow, so spam stays out.",
+        ),
+    )
 
     /** Discover is the extended network: people your follows follow, ranked
      *  by how many of your follows follow them. */

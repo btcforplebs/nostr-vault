@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens
 
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
@@ -21,6 +22,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,10 +35,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -44,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
@@ -74,12 +87,23 @@ import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.NIP49Service
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.RelayImportService
+import com.nostrvault.service.StatsService
+import com.nostrvault.setup.IdentityInput
+import com.nostrvault.setup.RelayCheck
+import com.nostrvault.setup.RelayCheckProbe
+import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialID
 import com.nostrvault.ui.components.NostrConnectPairing
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -98,24 +122,30 @@ import javax.inject.Inject
 
 // ── Wizard colors (from iOS WizardColors) ────────────────────────
 
-private val WizardBgPrimary = Color(0xFF09090B)
-private val WizardBgCard = Color(0xFF18181B)
-private val WizardBgElevated = Color(0xFF27272A)
-private val WizardBorderSubtle = Color.White.copy(alpha = 0.06f)
-private val WizardBorderActive = Color(0xFFF59E0B).copy(alpha = 0.4f)
-private val WizardAccent = Color(0xFFF59E0B)
-private val WizardGradient = Brush.horizontalGradient(
+internal val WizardBgPrimary = Color(0xFF09090B)
+internal val WizardBgCard = Color(0xFF18181B)
+internal val WizardBgElevated = Color(0xFF27272A)
+internal val WizardBorderSubtle = Color.White.copy(alpha = 0.06f)
+internal val WizardBorderActive = Color(0xFFF59E0B).copy(alpha = 0.4f)
+internal val WizardAccent = Color(0xFFF59E0B)
+internal val WizardGradient = Brush.horizontalGradient(
     colors = listOf(Color(0xFFEA580C), Color(0xFFF59E0B)),
 )
 
 // ── Enums ────────────────────────────────────────────────────────
 
+/** Where "I already use Nostr"'s import starts. Same as iOS. */
+internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
+
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, RELAY_CHECK, IMPORT_TOUR,
+    ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
-enum class SetupPath { NONE, FULL, BROWSE, NEW_TO_NOSTR }
+/** [USE_NOSTR] is "I already use Nostr": one key field decides read-only vs
+ *  can-post, so it replaces [FULL] and [BROWSE] on the front door. Same as iOS. */
+enum class SetupPath { NONE, FULL, BROWSE, NEW_TO_NOSTR, USE_NOSTR }
 
 // ── ViewModel ────────────────────────────────────────────────────
 
@@ -126,6 +156,8 @@ class SetupWizardViewModel @Inject constructor(
     private val amberSignerService: AmberSignerService,
     private val blossomService: BlossomService,
     private val nostrService: NostrService,
+    private val relayImportService: RelayImportService,
+    private val statsService: StatsService,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -234,6 +266,45 @@ class SetupWizardViewModel @Inject constructor(
     val nwcInput = _nwcInput.asStateFlow()
 
 
+    // New account: published once setup completes (see publishNewAccount)
+    private val _profileName = MutableStateFlow("")
+    val profileName = _profileName.asStateFlow()
+
+    private val _profilePhotoJpeg = MutableStateFlow<ByteArray?>(null)
+    val profilePhotoJpeg = _profilePhotoJpeg.asStateFlow()
+
+    private val _profilePhotoError = MutableStateFlow<String?>(null)
+    val profilePhotoError = _profilePhotoError.asStateFlow()
+
+    /** The new account's npub, shown on the keys page beside the nsec. */
+    private val _generatedNpub = MutableStateFlow<String?>(null)
+    val generatedNpub = _generatedNpub.asStateFlow()
+
+    // I already use Nostr
+    private val _useNostrInput = MutableStateFlow("")
+    val useNostrInput = _useNostrInput.asStateFlow()
+
+    private val _useNostrPassword = MutableStateFlow("")
+    val useNostrPassword = _useNostrPassword.asStateFlow()
+
+    private val _relayRows = MutableStateFlow<List<RelayCheck.Row>>(emptyList())
+    val relayRows = _relayRows.asStateFlow()
+
+    private val _isCheckingRelays = MutableStateFlow(true)
+    val isCheckingRelays = _isCheckingRelays.asStateFlow()
+    private var relayCheckStarted = false
+
+    /** The import tour runs the app-wide import, so it outlives this screen. */
+    val tourIsImporting = relayImportService.isImporting
+    val tourImportCompleted = relayImportService.importCompleted
+    val tourImportProgress = relayImportService.importProgress
+    val tourImportStatus = relayImportService.importStatusMessage
+
+    /** Notes, likes and everything, read from the relay once the import is done. */
+    private val _tourCounts = MutableStateFlow<Triple<Int, Int, Int>?>(null)
+    val tourCounts = _tourCounts.asStateFlow()
+    private var importTourStarted = false
+
     init {
         _isAmberAvailable.value = amberSignerService.isAmberInstalled()
     }
@@ -272,11 +343,18 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
-    /** Steps for "New to Nostr" mode. */
+    /** Steps for "New to Nostr" mode: keys, password, profile, done. The
+     *  Fill your feed guide finds people after setup. */
     private val newUserSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
-        // The Fill your feed guide finds people after setup; nothing here picks them.
-        WizardStep.NOSTR_INTRO, WizardStep.COMPLETE,
+        WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE,
+    )
+
+    /** Steps for "I already use Nostr": your key, relay check, import tour.
+     *  The tour's Enter finishes setup, so there's no done screen. */
+    private val useNostrSteps = listOf(
+        WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
+        WizardStep.USE_NOSTR_KEY, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
     )
 
     /**
@@ -289,10 +367,14 @@ class SetupWizardViewModel @Inject constructor(
             val steps = when (_setupPath.value) {
                 SetupPath.BROWSE -> browseSteps
                 SetupPath.NEW_TO_NOSTR -> newUserSteps
+                SetupPath.USE_NOSTR -> useNostrSteps
                 else -> fullSteps
             }
             return if (_useExternalRelay.value) {
-                steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA
+                // No import here, so "I already use Nostr" ends on the done screen.
+                val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
+                    WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
+                if (WizardStep.COMPLETE in withoutImport) withoutImport else withoutImport + WizardStep.COMPLETE
             } else {
                 steps
             }
@@ -382,12 +464,17 @@ class SetupWizardViewModel @Inject constructor(
                     return@launch
                 }
                 _generatedSkHex.value = skHex
+                _generatedNpub.value = npub
                 configStore.update { it.copy(
                     ownerNpub = npub,
                     ownerHexKey = skHex,
                     signingMode = "local",
                     setupMode = "newuser",
-                    defaultFeedMode = "POPULAR",
+                    // The Fill your feed guide opens on top and fills
+                    // Following. Popular is the unfiltered feed, so not a
+                    // first feed. Same as iOS.
+                    defaultFeedMode = "FOLLOWING",
+                    blossomMirrors = it.blossomMirrors.ifEmpty { RelayConfiguration.newAccountBlossomMirrors },
                 ) }
                 configStore.setActiveAccount(pkHex)
                 // Stay on NOSTR_INTRO so user can see/copy their nsec
@@ -398,8 +485,14 @@ class SetupWizardViewModel @Inject constructor(
         }
     }
 
-    /** Advance from NOSTR_INTRO to COMPLETE after user has seen their nsec. */
+    /** Keys page → password page, once they've ticked that the nsec is saved. */
     fun advanceFromNostrIntro() {
+        _error.value = null
+        _step.value = stepAfter(WizardStep.NOSTR_INTRO)
+    }
+
+    /** Password page: encrypts the new key with it (NIP-49), then the profile. */
+    fun advanceFromKeyPassword() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
@@ -434,12 +527,77 @@ class SetupWizardViewModel @Inject constructor(
                 configStore.update { it.copy(ownerNcryptsec = ncryptsec) }
                 credentialStore.storeKeychainPassword(configStore.config.value.ownerNpub, _passphrase.value)
 
-                _step.value = WizardStep.COMPLETE
+                _step.value = stepAfter(WizardStep.KEY_PASSWORD)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Encryption failed"
             }
             _isLoading.value = false
         }
+    }
+
+    // ── Profile (new account) ─────────────────────────────────────
+
+    fun setProfileName(value: String) { _profileName.value = value }
+
+    /** Reads the picked image into a JPEG of at most 512 px; same as iOS. */
+    fun setProfilePhoto(uri: android.net.Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val jpeg = runCatching { profileJpeg(uri) }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (jpeg != null) {
+                    _profilePhotoJpeg.value = jpeg
+                    _profilePhotoError.value = null
+                } else {
+                    _profilePhotoError.value = "Couldn't read that photo. Try another."
+                }
+            }
+        }
+    }
+
+    /**
+     * Decodes [uri] downsampled to at most [maxPixel] on its longest side and
+     * re-encodes it as JPEG. A fresh encode carries no EXIF, so the original's
+     * location never leaves the phone.
+     */
+    private fun profileJpeg(uri: android.net.Uri, maxPixel: Int = 512): ByteArray? {
+        val resolver = appContext.contentResolver
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longest <= 0) return null
+        var sample = 1
+        while (longest / (sample * 2) >= maxPixel) sample *= 2
+        val decoded = resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: return null
+        val rotation = resolver.openInputStream(uri)?.use {
+            when (androidx.exifinterface.media.ExifInterface(it).getAttributeInt(
+                androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL,
+            )) {
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+        } ?: 0f
+        val scale = minOf(1f, maxPixel.toFloat() / maxOf(decoded.width, decoded.height))
+        val matrix = android.graphics.Matrix().apply {
+            postScale(scale, scale)
+            postRotate(rotation)
+        }
+        val bitmap = android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        val out = java.io.ByteArrayOutputStream()
+        if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)) return null
+        return out.toByteArray()
+    }
+
+    fun advanceFromProfile() { _step.value = stepAfter(WizardStep.PROFILE) }
+
+    fun skipProfile() {
+        _profileName.value = ""
+        _profilePhotoJpeg.value = null
+        _step.value = stepAfter(WizardStep.PROFILE)
     }
 
     // ── Account ───────────────────────────────────────────────────
@@ -637,7 +795,8 @@ class SetupWizardViewModel @Inject constructor(
                 request.clientPubkey,
             )
             if (ok) {
-                _step.value = stepAfter(WizardStep.ACCOUNT)
+                // From the account step or "I already use Nostr"'s key step.
+                _step.value = stepAfter(_step.value)
                 null
             } else {
                 "Could not connect to the signer. Try again."
@@ -697,6 +856,242 @@ class SetupWizardViewModel @Inject constructor(
             _error.value = "Could not resolve NIP-05: ${e.localizedMessage ?: "Network error"}"
             null
         }
+    }
+
+    // ── I already use Nostr ───────────────────────────────────────
+
+    fun setUseNostrInput(value: String) {
+        _useNostrInput.value = value
+        _useNostrPassword.value = ""
+        _error.value = null
+    }
+    fun setUseNostrPassword(value: String) { _useNostrPassword.value = value; _error.value = null }
+
+    /**
+     * Whether a pasted key is complete: a one-character typo is a different,
+     * valid-looking key, so the checksum is checked before Continue.
+     */
+    fun keyChecksumOK(input: IdentityInput): Boolean = when (input) {
+        is IdentityInput.PublicKey -> HavenBridge.decodeNpub(input.key) != null
+        is IdentityInput.SecretKey -> HavenBridge.nsecToHex(input.key) != null
+        else -> true
+    }
+
+    /**
+     * The key step's Continue. What was pasted decides the account: a public
+     * key or name@domain is read-only, a private key, encrypted key or
+     * bunker:// link can post. Same as iOS `UseNostrKeyStep.handleContinue`.
+     */
+    fun continueUseNostr() {
+        val input = IdentityInput.parse(_useNostrInput.value)
+        val password = _useNostrPassword.value
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val ok = when (input) {
+                    is IdentityInput.PublicKey -> adoptReadOnly(input.key)
+                    is IdentityInput.Nip05 -> {
+                        val npub = resolveNIP05(input.name)
+                        if (npub == null) {
+                            _error.value = "Couldn't find ${input.name}. Check the spelling, or paste your npub."
+                            false
+                        } else adoptReadOnly(npub)
+                    }
+                    is IdentityInput.SecretKey -> {
+                        val skHex = HavenBridge.nsecToHex(input.key)
+                        if (skHex == null) { _error.value = "That key doesn't look complete."; false }
+                        else adoptSecretKey(skHex, password, ncryptsec = null)
+                    }
+                    is IdentityInput.EncryptedSecretKey -> {
+                        val skHex = withContext(Dispatchers.IO) {
+                            runCatching { NIP49Service.decrypt(input.key, password) }.getOrNull()
+                        }
+                        if (skHex == null) { _error.value = "That password didn't unlock the key."; false }
+                        else adoptSecretKey(skHex, password, ncryptsec = input.key)
+                    }
+                    is IdentityInput.RemoteSigner -> {
+                        val keypair = HavenBridge.generateKeyPair()?.split(":")
+                        if (keypair == null || keypair.size != 2) {
+                            _error.value = "Could not create a client key for the signer"
+                            false
+                        } else if (!connectRemoteSignerOwner(input.uri.trim(), keypair[0], keypair[1])) {
+                            _error.value = "Couldn't connect to the signer. Check the link and that the signer is online."
+                            false
+                        } else true
+                    }
+                    else -> false
+                }
+                if (ok) _step.value = stepAfter(WizardStep.USE_NOSTR_KEY)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Setup failed"
+            }
+            _isLoading.value = false
+        }
+    }
+
+    /** Amber (NIP-55), the signer app most Android users already have. */
+    fun useAmberForUseNostr() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            val hexPubkey = amberSignerService.getPublicKey()
+            if (hexPubkey == null) {
+                _error.value = "Amber signing was cancelled or timed out"
+            } else {
+                configStore.update { it.copy(
+                    ownerNpub = HavenBridge.hexToNpub(hexPubkey) ?: hexPubkey,
+                    signingMode = "amber",
+                    setupMode = "full",
+                    amberSignerPackage = amberSignerService.signerPackage,
+                ) }
+                configStore.setActiveAccount(hexPubkey)
+                _step.value = stepAfter(WizardStep.USE_NOSTR_KEY)
+            }
+            _isLoading.value = false
+        }
+    }
+
+    /** Read-only: an npub, as Browse stores it. */
+    private fun adoptReadOnly(npub: String): Boolean {
+        configStore.update { it.copy(ownerNpub = npub, setupMode = "browse", signingMode = "browse") }
+        HavenBridge.decodeNpub(npub)?.let { configStore.setActiveAccount(it) }
+        return true
+    }
+
+    /**
+     * Can post: the key is stored as New to Nostr stores a generated one,
+     * encrypted with [password] (NIP-49) and the password kept in the
+     * keystore. [ncryptsec] is the pasted encrypted key, kept as it was.
+     */
+    private suspend fun adoptSecretKey(skHex: String, password: String, ncryptsec: String?): Boolean {
+        if (password.isEmpty()) { _error.value = "Enter a password"; return false }
+        val pkHex = HavenBridge.getPublicKey(skHex)
+        if (pkHex == null) { _error.value = "Failed to derive public key"; return false }
+        val npub = HavenBridge.hexToNpub(pkHex) ?: pkHex
+        val encrypted = ncryptsec ?: withContext(Dispatchers.IO) { NIP49Service.encrypt(skHex, password) }
+        credentialStore.saveNsec(skHex, pkHex)
+        configStore.update { it.copy(
+            ownerNpub = npub,
+            ownerHexKey = skHex,
+            ownerNcryptsec = encrypted,
+            signingMode = "local",
+            setupMode = "full",
+        ) }
+        credentialStore.storeKeychainPassword(npub, password)
+        configStore.setActiveAccount(pkHex)
+        return true
+    }
+
+    /** "browse" when "I already use Nostr" was given only a public key. */
+    fun setupModeNow(): String = configStore.config.value.setupMode
+
+    // ── Relay check ───────────────────────────────────────────────
+
+    /**
+     * Their relay list says where their notes are; the defaults are where
+     * most people's notes also land. Each is asked for one note at once, and
+     * the ones that don't answer are switched off. Runs once per visit.
+     */
+    fun startRelayCheck() {
+        if (relayCheckStarted) return
+        relayCheckStarted = true
+        val pubkey = HavenBridge.decodeNpub(configStore.config.value.ownerNpub) ?: run {
+            _isCheckingRelays.value = false
+            return
+        }
+        viewModelScope.launch {
+            _isCheckingRelays.value = true
+            val list = runCatching {
+                nostrService.fetchNewestReplaceable(10002, pubkey, alsoAsk = configStore.config.value.importSeedRelays)
+            }.getOrNull()
+            _relayRows.value = RelayCheck.rows(list?.tags ?: emptyList(), HavenConfig().importSeedRelays)
+            _relayRows.value.map { row ->
+                launch { probeRelayRow(row.url, pubkey) }
+            }.joinAll()
+            _isCheckingRelays.value = false
+        }
+    }
+
+    private suspend fun probeRelayRow(url: String, pubkey: String) {
+        val result = RelayCheckProbe.check(url, pubkey)
+        _relayRows.update { rows ->
+            rows.map { if (it.url == url) it.copy(result = result, isOn = result.onByDefault) else it }
+        }
+    }
+
+    fun setRelayRowOn(url: String, on: Boolean) {
+        _relayRows.update { rows -> rows.map { if (it.url == url && it.result.canImport) it.copy(isOn = on) else it } }
+    }
+
+    /** Adds a relay to the check and probes it. False when it isn't a relay address. */
+    fun addRelayCheckRow(raw: String): Boolean {
+        val url = RelayCheck.normalize(raw) ?: return false
+        if (_relayRows.value.any { it.url == url }) return true
+        val pubkey = HavenBridge.decodeNpub(configStore.config.value.ownerNpub) ?: return false
+        _relayRows.update { it + RelayCheck.Row(url, isYours = false) }
+        viewModelScope.launch { probeRelayRow(url, pubkey) }
+        return true
+    }
+
+    /** "Start import": the picks become what the import reads. */
+    fun startImportFromRelayCheck() {
+        val picks = RelayCheck.importList(_relayRows.value)
+        if (picks.isEmpty()) return
+        configStore.update { it.copy(importSeedRelays = picks) }
+        _step.value = stepAfter(WizardStep.RELAY_CHECK)
+    }
+
+    // ── Import tour ───────────────────────────────────────────────
+
+    /**
+     * Starts the import as soon as the tour shows. It runs in
+     * [RelayImportService], not here, so "Keep it running in the background"
+     * can leave setup with it still going.
+     */
+    fun startImportTour() {
+        if (importTourStarted) return
+        importTourStarted = true
+        if (relayImportService.importCompleted.value && !relayImportService.isImporting.value) {
+            loadTourCounts()
+            return
+        }
+        if (relayImportService.isImporting.value) return
+        // Same start as iOS. 2021 was tried there: the import walks history in
+        // 10-day windows, each waiting on every relay, so two more years cost
+        // minutes for everyone. Older notes can be pulled from Settings → Import.
+        configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
+        relayImportService.importNotes()
+    }
+
+    /** Real counts for the Ready card, once the relay is back up. */
+    fun loadTourCounts() {
+        if (_tourCounts.value != null) return
+        viewModelScope.launch {
+            // The import restarts the relay when it finishes; give it a moment.
+            for (attempt in 1..10) {
+                statsService.fetchCountsByKind()
+                if (statsService.loadedEventsCount.value > 0) break
+                kotlinx.coroutines.delay(1_500)
+            }
+            val counts = statsService.kindCounts.value
+            _tourCounts.value = Triple(counts[1] ?: 0, counts[7] ?: 0, statsService.loadedEventsCount.value)
+        }
+    }
+
+    /**
+     * Leaves the tour and finishes setup. Seeing every lesson card finishes
+     * the tutorial (and covers Vault and Pocket relay); leaving before the
+     * last one counts as skipped. The import carries on if it's still going.
+     */
+    fun enterFromImportTour(sawEveryCard: Boolean, onComplete: () -> Unit) {
+        val account = HavenBridge.decodeNpub(configStore.config.value.ownerNpub).orEmpty()
+        if (sawEveryCard) {
+            TutorialCenter.finish(TutorialID.IMPORT_TOUR, account)
+        } else {
+            TutorialCenter.skip(TutorialID.IMPORT_TOUR, account)
+        }
+        completeSetup(onComplete)
     }
 
     // ── Relays ───────────────────────────────────────────────────
@@ -964,7 +1359,46 @@ class SetupWizardViewModel @Inject constructor(
             // replies had nowhere defined to go.
             runCatching { nostrService.republishDMRelayList() }
 
+            if (_setupPath.value == SetupPath.NEW_TO_NOSTR) publishNewAccount()
+
             onComplete()
+        }
+    }
+
+    /**
+     * Publishes what a brand-new account needs to exist for other people:
+     * a relay list and a profile. Its follow list starts with its first
+     * follow, in the Fill your feed guide. Same as iOS. Runs once setup has
+     * stored the key, because each event is signed by it, and only on New to
+     * Nostr, whose key was generated in this run and so has none of these
+     * events anywhere yet. Outlives the wizard (app scope).
+     */
+    private fun publishNewAccount() {
+        val name = _profileName.value.trim()
+        val photo = _profilePhotoJpeg.value
+
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val relayTags = RelayConfiguration.newAccountRelayListTags(configStore.config.value.activeBlastrRelays)
+            if (relayTags.isNotEmpty()) {
+                runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
+                    .getOrNull()?.let { nostrService.postEvent(it) }
+            }
+
+            val profile = JSONObject()
+            if (name.isNotEmpty()) {
+                profile.put("name", name)
+                profile.put("display_name", name)
+            }
+            if (photo != null) {
+                // Hosted URL only: a picture only this phone can serve is left off.
+                val sha = java.security.MessageDigest.getInstance("SHA-256").digest(photo)
+                    .joinToString("") { "%02x".format(it) }
+                runCatching { blossomService.uploadAndMirror(photo, sha, "image/jpeg") }
+                    .getOrNull()?.let { profile.put("picture", it) }
+            }
+            if (profile.length() == 0) return@launch
+            runCatching { nostrService.signEventAsync(kind = 0, content = profile.toString(), tags = emptyList()) }
+                .getOrNull()?.let { nostrService.postEvent(it) }
         }
     }
 }
@@ -1057,6 +1491,11 @@ fun SetupWizardScreen(
                     WizardStep.WELCOME -> Unit
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
                     WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
+                    WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel)
+                    WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
+                    WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
+                    WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
+                    WizardStep.PROFILE -> ProfileStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
                     WizardStep.RELAYS -> RelayStep(viewModel)
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)
@@ -1171,7 +1610,7 @@ private fun FrontDoor(onChoose: (SetupPath) -> Unit) {
                 modifier = Modifier.padding(top = 16.dp, bottom = 16.dp),
             ) {
                 WizardPrimaryButton(text = "Create an account", onClick = { onChoose(SetupPath.NEW_TO_NOSTR) })
-                FrontDoorSecondaryButton(text = "I already use Nostr", onClick = { onChoose(SetupPath.FULL) })
+                FrontDoorSecondaryButton(text = "I already use Nostr", onClick = { onChoose(SetupPath.USE_NOSTR) })
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -1467,12 +1906,17 @@ private fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
 @Composable
 private fun NostrIntroStep(viewModel: SetupWizardViewModel) {
     val generatedNsec by viewModel.generatedNsec.collectAsState()
+    val generatedNpub by viewModel.generatedNpub.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
-    val passphrase by viewModel.passphrase.collectAsState()
-    val confirmPassphrase by viewModel.confirmPassphrase.collectAsState()
-    val context = LocalContext.current
-    var showPassword by remember { mutableStateOf(false) }
+
+    // Read from the view model, so Back from the password page shows the
+    // same key instead of offering to make a new one.
+    val nsec = generatedNsec
+    if (nsec != null) {
+        NewKeysPage(npub = generatedNpub.orEmpty(), nsec = nsec, onContinue = viewModel::advanceFromNostrIntro)
+        return
+    }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // Card 1: What is Nostr
@@ -1525,132 +1969,271 @@ private fun NostrIntroStep(viewModel: SetupWizardViewModel) {
 
         Spacer(Modifier.height(20.dp))
 
-        if (generatedNsec != null) {
-            // Card 3: Secret key backup
-            WizardCard {
-                Text(
-                    text = "Your Secret Key",
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Save this somewhere safe. It's the only way to recover " +
-                        "your account. Anyone with this key can post as you.",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = generatedNsec!!,
-                    color = WizardAccent,
-                    fontSize = 12.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(WizardBgElevated)
-                        .border(1.dp, WizardBorderSubtle, RoundedCornerShape(8.dp))
-                        .clickable {
-                            val clipboard = context.getSystemService(
-                                Context.CLIPBOARD_SERVICE,
-                            ) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(
-                                android.content.ClipData.newPlainText("nsec", generatedNsec),
-                            )
-                        }
-                        .padding(12.dp),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Tap to copy",
-                    color = SecondaryText.copy(alpha = 0.5f),
-                    fontSize = 11.sp,
-                )
-            }
+        error?.let { errorText ->
+            Text(errorText, color = Color(0xFFEF4444), fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+        }
 
-            Spacer(Modifier.height(16.dp))
+        WizardPrimaryButton(
+            text = "Create My Account",
+            enabled = !isLoading,
+            onClick = viewModel::generateNewUserKeys,
+        )
+    }
+}
 
-            // Card 4: Password protection
-            WizardCard {
-                Text(
-                    text = "Protect Your Key",
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Set a password to encrypt your private key. You'll need this password to use Haven.",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
-                Spacer(Modifier.height(12.dp))
+/**
+ * Both new keys explained, the nsec readable in full to write down, and
+ * Continue held until "I saved my secret key" is ticked. Tapping a card
+ * copies it. Same as iOS (#399).
+ */
+@Composable
+private fun NewKeysPage(npub: String, nsec: String, onContinue: () -> Unit) {
+    val context = LocalContext.current
+    var savedKey by remember { mutableStateOf(false) }
+    var copiedKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(copiedKey) {
+        if (copiedKey != null) {
+            kotlinx.coroutines.delay(1_500)
+            copiedKey = null
+        }
+    }
+    fun copy(value: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nostr key", value))
+        copiedKey = value
+    }
 
-                // Password field
-                OutlinedTextField(
-                    value = passphrase,
-                    onValueChange = viewModel::setPassphrase,
-                    label = { Text("Password (minimum 8 characters)") },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (showPassword) "Hide password" else "Show password",
-                                tint = WizardAccent,
-                            )
-                        }
-                    },
-                    isError = passphrase.isNotEmpty() && passphrase.length < 8,
-                    supportingText = if (passphrase.isNotEmpty() && passphrase.length < 8) {
-                        { Text("Password must be at least 8 characters", color = ErrorRed) }
-                    } else null,
-                    colors = wizardTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                // Confirm password field
-                OutlinedTextField(
-                    value = confirmPassphrase,
-                    onValueChange = viewModel::setConfirmPassphrase,
-                    label = { Text("Confirm password") },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    isError = confirmPassphrase.isNotEmpty() && passphrase != confirmPassphrase,
-                    supportingText = if (confirmPassphrase.isNotEmpty() && passphrase != confirmPassphrase) {
-                        { Text("Passwords do not match", color = ErrorRed) }
-                    } else null,
-                    colors = wizardTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            Spacer(Modifier.height(32.dp))
-
-            val isPasswordValid = passphrase.isNotEmpty() && passphrase.length >= 8 && passphrase == confirmPassphrase
-            WizardPrimaryButton(
-                text = "Continue",
-                enabled = isPasswordValid && !isLoading,
-                onClick = viewModel::advanceFromNostrIntro,
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Your Keys", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Two keys replace a username and password.",
+            color = SecondaryText,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(14.dp))
+        NewKeyCard(
+            icon = Icons.Default.Person,
+            title = "Public key",
+            caption = "Your name on Nostr. Share it freely.",
+            value = npub,
+            isSecret = false,
+            copied = copiedKey == npub,
+            onCopy = { copy(npub) },
+        )
+        Spacer(Modifier.height(14.dp))
+        NewKeyCard(
+            icon = Icons.Default.Key,
+            title = "Secret key",
+            caption = "Your password to Nostr. Anyone who has it can post as you, so never share it.",
+            value = nsec,
+            isSecret = true,
+            copied = copiedKey == nsec,
+            onCopy = { copy(nsec) },
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .toggleable(value = savedKey, role = Role.Checkbox, onValueChange = { savedKey = it }),
+        ) {
+            Checkbox(
+                checked = savedKey,
+                onCheckedChange = null,
+                colors = CheckboxDefaults.colors(checkedColor = WizardAccent, uncheckedColor = SecondaryText),
             )
-        } else {
-            // Error display
-            error?.let { errorText ->
-                Text(errorText, color = Color(0xFFEF4444), fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-            }
+            Spacer(Modifier.width(10.dp))
+            Text("I saved my secret key", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        }
+        Spacer(Modifier.height(8.dp))
+        WizardPrimaryButton(text = "Continue", enabled = savedKey, onClick = onContinue)
+    }
+}
 
-            WizardPrimaryButton(
-                text = "Create My Account",
-                enabled = !isLoading,
-                onClick = viewModel::generateNewUserKeys,
+@Composable
+private fun NewKeyCard(
+    icon: ImageVector,
+    title: String,
+    caption: String,
+    value: String,
+    isSecret: Boolean,
+    copied: Boolean,
+    onCopy: () -> Unit,
+) {
+    WizardCard(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClickLabel = "Copy $title", onClick = onCopy),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = if (isSecret) WizardAccent else SecondaryText, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(
+                text = if (copied) "Copied" else "Copy",
+                color = if (copied) SuccessGreen else WizardAccent,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(caption, color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = value,
+            color = if (isSecret) WizardAccent else SecondaryText,
+            fontSize = 12.sp,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            // The npub only needs recognising; the nsec has to be readable in
+            // full to write it down.
+            maxLines = if (isSecret) Int.MAX_VALUE else 1,
+            overflow = if (isSecret) TextOverflow.Clip else TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(WizardBgElevated)
+                .border(1.dp, WizardBorderSubtle, RoundedCornerShape(8.dp))
+                .padding(10.dp),
+        )
+        if (isSecret) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.Shield, contentDescription = null, tint = PrimaryText.copy(alpha = 0.85f), modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Nobody can recover it for you, not even us.",
+                    color = PrimaryText.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The password that encrypts the new nsec (NIP-49). Its own page so the
+ * fields sit above the keyboard without scrolling. While a field has focus
+ * the icon and subtitle step aside. Same as iOS (#399).
+ */
+@Composable
+private fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
+    val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val passphrase by viewModel.passphrase.collectAsState()
+    val confirmPassphrase by viewModel.confirmPassphrase.collectAsState()
+    var showPassword by remember { mutableStateOf(false) }
+    var passwordFocused by remember { mutableStateOf(false) }
+    var confirmFocused by remember { mutableStateOf(false) }
+    val isTyping = passwordFocused || confirmFocused
+    val confirmFocus = remember { FocusRequester() }
+    val isPasswordValid = passphrase.length >= 8 && passphrase == confirmPassphrase
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        AnimatedVisibility(visible = !isTyping) {
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = null,
+                tint = WizardAccent,
+                modifier = Modifier.padding(bottom = 8.dp).size(40.dp),
+            )
+        }
+        Text("Protect Your Key", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        AnimatedVisibility(visible = !isTyping) {
+            Text(
+                text = "Choose a password to lock your secret key on this phone.",
+                color = SecondaryText,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+
+        OutlinedTextField(
+            value = passphrase,
+            onValueChange = viewModel::setPassphrase,
+            label = { Text("Password (minimum 8 characters)") },
+            singleLine = true,
+            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { showPassword = !showPassword }) {
+                    Icon(
+                        imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (showPassword) "Hide password" else "Show password",
+                        tint = WizardAccent,
+                    )
+                }
+            },
+            isError = passphrase.isNotEmpty() && passphrase.length < 8,
+            supportingText = if (passphrase.isNotEmpty() && passphrase.length < 8) {
+                { Text("Password must be at least 8 characters", color = ErrorRed) }
+            } else null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { confirmFocus.requestFocus() }),
+            colors = wizardTextFieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { passwordFocused = it.isFocused },
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = confirmPassphrase,
+            onValueChange = viewModel::setConfirmPassphrase,
+            label = { Text("Confirm password") },
+            singleLine = true,
+            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            isError = confirmPassphrase.isNotEmpty() && passphrase != confirmPassphrase,
+            supportingText = if (confirmPassphrase.isNotEmpty() && passphrase != confirmPassphrase) {
+                { Text("Passwords do not match", color = ErrorRed) }
+            } else null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = {
+                if (isPasswordValid && !isLoading) viewModel.advanceFromKeyPassword()
+            }),
+            colors = wizardTextFieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(confirmFocus)
+                .onFocusChanged { confirmFocused = it.isFocused },
+        )
+
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = ErrorRed, fontSize = 13.sp)
+        }
+
+        // Above the warning so it stays above the keyboard while typing; the
+        // warning was already read before a field took focus.
+        Spacer(Modifier.height(16.dp))
+        WizardPrimaryButton(
+            text = "Continue",
+            enabled = isPasswordValid,
+            isLoading = isLoading,
+            onClick = viewModel::advanceFromKeyPassword,
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(WizardAccent.copy(alpha = 0.08f))
+                .border(1.dp, WizardBorderActive, RoundedCornerShape(12.dp))
+                .padding(14.dp)
+                .semantics(mergeDescendants = true) {},
+        ) {
+            Icon(Icons.Default.Shield, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "Nobody can reset this password or recover your secret key for you, not even us. Write both down.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
             )
         }
     }
@@ -2565,10 +3148,28 @@ private fun CompleteStep(
                     WizardCheckItem("Account created")
                     WizardCheckItem("Relay is running")
                     Spacer(Modifier.height(16.dp))
+                    // How the on-device relay and Blossom reach everyone else.
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(WizardBgElevated)
+                            .border(1.dp, WizardBorderSubtle, RoundedCornerShape(12.dp))
+                            .padding(16.dp),
+                    ) {
+                        CompleteExplainerRow(
+                            Icons.Default.CellTower,
+                            "Your relay lives on this phone and sends your posts out to public relays so people can see them.",
+                        )
+                        CompleteExplainerRow(
+                            Icons.Default.PhotoLibrary,
+                            "Blossom does the same for photos and videos: they're kept here and copied to public media servers.",
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "We'll start you on the Popular feed so you can discover " +
-                            "interesting people to follow. You can switch to the " +
-                            "Following feed anytime.",
+                        text = "Next, a short guide helps you find people to follow.",
                         color = SecondaryText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -2607,6 +3208,15 @@ private fun CompleteStep(
 }
 
 @Composable
+private fun CompleteExplainerRow(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(icon, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp)
+    }
+}
+
+@Composable
 private fun WizardCheckItem(text: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -2630,7 +3240,7 @@ private fun WizardCheckItem(text: String) {
 // ══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun WizardCard(
+internal fun WizardCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -2683,7 +3293,7 @@ private fun WizardOptionCard(
 }
 
 @Composable
-private fun WizardPrimaryButton(
+internal fun WizardPrimaryButton(
     text: String,
     enabled: Boolean = true,
     isLoading: Boolean = false,
@@ -2733,7 +3343,7 @@ private fun WizardPrimaryButton(
 }
 
 @Composable
-private fun WizardSecondaryButton(
+internal fun WizardSecondaryButton(
     text: String,
     onClick: () -> Unit,
 ) {
@@ -2786,8 +3396,112 @@ private fun WizardTabRow(
     }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Step: Profile (New to Nostr)
+// ══════════════════════════════════════════════════════════════════
+
 @Composable
-private fun wizardTextFieldColors() = OutlinedTextFieldDefaults.colors(
+private fun ProfileStep(viewModel: SetupWizardViewModel) {
+    val name by viewModel.profileName.collectAsState()
+    val photo by viewModel.profilePhotoJpeg.collectAsState()
+    val photoError by viewModel.profilePhotoError.collectAsState()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.setProfilePhoto(uri)
+    }
+    val preview = remember(photo) {
+        photo?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = "Your Profile",
+            color = PrimaryText,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "This is how people will see you. You can change it later.",
+            color = SecondaryText,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClickLabel = if (photo == null) "Add profile photo" else "Change profile photo") {
+                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+                .padding(8.dp),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(104.dp)
+                    .clip(CircleShape)
+                    .background(WizardBgElevated)
+                    .border(1.dp, WizardAccent, CircleShape),
+            ) {
+                if (preview != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = preview,
+                        contentDescription = "Profile photo",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = null,
+                        tint = SecondaryText,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = if (photo == null) "Add Photo" else "Change Photo",
+                color = WizardAccent,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        photoError?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = SecondaryText, fontSize = 13.sp)
+        }
+
+        Spacer(Modifier.height(20.dp))
+        OutlinedTextField(
+            value = name,
+            onValueChange = viewModel::setProfileName,
+            label = { Text("Name") },
+            placeholder = { Text("Your name") },
+            singleLine = true,
+            colors = wizardTextFieldColors(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(24.dp))
+        WizardPrimaryButton(text = "Continue", onClick = viewModel::advanceFromProfile)
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = viewModel::skipProfile) {
+            Text("Skip for Now", color = SecondaryText, fontSize = 14.sp)
+        }
+    }
+}
+
+
+@Composable
+internal fun wizardTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = WizardAccent,
     unfocusedBorderColor = WizardBorderSubtle,
     cursorColor = WizardAccent,
