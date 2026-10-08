@@ -1,6 +1,6 @@
 import Foundation
 
-/// Likes, reposts, replies and zap sats for the posts on a profile: best
+/// Likes, reposts, replies, quotes and zap sats for the posts on a profile: best
 /// effort from relays, kept on the phone so they aren't pulled again.
 ///
 /// Each post's ledger (who liked, reposted, replied, zapped) is saved. The
@@ -49,8 +49,11 @@ final class ProfileEngagementStore: ObservableObject {
         // was sent to you; anything else may be missing likes on other relays.
         let lowerBound = !relays.contains { $0.absoluteString.hasSuffix("/inbox") }
 
-        let fresh = due.filter { ledgers[$0]?.checkedAt == nil }
-        let known = due.filter { ledgers[$0]?.checkedAt != nil }
+        // A ledger saved before quotes were counted (quotes nil) is asked
+        // about in full once; the ledger drops everything it already holds.
+        let isKnown = { (id: String) in self.ledgers[id]?.checkedAt != nil && self.ledgers[id]?.quotes != nil }
+        let fresh = due.filter { !isKnown($0) }
+        let known = due.filter(isKnown)
         var filters = PostEngagementQuery.filters(for: fresh)
         if let oldest = known.compactMap({ ledgers[$0]?.checkedAt }).min() {
             filters += PostEngagementQuery.filters(for: known, since: Int(oldest.addingTimeInterval(-sinceSlack).timeIntervalSince1970))

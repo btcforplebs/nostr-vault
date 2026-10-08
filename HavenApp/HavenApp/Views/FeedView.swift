@@ -3849,20 +3849,17 @@ struct FeedNoteRow: View {
         }
 
 
-        // Engagement numbers, where the caller fetched them (profiles).
-        if let engagement = rowData.engagement, !engagement.isEmpty {
-            EngagementSummaryLine(engagement: engagement, showsLikes: !rowData.zapsOnlyMode)
-                .padding(.top, 2)
-        }
-
-        // Actions row - minimal and clean
-        HStack(spacing: 12) {
-            actionButton(icon: "message", action: { onReply?() })
+        // Actions row - minimal and clean. Where the caller fetched the
+        // numbers (profiles), each button carries its own count.
+        let engagement = rowData.engagement
+        HStack(spacing: engagement == nil ? 12 : 8) {
+            actionButton(icon: "message", count: engagement?.replies, countLabel: "replies", action: { onReply?() })
                 .accessibilityLabel("Reply")
 
             actionButton(
                 icon: "arrow.2.squarepath",
                 color: rowData.isReposted ? .green : .secondary,
+                count: engagement?.reposts, countLabel: "reposts",
                 action: {
                     actions.repostNote(note)
                     Motion.firePulse($repostPulse)
@@ -3872,7 +3869,7 @@ struct FeedNoteRow: View {
             .scaleEffect(repostPulse ? Motion.pulseScale : 1.0)
             .animation(Motion.pop, value: repostPulse)
 
-            actionButton(icon: "quote.closing", action: { onQuote?() })
+            actionButton(icon: "quote.closing", count: engagement?.quotes, countLabel: "quotes", action: { onQuote?() })
                 .accessibilityLabel("Quote")
 
             if !rowData.zapsOnlyMode {
@@ -3912,10 +3909,14 @@ struct FeedNoteRow: View {
                 let lud16 = actions.getLightningAddress(zapRecipient)
                 let isZapped = rowData.zapAmount != nil
                 let hasLightning = lud16 != nil
-                Image(systemName: isZapped ? "bolt.fill" : "bolt")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
-                    .frame(width: 32, height: 32)
+                HStack(spacing: 4) {
+                    Image(systemName: isZapped ? "bolt.fill" : "bolt")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
+                    countText(engagement?.zapSats)
+                }
+                    .padding(.horizontal, (engagement?.zapSats ?? 0) > 0 ? 10 : 0)
+                    .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
                     .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
                     .zapFlightTarget(zapBoltAnchor)
@@ -3924,6 +3925,7 @@ struct FeedNoteRow: View {
                     .animation(Motion.pop, value: zapPulse)
                     .contentShape(Capsule())
                     .accessibilityLabel(isZapped ? "Zapped" : "Zap")
+                    .accessibilityValue(countLabel(engagement?.zapSats, "sats zapped"))
                     .accessibilityHint(hasLightning ? "Tap to send sats" : "No lightning address")
                     .onLongPressGesture {
                         if hasLightning {
@@ -3949,11 +3951,45 @@ struct FeedNoteRow: View {
                             noLightningAddressAlert = true
                         }
                     }
+            } else if let sats = engagement?.zapSats, sats > 0 {
+                // No wallet to zap from, but the sats others sent still show.
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.fill")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.85))
+                    countText(sats)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(Color.secondary.opacity(0.1))
+                .clipShape(Capsule())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(countLabel(sats, "sats zapped"))
             }
 
             Spacer()
         }
         .padding(.top, 4)
+    }
+
+    /// A button's count, compact ("2.1k", "64+"), or nothing for zero.
+    @ViewBuilder
+    private func countText(_ value: Int?) -> some View {
+        if let value, value > 0, let engagement = rowData.engagement {
+            Text(engagement.display(value))
+                .font(.appSystem(size: 12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    /// The count as VoiceOver reads it: "at least 64 likes" when it is a lower bound.
+    private func countLabel(_ value: Int?, _ noun: String) -> String {
+        guard let value, value > 0, let engagement = rowData.engagement else { return "" }
+        let lowerBound = engagement.isLowerBound && value >= PostEngagement.lowerBoundFrom
+        return lowerBound ? "at least \(value) \(noun)" : "\(value) \(noun)"
     }
 
     var body: some View {
@@ -4266,17 +4302,23 @@ struct FeedNoteRow: View {
         )
     }
 
-    private func actionButton(icon: String, color: Color = .secondary, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, color: Color = .secondary, count: Int? = nil, countLabel noun: String = "",
+                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(color)
-            .frame(width: 32, height: 32)
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(color)
+                countText(count)
+            }
+            .padding(.horizontal, (count ?? 0) > 0 ? 10 : 0)
+            .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
             .background(color.opacity(color == .secondary ? 0.1 : 0.15))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .contentShape(Capsule())
+        .accessibilityValue(countLabel(count, noun))
         #if os(macOS)
         .onHover { inside in
             // Handle hover state if needed, though .hoverEffect handles it on iOS
@@ -4376,7 +4418,8 @@ struct FeedNoteRow: View {
     @ViewBuilder
     private var reactionButton: some View {
         let shown = shownReaction
-        Group {
+        let likes = rowData.engagement?.likes
+        HStack(spacing: 4) {
             if let shown, shown != "❤️" {
                 Text(shown)
                     .font(.system(size: 16))
@@ -4385,8 +4428,10 @@ struct FeedNoteRow: View {
                     .font(.appSystem(size: 14, weight: .medium))
                     .foregroundColor(shown == nil ? .secondary : .red)
             }
+            countText(likes)
         }
-        .frame(width: 32, height: 32)
+        .padding(.horizontal, (likes ?? 0) > 0 ? 10 : 0)
+        .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
         .background(shown == nil ? Color.secondary.opacity(0.1)
                     : shown == "❤️" ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.18))
         .clipShape(Capsule())
@@ -4422,6 +4467,7 @@ struct FeedNoteRow: View {
         #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(shown.map { "Your reaction: \($0)" } ?? "React")
+        .accessibilityValue(countLabel(likes, "likes"))
         .accessibilityHint(shown == nil ? "Hold for more reactions" : "Removes your reaction. Hold to change it")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { toggleLike() }
