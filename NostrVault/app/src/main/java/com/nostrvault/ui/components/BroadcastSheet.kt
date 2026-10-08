@@ -121,6 +121,8 @@ fun BroadcastSheet(
     nostrService: NostrService,
     configStore: ConfigStore,
     onDismiss: () -> Unit,
+    /** Opens a profile from the Trust Path map. Null hides its profile buttons. */
+    onProfileClick: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -242,6 +244,9 @@ fun BroadcastSheet(
                     }
                 }
             }
+
+            // ── Trust Path ───────────────────────────────────────
+            TrustPathCard(author = note.pubkey, onProfileClick = onProfileClick)
 
             // ── Actions ──────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

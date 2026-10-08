@@ -1207,6 +1207,7 @@ fun NoteDetailScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { broadcastTargetNote = null },
+            onProfileClick = { broadcastTargetNote = null; onProfileClick(it) },
         )
     }
 }

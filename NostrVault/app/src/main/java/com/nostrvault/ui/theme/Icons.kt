@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -212,6 +213,8 @@ object NostrVaultIcons {
 
     // Navigation (additional)
     val Relay: ImageVector = Icons.Filled.CellTower          // antenna.radiowaves.left.and.right
+    val WebOfTrust: ImageVector = Icons.Filled.Hub           // point.3.connected.trianglepath.dotted
+    val PeopleList: ImageVector = Icons.AutoMirrored.Filled.FormatListBulleted // list.bullet
 
     // Tab bar (iOS BottomTabBar)
     val TabFeed: ImageVector = Icons.Filled.People           // person.2.wave.2
