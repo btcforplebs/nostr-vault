@@ -228,10 +228,12 @@ class ProfileViewModel @Inject constructor(
     /** Drops the stream and everything it loaded, for a fresh load. */
     private fun resetLoadedState() {
         stream?.close(); stream = null
+        pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
         _followersCount.value = null
+        ownLedgerLoaded = false
         _followingCount.value = null
         _followsMe.value = false
         _hasMoreNotes.value = true
@@ -240,8 +242,9 @@ class ProfileViewModel @Inject constructor(
     }
 
     /**
-     * Pull-to-refresh: reloads the profile from scratch on a new stream —
-     * metadata, notes, tagged notes and counts — keeping the open tab.
+     * Pull-to-refresh, in place: a new stream adds what is new while the
+     * notes, counts and tabs on screen stay until something replaces them,
+     * so the page never blanks and refills. Metadata is fetched again.
      * iOS: ProfileView.refreshProfile().
      */
     fun refresh() {
@@ -249,7 +252,11 @@ class ProfileViewModel @Inject constructor(
         if (pk.isEmpty() || _isRefreshing.value) return
         _isRefreshing.value = true
         _isLoading.value = true
-        resetLoadedState()
+        // A page of older notes in flight dies with the old stream.
+        stream?.close(); stream = null
+        pageToken++
+        _isLoadingOlder.value = false
+        nostrService.fetchMissingProfiles(listOf(pk), force = true)
         loadProfile()
         shop.load(pk, force = true)
         loadExtras(pk, force = true)
@@ -260,6 +267,12 @@ class ProfileViewModel @Inject constructor(
             _isRefreshing.value = false
         }
     }
+
+    /** Set once your own follower ledger supplied the FOLLOWERS count. */
+    @Volatile private var ownLedgerLoaded = false
+
+    /** Bumped by each load so an earlier load's fallback can't end a later one. */
+    private var loadToken = 0
 
     private fun loadProfile() {
         val pk = _pubkey.value
@@ -275,6 +288,17 @@ class ProfileViewModel @Inject constructor(
             // Own following count is known instantly from our contact list.
             if (own) {
                 _followingCount.value = feedService.followedPubkeys.value.count { it != pk }
+                // Your followers come from the relay's ledger, which is complete
+                // (spam left out); relay samples would cap at a page.
+                launch {
+                    val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
+                    }
+                    if (ledger != null && _pubkey.value == pk) {
+                        ownLedgerLoaded = true
+                        _followersCount.value = ledger.current.size
+                    }
+                }
             }
 
             // Fetch metadata if missing.
@@ -284,17 +308,18 @@ class ProfileViewModel @Inject constructor(
 
             // Seed instantly from cached feed notes (iOS parity).
             val cached = feedService.notes.value.filter { it.pubkey == pk }
-            if (cached.isNotEmpty()) {
-                cached.forEach { seenNoteIds.add(it.id) }
-                _profileNotes.value = cached.sortedByDescending { it.createdAt }
-            }
+            // Merged, not assigned: a refresh keeps what the relays already
+            // loaded (their notes are in seenNoteIds, so they won't come back).
+            if (cached.isNotEmpty()) mergeNotes(cached)
 
             startStream(pk)
 
-            // Fallback: stop the spinner after 10s even if no EOSE arrives.
+            // Fallback: stop the spinner after 10s even if no EOSE arrives —
+            // unless a later load (a refresh) has started since.
+            val token = ++loadToken
             launch {
                 delay(10_000)
-                if (_pubkey.value == pk) _isLoading.value = false
+                if (_pubkey.value == pk && token == loadToken) _isLoading.value = false
             }
         }
     }
@@ -308,7 +333,9 @@ class ProfileViewModel @Inject constructor(
             _followsMe.value = followsMe
         }
         s.onFollower = { followerPk ->
-            if (followerPubkeys.add(followerPk)) {
+            // Your ledger's count is exact; the relay sample only stands in
+            // when the ledger can't be read.
+            if (followerPubkeys.add(followerPk) && !ownLedgerLoaded) {
                 _followersCount.value = followerPubkeys.size
             }
         }
@@ -337,6 +364,13 @@ class ProfileViewModel @Inject constructor(
     }
 
     @Synchronized
+    private fun mergeNotes(notes: List<FeedNote>) {
+        val fresh = notes.filter { seenNoteIds.add(it.id) }
+        if (fresh.isEmpty()) return
+        _profileNotes.value = (_profileNotes.value + fresh).sortedByDescending { it.createdAt }
+    }
+
+    @Synchronized
     private fun addTagged(note: FeedNote) {
         if (!seenTaggedIds.add(note.id)) return
         if (nostrService.profiles.value[note.pubkey] == null) {
@@ -345,6 +379,9 @@ class ProfileViewModel @Inject constructor(
         _taggedNotes.value = (_taggedNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
     }
+
+    /** Bumped when a stream is replaced so an older page's check can't end paging. */
+    private var pageToken = 0
 
     /** Infinite-scroll: page older notes (or tagged) on the open stream sockets. */
     fun loadOlder() {
@@ -356,8 +393,10 @@ class ProfileViewModel @Inject constructor(
             _isLoadingOlder.value = true
             val before = _taggedNotes.value.size
             s.loadOlderTagged(oldest.createdAt.time / 1000)
+            val token = pageToken
             viewModelScope.launch {
                 delay(5000)
+                if (token != pageToken) return@launch
                 if (_taggedNotes.value.size == before) _hasMoreTagged.value = false
                 _isLoadingOlder.value = false
             }
@@ -367,8 +406,10 @@ class ProfileViewModel @Inject constructor(
             _isLoadingOlder.value = true
             val before = _profileNotes.value.size
             s.loadOlder(oldest.createdAt.time / 1000)
+            val token = pageToken
             viewModelScope.launch {
                 delay(5000)
+                if (token != pageToken) return@launch
                 if (_profileNotes.value.size == before) _hasMoreNotes.value = false
                 _isLoadingOlder.value = false
             }

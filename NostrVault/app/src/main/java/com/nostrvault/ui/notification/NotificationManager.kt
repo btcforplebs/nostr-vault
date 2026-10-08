@@ -54,8 +54,8 @@ class NotificationManager @Inject constructor() {
 
     // ── Follow pills ──────────────────────────────────────────
 
-    fun showFollow(recipientName: String, kind: FollowKind) {
-        val notification = FollowNotification(recipientName = recipientName, kind = kind)
+    fun showFollow(recipientName: String, kind: FollowKind, undo: (() -> Unit)? = null) {
+        val notification = FollowNotification(recipientName = recipientName, kind = kind, undo = undo)
         addNotification(notification)
         scheduleDismiss(notification.id, notification.autoDismissMs)
     }

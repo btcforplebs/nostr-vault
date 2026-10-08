@@ -1974,9 +1974,12 @@ class NostrService @Inject constructor(
      * relays + the user's NIP-65 relays. The caller assigns callbacks then calls
      * [ProfileStream.start], and must call [ProfileStream.close] when done.
      */
-    fun profileStream(pubkey: String): ProfileStream {
+    fun profileStream(pubkey: String): ProfileStream = ProfileStream(pubkey, profileRelayUrls(pubkey))
+
+    /** The relays a profile page asks: local, up to 3 feed relays, up to 3 of the profile's outbox. */
+    fun profileRelayUrls(pubkey: String): List<String> {
         val config = configStore.config.value
-        val relays = buildList {
+        return buildList {
             config.nostrURL?.let { add(it) }
             val feed = config.activeFeedRelays.ifEmpty {
                 listOf("wss://relay.primal.net", "wss://nos.lol")
@@ -1987,7 +1990,6 @@ class NostrService @Inject constructor(
             // read/inbox relays (where others send things TO them).
             _outboxRelays.value[pubkey]?.let { addAll(it.take(3)) }
         }.distinct().take(6)
-        return ProfileStream(pubkey, relays)
     }
 
     /**

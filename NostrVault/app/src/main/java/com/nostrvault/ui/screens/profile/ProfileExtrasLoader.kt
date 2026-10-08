@@ -48,8 +48,11 @@ class ProfileExtrasLoader(
         if (pubkey.isEmpty() || (!force && loadedPubkey == pubkey)) return
         jobs.forEach { it.cancel() }
         jobs.clear()
+        // A refresh of the same person keeps their tabs until new answers land.
+        if (loadedPubkey != pubkey) {
+            _articles.value = emptyList(); _reels.value = emptyList(); _tracks.value = emptyList()
+        }
         loadedPubkey = pubkey
-        _articles.value = emptyList(); _reels.value = emptyList(); _tracks.value = emptyList()
         jobs += scope.launch(Dispatchers.Default) { loadEvents(pubkey, relays) }
         jobs += scope.launch(Dispatchers.IO) { loadMusic(pubkey) }
     }
@@ -61,6 +64,8 @@ class ProfileExtrasLoader(
             timeoutMs = 8_000L,
         )
         if (loadedPubkey != pubkey) return
+        // No answer at all is a failed fetch, not proof the tabs are empty.
+        if (events.isEmpty() && (_articles.value.isNotEmpty() || _reels.value.isNotEmpty())) return
         val notes = events.mapNotNull { ev -> noteFrom(ev, pubkey) }
         _articles.value = ProfileExtras.articles(notes)
         _reels.value = ProfileExtras.reels(notes)
