@@ -1579,8 +1579,13 @@ func NIP46PingC() C.int {
 	defer cancel()
 
 	if err := client.Ping(ctx); err != nil {
-		slog.Error("NIP46PingC: failed", "error", err)
-		recordNIP46Error(ctx, err)
+		// A keepalive the signer did not answer (its app is asleep, its
+		// relay dropped us) is routine and the caller keeps the session, so
+		// it is a WARN, not an ERROR. It is also not recorded in
+		// nip46LastError: that slot explains the last failed *request*, and a
+		// background ping must not overwrite it.
+		kind := classifyNIP46Error(ctx, err)
+		slog.Log(ctx, nip46PingLogLevel(kind), "NIP46PingC: signer did not answer the keepalive", "kind", kind, "error", err)
 		return 1
 	}
 	return 0

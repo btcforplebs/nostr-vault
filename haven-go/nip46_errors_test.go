@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 )
 
@@ -49,6 +50,19 @@ func TestNIP46ConnectConfirmed(t *testing.T) {
 	for _, c := range cases {
 		if got := nip46ConnectConfirmed(c.result, c.secret); got != c.want {
 			t.Errorf("result=%q secret=%q: got %v, want %v", c.result, c.secret, got, c.want)
+		}
+	}
+}
+
+func TestNIP46PingLogLevel(t *testing.T) {
+	for _, kind := range []string{"timeout", "disconnected", "offline"} {
+		if got := nip46PingLogLevel(kind); got != slog.LevelWarn {
+			t.Errorf("%s: got %v, want WARN", kind, got)
+		}
+	}
+	for _, kind := range []string{"rejected:denied", "error:boom", ""} {
+		if got := nip46PingLogLevel(kind); got != slog.LevelError {
+			t.Errorf("%q: got %v, want ERROR", kind, got)
 		}
 	}
 }

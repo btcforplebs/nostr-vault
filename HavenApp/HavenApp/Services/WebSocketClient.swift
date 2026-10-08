@@ -222,6 +222,11 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
                 guard let self = self, let task = self.webSocketTask else { return }
                 task.sendPing { [weak self] error in
                     if let error = error {
+                        self?.stateQueue.async { [weak self] in
+                            // Only if this ping was for the socket still in use.
+                            guard let self, self.webSocketTask === task else { return }
+                            self.stopPingTimerLocked()
+                        }
                         #if DEBUG
                         print("WebSocketClient: Ping failed (\(error.localizedDescription)) — marking error")
                         #endif
@@ -277,6 +282,10 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             case .failure(let error):
                 self.stateQueue.async { [weak self] in
                     guard let self = self, !self.isClosing else { return }
+                    // The socket is dead: its keepalive would only keep
+                    // re-marking it as failed every 25 s. Whoever owns the
+                    // client reconnects with a new socket and a new timer.
+                    self.stopPingTimerLocked()
                     #if DEBUG
                     if self.shouldLogClosed() {
                         print("WebSocketClient: Receive error: \(error.localizedDescription)")
