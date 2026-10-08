@@ -140,6 +140,13 @@ class WebSocketClient(
 
     private fun doConnect() {
         if (_connectionState.value == ConnectionState.CONNECTING) return
+        // Never connect: the owner blocked this relay. No reconnect loop either.
+        if (com.nostrvault.relay.RelayBlocklist.isBlocked(url)) {
+            Log.d(TAG, "Blocked relay, not connecting: $url")
+            shouldReconnect = false
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
 
         _connectionState.value = if (reconnectAttempts > 0) {
             ConnectionState.RECONNECTING

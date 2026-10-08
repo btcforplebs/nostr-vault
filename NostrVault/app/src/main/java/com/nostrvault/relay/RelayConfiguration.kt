@@ -341,6 +341,8 @@ data class HavenConfig(
      * published its own. null = never set, which any published list beats.
      */
     val dmRelaysUpdatedAt: Long? = null,
+    /** Never connect: published as the blocked relay list (NIP-51 kind 10006). See [RelayBlocklist]. */
+    val blockedRelays: List<String> = emptyList(),
 
     // Relay URLs
     val inboxRelays: List<String>? = listOf(

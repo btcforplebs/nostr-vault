@@ -141,8 +141,8 @@ object RelayMatrix {
     }
 
     sealed class Problem(val title: String, val detail: String, val broken: Boolean = true) {
-        data object NoRead : Problem("No Read relay", "Your feed falls back to the default relays.")
-        data object NoWrite : Problem("No Write relay", "Your posts go to the default relays.")
+        data object NoRead : Problem("No Read relay", "Your feed falls back to ${labels(RelayConfiguration.FALLBACK_RELAYS)}.")
+        data object NoWrite : Problem("No Write relay", "Your posts fall back to ${labels(RelayConfiguration.FALLBACK_WRITE_RELAYS)}.")
         data object NoDMs : Problem("No DM relay", "People can't message you.")
         data object OneDM : Problem("Only one DM relay", "If it goes down, nobody can message you. Add a second.", broken = false)
         data object NoSearch : Problem("No Search relay", "Search won't find anything.")
@@ -163,7 +163,135 @@ object RelayMatrix {
         unreachable.forEach { add(Problem.Unreachable(it)) }
     }
 
+    fun labels(urls: List<String>): String = urls.joinToString(", ") { label(it) }
+
+    // Never connect
+
+    /** Blocks [url]: out of every job, into [blocked] once. */
+    fun blocking(url: String, lists: Lists, blocked: List<String>): Pair<Lists, List<String>> {
+        val k = key(url)
+        val newBlocked = if (blocked.any { key(it) == k }) blocked else blocked + DMInbox.normalizedRelayURL(url)
+        return removing(url, lists) to newBlocked
+    }
+
+    fun unblocking(url: String, blocked: List<String>): List<String> {
+        val k = key(url)
+        return blocked.filter { key(it) != k }
+    }
+
+    // Recommended
+
+    /** Well-known public relays, timed for "Fastest from this device". Same as iOS. */
+    val wellKnownRelays = listOf(
+        "wss://relay.damus.io",
+        "wss://relay.primal.net",
+        "wss://nos.lol",
+        "wss://relay.snort.social",
+        "wss://relay.btcforplebs.com",
+        "wss://nostr.mom",
+        "wss://nostr-pub.wellorder.net",
+        "wss://offchain.pub",
+        "wss://relay.nostr.bg",
+        "wss://nostr.oxtr.dev",
+        "wss://relay.nostr.net",
+        "wss://nostr.bitcoiner.social",
+    )
+
+    data class FollowSuggestion(val url: String, val follows: Int)
+
+    private fun taken(lists: Lists, blocked: List<String>, pinned: List<String>): Set<String> =
+        (Job.entries.flatMap { lists[it] } + blocked + pinned).filter { it.isNotBlank() }.map(::key).toSet()
+
+    /**
+     * Relays the follows write to (their kind 10002 write relays), most used
+     * first, leaving out relays already in a job, blocked ones and ones no
+     * other client can reach. A relay needs [minimumFollows] follows.
+     */
+    fun followSuggestions(
+        follows: List<String>,
+        outbox: Map<String, List<String>>,
+        lists: Lists,
+        blocked: List<String>,
+        pinned: List<String> = emptyList(),
+        minimumFollows: Int = 2,
+        limit: Int = 8,
+    ): List<FollowSuggestion> {
+        val taken = taken(lists, blocked, pinned)
+        val counts = HashMap<String, Int>()
+        val spelling = HashMap<String, String>()
+        for (pubkey in follows.toSet()) {
+            val seen = HashSet<String>()
+            for (raw in outbox[pubkey].orEmpty()) {
+                val url = DMInbox.normalizedRelayURL(raw)
+                val k = key(url)
+                if (!isPublicRelay(url) || k in taken || !seen.add(k)) continue
+                counts[k] = (counts[k] ?: 0) + 1
+                spelling.putIfAbsent(k, url)
+            }
+        }
+        return counts.entries
+            .filter { it.value >= minimumFollows }
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .take(limit)
+            .map { FollowSuggestion(spelling.getValue(it.key), it.value) }
+    }
+
+    fun followsWithRelayLists(follows: List<String>, outbox: Map<String, List<String>>): Int =
+        follows.toSet().count { outbox[it].orEmpty().isNotEmpty() }
+
+    /** The fastest relays that answered, quickest first; [milliseconds] is keyed by [key]. */
+    fun fastest(
+        candidates: List<String>,
+        milliseconds: Map<String, Int>,
+        lists: Lists,
+        blocked: List<String>,
+        pinned: List<String> = emptyList(),
+        limit: Int = 5,
+    ): List<String> {
+        val taken = taken(lists, blocked, pinned)
+        return candidates
+            .map(DMInbox::normalizedRelayURL)
+            .filter { key(it) !in taken && milliseconds[key(it)] != null }
+            .distinctBy(::key)
+            .sortedWith(compareBy<String> { milliseconds.getValue(key(it)) }.thenBy { it })
+            .take(limit)
+    }
+
+    /** A relay any client could reach: wss, a real host, not loopback, private or Tor. */
+    fun isPublicRelay(url: String): Boolean {
+        if (!url.lowercase().startsWith("wss://")) return false
+        val host = url.substringAfter("://").substringBefore('/').substringBefore(':').lowercase()
+        if (!host.contains('.') || host == "localhost" || host.endsWith(".onion") || host.endsWith(".local")) return false
+        if (listOf("127.", "10.", "192.168.", "0.", "169.254.").any { host.startsWith(it) }) return false
+        if (host.startsWith("172.") && host.split('.').getOrNull(1)?.toIntOrNull() in 16..31) return false
+        return true
+    }
+
     /** The host, for a compact label: "wss://relay.primal.net/" → "relay.primal.net". */
     fun label(url: String): String =
         DMInbox.normalizedRelayURL(url).replaceFirst(Regex("^wss?://", RegexOption.IGNORE_CASE), "")
+}
+
+/**
+ * The owner's Never connect list, readable from any thread. [ConfigStore]
+ * points [source] at its config; [com.nostrvault.data.remote.WebSocketClient]
+ * and the search sockets refuse to connect to anything on it. A blocked relay
+ * with no path blocks its whole host.
+ */
+object RelayBlocklist {
+    @Volatile
+    var source: () -> List<String> = { emptyList() }
+
+    fun isBlocked(url: String, blocked: List<String> = source()): Boolean {
+        if (blocked.isEmpty()) return false
+        val k = RelayMatrix.key(url)
+        val host = hostOf(k)
+        return blocked.any { entry ->
+            val b = RelayMatrix.key(entry)
+            b.isNotEmpty() && (b == k || (pathOf(b).isEmpty() && hostOf(b) == host))
+        }
+    }
+
+    private fun hostOf(key: String) = key.substringAfter("://").substringBefore('/').substringBefore(':')
+    private fun pathOf(key: String) = key.substringAfter("://").substringAfter('/', "")
 }

@@ -26,8 +26,10 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.relay.RelayMatrix.Job
+import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -62,12 +64,15 @@ sealed class RelayProbeResult {
  * Settings > Relays: every relay the owner uses on one screen. Port of iOS
  * RelayMatrixView. Edits go straight to the config; a DM change republishes
  * kind 10050 and a Read/Write change republishes kind 10002 (when the owner
- * publishes it), each once edits settle.
+ * publishes it), each once edits settle. The Recommended page suggests relays
+ * the follows write to and the fastest well-known relays; Never connect
+ * blocks a relay and publishes kind 10006.
  */
 @HiltViewModel
 class RelayMatrixViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val feedService: FeedService,
 ) : ViewModel() {
 
     val config = configStore.config
@@ -79,6 +84,57 @@ class RelayMatrixViewModel @Inject constructor(
     private var dmPending = false
     private var relayListJob: CoroutineJob? = null
     private var relayListPending = false
+    private var blockedJob: CoroutineJob? = null
+    private var blockedPending = false
+
+    data class FollowInfo(
+        val suggestions: List<RelayMatrix.FollowSuggestion> = emptyList(),
+        val withLists: Int = 0,
+        val follows: Int = 0,
+    )
+
+    private val _follow = MutableStateFlow(FollowInfo())
+    val follow = _follow.asStateFlow()
+
+    /** Walks every follow's relay list, so it runs when asked, not per frame. */
+    fun refreshSuggestions() {
+        val cfg = configStore.config.value
+        val follows = feedService.followedPubkeys.value
+        val outbox = nostrService.outboxRelays.value
+        _follow.value = FollowInfo(
+            suggestions = RelayMatrix.followSuggestions(
+                follows, outbox, RelayMatrix.lists(cfg), cfg.blockedRelays, pinned(cfg)),
+            withLists = RelayMatrix.followsWithRelayLists(follows, outbox),
+            follows = follows.size,
+        )
+    }
+
+    fun block(url: String) {
+        val cfg = configStore.config.value
+        val (lists, blocked) = RelayMatrix.blocking(url, RelayMatrix.lists(cfg), cfg.blockedRelays)
+        apply(lists)
+        setBlocked(blocked)
+    }
+
+    fun unblock(url: String) = setBlocked(RelayMatrix.unblocking(url, configStore.config.value.blockedRelays))
+
+    private fun setBlocked(blocked: List<String>) {
+        if (blocked == configStore.config.value.blockedRelays) return
+        configStore.update { it.copy(blockedRelays = blocked) }
+        refreshSuggestions()
+        blockedPending = true
+        blockedJob?.cancel()
+        blockedJob = viewModelScope.launch {
+            delay(2_000)
+            publishBlocked()
+        }
+    }
+
+    private fun publishBlocked() {
+        if (!blockedPending) return
+        blockedPending = false
+        nostrService.publishBlockedRelayList()
+    }
 
     fun ownRelay(cfg: HavenConfig): String = cfg.macRelayWssURL
 
@@ -186,8 +242,10 @@ class RelayMatrixViewModel @Inject constructor(
         // Leaving inside the debounce still publishes the edit.
         dmJob?.cancel()
         relayListJob?.cancel()
+        blockedJob?.cancel()
         publishDM()
         publishRelayList()
+        publishBlocked()
         super.onCleared()
     }
 }
@@ -216,16 +274,34 @@ fun RelayMatrixScreen(
     val lists = RelayMatrix.lists(cfg)
     val ownRelay = viewModel.ownRelay(cfg)
     val rows = RelayMatrix.rows(lists, viewModel.pinned(cfg))
-    val unreachable = results.filterValues { it == RelayProbeResult.Unreachable }.keys.sorted()
+    // Only the owner's relays: the probe also times suggestions.
+    val yours = (listOf(ownRelay) + rows.map { it.url }).filter { it.isNotEmpty() }.map(RelayMatrix::key).toSet()
+    val unreachable = results.filterValues { it == RelayProbeResult.Unreachable }.keys.filter { it in yours }.sorted()
     val problems = RelayMatrix.problems(lists, cfg.ownHavenDMInboxURL, unreachable)
+    val follow by viewModel.follow.collectAsState()
 
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showingAdd by remember { mutableStateOf(false) }
     var newRelay by remember { mutableStateOf("") }
+    var recommended by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.probe((listOf(ownRelay) + rows.map { it.url }).filter { it.isNotEmpty() })
+        viewModel.refreshSuggestions()
     }
+    LaunchedEffect(recommended) {
+        if (!recommended) return@LaunchedEffect
+        viewModel.refreshSuggestions()
+        viewModel.probe(RelayMatrix.wellKnownRelays.filterNot { RelayBlocklist.isBlocked(it) } +
+            viewModel.follow.value.suggestions.map { it.url })
+    }
+    val taken = (rows.map { it.id } + cfg.blockedRelays.map(RelayMatrix::key)).toSet()
+    val followSuggestions = follow.suggestions.filter { RelayMatrix.key(it.url) !in taken }
+    val fastest = RelayMatrix.fastest(
+        RelayMatrix.wellKnownRelays,
+        results.mapNotNull { (k, r) -> (r as? RelayProbeResult.Answered)?.let { k to it.milliseconds } }.toMap(),
+        lists, cfg.blockedRelays, viewModel.pinned(cfg),
+    )
 
     Scaffold(
         topBar = {
@@ -249,130 +325,214 @@ fun RelayMatrixScreen(
         containerColor = WindowBackground,
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            item {
+                TabRow(
+                    selectedTabIndex = if (recommended) 1 else 0,
+                    containerColor = WindowBackground,
+                    contentColor = accent,
+                ) {
+                    Tab(selected = !recommended, onClick = { recommended = false }, text = { Text("Your Relays") })
+                    Tab(selected = recommended, onClick = { recommended = true }, text = { Text("Recommended") })
+                }
+            }
+
             // Summary chips
             item {
-                val times = results.values.filterIsInstance<RelayProbeResult.Answered>().map { it.milliseconds }
+                val times = results.filterKeys { it in yours }.values
+                    .filterIsInstance<RelayProbeResult.Answered>().map { it.milliseconds }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Chip("${rows.size + if (ownRelay.isEmpty()) 0 else 1} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
-                    if (problems.isNotEmpty()) Chip("⚠ ${problems.size} to fix", SlowAmber)
+                    if (problems.isNotEmpty()) {
+                        Box(Modifier.clickable { recommended = true }) { Chip("⚠ ${problems.size} to fix", SlowAmber) }
+                    }
                 }
             }
 
-            if (problems.isNotEmpty()) {
-                item { SectionHeader("Fixes") }
-                items(problems) { problem ->
+            if (recommended) {
+                if (problems.isNotEmpty()) {
+                    item { SectionHeader("Fixes") }
+                    items(problems) { problem ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Text("!", color = if (problem.broken) ErrorRed else SlowAmber, fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp, modifier = Modifier.width(20.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(problem.title, color = PrimaryText, fontSize = 15.sp)
+                                Text(problem.detail, color = SecondaryText, fontSize = 12.sp)
+                            }
+                            val row = (problem as? RelayMatrix.Problem.Unreachable)?.let { p -> rows.firstOrNull { it.id == p.key } }
+                            if (row != null) {
+                                Button(
+                                    onClick = { viewModel.apply(RelayMatrix.removing(row.url, lists)) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = accent),
+                                ) { Text("Remove") }
+                            } else if (problem == RelayMatrix.Problem.NoSearch) {
+                                Button(
+                                    onClick = viewModel::resetSearch,
+                                    colors = ButtonDefaults.buttonColors(containerColor = accent),
+                                ) { Text("Defaults") }
+                            }
+                        }
+                    }
+                }
+
+
+                item { SectionHeader("Your Follows Write To") }
+                if (followSuggestions.isEmpty()) {
+                    item {
+                        Text(
+                            if (follow.withLists == 0) "None of your follows' relay lists have loaded yet. They load as you browse profiles and your feed."
+                            else "You already read from the relays your follows use most.",
+                            color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+                items(followSuggestions, key = { "f" + it.url }) { suggestion ->
+                    SuggestionRow(suggestion.url, results[RelayMatrix.key(suggestion.url)],
+                        "${suggestion.follows} follows write here", accent) {
+                        viewModel.apply(RelayMatrix.setting(Job.READ, true, suggestion.url, lists))
+                    }
+                }
+                item {
+                    Text(
+                        "Add one to Read to see more of their posts. Based on ${follow.withLists} of your ${follow.follows} follows' relay lists.",
+                        color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+
+                item { SectionHeader("Fastest From This Device") }
+                if (fastest.isEmpty()) {
+                    item {
+                        val measuring = RelayMatrix.wellKnownRelays.any { results[RelayMatrix.key(it)] == RelayProbeResult.Probing }
+                        Text(if (measuring) "Measuring…" else "Nothing faster to suggest.", color = SecondaryText, fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                }
+                items(fastest, key = { "s$it" }) { url ->
+                    SuggestionRow(url, results[RelayMatrix.key(url)], null, accent) {
+                        viewModel.apply(RelayMatrix.adding(url, lists))
+                    }
+                }
+                item {
+                    Text(
+                        "Well-known public relays, timed from here just now. Add puts it in Read and Write.",
+                        color = SecondaryText, fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+                    )
+                }
+            } else {
+                // Grid header
+                item {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
                     ) {
-                        Text("!", color = if (problem.broken) ErrorRed else SlowAmber, fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp, modifier = Modifier.width(20.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(problem.title, color = PrimaryText, fontSize = 15.sp)
-                            Text(problem.detail, color = SecondaryText, fontSize = 12.sp)
-                        }
-                        val row = (problem as? RelayMatrix.Problem.Unreachable)?.let { p -> rows.firstOrNull { it.id == p.key } }
-                        if (row != null) {
-                            Button(
-                                onClick = { viewModel.apply(RelayMatrix.removing(row.url, lists)) },
-                                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                            ) { Text("Remove") }
-                        } else if (problem == RelayMatrix.Problem.NoSearch) {
-                            Button(
-                                onClick = viewModel::resetSearch,
-                                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                            ) { Text("Defaults") }
+                        Text("RELAY", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f))
+                        Job.columns.forEach {
+                            Text(it.title.uppercase(), color = SecondaryText, fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold, modifier = Modifier.width(ColumnWidth),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         }
                     }
                 }
-            }
 
-            // Grid header
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-                ) {
-                    Text("RELAY", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f))
-                    Job.columns.forEach {
-                        Text(it.title.uppercase(), color = SecondaryText, fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold, modifier = Modifier.width(ColumnWidth),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                if (ownRelay.isNotEmpty()) {
+                    item {
+                        GridRow(
+                            name = RelayMatrix.label(ownRelay),
+                            result = results[RelayMatrix.key(ownRelay)],
+                            tags = emptyList(),
+                            badge = "YOUR RELAY",
+                            onName = null,
+                            accent = accent,
+                        ) {
+                            LockedDot(true, accent)
+                            LockedDot(true, accent)
+                            LockedDot(cfg.ownHavenDMInboxURL.isNotEmpty(), accent)
+                        }
                     }
                 }
-            }
-
-            if (ownRelay.isNotEmpty()) {
-                item {
+                items(rows, key = { it.id }) { row ->
                     GridRow(
-                        name = RelayMatrix.label(ownRelay),
-                        result = results[RelayMatrix.key(ownRelay)],
-                        tags = emptyList(),
-                        badge = "YOUR RELAY",
-                        onName = null,
+                        name = RelayMatrix.label(row.url),
+                        result = results[row.id],
+                        tags = Job.advanced.filter(row::has).map { it.title },
+                        badge = null,
+                        onName = { selectedKey = row.id },
                         accent = accent,
                     ) {
-                        LockedDot(true, accent)
-                        LockedDot(true, accent)
-                        LockedDot(cfg.ownHavenDMInboxURL.isNotEmpty(), accent)
-                    }
-                }
-            }
-            items(rows, key = { it.id }) { row ->
-                GridRow(
-                    name = RelayMatrix.label(row.url),
-                    result = results[row.id],
-                    tags = Job.advanced.filter(row::has).map { it.title },
-                    badge = null,
-                    onName = { selectedKey = row.id },
-                    accent = accent,
-                ) {
-                    Job.columns.forEach { job ->
-                        JobDot(row.has(job), accent, "${job.title}, ${RelayMatrix.label(row.url)}") {
-                            viewModel.apply(RelayMatrix.setting(job, !row.has(job), row.url, lists))
+                        Job.columns.forEach { job ->
+                            JobDot(row.has(job), accent, "${job.title}, ${RelayMatrix.label(row.url)}") {
+                                viewModel.apply(RelayMatrix.setting(job, !row.has(job), row.url, lists))
+                            }
                         }
                     }
                 }
-            }
-            if (rows.isEmpty() && ownRelay.isEmpty()) {
-                item {
-                    Text("No relays yet. Tap + to add one.", color = SecondaryText, fontSize = 13.sp,
-                        modifier = Modifier.padding(16.dp))
+                if (rows.isEmpty() && ownRelay.isEmpty()) {
+                    item {
+                        Text("No relays yet. Tap + to add one.", color = SecondaryText, fontSize = 13.sp,
+                            modifier = Modifier.padding(16.dp))
+                    }
                 }
-            }
-            item {
-                Text(
-                    "Read + Write are your public relay list (10002). DMs are your DM inbox (10050). " +
-                        "Tap a relay's name for Search and Import.",
-                    color = SecondaryText, fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
+                item {
+                    Text(
+                        "Read + Write are your public relay list (10002). DMs are your DM inbox (10050). " +
+                            "Tap a relay's name for Search and Import.",
+                        color = SecondaryText, fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
 
-            // Media servers
-            item { SectionHeader("Media Servers") }
-            items(cfg.activeBlossomMirrors) { mirror ->
-                Text(mirror.removePrefix("https://").removePrefix("http://"), color = PrimaryText, fontSize = 15.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-            }
-            item {
-                Text(
-                    if (cfg.activeBlossomMirrors.isEmpty()) "Add a media server" else "Edit media servers",
-                    color = accent, fontSize = 15.sp,
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenMediaServers)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-                Text(
-                    "Where your photos and videos are stored (Blossom). These aren't relays.",
-                    color = SecondaryText, fontSize = 12.sp,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-                )
+                if (cfg.blockedRelays.isNotEmpty()) {
+                    item { SectionHeader("Never Connect") }
+                    items(cfg.blockedRelays, key = { "b$it" }) { url ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        ) {
+                            Text("⊘", color = ErrorRed, fontSize = 16.sp, modifier = Modifier.width(24.dp))
+                            Text(RelayMatrix.label(url), color = PrimaryText, fontSize = 15.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { viewModel.unblock(url) }) { Text("Unblock", color = accent) }
+                        }
+                    }
+                    item {
+                        Text(
+                            "The app won't open a connection to these, even when someone you follow uses them. " +
+                                "Published as your blocked relay list (10006).",
+                            color = SecondaryText, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+
+                // Media servers
+                item { SectionHeader("Media Servers") }
+                items(cfg.activeBlossomMirrors) { mirror ->
+                    Text(mirror.removePrefix("https://").removePrefix("http://"), color = PrimaryText, fontSize = 15.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                item {
+                    Text(
+                        if (cfg.activeBlossomMirrors.isEmpty()) "Add a media server" else "Edit media servers",
+                        color = accent, fontSize = 15.sp,
+                        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenMediaServers)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                    Text(
+                        "Where your photos and videos are stored (Blossom). These aren't relays.",
+                        color = SecondaryText, fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                    )
+                }
             }
         }
     }
@@ -408,6 +568,10 @@ fun RelayMatrixScreen(
                 result = results[selected.id],
                 accent = accent,
                 onSet = { job, on -> viewModel.apply(RelayMatrix.setting(job, on, selected.url, lists)) },
+                onBlock = {
+                    viewModel.block(selected.url)
+                    selectedKey = null
+                },
                 onRemove = {
                     viewModel.apply(RelayMatrix.removing(selected.url, lists))
                     selectedKey = null
@@ -515,6 +679,7 @@ private fun RelayDetail(
     result: RelayProbeResult?,
     accent: Color,
     onSet: (Job, Boolean) -> Unit,
+    onBlock: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
@@ -535,6 +700,10 @@ private fun RelayDetail(
         Text("ADVANCED", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
         Job.advanced.forEach { JobSwitch(it, row.has(it), accent, onSet) }
+        Column(Modifier.fillMaxWidth().clickable(onClick = onBlock).padding(vertical = 8.dp)) {
+            Text("Never Connect", color = ErrorRed, fontSize = 15.sp)
+            Text("Remove it and block it everywhere in the app", color = SecondaryText, fontSize = 12.sp)
+        }
         Text("Write without Read sends your posts here but never loads from it.",
             color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.padding(top = 16.dp)) {
@@ -569,3 +738,24 @@ private fun usedBy(jobs: Set<Job>): String = buildList {
     if (Job.SEARCH in jobs) add("Search")
     if (Job.IMPORT in jobs) add("Import")
 }.ifEmpty { listOf("Nothing") }.joinToString(", ")
+
+@Composable
+private fun SuggestionRow(url: String, result: RelayProbeResult?, detail: String?, accent: Color, onAdd: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Box(Modifier.size(8.dp).background(healthColor(result), CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(RelayMatrix.label(url), color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val (text, tint) = subtitle(result, listOfNotNull(detail))
+            Text(text, color = tint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Button(
+            onClick = onAdd,
+            colors = ButtonDefaults.buttonColors(containerColor = accent),
+            modifier = Modifier.semantics { contentDescription = "Add ${RelayMatrix.label(url)}" },
+        ) { Text("Add") }
+    }
+}

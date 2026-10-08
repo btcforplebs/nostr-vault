@@ -4,6 +4,7 @@ import com.nostrvault.relay.RelayMatrix.Job
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The relay matrix grid: one row per relay, its jobs read from and written back to the separate lists. */
@@ -83,5 +84,74 @@ class RelayMatrixTest {
         assertEquals(listOf("wss://in.example"), same.feedRelays)
         val changed = RelayMatrix.applying(RelayMatrix.setting(Job.SEARCH, true, "wss://x.example", read), config)
         assertEquals(config.activeSearchRelays + "wss://x.example", changed.searchRelays)
+    }
+
+    // Never connect
+
+    @Test
+    fun `blocking removes from every job once`() {
+        val (after, blocked) = RelayMatrix.blocking("wss://a.example/", lists, listOf("wss://x.example"))
+        assertFalse(RelayMatrix.rows(after).any { it.id == "wss://a.example" })
+        assertEquals(listOf("wss://x.example", "wss://a.example"), blocked)
+        assertEquals(blocked, RelayMatrix.blocking("WSS://A.example", after, blocked).second)
+        assertEquals(listOf("wss://x.example"), RelayMatrix.unblocking("wss://A.example/", blocked))
+    }
+
+    @Test
+    fun `blocklist matches the host and exact paths`() {
+        val blocked = listOf("wss://bad.example/", "wss://host.example/private")
+        assertTrue(RelayBlocklist.isBlocked("wss://bad.example", blocked))
+        assertTrue(RelayBlocklist.isBlocked("WSS://Bad.example/inbox", blocked))
+        assertTrue(RelayBlocklist.isBlocked("wss://host.example/private/", blocked))
+        assertFalse(RelayBlocklist.isBlocked("wss://host.example", blocked))
+        assertFalse(RelayBlocklist.isBlocked("wss://good.example", blocked))
+    }
+
+    // Recommended
+
+    @Test
+    fun `follow suggestions rank by follows and skip taken`() {
+        val outbox = mapOf(
+            "p1" to listOf("wss://popular.example", "wss://a.example", "wss://once.example"),
+            "p2" to listOf("wss://popular.example/", "wss://Popular.example", "wss://blocked.example"),
+            "p3" to listOf("wss://popular.example", "wss://second.example", "wss://blocked.example"),
+            "p4" to listOf("wss://second.example", "ws://127.0.0.1:4869", "wss://x.onion"),
+            "p5" to listOf("wss://localhost.example"),
+        )
+        val suggestions = RelayMatrix.followSuggestions(
+            listOf("p1", "p2", "p3", "p4", "p4"), outbox, lists, listOf("wss://blocked.example"))
+        assertEquals(
+            listOf(
+                RelayMatrix.FollowSuggestion("wss://popular.example", 3),
+                RelayMatrix.FollowSuggestion("wss://second.example", 2),
+            ),
+            suggestions,
+        )
+        assertEquals(1, RelayMatrix.followsWithRelayLists(listOf("p1", "p9"), outbox))
+    }
+
+    @Test
+    fun `fastest sorts answered relays and skips taken`() {
+        val ms = mapOf("wss://slow.example" to 400, "wss://quick.example" to 90, "wss://a.example" to 10)
+        val fastest = RelayMatrix.fastest(
+            listOf("wss://slow.example", "wss://down.example", "wss://quick.example/", "wss://a.example", "wss://gone.example"),
+            ms, lists, listOf("wss://gone.example"))
+        assertEquals(listOf("wss://quick.example", "wss://slow.example"), fastest)
+    }
+
+    @Test
+    fun `public relay`() {
+        assertTrue(RelayMatrix.isPublicRelay("wss://relay.damus.io"))
+        listOf("ws://relay.damus.io", "wss://localhost", "wss://abc.onion", "wss://192.168.1.4",
+            "wss://172.20.0.1", "wss://10.0.0.1:4848", "wss://vault.local", "wss://nodots").forEach {
+            assertFalse(it, RelayMatrix.isPublicRelay(it))
+        }
+        assertTrue(RelayMatrix.isPublicRelay("wss://172.40.0.1"))
+    }
+
+    @Test
+    fun `fallback problem text names the real fallbacks`() {
+        assertTrue(RelayMatrix.Problem.NoWrite.detail.contains("relay.btcforplebs.com"))
+        assertTrue(RelayMatrix.Problem.NoRead.detail.contains("relay.primal.net"))
     }
 }
