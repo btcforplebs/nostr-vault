@@ -1276,7 +1276,8 @@ class DMService @Inject constructor(
         loadedCacheKey = key
         scope.launch(Dispatchers.IO) {
             try {
-                deleteTruncatedKeyCaches()
+                deleteOldKeyCaches()
+                if (key == null) return@launch // no account: nothing to load
                 val dir = configStore.config.value.appSupportDir ?: run { Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
                 val file = File(dir, "dm_cache_$key.json")
                 if (!file.exists()) { Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
@@ -1361,20 +1362,22 @@ class DMService @Inject constructor(
     }
 
     /**
-     * The full hex pubkey of the active account. The old key was the npub's
-     * first 12 characters ("npub1" plus 7), which two accounts could share.
+     * The full hex pubkey of the active account, or null with none (then
+     * nothing is cached). The old key was the npub's first 12 characters
+     * ("npub1" plus 7), which two accounts could share.
      */
-    private fun currentCacheKey(): String =
-        configStore.activeAccountHexPubkey.value.ifEmpty { "default" }
+    private fun currentCacheKey(): String? =
+        configStore.activeAccountHexPubkey.value.ifEmpty { null }
 
     /**
-     * Deletes caches written under the old truncated-npub key. Some hold
-     * another account's DMs (written across a switch); the inbox refetches
-     * from the relays, so nothing is lost.
+     * Deletes caches written under the old keys (truncated npub or hex,
+     * "default"). Some hold another account's DMs (written across a switch),
+     * and none is read again; the inbox refetches from the relays, so nothing
+     * is lost.
      */
-    private fun deleteTruncatedKeyCaches() {
+    private fun deleteOldKeyCaches() {
         val dir = configStore.config.value.appSupportDir ?: return
-        File(dir).listFiles { f -> DMCacheFiles.isTruncatedKeyCache(f.name) }?.forEach { it.delete() }
+        File(dir).listFiles { f -> DMCacheFiles.isOldKeyCache(f.name) }?.forEach { it.delete() }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1567,8 +1570,13 @@ data class DMMessage(
 
 /** Cache file names, kept apart so the old-format rule is unit-tested. */
 internal object DMCacheFiles {
-    /** "dm_cache_npub1xxxxxxx.json": the key before it became the full hex pubkey. */
-    fun isTruncatedKeyCache(name: String): Boolean =
-        name.startsWith("dm_cache_npub1") && name.endsWith(".json") &&
-            name.removePrefix("dm_cache_").removeSuffix(".json").length == 12
+    /**
+     * A DM cache not keyed on a full 64-hex pubkey: written before the key was
+     * the account's hex ("npub1xxxxxxx", 12 hex characters, "default").
+     */
+    fun isOldKeyCache(name: String): Boolean {
+        if (!name.startsWith("dm_cache_") || !name.endsWith(".json")) return false
+        val key = name.removePrefix("dm_cache_").removeSuffix(".json")
+        return !(key.length == 64 && key.all { it in '0'..'9' || it in 'a'..'f' })
+    }
 }
