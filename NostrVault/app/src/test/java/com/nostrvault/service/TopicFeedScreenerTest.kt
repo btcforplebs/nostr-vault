@@ -11,6 +11,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Date
 
@@ -28,9 +30,18 @@ class TopicFeedScreenerTest {
         val reactions: List<Pair<String, String>> = emptyList(),
     ) {
         val asked = mutableListOf<List<JsonObject>>()
+        /** False: the kind 3 lookup times out (some relay never answered). */
+        var answersAll = true
+        /** The next kind 3 lookup throws. */
+        var throwOnce = false
 
-        fun answer(filters: List<JsonObject>, onEvent: (JsonObject) -> Unit) {
+        fun answer(filters: List<JsonObject>, onEvent: (JsonObject) -> Unit): Boolean {
             asked += filters
+            val followLookup = filters.any { it.containsKey("authors") }
+            if (followLookup && throwOnce) {
+                throwOnce = false
+                throw IllegalStateException("relay sent something odd")
+            }
             for (filter in filters) {
                 val kinds = filter["kinds"]!!.jsonArray.map { it.jsonPrimitive.content }
                 if ("3" in kinds) {
@@ -46,15 +57,84 @@ class TopicFeedScreenerTest {
                     }
                 }
             }
+            return !followLookup || answersAll
         }
+
+        fun followLookups() = asked.count { f -> f.any { it.containsKey("authors") } }
     }
 
-    private fun TestScope.screener(relay: FakeRelay, shown: MutableList<List<String>>) = TopicFeedScreener(
+    private fun TestScope.screener(
+        relay: FakeRelay,
+        shown: MutableList<List<String>>,
+        onPass: () -> Unit = {},
+    ) = TopicFeedScreener(
         scope = this,
         query = { filters, onEvent -> relay.answer(filters, onEvent) },
         isValid = { true },
         onShown = { notes -> shown += notes.map { it.id } },
+        onPass = onPass,
     )
+
+    @Test fun aThrownLookupIsRetriedOnItsOwn() = runTest {
+        val relay = FakeRelay(follows = mapOf("person" to 150)).apply { throwOnce = true }
+        val shown = mutableListOf<List<String>>()
+        var passes = 0
+        val s = screener(relay, shown, onPass = { passes += 1 })
+        s.add(note("a", "person", 1))
+        advanceUntilIdle()
+        // The failed lookup still ran a pass, and person was asked again on
+        // the retry timer, with no other post needed.
+        assertTrue(passes > 0)
+        assertEquals(2, relay.followLookups())
+        assertEquals(listOf("a"), shown.last())
+        assertTrue(s.isSettled())
+    }
+
+    @Test fun aTimedOutLookupIsAskedAgainBeforeCountingZero() = runTest {
+        // "quiet" has no follow list anywhere, but a relay never answers.
+        val relay = FakeRelay(follows = mapOf("person" to 150)).apply { answersAll = false }
+        val shown = mutableListOf<List<String>>()
+        val s = screener(relay, shown)
+        s.add(note("a", "person", 1))
+        s.add(note("q1", "quiet", 2))
+        advanceUntilIdle()
+        // A found follow list counts even from a partial answer.
+        assertEquals(listOf("a"), shown.last())
+        // quiet: asked 3 times on the retry timer, then counted as 0.
+        assertEquals(3, relay.followLookups())
+        s.add(note("q2", "quiet", 3))
+        advanceUntilIdle()
+        assertEquals(3, relay.followLookups())
+        // A newcomer is asked about; quiet isn't asked again.
+        relay.answersAll = true
+        s.add(note("n", "newcomer", 4))
+        advanceUntilIdle()
+        assertEquals(4, relay.followLookups())
+        assertEquals(listOf("newcomer"), relay.asked.last().flatMap { f -> f["authors"]!!.jsonArray.map { it.jsonPrimitive.content } })
+    }
+
+    @Test fun aCompleteAnswerWithNoFollowListCountsZeroAtOnce() = runTest {
+        val relay = FakeRelay(follows = emptyMap())
+        val s = screener(relay, mutableListOf())
+        s.add(note("q1", "quiet", 1))
+        advanceUntilIdle()
+        s.add(note("q2", "quiet", 2))
+        advanceUntilIdle()
+        assertEquals(1, relay.followLookups())
+    }
+
+    @Test fun settlesOnceEveryAuthorHasBeenAskedAbout() = runTest {
+        val relay = FakeRelay(follows = mapOf("bot" to 0))
+        var passes = 0
+        val s = screener(relay, mutableListOf(), onPass = { passes += 1 })
+        assertTrue("nothing on hand is settled", s.isSettled())
+        s.add(note("b", "bot", 1))
+        assertFalse(s.isSettled())
+        advanceUntilIdle()
+        // Nothing shown, but the pass ran and every author was asked about.
+        assertTrue(s.isSettled())
+        assertTrue(passes > 0)
+    }
 
     @Test fun botsWaitForTheirCountThenDropOut() = runTest {
         val relay = FakeRelay(follows = mapOf("person" to 150, "bot" to 10))
