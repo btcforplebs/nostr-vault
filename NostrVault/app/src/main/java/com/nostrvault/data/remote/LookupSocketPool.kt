@@ -108,6 +108,8 @@ class LookupSocketPool(
         EOSE,
         /** The relay sent CLOSED for the subscription. */
         CLOSED,
+        /** The relay answered a NIP-45 COUNT; nothing left to CLOSE. */
+        COUNTED,
         /** Neither arrived in time; the subscription was CLOSEd. */
         TIMEOUT,
         /** The socket was refused or dropped; the relay is cooling down. */
@@ -153,11 +155,13 @@ class LookupSocketPool(
         subId: String,
         filters: List<String>,
         timeoutMs: Long,
+        /** "COUNT" sends a NIP-45 count instead; it ends at the relay's COUNT reply. */
+        verb: String = "REQ",
         onMessage: suspend (String) -> Unit,
     ): Outcome {
         if (filters.isEmpty()) return Outcome.SKIPPED
         val sub = Sub(subId, onMessage)
-        val req = "[\"REQ\",${quote(subId)},${filters.joinToString(",")}]"
+        val req = "[${quote(verb)},${quote(subId)},${filters.joinToString(",")}]"
         val entry = synchronized(lock) { register(url, sub, req) } ?: return Outcome.SKIPPED
         var outcome = Outcome.TIMEOUT
         try {
@@ -254,6 +258,7 @@ class LookupSocketPool(
         when (type) {
             "EOSE" -> sub.done.complete(Outcome.EOSE)
             "CLOSED" -> sub.done.complete(Outcome.CLOSED)
+            "COUNT" -> sub.done.complete(Outcome.COUNTED)
         }
     }
 

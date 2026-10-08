@@ -1019,6 +1019,7 @@ fun FeedScreen(
     if (zapNoteId != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
+            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
             onDismiss = { zapNoteId = null },
             onZap = { amount ->
                 zapNoteId?.let { viewModel.zapNote(it, amount) }

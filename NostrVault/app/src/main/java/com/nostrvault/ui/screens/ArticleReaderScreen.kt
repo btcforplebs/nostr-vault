@@ -122,6 +122,8 @@ class ArticleReaderViewModel @Inject constructor(
     val zappedSats: StateFlow<Long> = _zappedSats.asStateFlow()
 
     val myPubkey: String get() = configStore.activeAccountHexPubkey.value
+    /** Wallet settings' default zap, in sats: where the zap sheet starts. */
+    val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount
 
     private val relayHint: String get() = configStore.config.value.nostrURL ?: ""
 
@@ -479,6 +481,7 @@ fun ArticleReaderScreen(
     if (showZapSheet && target != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
+            defaultAmount = viewModel.defaultZapSats,
             onDismiss = { showZapSheet = false },
             onZap = { amount ->
                 viewModel.zap(target, amount)

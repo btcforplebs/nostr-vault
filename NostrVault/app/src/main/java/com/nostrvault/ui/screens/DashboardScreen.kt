@@ -2720,6 +2720,7 @@ fun DashboardScreen(
     if (zapNoteId != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
+            defaultAmount = viewModel.configStore.config.value.defaultZapAmount,
             onDismiss = { zapNoteId = null },
             onZap = { _ -> zapNoteId = null },
         )

@@ -1192,6 +1192,7 @@ fun NoteDetailScreen(
     zapTargetNote?.let { target ->
         CustomZapSheet(
             sheetState = zapSheetState,
+            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
             onDismiss = { zapTargetNote = null },
             onZap = { amount ->
                 viewModel.zapNote(target, amount)
