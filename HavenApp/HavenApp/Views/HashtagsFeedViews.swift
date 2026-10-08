@@ -258,7 +258,9 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     private var threadedList: some View {
         let followIds = Set(model.fromFollows.map(\.id))
         let blocked = configService.activeAccountBlockedHexPubkeys
-        let threads = FeedThreadGrouping.build(notes: model.fromFollows + model.fromOthers) { id in
+        // Screened, the order is the ranking (posts people responded to first).
+        let threads = FeedThreadGrouping.build(notes: model.fromFollows + model.fromOthers,
+                                               keepFeedOrder: model.screening) { id in
             guard let note = feedService.findNote(id: id), !blocked.contains(note.pubkey) else { return nil }
             return note
         }

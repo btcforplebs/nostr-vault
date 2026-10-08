@@ -63,6 +63,14 @@ final class TopicFeedFilterTests: XCTestCase {
         XCTAssertEqual(TopicFeedFilter.shown([game, person, photo], followCounts: ["p": 50, "q": 50, "r": 50]), ["h", "i"])
     }
 
+    /// Posts two or more people responded to lead; the rest follow, in order.
+    func testRespondedToGoFirst() {
+        let ids = ["new", "liked", "one", "older", "loved"]
+        XCTAssertEqual(TopicFeedFilter.ordered(ids, responders: ["liked": 2, "one": 1, "loved": 9]),
+                       ["liked", "loved", "new", "one", "older"])
+        XCTAssertEqual(TopicFeedFilter.ordered(ids, responders: [:]), ids)
+    }
+
     func testLinkDomains() {
         XCTAssertEqual(TopicFeedFilter.linkDomains("see https://Example.com/a and https://i.nostr.build/x.PNG"), ["example.com"])
     }

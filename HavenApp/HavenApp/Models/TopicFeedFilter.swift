@@ -88,6 +88,19 @@ enum TopicFeedFilter {
         String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) && $0.isASCII }.map(Character.init))
     }
 
+    /// Different people (not the author) who must have replied, reposted,
+    /// liked or zapped a post for it to go first. Sampled 2026-10-08 this
+    /// left only people: #bitcoin 37 → 11, #nostr 71 → 11, no games or ads.
+    static let minResponders = 2
+
+    /// `ids` as `shown` returned them, with the posts people responded to
+    /// moved to the front. Both groups keep their order; nothing is dropped.
+    static func ordered(_ ids: [String], responders: [String: Int]) -> [String] {
+        let answered = ids.filter { (responders[$0] ?? 0) >= minResponders }
+        let rest = ids.filter { (responders[$0] ?? 0) < minResponders }
+        return answered + rest
+    }
+
     static func hashtagCount(_ tags: [[String]]) -> Int {
         tags.filter { $0.count >= 2 && $0[0] == "t" }.count
     }

@@ -1375,13 +1375,19 @@ final class HashtagFeedModel: ObservableObject {
     /// Fill your feed: no web of trust yet, so the open list is screened
     /// (`TopicFeedFilter`). Every post lands in `pool`; `fromOthers` is what
     /// passes. Follow counts come from each author's kind 3.
-    private var screening = false
+    private(set) var screening = false
     private var pool: [FeedNote] = []
     private var followCounts: [String: Int] = [:]
     private var lookingUp = Set<String>()
     private var rescreenQueued = false
     private var lookupClients: [WebSocketClient] = []
     private var lookupCancellables = Set<AnyCancellable>()
+    /// Who else liked, replied to, reposted or zapped each shown post.
+    /// Posts people responded to go first (`TopicFeedFilter.ordered`).
+    private var responders: [String: Set<String>] = [:]
+    private var askedResponders = Set<String>()
+    private var pendingResponders: [String] = []
+    private var respondersQueued = false
 
     init(tag: String) { self.tags = [tag] }
     init(tags: [String]) { self.tags = tags }
@@ -1518,6 +1524,7 @@ final class HashtagFeedModel: ObservableObject {
         lookupClients = []
         lookupCancellables.removeAll()
         lookingUp = []
+        askedResponders.subtract(askedResponders.filter { responders[$0] == nil })
         stopPage()
     }
 
@@ -1673,9 +1680,105 @@ final class HashtagFeedModel: ObservableObject {
 
     private func rescreen() {
         let posts = pool.map { TopicFeedFilter.Post(id: $0.id, pubkey: $0.pubkey, content: $0.content, tags: $0.tags) }
-        let shown = Set(TopicFeedFilter.shown(posts, followCounts: followCounts))
-        let next = pool.filter { shown.contains($0.id) }
+        let shownIds = TopicFeedFilter.shown(posts, followCounts: followCounts)
+        lookUpResponders(shownIds)
+        let byId = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let counts = responders.mapValues(\.count)
+        let next = TopicFeedFilter.ordered(shownIds, responders: counts).compactMap { byId[$0] }
         if next.map(\.id) != fromOthers.map(\.id) { fromOthers = next }
+    }
+
+    /// Replies, reposts, reactions and zaps on the shown posts, counted by
+    /// distinct person (the author's own don't count).
+    private func lookUpResponders(_ ids: [String]) {
+        let fresh = ids.filter { !askedResponders.contains($0) }
+        guard !fresh.isEmpty else { return }
+        askedResponders.formUnion(fresh)
+        pendingResponders.append(contentsOf: fresh)
+        // Posts arrive in a stream: ask once a second, not once per post.
+        guard !respondersQueued else { return }
+        respondersQueued = true
+        let gen = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            self.respondersQueued = false
+            let missing = self.pendingResponders
+            self.pendingResponders = []
+            guard self.generation == gen else {
+                self.askedResponders.subtract(missing)
+                return
+            }
+            self.askResponders(missing)
+        }
+    }
+
+    private func askResponders(_ missing: [String]) {
+        let authors = Dictionary(pool.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { first, _ in first })
+        for batch in missing.chunked(into: 150) {
+            let wanted = Set(batch)
+            var found: [String: Set<String>] = [:]
+            oneShotQuery(["kinds": [1, 6, 7, 9735], "#e": batch, "limit": 2000], onEvent: { ev in
+                guard let pubkey = ev["pubkey"] as? String, let tags = ev["tags"] as? [[String]] else { return }
+                for tag in tags where tag.count >= 2 && tag[0] == "e" && wanted.contains(tag[1]) {
+                    if authors[tag[1]] != pubkey { found[tag[1], default: []].insert(pubkey) }
+                }
+            }, finish: { [weak self] in
+                guard let self else { return }
+                for id in batch { self.responders[id, default: []].formUnion(found[id] ?? []) }
+                self.rescreen()
+            })
+        }
+    }
+
+    /// One REQ to every feed relay; `finish` runs once, when all have
+    /// answered or after 6s, and only if the feed hasn't restarted since.
+    private func oneShotQuery(_ filter: [String: Any], onEvent: @escaping ([String: Any]) -> Void,
+                              finish: @escaping () -> Void) {
+        let gen = generation
+        let subId = "q-\(UUID().uuidString.prefix(8))"
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+              let req = String(data: data, encoding: .utf8) else { return }
+        let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
+        var answered = 0
+        var finished = false
+        let finishOnce = { [weak self] in
+            guard !finished else { return }
+            finished = true
+            guard let self, self.generation == gen else { return }
+            finish()
+        }
+        for relay in relays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            lookupClients.append(client)
+            var sent = false
+            client.$connectionState
+                .sink { [weak client] state in
+                    guard state == .connected, !sent, let client else { return }
+                    sent = true
+                    client.send(text: req)
+                }
+                .store(in: &lookupCancellables)
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { message in
+                    guard let data = message.data(using: .utf8),
+                          let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          let type = array.first as? String, array.count >= 2,
+                          (array[1] as? String) == subId else { return }
+                    if type == "EVENT", array.count >= 3, let ev = array[2] as? [String: Any],
+                       NostrEventVerifier.isValid(ev) {
+                        onEvent(ev)
+                    } else if type == "EOSE" || type == "CLOSED" {
+                        answered += 1
+                        if answered >= relays.count { finishOnce() }
+                    }
+                }
+                .store(in: &lookupCancellables)
+            client.connect(url: relay)
+        }
+        if relays.isEmpty { finishOnce() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishOnce() }
     }
 
     /// Each new author's newest kind 3, counted. Authors no relay has a
