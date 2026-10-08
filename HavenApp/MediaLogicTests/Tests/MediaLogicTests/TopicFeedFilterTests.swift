@@ -74,16 +74,25 @@ final class TopicFeedFilterTests: XCTestCase {
         XCTAssertEqual(TopicFeedFilter.ordered(ids, responders: [:]), ids)
     }
 
-    /// A zap counts as the person who zapped, not the wallet that signed it.
-    func testZapResponderIsTheSender() {
-        let withP: [String: Any] = ["kind": 9735, "pubkey": "wallet", "tags": [["P", "alice"], ["e", "x"]]]
-        let request = #"{"kind":9734,"pubkey":"bob","tags":[]}"#
-        let withDescription: [String: Any] = ["kind": 9735, "pubkey": "wallet", "tags": [["description", request]]]
+    /// A zap counts as the signer of the zap request inside the receipt,
+    /// never an unsigned name the wallet wrote.
+    func testZapResponderIsTheSignedSender() {
+        let signed = #"{"kind":9734,"pubkey":"bob","tags":[],"sig":"ok"}"#
+        let forged = #"{"kind":9734,"pubkey":"mallory","tags":[],"sig":"bad"}"#
+        let valid: ([String: Any]) -> Bool = { ($0["sig"] as? String) == "ok" }
+        func receipt(_ description: String?, p: String? = nil) -> [String: Any] {
+            var tags: [[String]] = [["e", "x"]]
+            if let description { tags.append(["description", description]) }
+            if let p { tags.append(["P", p]) }
+            return ["kind": 9735, "pubkey": "wallet", "tags": tags]
+        }
+        XCTAssertEqual(TopicFeedFilter.responder(receipt(signed), isValid: valid), "bob")
+        XCTAssertEqual(TopicFeedFilter.responder(receipt(signed, p: "bob"), isValid: valid), "bob")
+        XCTAssertNil(TopicFeedFilter.responder(receipt(signed, p: "alice"), isValid: valid), "P disagrees")
+        XCTAssertNil(TopicFeedFilter.responder(receipt(forged), isValid: valid), "unsigned request")
+        XCTAssertNil(TopicFeedFilter.responder(receipt(nil, p: "alice"), isValid: valid), "P alone is unsigned")
         let like: [String: Any] = ["kind": 7, "pubkey": "carol", "tags": [["e", "x"]]]
-        XCTAssertEqual(TopicFeedFilter.responder(withP), "alice")
-        XCTAssertEqual(TopicFeedFilter.responder(withDescription), "bob")
-        XCTAssertEqual(TopicFeedFilter.responder(like), "carol")
-        XCTAssertNil(TopicFeedFilter.responder(["kind": 9735, "pubkey": "wallet", "tags": [[String]]()]))
+        XCTAssertEqual(TopicFeedFilter.responder(like, isValid: valid), "carol")
     }
 
     func testLinkDomains() {

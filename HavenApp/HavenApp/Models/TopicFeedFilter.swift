@@ -110,15 +110,20 @@ enum TopicFeedFilter {
     }
 
     /// Who responded. A zap receipt (9735) is signed by the zap service, so
-    /// the person is its `P` tag or the pubkey of the request inside it.
-    static func responder(_ ev: [String: Any]) -> String? {
+    /// the person is the signer of the zap request (9734) inside it, and only
+    /// if that request's own signature checks out (`isValid`); a `P` tag that
+    /// disagrees with it voids the receipt. Unsigned names would let one
+    /// wallet key mint any number of "zappers" (Tron, 2026-10-08).
+    static func responder(_ ev: [String: Any], isValid: ([String: Any]) -> Bool) -> String? {
         guard (ev["kind"] as? Int) == 9735 else { return ev["pubkey"] as? String }
         let tags = ev["tags"] as? [[String]] ?? []
-        if let sender = tags.first(where: { $0.count >= 2 && $0[0] == "P" })?[1] { return sender }
         guard let description = tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
               let data = description.data(using: .utf8),
-              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return request["pubkey"] as? String
+              let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (request["kind"] as? Int) == 9734, isValid(request),
+              let sender = request["pubkey"] as? String else { return nil }
+        if let claimed = tags.first(where: { $0.count >= 2 && $0[0] == "P" })?[1], claimed != sender { return nil }
+        return sender
     }
 
     static func hashtagCount(_ tags: [[String]]) -> Int {

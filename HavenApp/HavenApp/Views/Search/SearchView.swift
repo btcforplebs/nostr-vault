@@ -1720,43 +1720,48 @@ final class HashtagFeedModel: ObservableObject {
 
     private func askResponders(_ missing: [String]) {
         let authors = Dictionary(pool.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { first, _ in first })
-        // Small batches: `limit` caps the whole batch, and one busy post must
-        // not use it up before the others are counted (Tron, 2026-10-08).
-        for batch in missing.chunked(into: 25) {
-            let wanted = Set(batch)
-            var found: [String: Set<String>] = [:]
-            oneShotQuery(["kinds": [1, 6, 7, 9735], "#e": batch, "limit": 1000], onEvent: { ev in
-                guard let pubkey = TopicFeedFilter.responder(ev), let tags = ev["tags"] as? [[String]] else { return }
-                for tag in tags where tag.count >= 2 && tag[0] == "e" && wanted.contains(tag[1]) {
-                    if authors[tag[1]] != pubkey { found[tag[1], default: []].insert(pubkey) }
-                }
-            }, finish: { [weak self] in
-                guard let self else { return }
-                for id in batch { self.responders[id, default: []].formUnion(found[id] ?? []) }
-                self.rescreen()
-            })
+        let wanted = Set(missing)
+        var found: [String: Set<String>] = [:]
+        // One filter per 25 posts, because `limit` caps each filter and one
+        // busy post must not use it up for the others; all of them in one
+        // REQ, so one tick opens one connection per relay (Tron, 2026-10-08).
+        let filters: [[String: Any]] = missing.chunked(into: 25).map {
+            ["kinds": [1, 6, 7, 9735], "#e": $0, "limit": 1000]
         }
+        oneShotQuery(filters, onEvent: { ev in
+            guard let pubkey = TopicFeedFilter.responder(ev, isValid: NostrEventVerifier.isValid),
+                  let tags = ev["tags"] as? [[String]] else { return }
+            for tag in tags where tag.count >= 2 && tag[0] == "e" && wanted.contains(tag[1]) {
+                if authors[tag[1]] != pubkey { found[tag[1], default: []].insert(pubkey) }
+            }
+        }, finish: { [weak self] in
+            guard let self else { return }
+            for id in missing { self.responders[id, default: []].formUnion(found[id] ?? []) }
+            self.rescreen()
+        })
     }
 
     /// One REQ to every feed relay; `finish` runs once, when all have
     /// answered or after 6s, and only if the feed hasn't restarted since.
     /// Its sockets close when it finishes.
-    private func oneShotQuery(_ filter: [String: Any], onEvent: @escaping ([String: Any]) -> Void,
+    private func oneShotQuery(_ filters: [[String: Any]], onEvent: @escaping ([String: Any]) -> Void,
                               finish: @escaping () -> Void) {
         let gen = generation
         let subId = "q-\(UUID().uuidString.prefix(8))"
-        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+        guard let data = try? JSONSerialization.data(withJSONObject: (["REQ", subId] as [Any]) + filters),
               let req = String(data: data, encoding: .utf8) else { return }
         let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
         var answered = Set<Int>()
         var finished = false
         var mine: [WebSocketClient] = []
+        var mineCancellables: [AnyCancellable] = []
         let finishOnce = { [weak self] in
             guard !finished else { return }
             finished = true
             mine.forEach { $0.disconnect() }
             guard let self else { return }
             self.lookupClients.removeAll { client in mine.contains { $0 === client } }
+            mineCancellables.forEach { $0.cancel(); self.lookupCancellables.remove($0) }
             guard self.generation == gen else { return }
             finish()
         }
@@ -1772,7 +1777,7 @@ final class HashtagFeedModel: ObservableObject {
                     sent = true
                     client.send(text: req)
                 }
-                .store(in: &lookupCancellables)
+                .store(in: &mineCancellables)
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { message in
@@ -1789,7 +1794,8 @@ final class HashtagFeedModel: ObservableObject {
                         if answered.count >= relays.count { finishOnce() }
                     }
                 }
-                .store(in: &lookupCancellables)
+                .store(in: &mineCancellables)
+            lookupCancellables.formUnion(mineCancellables.suffix(2))
             client.connect(url: relay)
         }
         if relays.isEmpty { finishOnce() }
@@ -1799,29 +1805,28 @@ final class HashtagFeedModel: ObservableObject {
     /// Each new author's newest kind 3, counted. Authors no relay has a
     /// follow list for count as 0, which keeps them out: people follow.
     private func lookUpFollowCounts() {
-        let missing = Set(pool.map(\.pubkey)).subtracting(followCounts.keys).subtracting(lookingUp)
+        let missing = Array(Set(pool.map(\.pubkey)).subtracting(followCounts.keys).subtracting(lookingUp))
         guard !missing.isEmpty else { return }
-        for batch in Array(missing).chunked(into: 100) {
-            lookingUp.formUnion(batch)
-            let wanted = Set(batch)
-            var newest: [String: (Int64, Int)] = [:]
-            oneShotQuery(["kinds": [3], "authors": batch], onEvent: { ev in
-                guard let pubkey = ev["pubkey"] as? String, wanted.contains(pubkey),
-                      let createdAt = ev["created_at"] as? Int64,
-                      let tags = ev["tags"] as? [[String]],
-                      (ev["kind"] as? Int) == 3 else { return }
-                if (newest[pubkey]?.0 ?? 0) < createdAt {
-                    newest[pubkey] = (createdAt, tags.filter { $0.first == "p" }.count)
-                }
-            }, finish: { [weak self] in
-                guard let self else { return }
-                for author in batch where self.followCounts[author] == nil {
-                    self.followCounts[author] = newest[author]?.1 ?? 0
-                }
-                self.lookingUp.subtract(batch)
-                self.rescreen()
-            })
-        }
+        lookingUp.formUnion(missing)
+        let wanted = Set(missing)
+        var newest: [String: (Int64, Int)] = [:]
+        let filters: [[String: Any]] = missing.chunked(into: 100).map { ["kinds": [3], "authors": $0] }
+        oneShotQuery(filters, onEvent: { ev in
+            guard let pubkey = ev["pubkey"] as? String, wanted.contains(pubkey),
+                  let createdAt = ev["created_at"] as? Int64,
+                  let tags = ev["tags"] as? [[String]],
+                  (ev["kind"] as? Int) == 3 else { return }
+            if (newest[pubkey]?.0 ?? 0) < createdAt {
+                newest[pubkey] = (createdAt, tags.filter { $0.first == "p" }.count)
+            }
+        }, finish: { [weak self] in
+            guard let self else { return }
+            for author in missing where self.followCounts[author] == nil {
+                self.followCounts[author] = newest[author]?.1 ?? 0
+            }
+            self.lookingUp.subtract(missing)
+            self.rescreen()
+        })
     }
 
     private static func insert(_ note: FeedNote, into list: inout [FeedNote]) {
