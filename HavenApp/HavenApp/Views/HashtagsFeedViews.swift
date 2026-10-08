@@ -107,7 +107,9 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             return
         }
         let trust = unfilteredForNewAccount ? nil : feedService.globalTrustSet()
-        model.start(tags: shownTags, follows: follows, trust: trust)
+        // No web of trust yet: the open list is screened for bots and farms
+        // (TopicFeedFilter) rather than shown raw.
+        model.start(tags: shownTags, follows: follows, trust: trust, screen: unfilteredForNewAccount)
     }
 
     private var unfilteredBanner: some View {

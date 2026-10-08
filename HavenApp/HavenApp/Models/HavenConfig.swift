@@ -45,7 +45,11 @@ struct HavenConfig: Codable, Equatable {
     /// Per-feed layout choice (expanded / condensed / threaded), keyed by
     /// FeedMode.rawValue. Supersedes `feedCompactModes`, which is still read as
     /// the fallback so an upgrade keeps whatever compact setting was in place.
-    var feedLayoutModes: [String: String] = [:]
+    /// New installs open the timeline feeds in Threaded View (Logen,
+    /// 2026-10-08). Saved configs keep their own, including older ones
+    /// without this key (see `init(from:)`).
+    var feedLayoutModes: [String: String] = Dictionary(uniqueKeysWithValues:
+        ["Following", "Discovery", "Global", "Hashtags", "Popular"].map { ($0, "threaded") })
     var noteDetailExpandedEngagement: Bool = false // Persisted stats/engagement toggle for NoteDetailView
     var defaultReactionEmoji: String = "❤️" // Default emoji for quick reactions
     var appIcon: String = "Default" // Selected app icon name
@@ -343,7 +347,9 @@ struct HavenConfig: Codable, Equatable {
         textSizeScale = try container.decodeIfPresent(Double.self, forKey: .textSizeScale) ?? defaults.textSizeScale
         useFeedCompactMode = try container.decodeIfPresent(Bool.self, forKey: .useFeedCompactMode) ?? defaults.useFeedCompactMode
         feedCompactModes = try container.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? defaults.feedCompactModes
-        feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? defaults.feedLayoutModes
+        // Not `defaults`: a config from before this key existed keeps its
+        // legacy compact choice instead of jumping to Threaded View.
+        feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? [:]
         noteDetailExpandedEngagement = try container.decodeIfPresent(Bool.self, forKey: .noteDetailExpandedEngagement) ?? defaults.noteDetailExpandedEngagement
         defaultReactionEmoji = try container.decodeIfPresent(String.self, forKey: .defaultReactionEmoji) ?? defaults.defaultReactionEmoji
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
