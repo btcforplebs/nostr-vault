@@ -89,16 +89,27 @@ class ProfileEngagementStore @Inject constructor(
             }
 
             val targets = due.toSet()
+            val answered = AtomicBoolean(false)
             val events = nostrService.queryRawEvents(
                 filters = filters,
                 relayUrls = relays,
                 timeoutMs = QUERY_TIMEOUT_MS,
+                onAnswered = { answered.set(true) },
                 // Counts fill in as each relay answers rather than all at the end.
                 onProgress = { partial ->
                     absorb(contributions(partial, targets), lowerBound, checkedAt = null)
                 },
             )
-            absorb(contributions(events, targets), lowerBound, checkedAt = now, checked = due)
+            // Up to a thousand events: parsed off the caller's (main) thread.
+            val found = withContext(Dispatchers.Default) { contributions(events, targets) }
+            // Stamped only when a relay sent EOSE. If none answered, empty
+            // means "unknown", and stamping it would make later visits ask
+            // only for what's newer, so earlier likes would never load.
+            if (answered.get()) {
+                absorb(found, lowerBound, checkedAt = now, checked = due)
+            } else {
+                absorb(found, lowerBound, checkedAt = null)
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

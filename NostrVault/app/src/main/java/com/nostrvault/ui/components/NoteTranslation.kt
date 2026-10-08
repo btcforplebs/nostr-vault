@@ -15,6 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,6 +70,8 @@ fun TranslatableNoteText(
     onTranslationClick: (() -> Unit)? = null,
     /** Lets the translation be selected, as the note detail's original is. */
     selectable: Boolean = false,
+    /** Applies to the translation as well as the original, for compact rows. */
+    maxLines: Int = Int.MAX_VALUE,
     original: @Composable () -> Unit,
 ) {
     val context = LocalNoteTranslation.current
@@ -104,6 +107,8 @@ fun TranslatableNoteText(
                     color = PrimaryText,
                     fontSize = fontSize,
                     lineHeight = lineHeight,
+                    maxLines = maxLines,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = if (onTranslationClick != null) Modifier.clickable(onClick = onTranslationClick) else Modifier,
                 )
             }

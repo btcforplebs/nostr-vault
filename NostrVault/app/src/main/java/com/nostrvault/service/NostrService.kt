@@ -2381,12 +2381,15 @@ class NostrService @Inject constructor(
      * collects events, deduplicated by id, until each relay has sent EOSE or
      * CLOSED (or dropped the connection) or [timeoutMs] passes. Any kind; the
      * caller decides what the events are. [onProgress], when given, gets the
-     * events so far each time a relay finishes, on an IO thread.
+     * events so far each time a relay finishes, on an IO thread. [onAnswered]
+     * runs when a relay sends EOSE, so a caller can tell "relays had nothing"
+     * from "no relay answered".
      */
     suspend fun queryRawEvents(
         filters: List<String>,
         relayUrls: List<String>,
         timeoutMs: Long = 5_000L,
+        onAnswered: (() -> Unit)? = null,
         onProgress: ((List<JsonObject>) -> Unit)? = null,
     ): List<JsonObject> {
         if (filters.isEmpty() || relayUrls.isEmpty()) return emptyList()
@@ -2398,9 +2401,10 @@ class NostrService @Inject constructor(
         withTimeoutOrNull(timeoutMs) {
             coroutineScope {
                 for (relayUrl in relayUrls) launch(Dispatchers.IO) {
-                    lookupPool.query(relayUrl, subId, filters, timeoutMs) { msg ->
+                    val outcome = lookupPool.query(relayUrl, subId, filters, timeoutMs) { msg ->
                         handleRawQueryMessage(msg, subId, collected)
                     }
+                    if (outcome == LookupSocketPool.Outcome.EOSE) onAnswered?.invoke()
                     // What has arrived so far, as each relay finishes, so a
                     // caller need not wait for the slowest one.
                     if (onProgress != null && collected.isNotEmpty()) onProgress(collected.values.toList())

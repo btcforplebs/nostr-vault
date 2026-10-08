@@ -108,7 +108,7 @@ fun ProfileScreen(
     // Numbers on each post's buttons, fetched as the posts appear (iOS ProfileView).
     val noteIds = remember(filteredNotes) { filteredNotes.map { it.id } }
     LaunchedEffect(selectedSection, noteIds) {
-        viewModel.loadEngagement(filteredNotes)
+        viewModel.loadEngagement()
     }
     val toast by viewModel.toast.collectAsState()
     val shopListings by viewModel.shopListings.collectAsState()

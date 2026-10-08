@@ -77,18 +77,36 @@ class ProfileViewModel @Inject constructor(
      * is other people's posts, so it is left out, and the media grid has no
      * buttons to put them on. A repost is counted on the note it reposted.
      */
-    fun loadEngagement(notes: List<com.nostrvault.data.model.FeedNote>, force: Boolean = false) {
-        val pk = _pubkey.value
-        val section = _selectedSection.value
-        if (pk.isEmpty() || section == ProfileSection.TAGGED || section == ProfileSection.MEDIA || notes.isEmpty()) return
-        viewModelScope.launch {
-            engagementStore.load(notes.map { it.effectiveEventId }, author = pk, force = force)
+    fun loadEngagement(force: Boolean = false) {
+        // One query at a time: notes stream in, and each new one restarts it
+        // with the whole list rather than adding another (iOS cancels too).
+        // A pull-to-refresh cut short by a restart keeps its force.
+        engagementJob?.cancel()
+        val forced = force || engagementForcePending
+        engagementForcePending = forced
+        engagementJob = viewModelScope.launch {
+            if (!forced) delay(ENGAGEMENT_DEBOUNCE_MS)
+            // Read after the wait, so a tab switch can't pair the new tab
+            // with the old tab's notes.
+            val pk = _pubkey.value
+            val section = _selectedSection.value
+            val notes = filteredNotes.value
+            if (pk.isEmpty() || section == ProfileSection.TAGGED || section == ProfileSection.MEDIA || notes.isEmpty()) {
+                engagementForcePending = false
+                return@launch
+            }
+            engagementStore.load(notes.map { it.effectiveEventId }, author = pk, force = forced)
+            engagementForcePending = false
         }
     }
+    private var engagementJob: kotlinx.coroutines.Job? = null
+    private var engagementForcePending = false
 
     companion object {
         /** Default zap amount (sats) — no per-user setting on Android yet. */
         const val DEFAULT_ZAP_SATS = 21
+        /** Posts arriving within this long of each other share one count query. */
+        private const val ENGAGEMENT_DEBOUNCE_MS = 300L
     }
 
     /** The Shop tab: this person's marketplace listings. */
@@ -281,7 +299,7 @@ class ProfileViewModel @Inject constructor(
         pageToken++
         _isLoadingOlder.value = false
         nostrService.fetchMissingProfiles(listOf(pk), force = true)
-        loadEngagement(filteredNotes.value, force = true)
+        loadEngagement(force = true)
         loadProfile()
         shop.load(pk, force = true)
         loadExtras(pk, force = true)

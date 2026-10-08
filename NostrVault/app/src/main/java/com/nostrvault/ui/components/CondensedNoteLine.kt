@@ -278,6 +278,7 @@ fun CondensedNoteLine(
                             linkURLs = bodyLinks.toSet(),
                             fontSize = bodySize,
                             lineHeight = (bodySize.value + 4).sp,
+                            maxLines = bodyLineLimit,
                             original = line,
                         )
                     } else {
