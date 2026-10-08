@@ -57,14 +57,13 @@ class SetupWizardRelayChoiceTest {
             viewModel.setUseExternalRelay(true)
             assertFalse(WizardStep.IMPORT_NOTES in viewModel.activeSteps)
             assertFalse(WizardStep.MIRROR_MEDIA in viewModel.activeSteps)
-            assertEquals(WizardStep.RELAY_CHOICE, viewModel.activeSteps[2])
+            assertEquals(WizardStep.RELAY_CHOICE, viewModel.activeSteps[1])
         }
     }
 
     @Test
     fun `choosing an external relay saves it before setup completes`() {
-        viewModel.setSetupPath(SetupPath.FULL)
-        viewModel.advanceFromChoosePath()
+        viewModel.choosePath(SetupPath.FULL)
         viewModel.setUseExternalRelay(true)
         viewModel.setExternalRelayInput("127.0.0.1:4869")
         viewModel.advanceFromRelayChoice()
@@ -76,8 +75,7 @@ class SetupWizardRelayChoiceTest {
 
     @Test
     fun `plain ws off the phone is refused`() {
-        viewModel.setSetupPath(SetupPath.BROWSE)
-        viewModel.advanceFromChoosePath()
+        viewModel.choosePath(SetupPath.BROWSE)
         viewModel.setUseExternalRelay(true)
         viewModel.setExternalRelayInput("ws://relay.example")
         viewModel.advanceFromRelayChoice()
@@ -89,8 +87,7 @@ class SetupWizardRelayChoiceTest {
 
     @Test
     fun `a wss relay off the phone is accepted`() {
-        viewModel.setSetupPath(SetupPath.BROWSE)
-        viewModel.advanceFromChoosePath()
+        viewModel.choosePath(SetupPath.BROWSE)
         viewModel.setUseExternalRelay(true)
         viewModel.setExternalRelayInput("wss://relay.mac.example")
         viewModel.setExternalBlossomInput("https://relay.mac.example")
@@ -103,10 +100,20 @@ class SetupWizardRelayChoiceTest {
 
     @Test
     fun `new-to-nostr continues to the intro`() {
-        viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR)
-        viewModel.advanceFromChoosePath()
+        viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
         viewModel.advanceFromRelayChoice()
         assertEquals(WizardStep.NOSTR_INTRO, viewModel.step.value)
         assertFalse(saved.useExternalRelay)
+    }
+
+    @Test
+    fun `every front door choice goes to the relay choice and back to the front door`() {
+        for (path in listOf(SetupPath.FULL, SetupPath.BROWSE, SetupPath.NEW_TO_NOSTR)) {
+            viewModel.choosePath(path)
+            assertEquals(path, viewModel.setupPath.value)
+            assertEquals(WizardStep.RELAY_CHOICE, viewModel.step.value)
+            viewModel.goBack()
+            assertEquals(WizardStep.WELCOME, viewModel.step.value)
+        }
     }
 }
