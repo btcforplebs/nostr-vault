@@ -7,11 +7,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -50,6 +54,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -140,6 +145,10 @@ internal fun ReactionButton(
     isLiked: Boolean,
     onTap: () -> Unit,
     onMore: (() -> Unit)?,
+    /** Likes on a profile post ("64+"); null draws the plain 32dp circle. */
+    count: String? = null,
+    /** [count] as TalkBack reads it. */
+    countDescription: String? = null,
 ) {
     val actions = LocalReactionActions.current
     val myContent by remember(actions, noteId) {
@@ -221,7 +230,7 @@ internal fun ReactionButton(
         }
     }
 
-    val label = shown?.let { "Your reaction: $it" } ?: "React"
+    val label = (shown?.let { "Your reaction: $it" } ?: "React") + (countDescription?.let { ", $it" } ?: "")
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -264,10 +273,14 @@ internal fun ReactionButton(
             }
             .padding(horizontal = 4.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
+        // With a count it becomes a capsule wide enough for the number, as
+        // EngagementButton does; the height stays 32dp either way.
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .size(32.dp)
+                .height(32.dp)
+                .then(if (count == null) Modifier.width(32.dp) else Modifier.widthIn(min = 32.dp))
                 .clip(CircleShape)
                 .background(
                     when (shown) {
@@ -275,7 +288,8 @@ internal fun ReactionButton(
                         "❤️" -> LikeRed.copy(alpha = 0.18f)
                         else -> colors.primary.copy(alpha = 0.18f)
                     },
-                ),
+                )
+                .then(if (count == null) Modifier else Modifier.padding(horizontal = 9.dp)),
         ) {
             if (shown != null && shown != "❤️") {
                 Text(shown, fontSize = 15.sp)
@@ -285,6 +299,16 @@ internal fun ReactionButton(
                     contentDescription = null,
                     tint = if (shown == null) SecondaryText else LikeRed,
                     modifier = Modifier.size(16.dp),
+                )
+            }
+            if (count != null) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = count,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (shown == "❤️") LikeRed else SecondaryText,
+                    maxLines = 1,
                 )
             }
         }

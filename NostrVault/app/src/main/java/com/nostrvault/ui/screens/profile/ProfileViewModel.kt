@@ -60,7 +60,31 @@ class ProfileViewModel @Inject constructor(
     private val feedService: FeedService,
     private val zapSendService: ZapSendService,
     private val configStore: ConfigStore,
+    private val engagementStore: com.nostrvault.service.ProfileEngagementStore,
 ) : ViewModel() {
+
+    /**
+     * Likes, reposts, replies, quotes and zap sats under each post, by post
+     * id; read with [com.nostrvault.service.ProfileEngagementStore.engagement].
+     */
+    val engagementLedgers = engagementStore.ledgers
+
+    fun engagementFor(ledgers: Map<String, com.nostrvault.data.model.EngagementLedger>, id: String) =
+        engagementStore.engagement(ledgers, id)
+
+    /**
+     * Counts for the posts on screen, fetched as they appear. The tagged tab
+     * is other people's posts, so it is left out, and the media grid has no
+     * buttons to put them on. A repost is counted on the note it reposted.
+     */
+    fun loadEngagement(notes: List<com.nostrvault.data.model.FeedNote>, force: Boolean = false) {
+        val pk = _pubkey.value
+        val section = _selectedSection.value
+        if (pk.isEmpty() || section == ProfileSection.TAGGED || section == ProfileSection.MEDIA || notes.isEmpty()) return
+        viewModelScope.launch {
+            engagementStore.load(notes.map { it.effectiveEventId }, author = pk, force = force)
+        }
+    }
 
     companion object {
         /** Default zap amount (sats) — no per-user setting on Android yet. */
@@ -257,6 +281,7 @@ class ProfileViewModel @Inject constructor(
         pageToken++
         _isLoadingOlder.value = false
         nostrService.fetchMissingProfiles(listOf(pk), force = true)
+        loadEngagement(filteredNotes.value, force = true)
         loadProfile()
         shop.load(pk, force = true)
         loadExtras(pk, force = true)

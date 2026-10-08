@@ -102,6 +102,14 @@ fun ProfileScreen(
     val allProfiles by viewModel.profiles.collectAsState()
     val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
+    // Read per row through derivedStateOf, so a relay's answer recomposes
+    // only the rows whose numbers changed.
+    val engagementState = viewModel.engagementLedgers.collectAsState()
+    // Numbers on each post's buttons, fetched as the posts appear (iOS ProfileView).
+    val noteIds = remember(filteredNotes) { filteredNotes.map { it.id } }
+    LaunchedEffect(selectedSection, noteIds) {
+        viewModel.loadEngagement(filteredNotes)
+    }
     val toast by viewModel.toast.collectAsState()
     val shopListings by viewModel.shopListings.collectAsState()
     val shopLoading by viewModel.shopLoading.collectAsState()
@@ -504,6 +512,12 @@ fun ProfileScreen(
                 }
             } else {
                 items(items = filteredNotes, key = { it.id }) { note ->
+                    val engagement by remember(note.effectiveEventId, selectedSection) {
+                        derivedStateOf {
+                            if (selectedSection == ProfileSection.TAGGED) null
+                            else viewModel.engagementFor(engagementState.value, note.effectiveEventId)
+                        }
+                    }
                     NoteCard(
                         note = note,
                         // A repost on this profile is someone else's note:
@@ -523,6 +537,7 @@ fun ProfileScreen(
                         onReply = onReply,
                         onQuote = onQuote,
                         onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                        engagement = engagement,
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }

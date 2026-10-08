@@ -65,11 +65,14 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PostEngagement
 import com.nostrvault.data.model.poll
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -226,6 +229,12 @@ fun NoteCard(
     autoplayVideos: Boolean = false,
     /** With it, an avatar tap opens Follow / Slow down / Block, and the name opens the profile. */
     avatarMenu: AvatarMenuActions? = null,
+    /**
+     * Likes, reposts, replies, quotes and zap sats, where the screen fetched
+     * them (profiles, [com.nostrvault.service.ProfileEngagementStore]). Each
+     * number goes on its own button; null leaves the buttons bare.
+     */
+    engagement: PostEngagement? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -662,6 +671,7 @@ fun NoteCard(
                 onLongPressLike = onLongPressLike,
                 onLongPressZap = onLongPressZap,
                 zapDimmed = zapDimmed,
+                engagement = engagement,
             )
         }
         } // Box (focused tint overlay)
@@ -750,8 +760,10 @@ private fun ArticleInlineBody(
  * active states.
  * Order: Reply → Repost → Quote → Like → Zap.
  *
- * No counts, as on iOS: the numbers belong to the thread view, which shows
- * them as its own row (ThreadNoteEngagementRow, the hero note's stats).
+ * Counts only where the screen fetched [engagement] (profiles), as on iOS:
+ * each button carries its own number ("Reply 5", "Like 64+"), zero shows
+ * none. Elsewhere the numbers belong to the thread view, which shows them as
+ * its own row (ThreadNoteEngagementRow, the hero note's stats).
  *
  * **Five buttons, with Share and Broadcast in the ⋯ menu.** iOS put them in
  * the row and had no ⋯ menu, so a note there could not be reported, blocked
@@ -793,15 +805,24 @@ internal fun EngagementBar(
     onLongPressLike: ((String) -> Unit)? = null,
     onLongPressZap: ((String) -> Unit)? = null,
     zapDimmed: Boolean = false,
+    engagement: PostEngagement? = null,
     modifier: Modifier = Modifier,
 ) {
+    fun label(value: Long) = engagement?.let { postEngagementLabel(value, it.isAtLeast(value)) }
+    fun spoken(value: Long, noun: String) =
+        engagement?.let { postEngagementDescription(value, noun, it.isAtLeast(value)) }
     // No spacing here: each button carries its own 4dp a side inside its tap
     // target, so the drawn gap is still 8dp and the pitch is still 40dp, with
     // no dead strip between two targets. See [EngagementButton].
+    // Five counted buttons do not always fit a 360dp phone ("12+", "2.1k+"…),
+    // so a row with profile counts scrolls rather than clipping Zap.
+    val counted = engagement != null
     Row(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (counted) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
     ) {
         // Reply
         if (onReply != null) {
@@ -811,6 +832,8 @@ internal fun EngagementBar(
                 activeColor = SecondaryText,
                 contentDescription = "Reply",
                 onClick = { onReply.invoke(noteId) },
+                count = engagement?.let { label(it.replies.toLong()) },
+                countDescription = engagement?.let { spoken(it.replies.toLong(), "replies") },
             )
         }
 
@@ -822,6 +845,8 @@ internal fun EngagementBar(
                 activeColor = RepostGreen,
                 contentDescription = if (isReposted) "Reposted" else "Repost",
                 onClick = { onRepost.invoke(noteId) },
+                count = engagement?.let { label(it.reposts.toLong()) },
+                countDescription = engagement?.let { spoken(it.reposts.toLong(), "reposts") },
             )
         }
 
@@ -833,6 +858,8 @@ internal fun EngagementBar(
                 activeColor = SecondaryText,
                 contentDescription = "Quote",
                 onClick = { onQuote.invoke(noteId) },
+                count = engagement?.let { label(it.quotes.toLong()) },
+                countDescription = engagement?.let { spoken(it.quotes.toLong(), "quotes") },
             )
         }
 
@@ -844,6 +871,8 @@ internal fun EngagementBar(
                 isLiked = isLiked,
                 onTap = { onLike.invoke(noteId) },
                 onMore = onLongPressLike?.let { more -> { more(noteId) } },
+                count = engagement?.let { label(it.likes.toLong()) },
+                countDescription = engagement?.let { spoken(it.likes.toLong(), "likes") },
             )
         }
 
@@ -857,12 +886,15 @@ internal fun EngagementBar(
                 onClick = { onZap.invoke(noteId) },
                 onLongClick = onLongPressZap?.let { longPress -> { longPress(noteId) } },
                 dimmed = zapDimmed && !isZapped,
+                count = engagement?.let { label(it.zapSats) },
+                countDescription = engagement?.let { spoken(it.zapSats, "sats zapped") },
             )
         }
 
         // Slack stays here, at the end, rather than being spread between the
-        // buttons — see the arrangement note above.
-        Spacer(Modifier.weight(1f))
+        // buttons — see the arrangement note above. A scrolling row has no
+        // slack to hold.
+        if (!counted) Spacer(Modifier.weight(1f))
     }
 }
 
@@ -876,6 +908,8 @@ internal fun EngagementButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     count: String? = null,
+    /** [count] as TalkBack reads it ("at least 64 likes"). */
+    countDescription: String? = null,
     /** Drawn faint and without the tap pulse: the tap explains why it can't act. */
     dimmed: Boolean = false,
 ) {
@@ -997,6 +1031,8 @@ internal fun EngagementButton(
                 fontWeight = FontWeight.Medium,
                 color = tint,
                 maxLines = 1,
+                modifier = if (countDescription == null) Modifier
+                else Modifier.semantics { this.contentDescription = countDescription },
             )
         }
     }
