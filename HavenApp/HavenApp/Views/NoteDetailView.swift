@@ -2002,6 +2002,9 @@ struct ThreadedReplyNode: View {
 struct NoteDetailViewWrapper: View {
     let noteId: String
     var onDismiss: (() -> Void)? = nil
+    /// Pushed onto an existing navigation stack rather than presented as a
+    /// sheet: no stack of its own and no Done button — Back closes it.
+    var pushed = false
     @State private var resolvedNote: FeedNote?
     @State private var isLoading = true
     @State private var error: String?
@@ -2013,7 +2016,31 @@ struct NoteDetailViewWrapper: View {
     @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
-        NavigationStack {
+        if pushed {
+            content
+                .onAppear { fetchNote() }
+        } else {
+            NavigationStack {
+                content
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                if let onDismiss = onDismiss {
+                                    onDismiss()
+                                } else {
+                                    dismiss()
+                                }
+                            }
+                        }
+                    }
+            }
+            .onAppear {
+                fetchNote()
+            }
+        }
+    }
+
+    private var content: some View {
             Group {
                 if let note = resolvedNote {
                     NoteDetailView(note: note)
@@ -2033,21 +2060,6 @@ struct NoteDetailViewWrapper: View {
                     }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        if let onDismiss = onDismiss {
-                            onDismiss()
-                        } else {
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
-        .onAppear {
-            fetchNote()
-        }
     }
 
     private func fetchNote() {
@@ -2102,7 +2114,9 @@ struct NoteDetailViewWrapper: View {
             filter = ["ids": [hexId], "limit": 1]
         }
 
-        let relays = [configService.config.nostrURL, "wss://relay.primal.net"].compactMap { URL(string: $0) }
+        // The inbox too: mentions, replies, likes and zaps on this device are stored there.
+        let relays = [configService.config.nostrURL, configService.config.nostrURL + "/inbox",
+                      "wss://relay.primal.net"].compactMap { URL(string: $0) }
         guard !relays.isEmpty else { return }
 
         for url in relays {

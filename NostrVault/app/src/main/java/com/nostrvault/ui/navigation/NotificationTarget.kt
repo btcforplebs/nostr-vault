@@ -3,6 +3,12 @@ package com.nostrvault.ui.navigation
 import com.nostrvault.data.model.VaultViewMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * A notification tap that should land on one event in the Relay tab.
@@ -85,4 +91,64 @@ object RelayFocus {
     fun request(request: RelayFocusRequest) { _pending.value = request }
 
     fun consume(): RelayFocusRequest? = _pending.value?.also { _pending.value = null }
+}
+
+/** The fields of a Nostr event a note screen needs, carried in a notification. */
+data class CarriedEvent(
+    val id: String,
+    val pubkey: String,
+    val createdAt: Long,
+    val kind: Int,
+    val tags: List<List<String>>,
+    val content: String,
+)
+
+/**
+ * The post a relay notification opens, carried inside the notification.
+ *
+ * The relay raises its NOTIFY marker only after storing the event, so the app
+ * reads that event — and for a like, zap or repost the post it is about — from
+ * the on-device relay and puts both on the tap intent. The tap then opens the
+ * post from that copy: no relay round trip and no hunt through the Relay tab,
+ * even on a cold start. Same as iOS `NotificationNote`.
+ */
+object NotificationNote {
+    /** Intent extra holding the notifying event, as NIP-01 JSON. */
+    const val EVENT_EXTRA = "notif_event"
+    /** Intent extra holding the post a like, zap or repost is about. */
+    const val TARGET_EXTRA = "notif_target"
+
+    /**
+     * Past this size an event stays out of the intent and the tap loads it by
+     * id. A PendingIntent lives in the system process; a long-form post has
+     * no business there.
+     */
+    const val MAX_ENCODED_CHARS = 32 * 1024
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** The event's JSON for an intent extra, or null if malformed or too big. */
+    fun encode(event: JsonObject): String? {
+        val text = event.toString()
+        if (text.length > MAX_ENCODED_CHARS) return null
+        return text.takeIf { decode(it) != null }
+    }
+
+    /** The event from an intent extra; null for anything that is not a whole event. */
+    fun decode(text: String?): CarriedEvent? {
+        if (text.isNullOrEmpty()) return null
+        val obj = try { json.parseToJsonElement(text) as? JsonObject } catch (_: Exception) { null } ?: return null
+        fun str(key: String) = (obj[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val id = str("id")?.takeIf(NotificationTarget::isHex64) ?: return null
+        val pubkey = str("pubkey")?.takeIf(NotificationTarget::isHex64) ?: return null
+        val createdAt = (obj["created_at"] as? JsonPrimitive)?.longOrNull ?: return null
+        val kind = (obj["kind"] as? JsonPrimitive)?.intOrNull ?: return null
+        val content = str("content") ?: return null
+        val tags = try {
+            (obj["tags"] as? JsonArray)?.map { tag ->
+                (tag as JsonArray).map { (it as JsonPrimitive).content }
+            }
+        } catch (_: Exception) { null } ?: return null
+        return CarriedEvent(id, pubkey, createdAt, kind, tags, content)
+    }
 }

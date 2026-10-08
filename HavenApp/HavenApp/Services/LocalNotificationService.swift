@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -124,7 +125,108 @@ final class LocalNotificationService {
         }
 
         let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
-        deliver(id: id, type: type, name: name, preview: preview, npub: npub)
+        Task { @MainActor in
+            let carried = await Self.carriedNotes(type: type, id: id)
+            deliver(id: id, type: type, name: name, preview: preview, npub: npub, carried: carried)
+        }
+    }
+
+    /// How long the on-device lookup may hold a notification back. The relay
+    /// is in-process and answers in milliseconds; this only bounds a socket
+    /// that never does.
+    private static let carriedLookupTimeout: TimeInterval = 1.5
+
+    /// The event this notification is about, and for a like, zap or repost the
+    /// post it was on, as userInfo entries (see `NotificationNote`). Read from
+    /// this device's relay, which stored the event before raising the marker.
+    /// Empty when the relay does not answer; the tap then loads by id.
+    private static func carriedNotes(type: String, id: String) async -> [String: String] {
+        var carried: [String: String] = [:]
+        let found = await localEvents(ids: [id])
+        guard let event = found[id] else { return carried }
+        carried[NotificationNote.eventKey] = event
+        guard let parsed = NotificationNote.decode(event),
+              let targetId = NotificationNote.targetId(type: type, tags: parsed.tags) else { return carried }
+        if let target = await localEvents(ids: [targetId])[targetId] {
+            carried[NotificationNote.targetKey] = target
+        } else if let note = FeedService.shared.findNote(id: targetId), note.kind != 6,
+                  let target = NotificationNote.encode([
+                      "id": note.id, "pubkey": note.pubkey, "kind": note.kind, "tags": note.tags,
+                      "content": note.content, "created_at": Int64(note.createdAt.timeIntervalSince1970)
+                  ]) {
+            carried[NotificationNote.targetKey] = target
+        }
+        return carried
+    }
+
+    /// Events by id from this device's relay: the inbox, where mentions,
+    /// likes and zaps are stored, and the outbox, which holds your own posts.
+    /// Finishes when both routes have answered.
+    private static func localEvents(ids: [String]) async -> [String: String] {
+        let base = ConfigService.shared.config.nostrURL
+        let routes = [base, base + "/inbox"].compactMap { URL(string: $0) }
+        guard !routes.isEmpty, !ids.isEmpty else { return [:] }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[String: String], Never>) in
+            var found: [String: String] = [:]
+            var finished = 0
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            // Everything below runs on the main queue, so no lock.
+            func finish() {
+                guard !resumed else { return }
+                resumed = true
+                clients.forEach { $0.disconnect() }
+                subs.removeAll()
+                continuation.resume(returning: found)
+            }
+
+            for url in routes {
+                let client = WebSocketClient()
+                client.isTemporary = true
+                clients.append(client)
+                let subId = "notif-\(UUID().uuidString.prefix(6))"
+                client.messageSubject
+                    .receive(on: DispatchQueue.main)
+                    .sink { message in
+                        guard let data = message.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                              let type = json.first as? String,
+                              json[safe: 1] as? String == subId else { return }
+                        if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                           let id = dict["id"] as? String, ids.contains(id),
+                           let encoded = NotificationNote.encode(dict) {
+                            found[id] = encoded
+                        } else if type == "EOSE" || type == "CLOSED" {
+                            finished += 1
+                            if finished >= routes.count || found.count == ids.count { finish() }
+                        }
+                    }
+                    .store(in: &subs)
+                client.$connectionState
+                    .receive(on: DispatchQueue.main)
+                    .sink { state in
+                        switch state {
+                        case .connected:
+                            let req = ["REQ", subId, ["ids": ids, "limit": ids.count]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let text = String(data: data, encoding: .utf8) {
+                                client.send(text: text)
+                            }
+                        case .error:
+                            finished += 1
+                            if finished >= routes.count { finish() }
+                        default:
+                            break
+                        }
+                    }
+                    .store(in: &subs)
+                client.connect(url: url)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + carriedLookupTimeout) { finish() }
+        }
     }
 
     /// How long a DM marker waits for the inbox to decrypt its message.
@@ -163,11 +265,12 @@ final class LocalNotificationService {
         }
     }
 
-    private func deliver(id: String, type: String, name: String?, preview: String, npub: String) {
+    private func deliver(id: String, type: String, name: String?, preview: String, npub: String,
+                         carried: [String: String] = [:]) {
         if appInForeground {
-            showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub)
+            showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub, carried: carried)
         } else {
-            post(id: id, type: type, name: name, preview: preview, npub: npub)
+            post(id: id, type: type, name: name, preview: preview, npub: npub, carried: carried)
         }
     }
 
@@ -226,11 +329,12 @@ final class LocalNotificationService {
     /// Shows the in-app drop-down banner (RelayActivityBanner) for activity that arrives
     /// while the app is foregrounded, tappable to jump straight to the relevant tab/note,
     /// with the same notification sound the system push would have played.
-    private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String) {
+    private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String,
+                                 carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
         let (icon, color) = iconAndColor(for: type)
         RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color) {
-            Self.navigate(type: type, id: id, npub: npub)
+            Self.navigate(type: type, id: id, npub: npub, carried: carried)
         }
         playSound()
     }
@@ -266,13 +370,25 @@ final class LocalNotificationService {
     /// userInfo this service attaches in `post()`. Switches to the tagged account first —
     /// without this, tapping a notification for a non-active whitelisted account would
     /// open the right tab but show the wrong account's data.
-    static func navigate(type: String, id: String, npub: String? = nil) {
+    static func navigate(type: String, id: String, npub: String? = nil, carried: [AnyHashable: Any] = [:]) {
         let currentNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
             ? ConfigService.shared.config.ownerNpub
             : ConfigService.shared.config.activeAccountNpub
         if let npub, !npub.isEmpty, npub != currentNpub {
             ConfigService.shared.switchActiveAccount(to: npub)
         }
+        #if os(iOS)
+        // A post opens straight away in the Feed tab's thread view, from the
+        // copy the notification carries. The Relay tab route below is left for
+        // what has no post to open: a zap on your profile, or an alert raised
+        // before notifications carried their post and naming a like by id only.
+        if let open = NotificationOpen.destination(type: type, id: id, carried: carried) {
+            NotificationOpen.pending = open
+            NotificationCenter.default.post(name: .havenOpenFeed, object: nil)
+            NotificationCenter.default.post(name: .havenOpenNotificationNote, object: nil)
+            return
+        }
+        #endif
         // Every relay-event notification lands on that event in the Relay tab.
         // Mentions and replies used to open the thread sheet over the Feed tab
         // instead, and the others only picked a filter without finding the post.
@@ -296,7 +412,8 @@ final class LocalNotificationService {
         }
     }
 
-    private func post(id: String, type: String, name: String?, preview: String, npub: String) {
+    private func post(id: String, type: String, name: String?, preview: String, npub: String,
+                      carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
 
         let content = UNMutableNotificationContent()
@@ -306,6 +423,7 @@ final class LocalNotificationService {
         content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))
         content.categoryIdentifier = "RELAY_EVENT"
         content.userInfo = ["notif_type": type, "notif_id": id, "notif_npub": npub]
+            .merging(carried) { current, _ in current }
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
         let request = UNNotificationRequest(
@@ -314,5 +432,47 @@ final class LocalNotificationService {
             trigger: trigger
         )
         UNUserNotificationCenter.current().add(request)
+    }
+}
+
+/// The post a tapped notification opens, parked for the Feed tab. A tap on a
+/// cold start lands before the Feed tab exists, so it waits here and the Feed
+/// tab takes it when it appears.
+enum NotificationOpen {
+    /// The post itself, from the copy the notification carried.
+    case note(FeedNote)
+    /// Only its id: the Feed tab pushes a view that loads it.
+    case id(String)
+
+    @MainActor static var pending: NotificationOpen?
+
+    /// Where a tap on a `type` notification goes. Nil when there is no post:
+    /// a zap on a profile, or a like whose event the notification lacks.
+    @MainActor
+    static func destination(type: String, id: String, carried: [AnyHashable: Any]) -> NotificationOpen? {
+        guard ["mention", "reply", "repost", "reaction", "zap"].contains(type) else { return nil }
+        let event = (carried[NotificationNote.eventKey] as? String).flatMap(NotificationNote.decode)
+        guard NotificationNote.opensTarget(type: type) else {
+            return event.map { .note(FeedNote($0)) } ?? .id(id)
+        }
+        if let target = (carried[NotificationNote.targetKey] as? String).flatMap(NotificationNote.decode) {
+            return .note(FeedNote(target))
+        }
+        guard let event, let targetId = NotificationNote.targetId(type: type, tags: event.tags) else { return nil }
+        if let cached = FeedService.shared.findNote(id: targetId) { return .note(cached) }
+        return .id(targetId)
+    }
+}
+
+/// Pushed by the Feed tab for a notification that names its post by id only.
+struct NotificationNoteRoute: Hashable {
+    let id: String
+}
+
+extension FeedNote {
+    init(_ event: NotificationNote.Event) {
+        self.init(id: event.id, pubkey: event.pubkey, content: event.content,
+                  createdAt: Date(timeIntervalSince1970: TimeInterval(event.createdAt)),
+                  tags: event.tags, kind: event.kind)
     }
 }

@@ -86,6 +86,7 @@ struct ContentView: View {
             if RelayFocus.pending != nil {
                 selectedTab = 4 // Relay tab
             }
+            clearCoversForNotificationNote()
             // Replay any queued notification action from a cold start
             if let action = AppDelegate.pendingAction {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -103,6 +104,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeed)) { _ in
             selectedTab = 0 // Feed tab
+            clearCoversForNotificationNote()
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenSearch)) { _ in
             selectedTab = 1 // Search tab
@@ -161,6 +163,18 @@ struct ContentView: View {
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
         }
+    }
+}
+
+extension ContentView {
+    /// A notification's post is about to open in the Feed tab: switch there
+    /// and drop anything that would cover it.
+    fileprivate func clearCoversForNotificationNote() {
+        guard NotificationOpen.pending != nil else { return }
+        selectedTab = 0
+        showingDMInbox = false
+        pendingMentionNoteId = nil
+        pendingProfilePubkey = nil
     }
 }
 
