@@ -92,6 +92,7 @@ import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
 import com.nostrvault.ui.components.CompactNoteCard
 import com.nostrvault.ui.components.CondensedEngagement
+import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.components.RepostPlaceholder
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.ThreadLineAnchor
@@ -311,6 +312,8 @@ fun FeedScreen(
 
     // Broadcast sheet state
     var broadcastNoteId by remember { mutableStateOf<String?>(null) }
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
     var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
     var listingInfoNote by remember { mutableStateOf<FeedNote?>(null) }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -828,6 +831,7 @@ fun FeedScreen(
                                         onLongPressZap = { id -> zapNoteId = id },
                                         onNoLightningAddress = { showNoLightningAddress = true },
                                         onBroadcast = { id -> broadcastNoteId = id },
+                                        onTrustWeb = { author -> trustWebAuthor = author },
                                         onReport = { id -> reportNoteId = id },
                                         onBlock = { id -> blockNoteId = id },
                                         onDelete = { id -> deleteNoteId = id },
@@ -916,6 +920,7 @@ fun FeedScreen(
                                 onLongPressZap = { id -> zapNoteId = id },
                                 onNoLightningAddress = { showNoLightningAddress = true },
                                 onBroadcast = { id -> broadcastNoteId = id },
+                                onTrustWeb = { author -> trustWebAuthor = author },
                                 onReport = { id -> reportNoteId = id },
                                 onBlock = { id -> blockNoteId = id },
                                 onDelete = { id -> deleteNoteId = id },
@@ -1105,6 +1110,16 @@ fun FeedScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { broadcastNoteId = null },
+            onProfileClick = { broadcastNoteId = null; openProfile(it) },
+        )
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = openProfile,
+            onDismiss = { trustWebAuthor = null },
         )
     }
 
@@ -1128,6 +1143,7 @@ fun FeedScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { listingInfoNote = null },
+            onProfileClick = { listingInfoNote = null; openProfile(it) },
         )
     }
 
@@ -1512,6 +1528,7 @@ private fun FeedFullNoteRow(
     onLongPressZap: (String) -> Unit,
     onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
+    onTrustWeb: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -1536,6 +1553,7 @@ private fun FeedFullNoteRow(
             onLongPressZap = onLongPressZap,
             onNoLightningAddress = onNoLightningAddress,
             onBroadcast = onBroadcast,
+            onTrustWeb = onTrustWeb,
             onReport = onReport,
             onBlock = onBlock,
             onDelete = onDelete,
@@ -1592,6 +1610,7 @@ private fun FeedFullNoteRowContent(
     onLongPressZap: (String) -> Unit,
     onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
+    onTrustWeb: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -1684,6 +1703,8 @@ private fun FeedFullNoteRowContent(
         onReply = onReply,
         onQuote = onQuote,
         onBroadcast = onBroadcast,
+        // Your own notes have no path to show.
+        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else onTrustWeb,
         // Every note gets an overflow menu. Gating this on your own notes
         // meant other people's notes had no menu at all, so reporting and
         // blocking were only reachable two navigations deep — from the note

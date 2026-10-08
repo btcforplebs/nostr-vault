@@ -207,6 +207,8 @@ fun NoteCard(
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onBroadcast: ((String) -> Unit)? = null,
+    /** Opens the Web of Trust map for the author's pubkey. Null hides the button (pass null on your own notes). */
+    onTrustWeb: ((String) -> Unit)? = null,
     /**
      * Overflow-menu handlers. The menu is anchored to the card's own button, so
      * the card owns it rather than a screen-level dialog keyed by note id.
@@ -672,6 +674,7 @@ fun NoteCard(
                 onLongPressZap = onLongPressZap,
                 zapDimmed = zapDimmed,
                 engagement = engagement,
+                onTrustWeb = onTrustWeb?.let { open -> { open(note.effectiveAuthor) } },
             )
         }
         } // Box (focused tint overlay)
@@ -758,7 +761,7 @@ private fun ArticleInlineBody(
  * Action button row. Mirrors the iOS feed note layout: capsule-background
  * icon buttons, left-aligned with fixed spacing, with a spring scale-up on
  * active states.
- * Order: Reply → Repost → Quote → Like → Zap.
+ * Order: Reply → Repost → Quote → Like → Zap, then Web of Trust where offered.
  *
  * Counts only where the screen fetched [engagement] (profiles), as on iOS:
  * each button carries its own number ("Reply 5", "Like 64+"), zero shows
@@ -768,7 +771,8 @@ private fun ArticleInlineBody(
  * **Five buttons, with Share and Broadcast in the ⋯ menu.** iOS put them in
  * the row and had no ⋯ menu, so a note there could not be reported, blocked
  * or copied; both apps now use this row plus the menu. Share sits next to
- * Copy link there, where it belongs.
+ * Copy link there, where it belongs. The one addition is Web of Trust (iOS
+ * d584a294), a sixth uncounted 40dp cell: 240dp of the 312dp row.
  *
  * **Every child is unweighted, deliberately.** An equal `weight(1f)` hands each
  * cell the same width whether it needs 32dp or 58dp, and inside a counted cell
@@ -806,6 +810,8 @@ internal fun EngagementBar(
     onLongPressZap: ((String) -> Unit)? = null,
     zapDimmed: Boolean = false,
     engagement: PostEngagement? = null,
+    /** Web of Trust for the author; null on your own notes and where it isn't offered. */
+    onTrustWeb: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     fun label(value: Long) = engagement?.let { postEngagementLabel(value, it.isAtLeast(value)) }
@@ -888,6 +894,18 @@ internal fun EngagementBar(
                 dimmed = zapDimmed && !isZapped,
                 count = engagement?.let { label(it.zapSats) },
                 countDescription = engagement?.let { spoken(it.zapSats, "sats zapped") },
+            )
+        }
+
+        // Web of Trust: how you reach the author. Opens a map, publishes
+        // nothing, so it never shows as active.
+        if (onTrustWeb != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.WebOfTrust,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Web of Trust",
+                onClick = onTrustWeb,
             )
         }
 
