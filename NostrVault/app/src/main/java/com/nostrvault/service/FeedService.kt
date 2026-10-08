@@ -2607,10 +2607,6 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
-    fun markViewed() {
-        _newNoteCount.value = 0
-    }
-
     // ── Scroll position tracking ─────────────────────────────────
 
     fun updateScrollPosition(index: Int, offset: Int) {
@@ -3420,19 +3416,6 @@ class FeedService @Inject constructor(
     // Search
     // ══════════════════════════════════════════════════════════════════
 
-    fun searchDebounced(query: String) {
-        _searchQuery.value = query
-        searchDebounceJob?.cancel()
-        if (query.isBlank()) {
-            clearSearch()
-            return
-        }
-        searchDebounceJob = scope.launch {
-            delay(SEARCH_DEBOUNCE_MS)
-            performSearch(query)
-        }
-    }
-
     fun performSearch(query: String) {
         _isSearching.value = true
         _isSearchActive.value = true
@@ -3486,56 +3469,6 @@ class FeedService @Inject constructor(
         interactionSaveJob?.cancel()
         interactionSaveJob = scope.launch(Dispatchers.IO) {
             engagementTracker.saveInteractionState(state, forKey = key)
-        }
-    }
-
-    fun fetchNoteStats(noteId: String) {
-        scope.launch(Dispatchers.IO) {
-            // Connect to local + inbox relays and query for engagement
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.localInboxURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it.take(1)) }
-            }.distinct()
-
-            val stats = NoteStats()
-            val seenReactions = mutableSetOf<String>()
-            val seenReposts = mutableSetOf<String>()
-            val seenZaps = mutableSetOf<String>()
-
-            for (relayUrl in relayUrls) {
-                val subId = "stats-${UUID.randomUUID().toString().take(8)}"
-                val repostFilter = """{"kinds":[6],"#e":["$noteId"]}"""
-                val reactionFilter = """{"kinds":[7],"#e":["$noteId"]}"""
-                val zapFilter = """{"kinds":[9735],"#e":["$noteId"]}"""
-
-                lookupPool.query(relayUrl, subId, listOf(repostFilter, reactionFilter, zapFilter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                    try {
-                        val parsed = json.parseToJsonElement(msg).jsonArray
-                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                            val eventObj = parsed[2].jsonObject
-                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-
-                            when (kind) {
-                                6 -> seenReposts.add(id)
-                                7 -> seenReactions.add(id)
-                                9735 -> seenZaps.add(id)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-
-            withContext(Dispatchers.Main.immediate) {
-                val merged = NoteStats(
-                    repostCount = seenReposts.size,
-                    reactionCount = seenReactions.size,
-                    zapCount = seenZaps.size,
-                )
-                _noteStats.value = _noteStats.value + (noteId to merged)
-            }
         }
     }
 
@@ -3877,13 +3810,6 @@ class FeedService @Inject constructor(
     // Local relay operations
     // ══════════════════════════════════════════════════════════════════
 
-    fun addLocalRelayIfReady() {
-        val config = configStore.config.value
-        val localUrl = config.nostrURL ?: return
-        if (feedClients.containsKey(localUrl)) return
-        connectFeedRelay(localUrl)
-    }
-
     /**
      * Keeps a copy of a post you liked on your own relay. Its root stores only
      * your events and its inbox only events that tag you, so a liked post
@@ -3895,14 +3821,6 @@ class FeedService @Inject constructor(
         val raw = rawEventCache[noteId] ?: return
         val feedUrl = configStore.config.value.localRelayURL("feed") ?: return
         feedClients[feedUrl]?.send("[\"EVENT\",$raw]")
-    }
-
-    fun sendToLocalRelay(text: String): Boolean {
-        val config = configStore.config.value
-        val localUrl = config.nostrURL ?: return false
-        val client = feedClients[localUrl] ?: return false
-        client.send(text)
-        return true
     }
 
     // ══════════════════════════════════════════════════════════════════
