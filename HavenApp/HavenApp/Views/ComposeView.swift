@@ -1724,7 +1724,7 @@ struct ComposeView: View {
             if let quoted = effectiveQuoteTo {
                 quoteSuffix = "\nnostr:\(quoted.nevent)"
                 finalContent += "\nnostr:\(quoted.nevent)"
-                tags.append(["q", quoted.id, relayHint, quoted.pubkey])
+                tags.append(["q", quoted.id, configService.config.publicRelayHint, quoted.pubkey])
                 if !tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == quoted.pubkey }) {
                     tags.append(["p", quoted.pubkey])
                 }

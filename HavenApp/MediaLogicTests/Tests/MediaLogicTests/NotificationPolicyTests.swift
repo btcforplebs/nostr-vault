@@ -100,7 +100,7 @@ final class NotificationPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             NotificationPolicy.notifyKinds(mentionsOrReplies: false, dms: false, zaps: false, reactions: true, reposts: true),
-            [6, 7]
+            [6, 7, 16]
         )
     }
 
@@ -120,7 +120,7 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertTrue(NotificationPolicy.allowsWithPushOff(type: "giftwrap", appInForeground: true))
         XCTAssertTrue(NotificationPolicy.allowsWithPushOff(type: "dm", appInForeground: true))
         XCTAssertFalse(NotificationPolicy.allowsWithPushOff(type: "giftwrap", appInForeground: false))
-        for type in ["mention", "reply", "zap", "reaction", "repost", "summary"] {
+        for type in ["mention", "reply", "quote", "zap", "reaction", "repost", "summary"] {
             XCTAssertFalse(NotificationPolicy.allowsWithPushOff(type: type, appInForeground: true), type)
         }
     }

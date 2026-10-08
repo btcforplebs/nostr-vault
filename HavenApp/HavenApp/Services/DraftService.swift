@@ -196,8 +196,7 @@ class DraftService: ObservableObject {
         }
 
         if let quoted = quoteTo {
-            let relayHint = ConfigService.shared.config.nostrURL
-            tags.append(["q", quoted.id, relayHint, quoted.pubkey])
+            tags.append(["q", quoted.id, ConfigService.shared.config.publicRelayHint, quoted.pubkey])
         }
 
         for pk in taggedPubkeys {

@@ -524,7 +524,7 @@ extension VaultView {
     /// zap or repost opens the post it targets, since it has no body of its own.
     private func fallbackNoteId(for request: RelayFocusRequest) -> String {
         switch request.type {
-        case "reply", "mention":
+        case "reply", "mention", "quote":
             return request.eventId
         default:
             return focusCandidates(for: request).dropFirst().first ?? request.eventId
