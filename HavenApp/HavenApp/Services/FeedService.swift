@@ -119,7 +119,15 @@ class FeedService: ObservableObject {
         }
     }
     @Published var newNoteCount: Int = 0
-    @Published var pendingNotes: [FeedNote] = []
+    @Published var pendingNotes: [FeedNote] = [] {
+        didSet { refreshVisiblePendingCount() }
+    }
+    /// How many of `pendingNotes` the current feed would actually show. The
+    /// raw list is unfiltered: in Global with the Web of Trust on, most of it
+    /// is outsiders the filter drops, so counting it raw put "12 New Posts"
+    /// on a button that revealed nothing. Same rule as Android's
+    /// `visiblePendingCount`.
+    @Published private(set) var visiblePendingCount: Int = 0
     @Published var likedEventIds: Set<String> = []
     /// The emoji (and kind-7 event) behind each entry of `likedEventIds`.
     @Published var myReactions: [String: EngagementTracker.MyReaction] = [:]
@@ -210,6 +218,54 @@ class FeedService: ObservableObject {
             !zip(newMedia, filteredMediaNotes).allSatisfy({ $0.id == $1.id }) {
             filteredMediaNotes = newMedia
         }
+        refreshVisiblePendingCount()
+    }
+
+    /// Re-counts `visiblePendingCount` through the current feed's filter.
+    /// Runs when the pending list changes and on every recompute, which is
+    /// where the filter's inputs (mode, trust graph, blocked, settings) land.
+    private func refreshVisiblePendingCount() {
+        let count: Int
+        if pendingNotes.isEmpty {
+            count = 0
+        } else {
+            let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+            let authorOf: (String) -> String? = { [unowned self] id in self.findNote(id: id)?.pubkey }
+            if feedMode == .media {
+                count = FeedFilterEngine.filterMediaNotes(
+                    notes: pendingNotes,
+                    blocked: blocked,
+                    wotPubkeys: wotPubkeys,
+                    isGlobalMedia: mediaFeedMode == .global,
+                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+                    throttledPubkeys: [:],
+                    authorOf: authorOf
+                ).count
+            } else {
+                // No throttle: it keeps each author's newest posts, and these
+                // are the newest there are.
+                count = FeedFilterEngine.filterFeedNotes(
+                    notes: pendingNotes,
+                    mode: feedMode,
+                    articlesGlobal: articlesFeedMode == .global,
+                    pollsGlobal: pollsFeedMode == .global,
+                    pollStatus: pollStatusFilter,
+                    blocked: blocked,
+                    showReposts: ConfigService.shared.config.showReposts,
+                    showReplies: ConfigService.shared.config.showReplies,
+                    followedPubkeys: followedPubkeys,
+                    wotPubkeys: wotPubkeys,
+                    popularFilter: popularFilter,
+                    popularNoteScores: popularNoteScores,
+                    throttledPubkeys: [:],
+                    globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
+                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+                    languageOf: { [unowned self] note in self.language(of: note) },
+                    authorOf: authorOf
+                ).count
+            }
+        }
+        if count != visiblePendingCount { visiblePendingCount = count }
     }
 
     /// Detected language per note id (nil inner value: could not be told).
