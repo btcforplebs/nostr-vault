@@ -2,9 +2,11 @@ package com.nostrvault.ui.screens.wallet
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -158,6 +160,13 @@ fun WalletLightningTab(viewModel: WalletViewModel, onNoteClick: (String) -> Unit
                 )
             }
             TextButton(onClick = viewModel::refreshBalance) { Text("Refresh", color = colors.primary) }
+        }
+
+        // Your lightning address from your profile (lud16), as on iOS.
+        val profiles by viewModel.profiles.collectAsState()
+        profiles[viewModel.myPubkey]?.lud16?.trim()?.takeIf { it.isNotEmpty() }?.let { address ->
+            Spacer(Modifier.height(12.dp))
+            LightningAddressRow(address, onCopy = { clipboard.setText(AnnotatedString(address)) })
         }
 
         Spacer(Modifier.height(24.dp))
@@ -685,3 +694,41 @@ private fun transactionSubtitle(tx: WalletTransaction, nowMillis: Long): String 
 
 /** 21000 reads as 21,000 — the digit group is the point of showing it. */
 private fun formatSats(sats: Long): String = "%,d".format(sats)
+
+/** Your lightning address with a copy button that shows a check for 2s. */
+@Composable
+private fun LightningAddressRow(address: String, onCopy: () -> Unit) {
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) { delay(2_000); copied = false }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SecondaryGroupedBg)
+            .border(1.dp, SeparatorColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(start = 12.dp),
+    ) {
+        Icon(
+            NostrVaultIcons.Zap, contentDescription = null,
+            tint = ZapOrange, modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = address,
+            color = SecondaryText, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { onCopy(); copied = true }) {
+            Icon(
+                if (copied) NostrVaultIcons.Check else NostrVaultIcons.Copy,
+                contentDescription = if (copied) "Copied" else "Copy lightning address",
+                tint = if (copied) SuccessGreen else SecondaryText,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}

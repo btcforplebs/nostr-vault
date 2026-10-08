@@ -107,6 +107,7 @@ class ProfileViewModel @Inject constructor(
         const val DEFAULT_ZAP_SATS = 21
         /** Posts arriving within this long of each other share one count query. */
         private const val ENGAGEMENT_DEBOUNCE_MS = 300L
+        private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
     }
 
     /** The Shop tab: this person's marketplace listings. */
@@ -272,6 +273,7 @@ class ProfileViewModel @Inject constructor(
         stream?.close(); stream = null
         pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
+        relayFollowerCount = null
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
         _followersCount.value = null
@@ -344,6 +346,8 @@ class ProfileViewModel @Inject constructor(
                 }
             }
 
+            if (!own) fetchFollowerCount(pk)
+
             // Fetch metadata if missing.
             if (nostrService.profiles.value[pk] == null) {
                 nostrService.fetchMissingProfiles(listOf(pk))
@@ -367,6 +371,32 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    /** Largest NIP-45 COUNT any relay gave for this profile's followers. */
+    @Volatile private var relayFollowerCount: Int? = null
+
+    /**
+     * The streamed kind 3s stop at a page per relay, so they undercount anyone
+     * with more followers. Relays that answer NIP-45 COUNT give the full
+     * number; the largest single answer wins, since relays hold overlapping
+     * subsets and adding them would double-count. Port of iOS
+     * ProfileView.fetchFollowerCount.
+     */
+    private fun fetchFollowerCount(pk: String) {
+        // damus and primal answer COUNT; most other popular relays refuse it.
+        val relays = (COUNT_RELAYS + configStore.config.value.readRelays.take(3))
+            .distinctBy { it.trim().trimEnd('/').lowercase() }
+        val filter = mapOf("kinds" to listOf(3), "#p" to listOf(pk))
+        for (url in relays) viewModelScope.launch {
+            val count = nostrService.countEvents(url, filter) ?: return@launch
+            synchronized(this@ProfileViewModel) {
+                if (_pubkey.value != pk) return@launch
+                val best = maxOf(relayFollowerCount ?: 0, count)
+                relayFollowerCount = best
+                _followersCount.value = maxOf(best, _followersCount.value ?: 0)
+            }
+        }
+    }
+
     private fun startStream(pk: String) {
         val s = nostrService.profileStream(pk)
         s.onNote = { note -> addNote(note) }
@@ -378,8 +408,10 @@ class ProfileViewModel @Inject constructor(
         s.onFollower = { followerPk ->
             // Your ledger's count is exact; the relay sample only stands in
             // when the ledger can't be read.
-            if (followerPubkeys.add(followerPk) && !ownLedgerLoaded) {
-                _followersCount.value = followerPubkeys.size
+            synchronized(this@ProfileViewModel) {
+                if (followerPubkeys.add(followerPk) && !ownLedgerLoaded) {
+                    _followersCount.value = maxOf(followerPubkeys.size, relayFollowerCount ?: 0)
+                }
             }
         }
         s.onEose = { subId ->

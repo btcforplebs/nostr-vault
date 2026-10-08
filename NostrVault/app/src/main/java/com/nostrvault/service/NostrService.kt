@@ -92,6 +92,19 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
+
+        /**
+         * The number in a NIP-45 `["COUNT", subId, {"count": n}]` reply; relays
+         * send it as an integer, a float or a string. Null for anything else.
+         */
+        internal fun countFrom(msg: String): Int? = try {
+            val arr = Json.parseToJsonElement(msg).jsonArray
+            if (arr.size < 3 || arr[0].jsonPrimitive.contentOrNull != "COUNT") null
+            else arr[2].jsonObject["count"]?.jsonPrimitive?.contentOrNull
+                ?.toDoubleOrNull()?.takeIf { it >= 0 }?.toInt()
+        } catch (_: Exception) {
+            null
+        }
         // Profile relays plus Blastr, up to this many. Kind 0 coverage varies
         // wildly: relay.primal.net returns few profiles for an authors filter,
         // and a relay that is down or blocked returns none, so a short list
@@ -2412,6 +2425,21 @@ class NostrService @Inject constructor(
             }
         }
         return collected.values.toList()
+    }
+
+    /**
+     * NIP-45 COUNT for [filter] on one relay, on the pooled lookup socket.
+     * Null when the relay refuses COUNT (most do), doesn't answer in
+     * [timeoutMs], or sends no number.
+     */
+    suspend fun countEvents(relayUrl: String, filter: Map<String, Any>, timeoutMs: Long = 8_000L): Int? {
+        if (!isValidRelayUrl(relayUrl)) return null
+        val subId = "count-${UUID.randomUUID().toString().take(8)}"
+        var count: Int? = null
+        lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), timeoutMs, verb = "COUNT") { msg ->
+            count = countFrom(msg) ?: count
+        }
+        return count
     }
 
     /** Stores an EVENT for [subId]; true once the relay is done (EOSE/CLOSED). */

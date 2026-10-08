@@ -120,6 +120,22 @@ class LookupSocketPoolTest {
     }
 
     @Test
+    fun `a COUNT ends at the relay's COUNT reply and is not CLOSEd`() = runTest {
+        val pool = pool()
+        val got = mutableListOf<String>()
+        val lookup = async { pool.query(relay, "c1", listOf(filter), 8_000, verb = "COUNT") { got += it } }
+        runCurrent()
+        val socket = opened.single()
+        socket.open()
+        runCurrent()
+        assertEquals(listOf("""["COUNT","c1",$filter]"""), socket.sent)
+        socket.relay("""["COUNT","c1",{"count":1234}]""")
+        assertEquals(Outcome.COUNTED, lookup.await())
+        assertEquals(listOf("""["COUNT","c1",{"count":1234}]"""), got)
+        assertFalse("""["CLOSE","c1"]""" in socket.sent)
+    }
+
+    @Test
     fun `a lookup with no EOSE times out and is CLOSEd`() = runTest {
         val pool = pool()
         val lookup = async { pool.query(relay, "s1", listOf(filter), 8_000) {} }
