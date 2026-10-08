@@ -462,6 +462,10 @@ data class HavenConfig(
      * HavenConfig.autoLoadNewPosts.
      */
     val autoLoadNewPosts: Boolean = false,
+    /** Reposts in the feed. Mirrors iOS HavenConfig.showReposts. */
+    val showReposts: Boolean = true,
+    /** Replies in the feed. Mirrors iOS HavenConfig.showReplies. */
+    val showReplies: Boolean = true,
     /**
      * The floating "New Posts" pill over the feed. Off, waiting posts load on
      * pull-to-refresh (or by themselves at the top with Auto-Load). On by
