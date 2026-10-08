@@ -943,25 +943,25 @@ private fun TrustMapCanvas(
 
                 // Lines first, under the dots.
                 val faint = Path(); val strong = Path(); val dashed = Path(); val grey = Path()
-                fun Path.line(vararg points: Offset) {
+                fun Path.line(points: List<Offset>) {
                     moveTo(points[0].x, points[0].y)
                     for (p in points.drop(1)) lineTo(p.x, p.y)
                 }
                 for (pubkey in litBridges) {
                     val p = screen(world(pubkey))
-                    if (pubkey in faceKeys) strong.line(c, p, authorPoint) else faint.line(p, authorPoint)
+                    if (pubkey in faceKeys) strong.line(listOf(c, p, authorPoint)) else faint.line(listOf(p, authorPoint))
                 }
-                if (authorOnRing && frame.center != author) strong.line(c, authorPoint)
+                if (authorOnRing && frame.center != author) strong.line(listOf(c, authorPoint))
                 for (chain in chains) {
                     val b = screen(world(chain.bridge)); val v = screen(world(chain.via))
-                    if (chain.via in faceKeys) dashed.line(c, b, v, authorPoint) else faint.line(v, authorPoint)
+                    if (chain.via in faceKeys) dashed.line(listOf(c, b, v, authorPoint)) else faint.line(listOf(v, authorPoint))
                 }
-                if (frame.center != me) grey.line(screen(world(me)), c)
+                if (frame.center != me) grey.line(listOf(screen(world(me)), c))
                 if (hops == 2 && litBridges.isEmpty() && !authorOnRing && frame.center != author) {
                     when (frame.path.reach) {
-                        TrustPath.Reach.WEB -> dashed.line(c, authorPoint)
+                        TrustPath.Reach.WEB -> dashed.line(listOf(c, authorPoint))
                         TrustPath.Reach.OUTSIDE, TrustPath.Reach.UNKNOWN ->
-                            grey.line(c, screen(TrustMap.polar(TrustMap.angle(author), 1.12)))
+                            grey.line(listOf(c, screen(TrustMap.polar(TrustMap.angle(author), 1.12))))
                         else -> Unit
                     }
                 }
