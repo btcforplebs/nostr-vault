@@ -2,6 +2,7 @@ package com.nostrvault.data.remote
 
 import android.util.Log
 import com.nostrvault.BuildConfig
+import com.nostrvault.data.remote.LocalTls.localTrust
 import com.nostrvault.relay.RelayBlocklist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,11 +20,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 /**
  * Port of WebSocketClient.swift -- OkHttp WebSocket with auto-reconnect.
@@ -83,24 +80,13 @@ class WebSocketClient(
                 .build()
         }
 
-        /** Shared OkHttpClient for localhost / LAN connections with self-signed cert trust. */
+        /** Shared OkHttpClient for this device's relay and LAN relays; trust follows [LocalTls]. */
         val sharedLocalhostClient: OkHttpClient by lazy {
-            val trustManager = object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            }
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(null, arrayOf<TrustManager>(trustManager), null)
             OkHttpClient.Builder()
                 .pingInterval(25, TimeUnit.SECONDS)
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
-                .sslSocketFactory(sslContext.socketFactory, trustManager)
-                .hostnameVerifier { hostname, _ ->
-                    hostname == "127.0.0.1" || hostname == "localhost" ||
-                        hostname.startsWith("192.168.") || hostname.startsWith("10.")
-                }
+                .localTrust()
                 .build()
         }
     }
