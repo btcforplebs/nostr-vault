@@ -155,7 +155,7 @@ final class ProfileEngagementStore: ObservableObject {
         }
         strings += (nostr.relayLists[author] ?? []).prefix(3)
         strings += (nostr.outboxRelays[author] ?? []).prefix(2)
-        strings += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        strings += config.readRelays
 
         var seen = Set<String>()
         return strings

@@ -30,6 +30,11 @@ class RelayRolesTest {
     }
 
     @Test
+    fun `writes fall back to the default broadcast list`() {
+        assertEquals(base.copy().blastrRelays, RelayConfiguration.FALLBACK_WRITE_RELAYS)
+    }
+
+    @Test
     fun `the Haven relay leads both roles`() {
         val config = base.copy(
             macRelayURL = "https://mac.example.com",
