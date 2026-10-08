@@ -57,7 +57,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 
 /**
- * The Trust Path singletons, reached from the card and the map themselves so
+ * The Trust Path singletons, reached from the card and the globe themselves so
  * every place that opens them (Event Info, the post bar) passes only the author.
  */
 @EntryPoint
@@ -79,7 +79,7 @@ internal fun rememberTrustPathServices(): TrustPathEntryPoint {
  * Event Info's Trust Path card: you on the left, the author on the right, and
  * the people you follow who follow them in between. Fixed layout and a single
  * line-draw animation, so nothing keeps redrawing while it's open. Tapping it
- * opens the Web of Trust map ([TrustWebDialog]).
+ * opens the Web of Trust globe ([TrustWebDialog]).
  *
  * Port of iOS Views/TrustPathCard.swift.
  */
@@ -96,7 +96,7 @@ fun TrustPathCard(
     val me = trust.me
 
     var path by remember(author) { mutableStateOf<TrustPath?>(null) }
-    var showingMap by remember { mutableStateOf(false) }
+    var showingGlobe by remember { mutableStateOf(false) }
 
     LaunchedEffect(author) {
         val found = trust.path(author)
@@ -128,11 +128,11 @@ fun TrustPathCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(CardFill)
-            .then(if (opens) Modifier.clickable(role = Role.Button) { showingMap = true } else Modifier)
+            .then(if (opens) Modifier.clickable(role = Role.Button) { showingGlobe = true } else Modifier)
             .padding(14.dp)
             .clearAndSetSemantics {
                 contentDescription = "Trust path. $label"
-                if (opens) onClick(label = "Show your web of trust") { showingMap = true; true }
+                if (opens) onClick(label = "Show your web of trust") { showingGlobe = true; true }
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -170,12 +170,12 @@ fun TrustPathCard(
     }
 
     val shown = path
-    if (showingMap && shown != null) {
+    if (showingGlobe && shown != null) {
         TrustWebDialog(
             author = author,
             initialPath = shown,
             onProfileClick = onProfileClick,
-            onDismiss = { showingMap = false },
+            onDismiss = { showingGlobe = false },
         )
     }
 }
