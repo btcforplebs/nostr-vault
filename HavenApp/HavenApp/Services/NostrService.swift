@@ -1400,6 +1400,90 @@ class NostrService: ObservableObject {
         }
     }
 
+    private var vertexCache = VertexReputation.Cache()
+
+    /// `target`'s follower count from Vertex, the source npub.world uses. Nil
+    /// when Vertex can't answer: no local key (a bunker would be asked to sign
+    /// for every profile opened), no credits, or no answer in time. The
+    /// request is signed by the active account and names `target`.
+    func fetchVertexFollowerCount(target: String, timeout: TimeInterval = 6) async -> Int? {
+        let now = Date()
+        if let cached = vertexCache.followers(for: target, now: now) { return cached }
+        guard vertexCache.shouldAsk(now: now),
+              ConfigService.shared.config.activeSigningMode() == "local",
+              let url = URL(string: VertexReputation.relayURL),
+              let request = signEvent(kind: VertexReputation.requestKind, content: "",
+                                      tags: VertexReputation.requestTags(target: target)),
+              let requestData = try? JSONEncoder().encode(request),
+              let requestDict = try? JSONSerialization.jsonObject(with: requestData) else { return nil }
+        let requestId = request.id
+
+        let reply = await withCheckedContinuation { (continuation: CheckedContinuation<VertexReputation.Reply?, Never>) in
+            let lock = NSLock()
+            var resumed = false
+            let client = WebSocketClient()
+            client.isTemporary = true
+            var subs = Set<AnyCancellable>()
+
+            func finish(_ reply: VertexReputation.Reply?) {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                lock.unlock()
+                DispatchQueue.main.async {
+                    client.disconnect()
+                    subs.removeAll()
+                }
+                continuation.resume(returning: reply)
+            }
+
+            DispatchQueue.main.async {
+                let subId = "vertex-\(UUID().uuidString.prefix(6))"
+                client.messageSubject
+                    .sink { message in
+                        guard let data = message.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                              json.first as? String == "EVENT",
+                              let dict = json[safe: 2] as? [String: Any],
+                              let raw = try? JSONSerialization.data(withJSONObject: dict),
+                              let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                              let str = String(data: raw, encoding: .utf8),
+                              NostrEventVerifier.isValid(json: str),
+                              let reply = VertexReputation.reply(
+                                kind: event.kind, pubkey: event.pubkey, tags: event.tags,
+                                content: event.content, requestId: requestId, target: target
+                              ) else { return }
+                        finish(reply)
+                    }
+                    .store(in: &subs)
+                client.$connectionState
+                    .sink { state in
+                        guard state == .connected else { return }
+                        // Listen first, so a fast answer isn't missed.
+                        let filter: [String: Any] = [
+                            "kinds": [VertexReputation.resultKind, VertexReputation.feedbackKind],
+                            "#e": [requestId],
+                        ]
+                        for message in [["REQ", subId, filter], ["EVENT", requestDict]] as [[Any]] {
+                            if let data = try? JSONSerialization.data(withJSONObject: message),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                    }
+                    .store(in: &subs)
+                client.connect(url: url)
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+            }
+        }
+
+        // No answer in time says nothing about credits; only a reply is kept.
+        guard let reply else { return nil }
+        vertexCache.record(reply, for: target, now: Date())
+        if case .followers(let count) = reply { return count }
+        return nil
+    }
+
     /// Ids of the active account's own reactions (kind 7) to `noteId`, from
     /// the account's relay and the blastr relays. For removing a like saved
     /// before its event id was kept.

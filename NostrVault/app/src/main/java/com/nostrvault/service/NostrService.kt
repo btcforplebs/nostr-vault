@@ -2442,6 +2442,61 @@ class NostrService @Inject constructor(
         return count
     }
 
+    private val vertexCache = com.nostrvault.data.model.VertexReputation.Cache()
+
+    /**
+     * [target]'s follower count from Vertex, the source npub.world uses. Null
+     * when Vertex can't answer: no local key (a bunker or Amber would be asked
+     * to sign for every profile opened), no credits, or no answer in time.
+     * The request is signed by the active account and names [target].
+     * Mirrors iOS NostrService.fetchVertexFollowerCount.
+     */
+    suspend fun fetchVertexFollowerCount(target: String, timeoutMs: Long = 6_000): Int? {
+        val vertex = com.nostrvault.data.model.VertexReputation
+        val now = System.currentTimeMillis()
+        vertexCache.followers(target, now)?.let { return it }
+        if (!vertexCache.shouldAsk(now) || configStore.config.value.activeSigningMode() != "local") return null
+        val request = withContext(Dispatchers.IO) {
+            runCatching { signLocally(vertex.REQUEST_KIND, "", vertex.requestTags(target), forceOwner = false) }.getOrNull()
+        } ?: return null
+
+        val reply = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val client = WebSocketClient(url = vertex.RELAY_URL, scope = this, autoReconnect = false)
+                try {
+                    withTimeoutOrNull(timeoutMs) {
+                        val subId = "vertex-${UUID.randomUUID().toString().take(6)}"
+                        val answer = CompletableDeferred<com.nostrvault.data.model.VertexReputation.Reply>()
+                        val collector = launch {
+                            client.messages.collect { msg ->
+                                val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                if (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull != "EVENT") return@collect
+                                val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                val r = vertex.reply(ev.kind, ev.pubkey, ev.tags, ev.content, request.id, target) ?: return@collect
+                                if (HavenBridge.verifyEvent(obj.toString())) answer.complete(r)
+                            }
+                        }
+                        launch {
+                            client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                            // Listen first, so a fast answer isn't missed.
+                            client.send("""["REQ","$subId",{"kinds":[${vertex.RESULT_KIND},${vertex.FEEDBACK_KIND}],"#e":["${request.id}"]}]""")
+                            client.send("[\"EVENT\",${serializeEvent(request)}]")
+                        }
+                        client.connect()
+                        answer.await().also { collector.cancel() }
+                    }
+                } finally {
+                    client.disconnect()
+                    coroutineContext.cancelChildren()
+                }
+            }
+        } ?: return null // No answer in time says nothing about credits.
+
+        vertexCache.record(reply, target, System.currentTimeMillis())
+        return (reply as? com.nostrvault.data.model.VertexReputation.Reply.Followers)?.count
+    }
+
     /** Stores an EVENT for [subId]; true once the relay is done (EOSE/CLOSED). */
     private fun handleRawQueryMessage(
         msg: String,
