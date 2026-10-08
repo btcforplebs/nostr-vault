@@ -348,8 +348,19 @@ fn add_peer(
         params: Some(serde_json::json!({ "npub": npub })),
     };
     let (tx, mut rx) = tokio::sync::oneshot::channel();
-    control.try_send((request, tx)).map_err(|e| anyhow::anyhow!("node busy or stopped: {e}"))?;
     let end = Instant::now() + ADD_PEER_TIMEOUT;
+    // A full queue is a burst of opens, not a failure: wait for room.
+    let mut message = (request, tx);
+    loop {
+        match control.try_send(message) {
+            Ok(()) => break,
+            Err(tokio::sync::mpsc::error::TrySendError::Full(m)) if Instant::now() < end => {
+                message = m;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => anyhow::bail!("node busy or stopped: {e}"),
+        }
+    }
     let response = loop {
         match rx.try_recv() {
             Ok(response) => break response,
@@ -421,6 +432,97 @@ pub fn init_logging() {
     });
 }
 
+/// C ABI for the iOS app (Swift through a bridging header, `nvfips.h`).
+/// Same calls and return codes as the JNI side. Returned strings are owned
+/// by the caller and freed with `NvFipsFreeString`.
+mod c_api {
+    use super::*;
+    use std::ffi::{CStr, CString, c_char};
+
+    fn arg(p: *const c_char) -> Option<String> {
+        if p.is_null() {
+            return None;
+        }
+        // SAFETY: non-null, and the caller passes a NUL-terminated string.
+        unsafe { CStr::from_ptr(p) }.to_str().ok().map(str::to_owned)
+    }
+
+    fn out(s: String) -> *mut c_char {
+        CString::new(s).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
+    }
+
+    /// A panic must not unwind into Swift; report it as a failure code.
+    fn guarded<T>(fallback: T, f: impl FnOnce() -> T + std::panic::UnwindSafe) -> T {
+        std::panic::catch_unwind(f).unwrap_or(fallback)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsStart(nsec: *const c_char, options_json: *const c_char) -> i32 {
+        init_logging();
+        let Some(nsec) = arg(nsec).map(Zeroizing::new) else { return ERR_CONFIG };
+        let opts_raw = arg(options_json).unwrap_or_default();
+        let opts: StartOptions = if opts_raw.trim().is_empty() {
+            StartOptions::default()
+        } else {
+            match serde_json::from_str(&opts_raw) {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!("mesh options: {e}");
+                    return ERR_CONFIG;
+                }
+            }
+        };
+        guarded(ERR_START, move || match start(&nsec, &opts) {
+            Ok(()) => 0,
+            Err(e) => {
+                tracing::warn!("mesh start failed: {e:#}");
+                ERR_START
+            }
+        })
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsGenerateNsec() -> *mut c_char {
+        guarded(None, || Some(generate_nsec())).map_or(std::ptr::null_mut(), out)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsStatusJSON() -> *mut c_char {
+        out(guarded("{\"running\":false}".to_string(), status_json))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsExport(port: u16) -> i32 {
+        guarded(ERR_START, move || export(port))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsUnexport() -> i32 {
+        guarded(ERR_START, unexport)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsIngress(npub: *const c_char) -> i32 {
+        let Some(npub) = arg(npub) else { return ERR_BAD_NPUB };
+        guarded(ERR_START, move || ingress(&npub))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsStop() {
+        guarded((), stop);
+    }
+
+    /// Free a string returned by this library. Null is ignored.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsFreeString(s: *mut c_char) {
+        if !s.is_null() {
+            // SAFETY: `s` came from `CString::into_raw` in `out`.
+            drop(unsafe { CString::from_raw(s) });
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
 mod jni_api {
     use super::*;
     use jni::JNIEnv;
@@ -554,6 +656,24 @@ mod tests {
         assert_eq!(v["reading"], serde_json::json!([]));
         assert_eq!(v["counters"]["served_open"], 0);
         assert_eq!(v["counters"]["read_rx"], 0);
+    }
+
+    #[test]
+    fn c_api_reports_codes_and_strings() {
+        use std::ffi::{CStr, CString};
+        let status = c_api::NvFipsStatusJSON();
+        assert!(unsafe { CStr::from_ptr(status) }.to_str().unwrap().starts_with("{\"running\":false"));
+        c_api::NvFipsFreeString(status);
+        c_api::NvFipsFreeString(std::ptr::null_mut());
+        let nsec = c_api::NvFipsGenerateNsec();
+        assert!(unsafe { CStr::from_ptr(nsec) }.to_str().unwrap().starts_with("nsec1"));
+        c_api::NvFipsFreeString(nsec);
+        assert_eq!(c_api::NvFipsStart(std::ptr::null(), std::ptr::null()), ERR_CONFIG);
+        let bad = CString::new("{not json").unwrap();
+        let key = CString::new("nsec1x").unwrap();
+        assert_eq!(c_api::NvFipsStart(key.as_ptr(), bad.as_ptr()), ERR_CONFIG);
+        assert_eq!(c_api::NvFipsIngress(std::ptr::null()), ERR_BAD_NPUB);
+        assert_eq!(c_api::NvFipsExport(4869), ERR_NOT_RUNNING);
     }
 
     #[test]

@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 publish = false
 
-# JNI library for the Android app: upstream FIPS embedded in-process with an
+# The mesh library for the app (JNI on Android, C ABI in nvfips.h on iOS): upstream FIPS embedded in-process with an
 # app-owned TUN, and fips-v2's smoltcp stack (included by path, not copied).
 [lib]
 name = "nvfips"
@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
 # headed upstream. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "e7aff30b" }
+fips = { git = "https://github.com/btcforplebs/fips", rev = "cd0a39c8" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
@@ -23,11 +23,11 @@ serde_json = "1"
 serde_yaml = "0.9"
 zeroize = "1"
 socket2 = "0.6"
-jni = "0.21"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
 tracing-android = "0.2"
 
 [profile.release]
