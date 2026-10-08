@@ -103,7 +103,21 @@ enum ModePostPublisher {
             throw PublishError.accountChanged
         }
         nostrService.postEvent(event, directBroadcast: false)
-        let eventDict: [String: Any] = [
+        nostrService.broadcastRawEvent(rawDict(event), extraRelays: extraRelays, onRelayResult: onRelayResult)
+        return event
+    }
+
+    /// Sends `pubkey`'s newest profile (kind 0), exactly as already signed, to
+    /// `relay`. diVine's search and author pages only know profiles that reach
+    /// its own relay, which otherwise happens only for people who have used
+    /// the diVine app. Nothing is signed, so no signer prompt.
+    static func sendProfile(of pubkey: String, to relay: String, nostrService: NostrService) async {
+        guard let profile = await nostrService.fetchNewestReplaceable(kind: 0, for: pubkey, alsoAsk: []) else { return }
+        nostrService.broadcastRawEvent(rawDict(profile), to: [relay])
+    }
+
+    private static func rawDict(_ event: NostrEvent) -> [String: Any] {
+        [
             "id": event.id,
             "pubkey": event.pubkey,
             "created_at": event.created_at,
@@ -112,7 +126,5 @@ enum ModePostPublisher {
             "content": event.content,
             "sig": event.sig
         ]
-        nostrService.broadcastRawEvent(eventDict, extraRelays: extraRelays, onRelayResult: onRelayResult)
-        return event
     }
 }

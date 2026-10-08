@@ -299,7 +299,7 @@ struct DivineComposeView: View {
                     }
                     Task {
                         do {
-                            try await ModePostPublisher.publish(
+                            let event = try await ModePostPublisher.publish(
                                 kind: 34236, content: trimmedCaption, tags: tags,
                                 extraRelays: [ReelsFeedService.divineRelay],
                                 nostrService: nostrService,
@@ -308,6 +308,10 @@ struct DivineComposeView: View {
                                 guard relay == ReelsFeedService.divineRelay, once.claim() else { return }
                                 continuation.resume(returning: (ok, message))
                             }
+                            // Without the profile, diVine shows the post with no
+                            // name and can't find the account in search.
+                            await ModePostPublisher.sendProfile(of: event.pubkey, to: ReelsFeedService.divineRelay,
+                                                                nostrService: nostrService)
                         } catch {
                             guard once.claim() else {
                                 // The sheet already closed on the relay deadline;

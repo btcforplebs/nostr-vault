@@ -313,6 +313,9 @@ class ModeComposeViewModel @Inject constructor(
                     ?: throw IllegalStateException("Couldn't sign the post. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
                 val (accepted, message) = nostrService.publishAwaitingOk(event, Reel.DIVINE_RELAY)
+                // Without the profile, diVine shows the post with no name and
+                // can't find the account in search.
+                nostrService.sendProfileTo(event.pubkey, Reel.DIVINE_RELAY)
                 if (!accepted) {
                     notificationManager.showError(
                         "Posted to your relays, but diVine's relay didn't take it: ${message.ifBlank { "no reason given" }}",
