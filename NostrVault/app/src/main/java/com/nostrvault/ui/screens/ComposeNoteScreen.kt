@@ -89,6 +89,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.nostrvault.data.gif.GifCache
 import javax.inject.Inject
 
 /**
@@ -584,12 +585,13 @@ class ComposeNoteViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val (bytes, mime) = com.nostrvault.data.gif.NostrBuildGifs.download(gif.url)
-                val ext = if (mime == "image/webp") "webp" else "gif"
                 val file = withContext(Dispatchers.IO) {
-                    File(context.cacheDir, "gif-${java.util.UUID.randomUUID()}.$ext").apply { writeBytes(bytes) }
+                    GifCache.newFile(context.cacheDir, mime).apply { writeBytes(bytes) }
                 }
                 if (_attachments.value.size < MAX_ATTACHMENTS) {
                     _attachments.value = _attachments.value + Attachment(uri = Uri.fromFile(file), mimeType = mime)
+                } else {
+                    file.delete()
                 }
             } catch (e: Exception) {
                 _error.value = "Could not fetch GIF: ${e.message ?: "unknown error"}"
@@ -607,7 +609,19 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     fun removeAttachment(id: String) {
+        _attachments.value.firstOrNull { it.id == id }?.let { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
         _attachments.value = _attachments.value.filter { it.id != id }
+    }
+
+    /** The downloaded GIFs behind [attachments]; the upload has its own copy by now. */
+    private fun deleteGifCopies(attachments: List<Attachment>) {
+        attachments.forEach { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
+    }
+
+    /** Leaving without posting: drafts keep only text, so the GIF copies have no further use. */
+    override fun onCleared() {
+        deleteGifCopies(_attachments.value)
+        super.onCleared()
     }
 
     fun setShowBlossomPicker(show: Boolean) {
@@ -854,6 +868,8 @@ class ComposeNoteViewModel @Inject constructor(
                         ErrorStyle.WARNING,
                     )
                     _isPublishing.value = false
+                    // Posted or queued: the upload kept its own copy, so the GIF copies go.
+                    deleteGifCopies(_attachments.value)
                     onPublished()
                     return@launch
                 }
@@ -904,6 +920,8 @@ class ComposeNoteViewModel @Inject constructor(
                     // Delete draft on successful publish
                     autoSaveJob?.cancel()
                     draftService.deleteDraft(draftId)
+                    // Posted or queued: the upload kept its own copy, so the GIF copies go.
+                    deleteGifCopies(_attachments.value)
                     onPublished()
                 } else {
                     Log.e("ComposeNote", "signEventAsync returned null for kind=$eventKind")

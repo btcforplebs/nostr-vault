@@ -144,3 +144,35 @@ object NostrBuildGifs {
         }
     }
 }
+
+/**
+ * The cache files "Save to my Blossom" downloads a picked GIF into. The
+ * upload makes its own copy (a queued post keeps the media by hash, not by
+ * this file), so each one is deleted once the note posts or is queued, when
+ * its attachment is removed or the composer closes, and any left over from
+ * a crash are swept at startup.
+ */
+object GifCache {
+    private const val PREFIX = "gif-"
+
+    fun newFile(cacheDir: java.io.File, mimeType: String): java.io.File =
+        java.io.File(cacheDir, "$PREFIX${java.util.UUID.randomUUID()}.${if (mimeType == "image/webp") "webp" else "gif"}")
+
+    /** Only files this app named, so a sweep never touches anything else in the cache. */
+    fun isGifCacheFile(file: java.io.File): Boolean =
+        file.isFile && file.name.startsWith(PREFIX) && (file.name.endsWith(".gif") || file.name.endsWith(".webp"))
+
+    /** Deletes [uri] if it is one of these files. */
+    fun deleteIfOwned(uri: android.net.Uri, cacheDir: java.io.File) {
+        if (uri.scheme != "file") return
+        deleteIfOwned(java.io.File(uri.path ?: return), cacheDir)
+    }
+
+    /** Deletes [file] only if it is one of these files, directly in [cacheDir]. */
+    fun deleteIfOwned(file: java.io.File, cacheDir: java.io.File): Boolean =
+        file.parentFile?.canonicalPath == cacheDir.canonicalPath && isGifCacheFile(file) && file.delete()
+
+    /** At startup no composer is open, so every one of these is left over. Returns how many went. */
+    fun sweep(cacheDir: java.io.File): Int =
+        cacheDir.listFiles()?.count { isGifCacheFile(it) && it.delete() } ?: 0
+}
