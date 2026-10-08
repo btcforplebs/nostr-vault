@@ -139,9 +139,12 @@ enum ZapHistoryService {
     /// replace it), and each relay is held to the total `limit` it was asked
     /// for, since `limit` is only a request (Tron, #189).
     /// `onProgress`, when given, gets the events so far each time a relay
-    /// finishes, on the main queue, before the final result.
+    /// finishes, on the main queue, before the final result. `onAnswered` is
+    /// called when a relay sends EOSE, so a caller can tell "nothing matched"
+    /// from "no relay answered".
     static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5,
-                      onProgress: (([[String: Any]]) -> Void)? = nil) async -> [[String: Any]] {
+                      onProgress: (([[String: Any]]) -> Void)? = nil,
+                      onAnswered: (() -> Void)? = nil) async -> [[String: Any]] {
         guard !relays.isEmpty else { return [] }
         let perRelayCap = filters.reduce(0) { $0 + (($1["limit"] as? Int) ?? 500) }
         return await withCheckedContinuation { continuation in
@@ -196,6 +199,7 @@ enum ZapHistoryService {
                                 events[id] = event
                             }
                         } else if type == "EOSE" || type == "CLOSED" {
+                            if type == "EOSE" { onAnswered?() }
                             relayDone = true
                             relayFinished()
                         }
