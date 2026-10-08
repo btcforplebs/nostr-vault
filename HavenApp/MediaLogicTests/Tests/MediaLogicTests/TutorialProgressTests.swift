@@ -143,7 +143,12 @@ final class TutorialProgressTests: XCTestCase {
     /// Only a tutorial that can run is offered as next, so the last card
     /// never starts one with nothing to draw.
     func testNextSkipsTutorialsWithoutCards() {
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.feeds.next, .vault)
+        #else
         XCTAssertNil(TutorialID.feeds.next)
+        #endif
+        XCTAssertNil(TutorialID.vault.next)
         XCTAssertNil(TutorialID.importTour.next)
         XCTAssertNil(TutorialID.fillYourVault.next)
     }

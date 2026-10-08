@@ -56,8 +56,15 @@ extension TutorialID {
             #else
             return []
             #endif
+        case .vault:
+            // Its anchors are the iPhone/iPad vault toolbar and Relay button.
+            #if os(iOS)
+            return TutorialContent.vault
+            #else
+            return []
+            #endif
         case .importTour: return TutorialContent.importTour
-        case .fillYourVault, .vault, .walletConnect, .pocketRelay: return []
+        case .fillYourVault, .walletConnect, .pocketRelay: return []
         }
     }
 
@@ -106,6 +113,32 @@ enum TutorialContent {
             anchor: feedToolbar,
             title: "Following, Global and trust",
             body: "On wider feeds you'll see a globe for Global. It shows people your follows follow, your web of trust, so spam stays out. The shield opens it to everyone."
+        ),
+    ]
+
+    /// The vault's top-left pill (Notes, Likes, Zaps, Followers), its
+    /// top-right filters, and the Relay button over the list.
+    static let vaultModes = "vault.modes"
+    static let vaultFilters = "vault.filters"
+    static let vaultRelay = "vault.relay"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "2. Your vault",
+    /// kept to what each part of the screen does, like Feeds.
+    static let vault: [TutorialStep] = [
+        TutorialStep(
+            anchor: vaultModes,
+            title: "Your vault",
+            body: "Your posts, likes, zaps and followers. It's all kept on this phone, not on someone else's server."
+        ),
+        TutorialStep(
+            anchor: vaultFilters,
+            title: "Narrow it down",
+            body: "These change with each tab. On Notes: everything, just yours, posts that mention you, and replies from outside your network."
+        ),
+        TutorialStep(
+            anchor: vaultRelay,
+            title: "Your relay",
+            body: "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work."
         ),
     ]
 
