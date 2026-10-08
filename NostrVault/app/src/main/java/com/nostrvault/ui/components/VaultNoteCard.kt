@@ -256,6 +256,11 @@ private fun CompactLayout(
                     modifier = Modifier.weight(1f, fill = false),
                 )
 
+                if (note.isFromNostrVault) {
+                    Spacer(Modifier.width(4.dp))
+                    NostrVaultBadge(size = 10.dp)
+                }
+
                 Spacer(Modifier.width(4.dp))
 
                 Icon(
@@ -420,6 +425,11 @@ private fun ExpandedLayout(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+
+                    if (note.isFromNostrVault) {
+                        Spacer(Modifier.width(6.dp))
+                        NostrVaultBadge(size = 12.dp)
+                    }
 
                     Spacer(Modifier.width(6.dp))
 
