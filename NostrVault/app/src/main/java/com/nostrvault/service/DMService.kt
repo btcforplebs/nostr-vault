@@ -156,6 +156,45 @@ class DMService @Inject constructor(
     private var hasStarted = false
     private var saveJob: Job? = null
 
+    /**
+     * The account (hex pubkey) whose conversations are in memory, and so the
+     * only cache file they may be written to. Set when they are loaded, not
+     * read at write time: a write landing after a switch used to put one
+     * account's DMs into the other's file.
+     */
+    @Volatile private var loadedCacheKey: String? = null
+
+    init {
+        // Follow account switches, as iOS DMService does. Skips setup's first
+        // account ("" → X) and anything before the inbox has started.
+        scope.launch {
+            var previous = configStore.activeAccountHexPubkey.value
+            configStore.activeAccountHexPubkey.collect { hex ->
+                val switched = previous.isNotEmpty() && hex.isNotEmpty() && hex != previous
+                previous = hex
+                if (switched && hasStarted && hex != loadedCacheKey) switchAccount()
+            }
+        }
+    }
+
+    /** Saves the old account's inbox under its own key, then starts the new one's. */
+    private fun switchAccount() {
+        saveJob?.cancel()
+        val conversations = _conversations.value
+        val oldKey = loadedCacheKey
+        scope.launch(Dispatchers.IO) { if (oldKey != null) writeCache(oldKey, conversations) }
+
+        chatInjectionClient?.disconnect(); chatInjectionClient = null
+        inboxInjectionClient?.disconnect(); inboxInjectionClient = null
+        _conversations.value = emptyList()
+        seenGiftWrapIds.clear()
+        injectedDmIds.clear()
+        openedMessages.clear()
+        sentSelfWrapIds.clear()
+        visibleConversation = null
+        startListening()
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Lifecycle
     // ══════════════════════════════════════════════════════════════════
@@ -1233,9 +1272,11 @@ class DMService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     private fun loadCachedConversations() {
+        val key = currentCacheKey()
+        loadedCacheKey = key
         scope.launch(Dispatchers.IO) {
             try {
-                val key = currentCacheKey()
+                deleteTruncatedKeyCaches()
                 val dir = configStore.config.value.appSupportDir ?: run { Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
                 val file = File(dir, "dm_cache_$key.json")
                 if (!file.exists()) { Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
@@ -1267,7 +1308,8 @@ class DMService @Inject constructor(
                 }
 
                 withContext(Dispatchers.Main.immediate) {
-                    _conversations.value = convos
+                    // A switch while this was reading: the file belongs to the old account.
+                    if (loadedCacheKey == key) _conversations.value = convos
                 }
 
                 if (repaired > 0) {
@@ -1298,8 +1340,12 @@ class DMService @Inject constructor(
     }
 
     private fun writeCacheNow() {
+        val key = loadedCacheKey ?: return
+        writeCache(key, _conversations.value)
+    }
+
+    private fun writeCache(key: String, conversations: List<DMConversation>) {
         try {
-            val key = currentCacheKey()
             val dir = configStore.config.value.appSupportDir ?: return
             val dirFile = File(dir)
             if (!dirFile.exists()) dirFile.mkdirs()
@@ -1307,17 +1353,28 @@ class DMService @Inject constructor(
             val file = File(dir, "dm_cache_$key.json")
             file.writeText(json.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(DMConversation.serializer()),
-                _conversations.value
+                conversations
             ))
         } catch (e: Exception) {
             Log.w(TAG, "DM cache save failed: ${e.message}")
         }
     }
 
-    private fun currentCacheKey(): String {
-        val npub = configStore.config.value.activeAccountNpub
-            ?: configStore.config.value.ownerNpub ?: "default"
-        return npub.take(12)
+    /**
+     * The full hex pubkey of the active account. The old key was the npub's
+     * first 12 characters ("npub1" plus 7), which two accounts could share.
+     */
+    private fun currentCacheKey(): String =
+        configStore.activeAccountHexPubkey.value.ifEmpty { "default" }
+
+    /**
+     * Deletes caches written under the old truncated-npub key. Some hold
+     * another account's DMs (written across a switch); the inbox refetches
+     * from the relays, so nothing is lost.
+     */
+    private fun deleteTruncatedKeyCaches() {
+        val dir = configStore.config.value.appSupportDir ?: return
+        File(dir).listFiles { f -> DMCacheFiles.isTruncatedKeyCache(f.name) }?.forEach { it.delete() }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1507,3 +1564,11 @@ data class DMMessage(
     val isFromMe: Boolean,
     val isNIP04: Boolean = false,
 )
+
+/** Cache file names, kept apart so the old-format rule is unit-tested. */
+internal object DMCacheFiles {
+    /** "dm_cache_npub1xxxxxxx.json": the key before it became the full hex pubkey. */
+    fun isTruncatedKeyCache(name: String): Boolean =
+        name.startsWith("dm_cache_npub1") && name.endsWith(".json") &&
+            name.removePrefix("dm_cache_").removeSuffix(".json").length == 12
+}
