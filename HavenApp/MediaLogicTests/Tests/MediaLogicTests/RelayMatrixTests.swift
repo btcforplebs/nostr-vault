@@ -149,4 +149,16 @@ final class RelayMatrixTests: XCTestCase {
         XCTAssertTrue(RelayMatrix.Problem.noWrite.detail.contains("relay.btcforplebs.com"))
         XCTAssertTrue(RelayMatrix.Problem.noRead.detail.contains("relay.primal.net"))
     }
+
+    func testSearchIsAGridColumn() {
+        XCTAssertTrue(RelayMatrix.Job.columns.contains(.search))
+        XCTAssertFalse(RelayMatrix.Job.advanced.contains(.search))
+        XCTAssertEqual(Set(RelayMatrix.Job.columns + RelayMatrix.Job.advanced), Set(RelayMatrix.Job.allCases))
+    }
+
+    func testAnEditProbesOnlyRelaysWithNoSpeedYet() {
+        let known: Set<String> = [RelayMatrix.key("wss://a.example"), RelayMatrix.key("wss://b.example")]
+        XCTAssertEqual(RelayMatrix.needingProbe(["wss://A.example/", "wss://b.example", "wss://new.example", ""], known: known),
+                       ["wss://new.example"])
+    }
 }
