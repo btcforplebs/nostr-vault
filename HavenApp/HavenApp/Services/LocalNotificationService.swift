@@ -98,6 +98,7 @@ final class LocalNotificationService {
             // Zaps Only mode hard-disables reaction notifications regardless of the stored preference.
             case "reaction":       return !ConfigService.shared.config.zapsOnlyMode && prefs.reactions
             case "repost":         return prefs.reposts
+            case "follow":         return prefs.follows
             // The catch-up backlog count spans every type, so no per-type
             // preference governs it — but turning all of them off must still
             // silence it. It is also meaningless while the app is open: it
@@ -111,9 +112,8 @@ final class LocalNotificationService {
         guard allowed else { return }
         // Nothing from outside your Web of Trust: those were the spam alerts.
         let own: Set<String> = [recipientHex, NostrService.shared.activeHexPubkey]
-        guard NotificationPolicy.authorMayNotify(author, type: type,
-                                                 trusted: FeedService.shared.relayTabTrustedPubkeys(),
-                                                 own: own) else { return }
+        let trusted = FeedService.shared.relayTabTrustedPubkeys()
+        guard NotificationPolicy.authorMayNotify(author, type: type, trusted: trusted, own: own) else { return }
 
         // One summary per absence: record it as soon as it is cleared to fire,
         // so the next background wake's round does not repeat it.
@@ -121,6 +121,15 @@ final class LocalNotificationService {
 
         if type == "dm" || type == "giftwrap" {
             announceDM(id: id, type: type, author: author, recipientHex: recipientHex, npub: npub)
+            return
+        }
+
+        if type == "follow" {
+            if NotificationPolicy.followIsNamed(author, trusted: trusted) {
+                announceFollow(follower: author, npub: npub)
+            } else {
+                announceFoldedFollow(follower: author, npub: npub)
+            }
             return
         }
 
@@ -229,6 +238,78 @@ final class LocalNotificationService {
         }
     }
 
+    /// How long a follow notification waits for the follower's profile.
+    private static let followProfileTimeout: TimeInterval = 3
+
+    /// A new follower is usually a stranger whose profile isn't loaded yet;
+    /// "Someone followed you" says nothing, so fetch the name first. The
+    /// follower's pubkey rides as the id so a tap can open their profile.
+    private func announceFollow(follower: String, npub: String) {
+        Task { @MainActor in
+            let nostr = NostrService.shared
+            if nostr.profiles[follower] == nil {
+                nostr.fetchMissingProfiles(for: [follower])
+                let deadline = Date().addingTimeInterval(Self.followProfileTimeout)
+                while nostr.profiles[follower] == nil, Date() < deadline {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+            deliver(id: follower, type: "follow", name: nostr.profiles[follower]?.bestName, preview: "", npub: npub)
+        }
+    }
+
+    /// Serialises the folded alert's read-then-replace, so two strangers
+    /// arriving together are both counted.
+    private var foldedFollowChain: Task<Void, Never>?
+
+    /// A stranger's follow joins one nameless "N new followers" alert per
+    /// account (NotificationPolicy.followIsNamed). The count and the latest
+    /// strangers ride in its userInfo, so the count survives a relaunch, and
+    /// once the alert is tapped or swiped away the next stranger starts it
+    /// over. Only the first stranger makes a sound: each later one just
+    /// changes the number, so a burst of follows buzzes the phone once.
+    private func announceFoldedFollow(follower: String, npub: String) {
+        guard NotificationPolicy.isPubkeyHex(follower) else { return }
+        let previous = foldedFollowChain
+        foldedFollowChain = Task { @MainActor in
+            await previous?.value
+            let id = "followers-\(npub)"
+            let showing = await Self.foldedFollowersShowing(identifier: "haven-relay-\(id)")
+            let folded = NotificationPolicy.foldedFollowers(showing: showing, adding: follower)
+            let (title, body) = NotificationPolicy.foldedFollowersText(count: folded.count)
+            let extra: [String: Any] = [Self.foldedFollowersKey: folded.members,
+                                        Self.foldedFollowerCountKey: folded.count]
+            if appInForeground {
+                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub)
+                // The alert waiting in Notification Center still counts too,
+                // or its number would go backwards after the next stranger.
+                if showing.isShowing {
+                    await post(id: id, type: "followers", title: title, body: body, npub: npub, extra: extra, quiet: true)
+                }
+            } else {
+                await post(id: id, type: "followers", title: title, body: body, npub: npub,
+                           extra: extra, quiet: showing.isShowing)
+            }
+        }
+    }
+
+    private static let foldedFollowersKey = "notif_followers"
+    private static let foldedFollowerCountKey = "notif_follower_count"
+    /// A replacement that only updates what is on screen: no sound, no banner.
+    static let quietKey = "notif_quiet"
+
+    /// What the folded alert on screen (or about to be) already counts.
+    private static func foldedFollowersShowing(identifier: String) async -> NotificationPolicy.FoldedFollowers {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+            .first { $0.identifier == identifier }?.content.userInfo
+        let delivered = await center.deliveredNotifications()
+            .first { $0.request.identifier == identifier }?.request.content.userInfo
+        guard let info = pending ?? delivered else { return .init() }
+        let members = (info[foldedFollowersKey] as? [String]) ?? []
+        return .init(members: members, count: (info[foldedFollowerCountKey] as? Int) ?? members.count)
+    }
+
     /// How long a DM marker waits for the inbox to decrypt its message.
     private static let dmOpenTimeout: TimeInterval = 3
     /// The wait while a DM thread is open: a slow decrypt there must end with
@@ -319,6 +400,8 @@ final class LocalNotificationService {
                     "Tap to view your note")
         case "repost":
             return ("\(who) reposted your note", "Tap to view")
+        case "follow":
+            return ("\(who) followed you", "Tap to see their profile")
         case "summary":
             return ("Catching up", preview.isEmpty ? "New activity while you were away" : preview)
         default:
@@ -332,6 +415,11 @@ final class LocalNotificationService {
     private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String,
                                  carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
+        showInAppBanner(id: id, type: type, title: title, body: body, npub: npub, carried: carried)
+    }
+
+    private func showInAppBanner(id: String, type: String, title: String, body: String, npub: String,
+                                 carried: [String: String] = [:]) {
         let (icon, color) = iconAndColor(for: type)
         RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color) {
             Self.navigate(type: type, id: id, npub: npub, carried: carried)
@@ -360,6 +448,7 @@ final class LocalNotificationService {
         case "zap":            return ("bolt.fill", Color.orange)
         case "reaction":       return ("heart.fill", Color.pink)
         case "repost":         return ("arrow.2.squarepath", Color(red: 0.2, green: 0.8, blue: 0.6))
+        case "follow", "followers": return ("person.badge.plus", Color.havenPurple)
         case "summary":        return ("clock.arrow.circlepath", Color.gray)
         default:               return ("bell.fill", Color.gray)
         }
@@ -402,6 +491,17 @@ final class LocalNotificationService {
         case "zap":
             NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
             RelayFocus.request(type: type, eventId: id)
+        case "follow":
+            // The id is the follower's pubkey (announceFollow): their profile
+            // opens over whatever tab is showing, and the Relay tab, if built,
+            // switches to its Followers list behind it.
+            NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
+            RelayFocus.request(type: "followers", eventId: "")
+            NotificationCenter.default.post(name: .havenOpenProfile, object: id)
+        case "followers":
+            // The folded strangers' alert: their list, nobody named.
+            NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
+            RelayFocus.request(type: "followers", eventId: "")
         case "dm", "giftwrap":
             // Straight to the conversation when the inbox has the message;
             // the object is the counterparty the inbox should open.
@@ -415,15 +515,28 @@ final class LocalNotificationService {
     private func post(id: String, type: String, name: String?, preview: String, npub: String,
                       carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
+        post(id: id, type: type, title: title, body: body, npub: npub, extra: carried)
+    }
 
+    private func post(id: String, type: String, title: String, body: String, npub: String,
+                      extra: [String: Any] = [:], quiet: Bool = false) {
+        Task { await post(id: id, type: type, title: title, body: body, npub: npub, extra: extra, quiet: quiet) }
+    }
+
+    /// Returns once the system has filed the request, so the folded alert's
+    /// next read-back sees it (announceFoldedFollow).
+    private func post(id: String, type: String, title: String, body: String, npub: String,
+                      extra: [String: Any] = [:], quiet: Bool = false) async {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
-        content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))
+        if !quiet {
+            let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))
+        }
         content.categoryIdentifier = "RELAY_EVENT"
-        content.userInfo = ["notif_type": type, "notif_id": id, "notif_npub": npub]
-            .merging(carried) { current, _ in current }
+        content.userInfo = ["notif_type": type, "notif_id": id, "notif_npub": npub, Self.quietKey: quiet]
+            .merging(extra) { current, _ in current }
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
         let request = UNNotificationRequest(
@@ -431,7 +544,11 @@ final class LocalNotificationService {
             content: content,
             trigger: trigger
         )
-        UNUserNotificationCenter.current().add(request)
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            print("LocalNotificationService: Failed to show '\(type)' notification: \(error)")
+        }
     }
 }
 

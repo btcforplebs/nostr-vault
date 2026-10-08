@@ -117,6 +117,7 @@ struct AccountNotificationSection: View {
                 Toggle("Reactions", isOn: prefs.reactions)
             }
             Toggle("Reposts", isOn: prefs.reposts)
+            Toggle("New Followers", isOn: prefs.follows)
         } header: {
             HStack(spacing: 8) {
                 let hex = Bech32.decode(npub)?.hexString ?? ""

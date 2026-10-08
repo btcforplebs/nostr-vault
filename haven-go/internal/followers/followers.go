@@ -9,7 +9,11 @@
 // it has already seen:
 //
 //   - New:       first time we see this pubkey's list tag the owner.
-//   - Returning: the pubkey had unfollowed and its list tags the owner again.
+//   - Returning: the pubkey had unfollowed and its list tags the owner again,
+//     after staying away at least flapWindow. A quicker comeback is a flap
+//     (one client dropped you, another put you back) and is restored silently.
+//     The gap is measured between the two lists' created_at, never on our
+//     clock: a phone relay may read a minute-apart flap days apart.
 //   - Refresh:   the pubkey already follows; a newer list still tags the owner.
 //     Counted (churn), never announced.
 //   - Existing:  the list predates the ledger, so the follow is old news.
@@ -51,6 +55,12 @@ func (c Change) String() string {
 // churnWindow is how far back list republishes are counted for churn.
 const churnWindow = 24 * time.Hour
 
+// flapWindow is how long an unfollow must last before a re-follow is news.
+// Clients that publish partial lists (a second device with a stale copy, a
+// half-loaded list) drop the owner and put them back within minutes or hours;
+// counting each of those as a return re-announced the same people all day.
+const flapWindow = 7 * 24 * time.Hour
+
 // maxVersions bounds the per-record churn history.
 const maxVersions = 64
 
@@ -64,6 +74,10 @@ type Record struct {
 	FollowedAt int64 `json:"followed_at"`
 	// UnfollowedAt is our clock when we saw them drop the owner; 0 while following.
 	UnfollowedAt int64 `json:"unfollowed_at,omitempty"`
+	// UnfollowListAt is created_at of the list that dropped the owner: the
+	// flap window is measured from it. 0 while following, and on records an
+	// older ledger wrote (whose comebacks then count as returns, as before).
+	UnfollowListAt int64 `json:"unfollow_list_at,omitempty"`
 	// Follows counts follow starts we witnessed (1 = never left).
 	Follows int `json:"follows"`
 	// Existing marks a follow that predates the ledger: not news.
@@ -198,14 +212,19 @@ func (l *Ledger) ObserveList(owner, follower string, createdAt int64, tagsOwner 
 	switch {
 	case tagsOwner && r.Following():
 		return Refresh
+	case tagsOwner && r.UnfollowListAt > 0 && createdAt-r.UnfollowListAt < int64(flapWindow/time.Second):
+		// A flap: the follow never really ended. Restore it as it was.
+		r.UnfollowedAt, r.UnfollowListAt = 0, 0
+		return Refresh
 	case tagsOwner:
-		r.UnfollowedAt = 0
+		r.UnfollowedAt, r.UnfollowListAt = 0, 0
 		r.FollowedAt = now
 		r.Follows++
 		r.Existing = false
 		return Returning
 	case r.Following():
 		r.UnfollowedAt = now
+		r.UnfollowListAt = createdAt
 		return Unfollow
 	default:
 		return Ignored // still not following; list changed for other reasons
@@ -289,6 +308,20 @@ func (l *Ledger) SweepTargets(owner string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Spam reports whether owner's follower is spam-tier right now (follow-
+// everyone list or constant republishing), ignoring web of trust: such a
+// follow is never worth a notification.
+func (l *Ledger) Spam(owner, follower string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.owners[owner]
+	if b == nil {
+		return false
+	}
+	r := b.Followers[follower]
+	return r != nil && Classify(r, false, l.now()) == TierSpam
 }
 
 // Tier sorts a follower into a trust bucket.

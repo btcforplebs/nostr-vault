@@ -153,6 +153,15 @@ object DeepLinkRouter {
             // notification lacks — its own id names the like, not the post.
             in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
                 ?.let { postTarget(type, it, account, event, target) }
+            // A new follower opens their profile; the author is the follower.
+            "follow" -> author?.takeIf { isHex64(it) }
+                ?.let { DeepLinkTarget(Screen.Profile.createRoute(it), account) }
+            // The folded strangers' alert names nobody: their Followers list.
+            NotificationTarget.FOLLOWERS -> DeepLinkTarget(
+                route = Screen.Dashboard.route,
+                accountNpub = account,
+                relayFocus = RelayFocusRequest(type = NotificationTarget.FOLLOWERS, eventId = ""),
+            )
             // The catch-up marker deliberately has no event id.
             "summary" -> DeepLinkTarget(Screen.Feed.route, account)
             else -> null

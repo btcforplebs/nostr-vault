@@ -222,7 +222,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        // A quiet replacement only updates the count already in Notification
+        // Center (LocalNotificationService.announceFoldedFollow).
+        let quiet = notification.request.content.userInfo[LocalNotificationService.quietKey] as? Bool ?? false
+        completionHandler(quiet ? [.list] : [.banner, .sound])
     }
 
     nonisolated func userNotificationCenter(

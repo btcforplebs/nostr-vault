@@ -365,6 +365,9 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .followers }
+        }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
             set: { showingProfilePubkey = $0?.id }
@@ -814,6 +817,9 @@ struct VaultView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .followers }
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },

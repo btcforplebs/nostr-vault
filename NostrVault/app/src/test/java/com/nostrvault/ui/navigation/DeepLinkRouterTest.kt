@@ -1,5 +1,6 @@
 package com.nostrvault.ui.navigation
 
+import com.nostrvault.data.model.VaultViewMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -154,6 +155,21 @@ class DeepLinkRouterTest {
         // The marker's author is the one-time wrapping key, not the sender.
         val target = DeepLinkRouter.fromNotification("giftwrap", hexNote, hexAuthor, null)
         assertEquals(Screen.DMInbox.route, target?.route)
+    }
+
+    @Test fun `a new follower notification opens the follower's profile`() {
+        val target = DeepLinkRouter.fromNotification("follow", hexNote, hexAuthor, "npub1abc")
+        assertEquals(Screen.Profile.createRoute(hexAuthor), target?.route)
+        assertEquals("npub1abc", target?.accountNpub)
+        assertNull(target?.relayFocus)
+    }
+
+    @Test fun `the folded new-followers alert opens the Followers list`() {
+        val target = DeepLinkRouter.fromNotification("followers", "followers-npub1abc", "", "npub1abc")
+        assertEquals(Screen.Dashboard.route, target?.route)
+        assertEquals("npub1abc", target?.accountNpub)
+        assertEquals(RelayFocusRequest(type = "followers", eventId = ""), target?.relayFocus)
+        assertEquals(VaultViewMode.FOLLOWERS, NotificationTarget.viewFor("followers", zapsOnly = false))
     }
 
     @Test fun `the catch-up summary carries no event id and opens the feed`() {

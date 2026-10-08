@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -29,7 +30,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.LinkedHashSet
 import javax.inject.Inject
@@ -58,6 +63,12 @@ class LocalNotificationService @Inject constructor(
     private val dmService: Lazy<DMService>,
     private val feedService: Lazy<FeedService>,
 ) {
+    /** Who the folded strangers' alert counts, and how many. */
+    data class FoldedFollowers(val members: List<String> = emptyList(), val count: Int = 0) {
+        /** Already on screen: an update to it changes the number, silently. */
+        val isShowing: Boolean get() = count > 0
+    }
+
     companion object {
         private const val TAG = "LocalNotif"
         private const val MARKER = "🔔NOTIFY|"
@@ -66,6 +77,7 @@ class LocalNotificationService @Inject constructor(
         /** How long a DM marker waits for the inbox to decrypt its message. */
         private const val DM_OPEN_TIMEOUT_MS = 3_000L
         private const val CARRIED_LOOKUP_TIMEOUT_MS = 1_500L
+        private const val FOLLOW_PROFILE_TIMEOUT_MS = 3_000L
         /**
          * The wait while a DM thread is open: a slow decrypt there (Amber) must
          * end with the message appearing in the thread, not a generic alert first.
@@ -82,13 +94,49 @@ class LocalNotificationService @Inject constructor(
          * service that signed the receipt, not the zapper; the relay already
          * admitted the receipt by the zapper's own standing (haven-go
          * zapimport.go inboxTrustKey), so it is not judged again. iOS:
-         * NotificationPolicy.authorMayNotify.
+         * NotificationPolicy.authorMayNotify. Follows pass as well: they are
+         * never dropped for trust, only told differently ([followIsNamed]).
          */
         fun authorMayNotify(author: String, type: String, trusted: Set<String>, own: Set<String>): Boolean {
-            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap") return true
+            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow") return true
             if (trusted.isEmpty() || author in own) return true
             return author in trusted
         }
+
+        /**
+         * Whether a new follower is announced by name. Only someone in your Web
+         * of Trust is; anyone else, and everyone while the graph is empty (a
+         * brand-new account), is folded into one nameless "N new followers"
+         * alert: a stranger's follow is the cheapest event to forge, so it must
+         * not put a chosen name or picture on the lock screen, but you still
+         * hear that you gained followers. iOS NotificationPolicy.followIsNamed.
+         */
+        fun followIsNamed(follower: String, trusted: Set<String>): Boolean = follower in trusted
+
+        /**
+         * The folded alert once [follower] joins it. [showing] is the alert
+         * still on screen (empty once tapped or cleared, so the count starts
+         * over). Only the latest [cap] strangers ride along, so the alert stays
+         * small however many follow; they exist to count a repeat once, and the
+         * count itself is stored apart from them. iOS NotificationPolicy.foldedFollowers.
+         */
+        fun foldedFollowers(showing: FoldedFollowers, follower: String, cap: Int = 32): FoldedFollowers {
+            val count = maxOf(showing.count, showing.members.size)
+            val members = (showing.members.filter { it != follower } + follower).takeLast(cap)
+            return FoldedFollowers(members, if (follower in showing.members) count else count + 1)
+        }
+
+        /** Title and text of the folded strangers' alert. */
+        fun foldedFollowersText(count: Int): Pair<String, String> =
+            if (count <= 1) "New follower" to "Someone new followed you. Tap to see your followers."
+            else "$count new followers" to "Tap to see your followers"
+
+        private const val FOLDED_FOLLOWERS_KEY = "nv_folded_followers"
+        private const val FOLDED_FOLLOWER_COUNT_KEY = "nv_folded_follower_count"
+        private const val FOLD_FILED_TIMEOUT_MS = 1_000L
+
+        /** A follower key as the relay marker should carry it: 64 hex characters. */
+        fun isPubkeyHex(s: String): Boolean = s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
         /**
          * Whether a marker may be shown while phone notifications are switched
@@ -149,7 +197,7 @@ class LocalNotificationService @Inject constructor(
                 "Mentions & messages",
                 previous?.importance ?: SystemNotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Mentions, replies, DMs, zaps, reactions, and reposts"
+                description = "Mentions, replies, DMs, zaps, reactions, reposts, and new followers"
                 enableVibration(previous?.shouldVibrate() ?: true)
                 previous?.vibrationPattern?.let { vibrationPattern = it }
                 previous?.let {
@@ -236,6 +284,7 @@ class LocalNotificationService @Inject constructor(
             "zap" -> prefs.zaps
             "reaction" -> prefs.reactions
             "repost" -> prefs.reposts
+            "follow" -> prefs.follows
             // The catch-up backlog count spans every type, so no per-type
             // preference governs it — but turning all of them off must still
             // silence it. It is also meaningless while the app is open: it
@@ -250,13 +299,19 @@ class LocalNotificationService @Inject constructor(
 
         // Nothing from outside your Web of Trust: those were the spam alerts.
         val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
-        if (!authorMayNotify(author, type, trustedAuthors(), own)) {
+        val trusted = trustedAuthors()
+        if (!authorMayNotify(author, type, trusted, own)) {
             Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
             return
         }
 
         if (isDm(type)) {
             announceDm(id, type, author, recipientHex, npub)
+            return
+        }
+
+        if (type == "follow") {
+            if (followIsNamed(author, trusted)) announceFollow(author, npub) else announceFoldedFollow(author, npub)
             return
         }
 
@@ -295,6 +350,77 @@ class LocalNotificationService @Inject constructor(
                 ?.let { carried[NotificationNote.TARGET_EXTRA] = it }
         }
         return carried
+    }
+
+    /**
+     * A new follower is usually a stranger whose profile isn't loaded yet, and
+     * "Someone followed you" says nothing — fetch the name first, briefly.
+     * Keyed by the follower, not the list event, so a repeat replaces the
+     * earlier notification instead of stacking (iOS announceFollow).
+     */
+    private fun announceFollow(follower: String, npub: String) {
+        if (follower.length != 64) return
+        scope.launch {
+            val nostr = nostrService.get()
+            if (nostr.profiles.value[follower] == null) {
+                nostr.fetchMissingProfiles(listOf(follower))
+                withTimeoutOrNull(FOLLOW_PROFILE_TIMEOUT_MS) {
+                    while (nostr.profiles.value[follower] == null) delay(250)
+                }
+            }
+            val profile = nostr.profiles.value[follower]
+            val (title, text) = buildContent("follow", profile?.bestName, "")
+            post(follower, title, text, "follow", follower, npub, profile?.pictureURL)
+        }
+    }
+
+    /** Serialises the folded alert's read-then-replace, so two strangers arriving together both count. */
+    private val foldedFollowLock = Mutex()
+
+    /**
+     * A stranger's follow joins one nameless "N new followers" alert per
+     * account ([followIsNamed]). The count and the latest strangers ride in its
+     * extras, so the count survives the process, and once the alert is tapped
+     * or swiped away the next stranger starts it over. Only the first stranger
+     * makes a sound (setOnlyAlertOnce): each later one just changes the number,
+     * so a burst of follows buzzes the phone once. iOS announceFoldedFollow.
+     */
+    private fun announceFoldedFollow(follower: String, npub: String) {
+        if (!isPubkeyHex(follower)) return
+        scope.launch {
+            foldedFollowLock.withLock {
+                val id = "followers-$npub"
+                val folded = foldedFollowers(foldedFollowersShowing(id), follower)
+                val (title, text) = foldedFollowersText(folded.count)
+                postNow(id, title, text, "followers", "", npub, null,
+                    Bundle().apply {
+                        putStringArray(FOLDED_FOLLOWERS_KEY, folded.members.toTypedArray())
+                        putInt(FOLDED_FOLLOWER_COUNT_KEY, folded.count)
+                    },
+                    alertOnce = true)
+                awaitFiled(id)
+            }
+        }
+    }
+
+    /**
+     * notify() only queues the post; wait (briefly) until the system lists it,
+     * so the next stranger's read-back counts this one.
+     */
+    private suspend fun awaitFiled(id: String) {
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return
+        withTimeoutOrNull(FOLD_FILED_TIMEOUT_MS) {
+            while (mgr.activeNotifications.none { it.id == id.hashCode() }) delay(25)
+        }
+    }
+
+    /** What the folded alert still on screen already counts. */
+    private fun foldedFollowersShowing(id: String): FoldedFollowers {
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return FoldedFollowers()
+        val extras = mgr.activeNotifications.firstOrNull { it.id == id.hashCode() }
+            ?.notification?.extras ?: return FoldedFollowers()
+        val members = extras.getStringArray(FOLDED_FOLLOWERS_KEY)?.toList() ?: emptyList()
+        return FoldedFollowers(members, extras.getInt(FOLDED_FOLLOWER_COUNT_KEY, members.size))
     }
 
     /**
@@ -383,6 +509,7 @@ class LocalNotificationService @Inject constructor(
             "zap" -> "⚡ New zap" to if (name != null) "$who zapped you" else "You received a zap"
             "reaction" -> "$who reacted ${preview.ifBlank { "❤️" }}" to "Tap to view your note"
             "repost" -> "$who reposted your note" to "Tap to view"
+            "follow" -> "$who followed you" to "Tap to see their profile"
             "summary" -> "Catching up" to preview.ifBlank { "New activity while you were away" }
             else -> "New activity" to "Tap to view"
         }
@@ -416,6 +543,14 @@ class LocalNotificationService @Inject constructor(
         pictureUrl: String?,
         carried: Map<String, String> = emptyMap(),
     ) {
+        scope.launch { postNow(id, title, text, type, author, npub, pictureUrl, carried = carried) }
+    }
+
+    private suspend fun postNow(
+        id: String, title: String, text: String, type: String, author: String, npub: String,
+        pictureUrl: String?, extras: Bundle? = null, alertOnce: Boolean = false,
+        carried: Map<String, String> = emptyMap(),
+    ) {
         ensureChannel()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -447,34 +582,35 @@ class LocalNotificationService @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        // Fetch the sender's avatar off the poll loop, then post. Android tints the
-        // small icon to a flat silhouette everywhere it appears, reading only alpha,
-        // so it has to be ic_notification rather than the full-colour launcher art;
-        // the large icon is the sender's profile picture when we have one.
-        scope.launch {
-            val largeIcon = loadAvatar(pictureUrl)
-            // Resolved after the avatar fetch: a sound picked meanwhile has
-            // retired the channel that was current when this started.
-            val channelId = ensureChannel()
-            val notification = NotificationCompat.Builder(context, channelId)
-                // Status-bar icons are drawn from alpha only, so use the
-                // purpose-built 24dp silhouette rather than the full-colour
-                // foreground, which flattens to a solid blob.
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-                .setContentIntent(pending)
-                .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
-                .build()
+        // Fetch the sender's avatar (off the poll loop: callers launch this), then
+        // post. Android tints the small icon to a flat silhouette everywhere it
+        // appears, reading only alpha, so it has to be ic_notification rather than
+        // the full-colour launcher art; the large icon is the sender's profile
+        // picture when we have one.
+        val largeIcon = loadAvatar(pictureUrl)
+        // Resolved after the avatar fetch: a sound picked meanwhile has
+        // retired the channel that was current when this started.
+        val channelId = ensureChannel()
+        val notification = NotificationCompat.Builder(context, channelId)
+            // Status-bar icons are drawn from alpha only, so use the
+            // purpose-built 24dp silhouette rather than the full-colour
+            // foreground, which flattens to a solid blob.
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setContentIntent(pending)
+            .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
+            .apply { if (extras != null) addExtras(extras) }
+            .setOnlyAlertOnce(alertOnce)
+            .build()
 
-            // Stable per-event notification id so the same event never double-posts.
-            NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
-            Log.i(TAG, "posted notification: \"$title\"")
-        }
+        // Stable per-event notification id so the same event never double-posts.
+        NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+        Log.i(TAG, "posted notification: \"$title\"")
     }
 
     /** Load the sender's avatar into a software bitmap via Coil; null on any failure. */
