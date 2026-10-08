@@ -4,6 +4,20 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -97,7 +111,7 @@ private val WizardGradient = Brush.horizontalGradient(
 // ── Enums ────────────────────────────────────────────────────────
 
 enum class WizardStep {
-    WELCOME, CHOOSE_PATH, RELAY_CHOICE, NOSTR_INTRO, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
@@ -247,20 +261,20 @@ class SetupWizardViewModel @Inject constructor(
 
     /** Steps for full setup mode. */
     private val fullSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
+        WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.RELAYS, WizardStep.IMPORT_NOTES, WizardStep.MIRROR_MEDIA,
         WizardStep.WALLET, WizardStep.COMPLETE,
     )
 
     /** Steps for browse mode. */
     private val browseSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
+        WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
     /** Steps for "New to Nostr" mode. */
     private val newUserSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE,
+        WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
         // The Fill your feed guide finds people after setup; nothing here picks them.
         WizardStep.NOSTR_INTRO, WizardStep.COMPLETE,
     )
@@ -300,9 +314,11 @@ class SetupWizardViewModel @Inject constructor(
         if (idx > 0) _step.value = steps[idx - 1]
     }
 
-    fun advanceFromWelcome() { _step.value = WizardStep.CHOOSE_PATH }
-
-    fun advanceFromChoosePath() { _step.value = WizardStep.RELAY_CHOICE }
+    /** The front door's three buttons. Every path goes on to the relay choice. */
+    fun choosePath(path: SetupPath) {
+        _setupPath.value = path
+        _step.value = WizardStep.RELAY_CHOICE
+    }
 
     fun advanceFromRelayChoice() {
         val external = _useExternalRelay.value
@@ -971,6 +987,13 @@ fun SetupWizardScreen(
             .fillMaxSize()
             .background(WizardBgPrimary),
     ) {
+        // The front door fills the screen and pins its buttons, so it lives
+        // outside the scrolling column, with no Back row, header or dots.
+        if (step == WizardStep.WELCOME) {
+            FrontDoor(onChoose = viewModel::choosePath)
+            return@Box
+        }
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -982,22 +1005,18 @@ fun SetupWizardScreen(
         ) {
             Spacer(Modifier.height(32.dp))
 
-            // Back button (hidden on first step)
-            if (step != WizardStep.WELCOME) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                ) {
-                    IconButton(onClick = viewModel::goBack) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Back,
-                            contentDescription = "Back",
-                            tint = SecondaryText,
-                        )
-                    }
+            // Back button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+            ) {
+                IconButton(onClick = viewModel::goBack) {
+                    Icon(
+                        imageVector = NostrVaultIcons.Back,
+                        contentDescription = "Back",
+                        tint = SecondaryText,
+                    )
                 }
-            } else {
-                Spacer(Modifier.height(48.dp))
             }
 
             // App brand
@@ -1014,14 +1033,13 @@ fun SetupWizardScreen(
                 fontSize = 16.sp,
             )
 
-            // Step dots
-            if (step != WizardStep.WELCOME) {
-                Spacer(Modifier.height(16.dp))
-                StepDots(
-                    totalSteps = viewModel.activeSteps.size,
-                    currentIndex = viewModel.currentStepIndex,
-                )
-            }
+            // Step dots. The front door is not step 1 of N, so they count
+            // from the screen after it.
+            Spacer(Modifier.height(16.dp))
+            StepDots(
+                totalSteps = viewModel.activeSteps.size - 1,
+                currentIndex = viewModel.currentStepIndex - 1,
+            )
 
             Spacer(Modifier.height(32.dp))
 
@@ -1035,10 +1053,8 @@ fun SetupWizardScreen(
                 label = "wizard_step",
             ) { currentStep ->
                 when (currentStep) {
-                    WizardStep.WELCOME -> WelcomeStep(
-                        onContinue = viewModel::advanceFromWelcome,
-                    )
-                    WizardStep.CHOOSE_PATH -> ChoosePathStep(viewModel)
+                    // Drawn outside this scrolling column; see FrontDoor above.
+                    WizardStep.WELCOME -> Unit
                     WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
                     WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
@@ -1090,121 +1106,264 @@ private fun StepDots(totalSteps: Int, currentIndex: Int) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Step 1: Welcome
+// Step 1: Welcome (the front door)
 // ══════════════════════════════════════════════════════════════════
 
+/**
+ * The first screen after install. It used to be a card and five feature
+ * bullets with Get Started below the fold, then a separate choose-your-setup
+ * screen whose Continue only enabled after picking a card. Now it fits one
+ * phone screen and the three ways in are the buttons themselves. Same layout
+ * numbers as the iOS front door.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WelcomeStep(onContinue: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        WizardCard {
-            Text(
-                text = "Take control of your social data",
-                color = PrimaryText,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Nostr Vault runs a personal relay on your device. Your notes, messages, and media stay with you -- not on someone else's server.",
-                color = SecondaryText,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
+private fun FrontDoor(onChoose: (SetupPath) -> Unit) {
+    var showWhatsInside by remember { mutableStateOf(false) }
+    var appeared by remember { mutableStateOf(Motion.isReduced) }
+    LaunchedEffect(Unit) { appeared = true }
+    val heroAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(if (Motion.isReduced) 0 else 450),
+        label = "front_door_hero",
+    )
 
-        Spacer(Modifier.height(24.dp))
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp),
+    ) {
+        // Tall phones get a bigger icon so the block fills the space instead
+        // of floating; small phones are already tight.
+        val iconSize = if (maxHeight > 800.dp) 112.dp else 92.dp
 
-        val features = listOf(
-            "Personal Relay" to "Run your own relay on-device",
-            "Full Nostr Client" to "Browse, post, reply, discover",
-            "Private Messaging" to "NIP-17 encrypted DMs",
-            "Blossom Media" to "Host images/videos on your device",
-            "Lightning Zaps" to "Send and receive zaps with your own wallet over NWC",
-        )
-        for ((title, desc) in features) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            // Centred in the space above the buttons. When it can't fit
+            // (large font scale), only this part scrolls and the buttons stay
+            // pinned.
+            BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                    .weight(1f)
+                    .fillMaxWidth(),
             ) {
-                Text("*", color = WizardAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Text(desc, color = SecondaryText, fontSize = 13.sp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(min = maxHeight)
+                        .padding(vertical = 16.dp)
+                        .alpha(heroAlpha),
+                ) {
+                    FrontDoorHero(iconSize = iconSize, onWhatsInside = { showWhatsInside = true })
+                }
+            }
+
+            // No entrance delay: these are tappable on the first frame.
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(top = 16.dp, bottom = 16.dp),
+            ) {
+                WizardPrimaryButton(text = "Create an account", onClick = { onChoose(SetupPath.NEW_TO_NOSTR) })
+                FrontDoorSecondaryButton(text = "I already use Nostr", onClick = { onChoose(SetupPath.FULL) })
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Button) { onChoose(SetupPath.BROWSE) },
+                ) {
+                    Text(
+                        text = "Just look around",
+                        color = SecondaryText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }
+    }
 
-        Spacer(Modifier.height(32.dp))
-
-        WizardPrimaryButton(text = "Get Started", onClick = onContinue)
+    if (showWhatsInside) {
+        ModalBottomSheet(
+            onDismissRequest = { showWhatsInside = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = WizardBgPrimary,
+        ) {
+            WhatsInsideSheet(onDone = { showWhatsInside = false })
+        }
     }
 }
 
-// ══════════════════════════════════════════════════════════════════
-// Step 2: Choose Path
-// ══════════════════════════════════════════════════════════════════
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FrontDoorHero(iconSize: Dp, onWhatsInside: () -> Unit) {
+    // The icon they just tapped on the home screen, with the amber glow.
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(iconSize + 4.dp)) {
+        Box(
+            modifier = Modifier
+                .requiredSize(iconSize * 1.6f)
+                .background(
+                    Brush.radialGradient(
+                        listOf(WizardAccent.copy(alpha = 0.35f), Color.Transparent),
+                    ),
+                    CircleShape,
+                ),
+        )
+        val corner = RoundedCornerShape(iconSize * 0.2237f)
+        Image(
+            painter = painterResource(R.drawable.vault_mark),
+            contentDescription = null,
+            modifier = Modifier
+                .size(iconSize)
+                .clip(corner)
+                .border(1.dp, Color.White.copy(alpha = 0.08f), corner),
+        )
+    }
+
+    Spacer(Modifier.height(24.dp))
+    Text(
+        text = "Nostr Vault",
+        color = PrimaryText,
+        fontSize = 34.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.semantics { heading() },
+    )
+    Spacer(Modifier.height(8.dp))
+    // Broken by hand so it splits at the comma on every width.
+    Text(
+        text = "Your posts, messages and media,\nkept on your own device.",
+        color = SecondaryText,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        textAlign = TextAlign.Center,
+    )
+
+    Spacer(Modifier.height(24.dp))
+    // Wraps rather than truncating at large font scale. Not buttons: they
+    // describe, they don't do anything.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics { contentDescription = "Includes your own relay, private DMs and zaps" },
+    ) {
+        FrontDoorChip(NostrVaultIcons.AppIcon, "Own relay")
+        FrontDoorChip(NostrVaultIcons.Lock, "Private DMs")
+        FrontDoorChip(NostrVaultIcons.Zap, "Zaps")
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .heightIn(min = 32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClick = onWhatsInside)
+            .padding(horizontal = 8.dp),
+    ) {
+        Text(
+            text = "What's inside?",
+            color = WizardAccent,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
 
 @Composable
-private fun ChoosePathStep(viewModel: SetupWizardViewModel) {
-    val setupPath by viewModel.setupPath.collectAsState()
+private fun FrontDoorChip(icon: ImageVector, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .heightIn(min = 32.dp)
+            .background(WizardBgCard, CircleShape)
+            .border(1.dp, BorderStrong, CircleShape)
+            .padding(horizontal = 12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(14.dp))
+        Text(label, color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+    }
+}
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "Choose your setup",
-            color = PrimaryText,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "You can upgrade from browse mode later.",
-            color = SecondaryText,
-            fontSize = 14.sp,
-        )
+@Composable
+private fun FrontDoorSecondaryButton(text: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(shape)
+            .background(WizardBgCard, shape)
+            .border(1.dp, BorderStrong, shape)
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Text(text = text, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
 
-        Spacer(Modifier.height(24.dp))
-
-        WizardOptionCard(
-            title = "New to Nostr",
-            subtitle = "Quick start -- we'll set everything up for you",
-            selected = setupPath == SetupPath.NEW_TO_NOSTR,
-            onClick = { viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
+/** The feature descriptions that used to fill the first screen. */
+@Composable
+private fun WhatsInsideSheet(onDone: () -> Unit) {
+    val features = listOf(
+        Triple(NostrVaultIcons.AppIcon, "Personal Relay", "Run your own relay on-device. Notes are stored locally and broadcast to the network — you always have a copy."),
+        Triple(NostrVaultIcons.Articles, "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
+        Triple(NostrVaultIcons.Lock, "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
+        Triple(NostrVaultIcons.Media, "Blossom Media", "Host images and videos on your device with Blossom. Mirror media from the network to your local storage."),
+        Triple(NostrVaultIcons.Zap, "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect."),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 20.dp)
+            .navigationBarsPadding(),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "What's inside",
+                color = PrimaryText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() },
+            )
+            TextButton(onClick = onDone) {
+                Text("Done", color = WizardAccent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
         Spacer(Modifier.height(12.dp))
-
-        WizardOptionCard(
-            title = "Full Setup",
-            subtitle = "Relay, notes, media, wallet -- the complete package",
-            selected = setupPath == SetupPath.FULL,
-            onClick = { viewModel.setSetupPath(SetupPath.FULL) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        WizardOptionCard(
-            title = "Browse Mode",
-            subtitle = "Read-only browsing -- no private key needed",
-            selected = setupPath == SetupPath.BROWSE,
-            onClick = { viewModel.setSetupPath(SetupPath.BROWSE) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(32.dp))
-
-        WizardPrimaryButton(
-            text = "Continue",
-            enabled = setupPath != SetupPath.NONE,
-            onClick = viewModel::advanceFromChoosePath,
-        )
+        for ((icon, title, line) in features) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+                    .background(WizardBgCard, RoundedCornerShape(12.dp))
+                    .border(1.dp, BorderStrong, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+                    .semantics(mergeDescendants = true) {},
+            ) {
+                Icon(icon, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(title, color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text(line, color = SecondaryText, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            }
+        }
     }
 }
 
