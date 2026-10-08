@@ -1145,6 +1145,20 @@ class NostrService: ObservableObject {
                 let canSign = ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub)
                 guard canSign else { continue }
 
+                // Only when it would change something. This ran on every
+                // launch and signed the same list again every time; with a
+                // remote signer that is a request to the person's signer app
+                // for nothing, queued in front of whatever they do first. A
+                // published list we cannot read (nobody answered, or it holds
+                // loopback entries from an older build) still gets republished
+                // — healing those is why this is not behind a toggle.
+                if let hex = Bech32.decode(npub)?.hexString,
+                   let newest = await fetchNewestDMRelayList(for: hex, alsoAsk: reachable),
+                   Set(newest.relays) == Set(reachable) {
+                    print("NostrService: DM relay list for \(npub.prefix(12))… already published and unchanged — not re-signing")
+                    continue
+                }
+
                 publishDMRelayList(dmRelays: reachable, signAsNpub: npub)
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }

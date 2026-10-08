@@ -1195,7 +1195,35 @@ struct ComposeView: View {
             return false
         }
         attachments.append(attachment)
+        prepareUploadAuth(for: attachment)
         return true
+    }
+
+    /// Signs the attachment's Blossom upload authorisation while the author is
+    /// still writing.
+    ///
+    /// Posting a photo used to cost two signer round trips back to back — the
+    /// authorisation, then the note — and a four-photo note five, all of them
+    /// after the tap. The hash is the only thing the authorisation is scoped
+    /// to and it is known the moment the file is attached, so the signer can
+    /// answer for it now; `BlossomService` hands the stored answer to the
+    /// upload. Nothing depends on it finishing: the upload path signs its own
+    /// if this has not landed.
+    private func prepareUploadAuth(for attachment: Attachment) {
+        let blossom = blossomService
+        if let data = attachment.data {
+            Task.detached(priority: .utility) {
+                let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                blossom.prepareUploadAuth(sha256: hash)
+            }
+        } else if let fileURL = attachment.fileURL {
+            Task.detached(priority: .utility) {
+                guard let hash = ComposeView.streamingSHA256(of: fileURL) else { return }
+                blossom.prepareUploadAuth(sha256: hash)
+            }
+        }
+        // Media already on the relay carries neither: it is not uploaded, so
+        // it needs no authorisation.
     }
 
     /// Attaches media that already lives on the relay. It shows in the

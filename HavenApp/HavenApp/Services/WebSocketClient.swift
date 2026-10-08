@@ -247,6 +247,38 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         }
     }
 
+    // MARK: - Liveness
+
+    /// Asks the socket whether it is still there, with a WebSocket ping, and
+    /// reports whether it answered before `timeout`.
+    ///
+    /// `connectionState` is not an answer to that question: a socket the system
+    /// killed while the app was suspended still reads `.connected` until the
+    /// next keepalive ping notices (up to `pingInterval`). Callers that would
+    /// otherwise reconnect blindly — and so pay a fresh relay AUTH signature
+    /// through the remote signer — ask this first.
+    func probeAlive(timeout: TimeInterval = 3, completion: @escaping (Bool) -> Void) {
+        let queue = stateQueue
+        queue.async { [weak self] in
+            guard let self = self, let task = self.webSocketTask, !self.isClosing else {
+                completion(false)
+                return
+            }
+            // `answered` and both closures below run only on `queue`, so the
+            // first answer wins without a lock and `completion` runs once.
+            var answered = false
+            let finish: (Bool) -> Void = { alive in
+                guard !answered else { return }
+                answered = true
+                completion(alive)
+            }
+            // Deliberately captures `queue`, not `self`: if the client is
+            // released while the ping is out, the caller still gets an answer.
+            task.sendPing { error in queue.async { finish(error == nil) } }
+            queue.asyncAfter(deadline: .now() + timeout) { finish(false) }
+        }
+    }
+
     // MARK: - Keepalive Ping
 
     /// MUST run on `stateQueue`.
