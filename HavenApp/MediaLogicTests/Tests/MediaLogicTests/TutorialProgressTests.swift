@@ -134,9 +134,18 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertEqual(TutorialProgress.key(.pocketRelay, account: alice), "tutorial.pocket-relay")
     }
 
-    func testFeedsCardsAllPointAtThePicker() {
-        XCTAssertEqual(TutorialContent.feeds.count, 6)
-        XCTAssertTrue(TutorialContent.feeds.allSatisfy { $0.anchor == TutorialContent.feedPicker })
+    func testFeedsCardsPointAtTheTwoCorners() {
+        XCTAssertEqual(TutorialContent.feeds.map(\.anchor), [
+            TutorialContent.feedPicker, TutorialContent.feedToolbar, TutorialContent.feedToolbar,
+        ])
+    }
+
+    /// Only a tutorial that can run is offered as next, so the last card
+    /// never starts one with nothing to draw.
+    func testNextSkipsTutorialsWithoutCards() {
+        XCTAssertNil(TutorialID.feeds.next)
+        XCTAssertNil(TutorialID.importTour.next)
+        XCTAssertNil(TutorialID.fillYourVault.next)
     }
 
     /// The import tour teaches Vault and Pocket relay, so finishing it marks

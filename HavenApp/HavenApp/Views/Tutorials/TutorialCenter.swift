@@ -113,6 +113,13 @@ final class TutorialCenter: ObservableObject {
         }
     }
 
+    /// Closes the active tutorial as done and starts the one after it.
+    func startNext(account: String) {
+        guard let id = progress.active, let next = id.next else { return }
+        finish(id, account: account)
+        replay(next)
+    }
+
     func back() {
         if stepIndex > 0 { stepIndex -= 1 }
     }

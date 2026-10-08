@@ -69,6 +69,15 @@ extension TutorialID {
         self == .fillYourVault ? Self.fillYourVaultHasGuide : !steps.isEmpty
     }
 
+    /// The tutorial a "Next" button on this one's last card starts: the
+    /// first available page tutorial after it. Nil when none is built yet,
+    /// so the last card just says Done.
+    var next: TutorialID? {
+        let order: [TutorialID] = [.feeds, .vault, .walletConnect, .pocketRelay]
+        guard let index = order.firstIndex(of: self) else { return nil }
+        return order[(index + 1)...].first { $0.isAvailable }
+    }
+
     /// The guide is `FillYourFeedOverlay`.
     static let fillYourVaultHasGuide = true
 }
@@ -76,39 +85,27 @@ extension TutorialID {
 enum TutorialContent {
     static let feedPicker = "feeds.picker"
 
-    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "1. Feeds". Discover
-    /// is `extendedNetworkPubkeys`: people your follows follow, ranked by how
-    /// many of your follows follow them.
+    /// The pill of buttons at the top right of the feed.
+    static let feedToolbar = "feeds.toolbar"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "1. Feeds". Kept to
+    /// what each corner does and how trust works (Logen, nostr-vault
+    /// Tutorial thread 2026-10-08): the picker lists the feeds itself.
     static let feeds: [TutorialStep] = [
         TutorialStep(
             anchor: feedPicker,
-            title: "Pick your feed here",
-            body: "Nostr has no algorithm. Each feed is a different way to look at the network, and you choose which one."
+            title: "Pick your feed",
+            body: "Tap here to switch feeds. Nostr has no algorithm, so you choose what you see."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Following is home",
-            body: "Only the people you follow, newest first."
+            anchor: feedToolbar,
+            title: "Tune this feed",
+            body: "These buttons change what this feed shows, like reposts and replies. They're different on each feed."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Discover",
-            body: "People your follows follow, the most shared first. The easiest place to find your next follow."
-        ),
-        TutorialStep(
-            anchor: feedPicker,
-            title: "Global and Hashtags",
-            body: "Wider than your follows. Once you follow people, they're filtered by your web of trust, so strangers' spam stays out."
-        ),
-        TutorialStep(
-            anchor: feedPicker,
-            title: "One kind of post",
-            body: "Media, diVines, Articles, Recipes, Marketplace, Live and Music each show just that kind of post."
-        ),
-        TutorialStep(
-            anchor: feedPicker,
-            title: "Make it yours",
-            body: "Edit Feeds, at the bottom of this menu, hides the feeds you don't use and changes their order."
+            anchor: feedToolbar,
+            title: "Following, Global and trust",
+            body: "On wider feeds you'll see a globe for Global. It shows people your follows follow, your web of trust, so spam stays out. The shield opens it to everyone."
         ),
     ]
 

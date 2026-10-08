@@ -91,12 +91,21 @@ struct TutorialStage: View {
                         .foregroundColor(.white.opacity(0.85))
                 }
                 Spacer()
-                Button(center.isLastStep ? "Done" : "Next") { center.next(account: account) }
+                if center.isLastStep, let next = id.next {
+                    Button("Next: \(next.title)") { center.startNext(account: account) }
+                        .font(.appBody.weight(.semibold))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.havenPurple))
+                        .foregroundColor(.white)
+                } else {
+                    Button(center.isLastStep ? "Done" : "Next") { center.next(account: account) }
                     .font(.appBody.weight(.semibold))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 8)
                     .background(Capsule().fill(Color.havenPurple))
                     .foregroundColor(.white)
+                }
             }
             .padding(.top, 2)
         }
