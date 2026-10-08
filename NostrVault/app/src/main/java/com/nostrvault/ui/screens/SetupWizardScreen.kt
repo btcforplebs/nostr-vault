@@ -103,6 +103,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -292,7 +293,8 @@ class SetupWizardViewModel @Inject constructor(
 
     private val _isCheckingRelays = MutableStateFlow(true)
     val isCheckingRelays = _isCheckingRelays.asStateFlow()
-    private var relayCheckStarted = false
+    /** The account the rows were checked for; another key checks again. */
+    private var relayCheckPubkey: String? = null
 
     /** The import tour runs the app-wide import, so it outlives this screen. */
     val tourIsImporting = relayImportService.isImporting
@@ -303,7 +305,13 @@ class SetupWizardViewModel @Inject constructor(
     /** Notes, likes and everything, read from the relay once the import is done. */
     private val _tourCounts = MutableStateFlow<Triple<Int, Int, Int>?>(null)
     val tourCounts = _tourCounts.asStateFlow()
-    private var importTourStarted = false
+    /** The account whose import the tour started. */
+    private var importTourPubkey: String? = null
+
+    /** The tour's import ran and stopped without finishing. Kept here, not in
+     *  the screen, so leaving and returning to the step still knows. */
+    private val _tourImportFailed = MutableStateFlow(false)
+    val tourImportFailed = _tourImportFailed.asStateFlow()
 
     init {
         _isAmberAvailable.value = amberSignerService.isAmberInstalled()
@@ -941,6 +949,8 @@ class SetupWizardViewModel @Inject constructor(
             } else {
                 configStore.update { it.copy(
                     ownerNpub = HavenBridge.hexToNpub(hexPubkey) ?: hexPubkey,
+                    ownerHexKey = null,
+                    ownerNcryptsec = null,
                     signingMode = "amber",
                     setupMode = "full",
                     amberSignerPackage = amberSignerService.signerPackage,
@@ -954,7 +964,10 @@ class SetupWizardViewModel @Inject constructor(
 
     /** Read-only: an npub, as Browse stores it. */
     private fun adoptReadOnly(npub: String): Boolean {
-        configStore.update { it.copy(ownerNpub = npub, setupMode = "browse", signingMode = "browse") }
+        // Clear a key pasted before Back, so it can't stay behind for this account.
+        configStore.update { it.copy(
+            ownerNpub = npub, ownerHexKey = null, ownerNcryptsec = null, setupMode = "browse", signingMode = "browse",
+        ) }
         HavenBridge.decodeNpub(npub)?.let { configStore.setActiveAccount(it) }
         return true
     }
@@ -993,13 +1006,16 @@ class SetupWizardViewModel @Inject constructor(
      * most people's notes also land. Each is asked for one note at once, and
      * the ones that don't answer are switched off. Runs once per visit.
      */
-    fun startRelayCheck() {
-        if (relayCheckStarted) return
-        relayCheckStarted = true
+    fun startRelayCheck(force: Boolean = false) {
         val pubkey = HavenBridge.decodeNpub(configStore.config.value.ownerNpub) ?: run {
+            _relayRows.value = emptyList()
             _isCheckingRelays.value = false
+            _error.value = "Couldn't read your key. Go back and paste it again."
             return
         }
+        if (!force && pubkey == relayCheckPubkey) return
+        relayCheckPubkey = pubkey
+        _error.value = null
         viewModelScope.launch {
             _isCheckingRelays.value = true
             val list = runCatching {
@@ -1050,9 +1066,13 @@ class SetupWizardViewModel @Inject constructor(
      * can leave setup with it still going.
      */
     fun startImportTour() {
-        if (importTourStarted) return
-        importTourStarted = true
-        if (relayImportService.importCompleted.value && !relayImportService.isImporting.value) {
+        val pubkey = HavenBridge.decodeNpub(configStore.config.value.ownerNpub).orEmpty()
+        if (pubkey == importTourPubkey) return
+        val sameAccountAgain = importTourPubkey == null
+        importTourPubkey = pubkey
+        _tourImportFailed.value = false
+        _tourCounts.value = null
+        if (sameAccountAgain && relayImportService.importCompleted.value && !relayImportService.isImporting.value) {
             loadTourCounts()
             return
         }
@@ -1062,6 +1082,11 @@ class SetupWizardViewModel @Inject constructor(
         // minutes for everyone. Older notes can be pulled from Settings → Import.
         configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
         relayImportService.importNotes()
+        viewModelScope.launch {
+            relayImportService.isImporting.first { it }
+            relayImportService.isImporting.first { !it }
+            if (!relayImportService.importCompleted.value) _tourImportFailed.value = true
+        }
     }
 
     /** Real counts for the Ready card, once the relay is back up. */
@@ -1503,6 +1528,7 @@ fun SetupWizardScreen(
                     WizardStep.WALLET -> WalletSetupStep(viewModel)
                     WizardStep.COMPLETE -> CompleteStep(
                         setupPath = setupPath,
+                        readOnly = viewModel.setupModeNow() == "browse",
                         onFinish = { viewModel.completeSetup(onComplete) },
                     )
                 }
@@ -3126,6 +3152,8 @@ private fun WalletSetupStep(viewModel: SetupWizardViewModel) {
 @Composable
 private fun CompleteStep(
     setupPath: SetupPath,
+    /** "I already use Nostr" with only a public key. */
+    readOnly: Boolean,
     onFinish: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -3170,6 +3198,19 @@ private fun CompleteStep(
                     Spacer(Modifier.height(16.dp))
                     Text(
                         text = "Next, a short guide helps you find people to follow.",
+                        color = SecondaryText,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                SetupPath.USE_NOSTR -> {
+                    WizardCheckItem(if (readOnly) "Connected to Nostr" else "Signed in")
+                    WizardCheckItem("Using your relay")
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = if (readOnly) "Read-only for now. Add your private key in Settings to post."
+                        else "Your posts go out through the relay you chose.",
                         color = SecondaryText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,

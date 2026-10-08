@@ -178,4 +178,15 @@ class SetupWizardRelayChoiceTest {
         val good = com.nostrvault.setup.IdentityInput.parse("npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m")
         assertTrue(viewModel.keyChecksumOK(good))
     }
+
+    @Test
+    fun `switching to a public key after Back drops the key pasted before`() {
+        saved = saved.copy(ownerHexKey = "ab".repeat(32), ownerNcryptsec = "ncryptsec1old")
+        viewModel.choosePath(SetupPath.USE_NOSTR)
+        viewModel.advanceFromRelayChoice()
+        viewModel.setUseNostrInput("npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m")
+        viewModel.continueUseNostr()
+        assertEquals(null, saved.ownerHexKey)
+        assertEquals(null, saved.ownerNcryptsec)
+    }
 }

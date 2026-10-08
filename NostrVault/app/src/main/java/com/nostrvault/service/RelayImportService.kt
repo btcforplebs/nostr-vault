@@ -73,6 +73,13 @@ class RelayImportService @Inject constructor(
 
     private var importJob: Job? = null
 
+    /** Set when the relay couldn't be restarted after an import (the app was
+     *  in the background). MainActivity starts it on the next foreground. */
+    @Volatile private var relayRestartPending = false
+
+    /** True once if the relay still needs the restart an import couldn't do. */
+    fun takeRelayRestartPending(): Boolean = relayRestartPending.also { relayRestartPending = false }
+
     /**
      * Import notes from seed relays. Stops the running relay, starts it
      * in import mode, polls for progress, then restarts normally.
@@ -143,10 +150,13 @@ class RelayImportService @Inject constructor(
                 delay(1000)
                 // Setup's import tour can leave the app before a long import
                 // ends, and a foreground service can't be started from the
-                // background (Android 12+). The relay then starts at the next
-                // launch rather than taking the app down with it.
+                // background (Android 12+). The relay then starts when the
+                // app is next in the foreground rather than taking it down.
                 runCatching { RelayForegroundService.start(context) }
-                    .onFailure { Log.w(TAG, "Relay restart after import failed: ${it.message}") }
+                    .onFailure {
+                        Log.w(TAG, "Relay restart after import failed: ${it.message}")
+                        relayRestartPending = true
+                    }
             }
         }
     }

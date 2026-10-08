@@ -385,6 +385,7 @@ private fun SignerButton(text: String, onClick: () -> Unit) {
 internal fun RelayCheckStep(viewModel: SetupWizardViewModel) {
     val rows by viewModel.relayRows.collectAsState()
     val isChecking by viewModel.isCheckingRelays.collectAsState()
+    val error by viewModel.error.collectAsState()
     var editing by rememberSaveable { mutableStateOf(false) }
     var newRelay by rememberSaveable { mutableStateOf("") }
     val onCount = rows.count { it.isOn }
@@ -439,6 +440,16 @@ internal fun RelayCheckStep(viewModel: SetupWizardViewModel) {
                 colors = wizardTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+
+        if (!isChecking && onCount == 0) {
+            TextButton(onClick = { viewModel.startRelayCheck(force = true) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Check again", color = WizardAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = ErrorRed, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
 
         Spacer(Modifier.height(20.dp))
@@ -544,9 +555,7 @@ internal fun ImportTourStep(viewModel: SetupWizardViewModel, onComplete: () -> U
     var index by rememberSaveable { mutableIntStateOf(0) }
     val done = completed && !isImporting
     // It ran and stopped without finishing: let them in anyway.
-    var sawImporting by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(isImporting) { if (isImporting) sawImporting = true }
-    val failed = sawImporting && !isImporting && !completed
+    val failed by viewModel.tourImportFailed.collectAsState()
     val stage = if (failed) ImportTourStage("The import stopped", 1) else ImportTourStage.from(status, done)
     // Kept running or not, the import carries on in RelayImportService.
     val enter = { viewModel.enterFromImportTour(sawEveryCard = index >= lastIndex, onComplete = onComplete) }

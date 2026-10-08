@@ -9,9 +9,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 
 /**
@@ -36,15 +35,17 @@ object RelayCheckProbe {
             var hasNotes = false
             val collector = launch {
                 client.messages.collect { msg ->
+                    // A relay can send anything; a malformed frame is ignored, never thrown.
                     val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
-                    if (arr.getOrNull(1)?.jsonPrimitive?.contentOrNull != subId) return@collect
-                    when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                    fun str(i: Int) = (arr.getOrNull(i) as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    if (str(1) != subId) return@collect
+                    when (str(0)) {
                         "EVENT" -> hasNotes = true
                         "EOSE" -> outcome.complete(
                             RelayCheck.Result.answeredAfter((System.nanoTime() - started) / 1e9, hasNotes),
                         )
                         "CLOSED" -> outcome.complete(
-                            RelayCheck.closedResult(arr.getOrNull(2)?.jsonPrimitive?.contentOrNull),
+                            RelayCheck.closedResult(str(2)),
                         )
                     }
                 }

@@ -402,6 +402,10 @@ class MainActivity : FragmentActivity() {
         mediaPostQueue.retryAll("foreground")
         // Restore the snapshot for instant UI, then reconnect in the background.
         if (configStore.config.value.hasCompletedSetup) {
+            // An import that ended while we were away couldn't restart the relay.
+            if (relayImportService.takeRelayRestartPending() && !configStore.config.value.useExternalRelay) {
+                RelayForegroundService.start(this)
+            }
             feedService.resumeFeed()
             // Start DM listeners once, then catch up from external relays each
             // time the app returns to the foreground.
