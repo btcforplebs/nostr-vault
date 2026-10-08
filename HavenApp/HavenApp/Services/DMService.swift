@@ -128,9 +128,13 @@ class DMService: ObservableObject {
         setupThrottling()
         loadConversations()
 
-        // React to account switches only (not every config save)
-        ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
+        // React to account switches only (not every config save). Keyed on the
+        // resolved hex key, not `activeAccountNpub`: a new account finishes setup
+        // as the owner with `activeAccountNpub` still "", so an npub-keyed sink
+        // never fired, this service kept the empty key it read while the setup
+        // wizard was on screen, and every send failed with "No active account
+        // loaded" until the app was relaunched.
+        ConfigService.shared.$activeAccountHexPubkey
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
