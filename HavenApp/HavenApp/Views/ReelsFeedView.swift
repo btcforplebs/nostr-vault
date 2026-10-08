@@ -193,7 +193,9 @@ struct ReelsFeedView: View {
     }
 }
 
-private enum AppActivity {
+/// App foreground notifications. Not `scenePhase`: the iOS app hosts SwiftUI
+/// from a UIKit scene delegate, where it never reports `.active`.
+enum AppActivity {
     #if os(iOS)
     static let didBecomeActive = UIApplication.didBecomeActiveNotification
     static let willResignActive = UIApplication.willResignActiveNotification

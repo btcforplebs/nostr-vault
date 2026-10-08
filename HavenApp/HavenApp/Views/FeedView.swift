@@ -4258,9 +4258,7 @@ struct FeedNoteRow: View {
         .sheet(isPresented: $showingBroadcastSheet) {
             EventBroadcastSheet(note: note)
         }
-        .sheet(isPresented: $showingTrustWeb) {
-            TrustWebSheet(author: zapRecipient)
-        }
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: zapRecipient)
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteIdInRow.map { IdentifiableString(id: $0) } },
             set: { showingNoteIdInRow = $0?.id }
