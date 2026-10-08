@@ -4,6 +4,7 @@ import android.content.Context
 import com.nostrvault.relay.HavenBridge
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -72,6 +73,25 @@ class ActiveAccountHexTest {
         val store = store()
         store.update { it.copy(activeAccountNpub = "npub1notarealkey") }
         assertEquals("", store.activeAccountHexPubkey.value)
+    }
+
+    @Test
+    fun `which changes count as a switch`() {
+        assertEquals(true, isAccountSwitch("aa", "bb"))
+        assertEquals(true, isAccountSwitch("aa", ""))
+        assertEquals(false, isAccountSwitch("", "aa"))
+        assertEquals(false, isAccountSwitch("aa", "aa"))
+    }
+
+    @Test
+    fun `accountSwitches reports a switch and not the starting account`() = runBlocking {
+        val store = store()
+        val seen = mutableListOf<String>()
+        val job = launch(kotlinx.coroutines.Dispatchers.Unconfined) { store.accountSwitches.collect { seen += it } }
+        store.update { it.copy(activeAccountNpub = second) }
+        store.update { it.copy(activeAccountNpub = null) }
+        job.cancel()
+        assertEquals(listOf(hex(second), hex(owner)), seen)
     }
 }
 

@@ -169,11 +169,10 @@ class DMService @Inject constructor(
         // Follow account switches, as iOS DMService does. Skips setup's first
         // account ("" → X) and anything before the inbox has started.
         scope.launch {
-            var previous = configStore.activeAccountHexPubkey.value
-            configStore.activeAccountHexPubkey.collect { hex ->
-                val switched = previous.isNotEmpty() && hex.isNotEmpty() && hex != previous
-                previous = hex
-                if (switched && hasStarted && hex != loadedCacheKey) switchAccount()
+            configStore.accountSwitches.collect { hex ->
+                // A switch to no account (reset, or an account that can't be
+                // decoded) leaves the inbox alone: there is no one to load.
+                if (hex.isNotEmpty() && hasStarted && hex != loadedCacheKey) switchAccount()
             }
         }
     }

@@ -304,11 +304,7 @@ class NostrService @Inject constructor(
 
     private fun observeAccountSwitch() {
         scope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
-                .collect { handleAccountSwitch() }
+            configStore.accountSwitches.collect { handleAccountSwitch() }
         }
     }
 

@@ -15,9 +15,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -50,6 +53,16 @@ class ConfigStore @Inject constructor(
 
     private val _activeAccountHexPubkey = MutableStateFlow("")
     val activeAccountHexPubkey: StateFlow<String> = _activeAccountHexPubkey.asStateFlow()
+
+    /**
+     * Each switch of the active account, as its hex pubkey. Leaves out the
+     * current value and setup's first account ("" → X), which is not a switch.
+     */
+    val accountSwitches: Flow<String> = activeAccountHexPubkey
+        .runningFold(null as String? to null as String?) { pair, hex -> pair.second to hex }
+        .mapNotNull { (previous, current) ->
+            current?.takeIf { previous != null && isAccountSwitch(previous, it) }
+        }
 
     private val _isSwitchingAccount = MutableStateFlow(false)
     val isSwitchingAccount: StateFlow<Boolean> = _isSwitchingAccount.asStateFlow()
@@ -343,3 +356,8 @@ class ConfigStore @Inject constructor(
         _activeAccountHexPubkey.value = ""
     }
 }
+
+/** Whether the active account moving from [previous] to [current] is a switch. */
+internal fun isAccountSwitch(previous: String, current: String): Boolean =
+    previous.isNotEmpty() && previous != current
+

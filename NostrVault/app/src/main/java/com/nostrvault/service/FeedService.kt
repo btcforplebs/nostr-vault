@@ -245,10 +245,7 @@ class FeedService @Inject constructor(
         }
 
         scope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
+            configStore.accountSwitches
                 .collect {
                     // The new account's list is unknown until its own load
                     // answers, and a tap queued under the previous account
