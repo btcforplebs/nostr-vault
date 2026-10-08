@@ -72,6 +72,8 @@ fun ProfileScreen(
     onSell: () -> Unit = {},
     /** Opens the composer with text in it (sharing a song from the Music tab). */
     onComposeText: (String) -> Unit = {},
+    /** Opens the Following / Followers lists on a tab, with the follower count shown here. */
+    onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -294,6 +296,7 @@ fun ProfileScreen(
                     media = counts.media,
                     following = followingCount,
                     followers = followersCount,
+                    onOpenFollowList = { tab -> onOpenFollowList(tab, followersCount) },
                     isOwnProfile = isOwnProfile,
                 )
             }
@@ -805,6 +808,7 @@ private fun ProfileStatsRow(
     following: Int?,
     followers: Int?,
     isOwnProfile: Boolean,
+    onOpenFollowList: (FollowListTab) -> Unit = {},
 ) {
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -814,16 +818,27 @@ private fun ProfileStatsRow(
     ) {
         ProfileStat(shortInt(notes), "NOTES")
         ProfileStat(shortInt(media), "MEDIA")
-        ProfileStat(following?.let { shortInt(it) } ?: "—", "FOLLOWING")
-        if (!isOwnProfile) {
-            ProfileStat(followers?.let { shortInt(it) } ?: "∞", "FOLLOWERS")
+        ProfileStat(following?.let { shortInt(it) } ?: "—", "FOLLOWING") {
+            onOpenFollowList(FollowListTab.FOLLOWING)
+        }
+        // Your own comes from the relay's follower ledger, so it is exact.
+        ProfileStat(followers?.let { shortInt(it) } ?: "—", "FOLLOWERS") {
+            onOpenFollowList(FollowListTab.FOLLOWERS)
         }
     }
 }
 
 @Composable
-private fun ProfileStat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ProfileStat(value: String, label: String, onClick: (() -> Unit)? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = if (onClick != null) {
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        } else Modifier,
+    ) {
         Text(value, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(label, color = SecondaryText, fontSize = 12.sp)
     }
