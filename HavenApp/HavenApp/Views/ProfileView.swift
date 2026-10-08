@@ -191,13 +191,14 @@ struct ProfileView: View {
     @State private var showingSell = false
     @State private var selectedListing: MarketListing?
 
-    /// The four tabs every profile has come first; the ones that only show
+    /// The five tabs every profile has come first; the ones that only show
     /// once this person's articles, diVines, music or listings arrive go
     /// after them, so a late tab never pushes an earlier one along.
     enum ProfileSection: String, CaseIterable, Identifiable {
         case notes = "Notes"
         case media = "Media"
         case replies = "Replies"
+        case reposts = "Reposts"
         case tagged = "Tagged"
         case articles = "Articles"
         case divines = "diVines"
@@ -213,6 +214,7 @@ struct ProfileView: View {
             case .notes: return "text.bubble"
             case .media: return FeedMode.media.symbolName
             case .replies: return "arrowshape.turn.up.left"
+            case .reposts: return "arrow.2.squarepath"
             case .articles: return FeedMode.articles.symbolName
             case .divines: return FeedMode.reels.symbolName
             case .music: return FeedMode.music.symbolName
@@ -269,24 +271,30 @@ struct ProfileView: View {
     private var topNotes: [FeedNote] { buckets.top }
     private var mediaNotes: [FeedNote] { buckets.media }
     private var replyNotes: [FeedNote] { buckets.replies }
+    private var repostNotes: [FeedNote] { buckets.reposts }
     private var taggedFilteredNotes: [FeedNote] { buckets.tagged }
 
     /// Splits the notes into the tab lists. `mediaURLs` scans each note's
     /// text, so this runs when the notes change, never from `body`.
+    /// Reposts get their own tab; everything else is a post or a reply.
+    /// Media is this person's own pictures and video, posted or replied
+    /// with — a repost's media is someone else's, so it stays out.
     private func rebucket() {
-        var top: [FeedNote] = [], media: [FeedNote] = [], replies: [FeedNote] = []
+        var top: [FeedNote] = [], media: [FeedNote] = []
+        var replies: [FeedNote] = [], reposts: [FeedNote] = []
         for note in profileNotes {
-            if note.isReply {
-                replies.append(note)
-            } else {
-                top.append(note)
-                if !note.mediaURLs.isEmpty { media.append(note) }
+            if note.kind == 6 {
+                reposts.append(note)
+                continue
             }
+            if note.isReply { replies.append(note) } else { top.append(note) }
+            if !note.mediaURLs.isEmpty { media.append(note) }
         }
         buckets = ProfileNoteBuckets(
             top: top,
             media: media,
             replies: replies,
+            reposts: reposts,
             tagged: taggedNotes.filter { $0.pubkey != pubkey }
         )
     }
@@ -320,6 +328,7 @@ struct ProfileView: View {
         case .notes: return topNotes
         case .media: return mediaNotes
         case .replies: return replyNotes
+        case .reposts: return repostNotes
         case .tagged: return taggedFilteredNotes
         case .shop, .articles, .divines, .music: return []
         }
@@ -372,15 +381,15 @@ struct ProfileView: View {
     /// `hasMore` says when older pages may still add to them. Your own
     /// relay's note count included replies and your Blossom file count
     /// included every upload, so neither matched its tab and both are gone.
-    private var sectionCount: (notes: Int, media: Int, replies: Int, tagged: Int) {
-        (topNotes.count, mediaNotes.count, replyNotes.count, taggedFilteredNotes.count)
+    private var sectionCount: (notes: Int, media: Int, replies: Int, reposts: Int, tagged: Int) {
+        (topNotes.count, mediaNotes.count, replyNotes.count, repostNotes.count, taggedFilteredNotes.count)
     }
 
     /// True until paging has found no older notes. A short profile shows the
     /// sentinel at once, so it pages to the end and drops the "+" quickly.
     private func hasMore(for section: ProfileSection) -> Bool {
         switch section {
-        case .notes, .media, .replies: return hasMoreNotes
+        case .notes, .media, .replies, .reposts: return hasMoreNotes
         case .tagged: return hasMoreTaggedNotes
         default: return false
         }
@@ -1456,12 +1465,12 @@ struct ProfileView: View {
     }
 
     /// Shop only shows when this person has listings, or on your own profile
-    /// where it holds the Sell button, so most profiles keep four tabs.
+    /// where it holds the Sell button, so most profiles keep five tabs.
     private var visibleSections: [ProfileSection] {
         ProfileSection.allCases.filter { section in
             switch section {
             case .shop: return isOwnProfile || revealedSections.contains(.shop)
-            // Only when this person has some, so most profiles keep four tabs.
+            // Only when this person has some, so most profiles keep five tabs.
             case .articles, .divines, .music: return revealedSections.contains(section)
             default: return true
             }
@@ -1495,6 +1504,7 @@ struct ProfileView: View {
         case .notes: return sectionCount.notes
         case .media: return sectionCount.media
         case .replies: return sectionCount.replies
+        case .reposts: return sectionCount.reposts
         case .tagged: return sectionCount.tagged
         }
     }
@@ -3317,6 +3327,7 @@ private struct ProfileNoteBuckets {
     var top: [FeedNote] = []
     var media: [FeedNote] = []
     var replies: [FeedNote] = []
+    var reposts: [FeedNote] = []
     var tagged: [FeedNote] = []
 }
 
