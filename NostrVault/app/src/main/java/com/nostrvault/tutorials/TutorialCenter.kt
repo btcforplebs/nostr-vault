@@ -61,6 +61,11 @@ object TutorialCenter {
 
     fun isActive(id: TutorialID): Boolean = _active.value == id
 
+    /** See [TutorialProgress.held]. Fill your vault's coordinator sets it. */
+    var held: Boolean
+        get() = progress.held
+        set(value) { progress.held = value }
+
     fun status(id: TutorialID, account: String): TutorialStatus = progress.status(id, account)
 
     fun startIfEligible(id: TutorialID, account: String) {
@@ -77,6 +82,12 @@ object TutorialCenter {
     }
 
     fun finish(id: TutorialID, account: String) {
+        progress.finish(id, account)
+        publish(saved = true)
+    }
+
+    /** Done without being shown, so the page on screen may start its own. */
+    fun finishQuietly(id: TutorialID, account: String) {
         progress.finish(id, account)
         publish(saved = true)
     }

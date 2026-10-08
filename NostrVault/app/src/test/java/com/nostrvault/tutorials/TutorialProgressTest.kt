@@ -19,7 +19,7 @@ class TutorialProgressTest {
     private val alice = "a".repeat(64)
     private val bob = "b".repeat(64)
 
-    @Test fun fillYourVaultStartsFirstAndBlocksOthers() {
+    @Test fun fillYourVaultStartsFirstAndAloneOnScreen() {
         val p = TutorialProgress(MemoryStore())
         assertTrue(p.startIfEligible(TutorialID.FILL_YOUR_VAULT, alice))
         assertFalse(p.startIfEligible(TutorialID.FEEDS, alice))
@@ -32,14 +32,32 @@ class TutorialProgressTest {
         assertNull(p.active)
     }
 
-    @Test fun oneTutorialPerLaunch() {
-        val store = MemoryStore()
-        val p = TutorialProgress(store)
+    /** Skipping counts the same as finishing for the gate, and every page
+     *  still starts its own tutorial in the same launch, one at a time. */
+    @Test fun eachPageStartsItsTutorialInTheSameLaunch() {
+        val p = TutorialProgress(MemoryStore())
         p.startIfEligible(TutorialID.FILL_YOUR_VAULT, alice)
         p.skip(TutorialID.FILL_YOUR_VAULT, alice)
         assertNull(p.active)
+        assertTrue(p.startIfEligible(TutorialID.FEEDS, alice))
+        assertFalse(p.startIfEligible(TutorialID.VAULT, alice))
+
+        p.skip(TutorialID.FEEDS, alice)
+        assertTrue(p.startIfEligible(TutorialID.VAULT, alice))
+        assertEquals(TutorialID.VAULT, p.active)
+    }
+
+    /** Fill your vault's "built" card is up after it's done: nothing starts
+     *  over it until it's put away. */
+    @Test fun heldStopsPageTutorials() {
+        val p = TutorialProgress(MemoryStore())
+        p.startIfEligible(TutorialID.FILL_YOUR_VAULT, alice)
+        p.finish(TutorialID.FILL_YOUR_VAULT, alice)
+        p.held = true
         assertFalse(p.startIfEligible(TutorialID.FEEDS, alice))
-        assertTrue(TutorialProgress(store).startIfEligible(TutorialID.FEEDS, alice))
+
+        p.held = false
+        assertTrue(p.startIfEligible(TutorialID.FEEDS, alice))
     }
 
     @Test fun finishedNeverStartsAgainOnItsOwn() {
@@ -61,13 +79,12 @@ class TutorialProgressTest {
         assertTrue(TutorialProgress(store).startIfEligible(TutorialID.FILL_YOUR_VAULT, bob))
     }
 
-    @Test fun replayKeepsStatusAndDoesNotUseTheLaunch() {
+    @Test fun replayKeepsStatus() {
         val p = TutorialProgress(MemoryStore())
         p.finish(TutorialID.FEEDS, alice)
         p.replay(TutorialID.FEEDS)
         assertEquals(TutorialID.FEEDS, p.active)
         assertEquals(TutorialStatus.DONE, p.status(TutorialID.FEEDS, alice))
-        assertFalse(p.autoStartedThisLaunch)
     }
 
     @Test fun resetAll() {
@@ -106,11 +123,53 @@ class TutorialProgressTest {
         assertEquals("tutorial.pocket-relay", TutorialProgress.key(TutorialID.POCKET_RELAY, alice))
     }
 
-    @Test fun feedsCardsPointAtThePicker() {
-        assertEquals(6, TutorialContent.feeds.size)
-        assertTrue(TutorialContent.feeds.all { it.anchor == TutorialContent.FEED_PICKER })
-        assertTrue(TutorialID.FILL_YOUR_VAULT.isAvailable) // its guide is FillYourFeedOverlay
-        assertTrue(TutorialID.FEEDS.isAvailable)
+    @Test fun feedsCardsPointAtTheTwoCorners() {
+        assertEquals(
+            listOf(TutorialContent.FEED_PICKER, TutorialContent.FEED_TOOLBAR, TutorialContent.FEED_TOOLBAR),
+            TutorialContent.feeds.map { it.anchor },
+        )
+    }
+
+    /** Pocket Relay points at the relay card, its activity, then its address. */
+    @Test fun pocketRelayCardsPointAtTheDashboard() {
+        assertEquals(
+            listOf(TutorialContent.RELAY_STATUS, TutorialContent.RELAY_ACTIVITY, TutorialContent.RELAY_ADDRESS),
+            TutorialContent.pocketRelay.map { it.anchor },
+        )
+    }
+
+    /** The screens put these on with `Modifier.tutorialAnchor`, and iOS uses
+     *  the same names. A typo here leaves a card with no pointer. */
+    @Test fun anchorNamesMatchIos() {
+        assertEquals("feeds.picker", TutorialContent.FEED_PICKER)
+        assertEquals("feeds.toolbar", TutorialContent.FEED_TOOLBAR)
+        assertEquals("vault.modes", TutorialContent.VAULT_MODES)
+        assertEquals("vault.filters", TutorialContent.VAULT_FILTERS)
+        assertEquals("vault.relay", TutorialContent.VAULT_RELAY)
+        assertEquals("wallet.empty", TutorialContent.WALLET_EMPTY)
+        assertEquals("wallet.connect", TutorialContent.WALLET_CONNECT_BUTTON)
+        assertEquals("relay.status", TutorialContent.RELAY_STATUS)
+        assertEquals("relay.address", TutorialContent.RELAY_ADDRESS)
+        assertEquals("relay.activity", TutorialContent.RELAY_ACTIVITY)
+    }
+
+    /** Every tutorial has cards on Android now (iOS: the iPhone/iPad build). */
+    @Test fun everyTutorialIsAvailable() {
+        TutorialID.entries.forEach { assertTrue(it.name, it.isAvailable) }
+        listOf(TutorialID.FEEDS, TutorialID.VAULT, TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY).forEach {
+            assertEquals(it.name, 3, it.steps.size)
+        }
+        assertTrue(TutorialID.FILL_YOUR_VAULT.steps.isEmpty()) // its guide is FillYourFeedOverlay
+    }
+
+    /** The "Next: …" chain, in the iOS order. */
+    @Test fun nextFollowsTheIosOrder() {
+        assertEquals(TutorialID.FEEDS, TutorialID.FILL_YOUR_VAULT.next)
+        assertEquals(TutorialID.VAULT, TutorialID.FEEDS.next)
+        assertEquals(TutorialID.WALLET_CONNECT, TutorialID.VAULT.next)
+        assertEquals(TutorialID.POCKET_RELAY, TutorialID.WALLET_CONNECT.next)
+        assertNull(TutorialID.POCKET_RELAY.next)
+        assertNull(TutorialID.IMPORT_TOUR.next)
     }
 
     @Test fun importTourCoversVaultAndPocketRelay() {

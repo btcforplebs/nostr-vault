@@ -19,19 +19,19 @@ enum class FillYourFeedPhase {
     HINT,
     /** No card; the person is browsing with the meter. */
     BROWSING,
-    /** "Your feed is ready", shown once at 5 follows. */
+    /** "Your web of trust is built", shown once at 5 follows. Its button
+     *  opens Discover and starts the Feeds tutorial. */
     READY,
-    /** The one-time "Your web of trust is built" card at 10. */
-    MASTER,
 }
 
 object FillYourFeedGuide {
-    /** The meter and pill at 10 (Logen: plain trust wording). */
+    /** The meter and pill at 5 (Logen: plain trust wording). */
     const val MASTER_TITLE = "Web of trust"
 
-    /** The one-time card at 10. */
-    const val MASTER_CARD_TITLE = "Your web of trust is built"
-    const val MASTER_CARD_BODY = "Your feed now comes from 10 people you chose, and the people they trust."
+    /** The one-time card at 5. */
+    const val READY_TITLE = "Your web of trust is built"
+    /** The card's button: Discover, where the Feeds tutorial starts. */
+    const val READY_BUTTON = "Next: Discover people"
 
     /**
      * Where the guide opens when the tutorial engine starts it. Someone who
@@ -62,21 +62,23 @@ object FillYourFeedGuide {
 
     fun meterSubtitle(meter: VaultMeter): String = when (meter.stage) {
         VaultMeter.Stage.FILLING -> "Look before you follow"
-        VaultMeter.Stage.FILLED -> "10 builds your web of trust"
-        VaultMeter.Stage.MASTER -> "${VaultMeter.MASTER_GOAL} people followed"
+        VaultMeter.Stage.MASTER -> "${VaultMeter.GOAL} people followed"
     }
 
+    /** The collapsed pill: "3/5", or the title once built. */
     fun pillText(meter: VaultMeter): String =
         if (meter.stage == VaultMeter.Stage.MASTER) MASTER_TITLE else meter.compactProgressText
 
+    /** Fraction of the pill's ring: progress toward 5. */
     fun ringFraction(meter: VaultMeter): Float =
         if (meter.stage == VaultMeter.Stage.MASTER) 1f
-        else minOf(meter.count, VaultMeter.MASTER_GOAL).toFloat() / VaultMeter.MASTER_GOAL
+        else minOf(meter.count, VaultMeter.GOAL).toFloat() / VaultMeter.GOAL
 }
 
 /**
  * Per account: whether the meter is on. Set on "Let's fill it", cleared by
- * "Hide the meter", Skip or "Not now".
+ * "Hide the meter", Skip, "Not now" or the last card's button. Kept so a
+ * relaunch mid-guide resumes on the feed with the meter.
  */
 class FeedMeterStore(private val store: TutorialStore) {
     private fun key(account: String) = "fillYourFeed.meter.$account"

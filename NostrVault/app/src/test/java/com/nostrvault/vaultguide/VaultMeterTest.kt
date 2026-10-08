@@ -24,31 +24,35 @@ class VaultMeterTest {
         assertEquals(2, VaultMeter.of(listOf("p1", "", "p1", "p2"), owner, false).count)
     }
 
-    @Test fun stagesAtFiveAndTen() {
+    /** Five builds the web of trust; there is no second goal. */
+    @Test fun webOfTrustIsBuiltAtFive() {
         assertEquals(VaultMeter.Stage.FILLING, meter(4).stage)
-        assertEquals(VaultMeter.Stage.FILLED, meter(5).stage)
-        assertEquals(VaultMeter.Stage.FILLED, meter(9).stage)
-        assertEquals(VaultMeter.Stage.MASTER, meter(10).stage)
-        assertEquals(VaultMeter.Stage.MASTER, meter(8, earned = true).stage)
+        assertEquals(VaultMeter.Stage.MASTER, meter(5).stage)
+        assertEquals(VaultMeter.Stage.MASTER, meter(12).stage)
     }
 
-    @Test fun progressText() {
+    /** Gold is a lasting mark: dropping below 5 afterwards keeps it. */
+    @Test fun earnedMasterSurvivesAnUnfollow() {
+        assertEquals(VaultMeter.Stage.MASTER, meter(3, earned = true).stage)
+    }
+
+    @Test fun progressTextStaysOnFive() {
         assertEquals("3 of 5", meter(3).progressText)
-        assertEquals("7 of 10", meter(7).progressText)
-        assertEquals("10 of 10", meter(14).progressText)
+        assertEquals("5 of 5", meter(7).progressText)
         assertEquals("4/5", meter(4).compactProgressText)
     }
 
     @Test fun accessibilityText() {
         assertEquals("1 of 5 person followed.", meter(1).accessibilityText)
         assertEquals("4 of 5 people followed.", meter(4).accessibilityText)
-        assertEquals("Web of trust built. 10 of 10 people followed.", meter(10).accessibilityText)
+        assertEquals("Web of trust built. 5 of 5 people followed.", meter(5).accessibilityText)
     }
 
-    @Test fun recentKeepsTheNewestTen() {
+    @Test fun recentKeepsTheNewestFive() {
         val m = meter(12)
-        assertEquals("p3", m.recent.first())
+        assertEquals("p8", m.recent.first())
         assertEquals("p12", m.recent.last())
+        assertEquals(5, m.recent.size)
     }
 
     @Test fun fiveOrMoreSkipsTheGuide() {
@@ -64,12 +68,13 @@ class VaultMeterTest {
                 if (value == null) values.remove(key) else values[key] = value
             }
         })
-        assertFalse(store.record(meter(9), owner))
-        assertTrue(store.record(meter(10), owner))
-        assertFalse(store.record(meter(10), owner))
+        assertFalse(store.record(meter(4), owner))
+        assertFalse(store.isEarned(owner))
+        assertTrue(store.record(meter(5), owner))
+        assertFalse("the bolt must play only once", store.record(meter(5), owner))
         assertTrue(store.isEarned(owner))
-        assertFalse(store.isEarned("someone-else"))
-        assertFalse(store.record(meter(10), ""))
+        assertFalse("earned is per account", store.isEarned("someone-else"))
+        assertFalse("no account, nothing to record", store.record(meter(5), ""))
     }
 
     @Test fun topicLists() {

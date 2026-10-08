@@ -156,10 +156,10 @@ fun FillYourFeedOverlay(
                 boltRunning = false
                 delay(500)
             }
-            guide.showMasterCard()
+            guide.showReadyCard()
         }
 
-        val dims = phase == FillYourFeedPhase.INTRO || phase == FillYourFeedPhase.READY || phase == FillYourFeedPhase.MASTER
+        val dims = phase == FillYourFeedPhase.INTRO || phase == FillYourFeedPhase.READY
         if (dims) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(enabled = false) {})
         }
@@ -176,7 +176,6 @@ fun FillYourFeedOverlay(
                 FillYourFeedPhase.TOPICS -> TopicsCard()
                 FillYourFeedPhase.HINT -> HintCard()
                 FillYourFeedPhase.READY -> ReadyCard(profiles)
-                FillYourFeedPhase.MASTER -> MasterCard()
                 FillYourFeedPhase.OFF, FillYourFeedPhase.BROWSING -> Unit
             }
         }
@@ -492,28 +491,36 @@ private fun HintCard() {
     val guide = FillYourVaultCoordinator
     GuideCard(step = 3, onSkip = guide::closeGuide) {
         CardTitle("Find people you like")
-        CardBody("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five gets your feed going.")
+        CardBody("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five builds your web of trust.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             PrimaryButton("Got it", onClick = guide::dismissHint)
         }
     }
 }
 
-// ── 4. Your feed is ready ──────────────────────────────────────────
+// ── 4. Your web of trust is built ──────────────────────────────────
 
+/** One card at 5 follows: the web of trust is built, then on to Discover
+ *  and the Feeds tutorial. iOS: ReadyCard in FillYourFeedOverlay.swift. */
 @Composable
 private fun ReadyCard(profiles: Map<String, FeedProfile>) {
     val guide = FillYourVaultCoordinator
     val meter by guide.meter.collectAsState()
-    var keepTopics by remember { mutableStateOf(true) }
     var reach by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(Unit) { reach = guide.countExtendedNetwork() }
-    GuideCard {
-        CardTitle("Your feed is ready", center = true)
+    GuideCard(border = GoldMid) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(
+            Modifier
+                .size(60.dp)
+                .shadow(12.dp, CircleShape, ambientColor = GoldMid, spotColor = GoldMid)
+                .background(Brush.radialGradient(listOf(GoldLight, GoldMid, GoldDark)), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Icon(NostrVaultIcons.Zap, contentDescription = null, tint = GoldInk, modifier = Modifier.size(32.dp)) } }
+        CardTitle(FillYourFeedGuide.READY_TITLE, color = GoldLight, center = true)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            meter.recent.takeLast(VaultMeter.GOAL).forEachIndexed { i, pk ->
+            meter.recent.forEachIndexed { i, pk ->
                 Box(Modifier.offset(x = (-10 * i).dp).border(3.dp, CardSurface, CircleShape)) {
-                    AvatarImage(url = profiles[pk]?.pictureURL, pubkey = pk, size = 48.dp, displayName = profiles[pk]?.bestName)
+                    AvatarImage(url = profiles[pk]?.pictureURL, pubkey = pk, size = 44.dp, displayName = profiles[pk]?.bestName)
                 }
             }
         }
@@ -526,56 +533,14 @@ private fun ReadyCard(profiles: Map<String, FeedProfile>) {
                 Text("Counting the people your follows bring in…", color = SecondaryText, fontSize = 13.sp)
             }
         }
-        ChoiceRow("Keep my topics", "Topic posts from people in your web of trust.", keepTopics) { keepTopics = true }
-        ChoiceRow("Only my web of trust", "Drop the topics and just see Following.", !keepTopics) { keepTopics = false }
-        PrimaryButton("Go to Following", modifier = Modifier.fillMaxWidth()) { guide.goToFollowing(keepTopics) }
-    }
-}
-
-@Composable
-private fun ChoiceRow(title: String, detail: String, on: Boolean, onClick: () -> Unit) {
-    val primary = LocalNostrVaultColors.current.primary
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (on) primary.copy(alpha = 0.18f) else ChipSurface)
-            .border(1.dp, if (on) primary else Color.White.copy(alpha = 0.1f), shape)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .semantics { selected = on }
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            Modifier.size(20.dp).border(if (on) 6.dp else 2.dp, if (on) primary else SecondaryText, CircleShape),
-        )
-        Column {
-            Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(detail, color = SecondaryText, fontSize = 13.sp)
-        }
-    }
-}
-
-// ── the web of trust (10 follows) ───────────────────────────────────────────────────
-
-@Composable
-private fun MasterCard() {
-    val guide = FillYourVaultCoordinator
-    GuideCard(border = GoldMid) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(
-            Modifier
-                .size(96.dp)
-                .shadow(15.dp, CircleShape, ambientColor = GoldMid, spotColor = GoldMid)
-                .background(Brush.radialGradient(listOf(GoldLight, GoldMid, GoldDark)), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Icon(NostrVaultIcons.Zap, contentDescription = null, tint = GoldInk, modifier = Modifier.size(52.dp)) } }
-        CardTitle(FillYourFeedGuide.MASTER_CARD_TITLE, color = GoldLight, center = true)
         Text(
-            FillYourFeedGuide.MASTER_CARD_BODY,
+            "Find more people on Discover. It shows posts from the people your follows follow.",
             color = PrimaryText.copy(alpha = 0.85f), fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
         )
-        PrimaryButton("Done", modifier = Modifier.fillMaxWidth(), container = GoldMid, content = GoldInk, onClick = guide::dismissMasterCard)
+        PrimaryButton(
+            FillYourFeedGuide.READY_BUTTON, modifier = Modifier.fillMaxWidth(),
+            container = GoldMid, content = GoldInk, onClick = guide::goToDiscover,
+        )
     }
 }
 
@@ -643,8 +608,8 @@ private fun MeterBar(
 @Composable
 private fun MeterSlots(meter: VaultMeter, profiles: Map<String, FeedProfile>, gold: Boolean) {
     val row = meter.slots
-    val size = if (row > VaultMeter.GOAL) 24.dp else 32.dp
-    val overlap = if (row > VaultMeter.GOAL) 8.dp else 6.dp
+    val size = 32.dp
+    val overlap = 6.dp
     val people = meter.recent.takeLast(row)
     Row(Modifier.semantics { }) {
         for (i in 0 until row) {
