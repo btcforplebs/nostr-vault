@@ -59,6 +59,9 @@ class LiveFeedService @Inject constructor(
     private val _streams = MutableStateFlow<List<LiveStream>>(emptyList())
     val streams: StateFlow<List<LiveStream>> = _streams.asStateFlow()
 
+    /** Hosts blocked from the player since the last refresh; a late relay answer must not bring them back. */
+    private val removedHosts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -79,6 +82,8 @@ class LiveFeedService @Inject constructor(
     fun refresh() {
         job?.cancel()
         disconnect()
+        // The block list is read fresh below, so an unblocked host can come back.
+        removedHosts.clear()
         _isLoading.value = true
 
         val relays = configStore.config.value.activeFeedRelays
@@ -161,10 +166,19 @@ class LiveFeedService @Inject constructor(
         clients.clear()
     }
 
+    /**
+     * Drops a host's streams from the grid without a refetch, when the owner
+     * blocks them from the player. iOS LiveFeedService.removeStreams(byHost:).
+     */
+    fun removeStreams(byHost: String) {
+        removedHosts.add(byHost)
+        _streams.value = _streams.value.filter { it.hostPubkey != byHost }
+    }
+
     private fun publish(values: Collection<LiveStream>) {
         val now = System.currentTimeMillis() / 1000
         _streams.value = values
-            .filter { it.isPlayableLive && it.isOnAirAt(now) }
+            .filter { it.isPlayableLive && it.isOnAirAt(now) && it.hostPubkey !in removedHosts }
             .sortedByDescending { it.participants ?: 0 }
     }
 

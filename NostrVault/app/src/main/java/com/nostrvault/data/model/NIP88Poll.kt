@@ -164,9 +164,12 @@ data class PollTally(
         if (voters.isEmpty()) 0.0 else count(optionId).toDouble() / voters.size
 }
 
-/** The poll this note is, when it is a NIP-88 poll with options. */
+/**
+ * The poll this note is, when it is a NIP-88 poll with options. A reposted
+ * poll keys on the original's id, so votes go to the poll, not the repost.
+ */
 val FeedNote.poll: NIP88Poll.Poll?
-    get() = NIP88Poll.Poll.from(id, pubkey, kind, content, tags)
+    get() = NIP88Poll.Poll.from(effectiveEventId, pubkey, displayKind, content, tags)
 
 /**
  * What a one-line row shows for a poll: its question, marked as a poll. Null

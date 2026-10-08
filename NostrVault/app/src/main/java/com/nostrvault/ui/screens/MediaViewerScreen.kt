@@ -50,6 +50,16 @@ import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.max
 
+/**
+ * The link to share for a Blossom item: its own URL when it has one, otherwise
+ * the first public mirror + sha256. Never a path on this phone.
+ */
+internal fun publicBlossomLink(item: BlossomMediaItem, mirrors: List<String>): String {
+    if (item.displayUrl.startsWith("http")) return item.displayUrl
+    val mirror = mirrors.firstOrNull { !it.contains("localhost") && !it.contains("127.0.0.1") }
+    return if (mirror != null) "$mirror/${item.sha256}" else item.displayUrl
+}
+
 @HiltViewModel
 class MediaViewerViewModel @Inject constructor(
     private val mediaSaveService: MediaSaveService,
@@ -157,12 +167,8 @@ class MediaViewerViewModel @Inject constructor(
     }
 
     /** Returns the best public Blossom URL for [item] — external mirror preferred over local. */
-    fun blossomLink(item: BlossomMediaItem): String {
-        if (item.displayUrl.startsWith("http")) return item.displayUrl
-        val mirror = configStore.config.value.activeBlossomMirrors
-            .firstOrNull { !it.contains("localhost") && !it.contains("127.0.0.1") }
-        return if (mirror != null) "$mirror/${item.sha256}" else item.displayUrl
-    }
+    fun blossomLink(item: BlossomMediaItem): String =
+        publicBlossomLink(item, configStore.config.value.activeBlossomMirrors)
 
     fun saveToGallery(item: BlossomMediaItem) {
         viewModelScope.launch {

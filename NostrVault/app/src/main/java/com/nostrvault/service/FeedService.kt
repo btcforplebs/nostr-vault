@@ -19,6 +19,7 @@ import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.components.ReactionChoice
 import com.nostrvault.ui.components.likedToastMessage
 import com.nostrvault.util.RelayGiven
+import com.nostrvault.util.ZapAmount
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -3566,22 +3567,16 @@ class FeedService @Inject constructor(
                                 9735 -> {
                                     val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
                                     var zapperPubkey = pubkey
-                                    var amountSats = 0L
                                     var comment = ""
                                     if (descTag != null) {
                                         try {
                                             val zapReq = json.parseToJsonElement(descTag).jsonObject
                                             zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
                                             comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                            val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
-                                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                            } ?: emptyList()
-                                            val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
-                                            if (amountTag != null) {
-                                                amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
-                                            }
                                         } catch (_: Exception) {}
                                     }
+                                    // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+                                    val amountSats = ZapAmount.sats(tags)
                                     synchronized(zaps) { zaps.add(ZapDetail(id, zapperPubkey, amountSats, comment)) }
                                 }
                                 6 -> {
@@ -3660,22 +3655,16 @@ class FeedService @Inject constructor(
                                             9735 -> {
                                                 val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
                                                 var zapperPubkey = pubkey
-                                                var amountSats = 0L
                                                 var comment = ""
                                                 if (descTag != null) {
                                                     try {
                                                         val zapReq = json.parseToJsonElement(descTag).jsonObject
                                                         zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
                                                         comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                                        val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
-                                                            t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                                        } ?: emptyList()
-                                                        val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
-                                                        if (amountTag != null) {
-                                                            amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
-                                                        }
                                                     } catch (_: Exception) {}
                                                 }
+                                                // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+                                                val amountSats = ZapAmount.sats(tags)
                                                 ZapDetail(id, zapperPubkey, amountSats, comment)
                                             }
                                             6 -> RepostDetail(id, pubkey)
@@ -4148,7 +4137,7 @@ class FeedService @Inject constructor(
             val originalId = note?.repostedEventId ?: noteId
             // A bare repost still carries the reposter's pubkey.
             val originalPubkey = note?.effectiveAuthor
-            val originalKind = if (note?.repostedEventId != null) 1 else (note?.kind ?: 1)
+            val originalKind = note?.effectiveKind ?: 1
 
             val rawEvent = rawEventCache[originalId] ?: ""
             val config = configStore.config.value
