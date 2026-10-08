@@ -97,6 +97,46 @@ func Initialize(ctx context.Context, model Model, g *ReadyGate) {
 	g.markReady()
 }
 
+// EmptyGraphRefreshInterval is how often a graph that names nobody but the
+// owner is rebuilt. A new account's first follows should reach its web of
+// trust in minutes, not at the next daily refresh.
+const EmptyGraphRefreshInterval = 2 * time.Minute
+
+// RefreshWhileEmpty rebuilds the graph every interval while it names only the
+// owners, so following people fills it soon after. Once it names anyone else
+// this costs nothing; PeriodicRefresh takes over.
+func RefreshWhileEmpty(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refreshIfOnlyOwners(ctx, GetInstance())
+		}
+	}
+}
+
+type ownersOnly interface {
+	NamesOnlyOwners() bool
+}
+
+func refreshIfOnlyOwners(ctx context.Context, instance any) bool {
+	empty, ok := instance.(ownersOnly)
+	if !ok || !empty.NamesOnlyOwners() {
+		return false
+	}
+	refresher, ok := instance.(Refresher)
+	if !ok {
+		return false
+	}
+	slog.Info("🌱 Web of Trust names only the owner, checking for new follows")
+	refresher.Refresh(ctx)
+	return true
+}
+
 // PeriodicRefresh re-computes the WoT every interval for as long as the process
 // stays alive. The ticker starts from zero on every call, so on a process that
 // restarts often (a mobile app backgrounded/relaunched constantly, unlike a

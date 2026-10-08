@@ -442,6 +442,21 @@ class FeedService @Inject constructor(
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
 
     /**
+     * True once the relay's graph file has been read for this account, even
+     * if it named nobody. Separates "no graph built yet" from "built and
+     * empty because you follow nobody". iOS: FeedService.wotCacheRead.
+     */
+    private val _wotCacheRead = MutableStateFlow(false)
+    val wotCacheRead: StateFlow<Boolean> = _wotCacheRead.asStateFlow()
+
+    /**
+     * The graph is built and names nobody: the account follows no one yet.
+     * Global says so, and the Hashtags feed opens up (labelled) so there is
+     * somewhere to find people to follow.
+     */
+    fun hasNoWebOfTrustYet(): Boolean = _wotCacheRead.value && _wotPubkeys.value.isEmpty()
+
+    /**
      * Everyone around the user, for ranking search and mention results after
      * their follows: the relay's Web of Trust graph plus the extended network.
      * iOS: FeedService.webOfTrustForRanking.
@@ -806,7 +821,21 @@ class FeedService @Inject constructor(
      * publish: a timed-out load leaves an empty or partial list in memory, and
      * publishing it would replace every follow on every relay (iOS #180).
      */
-    @Volatile private var contactListConfirmed = false
+    private val _contactListConfirmed = MutableStateFlow(false)
+    private var contactListConfirmed: Boolean
+        get() = _contactListConfirmed.value
+        set(value) { _contactListConfirmed.value = value }
+
+    /**
+     * The real follow list has loaded for the active account: the same test
+     * Follow uses before it publishes. Until then the follow list can read
+     * empty for someone who follows hundreds. iOS: FeedService.followListIsKnown.
+     */
+    val followListIsKnown: StateFlow<Boolean> = combine(
+        _hasAttemptedContactLoad, _isLoadingContacts, _contactListConfirmed,
+    ) { attempted, loading, confirmed ->
+        contactManager.mayPublishFollowList(attempted, loading, confirmed)
+    }.stateIn(scope, SharingStarted.Eagerly, false)
 
     private fun queueFollowAction(pubkey: String, follow: Boolean, unavailable: Boolean = false) {
         pendingFollowActions.removeAll { it.pubkey == pubkey }
@@ -910,8 +939,10 @@ class FeedService @Inject constructor(
                     Log.w(TAG, "loadContactList: no contact list found (confirmed new account=${fetched?.confirmed == true})")
                     withContext(Dispatchers.Main.immediate) {
                         // Only a genuinely new account (every relay answered,
-                        // none had a list) may follow from empty; a timeout may not.
-                        contactListConfirmed = fetched?.confirmed == true
+                        // none had a list, or a key setup just made) may follow
+                        // from empty; a timeout may not.
+                        contactListConfirmed = fetched?.confirmed == true ||
+                            FreshAccountKeys.isFresh(appContext, nostrService.activeHexPubkey)
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                     }
@@ -1114,6 +1145,15 @@ class FeedService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Extended network (discovery mode)
     // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * How many people the follows bring in: the people they follow, freshly
+     * tallied (an older tally predates the follows just made).
+     */
+    suspend fun countExtendedNetwork(): Int {
+        loadExtendedNetwork()
+        return _extendedNetworkPubkeys.value.size
+    }
 
     /**
      * Builds the discovery feed's author set: the people your follows follow,
@@ -2287,6 +2327,7 @@ class FeedService @Inject constructor(
                         }
                         Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
+                            _wotCacheRead.value = true
                             if (loaded != _wotPubkeys.value) {
                                 _wotPubkeys.value = loaded
                                 // Global is filtered against this set; notes
@@ -2409,6 +2450,8 @@ class FeedService @Inject constructor(
         rollback: List<String>? = null,
         onFailed: (() -> Unit)? = null,
     ) {
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(appContext, nostrService.activeHexPubkey)
         val tags = pubkeys.map { listOf("p", it) }
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {

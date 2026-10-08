@@ -240,8 +240,6 @@ class ConfigService: ObservableObject {
         
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         
-        writeStarterPackSeeds(encoder: encoder)
-
         if !config.blastrRelays.isEmpty {
             let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
             if let data = try? encoder.encode(config.blastrRelays) {
@@ -845,39 +843,6 @@ class ConfigService: ObservableObject {
         }
 
         return url
-    }
-
-
-    /// Hands the bundled starter packs to the Go relay as a flat list of npubs.
-    ///
-    /// The relay seeds its Web of Trust from these when the owner follows
-    /// nobody — otherwise a new account's trust graph contains one pubkey,
-    /// itself, and every feed built on it shows either nothing or the open
-    /// firehose. The relay carries its own copy as a fallback for running
-    /// headless, but `starter_packs.json` in the app bundle is the source of
-    /// truth and this write is what keeps the two from drifting: edit the
-    /// bundled file and both the Initial Follows step and the trust graph
-    /// follow.
-    ///
-    /// Writing nothing is better than writing an empty list — the relay treats
-    /// an empty override as unusable and keeps its fallback, but leaving a
-    /// stale file behind would be worse.
-    private func writeStarterPackSeeds(encoder: JSONEncoder) {
-        guard let packs = StarterPacksData.load() else { return }
-        var seen = Set<String>()
-        var npubs: [String] = []
-        for pack in packs.packs {
-            for account in pack.accounts where !account.npub.isEmpty {
-                if seen.insert(account.npub).inserted {
-                    npubs.append(account.npub)
-                }
-            }
-        }
-        guard !npubs.isEmpty else { return }
-        let url = relayDataDir.appendingPathComponent("starter_pack.json")
-        if let data = try? encoder.encode(npubs) {
-            try? data.write(to: url)
-        }
     }
 
 }

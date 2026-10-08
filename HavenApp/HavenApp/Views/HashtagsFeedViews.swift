@@ -33,6 +33,16 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     }
 
     private var everyone: Bool { configService.config.globalShowsEveryone }
+    /// Following nobody means no web of trust to filter by. Rather than show
+    /// nothing, the topic feed opens to everyone and says so: it is where a
+    /// new account finds its first people.
+    private var unfilteredForNewAccount: Bool { !everyone && feedService.hasNoWebOfTrustYet }
+    /// Once the open list is being screened it stays screened while this
+    /// view lives: the empty web of trust is rebuilt every 2 minutes, and the
+    /// moment the guide's follows give it names, flipping to the network
+    /// feed wiped the list under the reader (Tron, 2026-10-08).
+    @State private var screenLatched = false
+    private var screened: Bool { !everyone && (unfilteredForNewAccount || screenLatched) }
     private var shownTags: [String] {
         if let selected, interests.hashtags.contains(selected) { return [selected] }
         return interests.hashtags
@@ -44,6 +54,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 noTagsState
             } else {
                 chipRow
+                if screened { unfilteredBanner }
                 if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                     noPostsState
                 }
@@ -59,7 +70,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                             if model.loadingOlder == .follows { olderSpinner }
                         }
                         if !model.fromOthers.isEmpty {
-                            if !everyone { sectionHeader("More from your network") }
+                            if !everyone && !screened { sectionHeader("More from your network") }
                             ForEach(model.fromOthers) { note in
                                 row(note).onAppear { model.rowAppeared(note, in: .others) }
                             }
@@ -84,6 +95,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
         .onChange(of: feedService.followedPubkeys.count) { _, _ in restart() }
         .onChange(of: feedService.wotPubkeys.count) { _, _ in restart() }
         .onChange(of: everyone) { _, _ in restart() }
+        .onChange(of: feedService.wotCacheRead) { _, _ in restart() }
         .alert("Couldn't save", isPresented: $showingFollowFailed) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -100,7 +112,21 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             suggestions.load(follows: Set(feedService.followedPubkeys), excluding: [])
             return
         }
-        model.start(tags: shownTags, follows: follows, trust: feedService.globalTrustSet())
+        if unfilteredForNewAccount { screenLatched = true }
+        if everyone { screenLatched = false }
+        let trust = screened ? nil : feedService.globalTrustSet()
+        // No web of trust yet: the open list is screened for bots and farms
+        // (TopicFeedFilter) rather than shown raw.
+        model.start(tags: shownTags, follows: follows, trust: trust, screen: screened)
+    }
+
+    private var unfilteredBanner: some View {
+        Label("Unfiltered: people you don't know yet", systemImage: "eye")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .accessibilityLabel("Unfiltered. These posts are from people you don't know yet.")
     }
 
     private func setFollowing(_ tag: String, _ followed: Bool) {
@@ -240,7 +266,9 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     private var threadedList: some View {
         let followIds = Set(model.fromFollows.map(\.id))
         let blocked = configService.activeAccountBlockedHexPubkeys
-        let threads = FeedThreadGrouping.build(notes: model.fromFollows + model.fromOthers) { id in
+        // Screened, the order is the ranking (posts people responded to first).
+        let threads = FeedThreadGrouping.build(notes: model.fromFollows + model.fromOthers,
+                                               keepFeedOrder: model.screening) { id in
             guard let note = feedService.findNote(id: id), !blocked.contains(note.pubkey) else { return nil }
             return note
         }
@@ -257,7 +285,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 if model.loadingOlder == .follows { olderSpinner }
             }
             if !rest.isEmpty {
-                if !everyone { sectionHeader("More from your network") }
+                if !everyone && !screened { sectionHeader("More from your network") }
                 ForEach(rest) { thread in
                     threadRow(thread).onAppear {
                         if thread.id == rest.last?.id { model.reachedEnd(of: .others) }

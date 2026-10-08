@@ -14,7 +14,7 @@ extension TutorialID {
     /// Shown in Settings → Tutorials.
     var title: String {
         switch self {
-        case .fillYourVault: return "Fill Your Vault"
+        case .fillYourVault: return "Fill Your Feed"
         case .feeds: return "Your Feeds"
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
@@ -69,8 +69,8 @@ extension TutorialID {
         self == .fillYourVault ? Self.fillYourVaultHasGuide : !steps.isEmpty
     }
 
-    /// Flip to true in the commit that adds the Fill your vault guide.
-    static let fillYourVaultHasGuide = false
+    /// The guide is `FillYourFeedOverlay`.
+    static let fillYourVaultHasGuide = true
 }
 
 enum TutorialContent {

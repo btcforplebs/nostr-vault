@@ -138,6 +138,22 @@ fun FeedScreen(
     hashtagsViewModel: HashtagsFeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()
+    // Fill your feed: while its meter is up, a tapped person opens the small
+    // profile card (look before you follow), Post rises above the open meter
+    // and the feed's end scrolls clear of it.
+    val guidePhase by com.nostrvault.vaultguide.FillYourVaultCoordinator.phase.collectAsState()
+    val guideMeterOn by com.nostrvault.vaultguide.FillYourVaultCoordinator.meterOn.collectAsState()
+    val guideCollapsed by com.nostrvault.vaultguide.FillYourVaultCoordinator.meterCollapsed.collectAsState()
+    val guideMeterHeight by com.nostrvault.vaultguide.FillYourVaultCoordinator.meterHeight.collectAsState()
+    val guideMeterShowing = com.nostrvault.vaultguide.FillYourFeedGuide.showsMeter(guidePhase, guideMeterOn)
+    val meterLift = if (guideMeterShowing && !guideCollapsed && guideMeterHeight > 0.dp) guideMeterHeight + 10.dp else 0.dp
+    val openProfile: (String) -> Unit = { pubkey ->
+        if (com.nostrvault.vaultguide.FillYourFeedGuide.opensProfileCard(guideMeterShowing)) {
+            com.nostrvault.vaultguide.FillYourVaultCoordinator.profileCardPubkey.value = pubkey
+        } else {
+            onProfileClick(pubkey)
+        }
+    }
     // The Feeds tutorial starts here the first time the feed shows (after
     // Fill your vault; see TutorialProgress). Its cards point at the picker.
     // Re-checked when a status is saved, so an account whose Fill your vault
@@ -195,6 +211,7 @@ fun FeedScreen(
     val globalShowsEveryone by viewModel.globalShowsEveryone.collectAsState()
     val globalFeedLanguages by viewModel.globalFeedLanguages.collectAsState()
     val trustGraphReady by viewModel.trustGraphReady.collectAsState()
+    val noWebOfTrustYet by viewModel.noWebOfTrustYet.collectAsState()
     val showEngagementStats by viewModel.showEngagementStats.collectAsState()
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
     // The parent, quote and repost caches are not collected here. Every parent
@@ -573,7 +590,7 @@ fun FeedScreen(
             // The FAB folds with the bars, following the finger.
             val folded by rememberChromeFolded()
             // Reels has its own reply button, and the rail sits where the FAB would.
-            if (feedMode != FeedMode.REELS) Box(Modifier.chromeFab().blockedWhen(folded)) {
+            if (feedMode != FeedMode.REELS) Box(Modifier.chromeFab().blockedWhen(folded).padding(bottom = meterLift)) {
                 // iOS-style gradient "Post" capsule (FeedView compose FAB)
                 val colors = LocalNostrVaultColors.current
                 Surface(
@@ -665,11 +682,14 @@ fun FeedScreen(
                 HashtagsFeed(
                     viewModel = hashtagsViewModel,
                     listState = hashtagsListState,
-                    contentPadding = padding,
+                    contentPadding = PaddingValues(
+                        top = padding.calculateTopPadding(),
+                        bottom = padding.calculateBottomPadding() + meterLift,
+                    ),
                     layoutMode = layoutMode,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
-                    onProfileClick = onProfileClick,
+                    onProfileClick = openProfile,
                     onReply = onReply ?: { _ -> onCompose() },
                     onQuote = onQuote ?: {},
                     // Not in the feed's note list; register the note so the
@@ -750,7 +770,11 @@ fun FeedScreen(
                     } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
                         // Global fails closed without the trust graph; say so
                         // rather than "waiting for notes" over a full inbox.
-                        "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                        if (noWebOfTrustYet) {
+                            "Follow people to build your web of trust"
+                        } else {
+                            "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                        }
                     } else if (feedMode == FeedMode.GLOBAL && globalFeedLanguages.isNotEmpty()) {
                         "Nothing in ${FeedLanguage.summary(globalFeedLanguages)} yet"
                     } else {
@@ -762,7 +786,7 @@ fun FeedScreen(
                     state = listState,
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding(),
-                        bottom = padding.calculateBottomPadding() + 88.dp,
+                        bottom = padding.calculateBottomPadding() + 88.dp + meterLift,
                     ),
                     modifier = Modifier
                         .fillMaxSize()
@@ -781,7 +805,7 @@ fun FeedScreen(
                                 onOpenNoteChange = { id -> expandedNoteId = id },
                                 isExpanded = threadFolds[thread.rootId] ?: false,
                                 onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
-                                onProfileClick = onProfileClick,
+                                onProfileClick = openProfile,
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
@@ -796,7 +820,7 @@ fun FeedScreen(
                                         allProfiles = allProfiles,
                                         onNoteClick = onNoteClick,
                                         onArticleClick = onArticleClick,
-                                        onProfileClick = onProfileClick,
+                                        onProfileClick = openProfile,
                                         onReply = onReply ?: { _ -> onCompose() },
                                         onQuote = onQuote ?: {},
                                         onZap = viewModel::quickZap,
@@ -857,7 +881,7 @@ fun FeedScreen(
                                     // Expand inline first instead of navigating
                                     expandedNoteId = id
                                 },
-                                onProfileClick = onProfileClick,
+                                onProfileClick = openProfile,
                                 // iOS: 8pt sides for a compact row, 12pt between rows.
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             )
@@ -868,7 +892,7 @@ fun FeedScreen(
                                 allProfiles = allProfiles,
                                 onNoteClick = onNoteClick,
                                 onArticleClick = onArticleClick,
-                                onProfileClick = onProfileClick,
+                                onProfileClick = openProfile,
                                 onReply = onReply ?: { _ -> onCompose() },
                                 onQuote = onQuote ?: {},
                                 onZap = viewModel::quickZap,
@@ -921,6 +945,17 @@ fun FeedScreen(
                         .blockedWhen(folded)
                 )
             }
+            // Fill your feed: its cards, the meter on Post's row, the profile card.
+            val guideFollows by viewModel.feedServiceRef.followedPubkeys.collectAsState()
+            com.nostrvault.vaultguide.FillYourFeedOverlay(
+                profiles = allProfiles,
+                bottomInset = com.nostrvault.ui.navigation.FloatingButtonRow.rowBottom,
+                isFollowing = { it in guideFollows },
+                onToggleFollow = { viewModel.toggleFollowFromGuide(it) },
+                onUnfollow = { viewModel.unfollowFromGuide(it) },
+                loadProfileCard = { viewModel.loadProfileCard(it) },
+                onOpenFullProfile = onProfileClick,
+            )
         }
     }
 
@@ -1645,7 +1680,15 @@ private fun FeedFullNoteRowContent(
         onLongPressLike = onLongPressLike,
         onRetryParent = viewModel::retryMissingNote,
         autoplayVideos = autoplayVideos,
-        avatarMenu = remember(viewModel) {
+        // Fill your feed: the photo opens the profile card like the name,
+        // rather than a quick Follow that skips looking first.
+        avatarMenu = if (com.nostrvault.vaultguide.FillYourFeedGuide.opensProfileCard(
+                com.nostrvault.vaultguide.FillYourFeedGuide.showsMeter(
+                    com.nostrvault.vaultguide.FillYourVaultCoordinator.phase.collectAsState().value,
+                    com.nostrvault.vaultguide.FillYourVaultCoordinator.meterOn.collectAsState().value,
+                ),
+            )
+        ) null else remember(viewModel) {
             AvatarMenuActions(
                 isOwn = viewModel::isOwnNote,
                 isFollowed = viewModel::isFollowing,

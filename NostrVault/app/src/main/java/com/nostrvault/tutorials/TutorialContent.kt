@@ -6,7 +6,7 @@ data class TutorialStep(val anchor: String?, val title: String, val body: String
 
 val TutorialID.title: String
     get() = when (this) {
-        TutorialID.FILL_YOUR_VAULT -> "Fill Your Vault"
+        TutorialID.FILL_YOUR_VAULT -> "Fill Your Feed"
         TutorialID.FEEDS -> "Your Feeds"
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
@@ -27,8 +27,8 @@ val TutorialID.isAvailable: Boolean
     get() = if (this == TutorialID.FILL_YOUR_VAULT) TutorialContent.FILL_YOUR_VAULT_HAS_GUIDE else steps.isNotEmpty()
 
 object TutorialContent {
-    /** Flip to true in the commit that adds the Fill your vault guide. */
-    const val FILL_YOUR_VAULT_HAS_GUIDE = false
+    /** The guide is `FillYourFeedOverlay`. */
+    const val FILL_YOUR_VAULT_HAS_GUIDE = true
 
     const val FEED_PICKER = "feeds.picker"
 

@@ -86,7 +86,7 @@ class FeedService: ObservableObject {
     /// ContactManager.loadConfirmsList). Until it is, follow / unfollow never
     /// publish: a timed-out load leaves an empty or partial list in memory,
     /// and publishing it would replace every follow on every relay.
-    private(set) var contactListConfirmed = false
+    @Published private(set) var contactListConfirmed = false
     @Published var isLoadingExtendedNetwork = false
     @Published var isLoadingPopular = false
     @Published var popularFilter: PopularFilter = .all
@@ -302,6 +302,10 @@ class FeedService: ObservableObject {
     /// cached WOT graph (`wot_cache.json`). Used to filter the GLOBAL feed and
     /// Media tab so only notes/media from WOT members are shown.
     @Published private(set) var wotPubkeys: Set<String> = []
+    /// True once the relay's graph file has been read for this account, even
+    /// if it named nobody. Separates "the relay has not built a graph yet"
+    /// from "the graph is built and empty because you follow nobody".
+    @Published private(set) var wotCacheRead = false
 
     /// Popularity scores returned by the local DVM, keyed by note ID.
     /// Used to sort the Popular feed by engagement rank.
@@ -523,6 +527,7 @@ class FeedService: ObservableObject {
             return
         }
         wotPubkeys = loaded
+        wotCacheRead = true
         #if DEBUG
         print("FeedService: Loaded \(wotPubkeys.count) usable WOT pubkeys from cache")
         #endif
@@ -568,11 +573,24 @@ class FeedService: ObservableObject {
     static let trustedAuthorsCap = 500
 
     /// True when the Global feed has a trust graph to filter against. The
-    /// relay writes `wot_cache.json` shortly after first launch, seeded from
-    /// the starter pack for an owner who follows nobody — so on a brand-new
-    /// install this is false for a few seconds and the feed legitimately has
-    /// nothing to show yet.
+    /// relay writes `wot_cache.json` shortly after first launch; an owner who
+    /// follows nobody has no graph at all, because nothing but the owner's own
+    /// follows may build one.
     var curatedGraphReady: Bool { !wotPubkeys.isEmpty }
+
+    /// The real follow list has loaded for the active account: the same test
+    /// Follow uses before it publishes. Until then `followedPubkeys` can read
+    /// empty for someone who follows hundreds.
+    var followListIsKnown: Bool {
+        ContactManager.mayPublishFollowList(hasAttemptedLoad: hasAttemptedContactLoad,
+                                            isLoading: isLoadingContacts,
+                                            listConfirmed: contactListConfirmed)
+    }
+
+    /// The graph is built and names nobody: the owner follows no one yet.
+    /// Feeds that fail closed say so, and the topic feed opens up (labelled)
+    /// so there is somewhere to find people to follow.
+    var hasNoWebOfTrustYet: Bool { wotCacheRead && wotPubkeys.isEmpty }
 
     /// Everyone around the user for ranking search and mention results after
     /// their follows: the relay's Web of Trust graph plus the extended network
@@ -584,7 +602,11 @@ class FeedService: ObservableObject {
     /// Status text for a Global feed with no graph yet. Global fails closed, so
     /// without this the user would sit in front of an empty screen labelled
     /// "No notes found" and reasonably conclude the app is broken.
-    private var curatedGraphPendingStatus: String { "Building your starter feed…" }
+    private var curatedGraphPendingStatus: String {
+        hasNoWebOfTrustYet
+            ? "Follow people to build your web of trust"
+            : "Building your web of trust…"
+    }
 
     private var curatedGraphPollAttempts = 0
     private var curatedGraphPollTimer: Timer?
@@ -1454,6 +1476,14 @@ class FeedService: ObservableObject {
             // Nothing here publishes a contact list — the user's follows stay
             // empty until they choose to follow someone.
             let hasBackup = !(FollowingBackupService.shared.snapshots.last?.pubkeys.isEmpty ?? true)
+            if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup
+                && !InterestListService.shared.hashtags.isEmpty {
+                // Topics picked (the Fill your feed guide) but nobody followed
+                // yet: their topic feed is where they find people, and it
+                // stays put when they follow someone.
+                self.switchMode(.hashtags)
+                return
+            }
             if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup {
                 self.didAutoSwitchToCurated = true
                 self.feedMode = .global
@@ -1621,6 +1651,9 @@ class FeedService: ObservableObject {
 
     func switchMode(_ mode: FeedMode) {
         guard mode != feedMode else { return }
+        // Picking a feed is a choice to stay on it: the first follow no
+        // longer pulls a new account from its topic feed back to Following.
+        didAutoSwitchToCurated = false
         let previous = feedMode
         // Side feeds linger connected for a minute (see sideFeedLinger).
         scheduleSideFeedDisconnect(previous)
@@ -2538,6 +2571,11 @@ class FeedService: ObservableObject {
     /// (e.g. refresh → subscribeToAllRelays); here we only repair live subs.
     private func handleContactLoadResolved() {
         defer { applyPendingFollowActions() }
+        // Every load ends here (answered or timed out). A key setup just
+        // made has no list anywhere, so "none found" is known for it.
+        if followedPubkeys.isEmpty, FreshAccountKeys.isFresh(ConfigService.shared.activeAccountHexPubkey) {
+            contactListConfirmed = true
+        }
         if followedPubkeys.isEmpty {
             let backup = FollowingBackupService.shared
             backup.loadSnapshots(forAccountKey: currentSnapshotKey())
@@ -2736,6 +2774,14 @@ class FeedService: ObservableObject {
     
     private var extendedNetworkTimeout: Timer?
     
+    /// How many people the follows bring in: the people they follow, fresh
+    /// (the cached tally predates the follows just made).
+    func countExtendedNetwork(completion: @escaping (Int) -> Void) {
+        loadExtendedNetwork(forceRefresh: true) { [weak self] in
+            completion(self?.extendedNetworkPubkeys.count ?? 0)
+        }
+    }
+
     private func loadExtendedNetwork(forceRefresh: Bool = false, completion: @escaping () -> Void) {
         guard !followedPubkeys.isEmpty else {
             completion()
@@ -3020,6 +3066,8 @@ class FeedService: ObservableObject {
             #endif
             return
         }
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
@@ -3063,6 +3111,20 @@ class FeedService: ObservableObject {
             contactListCreatedAt: event.created_at,
             forAccountKey: currentSnapshotKey()
         )
+    }
+
+    /// A key setup just generated has no kind 3 anywhere, so its empty follow
+    /// list is known without waiting for every relay to say so. Without this
+    /// one silent relay leaves a new account unable to follow anyone (the
+    /// follow is queued) and the Fill your feed guide never starts.
+    func markFreshAccount(_ hex: String) {
+        guard !hex.isEmpty else { return }
+        FreshAccountKeys.mark(hex)
+        // The first load may already have finished without a list.
+        if hex == ConfigService.shared.activeAccountHexPubkey,
+           hasAttemptedContactLoad, !isLoadingContacts, followedPubkeys.isEmpty {
+            contactListConfirmed = true
+        }
     }
 
     /// Starts the follow list of a key generated in setup, from the people

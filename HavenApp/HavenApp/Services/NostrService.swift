@@ -1292,6 +1292,89 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// The newest `limit` notes (kind 1) by `author`, newest first, from the
+    /// local relay, the feed relays and the author's outbox relays. Empty if
+    /// none answered within the timeout. For the small profile card, which
+    /// must never wait on a slow relay to offer Follow.
+    func fetchRecentNotes(author: String, limit: Int = 3, timeout: TimeInterval = 6) async -> [NostrEvent] {
+        var urls: [String] = []
+        if RelayProcessManager.shared.isRunning, !RelayProcessManager.shared.isBooting {
+            urls.append(ConfigService.shared.config.nostrURL)
+        }
+        let feedRelays = ConfigService.shared.config.activeFeedRelays
+        urls += (feedRelays.isEmpty ? ["wss://relay.primal.net", "wss://relay.nos.social"] : Array(feedRelays.prefix(3)))
+        urls += (outboxRelays[author] ?? []).prefix(3)
+        var seen = Set<String>()
+        let targets = urls.filter { seen.insert($0).inserted }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return [] }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[NostrEvent], Never>) in
+            let lock = NSLock()
+            var found: [String: NostrEvent] = [:]
+            var finished = Set<Int>()
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let notes = found.values.sorted { $0.created_at > $1.created_at }.prefix(limit)
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                continuation.resume(returning: Array(notes))
+            }
+
+            DispatchQueue.main.async {
+                for (index, url) in targets.enumerated() {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "recent-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                               event.kind == 1, event.pubkey == author,
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                found[event.id] = event
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [1], "authors": [author], "limit": limit]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+            }
+        }
+    }
+
     /// Ids of the active account's own reactions (kind 7) to `noteId`, from
     /// the account's relay and the blastr relays. For removing a like saved
     /// before its event id was kept.

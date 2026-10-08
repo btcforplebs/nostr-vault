@@ -1372,38 +1372,67 @@ final class HashtagFeedModel: ObservableObject {
     private var pageClients: [WebSocketClient] = []
     private var pageCancellables = Set<AnyCancellable>()
     private var page = 0
+    /// Fill your feed: no web of trust yet, so the open list is screened
+    /// (`TopicFeedFilter`). Every post lands in `pool`; `fromOthers` is what
+    /// passes. Follow counts come from each author's kind 3.
+    @Published private(set) var screening = false
+    private var pool: [FeedNote] = []
+    private var followCounts: [String: Int] = [:]
+    private var lookingUp = Set<String>()
+    private var rescreenQueued = false
+    private var lookupClients: [WebSocketClient] = []
+    private var lookupCancellables = Set<AnyCancellable>()
+    /// Who else liked, replied to, reposted or zapped each shown post.
+    /// Posts people responded to go first (`TopicFeedFilter.ordered`).
+    private var responders: [String: Set<String>] = [:]
+    private var askedResponders = Set<String>()
+    private var pendingResponders: [String] = []
+    private var respondersQueued = false
 
     init(tag: String) { self.tags = [tag] }
     init(tags: [String]) { self.tags = tags }
 
     /// Same as `start(follows:trust:)` for a new set of hashtags.
-    func start(tags: [String], follows: Set<String>, trust: Set<String>?) {
+    func start(tags: [String], follows: Set<String>, trust: Set<String>?, screen: Bool = false) {
         self.tags = tags
-        start(follows: follows, trust: trust)
+        start(follows: follows, trust: trust, screen: screen)
     }
 
     /// `follows` fill the top group. `trust` is who else may show: nil is
     /// everyone, empty is nobody (no Web of Trust yet fails closed, like Global).
     /// Everyone is one list by time: with follows on top, a busy follow list
     /// buried everyone else and the shield seemed to do nothing.
-    func start(follows: Set<String>, trust: Set<String>?) {
+    func start(follows: Set<String>, trust: Set<String>?, screen: Bool = false) {
         stop()
         generation += 1
         let gen = generation
+        if screen != screening {
+            screening = screen
+            pool = []
+            fromOthers = []
+            seen = []
+        }
         // Same feed as last time (back from a note): keep the posts so the
         // list, and the scroll position on it, survive; the reopened
         // subscription only adds what is new.
-        let resuming = tags == shownTags && follows == self.follows && trust == shownTrust
+        // Screened (Fill your feed), follows don't change what's shown: a
+        // follow from the guide must not wipe and reload the list under the
+        // reader (Logen, 2026-10-08).
+        let sameFollows = follows == self.follows || (screen && trust == nil)
+        let resuming = tags == shownTags && sameFollows && trust == shownTrust
             && !(fromFollows.isEmpty && fromOthers.isEmpty)
         shownTags = tags
         shownTrust = trust
         if !resuming {
             fromFollows = []
             fromOthers = []
+            pool = []
             seen = []
             isLoading = true
         }
         self.follows = follows
+        // stop() dropped any lookups in flight; ask again for what's on hand.
+        if resuming && screening { queueRescreen() }
         // Filters are rebuilt below; a resumed list keeps what it learned about its end.
         followsFilters = []
         othersFilters = []
@@ -1497,6 +1526,11 @@ final class HashtagFeedModel: ObservableObject {
         clients.forEach { $0.disconnect() }
         clients = []
         cancellables.removeAll()
+        lookupClients.forEach { $0.disconnect() }
+        lookupClients = []
+        lookupCancellables.removeAll()
+        lookingUp = []
+        askedResponders.subtract(askedResponders.filter { responders[$0] == nil })
         stopPage()
     }
 
@@ -1526,7 +1560,8 @@ final class HashtagFeedModel: ObservableObject {
     }
 
     private func loadOlder(_ section: Section) {
-        let list = section == .follows ? fromFollows : fromOthers
+        // Screened, the oldest post asked for is in the pool, not the list.
+        let list = section == .follows ? fromFollows : (screening ? pool : fromOthers)
         let base = section == .follows ? followsFilters : othersFilters
         guard loadingOlder == nil, !exhausted.contains(section),
               let oldest = list.last, !base.isEmpty else { return }
@@ -1602,6 +1637,11 @@ final class HashtagFeedModel: ObservableObject {
         let home: Section = shownTrust != nil && follows.contains(note.pubkey) ? .follows : .others
         guard home == section,
               seen.insert(note.id).inserted else { return false }
+        if section == .others && screening {
+            Self.insert(note, into: &pool)
+            queueRescreen()
+            return true
+        }
         if section == .follows {
             Self.insert(note, into: &fromFollows)
         } else {
@@ -1621,10 +1661,172 @@ final class HashtagFeedModel: ObservableObject {
         guard seen.insert(note.id).inserted else { return }
         if shownTrust != nil, follows.contains(note.pubkey) {
             Self.insert(note, into: &fromFollows)
+        } else if screening {
+            Self.insert(note, into: &pool)
+            queueRescreen()
         } else {
             Self.insert(note, into: &fromOthers)
         }
         isLoading = false
+    }
+
+    // MARK: Screening (Fill your feed)
+
+    /// One pass per run-loop turn, however many posts arrived in it.
+    private func queueRescreen() {
+        guard !rescreenQueued else { return }
+        rescreenQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.rescreenQueued = false
+            self.lookUpFollowCounts()
+            self.rescreen()
+        }
+    }
+
+    private func rescreen() {
+        let posts = pool.map { TopicFeedFilter.Post(id: $0.id, pubkey: $0.pubkey, content: $0.content, tags: $0.tags) }
+        let shownIds = TopicFeedFilter.shown(posts, followCounts: followCounts)
+        lookUpResponders(shownIds)
+        let byId = Dictionary(pool.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let counts = responders.mapValues(\.count)
+        let next = TopicFeedFilter.ordered(shownIds, responders: counts).compactMap { byId[$0] }
+        if next.map(\.id) != fromOthers.map(\.id) { fromOthers = next }
+    }
+
+    /// Replies, reposts, reactions and zaps on the shown posts, counted by
+    /// distinct person (the author's own don't count).
+    private func lookUpResponders(_ ids: [String]) {
+        let fresh = ids.filter { !askedResponders.contains($0) }
+        guard !fresh.isEmpty else { return }
+        askedResponders.formUnion(fresh)
+        pendingResponders.append(contentsOf: fresh)
+        // Posts arrive in a stream: ask once a second, not once per post.
+        guard !respondersQueued else { return }
+        respondersQueued = true
+        let gen = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            self.respondersQueued = false
+            let missing = self.pendingResponders
+            self.pendingResponders = []
+            guard self.generation == gen else {
+                self.askedResponders.subtract(missing)
+                return
+            }
+            self.askResponders(missing)
+        }
+    }
+
+    private func askResponders(_ missing: [String]) {
+        let authors = Dictionary(pool.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { first, _ in first })
+        let wanted = Set(missing)
+        var found: [String: Set<String>] = [:]
+        // One filter per 25 posts, because `limit` caps each filter and one
+        // busy post must not use it up for the others; all of them in one
+        // REQ, so one tick opens one connection per relay (Tron, 2026-10-08).
+        let filters: [[String: Any]] = missing.chunked(into: 25).map {
+            ["kinds": [1, 6, 7, 9735], "#e": $0, "limit": 1000]
+        }
+        oneShotQuery(filters, onEvent: { ev in
+            guard let pubkey = TopicFeedFilter.responder(ev, isValid: NostrEventVerifier.isValid),
+                  let tags = ev["tags"] as? [[String]] else { return }
+            for tag in tags where tag.count >= 2 && tag[0] == "e" && wanted.contains(tag[1]) {
+                if authors[tag[1]] != pubkey { found[tag[1], default: []].insert(pubkey) }
+            }
+        }, finish: { [weak self] in
+            guard let self else { return }
+            for id in missing { self.responders[id, default: []].formUnion(found[id] ?? []) }
+            self.rescreen()
+        })
+    }
+
+    /// One REQ to every feed relay; `finish` runs once, when all have
+    /// answered or after 6s, and only if the feed hasn't restarted since.
+    /// Its sockets close when it finishes.
+    private func oneShotQuery(_ filters: [[String: Any]], onEvent: @escaping ([String: Any]) -> Void,
+                              finish: @escaping () -> Void) {
+        let gen = generation
+        let subId = "q-\(UUID().uuidString.prefix(8))"
+        guard let data = try? JSONSerialization.data(withJSONObject: (["REQ", subId] as [Any]) + filters),
+              let req = String(data: data, encoding: .utf8) else { return }
+        let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
+        var answered = Set<Int>()
+        var finished = false
+        var mine: [WebSocketClient] = []
+        var mineCancellables: [AnyCancellable] = []
+        let finishOnce = { [weak self] in
+            guard !finished else { return }
+            finished = true
+            mine.forEach { $0.disconnect() }
+            guard let self else { return }
+            self.lookupClients.removeAll { client in mine.contains { $0 === client } }
+            mineCancellables.forEach { $0.cancel(); self.lookupCancellables.remove($0) }
+            guard self.generation == gen else { return }
+            finish()
+        }
+        for (index, relay) in relays.enumerated() {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            lookupClients.append(client)
+            mine.append(client)
+            var sent = false
+            client.$connectionState
+                .sink { [weak client] state in
+                    guard state == .connected, !sent, let client else { return }
+                    sent = true
+                    client.send(text: req)
+                }
+                .store(in: &mineCancellables)
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { message in
+                    guard let data = message.data(using: .utf8),
+                          let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          let type = array.first as? String, array.count >= 2,
+                          (array[1] as? String) == subId else { return }
+                    if type == "EVENT", array.count >= 3, let ev = array[2] as? [String: Any],
+                       NostrEventVerifier.isValid(ev) {
+                        onEvent(ev)
+                    } else if type == "EOSE" || type == "CLOSED" {
+                        // Per relay, so two frames from one can't end it early.
+                        answered.insert(index)
+                        if answered.count >= relays.count { finishOnce() }
+                    }
+                }
+                .store(in: &mineCancellables)
+            lookupCancellables.formUnion(mineCancellables.suffix(2))
+            client.connect(url: relay)
+        }
+        if relays.isEmpty { finishOnce() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishOnce() }
+    }
+
+    /// Each new author's newest kind 3, counted. Authors no relay has a
+    /// follow list for count as 0, which keeps them out: people follow.
+    private func lookUpFollowCounts() {
+        let missing = Array(Set(pool.map(\.pubkey)).subtracting(followCounts.keys).subtracting(lookingUp))
+        guard !missing.isEmpty else { return }
+        lookingUp.formUnion(missing)
+        let wanted = Set(missing)
+        var newest: [String: (Int64, Int)] = [:]
+        let filters: [[String: Any]] = missing.chunked(into: 100).map { ["kinds": [3], "authors": $0] }
+        oneShotQuery(filters, onEvent: { ev in
+            guard let pubkey = ev["pubkey"] as? String, wanted.contains(pubkey),
+                  let createdAt = ev["created_at"] as? Int64,
+                  let tags = ev["tags"] as? [[String]],
+                  (ev["kind"] as? Int) == 3 else { return }
+            if (newest[pubkey]?.0 ?? 0) < createdAt {
+                newest[pubkey] = (createdAt, tags.filter { $0.first == "p" }.count)
+            }
+        }, finish: { [weak self] in
+            guard let self else { return }
+            for author in missing where self.followCounts[author] == nil {
+                self.followCounts[author] = newest[author]?.1 ?? 0
+            }
+            self.lookingUp.subtract(missing)
+            self.rescreen()
+        })
     }
 
     private static func insert(_ note: FeedNote, into list: inout [FeedNote]) {
@@ -1882,5 +2084,11 @@ struct HashtagFeedView: View {
         .onTapGesture { showingNote = note }
         .padding(.horizontal, 16)
         .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+    }
+}
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
     }
 }

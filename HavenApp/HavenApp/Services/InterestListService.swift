@@ -18,7 +18,11 @@ final class InterestListService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
+        // The cached list right away: the feed's first load asks whether
+        // this account follows any topics before the publisher's next turn.
+        switchAccount(to: ConfigService.shared.activeAccountHexPubkey)
         ConfigService.shared.$activeAccountHexPubkey
+            .dropFirst()
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hex in self?.switchAccount(to: hex) }
@@ -40,30 +44,41 @@ final class InterestListService: ObservableObject {
     /// event can't be signed. Returns false when nothing was published.
     @discardableResult
     func setFollowing(_ hashtag: String, _ followed: Bool) async -> Bool {
+        await setFollowing([hashtag], followed)
+    }
+
+    /// `setFollowing` for several hashtags at once, as one published list.
+    @discardableResult
+    func setFollowing(_ hashtags: [String], _ followed: Bool) async -> Bool {
         let hex = accountHex
         guard !hex.isEmpty else { return false }
-        let name = InterestList.normalize(hashtag)
-        guard !name.isEmpty else { return false }
+        let names = hashtags.map(InterestList.normalize).filter { !$0.isEmpty }
+        guard !names.isEmpty else { return false }
+        func applied(to base: InterestList) -> InterestList {
+            names.reduce(base) { $0.setting($1, followed: followed) }
+        }
 
         // Optimistic: the button flips now.
-        hashtags = list.setting(name, followed: followed).hashtags
+        self.hashtags = applied(to: list).hashtags
 
+        // A key setup just made has no list anywhere: nothing to wait for.
+        if !confirmed, FreshAccountKeys.isFresh(hex) { confirmed = true }
         if !confirmed {
             let ok = await (fetch ?? startFetch()).value
             guard ok, accountHex == hex else {
-                if accountHex == hex { hashtags = list.hashtags }
+                if accountHex == hex { self.hashtags = list.hashtags }
                 return false
             }
         }
 
-        let next = list.setting(name, followed: followed)
+        let next = applied(to: list)
         guard next != list else {
-            hashtags = list.hashtags
+            self.hashtags = list.hashtags
             return true
         }
         guard let event = await NostrService.shared.signEventAsync(kind: 10015, content: next.content, tags: next.tags),
               accountHex == hex else {
-            if accountHex == hex { hashtags = list.hashtags }
+            if accountHex == hex { self.hashtags = list.hashtags }
             return false
         }
         var published = next

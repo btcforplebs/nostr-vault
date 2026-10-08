@@ -45,7 +45,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class InterestListService @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val lookupPool: LookupSocketPool,
@@ -90,14 +90,20 @@ class InterestListService @Inject constructor(
      * change at once; puts it back if the relays' copy can't be read or the
      * event can't be signed. Returns false when nothing was published.
      */
-    suspend fun setFollowing(hashtag: String, followed: Boolean): Boolean = withContext(Dispatchers.Main.immediate) {
+    suspend fun setFollowing(hashtag: String, followed: Boolean): Boolean = setFollowing(listOf(hashtag), followed)
+
+    /** [setFollowing] for several hashtags at once, as one published list. */
+    suspend fun setFollowing(hashtags: List<String>, followed: Boolean): Boolean = withContext(Dispatchers.Main.immediate) {
         val hex = accountHex
-        val name = InterestList.normalize(hashtag)
-        if (hex.isEmpty() || name.isEmpty()) return@withContext false
+        val names = hashtags.map { InterestList.normalize(it) }.filter { it.isNotEmpty() }
+        if (hex.isEmpty() || names.isEmpty()) return@withContext false
+        fun applied(base: InterestList) = names.fold(base) { acc, name -> acc.setting(name, followed) }
 
         // Optimistic: the button flips now.
-        _hashtags.value = list.setting(name, followed).hashtags
+        _hashtags.value = applied(list).hashtags
 
+        // A key setup just made has no list anywhere: nothing to wait for.
+        if (!confirmed && FreshAccountKeys.isFresh(context, hex)) confirmed = true
         if (!confirmed) {
             val pending = fetch ?: startFetch()
             // An account switch cancels the fetch; that is a "no", not our own cancellation.
@@ -110,7 +116,7 @@ class InterestListService @Inject constructor(
             if (!ok || accountHex != hex) return@withContext revert(hex)
         }
 
-        val next = list.setting(name, followed)
+        val next = applied(list)
         if (next == list) {
             _hashtags.value = list.hashtags
             return@withContext true

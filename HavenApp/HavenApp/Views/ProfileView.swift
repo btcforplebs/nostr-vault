@@ -2581,27 +2581,7 @@ struct ProfileView: View {
     }
 
     private func toggleFollow() {
-        let name = profile?.bestName ?? shortPubkey
-        if isFollowing {
-            switch feedService.unfollowUser(pubkey) {
-            case .success:
-                FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
-            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
-                // Queued until the follow list is confirmed; not an error.
-                FollowNotificationManager.shared.addPending(pubkey: pubkey, recipientName: name, follow: false)
-            case .failure(let err):
-                FollowNotificationManager.shared.add(recipientName: name, kind: .failed(unfollowErrorMessage(err)))
-            }
-        } else {
-            switch feedService.followUser(pubkey) {
-            case .success:
-                FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
-            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
-                FollowNotificationManager.shared.addPending(pubkey: pubkey, recipientName: name, follow: true)
-            case .failure(let err):
-                FollowNotificationManager.shared.add(recipientName: name, kind: .failed(followErrorMessage(err)))
-            }
-        }
+        FollowActions.toggle(pubkey, name: profile?.bestName ?? shortPubkey, isFollowing: isFollowing)
     }
 
     private func toggleBlock() {
@@ -2622,22 +2602,6 @@ struct ProfileView: View {
         } else {
             // Default to 5 posts visible when throttling
             configService.throttleProfile(npub, maxPosts: 5)
-        }
-    }
-
-    private func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
-        switch err {
-        case .contactsNotLoaded, .listUnavailable: return "Following once your follow list loads…"
-        case .alreadyFollowing:  return "Already following"
-        case .cannotUnfollowSelf: return "Follow failed"
-        }
-    }
-
-    private func unfollowErrorMessage(_ err: FeedService.FollowActionError) -> String {
-        switch err {
-        case .contactsNotLoaded, .listUnavailable: return "Unfollowing once your follow list loads…"
-        case .cannotUnfollowSelf: return "Can't unfollow yourself"
-        case .alreadyFollowing:   return "Unfollow failed"
         }
     }
 

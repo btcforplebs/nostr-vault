@@ -21,8 +21,8 @@ func TestRefreshWritesCacheAtEveryDepth(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx),
 			map[string]struct{}{"owner": {}},
-			nil, // no seed relays: depth 2 fetches nothing and falls back to the seeds
-			depth, 1, 1, path, 60).WithFallbackSeeds([]string{"seed"})
+			nil, // no seed relays: depth 2 fetches nothing
+			depth, 1, 1, path, 60)
 		wt.Refresh(ctx)
 		cancel()
 
@@ -91,5 +91,75 @@ func TestCacheFromOlderBuildIsRebuilt(t *testing.T) {
 	}
 	if ok, _ := NewSimpleInMemory(nil, nil, nil, 3, 1, 1, path, 60).LoadFromCache(); ok {
 		t.Fatal("a cache without a version was served")
+	}
+}
+
+// An owner who follows nobody has a graph of exactly themselves. Nothing the
+// app or relay picks may stand in for follows the owner never made: the web of
+// trust comes only from the people the owner follows.
+func TestOwnerWhoFollowsNobodyGetsNoSeededGraph(t *testing.T) {
+	for _, depth := range []int{2, 3} {
+		path := filepath.Join(t.TempDir(), "wot_cache.json")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx),
+			map[string]struct{}{"owner": {}},
+			nil, // no seed relays: the owner's follow list is empty
+			depth, 1, 1, path, 60)
+		wt.Refresh(ctx)
+		cancel()
+
+		if got := wt.Size(); got != 1 || !wt.Has(context.Background(), "owner") {
+			t.Fatalf("depth %d: graph holds %d pubkeys, want only the owner", depth, got)
+		}
+	}
+}
+
+type countingRefresher struct {
+	onlyOwners bool
+	refreshes  int
+}
+
+func (c *countingRefresher) NamesOnlyOwners() bool     { return c.onlyOwners }
+func (c *countingRefresher) Refresh(_ context.Context) { c.refreshes++ }
+
+// A new account's first follows must reach its graph in minutes: an empty
+// graph is rebuilt on the short ticker, and a graph with people in it is left
+// to the daily refresh.
+func TestRefreshIfOnlyOwners(t *testing.T) {
+	empty := &countingRefresher{onlyOwners: true}
+	if !refreshIfOnlyOwners(context.Background(), empty) || empty.refreshes != 1 {
+		t.Fatalf("an owner-only graph was not rebuilt (refreshes=%d)", empty.refreshes)
+	}
+	full := &countingRefresher{onlyOwners: false}
+	if refreshIfOnlyOwners(context.Background(), full) || full.refreshes != 0 {
+		t.Fatalf("a graph with people in it was rebuilt early (refreshes=%d)", full.refreshes)
+	}
+	if refreshIfOnlyOwners(context.Background(), nil) {
+		t.Fatal("no instance reported a refresh")
+	}
+}
+
+func TestNamesOnlyOwners(t *testing.T) {
+	owners := map[string]struct{}{"owner": {}}
+	graph := func(depth int, keys ...string) *SimpleInMemory {
+		wt := NewSimpleInMemory(nil, owners, nil, depth, 1, 1, "", 60)
+		m := map[string]bool{}
+		for _, k := range keys {
+			m[k] = true
+		}
+		wt.pubkeys.Store(&m)
+		return wt
+	}
+	if !graph(3, "owner").NamesOnlyOwners() {
+		t.Error("a graph of just the owner should be waiting for follows")
+	}
+	if graph(3, "owner", "friend").NamesOnlyOwners() {
+		t.Error("a graph with a follow is not empty")
+	}
+	if graph(1, "owner").NamesOnlyOwners() {
+		t.Error("depth 1 only ever holds the owner and must not refresh every 2 minutes")
+	}
+	if NewSimpleInMemory(nil, owners, nil, 3, 1, 1, "", 60).NamesOnlyOwners() {
+		t.Error("a graph that was never built is not an empty graph")
 	}
 }

@@ -52,6 +52,7 @@ class FeedViewModel @Inject constructor(
     private val liveFeedService: LiveFeedService,
     private val marketplaceFeedService: MarketplaceFeedService,
     private val reelsFeedService: ReelsFeedService,
+    private val interestListService: com.nostrvault.service.InterestListService,
 ) : ViewModel() {
 
     private companion object {
@@ -195,6 +196,11 @@ class FeedViewModel @Inject constructor(
 
     fun applyPendingNotes() {
         feedService.applyPendingNotes()
+    }
+
+    init {
+        // Starts, or quietly finishes, Fill your vault once the follow list is known.
+        com.nostrvault.vaultguide.FillYourVaultCoordinator.start(feedService, interestListService, activeHexPubkey)
     }
 
     init {
@@ -440,6 +446,11 @@ class FeedViewModel @Inject constructor(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
 
+    /** The graph is built and empty: this account follows nobody yet. */
+    val noWebOfTrustYet: StateFlow<Boolean> = combine(feedService.wotCacheRead, feedService.wotPubkeys) { read, wot ->
+        read && wot.isEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.hasNoWebOfTrustYet())
+
     // Declared after _feedMode, which the reload reads.
     init {
         reloadOnTrustScopeChange()
@@ -622,6 +633,50 @@ class FeedViewModel @Inject constructor(
 
     // Avatar quick menu (iOS FeedView avatar toolbar).
     fun isFollowing(pubkey: String): Boolean = feedService.isFollowing(pubkey)
+
+    // ── Fill your feed ────────────────────────────────────────────
+
+    /** Follow or unfollow from the guide's profile card. FeedService shows the banner. */
+    fun toggleFollowFromGuide(pubkey: String) {
+        if (feedService.isFollowing(pubkey)) feedService.unfollowUser(pubkey) else feedService.followUser(pubkey)
+    }
+
+    fun unfollowFromGuide(pubkey: String) {
+        feedService.unfollowUser(pubkey)
+    }
+
+    /**
+     * The small profile card's data, from the sources the profile page uses:
+     * notes already on screen first, then the newest 3 from the relays, and
+     * the person's follow list for the count. Never blocks Follow.
+     */
+    suspend fun loadProfileCard(pubkey: String): com.nostrvault.vaultguide.ProfileCardData {
+        if (nostrService.profiles.value[pubkey] == null) nostrService.fetchMissingProfiles(listOf(pubkey))
+        val config = configStore.config.value
+        val relays = buildList {
+            config.nostrURL?.let { add(it) }
+            addAll(config.activeFeedRelays.take(3))
+            addAll(nostrService.outboxRelays.value[pubkey].orEmpty().take(3))
+        }.distinct()
+        val filter = kotlinx.serialization.json.buildJsonObject {
+            put("kinds", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(1))))
+            put("authors", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(pubkey))))
+            put("limit", kotlinx.serialization.json.JsonPrimitive(3))
+        }.toString()
+        val fetched = runCatching { nostrService.queryRawEvents(listOf(filter), relays, 6_000L) }.getOrDefault(emptyList())
+            .mapNotNull { e ->
+                val author = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val content = (e["content"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val at = (e["created_at"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+                if (author == pubkey && content != null && at != null) content to at else null
+            }
+        val shown = feedService.notes.value.filter { it.pubkey == pubkey && it.kind == 1 }
+            .map { it.content to it.createdAt.time / 1000 }
+        val posts = (fetched.ifEmpty { shown }).sortedByDescending { it.second }.distinct().take(3)
+        val following = runCatching { nostrService.fetchNewestReplaceable(3, pubkey, emptyList()) }.getOrNull()
+            ?.tags?.count { it.size >= 2 && it[0] == "p" && it[1] != pubkey }
+        return com.nostrvault.vaultguide.ProfileCardData(followingCount = following, posts = posts, loadingPosts = false)
+    }
     fun followUser(pubkey: String) { viewModelScope.launch { feedService.followUser(pubkey) } }
     fun unfollowUser(pubkey: String) { viewModelScope.launch { feedService.unfollowUser(pubkey) } }
     fun slowDownUser(pubkey: String) =
