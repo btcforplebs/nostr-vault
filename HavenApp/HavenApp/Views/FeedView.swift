@@ -673,7 +673,7 @@ struct FeedView: View {
     /// when it's switched off in Appearance settings.
     private var showsNewPostsButton: Bool {
         configService.config.showNewPostsPill
-            && !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop)
+            && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
     #if os(iOS)
@@ -713,11 +713,11 @@ struct FeedView: View {
             HStack(spacing: compact ? 4 : 8) {
                 Image(systemName: "arrow.up")
                     .font(.appSystem(size: compact ? 11 : 12, weight: .bold))
-                Text(compact ? (feedService.pendingNotes.count > 99 ? "99+" : "\(feedService.pendingNotes.count)")
-                             : "\(feedService.pendingNotes.count) New Posts")
+                Text(compact ? (feedService.visiblePendingCount > 99 ? "99+" : "\(feedService.visiblePendingCount)")
+                             : "\(feedService.visiblePendingCount) New Posts")
                     .font(.appSystem(size: compact ? 12 : 13, weight: .bold))
                     .monospacedDigit()
-                    .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
+                    .contentTransition(.numericText(value: Double(feedService.visiblePendingCount)))
             }
             .padding(.vertical, compact ? 5 : 10)
             .padding(.horizontal, compact ? 10 : 20)
@@ -732,8 +732,8 @@ struct FeedView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(feedService.pendingNotes.count) new posts, tap to load")
-        .animation(Motion.fade, value: feedService.pendingNotes.count)
+        .accessibilityLabel("\(feedService.visiblePendingCount) new posts, tap to load")
+        .animation(Motion.fade, value: feedService.visiblePendingCount)
     }
 
     /// Cycles expanded → condensed → threaded. Shared by the full trailing
@@ -3093,7 +3093,7 @@ struct FeedView: View {
                         }
                     }
                 }
-                .onChange(of: feedService.pendingNotes.count) { _, count in
+                .onChange(of: feedService.visiblePendingCount) { _, count in
                     // Auto-apply pending notes when autoLoad is on, but only
                     // if the user is at the top of the feed to avoid disrupting
                     // their scroll position. Debounced to prevent duplicate calls.
@@ -3104,7 +3104,7 @@ struct FeedView: View {
                 .onChange(of: isAtTop) { _, atTop in
                     // When the user scrolls back to the top, auto-apply any
                     // accumulated pending notes if auto-load is enabled.
-                    if atTop && configService.config.autoLoadNewPosts && !feedService.pendingNotes.isEmpty && !feedService.isLoadingFeed {
+                    if atTop && configService.config.autoLoadNewPosts && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed {
                         scheduleAutoLoad(delay: 0.5)
                     }
                 }
