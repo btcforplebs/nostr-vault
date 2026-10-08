@@ -39,6 +39,28 @@ final class PlainLogTests: XCTestCase {
         XCTAssertEqual(msg?.title, "nostr.wine only accepts posts from its members")
     }
 
+    func testBlossomUploadToThisDeviceIsYourRelay() {
+        for url in ["https://localhost:3355", "http://127.0.0.1:3355"] {
+            let msg = PlainLog.translate(level: "WARN", message: "Blossom: upload to \(url) attempt 1/3 failed: The request timed out.")
+            XCTAssertEqual(msg?.title, "Couldn't save media to your relay", url)
+            XCTAssertEqual(msg?.severity, .problem, url)
+        }
+    }
+
+    func testBlossomUploadToOutsideServerNamesTheServer() {
+        let msg = PlainLog.translate(level: "WARN", message: "Blossom: upload to https://blossom.primal.net attempt 2/3 failed: HTTP 502")
+        XCTAssertEqual(msg?.title, "Couldn't upload media to blossom.primal.net")
+        XCTAssertEqual(msg?.severity, .headsUp)
+        XCTAssertFalse(msg!.title.contains("your relay"))
+    }
+
+    func testBlossomFailuresGroupPerServer() {
+        let lines = ["https://localhost:3355", "https://blossom.primal.net", "https://blossom.primal.net", "https://nostr.download"]
+            .map { entry("2026/10/05 10:00:00 WARN Blossom: upload to \($0) attempt 1/3 failed: x") }
+        let titles = Set(PlainLog.summarize(lines).map(\.title))
+        XCTAssertEqual(titles, ["Couldn't save media to your relay", "Couldn't upload media to blossom.primal.net", "Couldn't upload media to nostr.download"])
+    }
+
     func testLockedDatabaseIsAProblem() {
         let e = entry("2026/10/05 10:00:00 ERROR Cannot acquire directory lock on \"/Users/me/db\"")
         XCTAssertEqual(PlainLog.translate(level: e.level, message: e.message)?.severity, .problem)

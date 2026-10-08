@@ -92,9 +92,18 @@ enum PlainLog {
                            hint: "Stop it, wait a few seconds and start it again.")
         }
         if lower.hasPrefix("blossom: upload to") && lower.contains("failed") {
-            return Message(key: "blossom-local-upload", severity: .problem,
-                           title: "Couldn't save media to your relay",
-                           hint: "Make sure the relay is running.")
+            // The same line is logged for this device's relay and for every
+            // outside media server; only the first is "your relay".
+            let host = blossomUploadHost(in: m)
+            if host == nil || isLocalHost(host!) {
+                return Message(key: "blossom-local-upload", severity: .problem,
+                               title: "Couldn't save media to your relay",
+                               hint: "Make sure the relay is running.")
+            }
+            let name = host!.contains(".") ? host! : "a private media server"
+            return Message(key: "blossom-mirror|\(name)", severity: .headsUp,
+                           title: "Couldn't upload media to \(name)",
+                           hint: "Other media servers are still tried.")
         }
         if lower.contains("error decoding configuration") || lower.contains("failed to save config")
             || lower.contains("error reloading configuration") {
@@ -310,6 +319,17 @@ enum PlainLog {
               let url = URL(string: String(message[range])), let host = url.host else { return nil }
         // A single-label name (umbrel, mybox) is a LAN or Tailscale box: keep it out of titles.
         return host.contains(".") ? host : "a private relay"
+    }
+
+    /// Host of the URL in "Blossom: upload to <url> attempt …".
+    static func blossomUploadHost(in message: String) -> String? {
+        guard let r = message.range(of: "upload to ", options: .caseInsensitive) else { return nil }
+        let token = message[r.upperBound...].split(separator: " ").first.map(String.init) ?? ""
+        return URL(string: token)?.host?.lowercased()
+    }
+
+    static func isLocalHost(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
     }
 
     private static func firstNumber(after marker: String, in text: String) -> Int? {

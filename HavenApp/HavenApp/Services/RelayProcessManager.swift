@@ -2,6 +2,9 @@ import Foundation
 @preconcurrency import Dispatch
 import Combine
 import UniformTypeIdentifiers
+#if os(iOS)
+import UIKit
+#endif
 
 // Broad MIME types that allow more specific refinements from relay metadata
 private let mimeSubsetRules: [String: Set<String>] = [
@@ -193,6 +196,9 @@ class RelayProcessManager: ObservableObject {
 
         // Immediately claim the state so no second call can slip through.
         self.state = .booting
+        #if os(iOS)
+        observeForegroundOnce()
+        #endif
         self.lastConfig = config
         self.isReadyForConnections = false
         self.readyForConnectionsTask?.cancel()
@@ -386,6 +392,81 @@ class RelayProcessManager: ObservableObject {
         return isRunning && !isBooting
     }
 
+    /// Ready by the flags AND answering HTTP. The flags alone go stale: iOS
+    /// can close the listening socket while the app is suspended and nothing
+    /// flips `isRunning`, so an upload only found out by failing.
+    func ensureRelayServing(timeout: TimeInterval = 15.0) async -> Bool {
+        let started = Date()
+        guard await ensureRelayReady(timeout: timeout) else { return false }
+        let left = timeout - Date().timeIntervalSince(started)
+        return await waitForHTTP(timeout: max(left, Self.httpReadyTimeout))
+    }
+
+    /// How long the HTTP check keeps trying once the flags say running.
+    static let httpReadyTimeout: TimeInterval = 10
+
+    /// HEAD /upload until the relay answers, backing off 0.25s → 2s.
+    func waitForHTTP(timeout: TimeInterval = httpReadyTimeout) async -> Bool {
+        let port = lastConfig?.relayPort ?? ConfigService.shared.config.relayPort
+        let deadline = Date().addingTimeInterval(timeout)
+        var delay: TimeInterval = 0.25
+        while true {
+            if await Self.relayAnswersHTTP(port: port) { return true }
+            if Date().addingTimeInterval(delay) >= deadline { return false }
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            delay = min(delay * 2, 2)
+        }
+    }
+
+    private static let probeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2
+        config.timeoutIntervalForResource = 3
+        return URLSession(configuration: config, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+    }()
+
+    /// One request to the relay's own Blossom endpoint. Any HTTP status
+    /// counts: a 401 or 404 still means the listener is up. Only a connection
+    /// failure or a timeout means it is not.
+    nonisolated static func relayAnswersHTTP(port: Int) async -> Bool {
+        #if os(macOS)
+        guard let url = URL(string: "http://127.0.0.1:\(port)/upload") else { return false }
+        #else
+        guard let url = URL(string: "https://localhost:\(port)/upload") else { return false }
+        #endif
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 2
+        guard let (_, response) = try? await probeSession.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (100..<600).contains(http.statusCode)
+    }
+
+    #if os(iOS)
+    private var foregroundObserver: NSObjectProtocol?
+
+    /// On iOS the app restarts the relay on foreground only when it is idle.
+    /// A relay whose socket died during suspension still reads as running, so
+    /// check that it answers, and restart it if it does not.
+    private func observeForegroundOnce() {
+        guard foregroundObserver == nil else { return }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in await RelayProcessManager.shared.recheckAfterForeground() }
+        }
+    }
+
+    func recheckAfterForeground() async {
+        guard state == .running, isRunning, !isBooting, inFlightRestart == nil, !isApplyingConfig else { return }
+        // A few tries: right after resume the process is still thawing.
+        if await waitForHTTP(timeout: 4) { return }
+        guard state == .running else { return }  // stopped or restarting meanwhile
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay is not answering after the app came back; restarting it"))
+        _ = await gracefulRestart()
+    }
+    #endif
+
     /// Gracefully restart the relay by stopping and restarting it.
     /// Used for automatic recovery when blossom uploads to the local relay fail.
     /// Concurrent callers coalesce onto one in-flight restart, and a cooldown
@@ -397,12 +478,12 @@ class RelayProcessManager: ObservableObject {
         }
         if let last = lastRestartFinished, Date().timeIntervalSince(last) < Self.restartCooldown {
             logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Automatic restart suppressed (cooldown) — waiting for relay readiness instead"))
-            return await ensureRelayReady(timeout: 10.0)
+            return await ensureRelayServing(timeout: 10.0)
         }
         #if os(macOS)
         if SleepWakeMonitor.shared.isInWakeGracePeriod {
             logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Automatic restart skipped — system just woke from sleep; waiting for relay instead"))
-            return await ensureRelayReady(timeout: 15.0)
+            return await ensureRelayServing(timeout: 15.0)
         }
         #endif
         guard let config = lastConfig else {
@@ -420,7 +501,11 @@ class RelayProcessManager: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             self.startRelay(config: config, isRetry: true)
-            return await self.ensureRelayReady(timeout: 30.0)
+            // startRelay only queues the start. Until it has run, state is
+            // still .idle and ensureRelayReady returns false at once, which
+            // is how a post failed at :33 with the relay up at :34.
+            await self.lifecycleChain.value
+            return await self.ensureRelayServing(timeout: 30.0)
         }
         inFlightRestart = restart
         let result = await restart.value
@@ -504,7 +589,8 @@ class RelayProcessManager: ObservableObject {
                         self.stopRelay { continuation.resume() }
                     }
                     self.startRelay(config: next)
-                    return await self.ensureRelayReady(timeout: 30.0)
+                    await self.lifecycleChain.value  // see gracefulRestart
+                    return await self.ensureRelayServing(timeout: 30.0)
                 }
                 self.inFlightRestart = restart
                 _ = await restart.value
