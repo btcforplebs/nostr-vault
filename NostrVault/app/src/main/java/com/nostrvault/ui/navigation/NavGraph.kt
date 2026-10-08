@@ -59,6 +59,7 @@ import com.nostrvault.ui.screens.profile.ProfileScreen
 import com.nostrvault.ui.screens.settings.AccountSettingsScreen
 import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
 import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
+import com.nostrvault.ui.screens.settings.FeedSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
 import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
@@ -281,9 +282,6 @@ fun NostrVaultNavHost(
                         },
                         onQuote = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                        },
-                        onNavigateToSettings = {
-                            navController.navigate(Screen.Settings.route)
                         },
                     )
                 }
@@ -621,6 +619,13 @@ fun NostrVaultNavHost(
                 composable(Screen.AppearanceSettings.route) {
                     AppearanceSettingsScreen(
                         onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.FeedSettings.route) {
+                    FeedSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenRelays = { navController.navigate(Screen.Relays.route) },
                     )
                 }
 

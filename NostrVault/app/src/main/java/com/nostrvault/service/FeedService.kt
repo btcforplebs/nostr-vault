@@ -484,8 +484,8 @@ class FeedService @Inject constructor(
 
     /**
      * Each feed relay's own socket state, keyed by [FeedRelayHealth.key]. The
-     * feed dashboard rows and the feed dot read this; [connectionStatus] alone
-     * only says whether the feed has notes (iOS #281).
+     * feed dot reads this; [connectionStatus] alone only says whether the
+     * feed has notes (iOS #281).
      */
     private val _relayStates = MutableStateFlow<Map<String, WebSocketClient.ConnectionState>>(emptyMap())
     val relayStates: StateFlow<Map<String, WebSocketClient.ConnectionState>> = _relayStates.asStateFlow()

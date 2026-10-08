@@ -23,6 +23,10 @@ struct SettingsView: View {
     #endif
     @Environment(\.dismiss) private var dismiss
     var isEmbedded: Bool = false
+    /// A pane someone asked to open (the Mac feed's status dot asks for
+    /// Relays). Passed in, not sent as a notification: Settings is not on
+    /// screen to hear one until the Settings tab is open.
+    var paneRequest: Binding<SettingsTab?> = .constant(nil)
     
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.0"
@@ -148,11 +152,21 @@ struct SettingsView: View {
                 commitSave()
             }
         }
+        .onAppear(perform: takePaneRequest)
+        .onChange(of: paneRequest.wrappedValue) { _, _ in takePaneRequest() }
         #if os(macOS)
+        // Already on screen (including the separate Settings window, which
+        // gets no paneRequest): switch here too.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
-            selectedTab = .feed
+            selectedTab = .relays
         }
         #endif
+    }
+
+    private func takePaneRequest() {
+        guard let pane = paneRequest.wrappedValue else { return }
+        selectedTab = pane
+        paneRequest.wrappedValue = nil
     }
 
     private var macOSBody: some View {
@@ -2728,6 +2742,25 @@ struct FeedSettingsView: View {
             }
 
             Section {
+                #if os(iOS)
+                NavigationLink {
+                    RelayMatrixView()
+                        .navigationTitle("Relays")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    Text("Feed Relays")
+                }
+                #else
+                // The Mac's Settings is a sidebar; switch it to Relays.
+                Button("Feed Relays…") {
+                    NotificationCenter.default.post(name: .havenOpenFeedRelaySettings, object: nil)
+                }
+                #endif
+            } footer: {
+                Text("Your feed reads from the relays marked Read.")
+            }
+
+            Section {
                 Picker(selection: $sendDelay) {
                     ForEach(PendingPostManager.ActionType.countdownChoices, id: \.self) { seconds in
                         Text(seconds == 0 ? "Off" : "\(Int(seconds))s").tag(seconds)
@@ -2742,6 +2775,17 @@ struct FeedSettingsView: View {
                 Text(sendDelay == 0
                      ? "Posts go out as soon as you tap. There's no undo."
                      : "Posts wait \(Int(sendDelay)) seconds before going out, so you can undo or edit them.")
+            }
+
+            Section {
+                Button("Reload Feed") {
+                    FeedService.shared.forceReload()
+                    FeedService.shared.refresh()
+                }
+            } header: {
+                Text("Troubleshooting")
+            } footer: {
+                Text("Clears the posts loaded on this device and loads your feed again from its relays. To check for new posts, pull down on the feed.")
             }
         }
         .groupedFormStyleCompat()

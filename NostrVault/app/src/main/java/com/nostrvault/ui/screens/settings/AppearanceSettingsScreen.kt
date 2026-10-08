@@ -106,15 +106,6 @@ class AppearanceViewModel @Inject constructor(
     private val _threadedLines = MutableStateFlow(FeedLineLimits.DEFAULT_THREADED)
     val threadedLines = _threadedLines.asStateFlow()
 
-    /** The feed toolbar's bolt button flips this same value. */
-    val autoLoadNewPosts = configStore.config
-        .map { it.autoLoadNewPosts }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoLoadNewPosts)
-
-    fun setAutoLoadNewPosts(on: Boolean) {
-        configStore.update { it.copy(autoLoadNewPosts = on) }
-    }
-
     val showNewPostsPill = configStore.config
         .map { it.showNewPostsPill }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showNewPostsPill)
@@ -190,7 +181,6 @@ fun AppearanceSettingsScreen(
     val disableTabBarAnimation by viewModel.disableTabBarAnimation.collectAsState()
     val compactLines by viewModel.compactLines.collectAsState()
     val threadedLines by viewModel.threadedLines.collectAsState()
-    val autoLoadNewPosts by viewModel.autoLoadNewPosts.collectAsState()
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
@@ -280,37 +270,6 @@ fun AppearanceSettingsScreen(
             Spacer(Modifier.height(8.dp))
             LineCountRow("Compact View", compactLines, viewModel::setCompactLines)
             LineCountRow("Threaded View", threadedLines, viewModel::setThreadedLines)
-
-            Spacer(Modifier.height(32.dp))
-
-            // Auto-load new posts — the same switch as the feed toolbar's bolt
-            // (iOS FeedSettingsView "Auto-Load New Posts").
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Auto-Load New Posts",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = SettingsHelp.FEED_AUTO_LOAD.text,
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
-                Switch(
-                    checked = autoLoadNewPosts,
-                    onCheckedChange = viewModel::setAutoLoadNewPosts,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = PrimaryText,
-                        checkedTrackColor = LocalNostrVaultColors.current.primary,
-                    ),
-                )
-            }
 
             Spacer(Modifier.height(32.dp))
 

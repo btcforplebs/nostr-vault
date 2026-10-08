@@ -111,11 +111,6 @@ internal fun ReelsFeed(
     profiles: Map<String, FeedProfile>,
     /** Height of the toolbar laid over the top of the page. */
     topInset: Dp,
-    /**
-     * A sheet or dialog is over the feed. The reel under it must go quiet:
-     * being covered does not take the page out of composition.
-     */
-    isCovered: Boolean,
     onProfile: (String) -> Unit,
     onReply: (FeedNote) -> Unit,
     onOpenNote: (FeedNote) -> Unit,
@@ -217,7 +212,7 @@ internal fun ReelsFeed(
                     profile = profiles[reel.note.pubkey],
                     profiles = profiles,
                     isCurrent = page == pagerState.settledPage,
-                    canPlay = isForeground && !isCovered,
+                    canPlay = isForeground,
                     shouldPrepare = abs(page - pagerState.currentPage) <= 1,
                     isLiked = reel.id in likedIds,
                     isMuted = isMuted,

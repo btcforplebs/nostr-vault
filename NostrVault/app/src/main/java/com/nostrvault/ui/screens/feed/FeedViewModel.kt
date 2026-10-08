@@ -165,10 +165,6 @@ class FeedViewModel @Inject constructor(
     }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.connectionColor.value)
 
-    /** Each feed relay's socket state, for the feed dashboard rows. */
-    val relayStates: StateFlow<Map<String, com.nostrvault.data.remote.WebSocketClient.ConnectionState>> =
-        feedService.relayStates
-
     /// Discovery's empty state needs both of these to say *why* it is empty:
     /// still building, nobody followed, or relays that returned nothing.
     val isLoadingExtendedNetwork: StateFlow<Boolean> = feedService.isLoadingExtendedNetwork
