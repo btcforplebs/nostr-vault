@@ -15,9 +15,13 @@ final class FillYourVaultCoordinator: ObservableObject {
     @Published private(set) var meter = VaultMeter(follows: [], owner: "", masterEarned: false)
     /// Set when this account builds its web of trust for the first time; the
     /// meter plays the gold bolt once, then shows the "built" card.
-    @Published var celebrateVaultMaster = false
+    @Published var celebrateVaultMaster = false {
+        didSet { holdOtherTutorials() }
+    }
     /// Which of the guide's screens is up.
-    @Published private(set) var phase: FillYourFeedPhase = .off
+    @Published private(set) var phase: FillYourFeedPhase = .off {
+        didSet { holdOtherTutorials() }
+    }
     /// Whether the meter is on for this account (see `FeedMeterStore`).
     @Published private(set) var meterOn = false
     /// The meter folded down to its pill.
@@ -121,6 +125,12 @@ final class FillYourVaultCoordinator: ObservableObject {
         phase = .ready
     }
 
+    /// Fill your vault is done once 5 are followed, but its bolt and
+    /// "built" card are still up: no page tutorial may start over them.
+    private func holdOtherTutorials() {
+        TutorialCenter.shared.held = celebrateVaultMaster || phase == .ready
+    }
+
     /// Skip, "Not now" or "Hide the meter": the guide closes (done past 5,
     /// skipped below) and the meter goes away.
     func closeGuide() {
@@ -191,7 +201,7 @@ final class FillYourVaultCoordinator: ObservableObject {
         ) {
         case .none: break
         case .start: center.startIfEligible(.fillYourVault, account: account)
-        case .finishSilently: center.finish(.fillYourVault, account: account)
+        case .finishSilently: center.finishQuietly(.fillYourVault, account: account)
         case .finish:
             center.finish(.fillYourVault, account: account)
             profileCardPubkey = nil

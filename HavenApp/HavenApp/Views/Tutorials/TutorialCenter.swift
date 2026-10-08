@@ -33,9 +33,12 @@ final class TutorialCenter: ObservableObject {
     @Published private(set) var stepIndex = 0
     /// Where each `.tutorialAnchor` is on screen, in global coordinates.
     @Published private(set) var anchors: [String: CGRect] = [:]
-    /// Bumped whenever a status is saved. Pages key their start on it, so
-    /// Fill your vault being marked done quietly (an account that already
-    /// follows people) lets that page's tutorial start in the same launch.
+    /// Bumped when a status changes without the person closing anything:
+    /// Fill your vault marked done quietly (an account that already follows
+    /// people), or Settings resetting them all. Pages key their start on it,
+    /// so the page on screen starts its tutorial then. Skip or Done doesn't
+    /// bump it: the next tutorial waits for the person's next visit to a
+    /// tab, not the screen they just closed one on.
     @Published private(set) var revision = 0
     /// Runs once, a moment after the next tutorial is finished or skipped.
     /// Setup uses it to hold the notification permission prompt until the
@@ -49,6 +52,12 @@ final class TutorialCenter: ObservableObject {
     var active: TutorialID? { progress.active }
 
     func isActive(_ id: TutorialID) -> Bool { progress.active == id }
+
+    /// See `TutorialProgress.held`. Fill your vault's coordinator sets it.
+    var held: Bool {
+        get { progress.held }
+        set { if progress.held != newValue { progress.held = newValue } }
+    }
 
     func status(_ id: TutorialID, account: String) -> TutorialStatus {
         progress.status(id, account: account)
@@ -67,13 +76,18 @@ final class TutorialCenter: ObservableObject {
 
     func finish(_ id: TutorialID, account: String) {
         progress.finish(id, account: account)
+        runNextClose()
+    }
+
+    /// Done without being shown, so the page on screen may start its own.
+    func finishQuietly(_ id: TutorialID, account: String) {
+        progress.finish(id, account: account)
         revision += 1
         runNextClose()
     }
 
     func skip(_ id: TutorialID, account: String) {
         progress.skip(id, account: account)
-        revision += 1
         runNextClose()
     }
 
