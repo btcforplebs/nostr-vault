@@ -256,6 +256,8 @@ struct FollowNotification: Identifiable {
     var kind: Kind
     /// Set on a pending pill, so the follow that finally lands can find it.
     var pubkey: String? = nil
+    /// Reverses the follow or unfollow this pill confirms.
+    var undo: (() -> Void)? = nil
 
     enum Kind: Equatable {
         case followed
@@ -275,12 +277,20 @@ class FollowNotificationManager: ObservableObject {
 
     @Published var notifications: [FollowNotification] = []
 
-    func add(recipientName: String, kind: FollowNotification.Kind) {
-        let notification = FollowNotification(recipientName: recipientName, kind: kind)
+    func add(recipientName: String, kind: FollowNotification.Kind, undo: (() -> Void)? = nil) {
+        let notification = FollowNotification(recipientName: recipientName, kind: kind, undo: undo)
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
-        scheduleDismiss(notification.id, after: dismissDelay(kind))
+        // Long enough to reach Undo.
+        scheduleDismiss(notification.id, after: undo == nil ? dismissDelay(kind) : 5.0)
+    }
+
+    /// Runs a pill's Undo and takes the pill down.
+    func undo(_ id: UUID) {
+        guard let notification = notifications.first(where: { $0.id == id }) else { return }
+        withAnimation(Motion.bannerOut) { notifications.removeAll { $0.id == id } }
+        notification.undo?()
     }
 
     /// A follow or unfollow queued until the follow list loads. The pill
@@ -369,8 +379,18 @@ struct FollowPill: View {
             Text(label)
                 .font(.appSystem(size: 13, weight: .bold))
                 .lineLimit(1)
+
+            if notification.undo != nil {
+                Button("Undo") { FollowNotificationManager.shared.undo(notification.id) }
+                    .font(.appSystem(size: 13, weight: .heavy))
+                    .underline()
+                    .buttonStyle(.plain)
+                    .padding(.leading, 6)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, notification.undo == nil ? 10 : 0)
         .padding(.horizontal, 20)
         .background(
             Capsule()
@@ -380,6 +400,11 @@ struct FollowPill: View {
         .foregroundColor(.white)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .accessibilityActions {
+            if notification.undo != nil {
+                Button("Undo") { FollowNotificationManager.shared.undo(notification.id) }
+            }
+        }
     }
 
     private var iconName: String {

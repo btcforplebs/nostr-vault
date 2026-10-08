@@ -389,6 +389,23 @@ fun NostrVaultNavHost(
                         onMessageUser = { pk, draft ->
                             navController.navigate(Screen.DMThread.createRoute(pk, draft))
                         },
+                        onOpenFollowList = { tab, total ->
+                            navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(
+                    route = Screen.FollowList.route,
+                    arguments = listOf(
+                        navArgument("pubkey") { type = NavType.StringType },
+                        navArgument("tab") { type = NavType.StringType; defaultValue = "FOLLOWING" },
+                        navArgument("total") { type = NavType.StringType; defaultValue = "-1" },
+                    ),
+                ) {
+                    com.nostrvault.ui.screens.profile.FollowListScreen(
+                        onProfileClick = { pk -> navController.navigate(Screen.Profile.createRoute(pk)) },
                         onBack = { navController.popBackStack() },
                     )
                 }
