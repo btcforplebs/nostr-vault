@@ -232,7 +232,20 @@ abstract class HashtagNotesViewModel(
             if (notes.isNotEmpty()) _isLoading.value = false
             nostrService.fetchMissingProfiles(notes.map { it.pubkey }.distinct())
         },
+        onPass = ::endLoadingIfScreened,
     )
+
+    /** A relay has finished its first page. Screened, that alone isn't the
+     *  end of loading: the posts on hand wait for their authors' follow
+     *  counts, and an empty list until then is not "no posts". */
+    @Volatile private var firstPageDone = false
+    /** The generation whose first page is in, so an old feed's EOSE landing
+     *  just after a restart can't end the new feed's loading. */
+    @Volatile private var firstPageGen = -1
+
+    private fun endLoadingIfScreened() {
+        if (firstPageDone && firstPageGen == generation && screener.isSettled()) _isLoading.value = false
+    }
 
     protected fun observe(tags: Flow<List<String>>, active: Flow<Boolean> = flowOf(true)) {
         observing?.cancel()
@@ -312,6 +325,7 @@ abstract class HashtagNotesViewModel(
             _fromFollows.value = emptyList()
             _fromOthers.value = emptyList()
             _isLoading.value = true
+            firstPageDone = false
         }
         // stop() dropped any lookups in flight; ask again for what's on hand.
         if (resuming && screen) screener.resume()
@@ -512,10 +526,11 @@ abstract class HashtagNotesViewModel(
      * One REQ to the feed relays for the screener. Returns when every relay
      * has answered (EOSE or CLOSED, counted per relay) or after
      * [LOOKUP_TIMEOUT_MS]; its sockets close then. Only verified events.
+     * True when every relay answered, false when it timed out.
      */
-    private suspend fun lookupQuery(filters: List<JsonObject>, onEvent: (JsonObject) -> Unit) {
+    private suspend fun lookupQuery(filters: List<JsonObject>, onEvent: (JsonObject) -> Unit): Boolean {
         val relays = configStore.config.value.readRelays
-        if (relays.isEmpty() || filters.isEmpty()) return
+        if (relays.isEmpty() || filters.isEmpty()) return true
         val subId = "screen-${System.nanoTime().toString(36)}"
         val req = buildJsonArray {
             add(JsonPrimitive("REQ"))
@@ -526,7 +541,7 @@ abstract class HashtagNotesViewModel(
         val done = kotlinx.coroutines.CompletableDeferred<Unit>()
         val clients = mutableListOf<WebSocketClient>()
         val lookupJobs = mutableListOf<Job>()
-        try {
+        return try {
             coroutineScope {
                 for (url in relays) {
                     // Big buffer: a responder lookup can return thousands of frames,
@@ -559,8 +574,9 @@ abstract class HashtagNotesViewModel(
                     }
                     client.connect()
                 }
-                withTimeoutOrNull(LOOKUP_TIMEOUT_MS) { done.await() }
+                val allAnswered = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) { done.await() } != null
                 lookupJobs.forEach { it.cancel() }
+                allAnswered
             }
         } finally {
             clients.forEach { it.disconnect() }
@@ -588,7 +604,11 @@ abstract class HashtagNotesViewModel(
         } ?: return
         if (array.size < 2 || array[1].jsonPrimitive.contentOrNull != subId) return
         when (array[0].jsonPrimitive.contentOrNull) {
-            "EOSE" -> if (gen == generation) _isLoading.value = false
+            "EOSE" -> if (gen == generation) {
+                firstPageGen = gen
+                firstPageDone = true
+                if (screening) endLoadingIfScreened() else _isLoading.value = false
+            }
             "EVENT" -> {
                 val event = array.getOrNull(2) as? JsonObject ?: return
                 val note = parseNote(event, blocked, authors, wantedTags) ?: return

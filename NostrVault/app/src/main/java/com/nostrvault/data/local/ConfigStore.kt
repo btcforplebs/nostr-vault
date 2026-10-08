@@ -88,7 +88,7 @@ class ConfigStore @Inject constructor(
             if (configFile.exists()) {
                 json.decodeFromString<HavenConfig>(configFile.readText())
             } else {
-                HavenConfig()
+                HavenConfig.newInstall()
             }
         } catch (_: Exception) {
             HavenConfig()
@@ -333,7 +333,7 @@ class ConfigStore @Inject constructor(
         configFile.delete()
         // The relay's certificate goes with its data; a new one is coming.
         LocalTls.forgetAll()
-        _config.value = HavenConfig()
+        _config.value = HavenConfig.newInstall()
         _activeAccountHexPubkey.value = ""
     }
 }

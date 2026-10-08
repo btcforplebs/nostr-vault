@@ -1379,6 +1379,20 @@ final class HashtagFeedModel: ObservableObject {
     private var pool: [FeedNote] = []
     private var followCounts: [String: Int] = [:]
     private var lookingUp = Set<String>()
+    /// Authors whose follow-count lookup timed out with no follow list found,
+    /// and how often. See `followLookupTries`.
+    private var timedOut: [String: Int] = [:]
+    /// Lookups that timed out before an author with no follow list counts
+    /// as following nobody. One slow relay must not hide a person for good,
+    /// nor a dead one keep asking about them forever.
+    private static let followLookupTries = 3
+    /// Bumped by `stop()`: a lookup the view dropped (it went off screen)
+    /// mustn't count as a timeout. `generation` alone only moves on `start()`.
+    private var lookupGeneration = 0
+    /// A relay has finished its first page. Screened, that alone isn't the
+    /// end of loading: the posts on hand wait for their authors' follow
+    /// counts, and an empty list until then is not "no posts".
+    private var firstPageDone = false
     private var rescreenQueued = false
     private var lookupClients: [WebSocketClient] = []
     private var lookupCancellables = Set<AnyCancellable>()
@@ -1429,6 +1443,7 @@ final class HashtagFeedModel: ObservableObject {
             pool = []
             seen = []
             isLoading = true
+            firstPageDone = false
         }
         self.follows = follows
         // stop() dropped any lookups in flight; ask again for what's on hand.
@@ -1506,7 +1521,9 @@ final class HashtagFeedModel: ObservableObject {
                     guard let self, self.generation == gen else { return }
                     switch parsed {
                     case .some(let note?): self.insert(note)
-                    case .some(nil): self.isLoading = false   // EOSE from a relay
+                    case .some(nil):   // EOSE from a relay
+                        self.firstPageDone = true
+                        if self.screening { self.endLoadingIfSettled() } else { self.isLoading = false }
                     case .none: break
                     }
                 }
@@ -1529,6 +1546,7 @@ final class HashtagFeedModel: ObservableObject {
         lookupClients.forEach { $0.disconnect() }
         lookupClients = []
         lookupCancellables.removeAll()
+        lookupGeneration += 1
         lookingUp = []
         askedResponders.subtract(askedResponders.filter { responders[$0] == nil })
         stopPage()
@@ -1662,12 +1680,21 @@ final class HashtagFeedModel: ObservableObject {
         if shownTrust != nil, follows.contains(note.pubkey) {
             Self.insert(note, into: &fromFollows)
         } else if screening {
+            // Not shown yet: loading ends when the screen pass says so.
             Self.insert(note, into: &pool)
             queueRescreen()
+            return
         } else {
             Self.insert(note, into: &fromOthers)
         }
         isLoading = false
+    }
+
+    /// Screened, loading ends once a relay's first page is in and every
+    /// author on hand has been asked about. Before that an empty list read
+    /// as "No posts tagged #x yet" for up to 6 s on a fresh install.
+    private func endLoadingIfSettled() {
+        if firstPageDone && lookingUp.isEmpty && !rescreenQueued { isLoading = false }
     }
 
     // MARK: Screening (Fill your feed)
@@ -1692,6 +1719,8 @@ final class HashtagFeedModel: ObservableObject {
         let counts = responders.mapValues(\.count)
         let next = TopicFeedFilter.ordered(shownIds, responders: counts).compactMap { byId[$0] }
         if next.map(\.id) != fromOthers.map(\.id) { fromOthers = next }
+        if !next.isEmpty { isLoading = false }
+        endLoadingIfSettled()
     }
 
     /// Replies, reposts, reactions and zaps on the shown posts, counted by
@@ -1734,7 +1763,7 @@ final class HashtagFeedModel: ObservableObject {
             for tag in tags where tag.count >= 2 && tag[0] == "e" && wanted.contains(tag[1]) {
                 if authors[tag[1]] != pubkey { found[tag[1], default: []].insert(pubkey) }
             }
-        }, finish: { [weak self] in
+        }, finish: { [weak self] _ in
             guard let self else { return }
             for id in missing { self.responders[id, default: []].formUnion(found[id] ?? []) }
             self.rescreen()
@@ -1742,28 +1771,30 @@ final class HashtagFeedModel: ObservableObject {
     }
 
     /// One REQ to every feed relay; `finish` runs once, when all have
-    /// answered or after 6s, and only if the feed hasn't restarted since.
-    /// Its sockets close when it finishes.
+    /// answered (true) or after 6s (false), and only if the feed hasn't
+    /// restarted since. Its sockets close when it finishes.
     private func oneShotQuery(_ filters: [[String: Any]], onEvent: @escaping ([String: Any]) -> Void,
-                              finish: @escaping () -> Void) {
+                              finish: @escaping (_ complete: Bool) -> Void) {
         let gen = generation
+        let lookupGen = lookupGeneration
         let subId = "q-\(UUID().uuidString.prefix(8))"
+        // Always finish, so a lookup can't leave its authors in `lookingUp`.
         guard let data = try? JSONSerialization.data(withJSONObject: (["REQ", subId] as [Any]) + filters),
-              let req = String(data: data, encoding: .utf8) else { return }
+              let req = String(data: data, encoding: .utf8) else { finish(false); return }
         let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
         var answered = Set<Int>()
         var finished = false
         var mine: [WebSocketClient] = []
         var mineCancellables: [AnyCancellable] = []
-        let finishOnce = { [weak self] in
+        let finishOnce = { [weak self] (complete: Bool) in
             guard !finished else { return }
             finished = true
             mine.forEach { $0.disconnect() }
             guard let self else { return }
             self.lookupClients.removeAll { client in mine.contains { $0 === client } }
             mineCancellables.forEach { $0.cancel(); self.lookupCancellables.remove($0) }
-            guard self.generation == gen else { return }
-            finish()
+            guard self.generation == gen, self.lookupGeneration == lookupGen else { return }
+            finish(complete)
         }
         for (index, relay) in relays.enumerated() {
             let client = WebSocketClient()
@@ -1791,19 +1822,21 @@ final class HashtagFeedModel: ObservableObject {
                     } else if type == "EOSE" || type == "CLOSED" {
                         // Per relay, so two frames from one can't end it early.
                         answered.insert(index)
-                        if answered.count >= relays.count { finishOnce() }
+                        if answered.count >= relays.count { finishOnce(true) }
                     }
                 }
                 .store(in: &mineCancellables)
             lookupCancellables.formUnion(mineCancellables.suffix(2))
             client.connect(url: relay)
         }
-        if relays.isEmpty { finishOnce() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishOnce() }
+        if relays.isEmpty { finishOnce(true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishOnce(false) }
     }
 
     /// Each new author's newest kind 3, counted. Authors no relay has a
-    /// follow list for count as 0, which keeps them out: people follow.
+    /// follow list for count as 0, which keeps them out: people follow. Only
+    /// once every relay has answered, or after `followLookupTries` timed
+    /// out; until then they wait as unknown and are asked again next pass.
     private func lookUpFollowCounts() {
         let missing = Array(Set(pool.map(\.pubkey)).subtracting(followCounts.keys).subtracting(lookingUp))
         guard !missing.isEmpty else { return }
@@ -1819,10 +1852,27 @@ final class HashtagFeedModel: ObservableObject {
             if (newest[pubkey]?.0 ?? 0) < createdAt {
                 newest[pubkey] = (createdAt, tags.filter { $0.first == "p" }.count)
             }
-        }, finish: { [weak self] in
+        }, finish: { [weak self] complete in
             guard let self else { return }
             for author in missing where self.followCounts[author] == nil {
-                self.followCounts[author] = newest[author]?.1 ?? 0
+                let tries = (self.timedOut[author] ?? 0) + 1
+                if let count = newest[author]?.1 {
+                    self.followCounts[author] = count
+                } else if complete || tries >= Self.followLookupTries {
+                    self.followCounts[author] = 0
+                } else {
+                    self.timedOut[author] = tries
+                }
+                if self.followCounts[author] != nil { self.timedOut[author] = nil }
+            }
+            // Asked again on a timer, not only when another post arrives: on
+            // a quiet tag that could be hours. The try cap ends it.
+            if missing.contains(where: { self.followCounts[$0] == nil }) {
+                let lookupGen = self.lookupGeneration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, self.lookupGeneration == lookupGen else { return }
+                    self.queueRescreen()
+                }
             }
             self.lookingUp.subtract(missing)
             self.rescreen()

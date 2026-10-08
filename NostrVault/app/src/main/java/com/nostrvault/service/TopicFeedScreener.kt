@@ -26,14 +26,17 @@ import kotlinx.serialization.json.putJsonArray
  *
  * [query] is one REQ to the feed relays that returns when every relay has
  * answered or after a timeout, handing over each verified event as it
- * comes. Thread-safe: posts arrive off the main thread.
+ * comes, and says whether every relay answered. Thread-safe: posts arrive
+ * off the main thread.
  */
 class TopicFeedScreener(
     private val scope: CoroutineScope,
-    private val query: suspend (filters: List<JsonObject>, onEvent: (JsonObject) -> Unit) -> Unit,
+    private val query: suspend (filters: List<JsonObject>, onEvent: (JsonObject) -> Unit) -> Boolean,
     /** Checks a zap request's signature, given its JSON. */
     private val isValid: (String) -> Boolean,
     private val onShown: (List<FeedNote>) -> Unit,
+    /** After every screening pass, shown list changed or not. See [isSettled]. */
+    private val onPass: () -> Unit = {},
 ) {
     companion object {
         /** Posts arrive in a stream: ask about responders once a second, not once per post. */
@@ -41,6 +44,12 @@ class TopicFeedScreener(
         /** Per filter, because `limit` caps each one and one busy post must not use it up for the others. */
         const val RESPONDER_IDS_PER_FILTER = 25
         const val AUTHORS_PER_FILTER = 100
+        /** Lookups that timed out before an author with no follow list
+         *  counts as following nobody. One slow relay must not hide a person
+         *  for good, nor a dead one keep asking about them forever. */
+        const val FOLLOW_LOOKUP_TRIES = 3
+        /** How long after a lookup that left authors unknown they're asked again. */
+        const val FOLLOW_RETRY_MS = 2_000L
     }
 
     private val lock = Any()
@@ -49,6 +58,8 @@ class TopicFeedScreener(
     private var pool: List<FeedNote> = emptyList()
     private val followCounts = HashMap<String, Int>()
     private val lookingUp = HashSet<String>()
+    /** Authors whose lookup timed out with no follow list found, and how often. */
+    private val timedOut = HashMap<String, Int>()
     private val responders = HashMap<String, MutableSet<String>>()
     private val askedResponders = HashSet<String>()
     private val pendingResponders = ArrayList<String>()
@@ -56,6 +67,11 @@ class TopicFeedScreener(
     private var respondersQueued = false
     private val jobs = ArrayList<Job>()
     private var lastShown: List<String> = emptyList()
+
+    /** Every author on hand has been asked about and nothing is waiting to
+     *  be screened: what's shown is as good as this pass can make it. True
+     *  with no posts at all. */
+    fun isSettled(): Boolean = synchronized(lock) { lookingUp.isEmpty() && !rescreenQueued }
 
     /** The oldest post asked for, where an older page carries on from. */
     fun oldest(): FeedNote? = synchronized(lock) { pool.lastOrNull() }
@@ -125,6 +141,7 @@ class TopicFeedScreener(
         }
         if (next != null) onShown(next)
         if (fresh.isNotEmpty()) lookUpResponders(fresh)
+        onPass()
     }
 
     private fun lookUpResponders(ids: List<String>) {
@@ -170,7 +187,10 @@ class TopicFeedScreener(
     }
 
     /** Each new author's newest kind 3, counted. Authors no relay has a
-     *  follow list for count as 0, which keeps them out: people follow. */
+     *  follow list for count as 0, which keeps them out: people follow. Only
+     *  once every relay has answered, or after [FOLLOW_LOOKUP_TRIES] timed
+     *  out; until then they wait as unknown and are asked again on the next
+     *  pass. */
     private suspend fun lookUpFollowCounts(gen: Int) {
         val missing = synchronized(lock) {
             pool.map { it.pubkey }.toSet().filter { it !in followCounts && it !in lookingUp }
@@ -186,21 +206,53 @@ class TopicFeedScreener(
             }
         }
         launch(gen) {
-            query(filters) { event ->
-                val pubkey = (event["pubkey"] as? JsonPrimitive)?.contentOrNull ?: return@query
-                val createdAt = (event["created_at"] as? JsonPrimitive)?.longOrNull ?: return@query
-                if (pubkey !in wanted || (event["kind"] as? JsonPrimitive)?.contentOrNull != "3") return@query
-                val follows = TopicFeedFilter.tagsOf(event).count { it.firstOrNull() == "p" }
-                synchronized(newest) {
-                    if ((newest[pubkey]?.first ?: 0L) < createdAt) newest[pubkey] = createdAt to follows
+            var complete = false
+            var unknownLeft = false
+            try {
+                complete = query(filters) { event ->
+                    val pubkey = (event["pubkey"] as? JsonPrimitive)?.contentOrNull ?: return@query
+                    val createdAt = (event["created_at"] as? JsonPrimitive)?.longOrNull ?: return@query
+                    if (pubkey !in wanted || (event["kind"] as? JsonPrimitive)?.contentOrNull != "3") return@query
+                    val follows = TopicFeedFilter.tagsOf(event).count { it.firstOrNull() == "p" }
+                    synchronized(newest) {
+                        if ((newest[pubkey]?.first ?: 0L) < createdAt) newest[pubkey] = createdAt to follows
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Counts as a timed-out try; the pass below still runs.
+                Log.w("TopicFeedScreener", "follow-count lookup failed: ${e.message}")
+            } finally {
+                // Even when the query threw: authors left in lookingUp are
+                // never asked about again, so their posts would stay hidden.
+                // Not after stop(), which cleared it for whoever asks next.
+                synchronized(lock) {
+                    if (gen == generation) {
+                        val found = synchronized(newest) { HashMap(newest) }
+                        for (author in missing) {
+                            if (author in followCounts) continue
+                            val count = found[author]?.second
+                            val tries = (timedOut[author] ?: 0) + 1
+                            when {
+                                count != null -> followCounts[author] = count
+                                complete || tries >= FOLLOW_LOOKUP_TRIES -> followCounts[author] = 0
+                                else -> timedOut[author] = tries
+                            }
+                            if (author in followCounts) timedOut.remove(author)
+                        }
+                        lookingUp.removeAll(wanted)
+                        unknownLeft = missing.any { it !in followCounts }
+                    }
                 }
             }
-            synchronized(lock) {
-                if (gen != generation) return@launch
-                for (author in missing) if (author !in followCounts) followCounts[author] = newest[author]?.second ?: 0
-                lookingUp.removeAll(wanted)
-            }
             rescreen()
+            // Asked again on a timer, not only when another post arrives: on a
+            // quiet tag that could be hours. The try cap ends it.
+            if (unknownLeft) {
+                delay(FOLLOW_RETRY_MS)
+                queueRescreen()
+            }
         }
     }
 

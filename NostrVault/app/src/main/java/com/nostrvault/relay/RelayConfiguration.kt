@@ -541,6 +541,27 @@ data class HavenConfig(
     val activeSearchRelays: List<String>
         get() = searchRelays ?: com.nostrvault.data.model.DEFAULT_SEARCH_RELAYS
 
+    companion object {
+        /**
+         * New installs open the timeline feeds in Threaded View (iOS
+         * e3decc63, Logen 2026-10-08). Not the [feedLayoutModes] default:
+         * config.json leaves out values equal to their default, so a saved
+         * config from before this setting reads back without the key and
+         * would jump to Threaded View. Only a config that never existed
+         * gets it ([newInstall]); saved ones keep their legacy compact choice.
+         */
+        val NEW_INSTALL_FEED_LAYOUTS: Map<String, String> = listOf(
+            com.nostrvault.data.model.FeedMode.FOLLOWING,
+            com.nostrvault.data.model.FeedMode.DISCOVERY,
+            com.nostrvault.data.model.FeedMode.GLOBAL,
+            com.nostrvault.data.model.FeedMode.HASHTAGS,
+            com.nostrvault.data.model.FeedMode.POPULAR,
+        ).associate { it.name to com.nostrvault.data.model.FeedLayoutMode.THREADED.storageKey }
+
+        /** The config for an install with none saved yet (or just reset). */
+        fun newInstall(): HavenConfig = HavenConfig(feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS)
+    }
+
 
     /** Computed local relay WebSocket URL.
      *  Always uses ws:// for localhost since the local relay runs without TLS.
