@@ -394,7 +394,6 @@ struct FeedView: View {
     @State private var composeContext: ComposeContext?
     /// The diVine, article or recipe composer, when the post button opens one.
     @State private var modeComposer: ModeComposer?
-    @State private var showingRelayStatus = false
     @State private var showingFeedMenuEditor = false
     @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
     @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
@@ -653,8 +652,7 @@ struct FeedView: View {
             isCompactWidth: isCompactWidth,
             modes: menuModes,
             onSelect: { feedService.switchMode($0) },
-            onEdit: { showingFeedMenuEditor = true },
-            onDashboard: { showingRelayStatus = true }
+            onEdit: { showingFeedMenuEditor = true }
         )
         .equatable()
         // The Feeds tutorial points here, and starts here the first time
@@ -1294,7 +1292,8 @@ struct FeedView: View {
     private var macFeedHeader: some View {
         HStack(spacing: 12) {
             // Connection dot
-            Button(action: { showingRelayStatus = true }) {
+            // Opens Settings > Relays, where the feed relays are edited.
+            Button(action: { NotificationCenter.default.post(name: .havenOpenFeedRelaySettings, object: nil) }) {
                 Circle()
                     .fill(feedService.connectionDotColor)
                     .frame(width: 10, height: 10)
@@ -1751,12 +1750,6 @@ struct FeedView: View {
                 #if os(macOS)
                 .frame(minWidth: 360, minHeight: 520)
                 #endif
-        }
-        .sheet(isPresented: $showingRelayStatus) {
-            FeedDashboardSheet(onDismiss: { showingRelayStatus = false })
-                .environmentObject(relayManager)
-                .environmentObject(configService)
-                .environmentObject(nostrService)
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
@@ -2717,7 +2710,7 @@ struct FeedView: View {
             onShowGlobal: { reelsService.setScope(.global) },
             onPost: { modeComposer = .divine },
             isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
-                || showingMediaUrl != nil || showingRelayStatus
+                || showingMediaUrl != nil
         )
         // feedList is not on screen in diVines, so the collapsed tab bar's
         // compose button is answered here.
@@ -5128,7 +5121,6 @@ struct FeedPickerMenu: View, Equatable {
     let modes: [FeedMode]
     let onSelect: (FeedMode) -> Void
     let onEdit: () -> Void
-    let onDashboard: () -> Void
 
     static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
         lhs.mode == rhs.mode
@@ -5155,10 +5147,6 @@ struct FeedPickerMenu: View, Equatable {
             .pickerStyle(.inline)
 
             Divider()
-
-            Button(action: onDashboard) {
-                Label("Dashboard", systemImage: "antenna.radiowaves.left.and.right")
-            }
 
             // Last, at the bottom of the list it edits.
             Button(action: onEdit) {

@@ -150,7 +150,7 @@ struct SettingsView: View {
         }
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
-            selectedTab = .feed
+            selectedTab = .relays
         }
         #endif
     }
@@ -2728,6 +2728,25 @@ struct FeedSettingsView: View {
             }
 
             Section {
+                #if os(iOS)
+                NavigationLink {
+                    RelayMatrixView()
+                        .navigationTitle("Relays")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    Text("Feed Relays")
+                }
+                #else
+                // The Mac's Settings is a sidebar; switch it to Relays.
+                Button("Feed Relays…") {
+                    NotificationCenter.default.post(name: .havenOpenFeedRelaySettings, object: nil)
+                }
+                #endif
+            } footer: {
+                Text("Your feed reads from the relays marked Read.")
+            }
+
+            Section {
                 Picker(selection: $sendDelay) {
                     ForEach(PendingPostManager.ActionType.countdownChoices, id: \.self) { seconds in
                         Text(seconds == 0 ? "Off" : "\(Int(seconds))s").tag(seconds)
@@ -2742,6 +2761,17 @@ struct FeedSettingsView: View {
                 Text(sendDelay == 0
                      ? "Posts go out as soon as you tap. There's no undo."
                      : "Posts wait \(Int(sendDelay)) seconds before going out, so you can undo or edit them.")
+            }
+
+            Section {
+                Button("Reload Feed") {
+                    FeedService.shared.forceReload()
+                    FeedService.shared.refresh()
+                }
+            } header: {
+                Text("Troubleshooting")
+            } footer: {
+                Text("Clears the feed on this device and loads it again from your relays. To check for new posts, pull down on the feed.")
             }
         }
         .groupedFormStyleCompat()
