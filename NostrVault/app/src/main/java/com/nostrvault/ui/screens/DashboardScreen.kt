@@ -440,11 +440,7 @@ class DashboardViewModel @Inject constructor(
         // missing forceReload() wiring. Without this, the Relay/Vault tab kept showing
         // the previous account's notes/reactions/zaps mixed in with the new account's.
         viewModelScope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
-                .collect { resetForAccountSwitch() }
+            configStore.accountSwitches.collect { resetForAccountSwitch() }
         }
 
         // Blocking someone (this tab's Block User, the feed, Settings) drops
