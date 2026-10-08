@@ -135,6 +135,14 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             self.url = url
             self.disconnectLocked()
 
+            // Never connect: the owner blocked this relay.
+            if RelayBlocklist.isBlocked(url.absoluteString) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.connectionState = .error
+                }
+                return
+            }
+
             if !self.isTemporary {
                 #if DEBUG
                 print("WebSocketClient: Connecting to \(url.absoluteString)")

@@ -1092,6 +1092,24 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// NIP-51: publishes the owner's blocked relay list (kind 10006), the
+    /// relays set to Never connect. Public `relay` tags, empty content. An
+    /// empty list is published too, so unblocking the last relay clears it.
+    func publishBlockedRelayList() {
+        let config = ConfigService.shared.config
+        let tags = config.blockedRelays.map { ["relay", HavenConfig.normalizedRelayURL($0)] }
+        Task {
+            if let event = await signEventAsync(kind: 10006, content: "", tags: tags, signAsNpub: config.ownerNpub) {
+                postEvent(event)
+                #if DEBUG
+                print("NostrService: Published Kind 10006 blocked relay list with \(tags.count) relays")
+                #endif
+            } else {
+                print("NostrService: Failed to sign Kind 10006 blocked relay list")
+            }
+        }
+    }
+
     /// Brings the owner's DM inbox list (kind 10050) into step across devices,
     /// and republishes kind 10050 for every other account that can sign.
     ///
