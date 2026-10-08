@@ -456,10 +456,12 @@ struct ImportTourStep: View {
     @State private var counts: (notes: Int, likes: Int, all: Int)?
     @State private var started = false
 
-    /// "I use Nostr" imports reach back to Nostr's early days, so "your
-    /// notes are home" is true for nearly everyone. The config default
-    /// (2023-01-01) is for Full Setup's own picker.
-    static let importStartDate = "2021-01-01"
+    /// Same as the config default. 2021 was tried: the import walks the
+    /// history in 10-day windows, each waiting on every relay, and a fresh
+    /// key spent ~10 s per empty window on the simulator (2026-10-07), so
+    /// two more years cost minutes for everyone. Older notes can be pulled
+    /// from Settings → Import.
+    static let importStartDate = "2023-01-01"
 
     private var lessons: [TutorialStep] { TutorialContent.importTour }
     /// The small orange label over each lesson (mockup).
@@ -733,6 +735,7 @@ struct ImportRunningPill: View {
         stage.text
             .replacingOccurrences(of: "Saving your ", with: "")
             .replacingOccurrences(of: "Saving ", with: "")
+            .replacingOccurrences(of: "Looking through ", with: "")
             .replacingOccurrences(of: "…", with: "")
             .lowercasedFirst
     }

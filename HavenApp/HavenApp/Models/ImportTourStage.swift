@@ -19,6 +19,12 @@ struct ImportTourStage: Equatable {
     init(statusMessage: String, completed: Bool) {
         if completed {
             self = ImportTourStage(text: "Done. Your notes are home.", step: 4)
+        } else if statusMessage.hasPrefix("Looking through notes") {
+            if let month = Self.month(in: statusMessage) {
+                self = ImportTourStage(text: "Looking through \(month)…", step: 2)
+            } else {
+                self = ImportTourStage(text: "Looking through your history…", step: 2)
+            }
         } else if statusMessage.hasPrefix("Found notes") {
             if let month = Self.month(in: statusMessage) {
                 self = ImportTourStage(text: "Saving your notes from \(month)…", step: 2)

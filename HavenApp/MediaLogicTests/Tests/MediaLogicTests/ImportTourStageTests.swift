@@ -22,4 +22,14 @@ final class ImportTourStageTests: XCTestCase {
         XCTAssertNil(ImportTourStage.month(in: "Found notes from yesterday..."))
         XCTAssertNil(ImportTourStage.month(in: "Found notes..."))
     }
+
+    /// Empty windows move the headline too (import.go "No notes found").
+    func testEmptyWindowsKeepTheHeadlineMoving() {
+        var batch = RelayLogParser.BatchedStateUpdate()
+        RelayLogParser.collectStateChanges(from: "2026/10/08 00:28:01 ℹ️ No notes found for 2021-05-21 to 2021-05-31", into: &batch)
+        XCTAssertEqual(batch.progressDateStr, "2021-05-31")
+        XCTAssertEqual(batch.importStatusMessage, "Looking through notes from 2021-05-21...")
+        XCTAssertEqual(ImportTourStage(statusMessage: batch.importStatusMessage ?? "", completed: false),
+                       ImportTourStage(text: "Looking through May 2021…", step: 2))
+    }
 }

@@ -301,7 +301,6 @@ class ConfigService: ObservableObject {
         [
             "wss://relay.primal.net",
             "wss://relay.damus.io",
-            "wss://relay.nostr.build",
             "wss://relay.btcforplebs.com",
             "wss://nostr-pub.wellorder.net"
         ]

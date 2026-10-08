@@ -133,13 +133,12 @@ struct HavenConfig: Codable, Equatable {
     // Import
     var importStartDate: String = "2023-01-01"
     var importSeedRelaysFile: String = "relays_import.json"
-    // relay.damus.io and relay.nostr.build replaced nos.lol and nostr.mom
-    // (2026-10-07: both timed out on connect). relay.nostr.build asks for
-    // NIP-42 sign-in before it answers, which the import doesn't do yet.
+    // relay.damus.io replaced nos.lol and nostr.mom (2026-10-07: both timed
+    // out on connect). relay.nostr.build was tried and dropped: it wants
+    // NIP-42 sign-in before it answers, which the import doesn't do.
     var importSeedRelays: [String] = [
         "wss://relay.primal.net",
         "wss://relay.damus.io",
-        "wss://relay.nostr.build",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net"
     ]
