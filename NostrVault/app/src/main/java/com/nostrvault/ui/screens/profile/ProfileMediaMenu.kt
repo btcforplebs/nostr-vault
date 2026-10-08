@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
-import com.nostrvault.ui.components.isAudioUrl
+import com.nostrvault.service.MediaSaveService
 
 /**
  * What a profile Media grid tile's long-press offers, in iOS
@@ -18,7 +18,8 @@ enum class ProfileMediaAction {
 }
 
 /**
- * The menu for one tile. Save to Photos is for pictures and video only; a
+ * The menu for one tile. Save to Photos is for pictures and video only
+ * (known by extension, as iOS types the tile); a
  * file already in the vault offers Mirror to Blossom instead of Save to
  * Vault, and only once a server is known to lack it. Report and Block
  * appear only on someone else's media ([moderationTarget] non-null).
@@ -31,7 +32,7 @@ internal fun profileMediaMenu(
     moderationTarget: String?,
 ): List<ProfileMediaAction> = buildList {
     add(ProfileMediaAction.COPY_LINK)
-    if (!isAudioUrl(url)) add(ProfileMediaAction.SAVE_TO_PHOTOS)
+    if (MediaSaveService.mimeTypeForExtension(url) != null) add(ProfileMediaAction.SAVE_TO_PHOTOS)
     if (!inVault) add(ProfileMediaAction.SAVE_TO_VAULT)
     else if (needsMirror) add(ProfileMediaAction.MIRROR_TO_BLOSSOM)
     add(if (is404) ProfileMediaAction.UNMARK_404 else ProfileMediaAction.MARK_404)

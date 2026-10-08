@@ -860,7 +860,16 @@ class FeedService @Inject constructor(
 
     /** Applies queued taps only once the real list is known; after a timeout they stay queued. */
     private fun applyPendingFollowActions() {
-        if (!contactManager.mayPublishFollowList(_hasAttemptedContactLoad.value, _isLoadingContacts.value, contactListConfirmed)) return
+        if (!contactManager.mayPublishFollowList(_hasAttemptedContactLoad.value, _isLoadingContacts.value, contactListConfirmed)) {
+            // The load finished without the real list. The taps stay queued
+            // (a later load applies them), but the spinner doesn't spin on.
+            if (_hasAttemptedContactLoad.value && !_isLoadingContacts.value) {
+                pendingFollowActions.forEach {
+                    notificationManager.failPendingFollow(it.pubkey, "Couldn't load your follow list. Not changing it.")
+                }
+            }
+            return
+        }
         if (pendingFollowActions.isEmpty()) return
         val account = currentSnapshotKey()
         val (actions, dropped) = pendingFollowActions.partition { it.account == account }
@@ -2388,7 +2397,11 @@ class FeedService @Inject constructor(
                     queueFollowAction(pubkey, follow = true)
                     return Result.failure(it)
                 }
-                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"), pubkey = pubkey)
+                // A tap made while the list read empty: it was already done (iOS
+                // resolves .alreadyFollowing as followed).
+                val kind = if (it is ContactManager.FollowActionError.AlreadyFollowing) FollowKind.FOLLOWED
+                else FollowKind.FAILED(it.message ?: "Failed")
+                notificationManager.showFollow(displayName, kind, pubkey = pubkey)
                 Result.failure(it)
             },
         )

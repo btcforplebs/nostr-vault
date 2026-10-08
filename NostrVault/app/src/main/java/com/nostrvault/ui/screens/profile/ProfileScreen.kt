@@ -645,7 +645,8 @@ private fun ProfileMediaTile(
     val clipboard = LocalClipboardManager.current
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val isAudio = remember(url) { com.nostrvault.ui.components.isAudioUrl(url) }
-    var menuOpen by remember { mutableStateOf(false) }
+    // Keyed by url: rows are by position, so new posts can shift a tile under an open menu.
+    var menuOpen by remember(url) { mutableStateOf(false) }
     val busyUrl by viewModel.mediaBusyUrl.collectAsState()
     val presence by viewModel.mirrorPresence.collectAsState()
     // Ask the servers when the menu opens, so Mirror to Blossom can appear.

@@ -47,6 +47,16 @@ class PendingFollowPillTest {
         assertEquals(2, manager.follows().size)
     }
 
+    @Test fun aFailedLoadEndsTheSpinnerOnlyForPendingPills() {
+        val manager = NotificationManager()
+        manager.addPendingFollow("a", "Alice", follow = true)
+        manager.failPendingFollow("a", "Couldn't load your follow list. Not changing it.")
+        manager.failPendingFollow("b", "Couldn't load your follow list. Not changing it.")
+        val pill = manager.follows().single()
+        assertEquals(FollowKind.FAILED("Couldn't load your follow list. Not changing it."), pill.kind)
+        assertEquals(5_000L, pill.autoDismissMs)
+    }
+
     @Test fun droppedAndClearedPillsGo() {
         val manager = NotificationManager()
         manager.addPendingFollow("a", "Alice", follow = true)

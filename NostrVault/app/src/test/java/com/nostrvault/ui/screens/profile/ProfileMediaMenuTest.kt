@@ -48,6 +48,18 @@ class ProfileMediaMenuTest {
     }
 
     @Test
+    fun onlyKnownPicturesAndVideoGoToPhotos() {
+        assertEquals(
+            listOf(COPY_LINK, SAVE_TO_VAULT, MARK_404),
+            profileMediaMenu("https://x.example/$hash", inVault = false, needsMirror = false, is404 = false, moderationTarget = null),
+        )
+        assertEquals(
+            listOf(COPY_LINK, SAVE_TO_PHOTOS, SAVE_TO_VAULT, MARK_404),
+            profileMediaMenu("https://x.example/clip.mov", inVault = false, needsMirror = false, is404 = false, moderationTarget = null),
+        )
+    }
+
+    @Test
     fun blossomHashComesFromTheFileName() {
         assertEquals(hash, blossomHashOf(image))
         assertEquals(hash, blossomHashOf("https://b.example/${hash.uppercase()}?x=1"))

@@ -567,9 +567,7 @@ fun MediaGalleryScreen(
     val context = LocalContext.current
     // Type filter and layout survive relaunches, like iOS's @AppStorage.
     val galleryPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
-    var typeSelection by remember {
-        mutableStateOf(MediaTypeSelection.fromKey(galleryPrefs.getString(MediaTypeSelection.STORAGE_KEY, null)))
-    }
+    val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
     var layoutMode by remember {
         mutableStateOf(
             MediaLayoutMode.entries.firstOrNull { it.name == galleryPrefs.getString(LAYOUT_MODE_KEY, null) }
@@ -676,10 +674,7 @@ fun MediaGalleryScreen(
                     // includes those files.
                     MediaTypeFilterPill(
                         selection = typeSelection,
-                        onSelect = { filter ->
-                            typeSelection = MediaTypeSelection.tap(typeSelection, filter)
-                            galleryPrefs.edit().putString(MediaTypeSelection.STORAGE_KEY, MediaTypeSelection.toKey(typeSelection)).apply()
-                        },
+                        onSelect = onTypeTap,
                         filters = MediaTypeFilter.entries - MediaTypeFilter.OTHER,
                     )
 

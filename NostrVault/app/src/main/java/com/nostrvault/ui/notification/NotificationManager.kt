@@ -87,6 +87,12 @@ class NotificationManager @Inject constructor() {
         }
     }
 
+    /** Turns [pubkey]'s pending pill, if it has one, into a failure that times out. */
+    fun failPendingFollow(pubkey: String, reason: String) {
+        val pending = pendingFollowPill(pubkey) ?: return
+        showFollow(pending.recipientName, FollowKind.FAILED(reason), pubkey = pubkey)
+    }
+
     /** Takes down [pubkey]'s pending pill without an outcome (the tap was dropped). */
     fun dismissPendingFollow(pubkey: String) {
         pendingFollowPill(pubkey)?.let { dismiss(it.id) }

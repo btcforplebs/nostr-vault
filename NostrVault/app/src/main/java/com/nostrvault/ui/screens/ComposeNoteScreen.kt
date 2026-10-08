@@ -1844,10 +1844,7 @@ internal fun BlossomMediaPickerSheet(
     var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     // The Media tab's type filter, shared both ways as on iOS.
-    val galleryPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
-    var typeSelection by remember {
-        mutableStateOf(MediaTypeSelection.fromKey(galleryPrefs.getString(MediaTypeSelection.STORAGE_KEY, null)))
-    }
+    val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
     // The Media tab's sort, so the headings match what that tab shows (iOS
     // reads the same MediaSortOption setting).
     val sortOption = remember {
@@ -1900,10 +1897,7 @@ internal fun BlossomMediaPickerSheet(
             Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                 MediaTypeFilterPill(
                     selection = typeSelection,
-                    onSelect = { filter ->
-                        typeSelection = MediaTypeSelection.tap(typeSelection, filter)
-                        galleryPrefs.edit().putString(MediaTypeSelection.STORAGE_KEY, MediaTypeSelection.toKey(typeSelection)).apply()
-                    },
+                    onSelect = onTypeTap,
                     filters = listOf(
                         MediaTypeFilter.ALL,
                         MediaTypeFilter.PHOTO,
