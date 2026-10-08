@@ -30,4 +30,14 @@ final class RelayLogParserRangeTests: XCTestCase {
         XCTAssertEqual(batch.importStatusMessage, "Found notes from 2024-03-05...")
         XCTAssertEqual(batch.progressDateStr, "2024-03-15")
     }
+
+    /// The real trigger (Fred's re-shoot, 2026-10-08): a Swift print and a Go
+    /// log line share the stdout pipe and got spliced onto one line, so the
+    /// " to" of the cache path came before "for ".
+    func testSplicedMediaCacheLineDoesNotTrap() {
+        var batch = RelayLogParser.BatchedStateUpdate()
+        RelayLogParser.collectStateChanges(from: "MediaCacheService: Cached favicon.jpg to /Users/x/Library/Application Support/Haven/haven_database/cache/11d4e86e92026/10/08 21:57:39 ℹ️ No notes found for 2023-08-09 to 2023-08-19", into: &batch)
+        XCTAssertEqual(batch.importStatusMessage, "Looking through notes from 2023-08-09...")
+        XCTAssertEqual(batch.progressDateStr, "2023-08-19")
+    }
 }
