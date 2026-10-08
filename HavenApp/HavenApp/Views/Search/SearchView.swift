@@ -1415,7 +1415,11 @@ final class HashtagFeedModel: ObservableObject {
         // Same feed as last time (back from a note): keep the posts so the
         // list, and the scroll position on it, survive; the reopened
         // subscription only adds what is new.
-        let resuming = tags == shownTags && follows == self.follows && trust == shownTrust
+        // Screened (Fill your feed), follows don't change what's shown: a
+        // follow from the guide must not wipe and reload the list under the
+        // reader (Logen, 2026-10-08).
+        let sameFollows = follows == self.follows || (screen && trust == nil)
+        let resuming = tags == shownTags && sameFollows && trust == shownTrust
             && !(fromFollows.isEmpty && fromOthers.isEmpty)
         shownTags = tags
         shownTrust = trust
@@ -1427,6 +1431,8 @@ final class HashtagFeedModel: ObservableObject {
             isLoading = true
         }
         self.follows = follows
+        // stop() dropped any lookups in flight; ask again for what's on hand.
+        if resuming && screening { queueRescreen() }
         // Filters are rebuilt below; a resumed list keeps what it learned about its end.
         followsFilters = []
         othersFilters = []
