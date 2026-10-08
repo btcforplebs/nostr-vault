@@ -60,7 +60,6 @@ class NIP46Service: ObservableObject {
 
     private var outstandingRequests = 0
 
-    private var pingTask: Task<Void, Never>?
     private var authPollerTask: Task<Void, Never>?
 
     private init() {}
@@ -166,7 +165,6 @@ class NIP46Service: ObservableObject {
             if cached == expectedHex {
                 connectionState = .connected
                 connectedSignerPubkey = cached
-                startPingLoop()
                 print("[NIP46] connect() reused live session for \(cached.prefix(8))")
                 RelayProcessManager.shared.addLog("NIP-46: Switched to signer \(cached.prefix(8))... (already connected)", level: "INFO")
                 return cached
@@ -228,7 +226,7 @@ class NIP46Service: ObservableObject {
 
         connectionState = .connected
         connectedSignerPubkey = pubkey
-        startPingLoop()
+        lastSignerAnswer = Date()
 
         // Clear the bunker secret after successful pairing — it's one-time-use
         // and must not be re-sent on reconnection attempts. The signer already
@@ -257,6 +255,10 @@ class NIP46Service: ObservableObject {
         RelayProcessManager.shared.addLog("NIP-46: Connected to signer \(pubkey.prefix(8))...", level: "INFO")
         return pubkey
     }
+
+    /// When the signer last answered anything. A live session proved at no
+    /// cost, used in place of a fresh ping.
+    private var lastSignerAnswer: Date = .distantPast
 
     /// The in-flight connect, so every caller waits on the same handshake
     /// instead of starting a second one that would re-send a single-use secret.
@@ -316,8 +318,12 @@ class NIP46Service: ObservableObject {
         }
         // A reconnect tears down the session, and with it any request still
         // waiting on an answer — possibly one the user just approved. Leave a
-        // session with work in flight alone; the ping loop covers it after.
+        // session with work in flight alone.
         guard outstandingRequests == 0 else { return }
+        // The signer answered something a moment ago, so it is there: don't
+        // ask again. Leaving the app and coming straight back — to approve in
+        // the signer, to pick a photo — used to cost a ping every time.
+        guard Date().timeIntervalSince(lastSignerAnswer) > 60 else { return }
         Task {
             do {
                 try await ping()
@@ -338,8 +344,6 @@ class NIP46Service: ObservableObject {
     func detachForAccountSwitch() {
         connectTask?.cancel()
         connectTask = nil
-        pingTask?.cancel()
-        pingTask = nil
         authPollerTask?.cancel()
         authPollerTask = nil
         connectionState = .disconnected
@@ -350,8 +354,6 @@ class NIP46Service: ObservableObject {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
-        pingTask?.cancel()
-        pingTask = nil
         authPollerTask?.cancel()
         authPollerTask = nil
 
@@ -433,8 +435,6 @@ class NIP46Service: ObservableObject {
         guard connectionState == .connected, outstandingRequests == 0,
               Self.activeSignerKey() == sessionKey else { return }
         Self.dropSession(signerKey: sessionKey)
-        pingTask?.cancel()
-        pingTask = nil
         connectionState = .error
         connectedSignerPubkey = nil
         print("NIP46Service: signer did not answer a request or a ping; dropped the session, next request logs in again")
@@ -450,6 +450,7 @@ class NIP46Service: ObservableObject {
         guard connectionState == .connected else { throw NIP46Error.notConnected }
         let result: Int32 = await Task.detached { NIP46PingC() }.value
         guard result == 0 else { throw NIP46Error.invalidResponse }
+        lastSignerAnswer = Date()
     }
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
@@ -641,7 +642,9 @@ class NIP46Service: ObservableObject {
             }
             #endif
         }
-        return try await body()
+        let answer = try await body()
+        lastSignerAnswer = Date()
+        return answer
     }
 
     // MARK: - Auth URL Polling
@@ -667,25 +670,15 @@ class NIP46Service: ObservableObject {
     }
 
     // MARK: - Keepalive
-
-    private func startPingLoop() {
-        pingTask?.cancel()
-        pingTask = Task { @MainActor in
-            while !Task.isCancelled && connectionState == .connected {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                guard !Task.isCancelled && connectionState == .connected else { break }
-                do {
-                    try await ping()
-                } catch {
-                    // A missed ping is usually a signer app asleep, not a dead
-                    // session; tearing it down meant a full login (and often a
-                    // fresh approval) the next time anything was signed. Keep it:
-                    // its relay pool redials a dropped socket on its own.
-                    print("NIP46Service: Ping failed, keeping the session: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
+    //
+    // There is none, on purpose. A kind 24133 `ping` is a request like any
+    // other: it crosses the relay and wakes the signer app. The old 60 s loop
+    // sent one every minute the app was open and then did nothing with the
+    // answer — a failure no longer drops the session, because a signer app
+    // asleep on the phone misses pings. go-nostr's pool redials a dropped
+    // socket and re-subscribes for replies on its own, and a session that is
+    // genuinely gone is found by `recheckSession` on the first request that
+    // goes unanswered. So the loop was pure traffic to the person's signer.
 
     // MARK: - Sign in with a signer app (nostrconnect://)
 

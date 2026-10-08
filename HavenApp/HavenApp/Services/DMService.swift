@@ -1440,7 +1440,7 @@ class DMService: ObservableObject {
         // Load new account's conversations
         loadConversations()
 
-        reconnectInbox()
+        reconnectInbox(force: true)
     }
 
     // MARK: - /chat auto-reconnect
@@ -1472,7 +1472,40 @@ class DMService: ObservableObject {
         }
     }
 
-    private func reconnectInbox() {
+    /// Brings the DM sockets back only when they actually need it.
+    ///
+    /// `/chat` challenges every new connection with NIP-42, so every teardown
+    /// costs a kind 22242 signature. With a remote signer that is a full round
+    /// trip, and one more request queued in front of whatever the person does
+    /// next — and this runs on every foreground, every open of the inbox and
+    /// every pull-to-refresh. So ask the live socket whether it is still there
+    /// (a WebSocket ping, which never reaches the signer) and rebuild only if
+    /// it is not. `force` is for an account switch, where a healthy socket
+    /// still has to go: its subscription and its AUTH belong to the account we
+    /// just left.
+    private func reconnectInbox(force: Bool = false) {
+        guard !force, let chat = inboxClient,
+              chat.connectionState == .connected, isAuthenticated else {
+            restartInbox()
+            return
+        }
+        chat.probeAlive { [weak self] alive in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // Same socket, and it answered: keep it, and with it the AUTH
+                // signature already paid for.
+                guard alive, self.inboxClient === chat, self.isAuthenticated else {
+                    self.restartInbox()
+                    return
+                }
+                print("✅ DM chat relay still live — kept (no new NIP-42 AUTH)")
+                // The legacy NIP-04 inbox needs no AUTH, so cycling it is free.
+                self.restartNIP04IfNeeded()
+            }
+        }
+    }
+
+    private func restartInbox() {
         // Drop the old client's subscriptions first, so tearing it down does
         // not log a "disconnected" (or schedule a reconnect) of its own.
         connectionCancellables.removeAll()
@@ -1481,6 +1514,22 @@ class DMService: ObservableObject {
         inboxClient?.disconnect()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startListening()
+        }
+    }
+
+    /// Redials the kind 4 inbox when it is the half that died, without
+    /// touching the authenticated /chat socket next to it.
+    private func restartNIP04IfNeeded() {
+        guard let legacy = nip04Client, legacy.connectionState == .connected else {
+            startNIP04Listening()
+            return
+        }
+        legacy.probeAlive { [weak self] alive in
+            guard !alive else { return }
+            DispatchQueue.main.async {
+                guard let self = self, self.nip04Client === legacy else { return }
+                self.startNIP04Listening()
+            }
         }
     }
 
