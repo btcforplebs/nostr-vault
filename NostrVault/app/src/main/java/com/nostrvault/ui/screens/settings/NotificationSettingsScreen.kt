@@ -205,6 +205,10 @@ fun NotificationSettingsScreen(
                         NotificationToggle("Reposts", "When someone reposts your notes", prefs.reposts, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(reposts = it) }
                         }
+                        Divider()
+                        NotificationToggle("New Followers", "When someone new follows you", prefs.follows, enabled) {
+                            viewModel.setPref(npub) { p -> p.copy(follows = it) }
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))

@@ -164,7 +164,7 @@ enum SettingsHelp: String, CaseIterable {
         case .mediaClearCache: return "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched."
         case .notifyEnable: return "Turns on notifications, made on this device by your relay — no outside push server involved."
         case .notifyFeedNotes: return "Notifies you when new notes appear in your feed."
-        case .notifyPerAccount: return "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts) each account gets."
+        case .notifyPerAccount: return "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts, new followers) each account gets."
         case .shareDMRelays: return "Relays your encrypted DMs are sent to and read from."
         case .shareBroadcast: return "Copies your notes to public relays so more people can find them."
         case .shareMediaServers: return "Extra servers that keep copies of your media."

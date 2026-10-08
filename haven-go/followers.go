@@ -61,12 +61,29 @@ func observeFollowList(ev *nostr.Event) {
 		switch l.ObserveList(owner, ev.PubKey, int64(ev.CreatedAt), tagsOwner, size) {
 		case followers.New:
 			log.Println("👤 new follower", ev.PubKey)
+			emitFollowNotify(l, ev, owner)
 		case followers.Returning:
 			log.Println("👤 returning follower", ev.PubKey)
+			emitFollowNotify(l, ev, owner)
 		case followers.Unfollow:
 			log.Println("👤 unfollowed by", ev.PubKey)
 		}
 	}
+}
+
+// emitFollowNotify raises a "type=follow" notification marker (format in
+// emitInboxNotify) for a follow the ledger just watched happen. The ledger has
+// already dropped republishes, flaps and follows that predate it, so each
+// follower notifies once. Spam-tier followers (follow-everyone lists, constant
+// republishers — followers.Classify) and old lists stay silent;
+// the app applies the account's Follows switch and the Web of Trust gate.
+// Not gated on NOTIFY_KINDS: kind 3 is never in it (the catch-up summary does
+// not count follows), and the marker is only ever this one line.
+func emitFollowNotify(l *followers.Ledger, ev *nostr.Event, owner string) {
+	if l.Spam(owner, ev.PubKey) || !isNotifyableAge(ev) {
+		return
+	}
+	log.Printf("🔔NOTIFY|type=follow|kind=%d|author=%s|id=%s|recipient=%s|preview=", ev.Kind, ev.PubKey, ev.ID, owner)
 }
 
 // followerCycleMu serialises ledger owners across relay stop/start cycles.

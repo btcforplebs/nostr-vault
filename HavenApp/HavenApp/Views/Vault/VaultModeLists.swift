@@ -460,6 +460,11 @@ extension VaultView {
         showingNoteId = nil
         committedSearch = ""
         isSearchActive = false
+        // A follower alert lands on the Followers list; there is no event to find.
+        if request.type == "followers" {
+            viewMode = .followers
+            return
+        }
         switch request.type {
         case "reaction" where !configService.config.zapsOnlyMode:
             viewMode = .likes

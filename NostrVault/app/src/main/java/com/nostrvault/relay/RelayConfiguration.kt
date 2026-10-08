@@ -681,6 +681,8 @@ data class PushPrefs(
     val zaps: Boolean = true,
     val reactions: Boolean = false,
     val reposts: Boolean = false,
+    /** Someone new follows this account (or comes back after a week away). */
+    val follows: Boolean = true,
 ) {
     /**
      * Whether any notification at all is wanted. The relay's catch-up summary

@@ -1345,6 +1345,7 @@ class DashboardViewModel @Inject constructor(
             }
             VaultViewMode.FOLLOWERS -> {
                 if (_viewMode.value != VaultViewMode.FOLLOWERS) setViewMode(VaultViewMode.FOLLOWERS)
+                return // a list, not an event: nothing to fetch
             }
         }
         fetchFocusEventIfMissing(request.eventId)
@@ -2343,6 +2344,7 @@ fun DashboardScreen(
             val request = RelayFocus.consume() ?: return@collectLatest
             focusedEventId = null
             viewModel.applyRelayFocusView(request, currentZapsOnly)
+            if (request.type == NotificationTarget.FOLLOWERS) return@collectLatest
             // The event can still be arriving from the relay and the lists
             // rebuild on a debounce, so look for up to ~10 s.
             repeat(40) {

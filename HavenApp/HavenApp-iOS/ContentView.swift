@@ -137,15 +137,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenWallet)) { _ in
             selectedTab = 2 // Profile tab
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
-            selectedTab = 4 // Relay tab
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            selectedTab = 4 // Relay tab
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
-            selectedTab = 4 // Relay tab
-        }
+        .modifier(OpensRelayTab(selectedTab: $selectedTab))
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
                 DMInboxView(openConversation: dmInboxConversation)
@@ -1381,5 +1373,20 @@ struct NoteSplitPane<Content: View>: View {
                 description: Text(emptyMessage)
             )
         }
+    }
+}
+
+/// Every notification that lands in the Relay tab switches to it. One modifier
+/// rather than a receiver each keeps ContentView's chain inside the type
+/// checker's budget.
+private struct OpensRelayTab: ViewModifier {
+    @Binding var selectedTab: Int
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in selectedTab = 4 }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in selectedTab = 4 }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in selectedTab = 4 }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in selectedTab = 4 }
     }
 }

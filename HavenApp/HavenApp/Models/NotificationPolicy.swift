@@ -80,10 +80,54 @@ enum NotificationPolicy {
     /// already admitted the receipt on the zapper's standing (haven-go
     /// inboxTrustKey), and a relay from before that marker change names the
     /// lightning service, which is never in anyone's Web of Trust.
+    /// Follows pass as well: they are never dropped for trust, only told
+    /// differently (followIsNamed).
     static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
-        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" { return true }
+        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow" { return true }
         if trusted.isEmpty || own.contains(author) { return true }
         return trusted.contains(author)
+    }
+
+    /// Whether a new follower is announced by name ("Alice followed you").
+    /// Only someone in your Web of Trust is. Anyone else, and everyone while
+    /// the graph is empty (a brand-new account), is folded into one nameless
+    /// "N new followers" alert: a stranger's follow is the cheapest event to
+    /// forge, so it must not put a chosen name or picture on the lock screen,
+    /// but you still hear that you gained followers.
+    static func followIsNamed(_ follower: String, trusted: Set<String>) -> Bool {
+        trusted.contains(follower)
+    }
+
+    /// The folded alert once `follower` joins it. `showing` is the alert still
+    /// on screen (empty once it was tapped or cleared, so the count starts
+    /// over). Only the latest `cap` strangers ride along, so the alert stays
+    /// small however many follow; they exist to count a repeat once, and the
+    /// count itself is stored apart from them.
+    static func foldedFollowers(showing: FoldedFollowers, adding follower: String, cap: Int = 32) -> FoldedFollowers {
+        let count = max(showing.count, showing.members.count)
+        let repeat_ = showing.members.contains(follower)
+        let members = Array((showing.members.filter { $0 != follower } + [follower]).suffix(cap))
+        return FoldedFollowers(members: members, count: repeat_ ? count : count + 1)
+    }
+
+    /// Who the folded strangers' alert counts, and how many.
+    struct FoldedFollowers: Equatable {
+        var members: [String] = []
+        var count: Int = 0
+        /// Already on screen: an update to it changes the number, silently.
+        var isShowing: Bool { count > 0 }
+    }
+
+    /// A follower key as the relay marker should carry it: 64 hex characters.
+    static func isPubkeyHex(_ s: String) -> Bool {
+        s.count == 64 && s.allSatisfy(\.isHexDigit)
+    }
+
+    /// Title and body of the folded strangers' alert.
+    static func foldedFollowersText(count: Int) -> (String, String) {
+        count <= 1
+            ? ("New follower", "Someone new followed you. Tap to see your followers.")
+            : ("\(count) new followers", "Tap to see your followers")
     }
 
     static func allowsWithPushOff(type: String, appInForeground: Bool) -> Bool {
@@ -181,6 +225,8 @@ struct NotificationPreferences: Codable, Equatable {
     var zaps: Bool = true
     var reactions: Bool = false
     var reposts: Bool = false
+    /// Someone new follows this account (or comes back after a week away).
+    var follows: Bool = true
 
     /// Whether any notification at all is wanted. The relay's catch-up summary
     /// ("N more new items while you were away") counts events of every type at
@@ -262,5 +308,21 @@ enum NotificationNote {
 
     private static func isEventId(_ s: String) -> Bool {
         s.count == 64 && s.allSatisfy(\.isHexDigit)
+    }
+}
+
+extension NotificationPreferences {
+    /// Every key is optional: preferences saved before a switch existed must
+    /// decode to that switch's default, not fail and reset every account.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = NotificationPreferences()
+        mentions = try c.decodeIfPresent(Bool.self, forKey: .mentions) ?? d.mentions
+        replies = try c.decodeIfPresent(Bool.self, forKey: .replies) ?? d.replies
+        dms = try c.decodeIfPresent(Bool.self, forKey: .dms) ?? d.dms
+        zaps = try c.decodeIfPresent(Bool.self, forKey: .zaps) ?? d.zaps
+        reactions = try c.decodeIfPresent(Bool.self, forKey: .reactions) ?? d.reactions
+        reposts = try c.decodeIfPresent(Bool.self, forKey: .reposts) ?? d.reposts
+        follows = try c.decodeIfPresent(Bool.self, forKey: .follows) ?? d.follows
     }
 }

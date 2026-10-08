@@ -34,6 +34,9 @@ object NotificationTarget {
     /** Notification types that are about a post and land in the Relay tab. */
     val RELAY_TYPES = setOf("mention", "reply", "quote", "reaction", "repost", "zap")
 
+    /** The folded "N new followers" alert: lands on the Followers list, no event. */
+    const val FOLLOWERS = "followers"
+
     /**
      * The post a tap should open.
      *
@@ -66,6 +69,7 @@ object NotificationTarget {
     fun viewFor(type: String, zapsOnly: Boolean): VaultViewMode = when (type) {
         "reaction" -> if (zapsOnly) VaultViewMode.NOTES else VaultViewMode.LIKES
         "zap" -> VaultViewMode.ZAPS
+        FOLLOWERS -> VaultViewMode.FOLLOWERS
         else -> VaultViewMode.NOTES
     }
 

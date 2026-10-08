@@ -933,6 +933,9 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             selectedTab = .notes
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            selectedTab = .notes
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
             selectedTab = .feed
             if let eventId = notification.object as? String {

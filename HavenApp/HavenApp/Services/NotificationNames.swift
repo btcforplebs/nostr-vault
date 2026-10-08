@@ -17,6 +17,9 @@ extension Notification.Name {
     static let havenOpenWallet = Notification.Name("OpenWallet")
     /// Posted when the user taps a reaction notification — opens relay page likes section.
     static let havenOpenRelayLikes = Notification.Name("com.haven.openRelayLikes")
+    /// Posted when the user taps a new-follower notification — switches the
+    /// relay page to its Followers list (the profile opens via havenOpenProfile).
+    static let havenOpenRelayFollowers = Notification.Name("com.haven.openRelayFollowers")
     /// Posted when the user taps a repost notification — opens relay page notes section.
     static let havenOpenRelayNotes = Notification.Name("com.haven.openRelayNotes")
     /// Posted after a relay-tab route when a notification names one event — the
