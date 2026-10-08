@@ -96,6 +96,8 @@ class RelayImportService @Inject constructor(
             _importProgress.value = 0f
             _importStatusMessage.value = "Preparing import..."
             _importCompleted.value = false
+            // Keeps the process alive if the app goes to the background.
+            ImportForegroundService.start(context)
 
             try {
                 // 1. Stop the running relay
@@ -145,6 +147,7 @@ class RelayImportService @Inject constructor(
                 _importStatusMessage.value = "Import failed: ${e.message}"
             } finally {
                 _isImporting.value = false
+                ImportForegroundService.stop(context)
                 // 4. Restart relay in normal mode
                 _importStatusMessage.value = "Restarting relay..."
                 delay(1000)

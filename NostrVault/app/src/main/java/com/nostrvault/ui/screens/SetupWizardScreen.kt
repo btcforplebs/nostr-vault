@@ -280,6 +280,13 @@ class SetupWizardViewModel @Inject constructor(
     /** The new account's npub, shown on the keys page beside the nsec. */
     private val _generatedNpub = MutableStateFlow<String?>(null)
     val generatedNpub = _generatedNpub.asStateFlow()
+    /** The pubkey New to Nostr generated this run. Only this key may be
+     *  marked fresh or have a profile published for it at the end. */
+    private var generatedPkHex: String? = null
+
+    /** Keys this run of setup stored that weren't on the device before, so a
+     *  key left behind by Back and another choice can be removed again. */
+    private val wizardStoredKeys = mutableSetOf<String>()
 
     // I already use Nostr
     private val _useNostrInput = MutableStateFlow("")
@@ -287,6 +294,9 @@ class SetupWizardViewModel @Inject constructor(
 
     private val _useNostrPassword = MutableStateFlow("")
     val useNostrPassword = _useNostrPassword.asStateFlow()
+
+    private val _useNostrConfirm = MutableStateFlow("")
+    val useNostrConfirm = _useNostrConfirm.asStateFlow()
 
     private val _relayRows = MutableStateFlow<List<RelayCheck.Row>>(emptyList())
     val relayRows = _relayRows.asStateFlow()
@@ -406,8 +416,52 @@ class SetupWizardViewModel @Inject constructor(
 
     /** The front door's three buttons. Every path goes on to the relay choice. */
     fun choosePath(path: SetupPath) {
+        // Every way in starts with no identity. A key made or pasted on an
+        // earlier visit must not be shown again, or signed with, on this one.
+        forgetWizardKeys(except = null)
+        _generatedNsec.value = null
+        _generatedSkHex.value = null
+        _generatedNpub.value = null
+        generatedPkHex = null
+        _passphrase.value = ""
+        _confirmPassphrase.value = ""
+        _useNostrInput.value = ""
+        _useNostrPassword.value = ""
+        _useNostrConfirm.value = ""
+        _error.value = null
         _setupPath.value = path
         _step.value = WizardStep.RELAY_CHOICE
+    }
+
+    /** Records that setup stored [pkHex]'s key, unless it was already here. */
+    private fun storeWizardKey(skHex: String, pkHex: String) {
+        if (credentialStore.getNsec(pkHex) == null) wizardStoredKeys.add(pkHex)
+        credentialStore.saveNsec(skHex, pkHex)
+    }
+
+    /**
+     * Removes keys this run of setup stored, other than [except]: their nsec,
+     * their keychain password, and the owner fields when one of them is the
+     * owner. Keys that were on the device before setup are never touched.
+     */
+    private fun forgetWizardKeys(except: String?) {
+        val gone = wizardStoredKeys.filter { it != except }
+        if (gone.isEmpty()) return
+        for (pk in gone) {
+            credentialStore.deleteNsec(pk)
+            HavenBridge.hexToNpub(pk)?.let { credentialStore.deleteKeychainPassword(it) }
+            wizardStoredKeys.remove(pk)
+        }
+        val ownerHex = HavenBridge.decodeNpub(configStore.config.value.ownerNpub)
+        if (ownerHex != null && ownerHex in gone) {
+            configStore.update { it.copy(ownerNpub = "", ownerHexKey = null, ownerNcryptsec = null) }
+        }
+    }
+
+    /** True when the owner is the key New to Nostr generated this run. */
+    private fun ownerIsGeneratedKey(): Boolean {
+        val generated = generatedPkHex ?: return false
+        return HavenBridge.decodeNpub(configStore.config.value.ownerNpub) == generated
     }
 
     fun advanceFromRelayChoice() {
@@ -455,7 +509,7 @@ class SetupWizardViewModel @Inject constructor(
         val npub = HavenBridge.hexToNpub(pkHex)
         val nsec = HavenBridge.encodeNsec(skHex)
         _generatedNsec.value = nsec
-        credentialStore.saveNsec(skHex, pkHex)
+        storeWizardKey(skHex, pkHex)
         return Triple(npub ?: pkHex, skHex, pkHex)
     }
 
@@ -473,6 +527,7 @@ class SetupWizardViewModel @Inject constructor(
                 }
                 _generatedSkHex.value = skHex
                 _generatedNpub.value = npub
+                generatedPkHex = pkHex
                 configStore.update { it.copy(
                     ownerNpub = npub,
                     ownerHexKey = skHex,
@@ -525,15 +580,18 @@ class SetupWizardViewModel @Inject constructor(
 
                 // Encrypt the generated key with NIP-49
                 val skHex = _generatedSkHex.value
-                if (skHex == null) {
-                    _error.value = "No key generated"
+                if (skHex == null || !ownerIsGeneratedKey()) {
+                    _error.value = "Something changed since your key was made. Go back to the start and create it again."
                     _isLoading.value = false
                     return@launch
                 }
 
                 val ncryptsec = NIP49Service.encrypt(skHex, _passphrase.value)
                 configStore.update { it.copy(ownerNcryptsec = ncryptsec) }
-                credentialStore.storeKeychainPassword(configStore.config.value.ownerNpub, _passphrase.value)
+                credentialStore.storeKeychainPassword(
+                    password = _passphrase.value,
+                    npub = configStore.config.value.ownerNpub,
+                )
 
                 _step.value = stepAfter(WizardStep.KEY_PASSWORD)
             } catch (e: Exception) {
@@ -770,6 +828,8 @@ class SetupWizardViewModel @Inject constructor(
      */
     private suspend fun connectRemoteSignerOwner(uri: String, clientSec: String, clientPub: String): Boolean {
         val signerPubkey = NIP46Service.connect(clientSec, uri) ?: return false
+        // The signer is the account now; drop any key pasted before Back.
+        forgetWizardKeys(except = null)
         val npub = HavenBridge.hexToNpub(signerPubkey) ?: signerPubkey
         configStore.setBunkerConfig(
             npub,
@@ -871,9 +931,29 @@ class SetupWizardViewModel @Inject constructor(
     fun setUseNostrInput(value: String) {
         _useNostrInput.value = value
         _useNostrPassword.value = ""
+        _useNostrConfirm.value = ""
         _error.value = null
     }
     fun setUseNostrPassword(value: String) { _useNostrPassword.value = value; _error.value = null }
+    fun setUseNostrConfirm(value: String) { _useNostrConfirm.value = value; _error.value = null }
+
+    /**
+     * A pasted nsec gets a new password, so the same rules as New to Nostr's
+     * password page: 8 characters and typed twice. An ncryptsec's password
+     * already exists and only has to unlock it.
+     */
+    fun useNostrPasswordProblem(input: IdentityInput): String? {
+        val password = _useNostrPassword.value
+        return when (input) {
+            is IdentityInput.SecretKey -> when {
+                password.length < 8 -> "Password must be at least 8 characters"
+                password != _useNostrConfirm.value -> "Passwords do not match"
+                else -> null
+            }
+            is IdentityInput.EncryptedSecretKey -> if (password.isEmpty()) "Enter the password for this key" else null
+            else -> null
+        }
+    }
 
     /**
      * Whether a pasted key is complete: a one-character typo is a different,
@@ -893,6 +973,7 @@ class SetupWizardViewModel @Inject constructor(
     fun continueUseNostr() {
         val input = IdentityInput.parse(_useNostrInput.value)
         val password = _useNostrPassword.value
+        useNostrPasswordProblem(input)?.let { _error.value = it; return }
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
@@ -947,6 +1028,7 @@ class SetupWizardViewModel @Inject constructor(
             if (hexPubkey == null) {
                 _error.value = "Amber signing was cancelled or timed out"
             } else {
+                forgetWizardKeys(except = null)
                 configStore.update { it.copy(
                     ownerNpub = HavenBridge.hexToNpub(hexPubkey) ?: hexPubkey,
                     ownerHexKey = null,
@@ -965,6 +1047,7 @@ class SetupWizardViewModel @Inject constructor(
     /** Read-only: an npub, as Browse stores it. */
     private fun adoptReadOnly(npub: String): Boolean {
         // Clear a key pasted before Back, so it can't stay behind for this account.
+        forgetWizardKeys(except = null)
         configStore.update { it.copy(
             ownerNpub = npub, ownerHexKey = null, ownerNcryptsec = null, setupMode = "browse", signingMode = "browse",
         ) }
@@ -983,7 +1066,8 @@ class SetupWizardViewModel @Inject constructor(
         if (pkHex == null) { _error.value = "Failed to derive public key"; return false }
         val npub = HavenBridge.hexToNpub(pkHex) ?: pkHex
         val encrypted = ncryptsec ?: withContext(Dispatchers.IO) { NIP49Service.encrypt(skHex, password) }
-        credentialStore.saveNsec(skHex, pkHex)
+        forgetWizardKeys(except = pkHex)
+        storeWizardKey(skHex, pkHex)
         configStore.update { it.copy(
             ownerNpub = npub,
             ownerHexKey = skHex,
@@ -991,7 +1075,7 @@ class SetupWizardViewModel @Inject constructor(
             signingMode = "local",
             setupMode = "full",
         ) }
-        credentialStore.storeKeychainPassword(npub, password)
+        credentialStore.storeKeychainPassword(password = password, npub = npub)
         configStore.setActiveAccount(pkHex)
         return true
     }
@@ -1359,8 +1443,9 @@ class SetupWizardViewModel @Inject constructor(
                     val hex = HavenBridge.decodeNpub(npub)
                     if (!hex.isNullOrEmpty()) {
                         configStore.setActiveAccount(hex)
-                        // A key made here has no follow list anywhere yet.
-                        if (_setupPath.value == SetupPath.NEW_TO_NOSTR) {
+                        // A key made here has no follow list anywhere yet. Only
+                        // that key: never an account someone pasted in.
+                        if (_setupPath.value == SetupPath.NEW_TO_NOSTR && hex == generatedPkHex) {
                             com.nostrvault.service.FreshAccountKeys.mark(appContext, hex)
                             // Straight into Fill your feed: this key follows
                             // nobody yet, so there is nothing to wait for.
@@ -1384,7 +1469,7 @@ class SetupWizardViewModel @Inject constructor(
             // replies had nowhere defined to go.
             runCatching { nostrService.republishDMRelayList() }
 
-            if (_setupPath.value == SetupPath.NEW_TO_NOSTR) publishNewAccount()
+            if (_setupPath.value == SetupPath.NEW_TO_NOSTR && ownerIsGeneratedKey()) publishNewAccount()
 
             onComplete()
         }
@@ -1401,8 +1486,14 @@ class SetupWizardViewModel @Inject constructor(
     private fun publishNewAccount() {
         val name = _profileName.value.trim()
         val photo = _profilePhotoJpeg.value
+        val generated = generatedPkHex ?: return
+        // Each event is signed by whichever account is active, so check it
+        // is still the generated key right before signing.
+        fun stillGenerated() = nostrService.activeHexPubkey == generated &&
+            HavenBridge.decodeNpub(configStore.config.value.ownerNpub) == generated
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            if (!stillGenerated()) return@launch
             val relayTags = RelayConfiguration.newAccountRelayListTags(configStore.config.value.activeBlastrRelays)
             if (relayTags.isNotEmpty()) {
                 runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
@@ -1421,7 +1512,7 @@ class SetupWizardViewModel @Inject constructor(
                 runCatching { blossomService.uploadAndMirror(photo, sha, "image/jpeg") }
                     .getOrNull()?.let { profile.put("picture", it) }
             }
-            if (profile.length() == 0) return@launch
+            if (profile.length() == 0 || !stillGenerated()) return@launch
             runCatching { nostrService.signEventAsync(kind = 0, content = profile.toString(), tags = emptyList()) }
                 .getOrNull()?.let { nostrService.postEvent(it) }
         }
@@ -2026,7 +2117,14 @@ private fun NewKeysPage(npub: String, nsec: String, onContinue: () -> Unit) {
     }
     fun copy(value: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nostr key", value))
+        val clip = android.content.ClipData.newPlainText("Nostr key", value)
+        // Keeps the nsec out of the clipboard preview (Android 13+).
+        if (value == nsec) {
+            clip.description.extras = android.os.PersistableBundle().apply {
+                putBoolean("android.content.extra.IS_SENSITIVE", true)
+            }
+        }
+        clipboard.setPrimaryClip(clip)
         copiedKey = value
     }
 

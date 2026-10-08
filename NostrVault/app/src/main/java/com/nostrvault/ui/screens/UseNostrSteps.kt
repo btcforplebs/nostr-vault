@@ -116,6 +116,7 @@ private data class ModeLine(val tone: ModeTone, val title: String, val detail: S
 internal fun UseNostrKeyStep(viewModel: SetupWizardViewModel) {
     val raw by viewModel.useNostrInput.collectAsState()
     val password by viewModel.useNostrPassword.collectAsState()
+    val confirm by viewModel.useNostrConfirm.collectAsState()
     val error by viewModel.error.collectAsState()
     val isWorking by viewModel.isLoading.collectAsState()
     val isAmberAvailable by viewModel.isAmberAvailable.collectAsState()
@@ -128,7 +129,9 @@ internal fun UseNostrKeyStep(viewModel: SetupWizardViewModel) {
     val line = modeLine(kind, checksumOK)
     val isUsable = line != null && line.tone != ModeTone.ERROR
     val needsPassword = (kind is IdentityInput.SecretKey && checksumOK) || kind is IdentityInput.EncryptedSecretKey
-    val canContinue = isUsable && (!needsPassword || password.isNotEmpty())
+    val isNewPassword = kind is IdentityInput.SecretKey
+    val passwordProblem = if (needsPassword) viewModel.useNostrPasswordProblem(kind) else null
+    val canContinue = isUsable && passwordProblem == null
     val submit = { if (canContinue && !isWorking) { focusManager.clearFocus(); viewModel.continueUseNostr() } }
 
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
@@ -213,11 +216,45 @@ internal fun UseNostrKeyStep(viewModel: SetupWizardViewModel) {
                         )
                     }
                 },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+                isError = isNewPassword && password.isNotEmpty() && password.length < 8,
+                supportingText = if (isNewPassword && password.isNotEmpty() && password.length < 8) {
+                    { Text("Password must be at least 8 characters", color = ErrorRed) }
+                } else null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = if (isNewPassword) ImeAction.Next else ImeAction.Go,
+                ),
                 keyboardActions = KeyboardActions(onGo = { submit() }),
                 colors = wizardTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
+            // A new password for a pasted nsec: typed twice, as on New to
+            // Nostr, because a typo here means the key can't be unlocked.
+            if (isNewPassword) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = confirm,
+                    onValueChange = viewModel::setUseNostrConfirm,
+                    label = { Text("Confirm password") },
+                    singleLine = true,
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    isError = confirm.isNotEmpty() && confirm != password,
+                    supportingText = if (confirm.isNotEmpty() && confirm != password) {
+                        { Text("Passwords do not match", color = ErrorRed) }
+                    } else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { submit() }),
+                    colors = wizardTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Nobody can reset this password for you, not even us. Write it down.",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                )
+            }
         }
 
         if (!kind.canPost) {

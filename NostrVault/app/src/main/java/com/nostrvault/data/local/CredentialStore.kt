@@ -40,7 +40,32 @@ object CredentialStore {
             Log.e(TAG, "Failed to create EncryptedSharedPreferences: ${e.message}")
             throw e
         }
+        repairSwappedKeychainPasswords()
     }
+
+    /**
+     * Setup used to call storeKeychainPassword(npub, password), arguments
+     * swapped, so the npub was saved under "keychain-<password>" and the
+     * password lookups found nothing. Moves each such entry to where it
+     * belongs. Runs on every launch; a no-op once nothing is left to move.
+     */
+    private fun repairSwappedKeychainPasswords() {
+        val all = try { prefs.all } catch (e: Exception) { return }
+        for ((badKey, npub, password) in swappedKeychainEntries(all)) {
+            if (getKeychainPassword(npub) == null) storeKeychainPassword(password = password, npub = npub)
+            delete(badKey)
+            Log.i(TAG, "moved a keychain password stored under the wrong key")
+        }
+    }
+
+    /** (wrong key, npub, password) for every entry the swapped call wrote. */
+    internal fun swappedKeychainEntries(entries: Map<String, *>): List<Triple<String, String, String>> =
+        entries.mapNotNull { (key, value) ->
+            val suffix = key.removePrefix(KEYCHAIN_PREFIX)
+            if (key.startsWith(KEYCHAIN_PREFIX) && value is String && value.startsWith("npub1") &&
+                !suffix.startsWith("npub1") && suffix.isNotEmpty()
+            ) Triple(key, value, suffix) else null
+        }
 
     private fun accountId(npub: String): String = "account-key-password-$npub"
 
@@ -84,7 +109,8 @@ object CredentialStore {
 
     // ---- Keychain password (NIP-49 passphrase, keyed by npub) ----
 
-    private fun keychainKey(npub: String): String = "keychain-$npub"
+    private const val KEYCHAIN_PREFIX = "keychain-"
+    private fun keychainKey(npub: String): String = "$KEYCHAIN_PREFIX$npub"
 
     fun storeKeychainPassword(password: String, npub: String): Boolean =
         store(password, keychainKey(npub))

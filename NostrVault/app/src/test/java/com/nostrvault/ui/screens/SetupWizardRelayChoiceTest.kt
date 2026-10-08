@@ -22,6 +22,8 @@ class SetupWizardRelayChoiceTest {
 
     private var saved = HavenConfig()
     private lateinit var viewModel: SetupWizardViewModel
+    private val nostrService = mockk<com.nostrvault.service.NostrService>(relaxed = true)
+    private val appContext = mockk<android.content.Context>(relaxed = true)
 
     @Before
     fun setUp() {
@@ -30,15 +32,16 @@ class SetupWizardRelayChoiceTest {
         every { configStore.update(any()) } answers {
             saved = firstArg<(HavenConfig) -> HavenConfig>()(saved)
         }
+        every { configStore.config } answers { kotlinx.coroutines.flow.MutableStateFlow(saved) }
         viewModel = SetupWizardViewModel(
             configStore = configStore,
             credentialStore = mockk(relaxed = true),
             amberSignerService = mockk(relaxed = true),
             blossomService = mockk(relaxed = true),
-            nostrService = mockk(relaxed = true),
+            nostrService = nostrService,
             relayImportService = mockk(relaxed = true),
             statsService = mockk(relaxed = true),
-            appContext = mockk(relaxed = true),
+            appContext = appContext,
         )
     }
 
@@ -188,5 +191,50 @@ class SetupWizardRelayChoiceTest {
         viewModel.continueUseNostr()
         assertEquals(null, saved.ownerHexKey)
         assertEquals(null, saved.ownerNcryptsec)
+    }
+
+    /**
+     * Review repro for #409: a key generated on one visit, then another
+     * account chosen, then back to New to Nostr. Finishing must not mark or
+     * publish for the account that is now the owner, which setup didn't make.
+     */
+    @Test
+    fun `finishing New to Nostr never publishes for an account setup didn't generate`() {
+        viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
+        // As if a real user's key were the owner by now.
+        saved = saved.copy(ownerNpub = "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m")
+        viewModel.setProfileName("Someone")
+        viewModel.completeSetup {}
+        Thread.sleep(500) // publishing runs on its own IO coroutine
+        assertTrue(saved.hasCompletedSetup) // it really ran to the end
+
+        io.mockk.coVerify(exactly = 0) { nostrService.signEventAsync(any(), any(), any()) }
+        io.mockk.verify(exactly = 0) { appContext.getSharedPreferences(any(), any()) }
+    }
+
+    @Test
+    fun `choosing a way in starts with no key from an earlier visit`() {
+        viewModel.choosePath(SetupPath.USE_NOSTR)
+        viewModel.setUseNostrInput("nsec1abc")
+        viewModel.setUseNostrPassword("secretpass")
+        viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
+        assertEquals(null, viewModel.generatedNsec.value)
+        assertEquals("", viewModel.useNostrInput.value)
+        assertEquals("", viewModel.useNostrPassword.value)
+    }
+
+    @Test
+    fun `a pasted nsec needs the New to Nostr password rules`() {
+        val nsec = com.nostrvault.setup.IdentityInput.SecretKey("nsec1x")
+        viewModel.setUseNostrPassword("short")
+        assertEquals("Password must be at least 8 characters", viewModel.useNostrPasswordProblem(nsec))
+        viewModel.setUseNostrPassword("longenough")
+        viewModel.setUseNostrConfirm("longenougg")
+        assertEquals("Passwords do not match", viewModel.useNostrPasswordProblem(nsec))
+        viewModel.setUseNostrConfirm("longenough")
+        assertEquals(null, viewModel.useNostrPasswordProblem(nsec))
+        // An ncryptsec's password already exists; it only has to unlock it.
+        viewModel.setUseNostrPassword("x")
+        assertEquals(null, viewModel.useNostrPasswordProblem(com.nostrvault.setup.IdentityInput.EncryptedSecretKey("ncryptsec1x")))
     }
 }
