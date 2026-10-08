@@ -59,6 +59,12 @@ class FeedViewModel @Inject constructor(
         const val PROFILE_SAMPLE_MS = 300L
     }
 
+    /** The active account's hex pubkey; tutorial progress is saved under it. */
+    val activeHexPubkey: StateFlow<String> = configStore.config
+        .map { nostrService.activeHexPubkey }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, nostrService.activeHexPubkey)
+
     /**
      * Live streams come from their own service rather than the note list: a
      * kind-30311 event is a replaceable announcement, and one that ended two

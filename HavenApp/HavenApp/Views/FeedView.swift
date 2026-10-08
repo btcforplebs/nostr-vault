@@ -390,6 +390,7 @@ struct FeedView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @ObservedObject private var pendingManager = PendingPostManager.shared
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
     @State private var composeContext: ComposeContext?
     /// The diVine, article or recipe composer, when the post button opens one.
     @State private var modeComposer: ModeComposer?
@@ -655,6 +656,14 @@ struct FeedView: View {
             onDashboard: { showingRelayStatus = true }
         )
         .equatable()
+        // The Feeds tutorial points here, and starts here the first time
+        // the feed shows (after Fill your vault; see TutorialProgress).
+        // Re-checked when a status is saved, so an account whose Fill your
+        // vault is marked done after its follow list loads gets Feeds now.
+        .tutorialAnchor(TutorialContent.feedPicker)
+        .task(id: "\(configService.activeAccountHexPubkey).\(tutorialCenter.revision)") {
+            tutorialCenter.startIfEligible(.feeds, account: configService.activeAccountHexPubkey)
+        }
     }
     #endif
 

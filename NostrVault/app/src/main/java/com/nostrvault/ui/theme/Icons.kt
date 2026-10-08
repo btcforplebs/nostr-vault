@@ -83,6 +83,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -193,6 +194,7 @@ object NostrVaultIcons {
     val DragHandle: ImageVector = Icons.Filled.DragHandle  // line.3.horizontal
     val EditFeeds: ImageVector = Icons.Filled.Tune         // slider.horizontal.3
     val Info: ImageVector = Icons.Filled.Info              // info.circle
+    val Tutorials: ImageVector = Icons.Filled.School       // graduationcap
     @Suppress("DEPRECATION")
     val Send: ImageVector = Icons.Filled.Send              // paperplane.fill
     val PersonAdd: ImageVector = Icons.Filled.PersonAdd    // person.badge.plus
