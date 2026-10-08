@@ -2328,6 +2328,8 @@ fun DashboardScreen(
             focusedEventId = null
             viewModel.applyRelayFocusView(request, currentZapsOnly)
             if (request.type == NotificationTarget.FOLLOWERS) return@collectLatest
+            // The feed dashboard opens a list, not a post: nothing to find.
+            if (request.eventId.isEmpty()) return@collectLatest
             // The event can still be arriving from the relay and the lists
             // rebuild on a debounce, so look for up to ~10 s.
             repeat(40) {
