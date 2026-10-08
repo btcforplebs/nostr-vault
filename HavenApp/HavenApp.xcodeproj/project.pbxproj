@@ -263,6 +263,7 @@
 		78ADF8C19CAAAA4A58E158A0 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
 		79102C2AF9825055F7FF1310 /* DMAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155D5690C7C6EF350165A21F /* DMAttachment.swift */; };
 		79379A78AE60A6E8FE515E16 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
+		2264A944808FBAA532C216A9 /* LocalTLSPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D02B357E10810003823169F /* LocalTLSPolicy.swift */; };
 		79A7B0E3D32383C1DE4C7C92 /* LinkPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8826E9845079D00F1FE9D22A /* LinkPreviewCard.swift */; };
 		79E1E1A82F04ABF7DE2C2957 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */; };
 		7A308820A6095AF7E150647B /* ProofOfWorkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */; };
@@ -575,6 +576,7 @@
 		FE0414C0046FC50EA9DD4CFA /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
 		FECF50406D03C77725A672F0 /* VaultTopics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */; };
 		FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
+		D5D2E73DC4E94D307D4F6E30 /* LocalTLSPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D02B357E10810003823169F /* LocalTLSPolicy.swift */; };
 		FF3796326AA660DE673215DB /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F43AE6D03159B7716D9F71 /* LogStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -754,6 +756,7 @@
 		7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardComponents.swift; sourceTree = "<group>"; };
 		7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
 		7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayMatrix.swift; sourceTree = "<group>"; };
+		9D02B357E10810003823169F /* LocalTLSPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTLSPolicy.swift; sourceTree = "<group>"; };
 		7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
 		7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSound.swift; sourceTree = "<group>"; };
@@ -1280,6 +1283,7 @@
 				F8BC6C1B7108F0D538B2C558 /* ReferencedNoteRepair.swift */,
 				3E18F538AEEE5F1324B1A390 /* RelayCheck.swift */,
 				7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */,
+				9D02B357E10810003823169F /* LocalTLSPolicy.swift */,
 				7507E56424A5CF8EA46857DA /* SettingsHelp.swift */,
 				C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */,
 				B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */,
@@ -1865,6 +1869,7 @@
 				D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */,
 				1812007EFA1502564F99AB47 /* RelayLogParser.swift in Sources */,
 				79379A78AE60A6E8FE515E16 /* RelayMatrix.swift in Sources */,
+				2264A944808FBAA532C216A9 /* LocalTLSPolicy.swift in Sources */,
 				11E4220F9DFF75F3F0989C5F /* RelayMatrixView.swift in Sources */,
 				82B5D5B73A709BBABC6948C7 /* RelayProbe.swift in Sources */,
 				68FF85AB0479AECDE076D18D /* RelayProcessManager.swift in Sources */,
@@ -2150,6 +2155,7 @@
 				DB68DA241565F5E69B9F2B43 /* RelayListEditor.swift in Sources */,
 				AA7A14658D6BCB88A3174586 /* RelayLogParser.swift in Sources */,
 				FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */,
+				D5D2E73DC4E94D307D4F6E30 /* LocalTLSPolicy.swift in Sources */,
 				9D74848925393F3A0BA89DBC /* RelayMatrixView.swift in Sources */,
 				2A10DB96353A7C3563E2E185 /* RelayProbe.swift in Sources */,
 				AAABCCC974BE94C9B2626D3B /* RelayProcessManager.swift in Sources */,

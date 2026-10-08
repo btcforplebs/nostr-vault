@@ -1,48 +1,76 @@
 import Foundation
 import Combine
+import CryptoKit
+import Security
 
 /// Helper to identify if a host is local or on the local network (LAN/mDNS)
 func isLocalNetworkHost(_ host: String?) -> Bool {
-    guard let host = host?.lowercased() else { return false }
-    if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" || host == "[::1]" {
-        return true
-    }
-    // Match local private network subnets (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12)
-    if host.hasPrefix("192.168.") || host.hasPrefix("10.") || host.hasPrefix("172.") {
-        return true
-    }
-    // Match local network domain names
-    if host.hasSuffix(".local") {
-        return true
-    }
-    return false
+    LocalTLSPolicy.kind(of: host) != .public
 }
 
-/// URLSessionDelegate that trusts self-signed certificates for localhost
-class LocalhostTrustDelegate: NSObject, URLSessionDelegate {
-    private func isLocalhost(_ host: String?) -> Bool {
-        return isLocalNetworkHost(host)
-    }
+/// TLS for hosts a public certificate can't cover: this device's own relay
+/// and relays on the local network, which use self-signed certificates.
+/// Loopback is trusted as is. A LAN host with a certificate the system
+/// accepts is checked normally; otherwise its certificate is pinned the first
+/// time it is seen and must match after that, so another device on the same
+/// Wi-Fi can't stand in for it. Everything else gets default handling.
+enum LocalTLSTrust {
+    private static let pinsKey = "localTLSPins"
+    private static let lock = NSLock()
 
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        let host = challenge.protectionSpace.host
-        let authMethod = challenge.protectionSpace.authenticationMethod
-
-        // Only trust self-signed certs for localhost
-        if isLocalhost(host) {
-            // For server trust challenges (TLS/SSL), accept self-signed certificates
-            if authMethod == NSURLAuthenticationMethodServerTrust {
-                if let serverTrust = challenge.protectionSpace.serverTrust {
-                    // For localhost, always trust self-signed certificates
-                    let credential = URLCredential(trust: serverTrust)
-                    completionHandler(.useCredential, credential)
-                    return
-                }
+    static func handle(_ challenge: URLAuthenticationChallenge,
+                       completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = space.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        switch LocalTLSPolicy.kind(of: space.host) {
+        case .public:
+            completionHandler(.performDefaultHandling, nil)
+        case .loopback:
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        case .lan:
+            if SecTrustEvaluateWithError(trust, nil) {
+                completionHandler(.performDefaultHandling, nil)
+                return
+            }
+            guard let fingerprint = leafFingerprint(trust) else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            let key = "\(space.host.lowercased()):\(space.port)"
+            lock.lock()
+            var pins = UserDefaults.standard.dictionary(forKey: pinsKey) as? [String: String] ?? [:]
+            let decision = LocalTLSPolicy.decide(pinned: pins[key], presented: fingerprint)
+            if decision == .acceptAndPin {
+                pins[key] = fingerprint
+                UserDefaults.standard.set(pins, forKey: pinsKey)
+            }
+            lock.unlock()
+            if decision == .reject {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            } else {
+                completionHandler(.useCredential, URLCredential(trust: trust))
             }
         }
+    }
 
-        // For remote servers or other challenges, use default validation
-        completionHandler(.performDefaultHandling, nil)
+    /// SHA-256 of the server's leaf certificate, hex.
+    private static func leafFingerprint(_ trust: SecTrust) -> String? {
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = chain.first else { return nil }
+        let der = SecCertificateCopyData(leaf) as Data
+        return SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// URLSessionDelegate that trusts this device's relay and pins LAN relays
+/// (see `LocalTLSTrust`).
+class LocalhostTrustDelegate: NSObject, URLSessionDelegate {
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        LocalTLSTrust.handle(challenge, completionHandler: completionHandler)
     }
 }
 
@@ -403,15 +431,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     }
 
     private func handleTLSChallenge(_ challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        let host = challenge.protectionSpace.host
-        if isLocalNetworkHost(host) {
-            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-               let serverTrust = challenge.protectionSpace.serverTrust {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                return
-            }
-        }
-        completionHandler(.performDefaultHandling, nil)
+        LocalTLSTrust.handle(challenge, completionHandler: completionHandler)
     }
 
     // MARK: - URLSessionWebSocketDelegate
@@ -639,8 +659,8 @@ struct Bech32 {
 
 // MARK: - TLS Trust Bypass for Local Relay
 
-/// A URLSession wrapper that bypasses TLS certificate verification for localhost/127.0.0.1.
-/// This is necessary because the local Haven relay uses a self-signed certificate.
+/// A URLSession for the local relay, which uses a self-signed certificate.
+/// Trust follows `LocalTLSTrust`.
 class TLSSkipSession: NSObject, URLSessionDelegate {
     static let shared: URLSession = {
         let delegate = TLSSkipSession()
@@ -649,16 +669,6 @@ class TLSSkipSession: NSObject, URLSessionDelegate {
     }()
 
     nonisolated func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        // If the host is local, we allow the self-signed certificate
-        let host = challenge.protectionSpace.host
-        if isLocalNetworkHost(host) {
-            if let serverTrust = challenge.protectionSpace.serverTrust {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                return
-            }
-        }
-
-        // Otherwise, use default handling
-        completionHandler(.performDefaultHandling, nil)
+        LocalTLSTrust.handle(challenge, completionHandler: completionHandler)
     }
 }
