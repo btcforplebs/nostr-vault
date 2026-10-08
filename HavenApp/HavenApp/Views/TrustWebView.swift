@@ -122,6 +122,41 @@ struct TrustWebView: View {
     }
 }
 
+/// The ring on its own, from a post's WOT button. Finds the path the same way
+/// Event Info's Trust Path card does, then shows the ring once it lands.
+struct TrustWebSheet: View {
+    let author: String
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var path: TrustPath?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let path {
+                    TrustWebView(author: author, path: path)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.platformControlBackground)
+                        .navigationTitle("Web of Trust")
+                        #if os(iOS)
+                        .navigationBarTitleDisplayMode(.inline)
+                        #endif
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .task(id: author) {
+            path = await TrustPathService.shared.path(for: author)
+        }
+    }
+}
+
 /// The constellation itself. Layout is pure geometry from the view's size:
 /// you sit left of centre inside the ring, the author out at the right edge,
 /// and slot angles alternate either side of the author's direction

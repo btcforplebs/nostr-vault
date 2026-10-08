@@ -3322,6 +3322,7 @@ struct FeedNoteRow: View {
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
+    @State private var showingTrustWeb = false
     @State private var showingReportSheet = false
     @State private var showingBlockConfirm = false
     @State private var showingNoteIdInRow: String?
@@ -3945,6 +3946,16 @@ struct FeedNoteRow: View {
                     }
             }
 
+            actionButton(icon: "antenna.radiowaves.left.and.right", action: { showingBroadcastSheet = true })
+                .accessibilityLabel("Event Info")
+
+            // Your own posts have no path to show.
+            if zapRecipient != ConfigService.shared.activeAccountHexPubkey {
+                actionButton(icon: "point.3.connected.trianglepath.dotted", action: { showingTrustWeb = true })
+                    .accessibilityLabel("Web of Trust")
+                    .accessibilityHint("Shows how you're connected to the author")
+            }
+
             Spacer()
         }
         .padding(.top, 4)
@@ -4029,6 +4040,9 @@ struct FeedNoteRow: View {
         })
         .sheet(isPresented: $showingBroadcastSheet) {
             EventBroadcastSheet(note: note)
+        }
+        .sheet(isPresented: $showingTrustWeb) {
+            TrustWebSheet(author: zapRecipient)
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteIdInRow.map { IdentifiableString(id: $0) } },
@@ -4164,11 +4178,6 @@ struct FeedNoteRow: View {
                 } label: {
                     Label("Copy Text", systemImage: "doc.on.doc")
                 }
-            }
-            Button {
-                showingBroadcastSheet = true
-            } label: {
-                Label("Broadcast", systemImage: "antenna.radiowaves.left.and.right")
             }
             Divider()
             if rowData.isOwnNote {
