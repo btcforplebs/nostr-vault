@@ -234,6 +234,19 @@ class BlossomService @Inject constructor(
         }
 
         val mirrors = configStore.config.value.activeBlossomMirrors
+
+        // An external Blossom server on a public address (Nostr Vault for Mac
+        // on a domain) already hosts it: its URL is the one the post carries.
+        // Mirrors still get a copy, but one pass and no wait. A LAN or
+        // Tailscale address only opens for the owner, so it takes the normal
+        // path below, like the built-in relay.
+        if (savedLocalUrl != null && !com.nostrvault.relay.isPrivateNetworkURL(savedLocalUrl)) {
+            if (mirrors.isNotEmpty() && !skipOutsideServers) {
+                mirrorUploadPass(source, mirrors, sha256, contentType, authHeader)
+            }
+            return@withContext UploadAttempt(PostUploadOutcome.Hosted(savedLocalUrl), savedLocalUrl)
+        }
+
         if (mirrors.isEmpty()) {
             Log.e(TAG, "No Blossom mirrors configured — refusing to embed a localhost media URL")
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
@@ -285,7 +298,7 @@ class BlossomService @Inject constructor(
         try {
             try {
                 val request = Request.Builder().url("$localBase/$sha256").get().build()
-                localClient.newCall(request).execute().use { response ->
+                clientFor(localBase).newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.e(TAG, "waiting post: blob ${sha256.take(8)} not readable from this device's relay (HTTP ${response.code})")
                         return@withContext null
@@ -383,8 +396,8 @@ class BlossomService @Inject constructor(
                 .addHeader("Content-Type", contentType)
                 .build()
 
-            val response = localClient.newCall(request).execute()
-            response.isSuccessful
+            val client = clientFor(url)
+            client.newCall(request).execute().use { it.isSuccessful }
         } catch (e: Exception) {
             Log.w(TAG, "Local upload failed: ${e.message}")
             false
@@ -402,8 +415,8 @@ class BlossomService @Inject constructor(
                 .addHeader("Content-Type", contentType)
                 .build()
 
-            val response = localClient.newCall(request).execute()
-            response.isSuccessful
+            val client = clientFor(url)
+            client.newCall(request).execute().use { it.isSuccessful }
         } catch (e: Exception) {
             Log.w(TAG, "Local file upload failed: ${e.message}")
             false
@@ -631,7 +644,7 @@ class BlossomService @Inject constructor(
             var contentType = "application/octet-stream"
             val data = try {
                 val request = Request.Builder().url("$localUrl/$sha256").get().build()
-                localClient.newCall(request).execute().use { response ->
+                clientFor(localUrl).newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.w(TAG, "Push of ${sha256.take(8)}: local read HTTP ${response.code}")
                         return@withContext MirrorPushResult.NotOnDevice
@@ -989,6 +1002,15 @@ class BlossomService @Inject constructor(
 
     /** Embedded relay's Blossom, or the external one when that mode is on (null if unset). */
     fun localBlossomURL(): String? = configStore.config.value.localBlossomBaseURL
+
+    /**
+     * The client for this device's Blossom server: the self-signed-trusting
+     * one on loopback and LAN IPs (what its hostname verifier accepts), real
+     * TLS checks for an external server on a domain.
+     */
+    private fun clientFor(url: String): OkHttpClient =
+        if (isLocalhost(url) || com.nostrvault.data.remote.WebSocketClient.isLocalOrLanHost(url)) localClient
+        else remoteClient
 
     private fun isLocalhost(url: String): Boolean {
         val lower = url.lowercase()

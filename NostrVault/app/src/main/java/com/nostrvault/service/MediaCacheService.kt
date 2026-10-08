@@ -107,6 +107,7 @@ class MediaCacheService @Inject constructor(
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor(LocalBlossomCache.interceptor)
         .build()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

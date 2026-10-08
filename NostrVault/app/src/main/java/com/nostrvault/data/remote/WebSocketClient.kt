@@ -51,6 +51,14 @@ class WebSocketClient(
         private const val INITIAL_BACKOFF_MS = 1000L
         private const val SLOW_RETRY_INTERVAL_MS = 120_000L // 2 minutes between slow retries
 
+        /** Hosts [sharedLocalhostClient]'s hostname verifier accepts. */
+        fun isLocalOrLanHost(url: String): Boolean {
+            val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+            if (host == "127.0.0.1" || host == "localhost") return true
+            // IP literals only: "10.example.com" is a public name.
+            return Regex("^(192\\.168|10\\.\\d{1,3})\\.\\d{1,3}\\.\\d{1,3}$").matches(host)
+        }
+
         /** Shared OkHttpClient for all normal (non-localhost) connections. */
         val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
@@ -103,7 +111,10 @@ class WebSocketClient(
     private var shouldReconnect = true
 
     private val client: OkHttpClient
-        get() = if (trustLocalhost) sharedLocalhostClient else sharedClient
+        // The trust-everything client only ever talks to this phone or the LAN,
+        // even when a caller asked for it: the external-relay setting can point
+        // a "local" socket at a public relay, which must get real TLS checks.
+        get() = if (trustLocalhost && isLocalOrLanHost(url)) sharedLocalhostClient else sharedClient
 
     override fun connect() {
         shouldReconnect = true

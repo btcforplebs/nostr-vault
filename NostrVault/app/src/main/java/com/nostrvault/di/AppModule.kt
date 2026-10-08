@@ -94,6 +94,8 @@ object AppModule {
                     .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                    // Blossom media through Morganite when it runs on this phone.
+                    .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
                     .build()
             }
             .components {

@@ -56,6 +56,7 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setWotMinFollowers(v: Int) = save { it.copy(chatRelayMinFollowers = v.coerceIn(0, 100)) }
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
+    fun setUseLocalBlossomCache(v: Boolean) = save { it.copy(useLocalBlossomCache = v) }
 
     fun clearMediaCache() = mediaCacheService.clearCache()
 
@@ -152,6 +153,12 @@ fun AdvancedSettingsScreen(
             ToggleRow("Autoplay Videos", config.autoplayVideos, viewModel::setAutoplay)
             ToggleRow("Disable Media Cache", config.disableMediaCache, viewModel::setDisableMediaCache)
             ToggleRow("Prefetch Profile Pictures", config.prefetchAvatars, viewModel::setPrefetch)
+            ToggleRow("Use Local Blossom Cache", config.useLocalBlossomCache, viewModel::setUseLocalBlossomCache)
+            Caption(
+                "Loads media through a Blossom cache app on this phone, such as Morganite " +
+                    "(127.0.0.1:24242), when it is running. Media you have seen once then loads " +
+                    "from the phone, offline too. Uploads never go through it."
+            )
             PickerRow("Cache TTL", CACHE_TTL_OPTIONS, config.cacheTTLDays) { viewModel.setCacheTTL(it) }
             TextButton(onClick = { confirmClearCache = true }) {
                 Text("Clear Media Cache", color = ErrorRed)
