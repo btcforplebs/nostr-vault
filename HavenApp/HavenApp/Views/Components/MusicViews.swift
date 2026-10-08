@@ -1165,7 +1165,8 @@ struct MiniPlayerBar: View {
                     // stream's image (which stays as the fallback while it loads).
                     .overlay {
                         if let live = player.livePlayer {
-                            InlinePlayerLayer(player: live, videoGravity: .resizeAspectFill)
+                            InlinePlayerLayer(player: live, videoGravity: .resizeAspectFill,
+                                              keepsPlayingInBackground: true)
                                 .allowsHitTesting(false)
                         }
                     }
