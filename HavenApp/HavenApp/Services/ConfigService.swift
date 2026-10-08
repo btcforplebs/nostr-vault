@@ -11,7 +11,11 @@ import AppKit
 @MainActor
 class ConfigService: ObservableObject {
     static let shared = ConfigService()
-    @Published var config: HavenConfig
+    @Published var config: HavenConfig {
+        didSet {
+            if config.blockedRelays != oldValue.blockedRelays { RelayBlocklist.set(config.blockedRelays) }
+        }
+    }
     @Published var isSwitchingAccount: Bool = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
@@ -109,6 +113,7 @@ class ConfigService: ObservableObject {
 
         // Seed the @Published hex pubkey from the loaded config
         refreshActiveAccountHex()
+        RelayBlocklist.set(config.blockedRelays)
     }
     
     func reload() {

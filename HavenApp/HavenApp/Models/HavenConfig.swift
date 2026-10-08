@@ -215,6 +215,11 @@ struct HavenConfig: Codable, Equatable {
     /// list beats.
     var dmRelaysUpdatedAt: Int64? = nil
 
+    /// Relays the app never connects to (Never connect), published as the
+    /// owner's blocked relay list (NIP-51 kind 10006). Enforced in
+    /// `WebSocketClient` through `RelayBlocklist`.
+    var blockedRelays: [String] = []
+
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
     var whitelistedNpubsFile: String = "whitelisted_npubs.json"
@@ -292,7 +297,7 @@ struct HavenConfig: Codable, Equatable {
         case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
-        case feedRelays, dmRelays, dmRelaysUpdatedAt
+        case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
@@ -439,6 +444,7 @@ struct HavenConfig: Codable, Equatable {
         feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
         dmRelaysUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .dmRelaysUpdatedAt)
+        blockedRelays = try container.decodeIfPresent([String].self, forKey: .blockedRelays) ?? []
 
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs

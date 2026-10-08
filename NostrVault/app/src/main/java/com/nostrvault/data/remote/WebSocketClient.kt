@@ -1,6 +1,7 @@
 package com.nostrvault.data.remote
 
 import android.util.Log
+import com.nostrvault.relay.RelayBlocklist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,6 +48,19 @@ class WebSocketClient(
 ) : RelayConnection {
     companion object {
         private const val TAG = "WebSocketClient"
+
+        /** Every live client, so a blocklist change reaches sockets already open. */
+        private val live: MutableSet<WebSocketClient> =
+            java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(java.util.WeakHashMap()))
+
+        /**
+         * Call after the Never connect list changes: drops sockets to relays
+         * now blocked and reconnects clients that were refused and no longer are.
+         */
+        fun blocklistChanged() {
+            val clients = synchronized(live) { live.toList() }
+            clients.forEach { it.applyBlocklist() }
+        }
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val INITIAL_BACKOFF_MS = 1000L
         private const val SLOW_RETRY_INTERVAL_MS = 120_000L // 2 minutes between slow retries
@@ -109,6 +123,26 @@ class WebSocketClient(
     private var reconnectAttempts = 0
     private var reconnectJob: Job? = null
     private var shouldReconnect = true
+    @Volatile private var refusedByBlocklist = false
+
+    init {
+        live.add(this)
+    }
+
+    private fun applyBlocklist() {
+        val blocked = RelayBlocklist.isBlocked(url)
+        if (blocked) {
+            val open = synchronized(socketLock) { webSocket.also { webSocket = null } } ?: return
+            reconnectJob?.cancel()
+            refusedByBlocklist = true
+            open.cancel()
+            _connectionState.value = ConnectionState.DISCONNECTED
+        } else if (refusedByBlocklist && shouldReconnect) {
+            refusedByBlocklist = false
+            reconnectAttempts = 0
+            doConnect()
+        }
+    }
 
     private val client: OkHttpClient
         // The trust-everything client only ever talks to this phone or the LAN,
@@ -124,6 +158,7 @@ class WebSocketClient(
 
     override fun disconnect() {
         shouldReconnect = false
+        refusedByBlocklist = false
         reconnectJob?.cancel()
         synchronized(socketLock) {
             webSocket?.close(1000, "Client disconnect")
@@ -140,6 +175,14 @@ class WebSocketClient(
 
     private fun doConnect() {
         if (_connectionState.value == ConnectionState.CONNECTING) return
+        // Never connect: the owner blocked this relay. No retry; unblocking
+        // reconnects it through [blocklistChanged].
+        if (RelayBlocklist.isBlocked(url)) {
+            Log.d(TAG, "Blocked relay, not connecting: $url")
+            refusedByBlocklist = true
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
 
         _connectionState.value = if (reconnectAttempts > 0) {
             ConnectionState.RECONNECTING

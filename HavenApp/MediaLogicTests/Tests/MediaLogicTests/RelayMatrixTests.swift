@@ -71,4 +71,82 @@ final class RelayMatrixTests: XCTestCase {
         // The owner's own inbox counts as a second DM relay.
         XCTAssertEqual(RelayMatrix.problems(lists, ownDMInbox: "wss://vault.example.com/inbox", unreachable: []), [])
     }
+
+    // MARK: - Never connect
+
+    func testBlockingRemovesFromEveryJobOnce() {
+        let (after, blocked) = RelayMatrix.blocking("wss://a.example/", lists: lists, blocked: ["wss://x.example"])
+        XCTAssertFalse(RelayMatrix.rows(after).contains { $0.id == "wss://a.example" })
+        XCTAssertEqual(blocked, ["wss://x.example", "wss://a.example"])
+        let (_, again) = RelayMatrix.blocking("WSS://A.example", lists: after, blocked: blocked)
+        XCTAssertEqual(again, blocked)
+        XCTAssertEqual(RelayMatrix.unblocking("wss://A.example/", blocked: again), ["wss://x.example"])
+    }
+
+    func testBlocklistMatchesHostAndExactPaths() {
+        RelayBlocklist.set(["wss://bad.example/", "wss://host.example/private"])
+        defer { RelayBlocklist.set([]) }
+        XCTAssertTrue(RelayBlocklist.isBlocked("wss://bad.example"))
+        XCTAssertTrue(RelayBlocklist.isBlocked("WSS://Bad.example/inbox"))
+        XCTAssertTrue(RelayBlocklist.isBlocked("wss://host.example/private/"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://host.example"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://good.example"))
+        // Another port on the same host is another relay.
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://bad.example:8443"))
+    }
+
+    /// The app's own relay lives on loopback: a local relay can't be blocked,
+    /// or blocking one would cut off every other local port too.
+    func testBlocklistIgnoresLocalRelays() {
+        RelayBlocklist.set(["ws://127.0.0.1:4869", "wss://localhost", "wss://bad.example:7777"])
+        defer { RelayBlocklist.set([]) }
+        XCTAssertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:4869"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:3355/inbox"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://localhost/inbox"))
+        XCTAssertTrue(RelayBlocklist.isBlocked("wss://bad.example:7777/x"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://bad.example"))
+    }
+
+    // MARK: - Recommended
+
+    func testFollowSuggestionsRankByFollowsAndSkipTaken() {
+        let outbox = [
+            "p1": ["wss://popular.example", "wss://a.example", "wss://once.example"],
+            "p2": ["wss://popular.example/", "wss://Popular.example", "wss://blocked.example"],
+            "p3": ["wss://popular.example", "wss://second.example", "wss://blocked.example"],
+            "p4": ["wss://second.example", "ws://127.0.0.1:4869", "wss://x.onion"],
+            "p5": ["wss://localhost.example"],
+        ]
+        let suggestions = RelayMatrix.followSuggestions(
+            follows: ["p1", "p2", "p3", "p4", "p4"], outbox: outbox,
+            lists: lists, blocked: ["wss://blocked.example"])
+        // p5 isn't followed; a.example is already Read; once.example has one follow.
+        XCTAssertEqual(suggestions, [
+            .init(url: "wss://popular.example", follows: 3),
+            .init(url: "wss://second.example", follows: 2),
+        ])
+        XCTAssertEqual(RelayMatrix.followsWithRelayLists(follows: ["p1", "p9"], outbox: outbox), 1)
+    }
+
+    func testFastestSortsAnsweredAndSkipsTaken() {
+        let ms = ["wss://slow.example": 400, "wss://quick.example": 90, "wss://a.example": 10]
+        let fastest = RelayMatrix.fastest(
+            ["wss://slow.example", "wss://down.example", "wss://quick.example/", "wss://a.example", "wss://gone.example"],
+            milliseconds: ms, lists: lists, blocked: ["wss://gone.example"])
+        XCTAssertEqual(fastest, ["wss://quick.example", "wss://slow.example"])
+    }
+
+    func testPublicRelay() {
+        XCTAssertTrue(RelayMatrix.isPublicRelay("wss://relay.damus.io"))
+        for url in ["ws://relay.damus.io", "wss://localhost", "wss://abc.onion", "wss://192.168.1.4",
+                    "wss://172.20.0.1", "wss://10.0.0.1:4848", "wss://vault.local", "wss://nodots"] {
+            XCTAssertFalse(RelayMatrix.isPublicRelay(url), url)
+        }
+        XCTAssertTrue(RelayMatrix.isPublicRelay("wss://172.40.0.1"))
+    }
+
+    func testFallbackProblemTextNamesTheRealFallbacks() {
+        XCTAssertTrue(RelayMatrix.Problem.noWrite.detail.contains("relay.btcforplebs.com"))
+        XCTAssertTrue(RelayMatrix.Problem.noRead.detail.contains("relay.primal.net"))
+    }
 }

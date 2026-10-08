@@ -523,8 +523,9 @@ private class SearchSocket private constructor(url: String, http: OkHttpClient) 
     }
 
     companion object {
+        /** Null for a URL that can't be a socket, or a relay set to Never connect. */
         fun open(url: String, http: OkHttpClient): SearchSocket? = try {
-            SearchSocket(url, http)
+            if (com.nostrvault.relay.RelayBlocklist.isBlocked(url)) null else SearchSocket(url, http)
         } catch (_: IllegalArgumentException) {
             null
         }

@@ -5,6 +5,7 @@ import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayConfigApplier
+import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.NIP46Service
@@ -40,6 +41,10 @@ class ConfigStore @Inject constructor(
 
     private val _config = MutableStateFlow(HavenConfig())
     val config: StateFlow<HavenConfig> = _config.asStateFlow()
+
+    init {
+        RelayBlocklist.source = { _config.value.blockedRelays }
+    }
 
     private val _activeAccountHexPubkey = MutableStateFlow("")
     val activeAccountHexPubkey: StateFlow<String> = _activeAccountHexPubkey.asStateFlow()

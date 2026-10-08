@@ -1745,6 +1745,16 @@ class NostrService @Inject constructor(
         signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
     }
 
+    /**
+     * NIP-51: publishes the owner's blocked relay list (kind 10006), the relays
+     * set to Never connect. An empty list is published too, so unblocking the
+     * last relay clears it.
+     */
+    fun publishBlockedRelayList() {
+        val tags = configStore.config.value.blockedRelays.map { listOf("relay", DMInbox.normalizedRelayURL(it)) }
+        signAndPost(kind = 10006, content = "", tags = tags, forceOwner = true)
+    }
+
     fun publishServerList() {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
