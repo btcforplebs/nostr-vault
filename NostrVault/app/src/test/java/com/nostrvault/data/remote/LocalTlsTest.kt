@@ -51,4 +51,22 @@ class LocalTlsTest {
         assertTrue(LocalTls.refused.value.isEmpty())
         assertTrue(LocalTls.check("192.168.1.20:4869", "bb"))
     }
+
+    /** Pins checked before ConfigStore set the file must not be written over the saved ones. */
+    @Test
+    fun `setting the pin file reads its pins instead of keeping the cache`() {
+        val dir = java.nio.file.Files.createTempDirectory("pins").toFile()
+        try {
+            LocalTls.pinFile = null
+            assertTrue(LocalTls.check("10.0.0.5:4869", "early"))
+            val file = java.io.File(dir, "pins.json").apply { writeText("""{"10.0.0.5:4869":"saved"}""") }
+            LocalTls.pinFile = file
+            assertFalse(LocalTls.check("10.0.0.5:4869", "early"))
+            assertTrue(LocalTls.check("10.0.0.5:4869", "saved"))
+        } finally {
+            LocalTls.pinFile = null
+            dir.deleteRecursively()
+        }
+    }
 }
+

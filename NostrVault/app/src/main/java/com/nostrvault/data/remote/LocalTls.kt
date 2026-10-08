@@ -10,7 +10,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.internal.tls.OkHostnameVerifier
 import java.io.File
 import java.net.Socket
 import java.security.KeyStore
@@ -68,10 +67,21 @@ object LocalTls {
 
     // ── Pins ─────────────────────────────────────────────────────────
 
-    /** Set by ConfigStore at startup; null (tests) keeps pins in memory only. */
-    @Volatile var pinFile: File? = null
-
     private val lock = Any()
+
+    /**
+     * Set by ConfigStore at startup; null (tests) keeps pins in memory only.
+     * Setting it drops any pins cached before, so they are re-read from this
+     * file rather than written over it.
+     */
+    @Volatile var pinFile: File? = null
+        set(value) {
+            synchronized(lock) {
+                field = value
+                pins = null
+            }
+        }
+
     private var pins: MutableMap<String, String>? = null
     private val _refused = MutableStateFlow<List<String>>(emptyList())
 
@@ -136,7 +146,7 @@ object LocalTls {
     private fun fingerprint(cert: X509Certificate): String =
         MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString("") { "%02x".format(it) }
 
-    private fun checkServer(chain: Array<X509Certificate>, authType: String, host: String?, port: Int) {
+    private fun checkServer(chain: Array<X509Certificate>, authType: String, host: String?, port: Int, socket: Socket? = null) {
         when (kind(host)) {
             Kind.LOOPBACK -> Unit
             Kind.LAN -> {
@@ -145,7 +155,13 @@ object LocalTls {
                     throw CertificateException("$host:$port presented a different certificate than the one saved")
                 }
             }
-            Kind.PUBLIC -> systemTrust.checkServerTrusted(chain, authType)
+            Kind.PUBLIC -> {
+                // The socket overload keeps Android's per-domain network
+                // security config in force; the short one would skip it.
+                val system = systemTrust
+                if (system is X509ExtendedTrustManager && socket != null) system.checkServerTrusted(chain, authType, socket)
+                else system.checkServerTrusted(chain, authType)
+            }
         }
     }
 
@@ -153,7 +169,7 @@ object LocalTls {
     val trustManager: X509ExtendedTrustManager = object : X509ExtendedTrustManager() {
         override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String, socket: Socket?) {
             val session = (socket as? SSLSocket)?.handshakeSession
-            checkServer(chain, authType, session?.peerHost, session?.peerPort ?: -1)
+            checkServer(chain, authType, session?.peerHost, session?.peerPort ?: -1, socket)
         }
         override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String, engine: SSLEngine?) =
             checkServer(chain, authType, engine?.peerHost, engine?.peerPort ?: -1)
@@ -168,13 +184,16 @@ object LocalTls {
         override fun getAcceptedIssuers(): Array<X509Certificate> = systemTrust.acceptedIssuers
     }
 
+    /** OkHttp's own hostname check, through its public API. */
+    private val defaultHostnameVerifier = OkHttpClient().hostnameVerifier
+
     /** Uses [trustManager]; local and LAN names skip the hostname check, which the pin replaces. */
     fun OkHttpClient.Builder.localTrust(): OkHttpClient.Builder {
         val context = SSLContext.getInstance("TLS")
         context.init(null, arrayOf(trustManager), null)
         sslSocketFactory(context.socketFactory, trustManager)
         hostnameVerifier { hostname, session ->
-            kind(hostname) != Kind.PUBLIC || OkHostnameVerifier.verify(hostname, session)
+            kind(hostname) != Kind.PUBLIC || defaultHostnameVerifier.verify(hostname, session)
         }
         return this
     }
