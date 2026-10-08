@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.WebSocketClient
@@ -278,7 +279,7 @@ class DMService @Inject constructor(
     private fun subscribeToNip04(client: WebSocketClient) {
         val ownerHex = nostrService.activeHexPubkey
         val subId = "dm-nip04"
-        Log.w(TAG, "DBG: subscribeToNip04 ownerHex=${ownerHex.take(12)} amber=${isAmberMode()}")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: subscribeToNip04 ownerHex=${ownerHex.take(12)} amber=${isAmberMode()}")
 
         // Incoming NIP-04 DMs
         val inFilter = """{"kinds":[4],"#p":["$ownerHex"]}"""
@@ -299,7 +300,7 @@ class DMService @Inject constructor(
             if (parsed.isEmpty()) return
             val type = parsed[0].jsonPrimitive.contentOrNull ?: return
 
-            if (type != "EVENT") Log.w(TAG, "DBG: /chat recv type=$type")
+            if (BuildConfig.DEBUG && type != "EVENT") Log.w(TAG, "DBG: /chat recv type=$type")
             when (type) {
                 "AUTH" -> handleAuthChallenge(parsed, inboxClient)
                 "OK" -> {
@@ -312,7 +313,7 @@ class DMService @Inject constructor(
                     // replaces the subscription) and re-arms it after a reconnect.
                     val success = parsed.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
                     val reason = parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull
-                    Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
                     if (success) sendChatNip17Req()
                 }
                 "CLOSED" -> {
@@ -325,7 +326,7 @@ class DMService @Inject constructor(
                     // sub on a backoff so gift wraps start flowing once WoT warms up.
                     val subId = parsed.getOrNull(1)?.jsonPrimitive?.contentOrNull
                     val reason = parsed.getOrNull(2)?.jsonPrimitive?.contentOrNull
-                    Log.w(TAG, "DBG: /chat CLOSED sub=$subId reason=$reason")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat CLOSED sub=$subId reason=$reason")
                     if (subId == "dm-nip17") scheduleChatResubscribe(generation)
                 }
                 "EVENT" -> {
@@ -372,7 +373,7 @@ class DMService @Inject constructor(
                 delay(12_000)
                 if (switchGeneration != generation) return@launch
                 attempt++
-                Log.w(TAG, "DBG: /chat re-subscribe dm-nip17 attempt=$attempt")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat re-subscribe dm-nip17 attempt=$attempt")
                 sendChatNip17Req()
             }
         }
@@ -389,7 +390,7 @@ class DMService @Inject constructor(
                     if (parsed.size < 3) return
                     val eventObj = parsed[2].jsonObject
                     val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
-                    Log.w(TAG, "DBG: /inbox EVENT kind=$kind")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /inbox EVENT kind=$kind")
 
                     if (kind == 4) {
                         scope.launch {
@@ -397,7 +398,7 @@ class DMService @Inject constructor(
                         }
                     }
                 }
-                else -> Log.w(TAG, "DBG: /inbox recv type=$type")
+                else -> if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /inbox recv type=$type")
             }
         } catch (e: Exception) {
             Log.w(TAG, "NIP-04 relay message parse error: ${e.message}")
@@ -407,7 +408,7 @@ class DMService @Inject constructor(
     private suspend fun handleIncomingGiftWrap(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
+        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
         // Before any seen/queued claim, so a forged copy carrying a real event's
         // id cannot shadow the real one. A relay can serve any event under any
         // author; NIP-04 has no MAC, so a re-IV'd copy of a real DM decrypts to
@@ -434,7 +435,7 @@ class DMService @Inject constructor(
             try {
                 val giftWrapContent = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
                 val giftWrapPubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
-                Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypting (amber=${isAmberMode()})")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypting (amber=${isAmberMode()})")
 
                 val rumorJson = if (isAmberMode()) {
                     // Gift wrap → seal → rumor is TWO NIP-44 layers; Amber must
@@ -443,13 +444,13 @@ class DMService @Inject constructor(
                     NIP17Service.unwrapGiftWrappedDMWithAmber(
                         giftWrapContent, giftWrapPubkey, amberSignerService, silentOnly = true,
                     ) ?: run {
-                        Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} silent decrypt unavailable")
+                        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} silent decrypt unavailable")
                         return@withContext false // signer can't silently decrypt → retryable
                     }
                 } else {
                     val recipientPrivkey = resolvePrivateKey() ?: return@withContext true
                     NIP17Service.unwrapGiftWrappedDM(giftWrapContent, giftWrapPubkey, recipientPrivkey)
-                        ?: run { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                        ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
                 }
 
                 // Parse the rumor JSON to extract sender, content, timestamp, tags
@@ -493,7 +494,7 @@ class DMService @Inject constructor(
     private suspend fun handleIncomingNIP04(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
+        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
         if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
         // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
@@ -528,22 +529,22 @@ class DMService @Inject constructor(
                 } else {
                     pubkey
                 }
-                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} fromMe=$isFromMe cp=${counterparty.take(12)} decrypting (amber=${isAmberMode()})")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} fromMe=$isFromMe cp=${counterparty.take(12)} decrypting (amber=${isAmberMode()})")
 
                 // Decrypt (Amber or local key). silentOnly for the Amber path — a
                 // backlog drain must not launch an interactive Intent per message.
                 val plaintext = if (isAmberMode()) {
                     amberSignerService.nip04Decrypt(content, counterparty, silentOnly = true)
                         ?: run {
-                            Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
+                            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
                             return@withContext false // retryable
                         }
                 } else {
                     val privkey = resolvePrivateKey() ?: return@withContext true
                     NIP04Service.decrypt(content, counterparty, privkey)
-                        ?: run { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                        ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
                 }
-                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
 
                 val message = DMMessage(
                     id = eventId,
@@ -572,7 +573,7 @@ class DMService @Inject constructor(
         if (!queuedDecryptIds.add(eventId)) return
         pendingDecryptQueue.add(eventObj)
         _pendingDecryptCount.value = pendingDecryptQueue.size
-        Log.w(TAG, "DBG: queued ${eventId.take(8)} for decrypt (pending=${pendingDecryptQueue.size})")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: queued ${eventId.take(8)} for decrypt (pending=${pendingDecryptQueue.size})")
     }
 
     /**
@@ -612,7 +613,7 @@ class DMService @Inject constructor(
                     lastBlockedSize = pendingDecryptQueue.size
                     _decryptBlocked.value = true
                     _pendingDecryptCount.value = pendingDecryptQueue.size
-                    Log.w(TAG, "DBG: drain blocked — signer silent-decrypt unavailable, ${pendingDecryptQueue.size} pending")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: drain blocked — signer silent-decrypt unavailable, ${pendingDecryptQueue.size} pending")
                     return@withLock
                 }
                 _pendingDecryptCount.value = pendingDecryptQueue.size
@@ -673,7 +674,7 @@ class DMService @Inject constructor(
         // Sort by most recent
         current.sortByDescending { it.lastMessage?.timestamp ?: 0L }
         _conversations.value = current
-        Log.w(TAG, "DBG: addMessageToConversation cp=${counterparty.take(12)} → convos=${current.size}")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: addMessageToConversation cp=${counterparty.take(12)} → convos=${current.size}")
         saveCachedConversations()
     }
 
@@ -1218,12 +1219,12 @@ class DMService @Inject constructor(
                     forceOwner = true,
                 )
             } catch (e: Exception) {
-                Log.w(TAG, "DBG: /chat AUTH sign failed: ${e.message}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat AUTH sign failed: ${e.message}")
                 null
             } ?: return@launch
 
             val eventJson = serializeEvent(authEvent)
-            Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
             client?.send("[\"AUTH\",$eventJson]")
         }
     }
