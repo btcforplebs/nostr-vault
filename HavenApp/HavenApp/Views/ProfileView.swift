@@ -551,6 +551,8 @@ struct ProfileView: View {
         // showing.
         .onChange(of: tutorialCenter.active) { _, active in
             if active == .walletConnect && isOwnerProfile { showingLightning = true }
+            // Its last card hands over to Pocket Relay, on the Relay tab.
+            if active == .pocketRelay { showingLightning = false }
         }
         .onAppear {
             if tutorialCenter.active == .walletConnect && isOwnerProfile { showingLightning = true }

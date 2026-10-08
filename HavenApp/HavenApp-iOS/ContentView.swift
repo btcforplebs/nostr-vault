@@ -1395,9 +1395,19 @@ private struct OpensRelayTab: ViewModifier {
                 }
             }
             // A last card's Next goes to the next tutorial's page: Your
-            // Vault is the Relay tab, Wallet Connect the wallet on Profile.
+            // Vault is the Relay tab, Wallet Connect the wallet on Profile,
+            // Pocket Relay the relay dashboard on the Relay tab.
             .onChange(of: tutorialCenter.active) { _, active in
-                if active == .vault { selectedTab = 4 }
+                if active == .vault || active == .pocketRelay { selectedTab = 4 }
+                // Opened once the wallet sheet it came from has closed and
+                // the Relay tab is showing. Already open when the dashboard
+                // started it, and opening it again does nothing.
+                if active == .pocketRelay {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.6))
+                        NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
+                    }
+                }
                 if active == .walletConnect { selectedTab = 2 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in selectedTab = 4 }

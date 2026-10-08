@@ -70,8 +70,15 @@ extension TutorialID {
             #else
             return []
             #endif
+        case .pocketRelay:
+            // Its anchors are on the iPhone/iPad relay dashboard sheet.
+            #if os(iOS)
+            return TutorialContent.pocketRelay
+            #else
+            return []
+            #endif
         case .importTour: return TutorialContent.importTour
-        case .fillYourVault, .pocketRelay: return []
+        case .fillYourVault: return []
         }
     }
 
@@ -170,6 +177,33 @@ enum TutorialContent {
             anchor: walletConnectButton,
             title: "Link your wallet",
             body: "In your wallet app, find Nostr Wallet Connect and copy its link. Then tap here and paste it."
+        ),
+    ]
+
+    /// The relay dashboard's status card, the address in it, and the
+    /// activity card under it.
+    static let relayStatus = "relay.status"
+    static let relayAddress = "relay.address"
+    static let relayActivity = "relay.activity"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "4. Pocket relay vs
+    /// public relay", kept short like the others. Wording matches
+    /// website/index.html "Two ways to run it".
+    static let pocketRelay: [TutorialStep] = [
+        TutorialStep(
+            anchor: relayStatus,
+            title: "Your pocket relay",
+            body: "A real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
+        ),
+        TutorialStep(
+            anchor: relayActivity,
+            title: "It sends your posts out",
+            body: "When you post, your relay keeps a copy and passes it on to the public relays you picked. Watch it happen here."
+        ),
+        TutorialStep(
+            anchor: relayAddress,
+            title: "Pocket vs public",
+            body: "This address only works on this phone, so nobody on the network can connect to it. Want a public address? Run Nostr Vault on a Mac with your own domain. That's optional: your pocket relay works fine on its own."
         ),
     ]
 

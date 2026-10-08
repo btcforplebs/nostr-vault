@@ -140,6 +140,13 @@ final class TutorialProgressTests: XCTestCase {
         ])
     }
 
+    /// Pocket Relay points at the relay card, its activity, then its address.
+    func testPocketRelayCardsPointAtTheDashboard() {
+        XCTAssertEqual(TutorialContent.pocketRelay.map(\.anchor), [
+            TutorialContent.relayStatus, TutorialContent.relayActivity, TutorialContent.relayAddress,
+        ])
+    }
+
     /// Only a tutorial that can run is offered as next, so the last card
     /// never starts one with nothing to draw.
     func testNextSkipsTutorialsWithoutCards() {
@@ -153,7 +160,12 @@ final class TutorialProgressTests: XCTestCase {
         #else
         XCTAssertNil(TutorialID.vault.next)
         #endif
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.walletConnect.next, .pocketRelay)
+        #else
         XCTAssertNil(TutorialID.walletConnect.next)
+        #endif
+        XCTAssertNil(TutorialID.pocketRelay.next)
         XCTAssertNil(TutorialID.importTour.next)
         XCTAssertNil(TutorialID.fillYourVault.next)
     }

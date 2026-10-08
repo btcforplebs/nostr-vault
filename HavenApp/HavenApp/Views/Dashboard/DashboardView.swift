@@ -38,6 +38,10 @@ struct DashboardView: View {
         .onAppear {
             statsService.refreshStats()
         }
+        // The Pocket Relay tutorial starts the first time the dashboard opens.
+        .task(id: TutorialCenter.shared.revision) {
+            TutorialCenter.shared.startIfEligible(.pocketRelay, account: NostrService.shared.activeHexPubkey)
+        }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
                 statsService.refreshStats()
@@ -326,6 +330,7 @@ struct DashboardView: View {
         RelayActivityCard(logStore: relayManager.logStore) {
             showingFullLogs = true
         }
+        .tutorialAnchor(TutorialContent.relayActivity)
         .padding(.horizontal)
     }
 
@@ -754,6 +759,7 @@ struct DashboardView: View {
                 .accessibilityLabel(Text("Relay address"))
                 .accessibilityValue(Text(configService.config.nostrURL))
                 .accessibilityHint(Text("Copies the address to the clipboard"))
+                .tutorialAnchor(TutorialContent.relayAddress)
 
                 if showsMeta {
                     liveMeta
@@ -897,6 +903,7 @@ struct DashboardView: View {
             )
             .shadow(color: statusColor.opacity(relayManager.isRunning && !relayManager.isBooting ? 0.08 : 0), radius: 10, x: 0, y: 4)
             .animation(Motion.toggle, value: relayManager.isRunning)
+            .tutorialAnchor(TutorialContent.relayStatus)
 
             // Error recovery banner
             if relayManager.isLocked || relayManager.isPortConflict {
