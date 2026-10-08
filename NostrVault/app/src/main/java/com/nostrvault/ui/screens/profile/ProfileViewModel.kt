@@ -254,6 +254,12 @@ class ProfileViewModel @Inject constructor(
             shop.load(_pubkey.value)
             loadExtras(_pubkey.value)
         }
+        // Follow / Unfollow reads the real list, as iOS does: a tap queued
+        // until the list loads, or a publish rolled back, shows as it is.
+        viewModelScope.launch {
+            combine(_pubkey, feedService.followedPubkeys) { pk, followed -> pk.isNotEmpty() && pk in followed }
+                .collect { _isFollowing.value = it }
+        }
     }
 
     fun setPubkey(pubkey: String) {
@@ -520,7 +526,6 @@ class ProfileViewModel @Inject constructor(
         if (pk.isEmpty()) return
         viewModelScope.launch {
             if (_isFollowing.value) feedService.unfollowPubkey(pk) else feedService.followPubkey(pk)
-            _isFollowing.value = !_isFollowing.value
         }
     }
 

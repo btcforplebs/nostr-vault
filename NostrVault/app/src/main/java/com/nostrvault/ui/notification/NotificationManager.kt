@@ -54,11 +54,55 @@ class NotificationManager @Inject constructor() {
 
     // ── Follow pills ──────────────────────────────────────────
 
-    fun showFollow(recipientName: String, kind: FollowKind, undo: (() -> Unit)? = null) {
-        val notification = FollowNotification(recipientName = recipientName, kind = kind, undo = undo)
+    /**
+     * Shows a follow outcome. With [pubkey], a pending pill for that person
+     * turns into this one instead of a second pill appearing.
+     */
+    fun showFollow(recipientName: String, kind: FollowKind, undo: (() -> Unit)? = null, pubkey: String? = null) {
+        val pending = pubkey?.let { pendingFollowPill(it) }
+        if (pending != null) {
+            updateNotification<FollowNotification>(pending.id) {
+                it.copy(recipientName = recipientName, kind = kind, undo = undo)
+            }
+            scheduleDismiss(pending.id, FollowNotification(recipientName = recipientName, kind = kind, undo = undo).autoDismissMs)
+            return
+        }
+        val notification = FollowNotification(recipientName = recipientName, kind = kind, undo = undo, pubkey = pubkey)
         addNotification(notification)
-        scheduleDismiss(notification.id, notification.autoDismissMs)
     }
+
+    /**
+     * "Following Name…" with a spinner, for a tap queued until the follow
+     * list loads. Updates the person's pill if one is already pending.
+     * iOS `FollowNotificationManager.addPending`.
+     */
+    fun addPendingFollow(pubkey: String, recipientName: String, follow: Boolean) {
+        val pending = pendingFollowPill(pubkey)
+        if (pending != null) {
+            updateNotification<FollowNotification>(pending.id) {
+                it.copy(recipientName = recipientName, kind = FollowKind.PENDING(follow))
+            }
+        } else {
+            addNotification(FollowNotification(recipientName = recipientName, kind = FollowKind.PENDING(follow), pubkey = pubkey))
+        }
+    }
+
+    /** Takes down [pubkey]'s pending pill without an outcome (the tap was dropped). */
+    fun dismissPendingFollow(pubkey: String) {
+        pendingFollowPill(pubkey)?.let { dismiss(it.id) }
+    }
+
+    /** Every pending pill goes, as on an account switch (iOS `clearPending`). */
+    fun clearPendingFollows() {
+        _notifications.value
+            .filter { it is FollowNotification && it.kind is FollowKind.PENDING }
+            .forEach { dismiss(it.id) }
+    }
+
+    private fun pendingFollowPill(pubkey: String): FollowNotification? =
+        _notifications.value.firstOrNull {
+            it is FollowNotification && it.pubkey == pubkey && it.kind is FollowKind.PENDING
+        } as FollowNotification?
 
     // ── Error pills ───────────────────────────────────────────
 

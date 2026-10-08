@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +16,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,20 +61,30 @@ fun ZapPill(notification: ZapNotification) {
 
 @Composable
 fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
-    val bgColor = when (notification.kind) {
+    val kind = notification.kind
+    if (kind is FollowKind.PENDING) {
+        PendingFollowPill(
+            label = (if (kind.follow) "Following " else "Unfollowing ") + notification.recipientName + "…",
+        )
+        return
+    }
+    val bgColor = when (kind) {
         FollowKind.FOLLOWED -> SuccessGreen
         FollowKind.UNFOLLOWED -> Color(0xFF595959)
         is FollowKind.FAILED -> ErrorRed.copy(alpha = 0.85f)
+        is FollowKind.PENDING -> Color(0xFF595959)
     }
-    val icon = when (notification.kind) {
+    val icon = when (kind) {
         FollowKind.FOLLOWED -> NostrVaultIcons.PersonAdd
         FollowKind.UNFOLLOWED -> NostrVaultIcons.Blocked
         is FollowKind.FAILED -> NostrVaultIcons.Dismiss
+        is FollowKind.PENDING -> NostrVaultIcons.PersonAdd
     }
-    val label = when (notification.kind) {
+    val label = when (kind) {
         FollowKind.FOLLOWED -> "Followed ${notification.recipientName}"
         FollowKind.UNFOLLOWED -> "Unfollowed ${notification.recipientName}"
-        is FollowKind.FAILED -> notification.kind.reason
+        is FollowKind.FAILED -> kind.reason
+        is FollowKind.PENDING -> notification.recipientName
     }
     if (notification.undo == null) {
         BasePill(icon = icon, label = label, backgroundColor = bgColor)
@@ -98,6 +112,32 @@ fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
         ) {
             Text(text = "Undo", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
+    }
+}
+
+/**
+ * A follow waiting on the follow list: a small spinner where the icon goes,
+ * on grey, since it is not an error. iOS `FollowPill` `.pending`.
+ */
+@Composable
+private fun PendingFollowPill(label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .shadow(
+                elevation = 8.dp,
+                shape = PillShape,
+                ambientColor = Color.Black.copy(alpha = 0.4f),
+                spotColor = Color.Black.copy(alpha = 0.4f),
+            )
+            .background(Color(0xFF595959), PillShape)
+            .clip(PillShape)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(vertical = 10.dp, horizontal = 20.dp),
+    ) {
+        CircularProgressIndicator(color = Color.White, strokeWidth = 1.5.dp, modifier = Modifier.size(14.dp))
+        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
