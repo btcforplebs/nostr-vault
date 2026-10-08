@@ -944,16 +944,11 @@ class FeedService: ObservableObject {
         // Listen to active account changes to reload the feed automatically.
         // We snapshot the previous account's state into memory and either
         // restore an existing snapshot (instant) or run a cold load.
-        ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
-            // @Published emits from willSet: read synchronously, `config`
-            // still names the previous account, so the switch either no-oped
-            // or loaded the account before last, and that account's likes
-            // were shown (and saved) under the new one. One hop to main reads
-            // the new value, as DMService and NostrService already do.
-            .receive(on: DispatchQueue.main)
+        // activeAccountSwitches hops to main before delivering: @Published
+        // emits from willSet, and read synchronously `config` would still
+        // name the previous account, so that account's likes were shown
+        // (and saved) under the new one.
+        ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 self.handleAccountSwitch()

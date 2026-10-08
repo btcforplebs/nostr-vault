@@ -640,6 +640,13 @@ struct HavenConfig: Codable, Equatable {
         return result
     }
 
+    /// Whether the active account (as a hex pubkey) moving from `previous` to
+    /// `current` is a switch the app should react to. No account to an
+    /// account is setup finishing, not a switch.
+    static func isAccountSwitch(from previous: String, to current: String) -> Bool {
+        !previous.isEmpty && previous != current
+    }
+
     /// Trims whitespace and trailing slashes so the same relay typed two ways
     /// compares equal.
     static func normalizedRelayURL(_ raw: String) -> String {

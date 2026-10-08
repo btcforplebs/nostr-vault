@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Combine
 #if canImport(ServiceManagement)
 import ServiceManagement
 #endif
@@ -22,6 +23,21 @@ class ConfigService: ObservableObject {
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
     /// whenever the active account changes.
     @Published private(set) var activeAccountHexPubkey: String = ""
+
+    /// Each switch of the active account, as its hex pubkey, delivered on the
+    /// main queue once `config` already names the new account. Leaves out the
+    /// current value and setup's first account (see `isAccountSwitch`).
+    var activeAccountSwitches: AnyPublisher<String, Never> {
+        $activeAccountHexPubkey
+            .scan((previous: String?.none, current: String?.none)) { ($0.current, $1) }
+            .compactMap { pair -> String? in
+                guard let previous = pair.previous, let current = pair.current,
+                      HavenConfig.isAccountSwitch(from: previous, to: current) else { return nil }
+                return current
+            }
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
     
     // Config stored in App Support (standard macOS location for app preferences/state)
     private let configURL: URL
@@ -307,6 +323,8 @@ class ConfigService: ObservableObject {
         
         // 3. Reset in-memory config
         config = HavenConfig.default
+        // The account went with it; services listening for a switch drop its state.
+        refreshActiveAccountHex()
     }
     
     /// Programmatically quit the application
