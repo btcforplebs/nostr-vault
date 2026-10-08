@@ -215,11 +215,13 @@ struct VaultView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 leadingToolbarInline
+                    .tutorialAnchor(TutorialContent.vaultModes)
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
                 trailingToolbarInline
                     .animation(Motion.toggle, value: viewMode)
+                    .tutorialAnchor(TutorialContent.vaultFilters)
             }
             #endif
         }
@@ -467,6 +469,7 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
@@ -592,6 +595,7 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)

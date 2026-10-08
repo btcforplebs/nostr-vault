@@ -1691,6 +1691,7 @@ struct FeedView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .tutorialAnchor(TutorialContent.feedToolbar)
             }
             .hidingSharedToolbarBackground()
         }

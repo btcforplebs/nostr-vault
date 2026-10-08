@@ -52,9 +52,10 @@ struct TutorialProgress {
     let store: TutorialStore
     /// The one tutorial on screen, if any. Only one at a time.
     private(set) var active: TutorialID?
-    /// Set once a tutorial has shown on its own this launch. A replay from
-    /// Settings doesn't count: the person asked for it.
-    private(set) var autoStartedThisLaunch = false
+    /// Set while Fill your vault's bolt or "web of trust is built" card is
+    /// up. Fill your vault is already done by then, so nothing else is
+    /// active, but no page tutorial may start over that card.
+    var held = false
 
     init(store: TutorialStore) {
         self.store = store
@@ -75,13 +76,13 @@ struct TutorialProgress {
     }
 
     /// Whether `id` may show on its own right now: not seen at this version,
-    /// nothing else on screen, nothing already shown this launch, and, for
+    /// nothing else on screen or held, and, for
     /// the page tutorials, Fill your vault finished or skipped first so a new
     /// account never gets two in a row.
     func isEligible(_ id: TutorialID, account: String) -> Bool {
         guard !account.isEmpty,
               active == nil,
-              !autoStartedThisLaunch,
+              !held,
               status(id, account: account) == .notStarted else { return false }
         if id != .fillYourVault && !id.runsDuringSetup {
             return status(.fillYourVault, account: account) != .notStarted
@@ -93,7 +94,6 @@ struct TutorialProgress {
     mutating func startIfEligible(_ id: TutorialID, account: String) -> Bool {
         guard isEligible(id, account: account) else { return false }
         active = id
-        autoStartedThisLaunch = true
         return true
     }
 

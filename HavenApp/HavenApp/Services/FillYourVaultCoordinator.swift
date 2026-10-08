@@ -5,7 +5,7 @@ import CoreGraphics
 /// Applies `FillYourVaultRule` to the active account's follow list: starts the
 /// guide for a new account, marks it done without showing it for an account
 /// that already follows 5, and finishes it when the feed fills. Also keeps
-/// the web of trust (10 follows) once earned, and moves the "Fill your feed" guide between its
+/// the web of trust (5 follows) once built, and moves the "Fill your feed" guide between its
 /// screens (`phase`). `FillYourFeedOverlay` draws what this publishes.
 @MainActor
 final class FillYourVaultCoordinator: ObservableObject {
@@ -13,11 +13,15 @@ final class FillYourVaultCoordinator: ObservableObject {
 
     /// The meter for the active account, rebuilt on every follow change.
     @Published private(set) var meter = VaultMeter(follows: [], owner: "", masterEarned: false)
-    /// Set when this account reaches the web of trust (10 follows) for the first time; the
-    /// meter plays the gold bolt once and clears it.
-    @Published var celebrateVaultMaster = false
+    /// Set when this account builds its web of trust for the first time; the
+    /// meter plays the gold bolt once, then shows the "built" card.
+    @Published var celebrateVaultMaster = false {
+        didSet { holdOtherTutorials() }
+    }
     /// Which of the guide's screens is up.
-    @Published private(set) var phase: FillYourFeedPhase = .off
+    @Published private(set) var phase: FillYourFeedPhase = .off {
+        didSet { holdOtherTutorials() }
+    }
     /// Whether the meter is on for this account (see `FeedMeterStore`).
     @Published private(set) var meterOn = false
     /// The meter folded down to its pill.
@@ -27,8 +31,6 @@ final class FillYourVaultCoordinator: ObservableObject {
     @Published var meterHeight: CGFloat = 0
     /// The person whose small profile card is open.
     @Published var profileCardPubkey: String?
-    /// Topics picked in this run, so "Only my web of trust" drops just those.
-    private(set) var pickedTopics: [String] = []
 
     private let masterStore = VaultMasterStore()
     private let meterStore = FeedMeterStore(store: UserDefaultsTutorialStore())
@@ -94,7 +96,6 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// Topics: "Show posts". Follows the picked hashtags (one published
     /// list) and opens the topic feed behind the hint.
     func showPosts(topics: [String]) {
-        pickedTopics = topics
         let interests = InterestListService.shared
         let new = topics.filter { !interests.isFollowing($0) }
         if !new.isEmpty {
@@ -107,26 +108,28 @@ final class FillYourVaultCoordinator: ObservableObject {
     /// Hint: "Got it".
     func dismissHint() { phase = .browsing }
 
-    /// "Your feed is ready": go to Following. `keepTopics` false unfollows
-    /// the hashtags picked in this run (and only those).
-    func goToFollowing(keepTopics: Bool) {
-        if !keepTopics, !pickedTopics.isEmpty {
-            let topics = pickedTopics
-            Task { await InterestListService.shared.setFollowing(topics, false) }
-        }
-        FeedService.shared.switchMode(.following)
-        meterCollapsed = true
-        phase = .browsing
+    /// "Your web of trust is built": open Discover to find more people, put
+    /// the meter away and start the Feeds tutorial there. The picked topics
+    /// stay followed (Logen: keep them, don't ask).
+    func goToDiscover() {
+        FeedService.shared.switchMode(.discovery)
+        closeGuide()
+        let center = TutorialCenter.shared
+        if let next = center.next(after: .fillYourVault) { center.replay(next) }
     }
 
     /// The bolt has crossed the meter: show the web-of-trust card.
-    func showMasterCard() {
+    func showReadyCard() {
         celebrateVaultMaster = false
         meterCollapsed = false
-        phase = .master
+        phase = .ready
     }
 
-    func dismissMasterCard() { phase = .browsing }
+    /// Fill your vault is done once 5 are followed, but its bolt and
+    /// "built" card are still up: no page tutorial may start over them.
+    private func holdOtherTutorials() {
+        TutorialCenter.shared.held = celebrateVaultMaster || phase == .ready
+    }
 
     /// Skip, "Not now" or "Hide the meter": the guide closes (done past 5,
     /// skipped below) and the meter goes away.
@@ -162,7 +165,6 @@ final class FillYourVaultCoordinator: ObservableObject {
             let active = TutorialCenter.shared.isActive(.fillYourVault)
             defer { self.wasActive = active }
             guard active, !self.wasActive else { return }
-            self.pickedTopics = []
             let entry = FillYourFeedGuide.entryPhase(meterOn: self.meterOn)
             self.phase = entry
             // Back mid-guide after a relaunch: their topic feed, where they
@@ -199,11 +201,12 @@ final class FillYourVaultCoordinator: ObservableObject {
         ) {
         case .none: break
         case .start: center.startIfEligible(.fillYourVault, account: account)
-        case .finishSilently: center.finish(.fillYourVault, account: account)
+        case .finishSilently: center.finishQuietly(.fillYourVault, account: account)
         case .finish:
             center.finish(.fillYourVault, account: account)
             profileCardPubkey = nil
-            phase = .ready
+            // With the meter up, the bolt plays first and opens the card.
+            if !celebrateVaultMaster { phase = .ready }
         }
     }
 }

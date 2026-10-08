@@ -56,8 +56,29 @@ extension TutorialID {
             #else
             return []
             #endif
+        case .vault:
+            // Its anchors are the iPhone/iPad vault toolbar and Relay button.
+            #if os(iOS)
+            return TutorialContent.vault
+            #else
+            return []
+            #endif
+        case .walletConnect:
+            // Its anchors are on the iPhone/iPad wallet sheet.
+            #if os(iOS)
+            return TutorialContent.walletConnect
+            #else
+            return []
+            #endif
+        case .pocketRelay:
+            // Its anchors are on the iPhone/iPad relay dashboard sheet.
+            #if os(iOS)
+            return TutorialContent.pocketRelay
+            #else
+            return []
+            #endif
         case .importTour: return TutorialContent.importTour
-        case .fillYourVault, .vault, .walletConnect, .pocketRelay: return []
+        case .fillYourVault: return []
         }
     }
 
@@ -69,6 +90,16 @@ extension TutorialID {
         self == .fillYourVault ? Self.fillYourVaultHasGuide : !steps.isEmpty
     }
 
+    /// The tutorial a "Next" button on this one's last card starts: the
+    /// first available page tutorial after it. Nil when none is built yet,
+    /// so the last card just says Done. Fill your feed's last card hands
+    /// over to Feeds.
+    var next: TutorialID? {
+        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .walletConnect, .pocketRelay]
+        guard let index = order.firstIndex(of: self) else { return nil }
+        return order[(index + 1)...].first { $0.isAvailable }
+    }
+
     /// The guide is `FillYourFeedOverlay`.
     static let fillYourVaultHasGuide = true
 }
@@ -76,39 +107,104 @@ extension TutorialID {
 enum TutorialContent {
     static let feedPicker = "feeds.picker"
 
-    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "1. Feeds". Discover
-    /// is `extendedNetworkPubkeys`: people your follows follow, ranked by how
-    /// many of your follows follow them.
+    /// The pill of buttons at the top right of the feed.
+    static let feedToolbar = "feeds.toolbar"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "1. Feeds". Kept to
+    /// what each corner does and how trust works (Logen, nostr-vault
+    /// Tutorial thread 2026-10-08): the picker lists the feeds itself.
     static let feeds: [TutorialStep] = [
         TutorialStep(
             anchor: feedPicker,
-            title: "Pick your feed here",
-            body: "Nostr has no algorithm. Each feed is a different way to look at the network, and you choose which one."
+            title: "Pick your feed",
+            body: "Tap here to switch feeds. Nostr has no algorithm, so you choose what you see."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Following is home",
-            body: "Only the people you follow, newest first."
+            anchor: feedToolbar,
+            title: "Tune this feed",
+            body: "These buttons change what this feed shows, like reposts and replies. They're different on each feed."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Discover",
-            body: "People your follows follow, the most shared first. The easiest place to find your next follow."
+            anchor: feedToolbar,
+            title: "Following, Global and trust",
+            body: "On wider feeds you'll see a globe for Global. It shows people your follows follow, your web of trust, so spam stays out. The shield opens it to everyone."
+        ),
+    ]
+
+    /// The vault's top-left pill (Notes, Likes, Zaps, Followers), its
+    /// top-right filters, and the Relay button over the list.
+    static let vaultModes = "vault.modes"
+    static let vaultFilters = "vault.filters"
+    static let vaultRelay = "vault.relay"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "2. Your vault",
+    /// kept to what each part of the screen does, like Feeds.
+    static let vault: [TutorialStep] = [
+        TutorialStep(
+            anchor: vaultModes,
+            title: "Your vault",
+            body: "Your posts, likes, zaps and followers. It's all kept on this phone, not on someone else's server."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Global and Hashtags",
-            body: "Wider than your follows. Once you follow people, they're filtered by your web of trust, so strangers' spam stays out."
+            anchor: vaultFilters,
+            title: "Narrow it down",
+            body: "These change with each tab. On Notes: everything, just yours, posts that mention you, and replies from outside your network."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "One kind of post",
-            body: "Media, diVines, Articles, Recipes, Marketplace, Live and Music each show just that kind of post."
+            anchor: vaultRelay,
+            title: "Your relay",
+            body: "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work."
+        ),
+    ]
+
+    /// The wallet's "No Wallet Connected" card and its Connect button.
+    static let walletEmpty = "wallet.empty"
+    static let walletConnectButton = "wallet.connect"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "3. Wallet Connect".
+    /// Only shown with no wallet linked: its cards point at the empty card.
+    static let walletConnect: [TutorialStep] = [
+        TutorialStep(
+            anchor: walletEmpty,
+            title: "Zaps are bitcoin tips",
+            body: "A zap sends bitcoin straight to the person who posted. Nobody in between takes a cut."
         ),
         TutorialStep(
-            anchor: feedPicker,
-            title: "Make it yours",
-            body: "Edit Feeds, at the bottom of this menu, hides the feeds you don't use and changes their order."
+            anchor: walletEmpty,
+            title: "Your money stays in your wallet",
+            body: "Nostr Vault never holds your bitcoin. You link a wallet app you already use."
+        ),
+        TutorialStep(
+            anchor: walletConnectButton,
+            title: "Link your wallet",
+            body: "In your wallet app, find Nostr Wallet Connect and copy its link. Then tap here and paste it."
+        ),
+    ]
+
+    /// The relay dashboard's status card, the address in it, and the
+    /// activity card under it.
+    static let relayStatus = "relay.status"
+    static let relayAddress = "relay.address"
+    static let relayActivity = "relay.activity"
+
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "4. Pocket relay vs
+    /// public relay", kept short like the others. Wording matches
+    /// website/index.html "Two ways to run it".
+    static let pocketRelay: [TutorialStep] = [
+        TutorialStep(
+            anchor: relayStatus,
+            title: "Your pocket relay",
+            body: "A real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
+        ),
+        TutorialStep(
+            anchor: relayActivity,
+            title: "It sends your posts out",
+            body: "When you post, your relay keeps a copy and passes it on to the public relays you picked. Watch it happen here."
+        ),
+        TutorialStep(
+            anchor: relayAddress,
+            title: "Pocket vs public",
+            body: "This address only works on this phone, so nobody on the network can connect to it. Want a public address? Run Nostr Vault on a Mac with your own domain. That's optional: your pocket relay works fine on its own."
         ),
     ]
 

@@ -66,6 +66,7 @@ struct ProfileView: View {
 
     // Wallet views
     @State private var showingLightning = false
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     // Following / followers count
     @State private var followingCount: Int? = nil
@@ -546,6 +547,17 @@ struct ProfileView: View {
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
+        }
+        // Your Vault's last card hands over to Wallet Connect, whose cards
+        // are on the wallet. On appear too: the Profile tab may only now be
+        // showing.
+        .onChange(of: tutorialCenter.active) { _, active in
+            if active == .walletConnect && isOwnerProfile { showingLightning = true }
+            // Its last card hands over to Pocket Relay, on the Relay tab.
+            if active == .pocketRelay { showingLightning = false }
+        }
+        .onAppear {
+            if tutorialCenter.active == .walletConnect && isOwnerProfile { showingLightning = true }
         }
         .sheet(isPresented: $showingLightning) {
             NavigationStack {
