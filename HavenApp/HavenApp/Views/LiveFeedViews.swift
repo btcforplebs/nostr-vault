@@ -194,6 +194,7 @@ struct LiveStreamPlayerView: View {
     @State private var draft = ""
     @State private var zapSheet: ZapSheetContext?
     @State private var zapFailure: String?
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @State private var noLightningAddress = false
     @FocusState private var composerFocused: Bool
     @State private var showingBlossomPicker = false
@@ -473,15 +474,17 @@ struct LiveStreamPlayerView: View {
                 .background(Color.controlBackgroundColor)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-            Button {
-                zapSheet = ZapSheetContext(defaultAmount: max(1, configService.config.defaultZapAmount / 1000))
-            } label: {
-                Image(systemName: "bolt.fill")
-                    .font(.appSystem(size: 16, weight: .bold))
-                    .foregroundColor(.orange)
+            if PostButtons.showsZap(postButtons) {
+                Button {
+                    zapSheet = ZapSheetContext(defaultAmount: max(1, configService.config.defaultZapAmount / 1000))
+                } label: {
+                    Image(systemName: "bolt.fill")
+                        .font(.appSystem(size: 16, weight: .bold))
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Zap this stream")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Zap this stream")
 
             Button {
                 sendMessage()

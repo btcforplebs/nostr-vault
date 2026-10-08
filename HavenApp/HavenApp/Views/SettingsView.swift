@@ -3223,6 +3223,10 @@ struct AppearanceSettingsView: View {
                 Text("Off, new posts wait until you pull down to refresh.")
             }
 
+            #if os(iOS)
+            PostButtonsSection()
+            #endif
+
             Section {
                 Toggle(isOn: $configService.config.zapsOnlyMode) {
                     Label {
@@ -3261,17 +3265,6 @@ struct AppearanceSettingsView: View {
                     Text("Reactions")
                 }
             }
-
-            #if os(iOS)
-            Section {
-                AppIconPicker(selectedIcon: $configService.config.appIcon) { iconName in
-                    configService.save()
-                    setAppIcon(iconName)
-                }
-            } header: {
-                Text("App Icon")
-            }
-            #endif
         }
         .groupedFormStyleCompat()
         .sheet(isPresented: $showEmojiPicker) {
@@ -3305,22 +3298,6 @@ struct AppearanceSettingsView: View {
         .onChange(of: value.wrappedValue) { _, _ in configService.save() }
     }
 
-    #if os(iOS)
-    private func setAppIcon(_ iconName: String) {
-        let iconToSet = iconName == "Default" ? nil : iconName
-
-        guard UIApplication.shared.supportsAlternateIcons else {
-            print("Alternate icons not supported")
-            return
-        }
-
-        UIApplication.shared.setAlternateIconName(iconToSet) { error in
-            if let error = error {
-                print("Error setting alternate icon: \(error.localizedDescription)")
-            }
-        }
-    }
-    #endif
 
     
 }
@@ -3999,72 +3976,6 @@ struct BlossomSettingsView: View {
     }
 }
 
-#if os(iOS)
-// MARK: - App Icon Selection
-
-enum AppIconOption: String, CaseIterable, Identifiable {
-    case `default` = "Default"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .default: return "Vault (Default)"
-        }
-    }
-
-    var iconName: String? {
-        switch self {
-        case .default: return nil  // nil means the primary app icon
-        }
-    }
-
-    var previewImageName: String {
-        "AppIcon"  // All variants use the same preview for now
-    }
-}
-
-struct AppIconPicker: View {
-    @Binding var selectedIcon: String
-    let onChange: (String) -> Void
-
-    var body: some View {
-        ForEach(AppIconOption.allCases) { option in
-            Button(action: {
-                selectedIcon = option.rawValue
-                onChange(option.rawValue)
-            }) {
-                HStack(spacing: 12) {
-                    // App icon preview
-                    Image("AppIcon")
-                        .resizable()
-                        .frame(width: 60, height: 60)
-                        .cornerRadius(13.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 13.5)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                        )
-
-                    Text(option.displayName)
-                        .foregroundColor(.primary)
-
-                    Spacer()
-
-                    if selectedIcon == option.rawValue {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.havenPurple)
-                    }
-                }
-                .padding(.vertical, 4)
-                // The whole row, not just the icon and name.
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-#endif
-
 // RelayListEditor and LogsView moved to separate files
 
 /// A text field that writes to its binding only when editing ends (Return,
@@ -4117,3 +4028,59 @@ struct CommitOnEndTextField: View {
         return changed
     }
 }
+
+#if os(iOS)
+/// Settings → Post buttons: the emoji the action bar under a post shows. Adding
+/// ⚡️ turns on the zap button on posts, which ships off on iOS. Labeled and in
+/// plain sight on purpose — App Review has to be able to find it.
+private struct PostButtonsSection: View {
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
+
+    var body: some View {
+        Section {
+            HStack {
+                Label {
+                    Text("Post buttons")
+                } icon: {
+                    Image(systemName: "hand.tap")
+                }
+                Spacer()
+                TextField("Add ⚡️", text: $postButtons)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .frame(maxWidth: 140)
+            }
+            preview
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(PostButtons.showsZap(postButtons)
+                    ? "Preview: reply, repost, quote, react, zap"
+                    : "Preview: reply, repost, quote, react")
+        } header: {
+            Text("Post buttons")
+        } footer: {
+            Text("Add ⚡️ to show a zap button on posts, live streams and locked articles. Zaps go straight from your own wallet to the author over Nostr Wallet Connect. Profile zaps are always available.")
+        }
+    }
+
+    private var preview: some View {
+        HStack(spacing: 8) {
+            ForEach(previewIcons, id: \.self) { icon in
+                Image(systemName: icon)
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(icon == "bolt" ? .orange : .secondary)
+                    .frame(width: 32, height: 32)
+                    .background(icon == "bolt" ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                    .clipShape(Capsule())
+            }
+            Spacer(minLength: 0)
+        }
+        .animation(Motion.pop, value: PostButtons.showsZap(postButtons))
+    }
+
+    private var previewIcons: [String] {
+        let base = ["message", "arrow.2.squarepath", "quote.closing", "heart"]
+        return PostButtons.showsZap(postButtons) ? base + ["bolt"] : base
+    }
+}
+#endif

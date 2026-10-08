@@ -231,6 +231,7 @@ struct ArticleReaderView: View {
     @State private var highlightCommentContext: ComposeContext?
     /// Likes, zaps and comments from the network.
     @State private var tally = ArticleTally()
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
@@ -400,12 +401,14 @@ struct ArticleReaderView: View {
             actionButton("bubble.left", tint: .secondary, label: "Comment", count: tally.commentCount) {
                 composeContext = ComposeContext(replyTo: note, quoteTo: nil)
             }
-            actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
-                         count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
-                if lightningAddress != nil {
-                    zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
-                } else {
-                    noLightningAddressAlert = true
+            if PostButtons.showsZap(postButtons) {
+                actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
+                             count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
+                    if lightningAddress != nil {
+                        zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
+                    } else {
+                        noLightningAddressAlert = true
+                    }
                 }
             }
             actionButton("highlighter", tint: highlighting ? .havenPurple : .secondary, label: "Highlight") {
@@ -1009,7 +1012,9 @@ struct GatedArticleBody: View {
         case checking, locked, paying, waiting, unlocked(String), failed(String)
     }
     @State private var phase: Phase = .checking
+    #if !os(iOS)
     @State private var confirming = false
+    #endif
     /// Shares of the price not yet paid. Fewer than all means money may have
     /// moved already: the button then pays only what is left, or just
     /// re-checks for the key, and never pays the same share twice.
@@ -1039,7 +1044,48 @@ struct GatedArticleBody: View {
     private var paid: Bool { unpaid.count < gated.shares.count }
     private var dueSats: Int { unpaid.reduce(0) { $0 + $1.sats } }
 
+    /// iOS never pays to unlock: that is buying digital content (App Store
+    /// 3.1.1), and no opt-in changes that. It still opens an article paid for
+    /// on the web or in another client, since the key server only checks the
+    /// zap receipt.
+    private var paysHere: Bool {
+        #if os(iOS)
+        false
+        #else
+        true
+        #endif
+    }
+
+    /// Where to read or buy the article outside the app: the author's own
+    /// link, or on iOS (where there is no pay button) the naddr on njump.
+    private var webURL: URL? {
+        if let url = GatedArticleTeaser.unlockURL(note.content) { return url }
+        #if os(iOS)
+        let relay = gated.shares.first(where: { $0.pubkey == note.pubkey })?.relay ?? gated.receiptRelays.first
+        guard let identifier = note.longFormMetadata.identifier,
+              let tlv = GatedArticle.naddrTLV(identifier: identifier, relay: relay, pubkey: note.pubkey, kind: note.kind),
+              let naddr = Bech32.encode(hrp: "naddr", data: tlv) else { return nil }
+        return URL(string: "https://njump.me/\(naddr)")
+        #else
+        return nil
+        #endif
+    }
+
     private var lockPanel: some View {
+        #if os(iOS)
+        lockCard
+        #else
+        lockCard
+            .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
+                Button("Zap \(dueSats) sats") { Task { await pay() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your zap unlocks the full article.")
+            }
+        #endif
+    }
+
+    private var lockCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "lock.fill")
@@ -1060,29 +1106,38 @@ struct GatedArticleBody: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
-            } label: {
-                HStack(spacing: 8) {
-                    if busy {
-                        ProgressView().controlSize(.small).tint(.white)
+            // Re-checking for a key already paid for shows everywhere.
+            if paysHere || (paid && unpaid.isEmpty) {
+                Button {
+                    if paid && unpaid.isEmpty {
+                        Task { await waitForKey() }
                     } else {
-                        Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
+                        #if !os(iOS)
+                        confirming = true
+                        #endif
                     }
-                    Text(busy ? busyLabel : buttonLabel)
-                        .font(.appSystem(size: 15, weight: .semibold))
+                } label: {
+                    HStack(spacing: 8) {
+                        if busy {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
+                        }
+                        Text(busy ? busyLabel : buttonLabel)
+                            .font(.appSystem(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.havenPurple.opacity(busy ? 0.6 : 1))
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.havenPurple.opacity(busy ? 0.6 : 1))
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .buttonStyle(.plain)
+                .disabled(busy)
             }
-            .buttonStyle(.plain)
-            .disabled(busy)
 
             HStack(spacing: 16) {
-                if !paid, phase == .locked {
+                if phase == .locked, !paid || (!paysHere && !unpaid.isEmpty) {
                     Button {
                         Task { await checkAccess(auto: false) }
                     } label: {
@@ -1092,7 +1147,7 @@ struct GatedArticleBody: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if let web = GatedArticleTeaser.unlockURL(note.content) {
+                if let web = webURL {
                     Button {
                         openURL(web)
                     } label: {
@@ -1111,12 +1166,6 @@ struct GatedArticleBody: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.havenPurple.opacity(0.35), lineWidth: 1)
         )
-        .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
-            Button("Zap \(dueSats) sats") { Task { await pay() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your zap unlocks the full article.")
-        }
     }
 
     private var confirmTitle: String {
@@ -1144,8 +1193,12 @@ struct GatedArticleBody: View {
         case .waiting: return "Paid. Waiting for the author's server to see your zap. This can take a minute or two."
         case _ where paid && unpaid.isEmpty:
             return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
+        case _ where paid && !paysHere:
+            return "Part of the price went through. Pay the rest on the web or in another app, then tap Already paid?"
         case _ where paid:
             return "Part of the price went through. Zap the rest to unlock."
+        case _ where !paysHere:
+            return "Locked by \(authorName) for \(gated.priceSats) sats. Paid on the web or in another app? Tap Already paid? to read it here."
         default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
         }
     }
@@ -1173,6 +1226,7 @@ struct GatedArticleBody: View {
         }
     }
 
+    #if !os(iOS)
     private func pay() async {
         guard !busy else { return }
         phase = .paying
@@ -1188,6 +1242,7 @@ struct GatedArticleBody: View {
         unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
         await waitForKey()
     }
+    #endif
 
     private func waitForKey() async {
         phase = .waiting

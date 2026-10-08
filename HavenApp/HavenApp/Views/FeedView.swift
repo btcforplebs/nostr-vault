@@ -3318,6 +3318,7 @@ struct FeedNoteRow: View {
     @State private var reactionButtonFrame: CGRect = .zero
     @GestureState private var holdingReaction = false
     @State private var showLightning = false
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @State private var zapBoltAnchor = ZapFlightAnchor()
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
@@ -3902,7 +3903,7 @@ struct FeedNoteRow: View {
                     #endif
             }
 
-            if rowData.hasNWC {
+            if rowData.hasNWC && PostButtons.showsZap(postButtons) {
                 let lud16 = actions.getLightningAddress(zapRecipient)
                 let isZapped = rowData.zapAmount != nil
                 let hasLightning = lud16 != nil

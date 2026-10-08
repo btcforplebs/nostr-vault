@@ -92,8 +92,10 @@ final class GatedArticleService {
         unpaidShares(note: note, gated: gated).count < gated.shares.count
     }
 
+    #if !os(iOS)
     /// Zaps every share not already paid. Every recipient's lightning address
-    /// is found first, so a missing one fails before any money moves.
+    /// is found first, so a missing one fails before any money moves. Not on
+    /// iOS: paying to unlock is buying digital content (App Store 3.1.1).
     func pay(note: FeedNote, gated: GatedArticle) async throws {
         let coordinate = NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
         let due = unpaidShares(note: note, gated: gated)
@@ -120,6 +122,7 @@ final class GatedArticleService {
         FeedService.shared.zappedEventIds[note.id] = gated.priceSats
         FeedService.shared.saveInteractionState()
     }
+    #endif
 
     private func record(_ key: String, paid: Bool) {
         var all = paidShares()
