@@ -25,6 +25,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import com.nostrvault.tutorials.LocalTutorialLayer
+import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.TutorialStage
+import com.nostrvault.tutorials.tutorialAnchor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -109,6 +115,9 @@ private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 
  * load-more only needs to raise the cap; false means everything loaded is
  * listed and older notes have to come from the relay.
  */
+/** The relay dashboard sheet's [TutorialStage]. */
+private const val RELAY_DASHBOARD_TUTORIAL_LAYER = "relayDashboard"
+
 internal fun relayNotesHiddenBelowCap(filteredCount: Int, cap: Int): Boolean = filteredCount > cap
 
 /**
@@ -2207,8 +2216,8 @@ private fun RelayFilterPill(
  * SwiftUI's `ViewThatFits(in: .horizontal)`.
  */
 @Composable
-private fun FirstThatFits(vararg variants: @Composable () -> Unit) {
-    androidx.compose.ui.layout.SubcomposeLayout { constraints ->
+private fun FirstThatFits(modifier: Modifier = Modifier, vararg variants: @Composable () -> Unit) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
         val loose = constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
         var chosen: List<androidx.compose.ui.layout.Placeable> = emptyList()
         for ((index, variant) in variants.withIndex()) {
@@ -2407,6 +2416,22 @@ fun DashboardScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
+    // Your Vault starts the first time the Relay tab shows (after Fill your
+    // vault; see TutorialProgress), and again when a status changes quietly.
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    val activeTutorial by TutorialCenter.active.collectAsState()
+    LaunchedEffect(tutorialRevision) {
+        TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
+    }
+    // Pocket Relay's cards are on the relay dashboard: open it for them
+    // (Your Vault's "Next", or a replay from Settings).
+    LaunchedEffect(activeTutorial) {
+        if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboardSheet) {
+            viewModel.loadStats()
+            showDashboardSheet = true
+        }
+    }
+
     // Tapping the Relay tab again goes to the top of the list (iOS #275).
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
@@ -2430,7 +2455,10 @@ fun DashboardScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 // Leading pill: mode switcher (Notes / Likes / Zaps / Followers)
-                GlassPill(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                GlassPill(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
+                ) {
                     IconFilterButton(
                         icon = NostrVaultIcons.Document,
                         contentDescription = "Notes",
@@ -2468,6 +2496,7 @@ fun DashboardScreen(
                 // into a menu: when the bar is tight the word goes, not the icons.
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                     FirstThatFits(
+                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_FILTERS),
                         { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = true) },
                         { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = false) },
                     )
@@ -2483,7 +2512,9 @@ fun DashboardScreen(
                         viewModel.loadStats()
                         showDashboardSheet = true
                     },
-                    modifier = Modifier.floatingRowButton(),
+                    modifier = Modifier
+                        .floatingRowButton()
+                        .tutorialAnchor(TutorialContent.VAULT_RELAY),
                     color = dotColor,
                     shape = CircleShape,
                     shadowElevation = 8.dp,
@@ -2649,6 +2680,13 @@ fun DashboardScreen(
             val currentConfig by viewModel.configStore.config.collectAsState()
             val context = LocalContext.current
 
+            // The Pocket Relay tutorial starts the first time the dashboard
+            // opens. The sheet is its own window, so it draws its own cards.
+            LaunchedEffect(tutorialRevision) {
+                TutorialCenter.startIfEligible(TutorialID.POCKET_RELAY, viewModel.nostrService.activeHexPubkey)
+            }
+            CompositionLocalProvider(LocalTutorialLayer provides RELAY_DASHBOARD_TUTORIAL_LAYER) {
+            Box {
             DashboardSheetContent(
                 totalEvents = totalEvents,
                 storageUsed = storageUsed,
@@ -2699,6 +2737,13 @@ fun DashboardScreen(
                 onExportMedia = { viewModel.exportMedia(context) },
                 onDismissImport = viewModel::dismissImport,
             )
+            TutorialStage(
+                account = { viewModel.nostrService.activeHexPubkey },
+                modifier = Modifier.matchParentSize(),
+                layer = RELAY_DASHBOARD_TUTORIAL_LAYER,
+            )
+            }
+            }
         }
     }
 
@@ -3306,6 +3351,7 @@ private fun DashboardSheetContent(
             com.nostrvault.ui.screens.dashboard.CompactLogConsole(
                 logs = logs,
                 onViewAll = onViewAllLogs,
+                modifier = Modifier.tutorialAnchor(TutorialContent.RELAY_ACTIVITY),
             )
             Spacer(Modifier.height(12.dp))
         }

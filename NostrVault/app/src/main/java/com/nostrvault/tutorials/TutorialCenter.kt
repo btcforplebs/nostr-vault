@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -45,13 +47,31 @@ object TutorialCenter {
     private val _stepIndex = MutableStateFlow(0)
     val stepIndex: StateFlow<Int> = _stepIndex.asStateFlow()
 
-    /** Bumped on every saved status change, so Settings re-reads and pages
-     *  re-check their start (Fill your vault marked done quietly). */
+    /** Bumped when a status changes without the person closing anything:
+     *  Fill your vault marked done quietly (an account that already follows
+     *  people), or Settings resetting them all. Pages key their start on it,
+     *  so the page on screen starts its tutorial then. Skip or Done doesn't
+     *  bump it: the next tutorial waits for the person's next visit to a
+     *  page, not the screen they just closed one on (iOS #414). */
     private val _revision = MutableStateFlow(0)
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    /** Where each [tutorialAnchor] is, in root coordinates. */
-    val anchors = mutableStateMapOf<String, Rect>()
+    /** Bumped on every saved status, so Settings re-reads. */
+    private val _saves = MutableStateFlow(0)
+    val saves: StateFlow<Int> = _saves.asStateFlow()
+
+    /** Where each [tutorialAnchor] is, in its layer's root coordinates. */
+    val anchors = mutableStateMapOf<String, PlacedAnchor>()
+
+    /** The [TutorialStage]s on screen, bottom to top: the app's own, then
+     *  one per open sheet (a sheet is its own window, so the app's stage
+     *  can't draw over it). A card with nothing to point at goes on the top
+     *  one. */
+    val layers = mutableStateListOf<String>()
+
+    /** Whether a wallet is linked. Set by the app from its config: Wallet
+     *  Connect's cards point at the empty wallet, which isn't there then. */
+    var walletLinked: () -> Boolean = { false }
 
     fun init(context: Context) {
         progress = TutorialProgress(
@@ -83,7 +103,7 @@ object TutorialCenter {
 
     fun finish(id: TutorialID, account: String) {
         progress.finish(id, account)
-        publish(saved = true)
+        publish(saved = true, pagesRecheck = false)
     }
 
     /** Done without being shown, so the page on screen may start its own. */
@@ -94,12 +114,28 @@ object TutorialCenter {
 
     fun skip(id: TutorialID, account: String) {
         progress.skip(id, account)
-        publish(saved = true)
+        publish(saved = true, pagesRecheck = false)
     }
 
     fun resetAll(account: String) {
         progress.resetAll(account)
         publish(saved = true)
+    }
+
+    /** The tutorial the last card of [id] hands over to (iOS
+     *  `next(after:)`). Wallet Connect is passed over once a wallet is
+     *  linked. */
+    fun nextAfter(id: TutorialID): TutorialID? {
+        val next = id.next ?: return null
+        return if (next == TutorialID.WALLET_CONNECT && walletLinked()) nextAfter(next) else next
+    }
+
+    /** Closes the active tutorial as done and starts the one after it. */
+    fun startNext(account: String) {
+        val id = _active.value ?: return
+        val next = nextAfter(id) ?: return
+        finish(id, account)
+        replay(next)
     }
 
     // ── Cards ─────────────────────────────────────────────────────
@@ -123,19 +159,33 @@ object TutorialCenter {
         if (_stepIndex.value > 0) _stepIndex.value -= 1
     }
 
-    private fun publish(saved: Boolean = false) {
+    private fun publish(saved: Boolean = false, pagesRecheck: Boolean = saved) {
         _active.value = progress.active
-        if (saved) _revision.value += 1
+        if (saved) _saves.value += 1
+        if (pagesRecheck) _revision.value += 1
     }
 }
 
+/** An anchor's bounds and the [TutorialStage] layer it was laid out in. */
+data class PlacedAnchor(val bounds: Rect, val layer: String)
+
+/** The app's own stage, in MainActivity's root box. */
+const val ROOT_TUTORIAL_LAYER = "root"
+
+/** Which [TutorialStage] the anchors under it belong to. A sheet that holds
+ *  anchors provides its own and draws its own stage. */
+val LocalTutorialLayer = compositionLocalOf { ROOT_TUTORIAL_LAYER }
+
 /** Marks this as something a tutorial card can point at. */
 fun Modifier.tutorialAnchor(name: String): Modifier = composed {
-    DisposableEffect(name) {
-        onDispose { TutorialCenter.anchors.remove(name) }
+    val layer = LocalTutorialLayer.current
+    DisposableEffect(name, layer) {
+        onDispose {
+            if (TutorialCenter.anchors[name]?.layer == layer) TutorialCenter.anchors.remove(name)
+        }
     }
     onGloballyPositioned { coords ->
-        val bounds = coords.boundsInRoot()
-        if (TutorialCenter.anchors[name] != bounds) TutorialCenter.anchors[name] = bounds
+        val placed = PlacedAnchor(coords.boundsInRoot(), layer)
+        if (TutorialCenter.anchors[name] != placed) TutorialCenter.anchors[name] = placed
     }
 }

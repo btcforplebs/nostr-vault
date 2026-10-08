@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.relay.RelayForegroundService.RelayStatus
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.theme.*
 
 @Composable
@@ -64,7 +66,9 @@ fun RelayStatusHeader(
         Surface(
             color = SecondaryGroupedBg,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .tutorialAnchor(TutorialContent.RELAY_STATUS),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -122,6 +126,7 @@ fun RelayStatusHeader(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
+                                .tutorialAnchor(TutorialContent.RELAY_ADDRESS)
                                 .heightIn(min = 48.dp)
                                 .clickable {
                                     clipboard.setText(AnnotatedString(relayAddress))

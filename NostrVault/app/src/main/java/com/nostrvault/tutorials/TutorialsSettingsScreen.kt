@@ -52,7 +52,7 @@ fun TutorialsSettingsScreen(
     onReplay: (TutorialID) -> Unit,
 ) {
     // Re-read statuses whenever one is saved.
-    val revision by TutorialCenter.revision.collectAsState()
+    val revision by TutorialCenter.saves.collectAsState()
     var confirmingReset by remember { mutableStateOf(false) }
     val tutorials = TutorialID.entries.filter { it.isAvailable }
     val primary = LocalNostrVaultColors.current.primary

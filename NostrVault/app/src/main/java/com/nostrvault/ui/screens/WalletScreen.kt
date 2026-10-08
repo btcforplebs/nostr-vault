@@ -60,6 +60,8 @@ class WalletViewModel @Inject constructor(
     private val zapHistoryService: ZapHistoryService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
+    /** Whose tutorials the wallet's cards count against. */
+    val activeHexPubkey: String get() = nostrService.activeHexPubkey
     private val _lightningBalance = MutableStateFlow<Long?>(null)
     val lightningBalance = _lightningBalance.asStateFlow()
 
@@ -371,7 +373,11 @@ fun WalletScreen(
             }
 
             when (selectedTab) {
-                WalletTab.LIGHTNING -> WalletLightningTab(viewModel, onNoteClick)
+                WalletTab.LIGHTNING -> WalletLightningTab(
+                    viewModel,
+                    onNoteClick,
+                    onConnectWallet = { selectedTab = WalletTab.SETTINGS },
+                )
                 WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
             }
         }

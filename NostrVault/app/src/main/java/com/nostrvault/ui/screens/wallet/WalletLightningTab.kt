@@ -47,6 +47,10 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.util.lnurlPlainTextMetadata
+import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.tutorialAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
@@ -56,7 +60,12 @@ import kotlinx.coroutines.delay
  * Port of iOS WalletLightningTab.
  */
 @Composable
-fun WalletLightningTab(viewModel: WalletViewModel, onNoteClick: (String) -> Unit = {}) {
+fun WalletLightningTab(
+    viewModel: WalletViewModel,
+    onNoteClick: (String) -> Unit = {},
+    /** "Connect a wallet": the Settings tab, where the NWC link goes. */
+    onConnectWallet: () -> Unit = {},
+) {
     val config by viewModel.config.collectAsState()
     val balance by viewModel.lightningBalance.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -69,11 +78,12 @@ fun WalletLightningTab(viewModel: WalletViewModel, onNoteClick: (String) -> Unit
     }
 
     if (config.nwcURI.isNullOrBlank()) {
-        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-            Text(
-                "Connect a Lightning wallet in the Settings tab to send and receive.",
-                color = SecondaryText, fontSize = 14.sp,
-            )
+        NoWalletCard(onConnectWallet)
+        // The Wallet Connect tutorial starts the first time the wallet opens
+        // with nothing linked.
+        val tutorialRevision by TutorialCenter.revision.collectAsState()
+        LaunchedEffect(tutorialRevision) {
+            TutorialCenter.startIfEligible(TutorialID.WALLET_CONNECT, viewModel.activeHexPubkey)
         }
         return
     }
@@ -729,6 +739,44 @@ private fun LightningAddressRow(address: String, onCopy: () -> Unit) {
                 tint = if (copied) SuccessGreen else SecondaryText,
                 modifier = Modifier.size(16.dp),
             )
+        }
+    }
+}
+
+/** No wallet linked (iOS `WalletLightningTab` empty card): what a wallet is
+ *  for, and the way to link one. Wallet Connect's cards point here. */
+@Composable
+private fun NoWalletCard(onConnectWallet: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.TopCenter) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .padding(top = 16.dp)
+                .fillMaxWidth()
+                .tutorialAnchor(TutorialContent.WALLET_EMPTY)
+                .clip(RoundedCornerShape(12.dp))
+                .background(SecondaryGroupedBg)
+                .border(1.dp, SecondaryText.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                .padding(24.dp),
+        ) {
+            Text("No Wallet Connected", color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Link a wallet you already use to send and receive zaps.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Button(
+                onClick = onConnectWallet,
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.White),
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .tutorialAnchor(TutorialContent.WALLET_CONNECT_BUTTON),
+            ) {
+                Text("Connect a wallet", fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

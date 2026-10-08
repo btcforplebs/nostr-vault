@@ -46,6 +46,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         com.nostrvault.ui.screens.music.MusicFeedState.init(this)
         com.nostrvault.data.model.FeedMenuSettings.init(this)
         com.nostrvault.tutorials.TutorialCenter.init(this)
+        com.nostrvault.tutorials.TutorialCenter.walletLinked = { !configStore.config.value.nwcURI.isNullOrBlank() }
         com.nostrvault.vaultguide.FillYourVaultCoordinator.init(this)
         Motion.install(this)
         createNotificationChannels()
