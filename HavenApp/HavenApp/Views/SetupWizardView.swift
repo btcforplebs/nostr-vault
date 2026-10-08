@@ -276,7 +276,7 @@ struct SetupWizardView: View {
         switch setupPath {
         case .none: return []
         case .browse: return [2, 4, 8] // identity, import, done
-        case .newToNostr: return [9, 11, 8] // intro, profile, done (the Fill your feed guide finds people)
+        case .newToNostr: return [9, 10, 11, 8] // keys, password, profile, done (the Fill your feed guide finds people)
         case .full: return isIOSDevice ? [2, 3, 4, 5, 6, 7, 8] : [2, 3, 4, 5, 6, 8]
         case .useNostr: return [12, 14, 13] // your key, relay check, import tour
         }
@@ -410,6 +410,15 @@ struct SetupWizardView: View {
             NostrIntroStep(
                 npub: $npub,
                 nsec: $nsec,
+                onContinue: {
+                    direction = .forward
+                    withAnimation(WizardAnimations.springEnter) {
+                        currentStep = 10
+                    }
+                }
+            )
+        case 10:
+            KeyPasswordStep(
                 nsecPassword: $nsecPassword,
                 onContinue: {
                     saveIntermediateConfig()
@@ -507,7 +516,9 @@ struct SetupWizardView: View {
             } else if currentStep == 13 {
                 currentStep = 14 // Import tour: back to the relay check
             } else if currentStep == 11 {
-                currentStep = 9 // Profile: back to intro
+                currentStep = 10 // Profile: back to password
+            } else if currentStep == 10 {
+                currentStep = 9 // Password: back to your keys
             } else if currentStep == 4 && setupPath == .browse {
                 currentStep = 2 // Browse: back from import to identity (skip relay config)
             } else if currentStep == 8 {
@@ -1031,230 +1042,224 @@ private struct WhatsInsideSheet: View {
 
 // MARK: - Step 9: Nostr Intro (New to Nostr path)
 
+/// What Nostr is, then the new keypair: both keys explained, and the nsec
+/// backed up before the user can move on. The password is its own step (10)
+/// so neither page needs scrolling.
 private struct NostrIntroStep: View {
     @Binding var npub: String
     @Binding var nsec: String
-    @Binding var nsecPassword: String
     let onContinue: () -> Void
 
     @State private var appeared = false
-    @State private var generatedKeys = false
     @State private var isGenerating = false
     @State private var error: String?
-    @State private var keyPassword = ""
-    @State private var confirmPassword = ""
-    @State private var showPassword = false
+    @State private var savedKey = false
+    @State private var copiedKey: String?
+
+    /// Derived from the binding, not local state, so Back from the password
+    /// step shows the same key instead of offering to generate a new one.
+    private var hasKeys: Bool { !nsec.isEmpty }
 
     var body: some View {
         VStack(spacing: 20) {
-            Spacer().frame(height: 20)
+            Spacer().frame(height: hasKeys ? 4 : 20)
 
-            // Card 1: What is Nostr
-            WizardGlassCard(isSelected: false) {
-                VStack(spacing: 12) {
-                    Text("Welcome to Nostr")
-                        .font(.appSystem(size: 20, weight: .semibold))
-                        .foregroundColor(WizardColors.textPrimary)
-                        .multilineTextAlignment(.center)
-
-                    Text("Nostr is an open social protocol. You own your identity through a cryptographic keypair -- no company controls your account. Your posts are broadcast to relays and can be read by anyone.")
-                        .font(.appSystem(size: 15))
-                        .foregroundColor(WizardColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-                }
-            }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 16)
-            .animation(WizardAnimations.springEnter.delay(0.15), value: appeared)
-
-            // Card 2: Why Nostr Vault is unique
-            WizardGlassCard(isSelected: false) {
-                VStack(spacing: 12) {
-                    Text("Your Personal Archive")
-                        .font(.appSystem(size: 20, weight: .semibold))
-                        .foregroundColor(WizardColors.textPrimary)
-                        .multilineTextAlignment(.center)
-
-                    Text("Nostr Vault runs a HAVEN relay right on your device. Every note, message, and media file you interact with is archived locally. Your data stays with you -- not on someone else's server.")
-                        .font(.appSystem(size: 15))
-                        .foregroundColor(WizardColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-                }
-            }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 16)
-            .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
-            if generatedKeys {
-                // Card 3: Secret key backup
-                WizardGlassCard(isSelected: false) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your Secret Key")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(WizardColors.textPrimary)
-
-                        Text("Save this somewhere safe. It's the only way to recover your account. Anyone with this key can post as you.")
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(WizardColors.textSecondary)
-                            .lineSpacing(2)
-
-                        Button {
-                            #if os(iOS)
-                            UIPasteboard.general.string = nsec
-                            #else
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(nsec, forType: .string)
-                            #endif
-                        } label: {
-                            Text(nsec)
-                                .font(.appSystem(size: 12, design: .monospaced))
-                                .foregroundColor(WizardColors.accentPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(WizardColors.bgElevated)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("Tap to copy")
-                            .font(.appSystem(size: 11))
-                            .foregroundColor(WizardColors.textMuted)
-                    }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-
-                // Card 4: Password protection
-                WizardGlassCard(isSelected: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Protect Your Key")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(WizardColors.textPrimary)
-
-                        Text("Set a password to encrypt your private key. You'll need this password to use Haven.")
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(WizardColors.textSecondary)
-                            .lineSpacing(2)
-
-                        VStack(spacing: 10) {
-                            HStack {
-                                if showPassword {
-                                    TextField("Password (minimum 8 characters)", text: $keyPassword)
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                        .textFieldStyle(.plain)
-                                        .disableAutocorrection(true)
-                                } else {
-                                    SecureField("Password (minimum 8 characters)", text: $keyPassword)
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                        .textFieldStyle(.plain)
-                                        .disableAutocorrection(true)
-                                }
-                                Button {
-                                    showPassword.toggle()
-                                } label: {
-                                    Image(systemName: showPassword ? "eye.slash" : "eye")
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textMuted)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(12)
-                            .background(WizardColors.bgElevated)
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                            )
-
-                            if showPassword {
-                                TextField("Confirm password", text: $confirmPassword)
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textPrimary)
-                                    .textFieldStyle(.plain)
-                                    .disableAutocorrection(true)
-                                    .padding(12)
-                                    .background(WizardColors.bgElevated)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                    )
-                            } else {
-                                SecureField("Confirm password", text: $confirmPassword)
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textPrimary)
-                                    .textFieldStyle(.plain)
-                                    .disableAutocorrection(true)
-                                    .padding(12)
-                                    .background(WizardColors.bgElevated)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                    )
-                            }
-                        }
-
-                        if !keyPassword.isEmpty && keyPassword.count < 8 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.circle")
-                                    .font(.appSystem(size: 12))
-                                Text("Password must be at least 8 characters")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .foregroundColor(WizardColors.error)
-                        }
-
-                        if !confirmPassword.isEmpty && keyPassword != confirmPassword {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.circle")
-                                    .font(.appSystem(size: 12))
-                                Text("Passwords do not match")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .foregroundColor(WizardColors.error)
-                        }
-                    }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-
-                WizardPrimaryButton(title: "Continue", action: validateAndContinue)
-                    .disabled(!isPasswordValid)
-                    .opacity(isPasswordValid ? 1.0 : 0.5)
+            if hasKeys {
+                keysContent
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                if let errorText = error {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption)
-                        Text(errorText)
-                            .font(.appSystem(size: 13))
-                    }
-                    .foregroundColor(WizardColors.error)
-                }
-
-                WizardPrimaryButton(title: "Create My Account", action: generateKeys)
-                    .disabled(isGenerating)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 10)
-                    .animation(WizardAnimations.springEnter.delay(0.45), value: appeared)
-
-                if isGenerating {
-                    ProgressView()
-                        .tint(WizardColors.accentPrimary)
-                }
+                introContent
             }
 
             Spacer()
         }
         .onAppear { appeared = true }
+    }
+
+    @ViewBuilder
+    private var introContent: some View {
+        // Card 1: What is Nostr
+        WizardGlassCard(isSelected: false) {
+            VStack(spacing: 12) {
+                Text("Welcome to Nostr")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text("Nostr is an open social protocol. You own your identity through a cryptographic keypair -- no company controls your account. Your posts are broadcast to relays and can be read by anyone.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(WizardAnimations.springEnter.delay(0.15), value: appeared)
+
+        // Card 2: Why Nostr Vault is unique
+        WizardGlassCard(isSelected: false) {
+            VStack(spacing: 12) {
+                Text("Your Personal Archive")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text("Nostr Vault runs a HAVEN relay right on your device. Every note, message, and media file you interact with is archived locally. Your data stays with you -- not on someone else's server.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
+
+        if let errorText = error {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption)
+                Text(errorText)
+                    .font(.appSystem(size: 13))
+            }
+            .foregroundColor(WizardColors.error)
+        }
+
+        WizardPrimaryButton(title: "Create My Account", action: generateKeys)
+            .disabled(isGenerating)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(WizardAnimations.springEnter.delay(0.45), value: appeared)
+
+        if isGenerating {
+            ProgressView()
+                .tint(WizardColors.accentPrimary)
+        }
+    }
+
+    private var keysContent: some View {
+        VStack(spacing: 14) {
+            VStack(spacing: 6) {
+                Text("Your Keys")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                Text("Two keys replace a username and password.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            keyCard(
+                icon: "person.crop.circle",
+                title: "Public key",
+                caption: "Your name on Nostr. Share it freely.",
+                value: npub,
+                isSecret: false
+            )
+
+            keyCard(
+                icon: "key.fill",
+                title: "Secret key",
+                caption: "Your password to Nostr. Anyone who has it can post as you, so never share it.",
+                value: nsec,
+                isSecret: true
+            )
+
+            Button {
+                savedKey.toggle()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: savedKey ? "checkmark.square.fill" : "square")
+                        .font(.appSystem(size: 20))
+                        .foregroundColor(savedKey ? WizardColors.accentPrimary : WizardColors.textMuted)
+                    Text("I saved my secret key")
+                        .font(.appSystem(size: 15, weight: .medium))
+                        .foregroundColor(WizardColors.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("I saved my secret key")
+            .accessibilityValue(savedKey ? "Checked" : "Not checked")
+
+            WizardPrimaryButton(title: "Continue", action: onContinue, disabled: !savedKey)
+        }
+    }
+
+    private func keyCard(icon: String, title: String, caption: String, value: String, isSecret: Bool) -> some View {
+        WizardGlassCard(isSelected: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.appSystem(size: 15))
+                        .foregroundColor(isSecret ? WizardColors.accentPrimary : WizardColors.textSecondary)
+                    Text(title)
+                        .font(.appSystem(size: 16, weight: .semibold))
+                        .foregroundColor(WizardColors.textPrimary)
+                    Spacer(minLength: 0)
+                    Text(copiedKey == value ? "Copied" : "Copy")
+                        .font(.appSystem(size: 13, weight: .medium))
+                        .foregroundColor(copiedKey == value ? WizardColors.success : WizardColors.accentPrimary)
+                }
+
+                Text(caption)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(value)
+                    .font(.appSystem(size: 12, design: .monospaced))
+                    .foregroundColor(isSecret ? WizardColors.accentPrimary : WizardColors.textSecondary)
+                    // The npub only needs recognising; the nsec has to be
+                    // readable in full to write it down.
+                    .lineLimit(isSecret ? nil : 1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(WizardColors.bgElevated)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                    )
+
+                if isSecret {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.shield")
+                            .font(.appSystem(size: 12))
+                        Text("Nobody can recover it for you, not even us.")
+                            .font(.appSystem(size: 12))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundColor(WizardColors.textPrimary.opacity(0.85))
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { copy(value) }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Double tap to copy")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func copy(_ value: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = value
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        #endif
+        withAnimation(WizardAnimations.springGentle) { copiedKey = value }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if copiedKey == value {
+                withAnimation(WizardAnimations.springGentle) { copiedKey = nil }
+            }
+        }
     }
 
     private func generateKeys() {
@@ -1276,24 +1281,173 @@ private struct NostrIntroStep: View {
         let sk = String(parts[0])
         let pk = String(parts[1])
 
-        if let pubData = Bech32.hexToData(pk),
-           let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {
-            npub = generatedNpub
+        var newNpub: String?
+        var newNsec: String?
+        if let pubData = Bech32.hexToData(pk) {
+            newNpub = Bech32.encode(hrp: "npub", data: pubData)
         }
-
-        if let secData = Bech32.hexToData(sk),
-           let generatedNsec = Bech32.encode(hrp: "nsec", data: secData) {
-            nsec = generatedNsec
+        if let secData = Bech32.hexToData(sk) {
+            newNsec = Bech32.encode(hrp: "nsec", data: secData)
         }
 
         withAnimation(WizardAnimations.springBounce) {
-            generatedKeys = true
+            if let newNpub { npub = newNpub }
+            if let newNsec { nsec = newNsec }
         }
         isGenerating = false
     }
+}
+
+// MARK: - Step 10: Protect Your Key (New to Nostr path)
+
+/// The password that encrypts the new nsec (NIP-49). Its own page so the
+/// fields sit above the keyboard without scrolling.
+private struct KeyPasswordStep: View {
+    @Binding var nsecPassword: String
+    let onContinue: () -> Void
+
+    @State private var keyPassword = ""
+    @State private var confirmPassword = ""
+    @State private var showPassword = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case password, confirm }
+
+    /// With the keyboard up the icon and subtitle step aside, so the fields,
+    /// the warning and Continue all stay above it on an iPhone SE.
+    private var isTyping: Bool { focusedField != nil }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer().frame(height: isTyping ? 4 : 20)
+
+            VStack(spacing: 8) {
+                if !isTyping {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.appSystem(size: 40))
+                        .foregroundStyle(WizardColors.accentGradient)
+                        .accessibilityHidden(true)
+                        .transition(.opacity)
+                }
+                Text("Protect Your Key")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                if !isTyping {
+                    Text("Choose a password to lock your secret key on this phone.")
+                        .font(.appSystem(size: 15))
+                        .foregroundColor(WizardColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    passwordField("Password (minimum 8 characters)", text: $keyPassword)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .confirm }
+                    Button {
+                        showPassword.toggle()
+                    } label: {
+                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                            .font(.appSystem(size: 14))
+                            .foregroundColor(WizardColors.textMuted)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showPassword ? "Hide password" : "Show password")
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.vertical, 6)
+                .background(WizardColors.bgElevated)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                )
+
+                passwordField("Confirm password", text: $confirmPassword)
+                    .focused($focusedField, equals: .confirm)
+                    .submitLabel(.continue)
+                    .onSubmit(validateAndContinue)
+                    .padding(12)
+                    .background(WizardColors.bgElevated)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                    )
+
+                if !keyPassword.isEmpty && keyPassword.count < 8 {
+                    validationMessage("Password must be at least 8 characters")
+                }
+                if !confirmPassword.isEmpty && keyPassword != confirmPassword {
+                    validationMessage("Passwords do not match")
+                }
+            }
+
+            // Above the warning so it stays above the keyboard while typing;
+            // the warning was already read before a field took focus.
+            WizardPrimaryButton(title: "Continue", action: validateAndContinue, disabled: !isPasswordValid)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.shield")
+                    .font(.appSystem(size: 16))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .accessibilityHidden(true)
+                Text("Nobody can reset this password or recover your secret key for you, not even us. Write both down.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(WizardColors.accentPrimary.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(WizardColors.borderActive, lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+
+            Spacer()
+        }
+        .animation(WizardAnimations.springGentle, value: isTyping)
+    }
+
+    @ViewBuilder
+    private func passwordField(_ placeholder: String, text: Binding<String>) -> some View {
+        Group {
+            if showPassword {
+                TextField(placeholder, text: text)
+            } else {
+                SecureField(placeholder, text: text)
+            }
+        }
+        .font(.appSystem(size: 14))
+        .foregroundColor(WizardColors.textPrimary)
+        .textFieldStyle(.plain)
+        .disableAutocorrection(true)
+        #if os(iOS)
+        .textInputAutocapitalization(.never)
+        #endif
+    }
+
+    private func validationMessage(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.appSystem(size: 12))
+            Text(text)
+                .font(.appSystem(size: 12))
+        }
+        .foregroundColor(WizardColors.error)
+    }
 
     private var isPasswordValid: Bool {
-        !keyPassword.isEmpty && keyPassword.count >= 8 && keyPassword == confirmPassword
+        keyPassword.count >= 8 && keyPassword == confirmPassword
     }
 
     private func validateAndContinue() {
@@ -3187,8 +3341,10 @@ private struct CompleteStep: View {
     @State private var buttonPulse: Bool = false
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 40)
+        // New users get the relay/Blossom explainer too, so their screen
+        // tightens up to keep Start Exploring above the fold on an SE.
+        VStack(spacing: isNewUser ? 18 : 28) {
+            Spacer().frame(height: isNewUser ? 8 : 40)
 
             // Celebration animation
             ZStack {
@@ -3244,7 +3400,23 @@ private struct CompleteStep: View {
             }
 
             if isNewUser {
-                Text("Next, a short guide helps you find your first people to follow.")
+                // How the on-device relay and Blossom reach everyone else.
+                VStack(alignment: .leading, spacing: 12) {
+                    explainerRow(icon: "antenna.radiowaves.left.and.right", text: "Your relay lives on this phone and sends your posts out to public relays so people can see them.")
+                    explainerRow(icon: "photo.on.rectangle", text: "Blossom does the same for photos and videos: they're kept here and copied to public media servers.")
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(WizardColors.bgCard)
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                )
+                .opacity(showContent ? 1 : 0)
+                .animation(WizardAnimations.fadeIn.delay(1.2), value: showContent)
+
+                Text("Next, a short guide helps you find people to follow.")
                     .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -3312,6 +3484,21 @@ private struct CompleteStep: View {
                 FloatingArrowController.shared.show()
             }
             #endif
+        }
+    }
+
+    private func explainerRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.appSystem(size: 15))
+                .foregroundColor(WizardColors.accentPrimary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.textSecondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
