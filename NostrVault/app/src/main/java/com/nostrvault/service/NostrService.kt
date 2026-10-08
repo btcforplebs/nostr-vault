@@ -187,9 +187,15 @@ class NostrService @Inject constructor(
                 else -> npubToHex(npub) ?: ""
             }
         }
-    /** The one active-account value, kept by [ConfigStore]; the owner before setup sets one. */
+    /**
+     * The one active-account value, kept by [ConfigStore]. Empty when the
+     * active account can't be decoded, so nothing signs as someone else; the
+     * owner only when no other account is active.
+     */
     val activeHexPubkey: String
-        get() = configStore.activeAccountHexPubkey.value.ifEmpty { ownerHexPubkey }
+        get() = configStore.activeAccountHexPubkey.value.ifEmpty {
+            if (configStore.config.value.activeAccountNpub.isNullOrBlank()) ownerHexPubkey else ""
+        }
 
     // ── Relay pool ────────────────────────────────────────────────────
 

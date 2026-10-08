@@ -139,7 +139,8 @@ class ConfigStore @Inject constructor(
      * Every config write goes through here, so [activeAccountHexPubkey] always
      * names the account the config does: the active account, or the owner when
      * none is set (as after removing the active account). While setup has no
-     * owner yet the value setup chose with [setActiveAccount] is kept.
+     * owner yet the value setup chose with [setActiveAccount] is kept; an
+     * account that can't be decoded clears it.
      */
     private fun setConfig(new: HavenConfig) {
         _config.value = new
@@ -150,7 +151,11 @@ class ConfigStore @Inject constructor(
             npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
             else -> ""
         }
-        if (hex.isNotEmpty() && hex != _activeAccountHexPubkey.value) _activeAccountHexPubkey.value = hex
+        // No account named yet (setup): keep what setup set. An account that
+        // can't be decoded clears the value, so nothing signs as the account
+        // before it.
+        if (npub.isBlank()) return
+        if (hex != _activeAccountHexPubkey.value) _activeAccountHexPubkey.value = hex
     }
 
     /**

@@ -65,4 +65,13 @@ class ActiveAccountHexTest {
         store.update { it.copy(feedRelays = listOf("wss://a.example")) }
         assertEquals(hex(second), store.activeAccountHexPubkey.value)
     }
+
+    /** Signing as the previous account would be worse than not signing. */
+    @Test
+    fun `an account that can't be decoded clears the value`() {
+        val store = store()
+        store.update { it.copy(activeAccountNpub = "npub1notarealkey") }
+        assertEquals("", store.activeAccountHexPubkey.value)
+    }
 }
+
