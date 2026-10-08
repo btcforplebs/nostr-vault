@@ -40,6 +40,29 @@ final class TopicFeedFilterTests: XCTestCase {
         XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["busy": 300]), ["0", "1"])
     }
 
+    func testAdultPostsAreHidden() {
+        let posts = [
+            TopicFeedFilter.Post(id: "a", pubkey: "p", content: "say hi", tags: [["t", "NSFW"]]),
+            TopicFeedFilter.Post(id: "b", pubkey: "q", content: "beach", tags: [["content-warning", ""]]),
+            TopicFeedFilter.Post(id: "c", pubkey: "r", content: "sunset", tags: [["t", "photography"]]),
+        ]
+        XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["p": 50, "q": 50, "r": 50]), ["c"])
+    }
+
+    /// A game posting its player's score is the app talking, not the person.
+    func testAppMadePostsAreHidden() {
+        let game = TopicFeedFilter.Post(id: "g", pubkey: "p", content: "I just obliterated 197 zombies https://plebsvszombies.cc/x",
+                                        tags: [["client", "Plebs vs. Zombies"]])
+        let person = TopicFeedFilter.Post(id: "h", pubkey: "q", content: "my essay https://trbouma.substack.com/p/x",
+                                          tags: [["client", "Amethyst"]])
+        let photo = TopicFeedFilter.Post(id: "i", pubkey: "r", content: "walk https://i.nostr.build/a.jpg",
+                                         tags: [["client", "nostr.build"]])
+        XCTAssertTrue(TopicFeedFilter.isAppMade(game))
+        XCTAssertFalse(TopicFeedFilter.isAppMade(person))
+        XCTAssertFalse(TopicFeedFilter.isAppMade(photo), "image links are not sites")
+        XCTAssertEqual(TopicFeedFilter.shown([game, person, photo], followCounts: ["p": 50, "q": 50, "r": 50]), ["h", "i"])
+    }
+
     func testLinkDomains() {
         XCTAssertEqual(TopicFeedFilter.linkDomains("see https://Example.com/a and https://i.nostr.build/x.PNG"), ["example.com"])
     }

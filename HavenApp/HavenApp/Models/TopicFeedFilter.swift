@@ -13,6 +13,10 @@ import Foundation
 ///   the same feed (how farms post). Images and video don't count.
 /// - Not a copy of text already shown.
 /// - At most `perAuthor` posts per person, so one voice can't fill the page.
+/// - Not marked adult (#nsfw and the like, or a NIP-36 content warning).
+/// - Not posted by an app or game on its player's behalf: the post's
+///   `client` tag names the site it links to (Plebs vs. Zombies scores,
+///   holdbtc). Sampled 2026-10-08 these were most of #nostr's leftover junk.
 enum TopicFeedFilter {
     /// 20, not 10: the scheduled-content bots that got past 10 follow exactly
     /// 10 (sampled 2026-10-08: BTC Globe Live, Situation Room, Money Bot). At
@@ -48,6 +52,7 @@ enum TopicFeedFilter {
             guard let follows = followCounts[post.pubkey], follows >= minFollows else { continue }
             guard hashtagCount(post.tags) < maxHashtags else { continue }
             guard linkDomains(post.content).isDisjoint(with: farms) else { continue }
+            guard !isAdult(post.tags), !isAppMade(post) else { continue }
             let key = textKey(post.content)
             guard seenText.insert(key).inserted else { continue }
             guard perAuthorCount[post.pubkey, default: 0] < perAuthor else { continue }
@@ -55,6 +60,32 @@ enum TopicFeedFilter {
             out.append(post.id)
         }
         return out
+    }
+
+    static let adultHashtags: Set<String> = ["nsfw", "porn", "xxx", "nude", "nudes", "onlyfans"]
+
+    static func isAdult(_ tags: [[String]]) -> Bool {
+        tags.contains { tag in
+            tag.first == "content-warning"
+                || (tag.count >= 2 && tag[0] == "t" && adultHashtags.contains(tag[1].lowercased()))
+        }
+    }
+
+    /// The `client` tag and a linked site's name agree ("Plebs vs. Zombies"
+    /// and plebsvszombies.cc): the app wrote this post, not the person.
+    static func isAppMade(_ post: Post) -> Bool {
+        let clients = post.tags.filter { $0.count >= 2 && $0[0] == "client" }.map { lettersOnly($0[1]) }
+            .filter { $0.count >= 4 }
+        guard !clients.isEmpty else { return false }
+        let sites = linkDomains(post.content).map { host -> String in
+            let labels = host.split(separator: ".")
+            return lettersOnly(String(labels.count >= 2 ? labels[labels.count - 2] : labels.first ?? ""))
+        }.filter { $0.count >= 4 }
+        return clients.contains { client in sites.contains { client.contains($0) || $0.contains(client) } }
+    }
+
+    private static func lettersOnly(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) && $0.isASCII }.map(Character.init))
     }
 
     static func hashtagCount(_ tags: [[String]]) -> Int {
