@@ -743,28 +743,31 @@ private struct WelcomeStepView: View {
     @State private var showWhatsInside = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Two spacers above, three below: the block sits a little high.
-            // When it can't fit (large text scale), only this part scrolls and
-            // the buttons stay pinned.
-            ViewThatFits(in: .vertical) {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 16)
-                    Spacer(minLength: 0)
-                    hero
-                    Spacer(minLength: 16)
-                    Spacer(minLength: 0)
-                    Spacer(minLength: 0)
-                }
-                ScrollView {
-                    hero.padding(.vertical, 24)
-                }
-            }
-            .frame(maxHeight: .infinity)
+        GeometryReader { proxy in
+            // Tall phones get a bigger icon so the block fills the space
+            // instead of floating; the SE is already tight.
+            let iconSize: CGFloat = proxy.size.height > 800 ? 112 : 92
 
-            actions
-                .padding(.top, 16)
-                .padding(.bottom, 16)
+            VStack(spacing: 0) {
+                // Centred in the space above the buttons. When it can't fit
+                // (large text scale), only this part scrolls and the buttons
+                // stay pinned.
+                ViewThatFits(in: .vertical) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 16)
+                        hero(iconSize: iconSize)
+                        Spacer(minLength: 16)
+                    }
+                    ScrollView {
+                        hero(iconSize: iconSize).padding(.vertical, 24)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+
+                actions
+                    .padding(.top, 16)
+                    .padding(.bottom, 16)
+            }
         }
         .sheet(isPresented: $showWhatsInside) {
             WhatsInsideSheet()
@@ -780,9 +783,9 @@ private struct WelcomeStepView: View {
 
     // MARK: Hero
 
-    private var hero: some View {
+    private func hero(iconSize: CGFloat) -> some View {
         VStack(spacing: 0) {
-            vaultMark
+            vaultMark(size: iconSize)
                 .scaleEffect(appeared ? 1 : 0.92)
                 .accessibilityHidden(true)
 
@@ -792,7 +795,8 @@ private struct WelcomeStepView: View {
                 .padding(.top, 24)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("Your posts, messages and media, kept on your own device.")
+            // Broken by hand so it splits at the comma on every width.
+            Text("Your posts, messages and media,\nkept on your own device.")
                 .font(.appSystem(size: 17))
                 .foregroundColor(WizardColors.textSecondary)
                 .multilineTextAlignment(.center)
@@ -818,30 +822,31 @@ private struct WelcomeStepView: View {
     /// The icon they just tapped on the home screen, so the first screen
     /// matches it. Exported from the 1024 AppIcon: `Image("AppIcon")` does not
     /// load reliably on iOS.
-    private var vaultMark: some View {
-        ZStack {
+    private func vaultMark(size: CGFloat) -> some View {
+        let corner = size * 0.2237 // the iOS icon squircle's ratio
+        return ZStack {
             Circle()
                 .fill(WizardColors.accentPrimary.opacity(0.35))
-                .frame(width: 150, height: 150)
+                .frame(width: size * 1.6, height: size * 1.6)
                 .blur(radius: 40)
 
             Image("VaultMark")
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 92, height: 92)
-                .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 21, style: .continuous)
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 )
         }
-        .frame(height: 96)
+        .frame(height: size + 4)
     }
 
     // MARK: Chips
 
     private static let chipItems: [(icon: String, label: String)] = [
-        ("externaldrive.connected.to.line.below", "Your own relay"),
+        ("externaldrive.connected.to.line.below", "Own relay"),
         ("lock.shield", "Private DMs"),
         ("bolt.fill", "Zaps")
     ]
