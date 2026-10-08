@@ -136,7 +136,10 @@ final class LocalNotificationService {
         let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
         Task { @MainActor in
             let carried = await Self.carriedNotes(type: type, id: id)
-            deliver(id: id, type: type, name: name, preview: preview, npub: npub, carried: carried)
+            // The relay hands over the note's raw text, so a mention would read
+            // `nostr:npub1…`. A reaction's preview is its emoji, not note text.
+            let text = type == "reaction" ? preview : NostrContentFormatter.resolveMentionsPlainText(preview)
+            deliver(id: id, type: type, name: name, preview: text, npub: npub, carried: carried)
         }
     }
 
@@ -341,7 +344,9 @@ final class LocalNotificationService {
             }
             let sender = opened?.message.senderPubkey ?? author
             let name = sender.isEmpty ? nil : NostrService.shared.profiles[sender]?.bestName
-            let text = opened.flatMap { NotificationPolicy.dmPreview($0.message.content) } ?? ""
+            let text = opened.flatMap {
+                NotificationPolicy.dmPreview(NostrContentFormatter.resolveMentionsPlainText($0.message.content))
+            } ?? ""
             deliver(id: id, type: type, name: name, preview: text, npub: npub)
         }
     }
