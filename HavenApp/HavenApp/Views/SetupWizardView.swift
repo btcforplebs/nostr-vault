@@ -554,6 +554,11 @@ struct SetupWizardView: View {
     private func publishNewAccount() {
         guard let ownerHex = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
         FeedService.shared.markFreshAccount(ownerHex)
+        // Straight into Fill your feed: this key follows nobody and can't
+        // yet, so there is nothing to wait for (the follow-list check can
+        // take 15s or more on slow relays, or never finish).
+        FillYourVaultCoordinator.shared.start()
+        TutorialCenter.shared.startIfEligible(.fillYourVault, account: ownerHex)
         let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let photo = profilePhotoJPEG
         let configService = self.configService

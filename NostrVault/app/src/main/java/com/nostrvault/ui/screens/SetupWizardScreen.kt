@@ -925,6 +925,11 @@ class SetupWizardViewModel @Inject constructor(
                         // A key made here has no follow list anywhere yet.
                         if (_setupPath.value == SetupPath.NEW_TO_NOSTR) {
                             com.nostrvault.service.FreshAccountKeys.mark(appContext, hex)
+                            // Straight into Fill your feed: this key follows
+                            // nobody yet, so there is nothing to wait for.
+                            com.nostrvault.tutorials.TutorialCenter.startIfEligible(
+                                com.nostrvault.tutorials.TutorialID.FILL_YOUR_VAULT, hex,
+                            )
                         }
                     }
                 } catch (_: Exception) {}
