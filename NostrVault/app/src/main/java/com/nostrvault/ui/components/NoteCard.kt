@@ -558,8 +558,8 @@ fun NoteCard(
             // Content text (rich: clickable mentions, links, hashtags). Text,
             // quotes, links and media run the card's full width under the
             // avatar row, in every view (iOS #286, Logen: the most room).
-            val isArticle = note.kind == ArticleMeta.KIND
-            val poll = remember(note.id, note.kind) { note.poll }
+            val isArticle = note.displayKind == ArticleMeta.KIND
+            val poll = remember(note.id, note.displayKind, note.content) { note.poll }
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
@@ -568,7 +568,7 @@ fun NoteCard(
                 // article raw and untitled. iOS ArticleInlineBody.
                 ArticleInlineBody(
                     note = note,
-                    onClick = { (onArticleClick ?: onNoteClick)(note.id) },
+                    onClick = { (onArticleClick ?: onNoteClick)(note.effectiveEventId) },
                 )
             } else if (poll != null) {
                 // A NIP-88 poll's question is its content and its options are

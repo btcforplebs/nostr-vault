@@ -1936,17 +1936,8 @@ class DashboardViewModel @Inject constructor(
             }
             val targetId = requestTargetId ?: event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
 
-            var amountSats = 0L
-            if (reqTags != null) {
-                for (tag in reqTags) {
-                    val tagArr = tag.jsonArray
-                    if (tagArr.size >= 2 && tagArr[0].jsonPrimitive.contentOrNull == "amount") {
-                        val msats = tagArr[1].jsonPrimitive.contentOrNull?.toLongOrNull()
-                        if (msats != null) amountSats = msats / 1000
-                        break
-                    }
-                }
-            }
+            // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+            val amountSats = com.nostrvault.util.ZapAmount.sats(event.tags)
 
             val parsed = ParsedZapReceipt(senderPubkey, targetId, amountSats, com.nostrvault.relay.HavenBridge.verifyEvent(descJson))
             zapReceiptCache[event.id] = parsed

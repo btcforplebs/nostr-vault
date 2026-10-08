@@ -902,6 +902,7 @@ fun MediaGalleryScreen(
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,
+                                shareLink = publicBlossomLink(item, blossomMirrors),
                                 onSaveToPhotos = { mediaActions.saveToGallery(item) },
                                 onDelete = { scope -> pendingDelete = item to scope },
                                 moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
@@ -959,6 +960,7 @@ fun MediaGalleryScreen(
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,
+                                shareLink = publicBlossomLink(item, blossomMirrors),
                                 onSaveToPhotos = { mediaActions.saveToGallery(item) },
                                 onDelete = { scope -> pendingDelete = item to scope },
                                 moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
@@ -1046,6 +1048,7 @@ private fun MediaGridCell(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
     moderationTarget: String?,
@@ -1121,6 +1124,7 @@ private fun MediaGridCell(
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            shareLink = shareLink,
             onSaveToPhotos = onSaveToPhotos,
             onDelete = onDelete,
             moderationTarget = moderationTarget,
@@ -1145,6 +1149,7 @@ private fun MediaListRow(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
     moderationTarget: String?,
@@ -1241,7 +1246,7 @@ private fun MediaListRow(
 
         // Quick copy action
         IconButton(
-            onClick = { clipboardManager.setText(AnnotatedString(item.displayUrl)) },
+            onClick = { clipboardManager.setText(AnnotatedString(shareLink)) },
             modifier = Modifier.size(36.dp),
         ) {
             Icon(
@@ -1262,6 +1267,7 @@ private fun MediaListRow(
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            shareLink = shareLink,
             onSaveToPhotos = onSaveToPhotos,
             onDelete = onDelete,
             moderationTarget = moderationTarget,
@@ -1282,6 +1288,7 @@ private fun MediaItemContextMenu(
     onDismiss: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
     /** Someone else's media: offer Report Media and Block User on them. */
@@ -1316,7 +1323,7 @@ private fun MediaItemContextMenu(
                 Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp))
             },
             onClick = {
-                clipboardManager.setText(AnnotatedString(item.displayUrl))
+                clipboardManager.setText(AnnotatedString(shareLink))
                 onDismiss()
             },
         )

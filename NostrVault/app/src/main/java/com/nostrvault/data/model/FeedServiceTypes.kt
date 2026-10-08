@@ -125,7 +125,17 @@ data class FeedNote(
      * orders the feed (iOS e4ae7da3).
      */
     val originalCreatedAtSecs: Long? = null,
+    /**
+     * The reposted note's own kind (an article is 30023, a poll 1068), from a
+     * kind 6 repost's embedded event or the original a bare one resolved to.
+     * [kind] stays 6 so engagement still targets the original.
+     */
+    val originalKind: Int? = null,
 ) {
+    /** The kind this row is drawn as: a repost shows its original's kind. */
+    val displayKind: Int
+        get() = originalKind ?: kind
+
     /** When the note this row shows was written: a repost's original time. */
     val postedAt: Date
         get() = originalCreatedAtSecs?.let { Date(it * 1000) } ?: createdAt
@@ -167,6 +177,7 @@ data class FeedNote(
         linkURLs = original.linkURLs,
         quotedEventIds = original.quotedEventIds,
         originalCreatedAtSecs = original.createdAt.time / 1000,
+        originalKind = original.displayKind,
     )
 
     /**
@@ -206,9 +217,9 @@ data class FeedNote(
             return tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: pubkey
         }
 
-    /** The kind of the note engagement targets: a kind-6 repost always carries a kind 1. */
+    /** The kind of the note engagement targets: a kind-6 repost's original, a kind 1 when unknown. */
     val effectiveKind: Int
-        get() = if (kind == 6 && repostedEventId != null) 1 else kind
+        get() = if (kind == 6 && repostedEventId != null) originalKind ?: 1 else kind
 
     /** Who published this event: the reposter for a repost, else the author. */
     val publisher: String
@@ -324,6 +335,7 @@ data class FeedNote(
             var resolvedTags = tags
             var resolvedRepostedBy = repostedBy
             var originalCreatedAtSecs: Long? = null
+            var originalKind: Int? = null
 
             // Kind 6: swap to inner event if content is stringified JSON
             if (kind == 6) {
@@ -345,6 +357,7 @@ data class FeedNote(
                         }
                         if (resolvedRepostedBy == null) resolvedRepostedBy = pubkey
                         originalCreatedAtSecs = inner["created_at"]?.jsonPrimitive?.longOrNull
+                        originalKind = inner["kind"]?.jsonPrimitive?.intOrNull
                     }
                 } catch (_: Exception) {
                     // Content is not JSON, keep outer values
@@ -393,6 +406,7 @@ data class FeedNote(
                 quotedEventIds = quotedEventIds,
                 repostedEventId = outerRepostedEventId,
                 originalCreatedAtSecs = originalCreatedAtSecs,
+                originalKind = originalKind,
             )
         }
 

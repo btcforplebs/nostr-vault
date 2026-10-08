@@ -44,6 +44,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LiveChatService
+import com.nostrvault.service.LiveFeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.service.music.LiveRejoinListener
@@ -617,6 +618,7 @@ class LiveStreamViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val feedService: FeedService,
     private val blossomPickerMedia: BlossomPickerMedia,
+    private val liveFeedService: LiveFeedService,
 ) : ViewModel() {
 
     val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
@@ -680,11 +682,15 @@ class LiveStreamViewModel @Inject constructor(
         viewModelScope.launch {
             nostrService.reportUser(stream.hostPubkey, reason, description.ifBlank { null })
             feedService.blockUser(stream.hostPubkey)
+            liveFeedService.removeStreams(byHost = stream.hostPubkey)
         }
     }
 
     fun blockHost(stream: LiveStream) {
-        viewModelScope.launch { feedService.blockUser(stream.hostPubkey) }
+        viewModelScope.launch {
+            feedService.blockUser(stream.hostPubkey)
+            liveFeedService.removeStreams(byHost = stream.hostPubkey)
+        }
     }
 
     /**
