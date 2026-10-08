@@ -11,7 +11,11 @@ struct ProfileView: View {
     var onDismiss: (() -> Void)? = nil
 
     @EnvironmentObject var nostrService: NostrService
-    @StateObject private var feedService = FeedService.shared
+    /// Not observed: the main feed changes many times a second while it
+    /// loads, and observing all of it redrew this page each time.
+    /// `feedWatch` redraws only for the parts this page shows.
+    private var feedService: FeedService { .shared }
+    @StateObject private var feedWatch = ProfileFeedWatch()
     @StateObject private var dmService = DMService.shared
     @EnvironmentObject var configService: ConfigService
     @Environment(\.dismiss) private var dismiss
@@ -66,11 +70,33 @@ struct ProfileView: View {
     @State private var followsMe: Bool = false
     @State private var followersCount: Int? = nil
     @State private var followerPubkeys = Set<String>()
+    /// This profile's follows, in contact-list order (other profiles only;
+    /// your own come from the feed's follow list).
+    @State private var followingList: [String] = []
+    /// Follower → created_at of their list naming this profile.
+    @State private var followerSeenAt: [String: Int64] = [:]
+    /// The Following / Followers page, open on the tab that was tapped.
+    @State private var followListTab: FollowListTab?
+    /// The viewer's follower ledger, read when the page opens.
+    @State private var viewerLedger: FollowerSnapshot?
+    /// Older followers, a page at a time, as the Followers list scrolls.
+    @State private var followerPageSubId: String?
+    @State private var followerPageToken = 0
+    @State private var followerPageAnswers = 0
+    @State private var followerPageExpected = 0
+    @State private var followerPageCountBefore = 0
+    @State private var quietFollowerPages = 0
+    @State private var followersExhausted = false
+    /// Finished follower pages; the list's loader is keyed on it so it asks
+    /// again after a page that brought nobody new.
+    @State private var followerPagesDone = 0
     /// created_at of the kind 0 and kind 3 now shown. Each relay answers with
     /// its own copy and the answers arrive in any order, so an older copy from
     /// a slow relay must not replace a newer one already on screen.
     @State private var shownMetadataAt: Int64 = 0
     @State private var shownContactsAt: Int64 = 0
+    /// Largest NIP-45 COUNT any relay gave for this profile's followers.
+    @State private var relayFollowerCount: Int? = nil
 
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
@@ -125,10 +151,6 @@ struct ProfileView: View {
     @State private var olderTaggedVisibleBefore = 0
     @State private var quietOlderTaggedPages = 0
     @State private var autoPagedTaggedInARow = 0
-
-    // Total counts from local relay (own profile)
-    @State private var totalNoteCount: Int? = nil
-    @State private var totalMediaCount: Int? = nil
 
     @State private var selectedSection: ProfileSection = .notes
     /// The late tabs on show. Set only when their loader finishes, so the
@@ -346,10 +368,30 @@ struct ProfileView: View {
         )
     }
 
+    /// What each tab holds so far. These are the notes loaded, not totals:
+    /// `hasMore` says when older pages may still add to them. Your own
+    /// relay's note count included replies and your Blossom file count
+    /// included every upload, so neither matched its tab and both are gone.
     private var sectionCount: (notes: Int, media: Int, replies: Int, tagged: Int) {
-        let notes = (isOwnProfile ? totalNoteCount : nil) ?? topNotes.count
-        let media = (isOwnProfile ? totalMediaCount : nil) ?? mediaNotes.count
-        return (notes, media, replyNotes.count, taggedFilteredNotes.count)
+        (topNotes.count, mediaNotes.count, replyNotes.count, taggedFilteredNotes.count)
+    }
+
+    /// True until paging has found no older notes. A short profile shows the
+    /// sentinel at once, so it pages to the end and drops the "+" quickly.
+    private func hasMore(for section: ProfileSection) -> Bool {
+        switch section {
+        case .notes, .media, .replies: return hasMoreNotes
+        case .tagged: return hasMoreTaggedNotes
+        default: return false
+        }
+    }
+
+    /// "48", or "48+" while older pages may still raise it. Nothing loaded
+    /// yet with more to come reads "—", as FOLLOWING does before it knows.
+    private func countText(for section: ProfileSection) -> String {
+        let n = count(for: section)
+        guard hasMore(for: section) else { return shortInt(n) }
+        return n == 0 ? "—" : shortInt(n) + "+"
     }
 
     /// Opens a note in the split pane's detail column when this profile is the
@@ -423,7 +465,7 @@ struct ProfileView: View {
         .onAppear {
             nostrService.fetchMissingProfiles(for: [pubkey])
             fetchAuthorNotes()
-            fetchLocalRelayCounts()
+            fetchFollowerCount()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: extrasRelays)
             revealLateSections()
@@ -492,6 +534,9 @@ struct ProfileView: View {
                 .frame(minWidth: 520, minHeight: 560)
                 #endif
         }
+        .modifier(FollowListHost(item: $followListTab) { tab in
+            followListPage(startOn: tab)
+        })
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .hashtagLinks()
         .sheet(isPresented: $showSweep) {
@@ -1104,29 +1149,79 @@ struct ProfileView: View {
 
     private var statsBlock: some View {
         HStack(spacing: 0) {
-            statCell(value: shortInt(sectionCount.notes), label: "NOTES")
+            statCell(value: countText(for: .notes), label: "NOTES")
             statDivider
-            statCell(value: shortInt(sectionCount.media), label: "MEDIA")
+            statCell(value: countText(for: .media), label: "MEDIA")
             statDivider
-            if isOwnProfile {
+            Button { openFollowList(.following) } label: {
+                if isOwnProfile {
+                    statCell(
+                        value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
+                        label: "FOLLOWING"
+                    )
+                } else {
+                    statCell(
+                        value: followingCount.map(shortInt) ?? "—",
+                        label: "FOLLOWING"
+                    )
+                }
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            statDivider
+            Button { openFollowList(.followers) } label: {
                 statCell(
-                    value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
-                    label: "FOLLOWING"
-                )
-            } else {
-                statCell(
-                    value: followingCount.map(shortInt) ?? "—",
-                    label: "FOLLOWING"
-                )
-                statDivider
-                statCell(
-                    value: followersCount.map(shortInt) ?? "∞",
-                    label: "FOLLOWERS",
-                    tint: followersCount == nil ? Color.havenVerified.opacity(0.55) : .primary
+                    value: displayedFollowersCount.map(shortInt) ?? "—",
+                    label: "FOLLOWERS"
                 )
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
         }
         .padding(.horizontal, 16)
+    }
+
+    // MARK: - Follow lists
+
+    private func openFollowList(_ tab: FollowListTab) {
+        let viewer = configService.activeAccountHexPubkey
+        followListTab = tab
+        Task.detached(priority: .userInitiated) {
+            let ledger = FollowerSnapshot.load(owner: viewer)
+            await MainActor.run { viewerLedger = ledger }
+        }
+    }
+
+    private func followListPage(startOn tab: FollowListTab) -> some View {
+        let ledger = viewerLedger
+        let viewerFollowers = ledger.map { Set($0.current.map(\.pubkey)) } ?? []
+        let spam = ledger.map { Set($0.followers.filter(\.isSpam).map(\.pubkey)) } ?? []
+        let following = isOwnProfile
+            ? feedService.followedPubkeys.filter { $0 != pubkey }
+            : followingList
+        // Your own followers come from the relay's ledger, which is complete.
+        // Anyone else's are what relays returned, which may be short.
+        let ownLedger = isOwnProfile ? ledger : nil
+        let followers: [String: Int64] = ownLedger.map { snap in
+            Dictionary(snap.current.map { ($0.pubkey, $0.existing ? $0.listAt : $0.followedAt) }, uniquingKeysWith: max)
+        } ?? followerSeenAt
+        let haveMore = ownLedger == nil && !followersExhausted && (displayedFollowersCount ?? 0) > followers.count
+        return FollowListView(
+            subject: pubkey,
+            subjectName: profile?.bestName ?? shortPubkey,
+            startOn: tab,
+            following: following,
+            followers: followers,
+            followersHaveMore: haveMore,
+            followerPagesDone: followerPagesDone,
+            followersTotal: ownLedger == nil ? displayedFollowersCount : nil,
+            isViewersOwnFollowers: ownLedger != nil,
+            followsViewer: viewerFollowers,
+            hidden: spam,
+            onLoadMoreFollowers: ownLedger == nil ? { loadMoreFollowers() } : nil
+        )
+        .environmentObject(nostrService)
+        .environmentObject(configService)
     }
 
     private var statDivider: some View {
@@ -1384,8 +1479,7 @@ struct ProfileView: View {
     }
 
     private func countLabel(for section: ProfileSection) -> String {
-        let n = count(for: section)
-        return n > 0 ? shortInt(n) : ""
+        count(for: section) > 0 ? countText(for: section) : ""
     }
 
     // MARK: - Section content
@@ -1879,7 +1973,7 @@ struct ProfileView: View {
         olderTaggedSubId = nil
 
         fetchAuthorNotes()
-        fetchLocalRelayCounts()
+        fetchFollowerCount()
 
         // Until every relay has answered (EOSE, CLOSED or a failed
         // connection), 8s at most, and long enough that the spinner reads as
@@ -1893,38 +1987,42 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Local relay counts (own profile)
+    // MARK: - Follower count
 
-    private func fetchLocalRelayCounts() {
-        guard isOwnProfile else { return }
-        guard RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting else { return }
-
-        let config = ConfigService.shared.config
-        #if os(macOS)
-        let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
-        #else
-        let baseURLString = "wss://127.0.0.1:\(config.relayPort)"
-        #endif
-        guard let baseURL = URL(string: baseURLString) else { return }
-
-        Task {
-            // Fetch kind 1 note count
-            let noteCount = await nostrService.fetchCount(
-                from: [baseURL],
-                filter: ["kinds": [1], "authors": [pubkey]]
-            )
-            if let count = noteCount, count > 0 {
-                await MainActor.run { totalNoteCount = count }
-            }
-
-            // Fetch media count via blossom blob list
-            let blobs = await StatsService.shared.fetchBlobList(for: pubkey)
-            if !blobs.isEmpty {
-                await MainActor.run { totalMediaCount = blobs.count }
-            }
+    /// The streamed kind-3 events stop at 100 per relay, so they undercount
+    /// anyone with more followers. Relays that answer NIP-45 COUNT give the
+    /// full number; show whichever is larger.
+    private var displayedFollowersCount: Int? {
+        switch (relayFollowerCount, followersCount) {
+        case let (relay?, streamed?): return max(relay, streamed)
+        case let (relay, streamed): return relay ?? streamed
         }
     }
 
+    /// Asks each relay for its own follower COUNT and keeps the largest.
+    /// Relays hold different subsets of contact lists, so adding their
+    /// counts together would double-count; the largest single answer is
+    /// the closest to the real number.
+    private func fetchFollowerCount() {
+        var urls: [URL] = []
+        var seen = Set<String>()
+        // damus and primal answer COUNT; most other popular relays reject it.
+        let candidates = ["wss://relay.damus.io", "wss://relay.primal.net"]
+            + ConfigService.shared.config.activeFeedRelays.prefix(3)
+        for str in candidates where seen.insert(str).inserted {
+            if let url = URL(string: str) { urls.append(url) }
+        }
+        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey]]
+
+        for url in urls {
+            Task {
+                guard let count = await nostrService.fetchCount(from: [url], filter: filter) else { return }
+                await MainActor.run {
+                    relayFollowerCount = max(relayFollowerCount ?? 0, count)
+                }
+            }
+        }
+    }
 
     // MARK: - Profile editing
 
@@ -2090,6 +2188,9 @@ struct ProfileView: View {
                     // This user's own contact list → extract following count and followsMe.
                     // followsMe is true if they follow ANY of our accounts (owner or
                     // whitelisted) so the badge is consistent across account switches.
+                    var seenTags = Set<String>()
+                    let list = pTags.map { $0[1] }.filter { $0 != pubkey && seenTags.insert($0).inserted }
+                    self.followingList = list
                     let count = pTags.filter { $0[1] != pubkey }.count
                     self.followingCount = count
                     let ourHexKeys: Set<String> = Set(configService.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString })
@@ -2100,6 +2201,7 @@ struct ProfileView: View {
                     // Someone else's contact list containing this pubkey → they follow this user
                     followerPubkeys.insert(event.pubkey)
                     followersCount = followerPubkeys.count
+                    followerSeenAt[event.pubkey] = max(followerSeenAt[event.pubkey] ?? 0, event.created_at)
                 }
                 return
             }
@@ -2174,7 +2276,13 @@ struct ProfileView: View {
             let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
             // Page bookkeeping counts the lists, so they must be complete.
             flushPendingNotes()
-            if subId.hasPrefix("older-tagged-") {
+            if subId.hasPrefix("followers-page-") {
+                guard subId == followerPageSubId else { return }
+                followerPageAnswers += 1
+                if followerPageAnswers >= followerPageExpected {
+                    finishFollowerPage(token: followerPageToken)
+                }
+            } else if subId.hasPrefix("older-tagged-") {
                 guard subId == olderTaggedSubId else { return }
                 olderTaggedAnswers += 1
                 if olderTaggedAnswers >= olderTaggedExpected {
@@ -2192,6 +2300,43 @@ struct ProfileView: View {
                 openingRelayAnswered(relay)
             }
         }
+    }
+
+    /// Asks every relay for the next 100 lists naming this profile, older
+    /// than the oldest already seen.
+    private func loadMoreFollowers() {
+        guard followerPageSubId == nil, !followersExhausted, !profileClients.isEmpty,
+              let oldest = followerSeenAt.values.min() else { return }
+        followerPageToken &+= 1
+        let token = followerPageToken
+        let subId = "followers-page-\(UUID().uuidString.prefix(6))"
+        followerPageSubId = subId
+        followerPageAnswers = 0
+        followerPageExpected = profileClients.count
+        followerPageCountBefore = followerSeenAt.count
+        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey], "until": Int(oldest) - 1, "limit": 100]
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+              let str = String(data: data, encoding: .utf8) else {
+            followerPageSubId = nil
+            return
+        }
+        for client in profileClients { client.send(text: str) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishFollowerPage(token: token) }
+    }
+
+    private func finishFollowerPage(token: Int) {
+        guard token == followerPageToken, let subId = followerPageSubId else { return }
+        closeProfileSubscription(subId)
+        followerPageSubId = nil
+        if followerSeenAt.count > followerPageCountBefore {
+            quietFollowerPages = 0
+        } else {
+            // Two empty rounds in a row, not one: a single quiet round is more
+            // often a slow relay than the end of the list.
+            quietFollowerPages += 1
+            if quietFollowerPages >= 2 { followersExhausted = true }
+        }
+        followerPagesDone += 1
     }
 
     private func loadOlderProfileNotes() {
@@ -2959,6 +3104,36 @@ final class ProfileExtrasLoader: ObservableObject {
     }
 }
 
+// MARK: - Feed changes the profile shows
+
+/// Redraws the profile for the main-feed state it reads: who you follow,
+/// your likes, reactions, reposts and zaps on its notes, and fetched
+/// originals of reposted or replied-to notes. Not for the feed's own notes,
+/// paging or connection state, which change constantly and are not shown.
+@MainActor
+final class ProfileFeedWatch: ObservableObject {
+    private var cancellable: AnyCancellable?
+
+    init() {
+        let feed = FeedService.shared
+        // dropFirst: each @Published sends its current value on subscribe.
+        let changes: [AnyPublisher<Void, Never>] = [
+            feed.$followedPubkeys.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$likedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$myReactions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$repostedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$zappedEventIds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            feed.$parentNotesCache.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+        ]
+        // @Published fires before the value is stored; the throttle delivers
+        // on the next run loop pass, after it is. The first change in a burst
+        // goes through at once, so a like still shows straight away.
+        cancellable = Publishers.MergeMany(changes)
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] in self?.objectWillChange.send() }
+    }
+}
+
 // MARK: - Profile banner
 
 /// The strip across the top of a profile. Runs edge to edge and up under the
@@ -3164,4 +3339,18 @@ private struct ProfileNoteBuckets {
     var media: [FeedNote] = []
     var replies: [FeedNote] = []
     var tagged: [FeedNote] = []
+}
+
+/// Full screen on iPhone and iPad, a sized sheet on the Mac.
+private struct FollowListHost<Page: View>: ViewModifier {
+    @Binding var item: FollowListTab?
+    let page: (FollowListTab) -> Page
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(item: $item) { page($0) }
+        #else
+        content.sheet(item: $item) { page($0).frame(minWidth: 520, minHeight: 640) }
+        #endif
+    }
 }

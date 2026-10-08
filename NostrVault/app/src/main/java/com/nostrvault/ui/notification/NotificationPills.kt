@@ -56,7 +56,7 @@ fun ZapPill(notification: ZapNotification) {
 // ── Follow ───────────────────────────────────────────────────────
 
 @Composable
-fun FollowPill(notification: FollowNotification) {
+fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
     val bgColor = when (notification.kind) {
         FollowKind.FOLLOWED -> SuccessGreen
         FollowKind.UNFOLLOWED -> Color(0xFF595959)
@@ -72,7 +72,33 @@ fun FollowPill(notification: FollowNotification) {
         FollowKind.UNFOLLOWED -> "Unfollowed ${notification.recipientName}"
         is FollowKind.FAILED -> notification.kind.reason
     }
-    BasePill(icon = icon, label = label, backgroundColor = bgColor)
+    if (notification.undo == null) {
+        BasePill(icon = icon, label = label, backgroundColor = bgColor)
+        return
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .shadow(
+                elevation = 8.dp,
+                shape = PillShape,
+                ambientColor = Color.Black.copy(alpha = 0.4f),
+                spotColor = Color.Black.copy(alpha = 0.4f),
+            )
+            .background(bgColor, PillShape)
+            .clip(PillShape)
+            .padding(vertical = 6.dp, horizontal = 20.dp),
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        androidx.compose.material3.TextButton(
+            onClick = onUndo,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+            Text(text = "Undo", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 // ── Error ────────────────────────────────────────────────────────
