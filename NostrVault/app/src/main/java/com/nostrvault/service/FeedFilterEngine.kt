@@ -3,6 +3,7 @@ package com.nostrvault.service
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
+import com.nostrvault.data.model.poll
 import com.nostrvault.data.model.RecipeTopics
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -94,6 +95,8 @@ object FeedFilterEngine {
         globalRequiresTrust: Boolean = true,
         /** Articles/Recipes on Global (trust rule) rather than Following. */
         longFormGlobal: Boolean = false,
+        /** Polls' Open / Closed / All filter. */
+        pollStatus: com.nostrvault.data.model.PollStatusFilter = com.nostrvault.data.model.PollStatusFilter.ALL,
         languageOf: (FeedNote) -> String? = { null },
         authorOf: (String) -> String? = { null },
     ): List<FeedNote> {
@@ -146,6 +149,8 @@ object FeedFilterEngine {
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
                     longFormAdmits(note.pubkey)
+                // Polls are scoped like Articles: follows, or the Global trust rule.
+                FeedMode.POLLS -> note.poll?.let { pollStatus.admits(it) } == true && longFormAdmits(note.pubkey)
                 // Live streams are not notes; LiveFeedService supplies them.
                 FeedMode.LIVE -> false
                 // Listings are not notes; MarketplaceFeedService supplies them.

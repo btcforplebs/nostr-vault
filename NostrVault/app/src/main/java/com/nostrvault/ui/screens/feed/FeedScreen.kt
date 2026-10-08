@@ -175,6 +175,7 @@ fun FeedScreen(
         FeedMode.ARTICLES -> com.nostrvault.ui.screens.ModeComposerKind.ARTICLE
         FeedMode.RECIPES -> com.nostrvault.ui.screens.ModeComposerKind.RECIPE
         FeedMode.MARKETPLACE -> com.nostrvault.ui.screens.ModeComposerKind.LISTING
+        FeedMode.POLLS -> com.nostrvault.ui.screens.ModeComposerKind.POLL
         else -> null
     }
     val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
@@ -209,6 +210,8 @@ fun FeedScreen(
     val mediaFollowingOnly by viewModel.mediaFollowingOnly.collectAsState()
     val articlesScope by viewModel.articlesScope.collectAsState()
     val recipesScope by viewModel.recipesScope.collectAsState()
+    val pollsScope by viewModel.pollsScope.collectAsState()
+    val pollStatus by viewModel.pollStatus.collectAsState()
     val liveScope by viewModel.liveScope.collectAsState()
     val popularFilter by viewModel.popularFilter.collectAsState()
     val globalShowsEveryone by viewModel.globalShowsEveryone.collectAsState()
@@ -526,6 +529,7 @@ fun FeedScreen(
         FeedMode.MEDIA -> !mediaFollowingOnly
         FeedMode.ARTICLES -> articlesScope == com.nostrvault.data.model.MediaFeedMode.GLOBAL
         FeedMode.RECIPES -> recipesScope == com.nostrvault.data.model.MediaFeedMode.GLOBAL
+        FeedMode.POLLS -> pollsScope == com.nostrvault.data.model.MediaFeedMode.GLOBAL
         FeedMode.LIVE -> liveScope == ReelsScope.GLOBAL
         FeedMode.MARKETPLACE -> marketScope == ReelsScope.GLOBAL
         FeedMode.REELS -> reelsScope == ReelsScope.GLOBAL
@@ -571,6 +575,8 @@ fun FeedScreen(
                 scopeGlobal = scopeGlobal,
                 onScopeFollowing = { viewModel.setScope(feedMode, global = false) },
                 onScopeGlobal = { viewModel.setScope(feedMode, global = true) },
+                pollStatus = pollStatus,
+                onSetPollStatus = viewModel::setPollStatus,
                 onModeChange = viewModel::setFeedMode,
                 onCycleLayoutMode = {
                     layoutAnchor = captureLayoutAnchor()?.let { it to layoutMode }
@@ -753,6 +759,21 @@ fun FeedScreen(
             } else if (notes.isEmpty() && isRefreshing) {
                 // Shimmer skeleton loading
                 SkeletonFeed(count = 5)
+            } else if (notes.isEmpty() && feedMode == FeedMode.POLLS) {
+                // iOS PollsEmptyStateView: the title follows the status filter,
+                // and the button posts a poll rather than refreshing.
+                EmptyFeedPlaceholder(
+                    feedMode,
+                    onRefresh = postAction,
+                    titleOverride = when (pollStatus) {
+                        com.nostrvault.data.model.PollStatusFilter.ALL -> "No polls yet"
+                        com.nostrvault.data.model.PollStatusFilter.OPEN -> "No open polls"
+                        com.nostrvault.data.model.PollStatusFilter.CLOSED -> "No closed polls"
+                    },
+                    subtitleOverride = if (scopeGlobal) "Polls from across Nostr show up here"
+                    else "Polls from people you follow show up here",
+                    actionLabel = "Post a poll",
+                )
             } else if (notes.isEmpty()) {
                 // "Analyzing your extended network..." is only true while it is
                 // actually analyzing. Once it has finished and come back with
@@ -1743,6 +1764,9 @@ private fun FeedTopBar(
     scopeGlobal: Boolean,
     onScopeFollowing: () -> Unit,
     onScopeGlobal: () -> Unit,
+    /** The Polls feed's Open / Closed / All filter. */
+    pollStatus: com.nostrvault.data.model.PollStatusFilter,
+    onSetPollStatus: (com.nostrvault.data.model.PollStatusFilter) -> Unit,
     onModeChange: (FeedMode) -> Unit,
     onCycleLayoutMode: () -> Unit,
     onToggleAutoLoad: () -> Unit,
@@ -1937,6 +1961,21 @@ private fun FeedTopBar(
                     ScopeButtons(scopeGlobal, onScopeFollowing, onScopeGlobal)
                     if (scopeGlobal) TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
                 }
+                // Polls is a view of the note list, so auto-load applies (iOS
+                // keeps it next to the Open / Closed / All filter).
+                FeedMode.POLLS -> {
+                    ScopeButtons(scopeGlobal, onScopeFollowing, onScopeGlobal)
+                    if (scopeGlobal) TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
+                    PollStatusFilterButton(selected = pollStatus, onChange = onSetPollStatus)
+                    IconButton(onClick = onToggleAutoLoad, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = if (autoLoad) NostrVaultIcons.AutoLoad else NostrVaultIcons.AutoLoadOff,
+                            contentDescription = "Auto-load",
+                            tint = if (autoLoad) colors.primary else SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
                 FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL -> {
                     if (feedMode == FeedMode.GLOBAL) {
                         // Who Global shows, and in which languages (iOS #128/#133).
@@ -2052,6 +2091,48 @@ private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
             tint = if (everyone) ZapOrange else colors.primary,
             modifier = Modifier.size(18.dp),
         )
+    }
+}
+
+/** The Polls feed's Open / Closed / All menu. iOS PollStatusFilterMenu. */
+@Composable
+private fun PollStatusFilterButton(
+    selected: com.nostrvault.data.model.PollStatusFilter,
+    onChange: (com.nostrvault.data.model.PollStatusFilter) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    var expanded by remember { mutableStateOf(false) }
+    val all = selected == com.nostrvault.data.model.PollStatusFilter.ALL
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(32.dp)
+                .semantics { stateDescription = selected.label },
+        ) {
+            Icon(
+                imageVector = NostrVaultIcons.FilterMenu,
+                contentDescription = "Poll status",
+                tint = if (all) SecondaryText else colors.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            com.nostrvault.data.model.PollStatusFilter.entries.forEach { filter ->
+                DropdownMenuItem(
+                    text = { Text(filter.label) },
+                    leadingIcon = {
+                        if (filter == selected) {
+                            Icon(NostrVaultIcons.Check, contentDescription = "Selected", modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onChange(filter)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -2205,6 +2286,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MEDIA -> NostrVaultIcons.Media
                     FeedMode.ARTICLES -> NostrVaultIcons.Articles
                     FeedMode.RECIPES -> NostrVaultIcons.Recipes
+                    FeedMode.POLLS -> NostrVaultIcons.Polls
                     FeedMode.LIVE -> NostrVaultIcons.Live
                     FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
                     FeedMode.REELS -> NostrVaultIcons.Reels
@@ -2225,6 +2307,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MEDIA -> "No Media Found"
                     FeedMode.ARTICLES -> "No Articles Yet"
                     FeedMode.RECIPES -> "No Recipes Yet"
+                    FeedMode.POLLS -> "No polls yet"
                     FeedMode.LIVE -> "Nothing Live"
                     FeedMode.MARKETPLACE -> "No Listings"
                     FeedMode.REELS -> "No Videos Yet"
@@ -2246,6 +2329,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MEDIA -> "Photos and videos from your feed show up here"
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
+                    FeedMode.POLLS -> "Polls from people you follow show up here"
                     FeedMode.LIVE -> "Streams that are running right now show up here"
                     FeedMode.MARKETPLACE -> "Items for sale on Nostr show up here"
                     FeedMode.REELS -> "Videos from your feed show up here"
@@ -2374,6 +2458,7 @@ internal val FeedMode.icon: ImageVector
         FeedMode.REELS -> NostrVaultIcons.Reels
         FeedMode.ARTICLES -> NostrVaultIcons.Articles
         FeedMode.RECIPES -> NostrVaultIcons.Recipes
+        FeedMode.POLLS -> NostrVaultIcons.Polls
         FeedMode.LIVE -> NostrVaultIcons.Live
         FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
         FeedMode.MUSIC -> NostrVaultIcons.Music

@@ -161,9 +161,8 @@ data class FeedDashboardSnapshot(
             val title: (DashboardEvent) -> String? = { e ->
                 firstTag("title", e.tags) ?: firstTag("alt", e.tags) ?: oneLine(e.content)
             }
-            // Android has no Polls feed yet, so its tile has nowhere to open.
             val tiles = listOfNotNull(
-                tile(null, "Polls", polls) { oneLine(it.content) },
+                tile(FeedMode.POLLS, FeedMode.POLLS.displayName, polls) { oneLine(it.content) },
                 uniqueListings.firstOrNull()?.let { Tile(FeedMode.MARKETPLACE, FeedMode.MARKETPLACE.displayName, uniqueListings.size, it.second.title) },
                 tile(FeedMode.ARTICLES, FeedMode.ARTICLES.displayName, articles, title),
                 tile(FeedMode.REELS, FeedMode.REELS.displayName, diVines, title),
