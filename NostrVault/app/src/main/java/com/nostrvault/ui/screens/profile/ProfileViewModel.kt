@@ -29,6 +29,8 @@ enum class ProfileSection(val displayName: String) {
     NOTES("Notes"),
     MEDIA("Media"),
     REPLIES("Replies"),
+    /** This person's kind-6 reposts, kept out of Notes. */
+    REPOSTS("Reposts"),
     /** Long-form posts (kind 30023). Shown only when there are some. */
     ARTICLES("Articles"),
     /** Short videos (kind 34236). Shown only when there are some. */
@@ -41,7 +43,7 @@ enum class ProfileSection(val displayName: String) {
     ;
 
     /** Sections that list notes, and page in older ones as you scroll. */
-    val isNoteList: Boolean get() = this == NOTES || this == MEDIA || this == REPLIES || this == TAGGED
+    val isNoteList: Boolean get() = this == NOTES || this == MEDIA || this == REPLIES || this == REPOSTS || this == TAGGED
 }
 
 /** Per-tab counts shown next to the section labels. */
@@ -49,6 +51,7 @@ data class ProfileCounts(
     val notes: Int = 0,
     val media: Int = 0,
     val replies: Int = 0,
+    val reposts: Int = 0,
     val tagged: Int = 0,
 )
 
@@ -218,11 +221,12 @@ class ProfileViewModel @Inject constructor(
         _selectedSection,
     ) { notes, tagged, section ->
         when (section) {
-            // Matches iOS ProfileView sections: reposts appear in Notes (no
-            // dedicated Reposts tab), replies in Replies.
-            ProfileSection.NOTES -> notes.filter { !it.isReply }
-            ProfileSection.MEDIA -> notes.filter { it.mediaURLs.isNotEmpty() && !it.isReply && it.repostedBy == null }
-            ProfileSection.REPLIES -> notes.filter { it.isReply && it.repostedBy == null }
+            // Matches iOS ProfileView sections: reposts have their own tab,
+            // Media is this person's own media whether posted or replied with.
+            ProfileSection.NOTES -> notes.filter { !it.isReply && !it.isProfileRepost }
+            ProfileSection.MEDIA -> notes.filter { it.isProfileMedia }
+            ProfileSection.REPLIES -> notes.filter { it.isReply && !it.isProfileRepost }
+            ProfileSection.REPOSTS -> notes.filter { it.isProfileRepost }
             ProfileSection.TAGGED -> tagged.filter { it.pubkey != _pubkey.value }
             // Listings are not notes; the Shop tab reads [shopListings].
             ProfileSection.SHOP -> emptyList()
@@ -236,9 +240,10 @@ class ProfileViewModel @Inject constructor(
         _taggedNotes,
     ) { notes, tagged ->
         ProfileCounts(
-            notes = notes.count { !it.isReply },
-            media = notes.count { it.mediaURLs.isNotEmpty() && !it.isReply && it.repostedBy == null },
-            replies = notes.count { it.isReply && it.repostedBy == null },
+            notes = notes.count { !it.isReply && !it.isProfileRepost },
+            media = notes.count { it.isProfileMedia },
+            replies = notes.count { it.isReply && !it.isProfileRepost },
+            reposts = notes.count { it.isProfileRepost },
             tagged = tagged.count { it.pubkey != _pubkey.value },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProfileCounts())
@@ -635,3 +640,12 @@ class ProfileViewModel @Inject constructor(
         stream = null
     }
 }
+
+/** A repost on this profile: a kind 6, resolved to its original or still bare. */
+internal val FeedNote.isProfileRepost: Boolean get() = kind == 6 || repostedBy != null
+
+/**
+ * This person's own pictures and video, from posts and replies alike. A
+ * repost's media is someone else's, so it stays out.
+ */
+internal val FeedNote.isProfileMedia: Boolean get() = mediaURLs.isNotEmpty() && !isProfileRepost

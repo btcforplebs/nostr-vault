@@ -945,6 +945,7 @@ private fun ProfileSectionTabs(
         ProfileSection.NOTES -> counts.notes
         ProfileSection.MEDIA -> counts.media
         ProfileSection.REPLIES -> counts.replies
+        ProfileSection.REPOSTS -> counts.reposts
         ProfileSection.TAGGED -> counts.tagged
         else -> extraCounts[s] ?: 0
     }
@@ -1009,6 +1010,7 @@ private val ProfileSection.icon: androidx.compose.ui.graphics.vector.ImageVector
         ProfileSection.NOTES -> NostrVaultIcons.Chat
         ProfileSection.MEDIA -> NostrVaultIcons.Media
         ProfileSection.REPLIES -> NostrVaultIcons.Reply
+        ProfileSection.REPOSTS -> NostrVaultIcons.Repost
         ProfileSection.ARTICLES -> NostrVaultIcons.Articles
         ProfileSection.DIVINES -> NostrVaultIcons.Reels
         ProfileSection.MUSIC -> NostrVaultIcons.Music
