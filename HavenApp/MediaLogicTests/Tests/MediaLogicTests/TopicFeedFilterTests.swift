@@ -8,10 +8,12 @@ final class TopicFeedFilterTests: XCTestCase {
     }
 
     /// People follow people; bots and farms don't. Unknown waits.
-    func testAuthorsMustFollowTen() {
+    func testAuthorsMustFollowTwenty() {
         let posts = [post("a", "person", "street photo"), post("b", "bot", "price tick"), post("c", "unknown", "hi there")]
         XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["person": 120, "bot": 0]), ["a"])
-        XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["person": 9, "bot": 0]), [])
+        XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["person": 20, "bot": 19]), ["a"])
+        // Content bots follow exactly 10 to look like people.
+        XCTAssertEqual(TopicFeedFilter.shown(posts, followCounts: ["person": 10, "bot": 10]), [])
     }
 
     func testHashtagStuffing() {

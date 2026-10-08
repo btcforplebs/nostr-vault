@@ -14,7 +14,10 @@ import Foundation
 /// - Not a copy of text already shown.
 /// - At most `perAuthor` posts per person, so one voice can't fill the page.
 enum TopicFeedFilter {
-    static let minFollows = 10
+    /// 20, not 10: the scheduled-content bots that got past 10 follow exactly
+    /// 10 (sampled 2026-10-08: BTC Globe Live, Situation Room, Money Bot). At
+    /// 30 real people start dropping out.
+    static let minFollows = 20
     static let maxHashtags = 6
     static let farmAuthors = 4
     static let perAuthor = 2
