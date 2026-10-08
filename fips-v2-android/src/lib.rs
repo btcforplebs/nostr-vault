@@ -484,6 +484,9 @@ mod c_api {
                 }
             }
         };
+        if config_yaml(&nsec, &opts).is_err() {
+            return ERR_CONFIG;
+        }
         guarded(ERR_START, move || match start(&nsec, &opts) {
             Ok(()) => 0,
             Err(e) => {
@@ -575,6 +578,9 @@ mod jni_api {
                 }
             }
         };
+        if config_yaml(&nsec, &opts).is_err() {
+            return ERR_CONFIG;
+        }
         guarded(ERR_START, move || match start(&nsec, &opts) {
             Ok(()) => 0,
             Err(e) => {
@@ -711,6 +717,8 @@ mod tests {
         let bad = CString::new("{not json").unwrap();
         let key = CString::new("nsec1x").unwrap();
         assert_eq!(c_api::NvFipsStart(key.as_ptr(), bad.as_ptr()), ERR_CONFIG);
+        let empty = CString::new("").unwrap();
+        assert_eq!(c_api::NvFipsStart(key.as_ptr(), empty.as_ptr()), ERR_CONFIG, "bad nsec is a config error");
         assert_eq!(c_api::NvFipsIngress(std::ptr::null()), ERR_BAD_NPUB);
         assert_eq!(c_api::NvFipsExport(4869), ERR_NOT_RUNNING);
     }
