@@ -4657,13 +4657,22 @@ struct AvatarView: View {
     let url: URL?
     let pubkey: String
     var size: CGFloat = 40
+    /// A neutral silhouette instead of the coloured initial, for lists where
+    /// a pubkey's first hex digit would read as noise.
+    var neutralPlaceholder = false
     @State private var image: PlatformImage?
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(avatarGradient)
-                .frame(width: size, height: size)
+            if neutralPlaceholder {
+                Circle()
+                    .fill(Color.platformTertiaryGroupedBackground)
+                    .frame(width: size, height: size)
+            } else {
+                Circle()
+                    .fill(avatarGradient)
+                    .frame(width: size, height: size)
+            }
 
             if let image = image {
                 Image(platformImage: image)
@@ -4671,6 +4680,11 @@ struct AvatarView: View {
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(Circle())
+            } else if neutralPlaceholder {
+                Image(systemName: "person.fill")
+                    .font(.appSystem(size: size * 0.45))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .offset(y: size * 0.04)
             } else {
                 Text(String(pubkey.prefix(1)).uppercased())
                     .font(.appSystem(size: max(8, size * 0.325), weight: .bold, design: .monospaced))

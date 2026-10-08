@@ -82,6 +82,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -170,6 +171,7 @@ object NostrVaultIcons {
     val Incoming: ImageVector = Icons.Filled.SouthWest     // arrow.down.left
     val Outgoing: ImageVector = Icons.Filled.NorthEast     // arrow.up.right
     val Search: ImageVector = Icons.Filled.Search          // magnifyingglass
+    val Sort: ImageVector = Icons.Filled.SwapVert          // arrow.up.arrow.down
     val History: ImageVector = Icons.Filled.History         // clock.arrow.circlepath
     val Media: ImageVector = Icons.Filled.Image            // photo
     val Popular: ImageVector = Icons.Filled.Whatshot       // flame

@@ -58,7 +58,10 @@ fun NotificationOverlay(
                 ) {
                     when (notification) {
                         is ZapNotification -> ZapPill(notification)
-                        is FollowNotification -> FollowPill(notification)
+                        is FollowNotification -> FollowPill(notification) {
+                            notificationManager.dismiss(notification.id)
+                            notification.undo?.invoke()
+                        }
                         is ErrorNotification -> ErrorPill(notification)
                         is ActionToast -> ActionToastPill(notification)
                         is UploadNotification -> UploadPill(notification)
