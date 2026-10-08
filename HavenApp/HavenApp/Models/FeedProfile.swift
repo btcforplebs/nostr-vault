@@ -12,6 +12,10 @@ struct FeedProfile: Codable, Identifiable, Equatable {
     var lud06: String? // Raw bech32-encoded LNURL (LUD-06 fallback)
     var about: String?
     var website: String?
+    /// `created_at` of the kind 0 these fields came from. Relays hold different
+    /// versions of a profile and answer in any order, so an older one arriving
+    /// last must not replace a newer one. Nil for profiles cached before this.
+    var metadataCreatedAt: Int64?
 
     var id: String { pubkey }
 

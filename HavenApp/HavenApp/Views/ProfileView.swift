@@ -684,9 +684,11 @@ struct ProfileView: View {
 
     /// A profile with a banner gets a strip a third as tall as it is wide;
     /// one without gets a short tinted wash, so the avatar still has something
-    /// to sit on and the page has no gray block at the top.
+    /// to sit on and the page has no gray block at the top. Until the profile
+    /// has loaded the strip is the tall one: most profiles have a banner, and
+    /// growing it on arrival pushed the whole page down.
     private var bannerHeight: CGFloat {
-        guard profile?.bannerURL != nil else { return 64 }
+        if let profile, profile.bannerURL == nil { return 64 }
         let width = viewportWidth > 0 ? viewportWidth : 390
         return min(max(width / 3, 110), 210)
     }
@@ -1898,19 +1900,12 @@ struct ProfileView: View {
 
             // Handle kind 0 (profile metadata) from the target user
             if event.kind == 0, event.pubkey == pubkey {
-                if let contentData = event.content.data(using: .utf8),
-                   let metadata = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] {
-                    var prof = nostrService.profiles[pubkey] ?? FeedProfile(pubkey: pubkey)
-                    prof.name = metadata["name"] as? String
-                    prof.displayName = metadata["display_name"] as? String
-                    prof.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
-                    prof.bannerURL = (metadata["banner"] as? String).flatMap { URL(string: $0) }
-                    prof.nip05 = metadata["nip05"] as? String
-                    prof.about = metadata["about"] as? String
-                    prof.lud16 = metadata["lud16"] as? String
-                    prof.lud06 = metadata["lud06"] as? String
-                    prof.website = metadata["website"] as? String
-                    nostrService.profiles[pubkey] = prof
+                if let result = ProfileRepository.parseMetadataContent(
+                    event.content, pubkey: pubkey,
+                    existingProfile: nostrService.profiles[pubkey],
+                    createdAt: event.created_at
+                ), result.changed {
+                    nostrService.profiles[pubkey] = result.profile
                 }
                 return
             }
@@ -2670,6 +2665,7 @@ struct ProfileEditView: View {
             updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
             updated.lud06 = merged["lud06"] as? String
             updated.website = merged[ProfileMetadataMerge.website] as? String
+            updated.metadataCreatedAt = signed.created_at
 
             onSave(updated)
 

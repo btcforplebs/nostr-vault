@@ -103,8 +103,12 @@ enum ProfileRepository {
     static func parseMetadataContent(
         _ content: String,
         pubkey: String,
-        existingProfile: FeedProfile?
+        existingProfile: FeedProfile?,
+        createdAt: Int64? = nil
     ) -> (profile: FeedProfile, changed: Bool)? {
+        if let createdAt, let existing = existingProfile?.metadataCreatedAt, existing > createdAt {
+            return nil
+        }
         guard let metadata = try? JSONSerialization.jsonObject(
             with: content.data(using: .utf8) ?? Data()
         ) as? [String: Any] else { return nil }
@@ -131,6 +135,7 @@ enum ProfileRepository {
         if profile.lud16 != lud16 { profile.lud16 = lud16; changed = true }
         if profile.lud06 != lud06 { profile.lud06 = lud06; changed = true }
         if profile.website != website { profile.website = website; changed = true }
+        if let createdAt { profile.metadataCreatedAt = createdAt }
 
         return (profile, changed)
     }
