@@ -15,10 +15,9 @@ enum FillYourFeedPhase: Equatable {
     case hint
     /// No card; the person is browsing with the meter.
     case browsing
-    /// "Your feed is ready", shown once at 5 follows.
+    /// "Your web of trust is built", shown once at 5 follows. Its button
+    /// opens Discover and starts the Feeds tutorial.
     case ready
-    /// The one-time "Your web of trust is built" card at 10.
-    case master
 }
 
 enum FillYourFeedGuide {
@@ -36,7 +35,7 @@ enum FillYourFeedGuide {
         guard meterOn else { return false }
         switch phase {
         case .intro, .topics: return false
-        case .off, .hint, .browsing, .ready, .master: return true
+        case .off, .hint, .browsing, .ready: return true
         }
     }
 
@@ -58,32 +57,32 @@ enum FillYourFeedGuide {
     static func meterSubtitle(_ meter: VaultMeter) -> String {
         switch meter.stage {
         case .filling: return "Look before you follow"
-        case .filled: return "10 builds your web of trust"
-        case .master: return "\(VaultMeter.masterGoal) people followed"
+        case .master: return "\(VaultMeter.goal) people followed"
         }
     }
 
-    /// The collapsed pill: "5/10", or the title once earned.
+    /// The collapsed pill: "3/5", or the title once built.
     static func pillText(_ meter: VaultMeter) -> String {
         meter.stage == .master ? masterTitle : meter.compactProgressText
     }
 
-    /// Fraction of the pill's ring: progress toward 10.
+    /// Fraction of the pill's ring: progress toward 5.
     static func ringFraction(_ meter: VaultMeter) -> Double {
-        meter.stage == .master ? 1 : Double(min(meter.count, VaultMeter.masterGoal)) / Double(VaultMeter.masterGoal)
+        meter.stage == .master ? 1 : Double(min(meter.count, VaultMeter.goal)) / Double(VaultMeter.goal)
     }
 
-    /// The meter and pill at 10 (Logen: plain trust wording).
+    /// The meter and pill at 5 (Logen: plain trust wording).
     static let masterTitle = "Web of trust"
 
-    /// The one-time card at 10.
-    static let masterCardTitle = "Your web of trust is built"
-    static let masterCardBody = "Your feed now comes from 10 people you chose, and the people they trust."
+    /// The one-time card at 5.
+    static let readyTitle = "Your web of trust is built"
+    /// The card's button: Discover, where the Feeds tutorial starts.
+    static let readyButton = "Next: Discover people"
 }
 
 /// Per account: whether the meter is on. Set on "Let's fill it", cleared by
-/// "Hide the meter", Skip or "Not now". Kept so the meter survives a relaunch
-/// between 5 and 10, and so a relaunch mid-guide resumes on the feed.
+/// "Hide the meter", Skip, "Not now" or the last card's button. Kept so a
+/// relaunch mid-guide resumes on the feed with the meter.
 struct FeedMeterStore {
     let store: TutorialStore
 

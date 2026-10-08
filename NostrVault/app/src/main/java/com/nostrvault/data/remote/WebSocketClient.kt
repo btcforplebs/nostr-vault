@@ -1,6 +1,7 @@
 package com.nostrvault.data.remote
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.relay.RelayBlocklist
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -178,7 +179,7 @@ class WebSocketClient(
         // Never connect: the owner blocked this relay. No retry; unblocking
         // reconnects it through [blocklistChanged].
         if (RelayBlocklist.isBlocked(url)) {
-            Log.d(TAG, "Blocked relay, not connecting: $url")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Blocked relay, not connecting: $url")
             refusedByBlocklist = true
             _connectionState.value = ConnectionState.DISCONNECTED
             return
@@ -203,7 +204,7 @@ class WebSocketClient(
         synchronized(socketLock) {
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "Connected to $url")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
                 _connectionState.value = ConnectionState.CONNECTED
                 reconnectAttempts = 0
             }
@@ -213,12 +214,12 @@ class WebSocketClient(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closing: $code $reason")
+                if (BuildConfig.DEBUG) Log.d(TAG, "WebSocket closing: $code $reason")
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closed: $code $reason")
+                if (BuildConfig.DEBUG) Log.d(TAG, "WebSocket closed: $code $reason")
                 _connectionState.value = ConnectionState.DISCONNECTED
                 scheduleReconnect()
             }
@@ -258,7 +259,7 @@ class WebSocketClient(
             reconnectJob = scope.launch(Dispatchers.IO) {
                 delay(SLOW_RETRY_INTERVAL_MS)
                 reconnectAttempts = MAX_RECONNECT_ATTEMPTS // keep in slow mode
-                Log.d(TAG, "Slow-retry reconnecting to $url")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Slow-retry reconnecting to $url")
                 doConnect()
             }
             return
@@ -269,7 +270,7 @@ class WebSocketClient(
 
         reconnectJob = scope.launch(Dispatchers.IO) {
             delay(backoffMs)
-            Log.d(TAG, "Reconnecting to $url (attempt $reconnectAttempts)")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting to $url (attempt $reconnectAttempts)")
             doConnect()
         }
     }

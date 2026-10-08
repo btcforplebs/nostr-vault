@@ -289,47 +289,6 @@ class ConfigService: ObservableObject {
         }
         #endif
     }
-    /// Create the required files for Haven to run (.env, relay JSON files)
-    func createRequiredFiles() {
-        // Create relay data directory if needed
-        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-        
-        // Create .env file - handled by RelayProcessManager on first run/setup
-        let envContent = RelayConfiguration.formatEnvFile(from: RelayConfiguration.generateEnvDictionary(config: config, relayDataDir: relayDataDir))
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_import.json (same list as HavenConfig.importSeedRelays)
-        let importRelays = """
-        [
-            "wss://relay.primal.net",
-            "wss://relay.damus.io",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net"
-        ]
-        """
-        let importURL = relayDataDir.appendingPathComponent("relays_import.json")
-        try? importRelays.write(to: importURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_blastr.json (same list as HavenConfig.blastrRelays)
-        let blastrRelays = """
-        [
-            "wss://relay.btcforplebs.com",
-            "wss://relay.damus.io",
-            "wss://relay.snort.social"
-        ]
-        """
-        let blastrURL = relayDataDir.appendingPathComponent("relays_blastr.json")
-        try? blastrRelays.write(to: blastrURL, atomically: true, encoding: .utf8)
-        
-        // Create blossom directory
-        let blossomDir = relayDataDir.appendingPathComponent("blossom")
-        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-        
-        #if DEBUG
-        print("Created Haven config files at: \(relayDataDir.path)")
-        #endif
-    }
     
     /// Perform a factory reset: delete data and config using FileManager
     func resetApp() {
@@ -587,10 +546,6 @@ class ConfigService: ObservableObject {
             syncGlobalNIP46Fields(fromNpub: npub)
         }
         save()
-    }
-
-    func getBunkerConfig(forNpub npub: String) -> AccountBunkerConfig? {
-        config.accountBunkerConfigs[npub]
     }
 
     func hasBunkerConfig(forNpub npub: String) -> Bool {

@@ -66,6 +66,7 @@ struct ProfileView: View {
 
     // Wallet views
     @State private var showingLightning = false
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     // Following / followers count
     @State private var followingCount: Int? = nil
@@ -99,6 +100,8 @@ struct ProfileView: View {
     @State private var shownContactsAt: Int64 = 0
     /// Largest NIP-45 COUNT any relay gave for this profile's followers.
     @State private var relayFollowerCount: Int? = nil
+    /// Vertex's count, the one npub.world shows. Preferred when it answers.
+    @State private var vertexFollowerCount: Int? = nil
 
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
@@ -544,6 +547,17 @@ struct ProfileView: View {
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
+        }
+        // Your Vault's last card hands over to Wallet Connect, whose cards
+        // are on the wallet. On appear too: the Profile tab may only now be
+        // showing.
+        .onChange(of: tutorialCenter.active) { _, active in
+            if active == .walletConnect && isOwnerProfile { showingLightning = true }
+            // Its last card hands over to Pocket Relay, on the Relay tab.
+            if active == .pocketRelay { showingLightning = false }
+        }
+        .onAppear {
+            if tutorialCenter.active == .walletConnect && isOwnerProfile { showingLightning = true }
         }
         .sheet(isPresented: $showingLightning) {
             NavigationStack {
@@ -1998,10 +2012,12 @@ struct ProfileView: View {
 
     // MARK: - Follower count
 
-    /// The streamed kind-3 events stop at 100 per relay, so they undercount
-    /// anyone with more followers. Relays that answer NIP-45 COUNT give the
-    /// full number; show whichever is larger.
+    /// Vertex counts follow lists from across Nostr, once per follower, so
+    /// its answer wins. Without it: the streamed kind-3 events stop at 100
+    /// per relay, so they undercount anyone with more followers. Relays that
+    /// answer NIP-45 COUNT give the full number; show whichever is larger.
     private var displayedFollowersCount: Int? {
+        if let vertexFollowerCount { return vertexFollowerCount }
         switch (relayFollowerCount, followersCount) {
         case let (relay?, streamed?): return max(relay, streamed)
         case let (relay, streamed): return relay ?? streamed
@@ -2022,6 +2038,12 @@ struct ProfileView: View {
             if let url = URL(string: str) { urls.append(url) }
         }
         let filter: [String: Any] = ["kinds": [3], "#p": [pubkey]]
+
+        let target = pubkey
+        Task {
+            guard let count = await nostrService.fetchVertexFollowerCount(target: target) else { return }
+            await MainActor.run { vertexFollowerCount = count }
+        }
 
         for url in urls {
             Task {

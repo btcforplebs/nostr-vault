@@ -21,7 +21,7 @@ final class FillYourFeedGuideTests: XCTestCase {
     func testMeterHiddenDuringIntroAndTopicsAndWhenOff() {
         XCTAssertFalse(FillYourFeedGuide.showsMeter(phase: .intro, meterOn: true))
         XCTAssertFalse(FillYourFeedGuide.showsMeter(phase: .topics, meterOn: true))
-        for phase: FillYourFeedPhase in [.off, .hint, .browsing, .ready, .master] {
+        for phase: FillYourFeedPhase in [.off, .hint, .browsing, .ready] {
             XCTAssertTrue(FillYourFeedGuide.showsMeter(phase: phase, meterOn: true), "\(phase)")
             XCTAssertFalse(FillYourFeedGuide.showsMeter(phase: phase, meterOn: false), "\(phase)")
         }
@@ -36,18 +36,17 @@ final class FillYourFeedGuideTests: XCTestCase {
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(3), compact: false), "3 of 5")
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(3), compact: true), "3/5")
         XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(3)), "Look before you follow")
-        XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(7), compact: false), "7 of 10")
-        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(7)), "10 builds your web of trust")
-        XCTAssertEqual(FillYourFeedGuide.pillText(meter(7)), "7/10")
-        XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(10), compact: true), "Web of trust")
-        XCTAssertEqual(FillYourFeedGuide.pillText(meter(10)), "Web of trust")
+        XCTAssertEqual(FillYourFeedGuide.pillText(meter(3)), "3/5")
+        XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(5), compact: false), "Web of trust")
+        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(5)), "5 people followed")
+        XCTAssertEqual(FillYourFeedGuide.pillText(meter(5)), "Web of trust")
     }
 
-    func testEarnedMasterStaysGoldBelowTen() {
-        let m = meter(8, earned: true)
+    func testEarnedMasterStaysGoldBelowFive() {
+        let m = meter(3, earned: true)
         XCTAssertEqual(FillYourFeedGuide.pillText(m), "Web of trust")
         XCTAssertEqual(FillYourFeedGuide.ringFraction(m), 1)
-        XCTAssertEqual(FillYourFeedGuide.ringFraction(meter(4)), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(FillYourFeedGuide.ringFraction(meter(2)), 0.4, accuracy: 0.0001)
     }
 
     func testMeterStoreIsPerAccountAndIgnoresBlankAccount() {

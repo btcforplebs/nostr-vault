@@ -9,6 +9,7 @@ import android.util.Log
 import coil.ImageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -81,7 +82,7 @@ class ProfilePicturePrefetcher @Inject constructor(
                 if (pubkeys.size > previousSize && previousSize > 0) {
                     // New follows added — prefetch their avatars immediately
                     val newPubkeys = pubkeys.drop(previousSize)
-                    Log.d(TAG, "Follow list grew by ${newPubkeys.size}, prefetching new avatars")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Follow list grew by ${newPubkeys.size}, prefetching new avatars")
                     prefetchForPubkeys(newPubkeys)
                 }
                 previousSize = pubkeys.size
@@ -98,18 +99,18 @@ class ProfilePicturePrefetcher @Inject constructor(
     private suspend fun runIfEligible() {
         val config = configStore.config.value
         if (!config.prefetchAvatars) {
-            Log.d(TAG, "Prefetch disabled in config")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Prefetch disabled in config")
             return
         }
 
         if (!isUnmeteredNetwork) {
-            Log.d(TAG, "Not on unmetered network, skipping")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Not on unmetered network, skipping")
             return
         }
 
         val lastRun = prefs.getLong(PREF_LAST_RUN, 0L)
         if (System.currentTimeMillis() - lastRun < DEBOUNCE_MS) {
-            Log.d(TAG, "Last run was within 12 hours, skipping")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Last run was within 12 hours, skipping")
             return
         }
 
@@ -123,11 +124,11 @@ class ProfilePicturePrefetcher @Inject constructor(
         try {
             val pubkeys = feedService.followedPubkeys.value
             if (pubkeys.isEmpty()) {
-                Log.d(TAG, "No followed pubkeys, skipping")
+                if (BuildConfig.DEBUG) Log.d(TAG, "No followed pubkeys, skipping")
                 return
             }
 
-            Log.d(TAG, "Starting avatar prefetch for ${pubkeys.size} followed accounts")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Starting avatar prefetch for ${pubkeys.size} followed accounts")
 
             // Fetch missing profile metadata first, paced. Handing the whole
             // follow list over at once became a single metadata REQ for every
@@ -137,7 +138,7 @@ class ProfilePicturePrefetcher @Inject constructor(
             val profiles = nostrService.profiles.value
             val missingProfiles = pubkeys.filter { profiles[it] == null }
             if (missingProfiles.isNotEmpty()) {
-                Log.d(TAG, "Fetching ${missingProfiles.size} missing profiles")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Fetching ${missingProfiles.size} missing profiles")
                 for (chunk in missingProfiles.chunked(METADATA_CHUNK_SIZE)) {
                     nostrService.fetchMissingProfiles(chunk)
                     delay(METADATA_CHUNK_DELAY_MS)
@@ -157,7 +158,7 @@ class ProfilePicturePrefetcher @Inject constructor(
                 imageLoader.memoryCache?.get(key) == null && !isDiskCached(url)
             }
 
-            Log.d(TAG, "URLs: ${urls.size} total, ${uncached.size} uncached")
+            if (BuildConfig.DEBUG) Log.d(TAG, "URLs: ${urls.size} total, ${uncached.size} uncached")
 
             if (uncached.isEmpty()) {
                 prefs.edit().putLong(PREF_LAST_RUN, System.currentTimeMillis()).apply()
@@ -168,7 +169,7 @@ class ProfilePicturePrefetcher @Inject constructor(
             var downloaded = 0
             for (batch in uncached.chunked(BATCH_SIZE)) {
                 if (!isUnmeteredNetwork) {
-                    Log.d(TAG, "Lost unmetered network, stopping after $downloaded downloads")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Lost unmetered network, stopping after $downloaded downloads")
                     break
                 }
 
@@ -186,7 +187,7 @@ class ProfilePicturePrefetcher @Inject constructor(
                                 imageLoader.execute(request)
                                 downloaded++
                             } catch (e: Exception) {
-                                Log.d(TAG, "Failed to prefetch $url: ${e.message}")
+                                if (BuildConfig.DEBUG) Log.d(TAG, "Failed to prefetch $url: ${e.message}")
                             }
                         }
                     }.awaitAll()
@@ -196,7 +197,7 @@ class ProfilePicturePrefetcher @Inject constructor(
             }
 
             prefs.edit().putLong(PREF_LAST_RUN, System.currentTimeMillis()).apply()
-            Log.d(TAG, "Prefetch complete: $downloaded/${uncached.size} avatars cached")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Prefetch complete: $downloaded/${uncached.size} avatars cached")
 
         } finally {
             isRunning = false

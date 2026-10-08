@@ -107,10 +107,25 @@ struct WalletLightningTab: View {
             Text("No Wallet Connected")
                 .font(.appSystem(size: 16, weight: .semibold))
                 .foregroundColor(.primary)
-            Text("Add a Nostr Wallet Connect URI in Settings to enable Lightning payments.")
+            Text("Link a wallet you already use to send and receive zaps.")
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+            NavigationLink {
+                WalletSettingsView()
+                    .environmentObject(configService)
+                    .navigationTitle("Wallet")
+            } label: {
+                Text("Connect a wallet")
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.havenPurple))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+            .tutorialAnchor(TutorialContent.walletConnectButton)
         }
         .padding(24)
         .frame(maxWidth: .infinity)
@@ -120,7 +135,13 @@ struct WalletLightningTab: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.platformSeparator.opacity(0.4), lineWidth: 1)
         )
+        .tutorialAnchor(TutorialContent.walletEmpty)
         .padding(.horizontal, 16)
+        // The Wallet Connect tutorial starts the first time the wallet opens
+        // with nothing linked.
+        .task(id: TutorialCenter.shared.revision) {
+            TutorialCenter.shared.startIfEligible(.walletConnect, account: NostrService.shared.activeHexPubkey)
+        }
     }
 
     // MARK: - Balance Card

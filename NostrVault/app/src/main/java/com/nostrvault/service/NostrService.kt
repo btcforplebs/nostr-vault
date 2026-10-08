@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
@@ -23,7 +24,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
-import kotlin.coroutines.resume
 import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +32,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.concurrent.withLock
 import kotlin.math.min
-import kotlin.math.pow
 
 /**
  * Core Nostr relay management service.
@@ -278,7 +277,7 @@ class NostrService @Inject constructor(
     }
 
     fun initialize() {
-        Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
         loadProfilesFromDisk()
         observeAccountSwitch()
     }
@@ -424,12 +423,6 @@ class NostrService @Inject constructor(
         return client
     }
 
-    fun disconnectRelay(url: String) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        clients.remove(normalizedUrl)?.disconnect()
-        activeSubscriptions.remove(normalizedUrl)
-    }
-
     fun disconnectAll() {
         clients.values.forEach { it.disconnect() }
         clients.clear()
@@ -442,64 +435,9 @@ class NostrService @Inject constructor(
         closeMetadataPool()
     }
 
-    /**
-     * Reconnect to a relay with exponential backoff.
-     */
-    fun scheduleReconnect(url: String, onMessage: (String) -> Unit) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        if (relaysReconnecting.contains(normalizedUrl)) return
-
-        val attempts = reconnectAttempts.getOrDefault(normalizedUrl, 0)
-        if (attempts >= MAX_RECONNECT_ATTEMPTS) {
-            Log.w(TAG, "Max reconnect attempts reached for $normalizedUrl")
-            return
-        }
-
-        relaysReconnecting.add(normalizedUrl)
-        val delay = calculateBackoffDelay(attempts)
-        reconnectAttempts[normalizedUrl] = attempts + 1
-
-        scope.launch {
-            delay(delay)
-            relaysReconnecting.remove(normalizedUrl)
-            connectToRelay(normalizedUrl, onMessage)
-        }
-    }
-
-    private fun calculateBackoffDelay(attempts: Int): Long {
-        val base = BASE_RECONNECT_DELAY_MS * 2.0.pow(attempts).toLong()
-        val capped = min(base, MAX_RECONNECT_DELAY_MS)
-        val jitter = (Math.random() * 2000).toLong()
-        return capped + jitter
-    }
-
-    fun resetReconnectBackoff(url: String) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        reconnectAttempts.remove(normalizedUrl)
-        lastReconnectTime.remove(normalizedUrl)
-    }
-
     // ══════════════════════════════════════════════════════════════════
     // Subscriptions (REQ / CLOSE)
     // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Send a REQ subscription on a connected relay.
-     */
-    fun sendSubscription(
-        relayUrl: String,
-        subscriptionId: String,
-        filters: List<Map<String, Any>>,
-    ) {
-        val normalizedUrl = normalizeRelayUrl(relayUrl)
-        val client = clients[normalizedUrl] ?: return
-
-        activeSubscriptions[normalizedUrl] = subscriptionId
-
-        val filtersJson = filters.joinToString(",") { buildFilterJson(it) }
-        val req = "[\"REQ\",\"$subscriptionId\",$filtersJson]"
-        client.send(req)
-    }
 
     fun closeSubscription(relayUrl: String, subscriptionId: String) {
         val normalizedUrl = normalizeRelayUrl(relayUrl)
@@ -539,7 +477,7 @@ class NostrService @Inject constructor(
                 "NOTICE" -> {
                     if (parsed.size >= 2) {
                         val notice = parsed[1].jsonPrimitive.contentOrNull
-                        Log.d(TAG, "NOTICE from $relayUrl: $notice")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "NOTICE from $relayUrl: $notice")
                     }
                 }
                 "AUTH" -> {
@@ -711,10 +649,6 @@ class NostrService @Inject constructor(
         true
     }
 
-    fun hasSeen(id: String): Boolean = seenLock.withLock {
-        seenEventIds.contains(id)
-    }
-
     private fun clearSeen() = seenLock.withLock {
         seenEventIds.clear()
     }
@@ -722,18 +656,6 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Fetch watchdog
     // ══════════════════════════════════════════════════════════════════
-
-    fun armFetchWatchdog() {
-        fetchWatchdogJob?.cancel()
-        fetchWatchdogJob = scope.launch {
-            delay(FETCH_WATCHDOG_TIMEOUT_MS)
-            if (_isFetching.value) {
-                _isFetching.value = false
-                activeSubscriptionCount = 0
-                Log.w(TAG, "Fetch watchdog triggered — forcing isFetching=false")
-            }
-        }
-    }
 
     // ══════════════════════════════════════════════════════════════════
     // Profile management
@@ -1232,7 +1154,7 @@ class NostrService @Inject constructor(
         forceOwner: Boolean,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
-        Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
 
         // Owner-forced events while another account is active go to the
         // OWNER's own signer (#168 parity), never the active account's.
@@ -1640,7 +1562,7 @@ class NostrService @Inject constructor(
             configStore.updateAsync {
                 it.copy(dmRelays = published.ifEmpty { it.dmRelays }, dmRelaysUpdatedAt = newest.second)
             }
-            Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
+            if (BuildConfig.DEBUG) Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
             // This device may still hold more than was published (its own
             // Haven inbox, or loopback entries dropped).
             action = DMInbox.syncAction(configStore.config.value.dmInboxRelays, newest.second, newest.first, newest.second)
@@ -2143,72 +2065,6 @@ class NostrService @Inject constructor(
     }
 
     /**
-     * Fetch the owner's media-bearing notes from the local relay (and inbox relays).
-     *
-     * Queries kinds 1 (text notes), 1063 (NIP-94 file metadata) and 30023
-     * (long-form) authored by [pubkey]. Returns [FeedNote]s with their
-     * media URLs already extracted (regex + imeta) by [FeedNote.fromEvent].
-     *
-     * Used by the media gallery to surface media referenced in the user's own
-     * notes that may not exist as a local Blossom blob — iOS parity.
-     */
-    suspend fun fetchOwnerMediaNotes(pubkey: String): List<FeedNote> = suspendCancellableCoroutine { cont ->
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-        }.distinct().take(5)
-        if (relayUrls.isEmpty()) { cont.resume(emptyList()); return@suspendCancellableCoroutine }
-
-        val subId = "ownermedia-${UUID.randomUUID().toString().take(8)}"
-        val collected = java.util.concurrent.ConcurrentHashMap<String, FeedNote>()
-        val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
-
-        fun finish() {
-            if (resumed.compareAndSet(false, true)) {
-                cont.resume(collected.values.sortedByDescending { it.createdAt })
-            }
-        }
-        // A refused or cooling-down relay ends at once; only the last relay
-        // to end (or the first EOSE) finishes, not the first to give up.
-        val remaining = java.util.concurrent.atomic.AtomicInteger(relayUrls.size)
-
-        for (relayUrl in relayUrls) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val filter = """{"kinds":[1,1063,30023],"authors":["$pubkey"],"limit":500}"""
-                    lookupPool.query(relayUrl, subId, listOf(filter), TEMP_CLIENT_DISCONNECT_MS) { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size < 2) return@query
-                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
-                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
-                            if (sid != subId) return@query
-                            if (type == "EVENT" && parsed.size >= 3) {
-                                val ev = parsed[2].jsonObject
-                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
-                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-                                val tags: List<List<String>> = try {
-                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                } catch (_: Exception) { emptyList() }
-                                collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                            } else if (type == "EOSE") {
-                                finish()
-                            }
-                        } catch (_: Exception) {}
-                    }
-                } catch (_: Exception) {
-                } finally {
-                    if (remaining.decrementAndGet() == 0) finish()
-                }
-            }
-        }
-    }
-
-    /**
      * Fetch a whole thread for the note-detail view. Queries the entire subtree
      * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
      * mid-thread reply is opened, not just direct replies to the opened note),
@@ -2442,6 +2298,61 @@ class NostrService @Inject constructor(
         return count
     }
 
+    private val vertexCache = com.nostrvault.data.model.VertexReputation.Cache()
+
+    /**
+     * [target]'s follower count from Vertex, the source npub.world uses. Null
+     * when Vertex can't answer: no local key (a bunker or Amber would be asked
+     * to sign for every profile opened), no credits, or no answer in time.
+     * The request is signed by the active account and names [target].
+     * Mirrors iOS NostrService.fetchVertexFollowerCount.
+     */
+    suspend fun fetchVertexFollowerCount(target: String, timeoutMs: Long = 6_000): Int? {
+        val vertex = com.nostrvault.data.model.VertexReputation
+        val now = System.currentTimeMillis()
+        vertexCache.followers(target, now)?.let { return it }
+        if (!vertexCache.shouldAsk(now) || configStore.config.value.activeSigningMode() != "local") return null
+        val request = withContext(Dispatchers.IO) {
+            runCatching { signLocally(vertex.REQUEST_KIND, "", vertex.requestTags(target), forceOwner = false) }.getOrNull()
+        } ?: return null
+
+        val reply = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val client = WebSocketClient(url = vertex.RELAY_URL, scope = this, autoReconnect = false)
+                try {
+                    withTimeoutOrNull(timeoutMs) {
+                        val subId = "vertex-${UUID.randomUUID().toString().take(6)}"
+                        val answer = CompletableDeferred<com.nostrvault.data.model.VertexReputation.Reply>()
+                        val collector = launch {
+                            client.messages.collect { msg ->
+                                val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                if (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull != "EVENT") return@collect
+                                val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                val r = vertex.reply(ev.kind, ev.pubkey, ev.tags, ev.content, request.id, target) ?: return@collect
+                                if (HavenBridge.verifyEvent(obj.toString())) answer.complete(r)
+                            }
+                        }
+                        launch {
+                            client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                            // Listen first, so a fast answer isn't missed.
+                            client.send("""["REQ","$subId",{"kinds":[${vertex.RESULT_KIND},${vertex.FEEDBACK_KIND}],"#e":["${request.id}"]}]""")
+                            client.send("[\"EVENT\",${serializeEvent(request)}]")
+                        }
+                        client.connect()
+                        answer.await().also { collector.cancel() }
+                    }
+                } finally {
+                    client.disconnect()
+                    coroutineContext.cancelChildren()
+                }
+            }
+        } ?: return null // No answer in time says nothing about credits.
+
+        vertexCache.record(reply, target, System.currentTimeMillis())
+        return (reply as? com.nostrvault.data.model.VertexReputation.Reply.Followers)?.count
+    }
+
     /** Stores an EVENT for [subId]; true once the relay is done (EOSE/CLOSED). */
     private fun handleRawQueryMessage(
         msg: String,
@@ -2552,26 +2463,6 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Lifecycle
     // ══════════════════════════════════════════════════════════════════
-
-    fun enterBackground() {
-        profileSaveJob?.cancel()
-        saveProfilesThrottled()
-    }
-
-    fun enterForeground() {
-        // Resume profile timer if needed
-    }
-
-    fun resetConnections() {
-        disconnectAll()
-        fetchWatchdogJob?.cancel()
-        bufferFlushJob?.cancel()
-        profileFlushJob?.cancel()
-        profileSaveJob?.cancel()
-        profileUpdateJob?.cancel()
-        _connectionStatus.value = "Disconnected"
-        _connectionColor.value = "gray"
-    }
 
     fun injectEvent(event: NostrEvent) {
         if (!markSeen(event.id)) return
