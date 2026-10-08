@@ -4424,15 +4424,7 @@ struct FeedNoteRow: View {
                 else { actions.followUser(pubkey) }
                 dismiss()
             }
-            glassIcon("tortoise.fill", tint: .orange, expanded: expanded, index: 1) {
-                actions.throttleUser(pubkey, 3)
-                ActionToastManager.shared.show(
-                    icon: "tortoise.fill",
-                    message: "Slowed down \(displayName)"
-                )
-                dismiss()
-            }
-            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 2) {
+            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 1) {
                 actions.blockUser(pubkey)
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",

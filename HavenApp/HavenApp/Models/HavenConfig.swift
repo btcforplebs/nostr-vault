@@ -264,9 +264,6 @@ struct HavenConfig: Codable, Equatable {
     // Last processed/published Kind 10000 event timestamp per account (npub: created_at)
     var blockedNpubsLastSyncTimestamp: [String: Int64] = [:]
 
-    // Per-account throttled list (dictionary of account npub: {throttled npub: max visible posts})
-    var throttledAccountsPerAccount: [String: [String: Int]] = [:]
-
     // Backup
     var backupProvider: String = "none" // none, s3
     var backupIntervalHours: Int = 24
@@ -302,7 +299,6 @@ struct HavenConfig: Codable, Equatable {
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
         case blockedNpubsLastSyncTimestamp
-        case throttledAccountsPerAccount
         case activeAccountNpub
         case accountCredentials
         case accountBunkerConfigs
@@ -455,7 +451,6 @@ struct HavenConfig: Codable, Equatable {
         
         blockedNpubsPerAccount = try container.decodeIfPresent([String: [String]].self, forKey: .blockedNpubsPerAccount) ?? defaults.blockedNpubsPerAccount
         blockedNpubsLastSyncTimestamp = try container.decodeIfPresent([String: Int64].self, forKey: .blockedNpubsLastSyncTimestamp) ?? defaults.blockedNpubsLastSyncTimestamp
-        throttledAccountsPerAccount = try container.decodeIfPresent([String: [String: Int]].self, forKey: .throttledAccountsPerAccount) ?? defaults.throttledAccountsPerAccount
 
         activeAccountNpub = try container.decodeIfPresent(String.self, forKey: .activeAccountNpub) ?? defaults.activeAccountNpub
         accountCredentials = try container.decodeIfPresent([String: String].self, forKey: .accountCredentials) ?? defaults.accountCredentials

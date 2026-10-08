@@ -17,7 +17,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -87,8 +86,8 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * What tapping an avatar offers in the feed: Follow/Unfollow, Slow down
- * (three posts a day) and Block, the iOS FeedView avatar toolbar. Without it
+ * What tapping an avatar offers in the feed: Follow/Unfollow and Block,
+ * the iOS FeedView avatar toolbar. Without it
  * an avatar tap opens the profile, as on screens that pass none.
  */
 @Stable
@@ -98,12 +97,8 @@ class AvatarMenuActions(
     val isFollowed: (String) -> Boolean,
     val onFollow: (String) -> Unit,
     val onUnfollow: (String) -> Unit,
-    val onSlowDown: (String) -> Unit,
     val onBlock: (String) -> Unit,
 )
-
-/** Posts a day a slowed-down account keeps, as iOS throttleUser(pubkey, 3). */
-internal const val SLOW_DOWN_POSTS_PER_DAY = 3
 
 /**
  * [content] (an avatar) that opens the [menu] for [pubkey] when tapped, or
@@ -139,21 +134,6 @@ private fun AvatarWithMenu(
                 onClick = {
                     expanded = false
                     if (followed) menu.onUnfollow(pubkey) else menu.onFollow(pubkey)
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Slow down", color = PrimaryText) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.HourglassBottom,
-                        contentDescription = null,
-                        tint = ZapOrange,
-                    )
-                },
-                onClick = {
-                    expanded = false
-                    menu.onSlowDown(pubkey)
-                    Toast.makeText(context, "Slowed down $displayName", Toast.LENGTH_SHORT).show()
                 },
             )
             DropdownMenuItem(
@@ -229,7 +209,7 @@ fun NoteCard(
     onRetryParent: ((String) -> Unit)? = null,
     /** Videos play inline, muted and looping, while most on screen (Settings > Autoplay Videos). */
     autoplayVideos: Boolean = false,
-    /** With it, an avatar tap opens Follow / Slow down / Block, and the name opens the profile. */
+    /** With it, an avatar tap opens Follow / Block, and the name opens the profile. */
     avatarMenu: AvatarMenuActions? = null,
     /**
      * Likes, reposts, replies, quotes and zap sats, where the screen fetched

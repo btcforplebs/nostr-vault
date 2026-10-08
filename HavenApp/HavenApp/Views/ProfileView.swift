@@ -240,15 +240,6 @@ struct ProfileView: View {
         return blockedList.contains(npub)
     }
 
-    private var isThrottled: Bool {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return false }
-        let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
-        let throttledList = configService.config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        return throttledList[npub] != nil
-    }
-
     private var profile: FeedProfile? {
         nostrService.profiles[pubkey]
     }
@@ -1112,22 +1103,6 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isBlocked ? "Unblock user" : "Block user")
-
-                Button(action: toggleThrottle) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isThrottled ? "gauge.open.with.lines.needle.33percent" : "gauge")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                        Text(isThrottled ? "Speed Up" : "Slow Down")
-                            .font(.appSystem(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(isThrottled ? .blue : .secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background((isThrottled ? Color.blue : Color.secondary).opacity(0.12))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isThrottled ? "Remove speed limit" : "Slow down posts")
 
                 if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
                     HStack(spacing: 5) {
@@ -2608,17 +2583,6 @@ struct ProfileView: View {
             configService.unblockProfile(npub)
         } else {
             configService.blockProfile(npub)
-        }
-    }
-
-    private func toggleThrottle() {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if isThrottled {
-            configService.unthrottleProfile(npub)
-        } else {
-            // Default to 5 posts visible when throttling
-            configService.throttleProfile(npub, maxPosts: 5)
         }
     }
 

@@ -175,14 +175,6 @@ class ProfileViewModel @Inject constructor(
     private val _isBlocked = MutableStateFlow(false)
     val isBlocked: StateFlow<Boolean> = _isBlocked.asStateFlow()
 
-    /**
-     * Slowed down: at most a few of this person's posts show in the feed.
-     * Local-only, per account; the list lives in Settings → Blocked.
-     */
-    val isThrottled: StateFlow<Boolean> = combine(configStore.config, _pubkey) { cfg, pk ->
-        nostrService.hexToNpub(pk)?.let { it in cfg.throttledForActiveAccount() } == true
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
     /** Pull-to-refresh on your own profile. */
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -547,13 +539,6 @@ class ProfileViewModel @Inject constructor(
     fun blockAuthor(pubkey: String) {
         feedService.blockUser(pubkey)
         if (pubkey == _pubkey.value) _isBlocked.value = true
-    }
-
-    /** Slow Down (5 posts visible, as on iOS) or Speed Up. */
-    fun toggleThrottle() {
-        val npub = nostrService.hexToNpub(_pubkey.value) ?: return
-        val throttled = npub in configStore.config.value.throttledForActiveAccount()
-        if (throttled) configStore.unthrottleProfile(npub) else configStore.throttleProfile(npub, 5)
     }
 
     /** True when a NWC wallet is configured and the profile has a lightning address. */

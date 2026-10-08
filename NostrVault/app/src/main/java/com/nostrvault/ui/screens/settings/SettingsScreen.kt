@@ -77,7 +77,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Blocked,
                     title = "Blocked",
-                    subtitle = "Block and slow down accounts",
+                    subtitle = "Block accounts",
                     onClick = { onNavigate(Screen.BlockedSettings) },
                 )
             }

@@ -17,8 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -92,7 +90,6 @@ fun ProfileScreen(
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
-    val isThrottled by viewModel.isThrottled.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
@@ -276,7 +273,6 @@ fun ProfileScreen(
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     isBlocked = isBlocked,
-                    isThrottled = isThrottled,
                     canZap = canZap,
                     zapSats = viewModel.defaultZapSats,
                     onCompose = onCompose,
@@ -284,7 +280,6 @@ fun ProfileScreen(
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
-                    onThrottle = viewModel::toggleThrottle,
                     onZap = viewModel::zap,
                 )
             }
@@ -755,7 +750,6 @@ private fun ProfileActionRow(
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     isBlocked: Boolean,
-    isThrottled: Boolean,
     canZap: Boolean,
     zapSats: Int,
     onCompose: () -> Unit,
@@ -763,7 +757,6 @@ private fun ProfileActionRow(
     onFollow: () -> Unit,
     onMessage: () -> Unit,
     onBlock: () -> Unit,
-    onThrottle: () -> Unit,
     onZap: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -792,16 +785,6 @@ private fun ProfileActionRow(
                 if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935),
                 (if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935)).copy(alpha = 0.12f),
                 onClick = onBlock,
-            )
-            // Slow Down keeps this person to a few posts in the feed (Settings → Blocked lists them).
-            val throttleColor = if (isThrottled) Color(0xFF2196F3) else SecondaryText
-            ActionChip(
-                if (isThrottled) "Speed Up" else "Slow Down",
-                Icons.Filled.Speed,
-                throttleColor,
-                throttleColor.copy(alpha = 0.12f),
-                onClick = onThrottle,
-                description = if (isThrottled) "Remove speed limit" else "Slow down posts",
             )
             if (canZap) {
                 ActionChip("Zap $zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap)

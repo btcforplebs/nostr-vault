@@ -2149,11 +2149,8 @@ class FeedService @Inject constructor(
         val config = configStore.config.value
         val blockedPubkeys = config.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
-        val throttledPubkeys = config.throttledForActiveAccount()
-            .mapNotNull { (npub, max) -> nostrService.npubToHex(npub)?.let { it to max } }
-            .toMap()
 
-        _filteredNotes.value = filterForCurrentFeed(_notes.value, config, blockedPubkeys, throttledPubkeys)
+        _filteredNotes.value = filterForCurrentFeed(_notes.value, config, blockedPubkeys)
 
         _filteredMediaNotes.value = feedFilterEngine.filterMediaNotes(
             notes = _notes.value,
@@ -2161,7 +2158,6 @@ class FeedService @Inject constructor(
             wotPubkeys = _wotPubkeys.value,
             isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
             globalRequiresTrust = !config.globalShowsEveryone,
-            throttledPubkeys = throttledPubkeys,
             authorOf = ::authorOf,
         )
 
@@ -2172,7 +2168,6 @@ class FeedService @Inject constructor(
         notes: List<FeedNote>,
         config: HavenConfig,
         blockedPubkeys: Set<String>,
-        throttledPubkeys: Map<String, Int>,
     ): List<FeedNote> = feedFilterEngine.filterFeedNotes(
         notes = notes,
         mode = _feedMode.value,
@@ -2183,7 +2178,6 @@ class FeedService @Inject constructor(
         wotPubkeys = _wotPubkeys.value,
         popularFilter = _popularFilter.value,
         popularNoteScores = _popularNoteScores.value,
-        throttledPubkeys = throttledPubkeys,
         globalLanguages = config.globalFeedLanguages.toSet(),
         globalRequiresTrust = !config.globalShowsEveryone,
         longFormGlobal = longFormScope() == MediaFeedMode.GLOBAL,
@@ -2220,7 +2214,7 @@ class FeedService @Inject constructor(
                 authorOf = ::authorOf,
             ).size
         } else {
-            filterForCurrentFeed(pending, config, blockedPubkeys, emptyMap()).size
+            filterForCurrentFeed(pending, config, blockedPubkeys).size
         }
     }
 
@@ -2539,16 +2533,6 @@ class FeedService @Inject constructor(
         configStore.blockProfile(npub)
         publishActiveMuteList()
         _notes.value = _notes.value.filter { it.pubkey != hexPubkey }
-        recomputeFilteredNotes()
-    }
-
-    /**
-     * Slow an author down to [maxPosts] a day — the avatar menu's Slow down,
-     * the same per-account limit as Settings > Blocked — and re-filter now.
-     */
-    fun throttleUser(hexPubkey: String, maxPosts: Int) {
-        val npub = nostrService.hexToNpub(hexPubkey) ?: return
-        configStore.throttleProfile(npub, maxPosts)
         recomputeFilteredNotes()
     }
 
