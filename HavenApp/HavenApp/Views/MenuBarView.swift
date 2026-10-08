@@ -9,6 +9,7 @@ struct MenuBarView: View {
     #else
     @State private var selectedTab: Tab = .feed
     #endif
+    @State private var settingsPaneRequest: SettingsView.SettingsTab?
     #if os(macOS)
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
@@ -340,7 +341,7 @@ struct MenuBarView: View {
                                     .environmentObject(relayManager)
                                     .transition(.opacity)
                             case .settings:
-                                SettingsView(isEmbedded: true)
+                                SettingsView(isEmbedded: true, paneRequest: $settingsPaneRequest)
                                     .environmentObject(relayManager)
                                     .environmentObject(configService)
                                     .environmentObject(nostrService)
@@ -1003,6 +1004,7 @@ struct MenuBarView: View {
         // that silently threw away your tab if you spent a minute in another app —
         // switch to Safari, come back, and Notes or Feed had become Relay.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
+            settingsPaneRequest = .relays
             selectedTab = .settings
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in

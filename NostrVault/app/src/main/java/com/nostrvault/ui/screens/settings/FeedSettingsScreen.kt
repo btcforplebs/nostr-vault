@@ -138,7 +138,7 @@ fun FeedSettingsScreen(
                     }
                 }
             }
-            GroupFooter("Clears the posts loaded in memory and fetches your feed again from its relays.")
+            GroupFooter("Clears the posts loaded on this device and loads your feed again from its relays. To check for new posts, pull down on the feed.")
         }
     }
 }
