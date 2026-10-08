@@ -187,13 +187,9 @@ class NostrService @Inject constructor(
                 else -> npubToHex(npub) ?: ""
             }
         }
+    /** The one active-account value, kept by [ConfigStore]; the owner before setup sets one. */
     val activeHexPubkey: String
-        get() {
-            val npub = configStore.config.value.activeAccountNpub ?: return ownerHexPubkey
-            // Handle both npub and raw hex formats
-            if (npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' }) return npub
-            return npubToHex(npub) ?: ownerHexPubkey
-        }
+        get() = configStore.activeAccountHexPubkey.value.ifEmpty { ownerHexPubkey }
 
     // ── Relay pool ────────────────────────────────────────────────────
 
