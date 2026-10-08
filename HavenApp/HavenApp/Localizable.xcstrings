@@ -2702,56 +2702,6 @@
         }
       }
     },
-    "setup.path.browse.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explore Nostr read-only with just your public key. No posting, no signing. You can upgrade to full setup anytime."
-          }
-        }
-      }
-    },
-    "setup.path.browse.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browse Mode"
-          }
-        }
-      }
-    },
-    "setup.path.full.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Post, DM, and zap. Import your existing notes and media. Requires your private key or a remote signer."
-          }
-        }
-      }
-    },
-    "setup.path.full.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Full Setup"
-          }
-        }
-      }
-    },
-    "setup.path.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "How do you want to use Nostr Vault?"
-          }
-        }
-      }
-    },
     "setup.relay.diagram.iphone" : {
       "localizations" : {
         "en" : {
@@ -3018,46 +2968,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lightning"
-          }
-        }
-      }
-    },
-    "setup.welcome.appName" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nostr Vault"
-          }
-        }
-      }
-    },
-    "setup.welcome.getStarted" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Get Started"
-          }
-        }
-      }
-    },
-    "setup.welcome.subtitle1" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A Nostr client with a built-in personal relay."
-          }
-        }
-      }
-    },
-    "setup.welcome.subtitle2" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your posts go everywhere. Your data stays with you."
           }
         }
       }

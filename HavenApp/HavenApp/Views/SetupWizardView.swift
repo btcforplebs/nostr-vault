@@ -269,13 +269,16 @@ struct SetupWizardView: View {
     // step total by one on three of the four paths (browse: 4 vs 5 steps;
     // full iOS: 8 vs 9; full macOS: 7 vs 8) so the dots ran out before the
     // wizard did.
+    //
+    // Welcome (step 0) is the front door, not step 1 of N: it shows no dots,
+    // and picking a way in there is what sets the path.
     private var pathSteps: [Int] {
         switch setupPath {
-        case .none: return [0, 1, 2] // welcome, path, identity
-        case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
-        case .newToNostr: return [0, 1, 9, 11, 8] // welcome, path, intro, profile, done (the Fill your feed guide finds people)
-        case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
-        case .useNostr: return [0, 1, 12, 14, 13] // welcome, path, your key, relay check, import tour
+        case .none: return []
+        case .browse: return [2, 4, 8] // identity, import, done
+        case .newToNostr: return [9, 11, 8] // intro, profile, done (the Fill your feed guide finds people)
+        case .full: return isIOSDevice ? [2, 3, 4, 5, 6, 7, 8] : [2, 3, 4, 5, 6, 8]
+        case .useNostr: return [12, 14, 13] // your key, relay check, import tour
         }
     }
 
@@ -296,10 +299,17 @@ struct SetupWizardView: View {
             // Ambient gradient
             AmbientGradientView()
 
-            VStack(spacing: 0) {
-                // Back button
-                HStack {
-                    if currentStep > 0 {
+            if currentStep == 0 {
+                // Outside the ScrollView so it can fill the height and pin
+                // its buttons to the bottom.
+                WelcomeStepView(onChoose: choosePath)
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    // Back button
+                    HStack {
                         Button(action: goBack) {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left")
@@ -309,27 +319,26 @@ struct SetupWizardView: View {
                             .foregroundColor(WizardColors.textMuted)
                         }
                         .buttonStyle(.plain)
-                        .transition(.opacity)
+                        Spacer()
                     }
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
-                .frame(height: 36)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .frame(height: 36)
 
-                // Content area
-                ScrollView {
-                    VStack {
-                        stepContent
-                            .frame(maxWidth: 560)
-                            .padding(.horizontal, 24)
+                    // Content area
+                    ScrollView {
+                        VStack {
+                            stepContent
+                                .frame(maxWidth: 560)
+                                .padding(.horizontal, 24)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Step dots
-                StepDots(totalSteps: totalVisibleSteps, currentStep: currentDotIndex)
+                    // Step dots
+                    StepDots(totalSteps: totalVisibleSteps, currentStep: currentDotIndex)
+                }
             }
 
             // Process kill alert overlay
@@ -348,10 +357,6 @@ struct SetupWizardView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch currentStep {
-        case 0:
-            WelcomeStepView(onContinue: { goForward() })
-        case 1:
-            ChoosePathStep(selectedPath: $setupPath, onContinue: { goForward() })
         case 2:
             IdentityStepView(
                 isBrowseMode: setupPath == .browse,
@@ -447,15 +452,28 @@ struct SetupWizardView: View {
         }
     }
 
+    /// The front door's buttons. New to Nostr goes to the intro, I use Nostr
+    /// (iPhone/iPad) to its key step; full setup and browse (Mac) both start
+    /// at identity.
+    private func choosePath(_ path: SetupPath) {
+        setupPath = path
+        direction = .forward
+        withAnimation(WizardAnimations.springEnter) {
+            switch path {
+            case .newToNostr: currentStep = 9
+            case .useNostr: currentStep = 12
+            default: currentStep = 2
+            }
+        }
+        if path == .newToNostr || path == .useNostr {
+            saveIntermediateConfig()
+        }
+    }
+
     private func goForward() {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 1 && setupPath == .newToNostr {
-                // New to Nostr: go to intro step
-                currentStep = 9
-            } else if currentStep == 1 && setupPath == .useNostr {
-                currentStep = 12
-            } else if currentStep == 12 && setupPath == .useNostr {
+            if currentStep == 12 && setupPath == .useNostr {
                 currentStep = 14 // your key → relay check
             } else if currentStep == 14 {
                 currentStep = 13 // relay check → import tour
@@ -482,14 +500,12 @@ struct SetupWizardView: View {
     private func goBack() {
         direction = .backward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 12 {
-                currentStep = 1 // I use Nostr: back to choose path
+            if currentStep == 12 || currentStep == 9 || currentStep == 2 {
+                currentStep = 0 // Back to the front door
             } else if currentStep == 14 {
                 currentStep = 12 // Relay check: back to your key
             } else if currentStep == 13 {
                 currentStep = 14 // Import tour: back to the relay check
-            } else if currentStep == 9 {
-                currentStep = 1 // New to Nostr: back to choose path
             } else if currentStep == 11 {
                 currentStep = 9 // Profile: back to intro
             } else if currentStep == 4 && setupPath == .browse {
@@ -714,91 +730,288 @@ struct SetupWizardView: View {
     }
 }
 
-// MARK: - Step 0: Welcome
+// MARK: - Step 0: Welcome (the front door)
 
+/// The first screen after install. It used to be five feature paragraphs with
+/// Get Started below the fold, then a separate "how do you want to use it"
+/// screen whose Continue only appeared after picking a card. Now it fits one
+/// phone screen and the three ways in are the buttons themselves.
 private struct WelcomeStepView: View {
-    let onContinue: () -> Void
+    let onChoose: (SetupWizardView.SetupPath) -> Void
+
     @State private var appeared = false
+    @State private var showWhatsInside = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Two spacers above, three below: the block sits a little high.
+            // When it can't fit (large text scale), only this part scrolls and
+            // the buttons stay pinned.
+            ViewThatFits(in: .vertical) {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 16)
+                    Spacer(minLength: 0)
+                    hero
+                    Spacer(minLength: 16)
+                    Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                ScrollView {
+                    hero.padding(.vertical, 24)
+                }
+            }
+            .frame(maxHeight: .infinity)
+
+            actions
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+        }
+        .sheet(isPresented: $showWhatsInside) {
+            WhatsInsideSheet()
+        }
+        .onAppear {
+            if Motion.isReduced {
+                appeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.45)) { appeared = true }
+            }
+        }
+    }
+
+    // MARK: Hero
+
+    private var hero: some View {
+        VStack(spacing: 0) {
+            vaultMark
+                .scaleEffect(appeared ? 1 : 0.92)
+                .accessibilityHidden(true)
+
+            Text("Nostr Vault")
+                .font(.appSystem(size: 34, weight: .bold))
+                .foregroundColor(WizardColors.textPrimary)
+                .padding(.top, 24)
+                .accessibilityAddTraits(.isHeader)
+
+            Text("Your posts, messages and media, kept on your own device.")
+                .font(.appSystem(size: 17))
+                .foregroundColor(WizardColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+
+            chips
+                .padding(.top, 24)
+
+            Button { showWhatsInside = true } label: {
+                Text("What's inside?")
+                    .font(.appSystem(size: 13, weight: .medium))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+        }
+        .opacity(appeared ? 1 : 0)
+    }
+
+    /// The icon they just tapped on the home screen, so the first screen
+    /// matches it. Exported from the 1024 AppIcon: `Image("AppIcon")` does not
+    /// load reliably on iOS.
+    private var vaultMark: some View {
+        ZStack {
+            Circle()
+                .fill(WizardColors.accentPrimary.opacity(0.35))
+                .frame(width: 150, height: 150)
+                .blur(radius: 40)
+
+            Image("VaultMark")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 92, height: 92)
+                .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 21, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        }
+        .frame(height: 96)
+    }
+
+    // MARK: Chips
+
+    private static let chipItems: [(icon: String, label: String)] = [
+        ("externaldrive.connected.to.line.below", "Your own relay"),
+        ("lock.shield", "Private DMs"),
+        ("bolt.fill", "Zaps")
+    ]
+
+    /// One row when it fits, two rows on a narrow phone, a column at large
+    /// text. Not buttons: they describe, they don't do anything.
+    private var chips: some View {
+        let items = Self.chipItems
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.label) { chip($0.icon, $0.label) }
+            }
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(items.prefix(2), id: \.label) { chip($0.icon, $0.label) }
+                }
+                ForEach(items.suffix(1), id: \.label) { chip($0.icon, $0.label) }
+            }
+            VStack(spacing: 8) {
+                ForEach(items, id: \.label) { chip($0.icon, $0.label) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Includes your own relay, private DMs and zaps")
+    }
+
+    private func chip(_ icon: String, _ label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.accentPrimary)
+            Text(label)
+                .font(.appSystem(size: 13, weight: .medium))
+                .foregroundColor(WizardColors.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
+        .background(Capsule().fill(WizardColors.bgCard))
+        .overlay(Capsule().stroke(WizardColors.borderSubtle, lineWidth: 1))
+        .fixedSize()
+    }
+
+    // MARK: Actions
+
+    /// No entrance delay: these are tappable on the first frame.
+    private var actions: some View {
+        VStack(spacing: 12) {
+            Button { onChoose(.newToNostr) } label: {
+                Text("Create an account").font(.appSystem(size: 17, weight: .semibold))
+            }
+            .buttonStyle(FrontDoorButtonStyle(isPrimary: true))
+
+            // iPhone/iPad: one key field on the next step decides read-only
+            // vs can-post, so this one button covers both. The Mac still
+            // offers browse separately.
+            Button { onChoose(isIOSDevice ? .useNostr : .full) } label: {
+                Text("I already use Nostr").font(.appSystem(size: 17, weight: .semibold))
+            }
+            .buttonStyle(FrontDoorButtonStyle(isPrimary: false))
+
+            if !isIOSDevice {
+                Button { onChoose(.browse) } label: {
+                    Text("Just look around")
+                        .font(.appSystem(size: 15, weight: .medium))
+                        .foregroundColor(WizardColors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: isIOSDevice ? .infinity : 360)
+    }
+}
+
+private struct FrontDoorButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(WizardColors.textPrimary)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background {
+                if isPrimary {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(WizardColors.accentGradient)
+                        .shadow(color: WizardColors.accentGlow, radius: 8, y: 2)
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(WizardColors.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                        )
+                }
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(WizardAnimations.springGentle, value: configuration.isPressed)
+    }
+}
+
+/// The feature descriptions that used to fill the first screen.
+private struct WhatsInsideSheet: View {
+    @Environment(\.dismiss) private var dismiss
 
     private let features: [(icon: String, title: String, line: String)] = [
         ("externaldrive.connected.to.line.below", "Personal Relay", "Run your own relay on-device. Notes are stored locally and broadcast to the network — you always have a copy."),
         ("doc.text.image", "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
         ("lock.shield", "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
-        ("photo.stack", "Blossom Media", "Host images and videos on your machine with Blossom. Mirror media from the network to your local storage."),
+        ("photo.stack", "Blossom Media", "Host images and videos on your device with Blossom. Mirror media from the network to your local storage."),
         ("bolt.fill", "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect.")
     ]
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 20)
-
-            // App icon
-            Image(systemName: "shield.checkered")
-                .font(.appSystem(size: 64, weight: .light))
-                .foregroundStyle(WizardColors.accentGradient)
-                .scaleEffect(appeared ? 1.0 : 0.8)
-                .opacity(appeared ? 1 : 0)
-                .animation(WizardAnimations.springEnter, value: appeared)
-
-            // Title
-            Text(String(localized: "setup.welcome.appName"))
-                .font(.appSystem(size: isIOSDevice ? 32 : 36, weight: .bold, design: .default))
-                .foregroundColor(WizardColors.textPrimary)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
-
-            // Subtitle lines
-            VStack(spacing: 6) {
-                Text(String(localized: "setup.welcome.subtitle1"))
-                Text(String(localized: "setup.welcome.subtitle2"))
+        VStack(spacing: 0) {
+            HStack {
+                Text("What's inside")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .buttonStyle(.plain)
             }
-            .font(.appSystem(size: isIOSDevice ? 15 : 16))
-            .foregroundColor(WizardColors.textSecondary)
-            .multilineTextAlignment(.center)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
-            .animation(WizardAnimations.springEnter.delay(0.4), value: appeared)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
 
-            // Feature cards
-            VStack(spacing: 10) {
-                ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
-                    featureCard(icon: feature.icon, title: feature.title, line: feature.line)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 16)
-                        .animation(WizardAnimations.springEnter.delay(0.6 + Double(index) * WizardAnimations.staggerDelay), value: appeared)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(features, id: \.title) { feature in
+                        featureRow(feature.icon, feature.title, feature.line)
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-
-            // CTA
-            WizardPrimaryButton(title: String(localized: "setup.welcome.getStarted"), action: onContinue)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(1.0), value: appeared)
-
-            Spacer().frame(height: 8)
         }
-        .onAppear { appeared = true }
+        .background(WizardColors.bgPrimary.ignoresSafeArea())
+        #if os(iOS)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        #else
+        .frame(width: 480, height: 560)
+        #endif
     }
 
-    private func featureCard(icon: String, title: String, line: String) -> some View {
-        HStack(spacing: 14) {
+    private func featureRow(_ icon: String, _ title: String, _ line: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.appSystem(size: 20))
                 .foregroundColor(WizardColors.accentPrimary)
-                .shadow(color: WizardColors.accentGlow, radius: 4)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.appSystem(size: isIOSDevice ? 15 : 16, weight: .semibold))
+                    .font(.appSystem(size: 16, weight: .semibold))
                     .foregroundColor(WizardColors.textPrimary)
                 Text(line)
-                    .font(.appSystem(size: isIOSDevice ? 13 : 14))
+                    .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(14)
         .background(WizardColors.bgCard)
@@ -807,181 +1020,7 @@ private struct WelcomeStepView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(WizardColors.borderSubtle, lineWidth: 1)
         )
-    }
-}
-
-// MARK: - Step 1: Choose Path
-
-private struct ChoosePathStep: View {
-    @Binding var selectedPath: SetupWizardView.SetupPath
-    let onContinue: () -> Void
-    @State private var appeared = false
-
-    var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 40)
-
-            Text(String(localized: "setup.path.title"))
-                .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
-                .foregroundColor(WizardColors.textPrimary)
-                .multilineTextAlignment(.center)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(0.1), value: appeared)
-
-            VStack(spacing: 14) {
-                // New to Nostr card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .newToNostr } }) {
-                    WizardGlassCard(isSelected: selectedPath == .newToNostr) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "sparkles")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .newToNostr ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text("New to Nostr")
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .newToNostr {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text("Quick start. We'll set everything up for you.")
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .newToNostr ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
-
-                #if os(iOS)
-                // I use Nostr card: one key field next decides read-only vs
-                // can-post, so Full Setup and Browse Mode are one choice here.
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .useNostr } }) {
-                    WizardGlassCard(isSelected: selectedPath == .useNostr) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "key.fill")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .useNostr ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text("I use Nostr")
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .useNostr {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text("Bring your account and your notes. Read-only with just your public key, or post with your key or a signer app.")
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .useNostr ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-                #else
-                // Full Setup card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .full } }) {
-                    WizardGlassCard(isSelected: selectedPath == .full) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "key.fill")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .full ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(String(localized: "setup.path.full.title"))
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .full {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text(String(localized: "setup.path.full.description"))
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .full ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
-                // Browse Mode card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .browse } }) {
-                    WizardGlassCard(isSelected: selectedPath == .browse) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "eye.fill")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .browse ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(String(localized: "setup.path.browse.title"))
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .browse {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text(String(localized: "setup.path.browse.description"))
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .browse ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.4), value: appeared)
-                #endif
-            }
-
-            if selectedPath != .none {
-                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
-            Spacer()
-        }
-        .onAppear { appeared = true }
+        .accessibilityElement(children: .combine)
     }
 }
 
