@@ -140,4 +140,14 @@ final class NIP88PollTests: XCTestCase {
         let r = NIP88Poll.relays(poll: p, fallback: ["wss://poll.relay", "wss://feed.relay"])
         XCTAssertEqual(r, ["wss://poll.relay/", "wss://feed.relay"])
     }
+
+    func testRelaysDropAStrangersPrivateAddresses() {
+        let lan = ["ws://192.168.1.5:4848", "wss://192.168.1.5", "wss://umbrel.local", "ws://localhost:7777",
+                   "wss://127.0.0.1", "wss://10.0.0.2", "wss://172.20.0.3", "wss://abc.onion", "wss://169.254.1.1"]
+        let p = poll(relays: lan + ["wss://poll.relay"])
+        let r = NIP88Poll.relays(poll: p, fallback: ["ws://127.0.0.1:4869"],
+                                 outbox: ["wss://nas.local", "wss://outbox.relay"])
+        // This device's own relay stays; the stranger's private ones go.
+        XCTAssertEqual(r, ["wss://poll.relay", "ws://127.0.0.1:4869", "wss://outbox.relay"])
+    }
 }

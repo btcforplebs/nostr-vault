@@ -446,6 +446,7 @@ enum FeedMode: String, CaseIterable {
     case recipes = "Recipes"
     case marketplace = "Marketplace"
     case live = "Live"
+    case polls = "Polls"
     case music = "Music"
 }
 
@@ -474,6 +475,7 @@ extension FeedMode {
         case .recipes: return "fork.knife"
         case .marketplace: return "bag"
         case .live: return "dot.radiowaves.left.and.right"
+        case .polls: return "chart.bar.xaxis"
         case .music: return "music.note"
         }
     }

@@ -150,6 +150,7 @@
 		484242402584BDA11F3FC4B5 /* ProofOfWorkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */; };
 		489C0CB7897C5D6A6C6EBFD2 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		4980734C45973D0525500813 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */; };
+		4B042BA6B8B79242CE57173C /* PollComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */; };
 		4B5D58DCD57393A28797C9F4 /* NostrVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */; };
 		4BE74F42C56394DDD4DC8B80 /* NpubValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131AAC224239A2C64C2579FC /* NpubValidation.swift */; };
@@ -324,6 +325,7 @@
 		A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */; };
 		A4CC418BB19F41A7C051EF00 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
+		A54A5F1BC6E78AF6CB3579A3 /* PollsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */; };
 		A5B06D91684942B06596203F /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */; };
 		A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */; };
 		A67A3D25AD98B4679381B013 /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
@@ -372,6 +374,7 @@
 		BA8810E4D83750FF74358B10 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED924B5483C85E11E4917120 /* ContentView.swift */; };
 		BADF96FFDAD0786D3A218C25 /* ZapHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B7AE001906426D0D833C0D /* ZapHistory.swift */; };
 		BB0F85C63A35B8A9EC209A91 /* PlainLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44FA8B5C2592FA9E88658049 /* PlainLog.swift */; };
+		BB42C47EA6799609B78A865C /* PollsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */; };
 		BBADE21A4A5A36ACE752BE4A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3041B6BA67CC97B2AC442E6D /* FeedView.swift */; };
 		BBD8C5A4D3CCA41A25E9B22D /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B03DACD65D976F80B315E19 /* MirrorService.swift */; };
 		BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
@@ -470,6 +473,7 @@
 		E215B1FE35EB9D31FF48C426 /* QuoteReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528D1E62E799D477438A8E24 /* QuoteReference.swift */; };
 		E22FFB37CAC77A587016D695 /* GlobalSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */; };
 		E2575685724FF2B426237058 /* FeedFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */; };
+		E2B5D84651A43D0B22490254 /* PollComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */; };
 		E363C397778EDA4BA29B9B7E /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
 		E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
 		E4D9036E6A98FD0E5E5E4624 /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
@@ -674,6 +678,7 @@
 		775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMService.swift; sourceTree = "<group>"; };
 		78FF5CDA9642898C97A55DBD /* ReactionGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGrouping.swift; sourceTree = "<group>"; };
 		797BE98DE5E15BC89A516724 /* RelayActivityBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayActivityBanner.swift; sourceTree = "<group>"; };
+		7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollComposeView.swift; sourceTree = "<group>"; };
 		7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardComponents.swift; sourceTree = "<group>"; };
 		7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
 		7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
@@ -751,6 +756,7 @@
 		B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagSuggestions.swift; sourceTree = "<group>"; };
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
 		B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDashboardSheet.swift; sourceTree = "<group>"; };
+		B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollsFeedViews.swift; sourceTree = "<group>"; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FIPSDetectionService.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
@@ -879,6 +885,8 @@
 				47E52CADA44AC55958A69E64 /* MessageComposerView.swift */,
 				1E7AB74FB3335BCDF2AA8841 /* NoteDetailView.swift */,
 				7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */,
+				7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */,
+				B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */,
 				917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */,
 				83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */,
 				B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */,
@@ -1691,7 +1699,9 @@
 				53D20A98943D467A4CA6030B /* PlatformCompat.swift in Sources */,
 				AA107D7B77C75318F5856F10 /* PlayableLinks.swift in Sources */,
 				1F63555FC06C83D35B299FFA /* PollCardView.swift in Sources */,
+				E2B5D84651A43D0B22490254 /* PollComposeView.swift in Sources */,
 				89218707D6852D10879EE010 /* PollStore.swift in Sources */,
+				BB42C47EA6799609B78A865C /* PollsFeedViews.swift in Sources */,
 				B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */,
 				6DA4DEC18EB584B409F4955D /* PriceService.swift in Sources */,
 				5505125CFE72327600465A23 /* ProfileMetadataMerge.swift in Sources */,
@@ -1945,7 +1955,9 @@
 				6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */,
 				18B8580400FF5D09EDF7F8EA /* PlayableLinks.swift in Sources */,
 				F23A281E1A8CBDE567DA596C /* PollCardView.swift in Sources */,
+				4B042BA6B8B79242CE57173C /* PollComposeView.swift in Sources */,
 				42D13EDFA392C11343B47088 /* PollStore.swift in Sources */,
+				A54A5F1BC6E78AF6CB3579A3 /* PollsFeedViews.swift in Sources */,
 				51100A24E2561C1B68EA7B5E /* PowPreferences.swift in Sources */,
 				D345A3970B0C13CF6C96F080 /* PriceService.swift in Sources */,
 				72C7296B99E974D23EE05ECB /* ProfileMetadataMerge.swift in Sources */,

@@ -30,6 +30,9 @@ class FeedService: ObservableObject {
     /// Articles from follows only, or from everyone (filtered by the same
     /// Web of Trust / Everyone setting as Global).
     @Published var articlesFeedMode: MediaFeedMode = .following
+    /// Polls' Following / Global, and its Open / Closed / All filter.
+    @Published var pollsFeedMode: MediaFeedMode = .following
+    @Published var pollStatusFilter: PollStatusFilter = .all
     @Published var notes: [FeedNote] = []
     /// O(1) lookup index for notes by ID. Maintained alongside `notes` mutations.
     private(set) var noteIndex: [String: FeedNote] = [:]
@@ -164,6 +167,8 @@ class FeedService: ObservableObject {
             notes: notes,
             mode: feedMode,
             articlesGlobal: articlesFeedMode == .global,
+            pollsGlobal: pollsFeedMode == .global,
+            pollStatus: pollStatusFilter,
             blocked: blocked,
             showReposts: ConfigService.shared.config.showReposts,
             showReplies: ConfigService.shared.config.showReplies,
@@ -637,6 +642,7 @@ class FeedService: ObservableObject {
         feedMode == .global
             || (feedMode == .media && mediaFeedMode == .global)
             || (feedMode == .articles && articlesFeedMode == .global)
+            || (feedMode == .polls && pollsFeedMode == .global)
     }
 
     /// Feeds that cannot be rendered without the trust graph. Global filters
@@ -682,13 +688,14 @@ class FeedService: ObservableObject {
         var key = "\(account)|\(mode.rawValue)"
         if mode == .media { key += "|\(mediaFeedMode)" }
         if mode == .articles { key += "|\(articlesFeedMode)" }
+        if mode == .polls { key += "|\(pollsFeedMode)" }
         return key
     }
 
     /// Feeds whose notes come through this service's own pipeline.
     private static func usesNotePipeline(_ mode: FeedMode) -> Bool {
         switch mode {
-        case .following, .discovery, .global, .popular, .media, .articles: return true
+        case .following, .discovery, .global, .popular, .media, .articles, .polls: return true
         default: return false
         }
     }
@@ -1651,6 +1658,7 @@ class FeedService: ObservableObject {
         let isGlobal = mode == .global
             || (mode == .media && mediaFeedMode == .global)
             || (mode == .articles && articlesFeedMode == .global)
+            || (mode == .polls && pollsFeedMode == .global)
         processingQueue.async { [weak self] in
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
@@ -1799,6 +1807,7 @@ class FeedService: ObservableObject {
         case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
         case .articles: return articlesFeedMode == .following
+        case .polls: return pollsFeedMode == .following
         case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
         }
     }
@@ -1807,7 +1816,11 @@ class FeedService: ObservableObject {
     /// feed, so narrowing the REQ stops a page of results from being almost
     /// entirely kind-1 notes the mode is about to discard.
     private var primaryFeedKinds: [Int] {
-        feedMode == .articles ? [30023] : [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind]
+        switch feedMode {
+        case .articles: return [30023]
+        case .polls: return [NIP88Poll.kind]
+        default: return [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind]
+        }
     }
 
     /// True for the modes whose primary subscription is `authors: followedPubkeys`.
@@ -1816,6 +1829,7 @@ class FeedService: ObservableObject {
     /// and the dead-`authors:[]` REQ guard. Articles (Global) is global-like.
     var isFollowSetMode: Bool {
         feedMode == .following || (feedMode == .articles && articlesFeedMode == .following)
+            || (feedMode == .polls && pollsFeedMode == .following)
     }
 
     /// The authoritative author set the current mode's primary subscription should
@@ -1824,6 +1838,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following: return followedPubkeys
         case .articles: return articlesFeedMode == .following ? followedPubkeys : []
+        case .polls: return pollsFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
         case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
@@ -2058,6 +2073,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following: searchAuthors = followedPubkeys
         case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
+        case .polls: searchAuthors = pollsFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
         case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
         }
@@ -3282,6 +3298,11 @@ class FeedService: ObservableObject {
             // from now, as it was, every page past the first week asked for an
             // empty window and scrolling back stopped there.
             return (0, feedMode == .media ? 300 : 500)
+        } else if feedMode == .polls {
+            // Polls are rare next to notes: a week of them from the people
+            // you follow is often none, so the first page is the newest
+            // polls however old.
+            return (0, 500)
         } else {
             return (Int64(Date().timeIntervalSince1970) - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
         }
@@ -3363,9 +3384,10 @@ class FeedService: ObservableObject {
         let (since, _) = feedSinceAndLimit()
         let subId = feedSubId(for: label)
 
-        // Mentions (#p) of the owner (from anyone)
+        // Mentions (#p) of the owner (from anyone). The Polls feed asks for
+        // polls only, or every mention would count in its "N new" pill.
         let mentionsFilter: [String: Any] = [
-            "kinds": [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind],
+            "kinds": feedMode == .polls ? [NIP88Poll.kind] : [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind],
             "since": since,
             "#p": [ownerHex],
             "limit": 50

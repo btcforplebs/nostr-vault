@@ -42,8 +42,8 @@ final class PollModel: ObservableObject {
         let config = ConfigService.shared.config
         var fallback = [config.nostrURL]
         fallback += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
-        fallback += NostrService.shared.outboxRelays[poll.pubkey] ?? []
-        return NIP88Poll.relays(poll: poll, fallback: fallback)
+        return NIP88Poll.relays(poll: poll, fallback: fallback,
+                                outbox: NostrService.shared.outboxRelays[poll.pubkey] ?? [])
     }
 
     func load(force: Bool = false) async {
@@ -74,14 +74,15 @@ final class PollModel: ObservableObject {
         guard !isSending, !optionIds.isEmpty, !poll.isClosed() else { return }
         isSending = true
         sendError = nil
+        let pollRelays = poll.relays.filter(NIP88Poll.isPublicRelay)
         let tags = NIP88Poll.responseTags(poll: poll, optionIds: optionIds,
-                                          relayHint: poll.relays.first ?? ConfigService.shared.config.nostrURL)
+                                          relayHint: pollRelays.first ?? ConfigService.shared.config.nostrURL)
         Task {
             defer { isSending = false }
             do {
                 let event = try await ModePostPublisher.publish(
                     kind: NIP88Poll.responseKind, content: "", tags: tags,
-                    extraRelays: poll.relays, nostrService: NostrService.shared)
+                    extraRelays: pollRelays, nostrService: NostrService.shared)
                 merge([["id": event.id, "pubkey": event.pubkey, "created_at": event.created_at,
                         "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]])
             } catch {

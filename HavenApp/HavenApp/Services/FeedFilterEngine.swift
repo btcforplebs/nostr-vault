@@ -56,6 +56,9 @@ enum FeedFilterEngine {
         notes: [FeedNote],
         mode: FeedMode,
         articlesGlobal: Bool = false,
+        pollsGlobal: Bool = false,
+        pollStatus: PollStatusFilter = .all,
+        now: Date = Date(),
         blocked: Set<String>,
         showReposts: Bool,
         showReplies: Bool,
@@ -85,6 +88,18 @@ enum FeedFilterEngine {
                 return followedPubkeys.contains(note.pubkey)
             }
             return dedupeAddressable(longForm)
+        }
+
+        // Polls: NIP-88 polls only, newest first, scoped like Articles.
+        if mode == .polls {
+            return notes.filter { note in
+                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
+                guard let poll = note.poll, pollStatus.admits(poll, now: now) else { return false }
+                if pollsGlobal {
+                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                }
+                return followedPubkeys.contains(note.pubkey)
+            }
         }
 
         var filtered = notes.filter { note in

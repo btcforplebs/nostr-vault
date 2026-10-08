@@ -472,7 +472,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags, .polls:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -485,7 +485,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular, .hashtags:
             return true
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
     }
@@ -614,8 +614,9 @@ struct FeedView: View {
         case .following, .discovery, .global, .popular, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
-        // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
+        // compact mode has nothing to condense. Polls always show the
+        // full card, since the vote bars are the point of the feed.
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
     }
@@ -793,6 +794,21 @@ struct FeedView: View {
                 }
                 if feedService.articlesFeedMode == .global {
                     trustScopeButton
+                }
+            } else if feedService.feedMode == .polls {
+                // One scope toggle, not a Following / Global pair: with the
+                // shield, status and auto-load buttons a pair is too wide for
+                // an iPhone, and the whole row falls back to the Filter menu.
+                IconFilterButton(icon: feedService.pollsFeedMode == .following ? "person.2.fill" : "globe", tooltip: feedService.pollsFeedMode == .following ? "Following" : "Global", isSelected: true, color: .havenPurple) {
+                    PollsFeed.setScope(feedService.pollsFeedMode == .following ? .global : .following)
+                }
+                if feedService.pollsFeedMode == .global {
+                    trustScopeButton
+                }
+                PollStatusFilterMenu(selected: feedService.pollStatusFilter, color: .havenPurple)
+                IconFilterButton(icon: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle", tooltip: "Auto-load", isSelected: configService.config.autoLoadNewPosts, color: .havenPurple) {
+                    configService.config.autoLoadNewPosts.toggle()
+                    configService.save()
                 }
             } else if feedService.feedMode == .marketplace {
                 // Global is the default, and like every Global view it starts
@@ -1020,6 +1036,26 @@ struct FeedView: View {
                 if feedService.articlesFeedMode == .global {
                     Divider()
                     trustScopeMenuItems
+                }
+            } else if feedService.feedMode == .polls {
+                Button { PollsFeed.setScope(.following) } label: {
+                    Label("Following", systemImage: feedService.pollsFeedMode == .following ? "checkmark" : "person.2")
+                }
+                Button { PollsFeed.setScope(.global) } label: {
+                    Label("Global", systemImage: feedService.pollsFeedMode == .following ? "globe" : "checkmark")
+                }
+                if feedService.pollsFeedMode == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
+                Divider()
+                PollStatusFilterMenuItems(selected: feedService.pollStatusFilter)
+                Divider()
+                Button {
+                    configService.config.autoLoadNewPosts.toggle()
+                    configService.save()
+                } label: {
+                    Label("Auto-load", systemImage: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
                 }
             } else if feedService.feedMode == .marketplace {
                 Button { marketplaceService.setScope(.following) } label: {
@@ -1308,6 +1344,34 @@ struct FeedView: View {
                 if feedService.articlesFeedMode == .global {
                     trustScopeButton
                 }
+            } else if feedService.feedMode == .polls {
+                Button(action: { PollsFeed.setScope(.following) }) {
+                    Image(systemName: feedService.pollsFeedMode == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.pollsFeedMode == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Polls from people you follow")
+
+                Button(action: { PollsFeed.setScope(.global) }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.pollsFeedMode == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Global polls: your Web of Trust, or everyone with the shield off")
+
+                if feedService.pollsFeedMode == .global {
+                    trustScopeButton
+                }
+                PollStatusFilterMenu(selected: feedService.pollStatusFilter, color: .havenPurple)
+                Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                    Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(configService.config.autoLoadNewPosts ? String(localized: "feed.help.autoLoadOn") : String(localized: "feed.help.autoLoadOff"))
             } else if feedService.feedMode == .recipes {
                 Button(action: { recipeService.setScope(.following) }) {
                     Image(systemName: recipeService.scope == .following ? "person.2.fill" : "person.2")
@@ -1602,6 +1666,8 @@ struct FeedView: View {
                     LongFormComposeView(flavor: .recipe, onDismiss: { modeComposer = nil })
                 case .listing:
                     MarketplaceSellView(onDismiss: { modeComposer = nil })
+                case .poll:
+                    PollComposeView(onDismiss: { modeComposer = nil })
                 }
             }
             .environmentObject(nostrService)
@@ -2809,6 +2875,11 @@ struct FeedView: View {
                                 FeedNoteSkeletonRow()
                                     .padding(.horizontal, 16)
                             }
+                        }
+
+                        if feedService.feedMode == .polls && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed {
+                            PollsEmptyStateView(scope: feedService.pollsFeedMode, status: feedService.pollStatusFilter,
+                                                onPost: configService.activeAccountHexPubkey.isEmpty ? nil : { modeComposer = .poll })
                         }
 
                         if isThreadedModeActive {
