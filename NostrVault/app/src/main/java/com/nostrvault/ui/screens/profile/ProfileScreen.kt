@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,7 +12,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -281,6 +279,13 @@ fun ProfileScreen(
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
                     onZap = viewModel::zap,
+                    onTrustWeb = { trustWebAuthor = pubkey },
+                    onCopyNpub = {
+                        npub?.let {
+                            clipboard.setText(AnnotatedString(it))
+                            Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                 )
             }
 
@@ -745,6 +750,11 @@ private fun Badge(text: String, color: Color) {
     )
 }
 
+/**
+ * One line, never scrolled: the labelled actions share the width and the
+ * icon-only ones keep a fixed square. On narrow screens or with large text
+ * Message drops its word first, then Zap. Block lives in ⋯, away from Message.
+ */
 @Composable
 private fun ProfileActionRow(
     isOwnProfile: Boolean,
@@ -758,38 +768,72 @@ private fun ProfileActionRow(
     onMessage: () -> Unit,
     onBlock: () -> Unit,
     onZap: () -> Unit,
+    onTrustWeb: () -> Unit,
+    onCopyNpub: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-    ) {
-        if (isOwnProfile) {
-            ActionChip("Post", NostrVaultIcons.Compose, Color.White, colors.primary, onClick = onCompose)
-            ActionChip("Edit", NostrVaultIcons.Edit, colors.primary, colors.primary.copy(alpha = 0.12f), onClick = onEditProfile)
-        } else {
-            ActionChip(
-                if (isFollowing) "Unfollow" else "Follow",
-                NostrVaultIcons.PersonAdd,
-                if (isFollowing) Color.White else colors.primary,
-                if (isFollowing) colors.primary else colors.primary.copy(alpha = 0.12f),
-                onClick = onFollow,
-            )
-            ActionChip("Message", NostrVaultIcons.Chat, colors.primary, colors.primary.copy(alpha = 0.12f), onClick = onMessage)
-            ActionChip(
-                if (isBlocked) "Unblock" else "Block",
-                NostrVaultIcons.Blocked,
-                if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935),
-                (if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935)).copy(alpha = 0.12f),
-                onClick = onBlock,
-            )
-            if (canZap) {
-                ActionChip("Zap $zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap)
+    val tint = colors.primary.copy(alpha = 0.12f)
+    // Like SwiftUI's ViewThatFits: the first of the rows, each terser than the
+    // last, whose natural width fits.
+    @Composable
+    fun buttons(compact: Int) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (isOwnProfile) {
+                ActionChip("Post", NostrVaultIcons.Compose, Color.White, colors.primary, onClick = onCompose, modifier = Modifier.weight(1f))
+                ActionChip("Edit Profile", NostrVaultIcons.Edit, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+            } else {
+                ActionChip(
+                    if (isFollowing) "Unfollow" else "Follow",
+                    NostrVaultIcons.PersonAdd,
+                    if (isFollowing) Color.White else colors.primary,
+                    if (isFollowing) colors.primary else tint,
+                    onClick = onFollow,
+                    modifier = Modifier.weight(1f),
+                )
+                if (compact > 0) {
+                    ActionIcon(NostrVaultIcons.Chat, "Message", colors.primary, tint, onClick = onMessage)
+                } else {
+                    ActionChip("Message", NostrVaultIcons.Chat, colors.primary, tint, onClick = onMessage, modifier = Modifier.weight(1f))
+                }
+                if (canZap) {
+                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
+                }
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    ActionIcon(NostrVaultIcons.More, "More", colors.primary, tint, onClick = { menuOpen = true })
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Copy npub") },
+                            leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onCopyNpub() },
+                        )
+                        HorizontalDivider()
+                        val blockColor = if (isBlocked) Color(0xFFFF9800) else ErrorRed
+                        DropdownMenuItem(
+                            text = { Text(if (isBlocked) "Unblock" else "Block", color = blockColor) },
+                            leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = blockColor, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onBlock() },
+                        )
+                    }
+                }
             }
         }
+    }
+    androidx.compose.ui.layout.SubcomposeLayout(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) { constraints ->
+        val rows = (0..2).map { level -> subcompose(level) { buttons(compact = level) }.first() }
+        val chosen = rows.firstOrNull { it.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth } ?: rows.last()
+        val placeable = chosen.measure(constraints)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
     }
 }
 
@@ -800,19 +844,41 @@ private fun ActionChip(
     contentColor: Color,
     background: Color,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     description: String = label,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        modifier = modifier
+            .height(32.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(background)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 10.dp),
     ) {
         Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(14.dp))
-        Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    contentColor: Color,
+    background: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(width = 36.dp, height = 32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(background)
+            .clickable(onClick = onClick),
+    ) {
+        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(16.dp))
     }
 }
 
