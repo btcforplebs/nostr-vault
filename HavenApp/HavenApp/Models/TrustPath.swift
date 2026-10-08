@@ -47,19 +47,7 @@ struct TrustPath: Equatable {
                         trustGraph: Set<String>, contactLists: [[String: Any]]) -> TrustPath {
         if author == me { return TrustPath(reach: .you, bridges: [], hasMore: false) }
 
-        var newest: [String: (createdAt: Int, tagsAuthor: Bool)] = [:]
-        for list in contactLists {
-            guard list["kind"] as? Int == 3,
-                  let signer = list["pubkey"] as? String,
-                  signer != author, signer != me, follows.contains(signer),
-                  let tags = list["tags"] as? [[String]]
-            else { continue }
-            let createdAt = (list["created_at"] as? Int) ?? 0
-            if let seen = newest[signer], seen.createdAt >= createdAt { continue }
-            let tagsAuthor = tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == author }
-            newest[signer] = (createdAt, tagsAuthor)
-        }
-        let sorted = newest.filter(\.value.tagsAuthor).keys.sorted()
+        let sorted = allBridges(author: author, me: me, follows: follows, contactLists: contactLists)
         let shown = Array(sorted.prefix(shownBridges))
         let more = sorted.count > shownBridges
 
@@ -74,6 +62,25 @@ struct TrustPath: Equatable {
             reach = trustGraph.contains(author) ? .web : .outside
         }
         return TrustPath(reach: reach, bridges: shown, hasMore: more)
+    }
+
+    /// Every bridge in `contactLists`, sorted by key, by the same rules as
+    /// `resolve`. The map uses it to light all of them, not just the card's 5.
+    static func allBridges(author: String, me: String, follows: Set<String>,
+                           contactLists: [[String: Any]]) -> [String] {
+        var newest: [String: (createdAt: Int, tagsAuthor: Bool)] = [:]
+        for list in contactLists {
+            guard list["kind"] as? Int == 3,
+                  let signer = list["pubkey"] as? String,
+                  signer != author, signer != me, follows.contains(signer),
+                  let tags = list["tags"] as? [[String]]
+            else { continue }
+            let createdAt = (list["created_at"] as? Int) ?? 0
+            if let seen = newest[signer], seen.createdAt >= createdAt { continue }
+            let tagsAuthor = tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == author }
+            newest[signer] = (createdAt, tagsAuthor)
+        }
+        return newest.filter(\.value.tagsAuthor).keys.sorted()
     }
 
     /// The follow-list filters to ask for: your follows in chunks, each tagging

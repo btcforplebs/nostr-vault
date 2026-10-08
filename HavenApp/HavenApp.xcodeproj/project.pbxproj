@@ -375,6 +375,8 @@
 		B98F984A810E762DDFBBB244 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF859BC17F21BAE82F4F75F /* ZapNotificationBanner.swift */; };
 		BA28A725680810BA41A69746 /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD61BE8DFF662A086B42872 /* NIP17Service.swift */; };
 		BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */; };
+		7A1C0E5B3D2F4A6B8C9D0E20 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */; };
+		7A1C0E5B3D2F4A6B8C9D0E21 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */; };
 		BA8810E4D83750FF74358B10 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED924B5483C85E11E4917120 /* ContentView.swift */; };
 		BADF96FFDAD0786D3A218C25 /* ZapHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B7AE001906426D0D833C0D /* ZapHistory.swift */; };
 		BB0F85C63A35B8A9EC209A91 /* PlainLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44FA8B5C2592FA9E88658049 /* PlainLog.swift */; };
@@ -648,6 +650,7 @@
 		558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		5717FE059897D5903CA56549 /* NIP44Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP44Service.swift; sourceTree = "<group>"; };
 		57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPath.swift; sourceTree = "<group>"; };
+		7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMap.swift; sourceTree = "<group>"; };
 		58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerListingsLoader.swift; sourceTree = "<group>"; };
 		5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorStatusSheet.swift; sourceTree = "<group>"; };
 		5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaView.swift; sourceTree = "<group>"; };
@@ -1180,6 +1183,7 @@
 				B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */,
 				86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */,
 				57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */,
+				7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 			);
@@ -1755,6 +1759,7 @@
 				4672FF7145096D1FF96848F9 /* Theming.swift in Sources */,
 				3E132F275589C18543105D96 /* ThreadEngagementQuery.swift in Sources */,
 				BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */,
+				7A1C0E5B3D2F4A6B8C9D0E20 /* TrustMap.swift in Sources */,
 				D11A40BAE7126C3D866D0DBA /* TrustPathCard.swift in Sources */,
 				837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */,
 				93DCC2A165397C8BA4F00DF6 /* TrustWebView.swift in Sources */,
@@ -2012,6 +2017,7 @@
 				00119641B62DB2BBCEB963B0 /* Theming.swift in Sources */,
 				372DC81DD5E2474177F0AE1B /* ThreadEngagementQuery.swift in Sources */,
 				F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */,
+				7A1C0E5B3D2F4A6B8C9D0E21 /* TrustMap.swift in Sources */,
 				76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */,
 				673731663A06785AAD5AA6FD /* TrustPathService.swift in Sources */,
 				56CDAAD91FCF7898373661F0 /* TrustWebView.swift in Sources */,
