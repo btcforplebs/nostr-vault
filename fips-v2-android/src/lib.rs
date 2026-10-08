@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use fips::identity::{Identity, PeerIdentity, encode_nsec};
+use fips::identity::{Identity, PeerIdentity, decode_nsec, encode_nsec};
 use fips::{Config, Node};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -110,6 +110,12 @@ struct Running {
 
 static STATE: Mutex<Option<Running>> = Mutex::new(None);
 
+/// The state, even after a panic while it was held: a poisoned lock would
+/// otherwise fail every later call as a start error, forever.
+fn state() -> std::sync::MutexGuard<'static, Option<Running>> {
+    STATE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// How long an offer stays valid and how long we wait for its answer. Upstream
 /// defaults to 120 s, which is also how long a missed offer stalls a connect
 /// (the glare path drops the peer's offer while ours goes unanswered).
@@ -122,22 +128,27 @@ pub const ERR_ALREADY_EXPORTED: i32 = -4;
 pub const ERR_START: i32 = -5;
 pub const ERR_BAD_NPUB: i32 = -6;
 
-fn config_yaml(nsec: &str, opts: &StartOptions) -> Zeroizing<String> {
+/// Every caller string is decoded or quoted before it reaches the template:
+/// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
+/// are JSON strings (valid YAML), so no input can add keys or peers.
+fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
+    let nsec = Zeroizing::new(encode_nsec(&decode_nsec(nsec).context("nsec")?));
     let relays = if opts.relays.is_empty() {
         String::new()
     } else {
-        let list: Vec<String> = opts.relays.iter().map(|r| format!("\"{r}\"")).collect();
+        let list: Vec<String> = opts.relays.iter().map(|r| serde_json::Value::from(r.as_str()).to_string()).collect();
         format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
     };
     let mut peers = String::new();
     for npub in &opts.peers {
+        let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
         peers.push_str(&format!(
             "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
         ));
     }
     let peers = if peers.is_empty() { "peers: []\n".to_string() } else { format!("peers:\n{peers}") };
     // The control socket binds under /tmp, which an app sandbox cannot write.
-    Zeroizing::new(format!(
+    Ok(Zeroizing::new(format!(
         r#"node:
   identity:
     nsec: "{nsec}"
@@ -159,9 +170,10 @@ transports:
     advertise_on_nostr: true
     public: false
 {peers}"#,
+        nsec = nsec.as_str(),
         lan = opts.lan,
         port = opts.udp_port,
-    ))
+    )))
 }
 
 pub fn generate_nsec() -> String {
@@ -170,11 +182,11 @@ pub fn generate_nsec() -> String {
 
 /// Start the node. Idempotent: an already-running node returns Ok.
 pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
-    let mut state = STATE.lock().unwrap();
+    let mut state = state();
     if state.is_some() {
         return Ok(());
     }
-    let yaml = config_yaml(nsec, opts);
+    let yaml = config_yaml(nsec, opts)?;
     let config: Config = serde_yaml::from_str(&yaml).context("mesh config")?;
     drop(yaml);
 
@@ -268,7 +280,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
 /// Share a local TCP port (the relay, which also serves Blossom) on mesh :80.
 /// Sharing one port at a time; a different port needs `unexport` first.
 pub fn export(port: u16) -> i32 {
-    let mut state = STATE.lock().unwrap();
+    let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     match run.exported {
         Some(p) if p == port => return 0,
@@ -284,7 +296,7 @@ pub fn export(port: u16) -> i32 {
 
 /// Stop sharing. Friends' connections in progress are cut; reading continues.
 pub fn unexport() -> i32 {
-    let mut state = STATE.lock().unwrap();
+    let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     run.exported = None;
     if !run.ctl.set_serve(None) {
@@ -299,7 +311,7 @@ pub fn unexport() -> i32 {
 /// Waits up to 10 s for the node: call it off the UI thread. At most 32
 /// vaults stay open; opening one more closes the least recently read.
 pub fn ingress(npub: &str) -> i32 {
-    let control = match STATE.lock().unwrap().as_ref() {
+    let control = match state().as_ref() {
         Some(run) => run.control.clone(),
         None => return ERR_NOT_RUNNING,
     };
@@ -309,7 +321,7 @@ pub fn ingress(npub: &str) -> i32 {
         tracing::warn!("mesh add peer {npub}: {e:#}");
         return ERR_START;
     }
-    let mut state = STATE.lock().unwrap();
+    let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     match run.ctl.connect_port(peer.address().to_ipv6()) {
         Ok(port) => {
@@ -377,7 +389,7 @@ fn add_peer(
 
 /// Stop the node, and the stack with it.
 pub fn stop() {
-    let Some(run) = STATE.lock().unwrap().take() else { return };
+    let Some(run) = state().take() else { return };
     // Stack first, so its resets still have a node to leave through.
     run.ctl.stop();
     let _ = run.stack_thread.join();
@@ -387,7 +399,7 @@ pub fn stop() {
 }
 
 pub fn status_json() -> String {
-    let state = STATE.lock().unwrap();
+    let state = state();
     let status = match state.as_ref() {
         None => Status {
             running: false,
@@ -639,13 +651,40 @@ mod tests {
         let nsec = generate_nsec();
         for peers in [vec![], vec!["npub15mrkrlapfs52syawrthvyfhg349pkjd8zdkk6qfc4unj5jgxfwqsjmp6wn".to_string()]] {
             let opts = StartOptions { peers, relays: vec!["wss://nos.lol".into()], ..Default::default() };
-            let yaml = config_yaml(&nsec, &opts);
+            let yaml = config_yaml(&nsec, &opts).unwrap();
             let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
             assert!(!cfg.node.control.enabled);
             assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
             assert!(cfg.node.leaf_only, "a phone must never carry other nodes' traffic");
             assert_eq!(cfg.peers.len(), opts.peers.len());
         }
+    }
+
+    #[test]
+    fn config_refuses_strings_that_would_rewrite_it() {
+        let nsec = generate_nsec();
+        let npub = "npub15mrkrlapfs52syawrthvyfhg349pkjd8zdkk6qfc4unj5jgxfwqsjmp6wn";
+        // Tron's payloads: a second peer with an endpoint, an alias, a node subkey.
+        let extra_peer = format!("{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"203.0.113.7:4242\"\n    connect_policy: auto_connect\n  - npub: \"{npub}\" #");
+        let alias = format!("{npub}\"\n    alias: \"pwned\" #");
+        for peers in [vec![extra_peer], vec![alias]] {
+            let opts = StartOptions { peers, ..Default::default() };
+            assert!(config_yaml(&nsec, &opts).is_err());
+        }
+        let bad_nsec = format!("{nsec}\"\n  limits:\n    max_peers: 9999 #");
+        assert!(config_yaml(&bad_nsec, &StartOptions::default()).is_err());
+        // A relay is quoted, never parsed as YAML: the hostile string stays one URL.
+        let relay = "wss://a\"]\n      dm_relays: [\"wss://b".to_string();
+        let opts = StartOptions { relays: vec![relay.clone()], ..Default::default() };
+        let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, &opts).unwrap()).expect("parses");
+        assert_eq!(cfg.node.rendezvous.nostr.advert_relays, vec![relay.clone()]);
+        assert_eq!(cfg.node.rendezvous.nostr.dm_relays, vec![relay]);
+        // Clean input still works, and a peer comes out as one plain auto-connect npub.
+        let opts = StartOptions { peers: vec![npub.into()], ..Default::default() };
+        let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, &opts).unwrap()).unwrap();
+        assert_eq!(cfg.peers.len(), 1);
+        assert_eq!(cfg.peers[0].npub, npub);
+        assert!(cfg.peers[0].alias.is_none());
     }
 
     #[test]
