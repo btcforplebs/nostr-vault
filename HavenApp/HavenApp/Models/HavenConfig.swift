@@ -133,10 +133,12 @@ struct HavenConfig: Codable, Equatable {
     // Import
     var importStartDate: String = "2023-01-01"
     var importSeedRelaysFile: String = "relays_import.json"
+    // relay.damus.io replaced nos.lol and nostr.mom (2026-10-07: both timed
+    // out on connect). relay.nostr.build was tried and dropped: it wants
+    // NIP-42 sign-in before it answers, which the import doesn't do.
     var importSeedRelays: [String] = [
         "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
+        "wss://relay.damus.io",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net"
     ]
@@ -178,12 +180,12 @@ struct HavenConfig: Codable, Equatable {
 
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
+    // Default broadcast relays (Logen, 2026-10-07). nos.lol and nostr.mom
+    // were timing out on connect.
     var blastrRelays: [String] = [
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net"
+        "wss://relay.damus.io",
+        "wss://relay.snort.social"
     ]
     
     // Feed Reading

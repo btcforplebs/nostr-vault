@@ -138,4 +138,36 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertEqual(TutorialContent.feeds.count, 6)
         XCTAssertTrue(TutorialContent.feeds.allSatisfy { $0.anchor == TutorialContent.feedPicker })
     }
+
+    /// The import tour teaches Vault and Pocket relay, so finishing it marks
+    /// those done. Skipping it (keep running, jump in early) doesn't.
+    func testImportTourCoversVaultAndPocketRelay() {
+        var progress = TutorialProgress(store: MemoryStore())
+        progress.skip(.importTour, account: alice)
+        XCTAssertEqual(progress.status(.vault, account: alice), .notStarted)
+
+        progress.finish(.importTour, account: alice)
+        XCTAssertEqual(progress.status(.vault, account: alice), .done)
+        XCTAssertEqual(progress.status(.pocketRelay, account: alice), .done)
+    }
+
+    /// Covering never overwrites a status someone already chose.
+    func testCoverKeepsAnEarlierSkip() {
+        var progress = TutorialProgress(store: MemoryStore())
+        progress.skip(.vault, account: alice)
+        progress.finish(.importTour, account: alice)
+        XCTAssertEqual(progress.status(.vault, account: alice), .skipped)
+    }
+
+    /// The import tour runs in setup, before Fill your vault has a say.
+    func testImportTourDoesNotWaitForFillYourVault() {
+        var progress = TutorialProgress(store: MemoryStore())
+        XCTAssertTrue(progress.startIfEligible(.importTour, account: alice))
+    }
+
+    func testImportTourKey() {
+        XCTAssertEqual(TutorialProgress.key(.importTour, account: alice), "tutorial.import-tour")
+        XCTAssertEqual(TutorialContent.importTour.count, 5)
+        XCTAssertTrue(TutorialContent.importTour.allSatisfy { $0.anchor == nil })
+    }
 }

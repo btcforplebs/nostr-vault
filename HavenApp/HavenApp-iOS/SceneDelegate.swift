@@ -331,6 +331,7 @@ struct AppBannerStack: View {
             RelayActivityBanner().bannerHitRegion("relayActivity")
             ActionToastBanner().bannerHitRegion("toast")
             ErrorNotificationBanner().bannerHitRegion("error")
+            ImportRunningPill()
             Spacer(minLength: 0)
         }
         // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.

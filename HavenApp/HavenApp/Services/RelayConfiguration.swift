@@ -322,7 +322,7 @@ enum RelayConfiguration {
     }
 
     /// Where events go when no blastr relays are configured.
-    static let fallbackBroadcastRelays = ["wss://relay.primal.net", "wss://nos.lol"]
+    static let fallbackBroadcastRelays = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
 
     /// Format an environment dictionary as a .env file string.
     static func formatEnvFile(from envDict: [String: String]) -> String {

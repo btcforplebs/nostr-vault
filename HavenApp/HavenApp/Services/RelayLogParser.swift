@@ -90,6 +90,17 @@ enum RelayLogParser {
         if line.contains("connected successfully") {
             batch.importProgress = 0.1
             batch.importStatusMessage = "Connected to relays..."
+        } else if line.contains("No notes found for") {
+            // An empty 10-day window (import.go): still progress through the
+            // history, so the bar and the "from <month>" line keep moving for
+            // someone with gaps (or a new key with no notes at all).
+            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
+                batch.progressDateStr = String(dateStr)
+            }
+            if let rangeStart = line.range(of: "for ")?.upperBound,
+               let rangeEnd = line.range(of: " to")?.lowerBound {
+                batch.importStatusMessage = "Looking through notes from \(line[rangeStart..<rangeEnd])..."
+            }
         } else if line.contains("Imported") && line.contains("notes") {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
                 batch.progressDateStr = String(dateStr)

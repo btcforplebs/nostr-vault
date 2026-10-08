@@ -4043,7 +4043,7 @@ class FeedService @Inject constructor(
         if (pubkey.isEmpty()) return@withContext emptyList()
         val config = configStore.config.value
         val urls = buildList {
-            addAll(config.activeBlastrRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(config.activeBlastrRelays.ifEmpty { listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social") })
             config.nostrURL?.takeIf { it.isNotBlank() }?.let { add(it) }
         }.filterNot { NostrService.isLoopbackRelay(it) }.distinctBy { LookupSocketPool.relayKey(it) }
         val ids = java.util.Collections.synchronizedSet(mutableSetOf<String>())

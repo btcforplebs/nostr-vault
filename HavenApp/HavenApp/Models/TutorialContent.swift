@@ -19,6 +19,7 @@ extension TutorialID {
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
         case .pocketRelay: return "Pocket Relay vs Public Relay"
+        case .importTour: return "How Your Vault Works"
         }
     }
 
@@ -29,6 +30,7 @@ extension TutorialID {
         case .vault: return "Everything you've posted, kept on this device."
         case .walletConnect: return "Link a wallet so you can send zaps."
         case .pocketRelay: return "Who can reach the relay in your pocket."
+        case .importTour: return "Your own copy, your relay, and public relays."
         }
     }
 
@@ -39,6 +41,7 @@ extension TutorialID {
         case .vault: return "lock.shield"
         case .walletConnect: return "bolt.fill"
         case .pocketRelay: return "antenna.radiowaves.left.and.right"
+        case .importTour: return "tray.and.arrow.down"
         }
     }
 
@@ -53,6 +56,7 @@ extension TutorialID {
             #else
             return []
             #endif
+        case .importTour: return TutorialContent.importTour
         case .fillYourVault, .vault, .walletConnect, .pocketRelay: return []
         }
     }
@@ -105,6 +109,39 @@ enum TutorialContent {
             anchor: feedPicker,
             title: "Make it yours",
             body: "Edit Feeds, at the bottom of this menu, hides the feeds you don't use and changes their order."
+        ),
+    ]
+
+    /// Shown while "I use Nostr" imports (Tory's draft, nostr-vault Tutorial
+    /// thread 2026-10-07). No anchors: in setup they're the screen's own
+    /// cards, and a replay from Settings shows them low and centred. The
+    /// last "Ready" card with real counts belongs to the setup screen only.
+    /// Wording matches website/index.html "Two ways to run it".
+    static let importTour: [TutorialStep] = [
+        TutorialStep(
+            anchor: nil,
+            title: "Your notes, your copy",
+            body: "Your notes live on relays you don't own, and any of them can delete them. Importing makes a copy that lives on this device."
+        ),
+        TutorialStep(
+            anchor: nil,
+            title: "A relay in your pocket",
+            body: "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nothing on the network can reach in."
+        ),
+        TutorialStep(
+            anchor: nil,
+            title: "Public relays vs yours",
+            body: "Public relays are shared servers everyone posts to. Yours is your own copy. You post from your vault, and it sends the post out."
+        ),
+        TutorialStep(
+            anchor: nil,
+            title: "Want an address?",
+            body: "Run Nostr Vault on a Mac with your own domain and it becomes a public relay that's up 24/7. Your phone syncs from it. Without one, your pocket relay is all you need."
+        ),
+        TutorialStep(
+            anchor: nil,
+            title: "Your feed, your rules",
+            body: "No algorithm. Your feeds are filtered by the people you follow, so spam stays out."
         ),
     ]
 }

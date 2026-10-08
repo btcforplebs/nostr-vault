@@ -8,6 +8,9 @@ enum TutorialID: String, CaseIterable, Codable {
     case vault
     case walletConnect = "wallet-connect"
     case pocketRelay = "pocket-relay"
+    /// The cards shown while "I use Nostr" imports your notes. They teach
+    /// what Vault and Pocket relay would, so finishing them covers those.
+    case importTour = "import-tour"
 
     /// Fill your vault is about one account's follows, so a second account
     /// gets it again. The page tutorials teach the app, so one run covers
@@ -18,6 +21,16 @@ enum TutorialID: String, CaseIterable, Codable {
     /// tutorial should see the new one once. A stored status from an older
     /// version reads as `notStarted`.
     var version: Int { 1 }
+
+    /// Tutorials whose lessons this one already gave. Finishing it marks
+    /// them done too, so nobody hears the same thing twice.
+    var covers: [TutorialID] {
+        self == .importTour ? [.vault, .pocketRelay] : []
+    }
+
+    /// Runs inside setup, before there's a feed or a Fill your vault to
+    /// wait for.
+    var runsDuringSetup: Bool { self == .importTour }
 }
 
 enum TutorialStatus: String, Codable {
@@ -70,7 +83,7 @@ struct TutorialProgress {
               active == nil,
               !autoStartedThisLaunch,
               status(id, account: account) == .notStarted else { return false }
-        if id != .fillYourVault {
+        if id != .fillYourVault && !id.runsDuringSetup {
             return status(.fillYourVault, account: account) != .notStarted
         }
         return true
@@ -90,8 +103,13 @@ struct TutorialProgress {
         active = id
     }
 
+    /// Done, and so is everything it covers. Only call this when the cards
+    /// were actually seen; closing early is `skip`.
     mutating func finish(_ id: TutorialID, account: String) {
         close(id, as: .done, account: account)
+        for covered in id.covers where status(covered, account: account) == .notStarted {
+            close(covered, as: .done, account: account)
+        }
     }
 
     mutating func skip(_ id: TutorialID, account: String) {
