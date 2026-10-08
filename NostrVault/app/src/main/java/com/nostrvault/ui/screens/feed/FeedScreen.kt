@@ -135,7 +135,6 @@ fun FeedScreen(
     onComposeText: (String) -> Unit = {},
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
-    onNavigateToSettings: () -> Unit,
     viewModel: FeedViewModel = hiltViewModel(),
     hashtagsViewModel: HashtagsFeedViewModel = hiltViewModel(),
 ) {
@@ -318,8 +317,6 @@ fun FeedScreen(
     var listingInfoNote by remember { mutableStateOf<FeedNote?>(null) }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Feed config sheet state
-    var showFeedConfig by remember { mutableStateOf(false) }
     var showFeedMenuEditor by remember { mutableStateOf(false) }
 
     // Reels' Global scope is unmoderated video from the whole network; it sits
@@ -582,7 +579,6 @@ fun FeedScreen(
                 onToggleReplies = viewModel::toggleShowReplies,
                 onSetPopularFilter = viewModel::setPopularFilter,
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
-                onOpenFeedDashboard = { showFeedConfig = true },
                 onEditFeeds = { showFeedMenuEditor = true },
                 newPostsCount = if (showNewPosts) pendingCount else 0,
                 onLoadNewPosts = loadNewPosts,
@@ -657,7 +653,6 @@ fun FeedScreen(
                     viewModel = viewModel,
                     profiles = allProfiles,
                     topInset = padding.calculateTopPadding(),
-                    isCovered = showFeedConfig,
                     onProfile = onProfileClick,
                     // Reels are not in the feed's note list; register the note
                     // so the compose and thread screens can resolve it by id.
@@ -1154,26 +1149,6 @@ fun FeedScreen(
             // Hiding the feed you're on would leave the picker without it.
             onSaved = { hidden -> if (feedMode in hidden) viewModel.setFeedMode(FeedMenuSettings.PINNED) },
             onDismiss = { showFeedMenuEditor = false },
-        )
-    }
-
-    // Feed config sheet (matches iOS feed dashboard)
-    if (showFeedConfig) {
-        val feedConfig by viewModel.configStoreRef.config.collectAsState()
-        com.nostrvault.ui.screens.dashboard.FeedConfigSheet(
-            showReposts = showReposts,
-            showReplies = showReplies,
-            autoLoadNewNotes = autoLoad,
-            feedRelays = feedConfig.activeFeedRelays,
-            relayStates = viewModel.relayStates.collectAsState().value,
-            onToggleReposts = { viewModel.toggleShowReposts() },
-            onToggleReplies = { viewModel.toggleShowReplies() },
-            onToggleAutoLoad = { viewModel.toggleAutoLoad() },
-            onManageRelays = {
-                showFeedConfig = false
-                onNavigateToSettings()
-            },
-            onDismiss = { showFeedConfig = false },
         )
     }
 }
@@ -1773,7 +1748,6 @@ private fun FeedTopBar(
     onToggleReplies: () -> Unit,
     onSetPopularFilter: (PopularFilter) -> Unit,
     onToggleEngagementStats: () -> Unit,
-    onOpenFeedDashboard: () -> Unit,
     onEditFeeds: () -> Unit,
     /** Posts are waiting and the floating "New Posts" button is up. */
     newPostsCount: Int,
@@ -1818,7 +1792,7 @@ private fun FeedTopBar(
                 modifier = Modifier
                     .tutorialAnchor(com.nostrvault.tutorials.TutorialContent.FEED_PICKER)
                     .clip(CircleShape)
-                    .clickable(onClickLabel = "Switch feeds or open the feed dashboard") { feedModeExpanded = true }
+                    .clickable(onClickLabel = "Switch feeds") { feedModeExpanded = true }
                     .semantics { contentDescription = "Feed: ${feedMode.displayName}, $connectionStatus" },
             ) {
                 Box(
@@ -1886,25 +1860,6 @@ private fun FeedTopBar(
                     )
                 }
                 HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Dashboard") },
-                    leadingIcon = {
-                        Box {
-                            Icon(NostrVaultIcons.Relay, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(dotColor),
-                            )
-                        }
-                    },
-                    onClick = {
-                        feedModeExpanded = false
-                        onOpenFeedDashboard()
-                    },
-                )
                 // Last, at the bottom of the list it edits (iOS #303).
                 DropdownMenuItem(
                     text = { Text("Edit Feeds") },

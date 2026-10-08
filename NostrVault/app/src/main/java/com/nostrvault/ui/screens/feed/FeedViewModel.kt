@@ -165,10 +165,6 @@ class FeedViewModel @Inject constructor(
     }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.connectionColor.value)
 
-    /** Each feed relay's socket state, for the feed dashboard rows. */
-    val relayStates: StateFlow<Map<String, com.nostrvault.data.remote.WebSocketClient.ConnectionState>> =
-        feedService.relayStates
-
     /// Discovery's empty state needs both of these to say *why* it is empty:
     /// still building, nobody followed, or relays that returned nothing.
     val isLoadingExtendedNetwork: StateFlow<Boolean> = feedService.isLoadingExtendedNetwork
@@ -239,11 +235,11 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    private val _feedMode = MutableStateFlow(
-        configStore.config.value.defaultFeedMode
-            .let { name -> FeedMode.entries.find { it.name == name } }
-            ?: FeedMode.FOLLOWING
-    )
+    // Starts from the service's mode, not a second read of defaultFeedMode.
+    // The service is a singleton built before setup runs, so on a fresh
+    // install the two reads disagreed: the tab said what setup chose while
+    // the service loaded the default, and picking that tab again did nothing.
+    private val _feedMode = MutableStateFlow(feedService.feedMode.value)
     val feedMode: StateFlow<FeedMode> = _feedMode.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)

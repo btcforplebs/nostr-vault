@@ -261,7 +261,7 @@
 		760D65B08AFEAAEEF8EB6683 /* StatsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0AF323C6A978AA0E08E94A /* StatsCard.swift */; };
 		7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFB53AF0B545D2F574F9F8D /* TrustPathCard.swift */; };
-		77F2DF4742BD61D41A930B9A /* FeedDashboardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */; };
+		77F2DF4742BD61D41A930B9A /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5768CC5EF0D663BD7DBA800 /* MacRelaySyncStatusView.swift */; };
 		783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
 		78ADF8C19CAAAA4A58E158A0 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
 		79102C2AF9825055F7FF1310 /* DMAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155D5690C7C6EF350165A21F /* DMAttachment.swift */; };
@@ -299,7 +299,7 @@
 		8669D5E967AF7E8F56DAB283 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
 		869E22799F9A0329D1D7C56A /* NVWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCBFE5F177EF3E08A2B49DF /* NVWidgetSnapshot.swift */; };
 		87006C00E9C8539E9C81133A /* FeedProfileCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874CAE6A0EBBFE29AA920567 /* FeedProfileCard.swift */; };
-		870818EFD99EBF6D0E1F6C30 /* FeedDashboardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */; };
+		870818EFD99EBF6D0E1F6C30 /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5768CC5EF0D663BD7DBA800 /* MacRelaySyncStatusView.swift */; };
 		876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24FF7AFE3FFD1EBFFD119FA /* ZapBurstView.swift */; };
 		87D56536906D88D1C28BD2E2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */; };
 		882F2AC7BF561F047511CDA1 /* NIP10Thread.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */; };
@@ -836,7 +836,7 @@
 		B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportTourStage.swift; sourceTree = "<group>"; };
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
 		B3BCEFB561BABBB904949610 /* TutorialsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialsSettingsView.swift; sourceTree = "<group>"; };
-		B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDashboardSheet.swift; sourceTree = "<group>"; };
+		B5768CC5EF0D663BD7DBA800 /* MacRelaySyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncStatusView.swift; sourceTree = "<group>"; };
 		B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
 		B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollsFeedViews.swift; sourceTree = "<group>"; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
@@ -1161,7 +1161,7 @@
 				C86A6AE71C1034FAB5E689FE /* DashboardHelpers.swift */,
 				090FAA33204672CD9F7F6431 /* DashboardRelayRow.swift */,
 				41A8E188B7B23F83A3EA49AA /* DashboardView.swift */,
-				B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */,
+				B5768CC5EF0D663BD7DBA800 /* MacRelaySyncStatusView.swift */,
 				104C14D088ED0825A8996A61 /* RelayActivityViews.swift */,
 			);
 			path = Dashboard;
@@ -1709,7 +1709,7 @@
 				CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */,
 				030FF35B36CBFC4F36DB234A /* FIPSDetectionService.swift in Sources */,
 				26EC34BA41C0258FDC48AAC4 /* FeedActions.swift in Sources */,
-				77F2DF4742BD61D41A930B9A /* FeedDashboardSheet.swift in Sources */,
+				77F2DF4742BD61D41A930B9A /* MacRelaySyncStatusView.swift in Sources */,
 				0A7F84AA905A79326F9B2C30 /* FeedFilterEngine.swift in Sources */,
 				0DD1C8C36B2E95DB834BE5EB /* FeedLanguage.swift in Sources */,
 				9420BF6D6250673C8AD372A0 /* FeedLayoutMode.swift in Sources */,
@@ -2002,7 +2002,7 @@
 				1254B31953A9E00640351FFC /* EventPublisher.swift in Sources */,
 				29E9BEB0514B97A6DCD0257B /* FIPSDetectionService.swift in Sources */,
 				D9E8EC6D2923CC7E627C8F2B /* FeedActions.swift in Sources */,
-				870818EFD99EBF6D0E1F6C30 /* FeedDashboardSheet.swift in Sources */,
+				870818EFD99EBF6D0E1F6C30 /* MacRelaySyncStatusView.swift in Sources */,
 				E2575685724FF2B426237058 /* FeedFilterEngine.swift in Sources */,
 				3D71B8DAC40BC3DDCADB9B40 /* FeedLanguage.swift in Sources */,
 				8F8199339D065CB5F1B0D40E /* FeedLayoutMode.swift in Sources */,

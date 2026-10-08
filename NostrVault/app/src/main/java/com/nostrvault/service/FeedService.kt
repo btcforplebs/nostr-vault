@@ -235,6 +235,15 @@ class FeedService @Inject constructor(
         // naturally evicted or the user manually pulled to refresh. NostrService has
         // its own separate handleAccountSwitch() for its own state; this is FeedService's
         // equivalent, mirroring that same observeAccountSwitch() pattern.
+        // The saved switches arrive when the config loads from disk.
+        scope.launch {
+            configStore.config
+                .map { it.showReposts to it.showReplies }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { recomputeFilteredNotes() }
+        }
+
         scope.launch {
             configStore.config
                 .map { it.activeAccountNpub }
@@ -403,11 +412,13 @@ class FeedService @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
-    private val _showReposts = MutableStateFlow(true)
-    val showReposts: StateFlow<Boolean> = _showReposts.asStateFlow()
+    // Saved in the config so they survive a restart, as on iOS. Read from the
+    // config, not copied: the config loads from disk after this is built.
+    val showReposts: StateFlow<Boolean> = configStore.config.map { it.showReposts }
+        .stateIn(scope, SharingStarted.Eagerly, configStore.config.value.showReposts)
 
-    private val _showReplies = MutableStateFlow(true)
-    val showReplies: StateFlow<Boolean> = _showReplies.asStateFlow()
+    val showReplies: StateFlow<Boolean> = configStore.config.map { it.showReplies }
+        .stateIn(scope, SharingStarted.Eagerly, configStore.config.value.showReplies)
 
     private val _popularFilter = MutableStateFlow(PopularFilter.ALL)
     val popularFilter: StateFlow<PopularFilter> = _popularFilter.asStateFlow()
@@ -484,8 +495,8 @@ class FeedService @Inject constructor(
 
     /**
      * Each feed relay's own socket state, keyed by [FeedRelayHealth.key]. The
-     * feed dashboard rows and the feed dot read this; [connectionStatus] alone
-     * only says whether the feed has notes (iOS #281).
+     * feed dot reads this; [connectionStatus] alone only says whether the
+     * feed has notes (iOS #281).
      */
     private val _relayStates = MutableStateFlow<Map<String, WebSocketClient.ConnectionState>>(emptyMap())
     val relayStates: StateFlow<Map<String, WebSocketClient.ConnectionState>> = _relayStates.asStateFlow()
@@ -2168,8 +2179,8 @@ class FeedService @Inject constructor(
         notes = notes,
         mode = _feedMode.value,
         blocked = blockedPubkeys,
-        showReposts = _showReposts.value,
-        showReplies = _showReplies.value,
+        showReposts = configStore.config.value.showReposts,
+        showReplies = configStore.config.value.showReplies,
         followedPubkeys = _followedPubkeys.value.toSet(),
         wotPubkeys = _wotPubkeys.value,
         popularFilter = _popularFilter.value,
@@ -2273,12 +2284,12 @@ class FeedService @Inject constructor(
     }
 
     fun setShowReposts(show: Boolean) {
-        _showReposts.value = show
+        configStore.update { it.copy(showReposts = show) }
         recomputeFilteredNotes()
     }
 
     fun setShowReplies(show: Boolean) {
-        _showReplies.value = show
+        configStore.update { it.copy(showReplies = show) }
         recomputeFilteredNotes()
     }
 

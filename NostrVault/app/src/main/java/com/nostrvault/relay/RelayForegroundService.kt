@@ -590,22 +590,12 @@ class RelayForegroundService : Service() {
 
             // Fix file-based env vars: Go uses os.ReadFile with the
             // bare filename, but Android's CWD is NOT the relay data dir.
-            // Override with absolute paths so the Go relay can find them.
             // The lists are rewritten every boot: config is the source of truth
             // (there is no file-editing UI), and a list edited in Settings has
             // to reach the relay when the save restarts it. These used to be
             // written only when missing, so Blastr and import-seed edits never
             // reached the relay after the first boot.
-            fun writeRelayFile(envKey: String, fileName: String, content: List<String>) {
-                if (fileName.isNotEmpty()) {
-                    val file = File(relayDataDir, fileName)
-                    file.writeText("[" + content.joinToString(",") { "\"$it\"" } + "]")
-                    HavenBridge.setEnv(envKey, file.absolutePath)
-                }
-            }
-            writeRelayFile("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, inputs.importSeedRelays)
-            writeRelayFile("BLASTR_RELAYS_FILE", config.blastrRelaysFile, inputs.blastrRelays)
-            writeRelayFile("DM_RELAYS_FILE", RelayConfiguration.DM_RELAYS_FILE_NAME, inputs.dmRelays)
+            RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)
             if (config.whitelistedNpubsFile.isNotEmpty()) {
                 HavenBridge.setEnv("WHITELISTED_NPUBS_FILE", File(relayDataDir, config.whitelistedNpubsFile).absolutePath)
             }

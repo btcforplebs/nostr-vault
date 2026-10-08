@@ -124,6 +124,13 @@
             </intent-filter>
         </service>
 
+        <!-- Holds the foreground while RelayImportService imports notes;
+             the relay service is stopped for the length of the import. -->
+        <service
+            android:name=".service.ImportForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <!-- 24/7 Relay Foreground Service -->
         <service
             android:name=".relay.RelayForegroundService"

@@ -2700,18 +2700,6 @@ fun DashboardScreen(
                 onExportJsonl = { viewModel.exportJsonl(context) },
                 onExportMedia = { viewModel.exportMedia(context) },
                 onDismissImport = viewModel::dismissImport,
-                showReposts = feedService.showReposts.collectAsState().value,
-                showReplies = feedService.showReplies.collectAsState().value,
-                autoLoadNewNotes = currentConfig.autoLoadNewPosts,
-                feedRelays = currentConfig.activeFeedRelays,
-                relayStates = feedService.relayStates.collectAsState().value,
-                onToggleReposts = { feedService.setShowReposts(it) },
-                onToggleReplies = { feedService.setShowReplies(it) },
-                onToggleAutoLoad = { on -> viewModel.configStore.update { it.copy(autoLoadNewPosts = on) } },
-                onManageRelays = {
-                    showDashboardSheet = false
-                    onNavigate(Screen.Relays)
-                },
             )
         }
     }
@@ -3257,15 +3245,6 @@ private fun DashboardSheetContent(
     onExportJsonl: () -> Unit,
     onExportMedia: () -> Unit,
     onDismissImport: () -> Unit,
-    showReposts: Boolean,
-    showReplies: Boolean,
-    autoLoadNewNotes: Boolean,
-    feedRelays: List<String>,
-    relayStates: Map<String, com.nostrvault.data.remote.WebSocketClient.ConnectionState>,
-    onToggleReposts: (Boolean) -> Unit,
-    onToggleReplies: (Boolean) -> Unit,
-    onToggleAutoLoad: (Boolean) -> Unit,
-    onManageRelays: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
 
@@ -3298,40 +3277,12 @@ private fun DashboardSheetContent(
             )
             Spacer(Modifier.weight(1f))
 
-            var showFeedConfig by remember { mutableStateOf(false) }
-
-            IconButton(onClick = { showFeedConfig = true }, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    NostrVaultIcons.Settings,
-                    "Feed Settings",
-                    tint = SecondaryText,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
             IconButton(onClick = onRefresh, modifier = Modifier.size(32.dp)) {
                 Icon(
                     NostrVaultIcons.Refresh,
                     "Refresh",
                     tint = SecondaryText,
                     modifier = Modifier.size(18.dp),
-                )
-            }
-
-            if (showFeedConfig) {
-                com.nostrvault.ui.screens.dashboard.FeedConfigSheet(
-                    showReposts = showReposts,
-                    showReplies = showReplies,
-                    autoLoadNewNotes = autoLoadNewNotes,
-                    feedRelays = feedRelays,
-                    relayStates = relayStates,
-                    onToggleReposts = onToggleReposts,
-                    onToggleReplies = onToggleReplies,
-                    onToggleAutoLoad = onToggleAutoLoad,
-                    onManageRelays = {
-                        showFeedConfig = false
-                        onManageRelays()
-                    },
-                    onDismiss = { showFeedConfig = false },
                 )
             }
         }

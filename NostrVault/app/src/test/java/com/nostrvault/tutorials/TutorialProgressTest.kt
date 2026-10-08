@@ -112,4 +112,34 @@ class TutorialProgressTest {
         assertTrue(TutorialID.FILL_YOUR_VAULT.isAvailable) // its guide is FillYourFeedOverlay
         assertTrue(TutorialID.FEEDS.isAvailable)
     }
+
+    @Test fun importTourCoversVaultAndPocketRelay() {
+        val progress = TutorialProgress(MemoryStore())
+        progress.skip(TutorialID.IMPORT_TOUR, alice)
+        assertEquals(TutorialStatus.NOT_STARTED, progress.status(TutorialID.VAULT, alice))
+
+        progress.finish(TutorialID.IMPORT_TOUR, alice)
+        assertEquals(TutorialStatus.DONE, progress.status(TutorialID.VAULT, alice))
+        assertEquals(TutorialStatus.DONE, progress.status(TutorialID.POCKET_RELAY, alice))
+    }
+
+    /** Covering never overwrites a status someone already chose. */
+    @Test fun coverKeepsAnEarlierSkip() {
+        val progress = TutorialProgress(MemoryStore())
+        progress.skip(TutorialID.VAULT, alice)
+        progress.finish(TutorialID.IMPORT_TOUR, alice)
+        assertEquals(TutorialStatus.SKIPPED, progress.status(TutorialID.VAULT, alice))
+    }
+
+    /** The import tour runs in setup, before Fill your vault has a say. */
+    @Test fun importTourDoesNotWaitForFillYourVault() {
+        assertTrue(TutorialProgress(MemoryStore()).startIfEligible(TutorialID.IMPORT_TOUR, alice))
+    }
+
+    @Test fun importTourKey() {
+        assertEquals("tutorial.import-tour", TutorialProgress.key(TutorialID.IMPORT_TOUR, alice))
+        assertEquals(5, TutorialContent.importTour.size)
+        assertTrue(TutorialContent.importTour.all { it.anchor == null })
+        assertTrue(TutorialID.IMPORT_TOUR.isAvailable)
+    }
 }
