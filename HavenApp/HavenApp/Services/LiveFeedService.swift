@@ -170,7 +170,7 @@ final class LiveFeedService: ObservableObject {
         if let follows, !LiveChat.isFollowed(authorPubkey: pubkey, tags: tags, follows: follows) { return }
         guard let stream = LiveStream(id: id, pubkey: pubkey, createdAt: createdAt, tags: tags),
               // A block on the streamer has to reach their service-published streams too.
-              !blocked.contains(stream.zapPubkey)
+              !blocked.contains(stream.hostPubkey)
         else { return }
 
         // Addressable: the newest event for an address wins, which is how a
@@ -208,7 +208,14 @@ struct LiveStream: Identifiable, Equatable {
     /// The 30311 event's own id, which a zap for this stream tags alongside
     /// the address.
     let eventId: String
+    /// Who is streaming: the `p` tag marked Host, else the author. zap.stream
+    /// and shosho.live sign every stream with their own service key, so the
+    /// author alone names the service (NoGood Radio showed "zap.stream",
+    /// 2026-10-08). Shown, zapped, blocked and reported as the streamer.
     let hostPubkey: String
+    /// Who signed the event. The address is built from this, so chat and
+    /// naddr links point at the event that actually exists.
+    let authorPubkey: String
     let identifier: String
     let createdAt: Int64
     let title: String?
@@ -225,11 +232,7 @@ struct LiveStream: Identifiable, Equatable {
     let participants: Int?
     /// Relays the stream itself says its chat is on (NIP-53 `relays` tag).
     let chatRelays: [String]
-    /// Who a zap pays. Usually the author, but zap.stream publishes on the
-    /// host's behalf, and then the author is the service.
-    let zapPubkey: String
-
-    var address: String { LiveChat.address(hostPubkey: hostPubkey, identifier: identifier) }
+    var address: String { LiveChat.address(authorPubkey: authorPubkey, identifier: identifier) }
     var id: String { address }
 
     /// Shown only when the stream is running AND something can play it.
@@ -255,8 +258,8 @@ struct LiveStream: Identifiable, Equatable {
 
         guard let identifier = value("d") else { return nil }
         self.eventId = id
-        self.hostPubkey = pubkey
-        self.zapPubkey = LiveChat.hostPubkey(authorPubkey: pubkey, tags: tags)
+        self.authorPubkey = pubkey
+        self.hostPubkey = LiveChat.hostPubkey(authorPubkey: pubkey, tags: tags)
         self.identifier = identifier
         self.createdAt = createdAt
         self.title = value("title")

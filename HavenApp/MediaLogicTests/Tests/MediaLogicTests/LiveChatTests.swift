@@ -17,7 +17,7 @@ final class LiveChatTests: XCTestCase {
     // MARK: - Addressing
 
     func testAddressIsTheStreamCoordinate() {
-        XCTAssertEqual(LiveChat.address(hostPubkey: host, identifier: "abc"), "30311:\(host):abc")
+        XCTAssertEqual(LiveChat.address(authorPubkey: host, identifier: "abc"), "30311:\(host):abc")
     }
 
     /// zap.stream publishes a stream on the host's behalf. Paying the author
