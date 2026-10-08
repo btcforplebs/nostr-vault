@@ -8,11 +8,14 @@
 import SwiftUI
 
 struct InitialFollowsStepView: View {
+    /// Picks from an earlier visit to this step, so Back and forward keeps them.
+    var initiallySelected: Set<String> = []
     let onContinue: ([String]) -> Void
     let onSkip: () -> Void
 
     @State private var packsData: StarterPacksData?
-    @State private var expandedPackId: String?
+    // Packs start open: people hidden behind a chevron were people nobody saw.
+    @State private var collapsedPackIds: Set<String> = []
     @State private var selectedNpubs: Set<String> = []
     @State private var appeared = false
 
@@ -22,11 +25,11 @@ struct InitialFollowsStepView: View {
 
             // Header
             VStack(spacing: 8) {
-                Text("Discover Accounts")
+                Text("Find People to Follow")
                     .font(.appSystem(size: 24, weight: .bold))
                     .foregroundColor(WizardColors.textPrimary)
 
-                Text("Following accounts helps personalize your feed. Select any that interest you, or skip to explore on your own.")
+                Text("Pick a few to fill your feed. You can follow more anytime.")
                     .font(.appSystem(size: 15))
                     .foregroundColor(WizardColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -42,11 +45,15 @@ struct InitialFollowsStepView: View {
                         ForEach(packs) { pack in
                             PackCard(
                                 pack: pack,
-                                isExpanded: expandedPackId == pack.id,
+                                isExpanded: !collapsedPackIds.contains(pack.id),
                                 selectedNpubs: $selectedNpubs,
                                 onToggleExpand: {
                                     withAnimation(Motion.pop) {
-                                        expandedPackId = expandedPackId == pack.id ? nil : pack.id
+                                        if collapsedPackIds.contains(pack.id) {
+                                            collapsedPackIds.remove(pack.id)
+                                        } else {
+                                            collapsedPackIds.insert(pack.id)
+                                        }
                                     }
                                 }
                             )
@@ -113,6 +120,7 @@ struct InitialFollowsStepView: View {
         .onAppear {
             appeared = true
             packsData = StarterPacksData.load()?.validated()
+            if selectedNpubs.isEmpty { selectedNpubs = initiallySelected }
         }
     }
 }
@@ -212,6 +220,12 @@ private struct AccountRow: View {
                             .frame(width: 24, height: 24)
                     }
                 }
+
+                AvatarView(
+                    url: URL(string: account.picture),
+                    pubkey: NpubValidation.hexPubkey(fromNpub: account.npub) ?? "",
+                    size: 36
+                )
 
                 // Account info
                 VStack(alignment: .leading, spacing: 2) {

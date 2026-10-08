@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import ImageIO
+import UniformTypeIdentifiers
 
 // MARK: - Design System
 
@@ -238,6 +241,11 @@ struct SetupWizardView: View {
     // Wallet state
     @State private var nwcURI = ""
 
+    // New account state: published once setup completes and the key can sign
+    @State private var profileName = ""
+    @State private var profilePhotoJPEG: Data?
+    @State private var pickedNpubs: [String] = []
+
     // Error state
     @State private var setupError: String?
     @State private var showSetupError = false
@@ -263,7 +271,7 @@ struct SetupWizardView: View {
         switch setupPath {
         case .none: return [0, 1, 2] // welcome, path, identity
         case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
-        case .newToNostr: return [0, 1, 9, 10, 8] // welcome, path, intro, follows, done
+        case .newToNostr: return [0, 1, 9, 11, 10, 8] // welcome, path, intro, profile, follows, done
         case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
         }
     }
@@ -383,10 +391,10 @@ struct SetupWizardView: View {
                 PushNotificationStep(onContinue: { currentStep = 8 }, onSkip: { currentStep = 8 })
             } else {
                 // macOS browse mode lands here as "complete"
-                CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, onLaunch: { saveAndComplete() })
+                CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, newUserFollowCount: pickedNpubs.count, onLaunch: { saveAndComplete() })
             }
         case 8:
-            CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, onLaunch: { saveAndComplete() })
+            CompleteStep(isBrowseMode: setupPath == .browse, isNewUser: setupPath == .newToNostr, newUserFollowCount: pickedNpubs.count, onLaunch: { saveAndComplete() })
         case 9:
             NostrIntroStep(
                 npub: $npub,
@@ -396,20 +404,29 @@ struct SetupWizardView: View {
                     saveIntermediateConfig()
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
+                        currentStep = 11
+                    }
+                }
+            )
+        case 11:
+            NewProfileStep(
+                name: $profileName,
+                photoJPEG: $profilePhotoJPEG,
+                onContinue: {
+                    direction = .forward
+                    withAnimation(WizardAnimations.springEnter) {
                         currentStep = 10
                     }
                 }
             )
         case 10:
             InitialFollowsStepView(
+                initiallySelected: Set(pickedNpubs),
                 onContinue: { selectedNpubs in
-                    // Follow selected accounts
-                    var currentFollows = configService.config.whitelistedNpubs
-                    for npub in selectedNpubs where !currentFollows.contains(npub) {
-                        currentFollows.append(npub)
-                    }
-                    configService.config.whitelistedNpubs = currentFollows
-                    configService.save()
+                    // Held until setup completes: the follow list is published
+                    // then, as this key's first kind 3. Not whitelistedNpubs,
+                    // which is the list of the user's own accounts.
+                    pickedNpubs = selectedNpubs
 
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
@@ -417,6 +434,7 @@ struct SetupWizardView: View {
                     }
                 },
                 onSkip: {
+                    pickedNpubs = []
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
                         currentStep = 8
@@ -448,7 +466,7 @@ struct SetupWizardView: View {
             }
         }
         // Save intermediate config at key points
-        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 10 {
+        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 10 || currentStep == 11 {
             saveIntermediateConfig()
         }
     }
@@ -459,7 +477,9 @@ struct SetupWizardView: View {
             if currentStep == 9 {
                 currentStep = 1 // New to Nostr: back to choose path
             } else if currentStep == 10 {
-                currentStep = 9 // Initial Follows: back to intro
+                currentStep = 11 // Initial Follows: back to profile
+            } else if currentStep == 11 {
+                currentStep = 9 // Profile: back to intro
             } else if currentStep == 4 && setupPath == .browse {
                 currentStep = 2 // Browse: back from import to identity (skip relay config)
             } else if currentStep == 8 {
@@ -492,7 +512,13 @@ struct SetupWizardView: View {
         case .browse: configService.config.setupMode = "browse"
         case .newToNostr:
             configService.config.setupMode = "newuser"
-            configService.config.defaultFeedMode = "POPULAR"
+            // Following when people were picked. With none, FeedService's
+            // no-follows path moves a new user to the curated Global feed;
+            // Popular is the unfiltered one, which is why it isn't the default.
+            configService.config.defaultFeedMode = "FOLLOWING"
+            if configService.config.blossomMirrors.isEmpty {
+                configService.config.blossomMirrors = HavenConfig.newAccountBlossomMirrors
+            }
         default: configService.config.setupMode = "full"
         }
         configService.config.macRelayURL = macRelayURL
@@ -532,12 +558,69 @@ struct SetupWizardView: View {
         // brand-new user is effectively unreachable over NIP-17.
         NostrService.shared.republishDMRelayListsForSignableAccounts()
 
+        if setupPath == .newToNostr {
+            publishNewAccount()
+        }
+
         if isIOSDevice {
             PushNotificationService.shared.requestPermissionAndRegister()
         }
 
         onComplete()
         dismiss()
+    }
+
+    /// Publishes what a brand-new account needs to exist for other people:
+    /// its first follow list, a relay list, and a profile. Runs once, after
+    /// `saveAndComplete` has stored the key, because each event has to be
+    /// signed by it. Only for the New to Nostr path, whose key was generated
+    /// in this run — a key that cannot have any of these events yet.
+    private func publishNewAccount() {
+        guard let ownerHex = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
+        let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photo = profilePhotoJPEG
+        let picks = pickedNpubs
+        let configService = self.configService
+
+        Task { @MainActor in
+            let nostr = NostrService.shared
+
+            FeedService.shared.startNewAccountContactList(
+                ContactManager.newAccountContactTags(ownerHex: ownerHex, pickedNpubs: picks)
+            )
+
+            let relayTags = RelayConfiguration.newAccountRelayListTags(
+                broadcastRelays: RelayConfiguration.directBroadcastRelays(
+                    kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
+                )
+            )
+            if !relayTags.isEmpty,
+               let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags) {
+                nostr.postEvent(relayList)
+            }
+
+            var profile: [String: Any] = [:]
+            if !name.isEmpty {
+                profile[ProfileMetadataMerge.name] = name
+                profile[ProfileMetadataMerge.displayName] = name
+            }
+            if let photo {
+                // The upload signs with this key and stores the blob in the
+                // device's relay before mirroring it, so wait for the relay.
+                // A photo that can't be hosted outside is left off rather
+                // than published as a URL only this phone can serve.
+                _ = await RelayProcessManager.shared.ensureRelayReady(timeout: 30)
+                if let blob = try? await ModePostPublisher.upload(
+                    data: photo, mimeType: "image/jpeg", configService: configService, nostrService: nostr
+                ) {
+                    profile[ProfileMetadataMerge.picture] = blob.url.absoluteString
+                }
+            }
+            guard !profile.isEmpty,
+                  let content = ProfileMetadataMerge.encode(profile),
+                  let metadata = await nostr.signEventAsync(kind: 0, content: content, tags: []) else { return }
+            nostr.postEvent(metadata)
+        }
     }
 
     private var processKillOverlay: some View {
@@ -1113,6 +1196,121 @@ private struct NostrIntroStep: View {
         guard isPasswordValid else { return }
         nsecPassword = keyPassword
         onContinue()
+    }
+}
+
+// MARK: - Step 11: New Profile
+
+/// Name and photo for a key generated in this run. Nothing is published here:
+/// the wizard publishes the kind 0 once setup completes and the key can sign.
+private struct NewProfileStep: View {
+    @Binding var name: String
+    @Binding var photoJPEG: Data?
+    let onContinue: () -> Void
+
+    @State private var appeared = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photoError: String?
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer().frame(height: 20)
+
+            VStack(spacing: 8) {
+                Text("Your Profile")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                Text("This is how people will see you. You can change it later.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(WizardColors.bgElevated)
+                            .frame(width: 104, height: 104)
+                        if let preview = photoJPEG.flatMap(Self.previewImage) {
+                            Image(decorative: preview, scale: 1)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 104, height: 104)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "camera.fill")
+                                .font(.appSystem(size: 28))
+                                .foregroundColor(WizardColors.textMuted)
+                        }
+                    }
+                    .overlay(Circle().stroke(WizardColors.borderActive, lineWidth: 1))
+                    Text(photoJPEG == nil ? "Add Photo" : "Change Photo")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(WizardColors.accentPrimary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(photoJPEG == nil ? "Add profile photo" : "Change profile photo")
+
+            if let photoError {
+                Text(photoError)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+            }
+
+            WizardInputField(label: "Name", text: $name, placeholder: "Your name")
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
+                WizardSkipLink(title: "Skip for Now") {
+                    name = ""
+                    photoJPEG = nil
+                    onContinue()
+                }
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .animation(WizardAnimations.springEnter, value: appeared)
+        .onAppear { appeared = true }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    if let jpeg = data.flatMap({ Self.profileJPEG(from: $0) }) {
+                        photoJPEG = jpeg
+                        photoError = nil
+                    } else {
+                        photoError = "Couldn't read that photo. Try another."
+                    }
+                }
+            }
+        }
+    }
+
+    /// A square-friendly JPEG no larger than 512 px on its longest side.
+    /// Drawing a fresh thumbnail also leaves the original's metadata behind,
+    /// location included; the upload strips it again regardless.
+    static func profileJPEG(from data: Data, maxPixel: Int = 512) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+              ] as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return out as Data
+    }
+
+    static func previewImage(_ jpeg: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }
 
@@ -2874,6 +3072,7 @@ private struct PushNotificationStep: View {
 private struct CompleteStep: View {
     let isBrowseMode: Bool
     var isNewUser: Bool = false
+    var newUserFollowCount: Int = 0
     let onLaunch: () -> Void
     @State private var showContent = false
     @State private var ringScale: CGFloat = 0
@@ -2942,7 +3141,9 @@ private struct CompleteStep: View {
             }
 
             if isNewUser {
-                Text("We'll start you on the Popular feed so you can discover interesting people to follow. You can switch to the Following feed anytime.")
+                Text(newUserFollowCount > 0
+                     ? "We'll open your Following feed with posts from the people you picked."
+                     : "We'll start you on the Global feed so you can find people to follow. You can switch feeds anytime.")
                     .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
                     .multilineTextAlignment(.center)

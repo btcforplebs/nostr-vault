@@ -476,7 +476,7 @@ class BlossomService: @unchecked Sendable {
     /// Returns the URLs of every mirror that accepted the blob.
     private func mirrorUploadPass(source: UploadSource, sha256: String, contentType: String, mirrors: [String], authBase64: String?, progress: ((Double) -> Void)?) async -> [URL] {
         logger.debug("Attempting to mirror to: \(mirrors.description)")
-        return await withTaskGroup(of: (String, URL?).self) { group in
+        return await withTaskGroup(of: (Int, String, URL?).self) { group in
             for (index, mirrorURL) in mirrors.enumerated() {
                 group.addTask {
                     // Only report progress for the first remote mirror to avoid progress jitter
@@ -492,24 +492,28 @@ class BlossomService: @unchecked Sendable {
                     )
                     guard accepted else {
                         self.logger.info("BUD-06: Skipping mirror \(mirrorURL) — preflight rejected")
-                        return (mirrorURL, nil)
+                        return (index, mirrorURL, nil)
                     }
 
                     let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, authBase64: authBase64, progress: progressHandler)
-                    return (mirrorURL, result)
+                    return (index, mirrorURL, result)
                 }
             }
 
-            var successfulMirrors: [URL] = []
-            for await (mirrorURL, result) in group {
+            var successfulMirrors: [(index: Int, url: URL)] = []
+            for await (index, mirrorURL, result) in group {
                 if let url = result {
                     self.logger.info("Mirror upload succeeded for \(mirrorURL): \(url.absoluteString)")
-                    successfulMirrors.append(url)
+                    successfulMirrors.append((index, url))
                 } else {
                     self.logger.warning("Mirror upload failed for \(mirrorURL)")
                 }
             }
-            return successfulMirrors
+            // In the order the servers are configured, not the order they
+            // answered: callers post the first URL, and the list order is the
+            // user's preference. Fastest-first made it whichever server won
+            // the race that time.
+            return successfulMirrors.sorted { $0.index < $1.index }.map(\.url)
         }
     }
 
