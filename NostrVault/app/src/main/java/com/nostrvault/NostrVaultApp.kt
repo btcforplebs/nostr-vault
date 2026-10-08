@@ -50,6 +50,10 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         com.nostrvault.vaultguide.FillYourVaultCoordinator.init(this)
         Motion.install(this)
         createNotificationChannels()
+        // GIFs downloaded for "Save to my Blossom" that a crash left behind.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.nostrvault.data.gif.GifCache.sweep(cacheDir)
+        }
         profilePicturePrefetcher.start(applicationScope)
         applicationScope.launch {
             configStore.config.collect {
