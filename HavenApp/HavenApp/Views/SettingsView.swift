@@ -2469,6 +2469,7 @@ struct BackupSettingsView: View {
                 presentSavePanel(title: "Save JSONL Backup", defaultName: "nostrvault-backup.zip", tempPath: tempPath)
                 #else
                 shareFile(at: tempPath)
+                statusMessage = ""
                 #endif
             }
         }
@@ -2555,6 +2556,7 @@ struct BackupSettingsView: View {
                 presentSavePanel(title: "Save Blossom Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
                 #else
                 shareFile(at: tempPath)
+                statusMessage = ""
                 #endif
             }
         }
@@ -2653,11 +2655,17 @@ struct BackupSettingsView: View {
         let fileURL = URL(fileURLWithPath: path)
         let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
         
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = scene.windows.first,
-           let rootVC = window.rootViewController {
-            rootVC.present(activityVC, animated: true)
-        }
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first,
+              var top = window.rootViewController else { return }
+        // Settings is itself a sheet: the root is already presenting, so it
+        // would refuse the share sheet. Present from whatever is on top.
+        while let presented = top.presentedViewController { top = presented }
+        // iPad shows the share sheet as a popover, which needs an anchor.
+        activityVC.popoverPresentationController?.sourceView = top.view
+        activityVC.popoverPresentationController?.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+        activityVC.popoverPresentationController?.permittedArrowDirections = []
+        top.present(activityVC, animated: true)
     }
     #endif
     
