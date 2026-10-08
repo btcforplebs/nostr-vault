@@ -179,3 +179,81 @@ val FeedNote.pollSummary: String?
     get() = poll?.let { p ->
         "Poll: " + p.question.ifEmpty { p.options.joinToString(" / ") { it.label } }
     }
+
+/** The Polls feed's Open / Closed / All filter. Twin of the Swift enum. */
+enum class PollStatusFilter(val label: String) {
+    ALL("All"), OPEN("Open"), CLOSED("Closed");
+
+    fun admits(poll: NIP88Poll.Poll, nowSecs: Long = System.currentTimeMillis() / 1000): Boolean = when (this) {
+        ALL -> true
+        OPEN -> !poll.isClosed(nowSecs)
+        CLOSED -> poll.isClosed(nowSecs)
+    }
+}
+
+/**
+ * A poll being written, turned into a kind 1068 event's content and tags.
+ * Twin of the Swift `PollDraft`.
+ */
+data class PollDraft(
+    val question: String = "",
+    val options: List<String> = listOf("", ""),
+    val type: NIP88Poll.PollType = NIP88Poll.PollType.SINGLE,
+    /** When voting closes, unix seconds; null leaves the poll open. */
+    val endsAt: Long? = null,
+) {
+    val trimmedQuestion: String get() = question.trim()
+
+    /** The filled-in options, in order. */
+    val filledOptions: List<String> get() = options.map { it.trim() }.filter { it.isNotEmpty() }
+
+    val hasDuplicateOptions: Boolean
+        get() = filledOptions.map { it.lowercase() }.toSet().size != filledOptions.size
+
+    /** A question, 2-10 different options, and an end time still ahead. */
+    fun isComplete(nowSecs: Long = System.currentTimeMillis() / 1000): Boolean {
+        if (trimmedQuestion.isEmpty()) return false
+        val labels = filledOptions
+        if (labels.size < MIN_OPTIONS || labels.size > MAX_OPTIONS) return false
+        if (hasDuplicateOptions) return false
+        if (endsAt != null && endsAt <= nowSecs) return false
+        return true
+    }
+
+    /**
+     * NIP-88 tags: one `option` per label with a short id, the relays votes
+     * go to, the poll type, and `endsAt` when set. [makeId] is for tests.
+     */
+    fun tags(relays: List<String>, makeId: () -> String = ::randomOptionId): List<List<String>> {
+        val out = mutableListOf<List<String>>()
+        val used = HashSet<String>()
+        for (label in filledOptions) {
+            var id = makeId()
+            while (!used.add(id)) id = makeId()
+            out += listOf("option", id, label)
+        }
+        val seen = HashSet<String>()
+        for (relay in relays) {
+            val url = relay.trim()
+            if (!url.startsWith("wss://") || !seen.add(url.lowercase())) continue
+            out += listOf("relay", url)
+            if (seen.size >= MAX_RELAYS) break
+        }
+        out += listOf("polltype", if (type == NIP88Poll.PollType.MULTIPLE) "multiplechoice" else "singlechoice")
+        endsAt?.let { out += listOf("endsAt", it.toString()) }
+        return out
+    }
+
+    companion object {
+        const val MIN_OPTIONS = 2
+        const val MAX_OPTIONS = 10
+        /** Poll relays named in the event, at most this many. */
+        const val MAX_RELAYS = 4
+
+        /** A 9-character alphanumeric option id, as other clients use. */
+        fun randomOptionId(): String {
+            val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+            return (1..9).map { chars.random() }.joinToString("")
+        }
+    }
+}

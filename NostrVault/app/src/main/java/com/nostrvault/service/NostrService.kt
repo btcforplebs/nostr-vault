@@ -1466,6 +1466,16 @@ class NostrService @Inject constructor(
         accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
     }.getOrNull()
 
+    /**
+     * Also send [event] to [relays] without waiting for their answers, e.g. the
+     * relays a poll names for its votes (iOS broadcastRawEvent extraRelays).
+     */
+    fun publishFireAndForget(event: NostrEvent, relays: List<String>) {
+        val eventJson = serializeEvent(event)
+        relays.filter { isValidRelayUrl(it) && !isLoopbackRelay(it) }
+            .forEach { fireAndForgetPublish(eventJson, it) }
+    }
+
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
         if (!isValidRelayUrl(relayUrl)) return
         scope.launch(Dispatchers.IO) {

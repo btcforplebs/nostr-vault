@@ -615,6 +615,12 @@ enum class FeedMode(val displayName: String) {
     MARKETPLACE("Marketplace"),
 
     /**
+     * NIP-88 polls (kind 1068). A view of the note list like [ARTICLES]: the
+     * primary REQ asks for polls only, scoped Following / Global.
+     */
+    POLLS("Polls"),
+
+    /**
      * Wavlake music: trending and search, played in the background by
      * MusicPlaybackService. Not a view of the note list either; the note
      * subscription idles while this mode is showing.

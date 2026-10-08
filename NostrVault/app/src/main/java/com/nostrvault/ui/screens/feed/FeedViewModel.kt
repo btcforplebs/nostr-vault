@@ -271,7 +271,7 @@ class FeedViewModel @Inject constructor(
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -477,6 +477,10 @@ class FeedViewModel @Inject constructor(
 
     val articlesScope = feedService.articlesFeedMode
     val recipesScope = feedService.recipesFeedMode
+    val pollsScope = feedService.pollsFeedMode
+    val pollStatus = feedService.pollStatusFilter
+
+    fun setPollStatus(filter: com.nostrvault.data.model.PollStatusFilter) = feedService.setPollStatusFilter(filter)
     val liveScope = liveFeedService.liveScope
 
     /**
@@ -488,7 +492,7 @@ class FeedViewModel @Inject constructor(
         val media = if (global) MediaFeedMode.GLOBAL else MediaFeedMode.FOLLOWING
         when (mode) {
             FeedMode.MEDIA -> feedService.setMediaFeedMode(media)
-            FeedMode.ARTICLES, FeedMode.RECIPES -> feedService.setLongFormFeedMode(mode, media)
+            FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> feedService.setLongFormFeedMode(mode, media)
             FeedMode.REELS -> reelsFeedService.setScope(reels)
             FeedMode.LIVE -> liveFeedService.setScope(reels)
             FeedMode.MARKETPLACE -> marketplaceFeedService.setScope(reels)

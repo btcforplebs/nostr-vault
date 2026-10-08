@@ -148,11 +148,18 @@ class FeedService @Inject constructor(
     val articlesFeedMode: StateFlow<MediaFeedMode> = _articlesFeedMode.asStateFlow()
     private val _recipesFeedMode = MutableStateFlow(MediaFeedMode.FOLLOWING)
     val recipesFeedMode: StateFlow<MediaFeedMode> = _recipesFeedMode.asStateFlow()
+    /** Polls' Following / Global, scoped the same way as Articles. */
+    private val _pollsFeedMode = MutableStateFlow(MediaFeedMode.FOLLOWING)
+    val pollsFeedMode: StateFlow<MediaFeedMode> = _pollsFeedMode.asStateFlow()
+    /** Polls' Open / Closed / All filter. */
+    private val _pollStatusFilter = MutableStateFlow(com.nostrvault.data.model.PollStatusFilter.ALL)
+    val pollStatusFilter: StateFlow<com.nostrvault.data.model.PollStatusFilter> = _pollStatusFilter.asStateFlow()
 
-    /** The long-form scope for the current mode, or null outside Articles/Recipes. */
+    /** The Following / Global scope for Articles, Recipes and Polls; null elsewhere. */
     private fun longFormScope(): MediaFeedMode? = when (_feedMode.value) {
         FeedMode.ARTICLES -> _articlesFeedMode.value
         FeedMode.RECIPES -> _recipesFeedMode.value
+        FeedMode.POLLS -> _pollsFeedMode.value
         else -> null
     }
 
@@ -703,7 +710,7 @@ class FeedService @Inject constructor(
                 if (_mediaFeedMode.value == MediaFeedMode.GLOBAL) loadWotPubkeys()
                 subscribeToAllRelays()
             }
-            FeedMode.ARTICLES, FeedMode.RECIPES -> {
+            FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> {
                 if (longFormScope() == MediaFeedMode.GLOBAL) loadWotPubkeys()
                 subscribeToAllRelays()
             }
@@ -730,11 +737,12 @@ class FeedService @Inject constructor(
      * Switch the media sub-feed between Following and Global (iOS parity).
      * Re-subscribes with the new author scope and recomputes the media grid.
      */
-    /** Following / Global for Articles or Recipes; re-subscribes like Media. */
+    /** Following / Global for Articles, Recipes or Polls; re-subscribes like Media. */
     fun setLongFormFeedMode(feed: FeedMode, mode: MediaFeedMode) {
         val flow = when (feed) {
             FeedMode.ARTICLES -> _articlesFeedMode
             FeedMode.RECIPES -> _recipesFeedMode
+            FeedMode.POLLS -> _pollsFeedMode
             else -> return
         }
         if (flow.value == mode) return
@@ -1380,6 +1388,7 @@ class FeedService @Inject constructor(
                     FeedMode.MEDIA -> "media"
                     FeedMode.POPULAR -> "popular"
                     FeedMode.ARTICLES -> "articles"
+                    FeedMode.POLLS -> "polls"
                     FeedMode.RECIPES -> "recipes"
                     FeedMode.LIVE -> "live"
                     FeedMode.MARKETPLACE -> "marketplace"
@@ -1434,6 +1443,7 @@ class FeedService @Inject constructor(
     private fun isFollowSetMode(): Boolean = when (_feedMode.value) {
         FeedMode.FOLLOWING -> true
         FeedMode.ARTICLES -> _articlesFeedMode.value == MediaFeedMode.FOLLOWING
+        FeedMode.POLLS -> _pollsFeedMode.value == MediaFeedMode.FOLLOWING
         FeedMode.MEDIA -> _mediaFeedMode.value == MediaFeedMode.FOLLOWING
         else -> false
     }
@@ -1528,6 +1538,7 @@ class FeedService @Inject constructor(
             FeedMode.MEDIA -> "media"
             FeedMode.POPULAR -> "popular"
             FeedMode.ARTICLES -> "articles"
+            FeedMode.POLLS -> "polls"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
             FeedMode.MARKETPLACE -> "marketplace"
@@ -1621,6 +1632,7 @@ class FeedService @Inject constructor(
             FeedMode.MEDIA -> "media"
             FeedMode.POPULAR -> return
             FeedMode.ARTICLES -> "articles"
+            FeedMode.POLLS -> "polls"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
             FeedMode.MARKETPLACE -> "marketplace"
@@ -1644,9 +1656,11 @@ class FeedService @Inject constructor(
      * notes. Articles mode gains nothing from them, so it does not ask. NIP-88
      * polls (1068) draw as a card in the row; their votes are fetched per poll.
      */
-    private fun primaryFeedKinds(): String =
-        if (_feedMode.value == FeedMode.ARTICLES) "1,6,30023"
-        else "1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}"
+    private fun primaryFeedKinds(): String = when (_feedMode.value) {
+        FeedMode.ARTICLES -> "1,6,30023"
+        FeedMode.POLLS -> "${NIP88Poll.KIND}"
+        else -> "1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}"
+    }
 
     private fun sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
         // Reels runs its own queries (ReelsFeedService). The feed connections
@@ -1676,7 +1690,7 @@ class FeedService @Inject constructor(
                 FeedMode.GLOBAL -> {
                     // No author restriction
                 }
-                FeedMode.ARTICLES -> appendLongFormAuthors(this, relayUrl)
+                FeedMode.ARTICLES, FeedMode.POLLS -> appendLongFormAuthors(this, relayUrl)
                 FeedMode.MARKETPLACE -> {
                     // Handled entirely by MarketplaceFeedService.
                 }
@@ -1715,10 +1729,18 @@ class FeedService @Inject constructor(
                 FeedMode.POPULAR -> return // Handled separately
             }
 
-            // Since timestamp
-            val oldest = _notes.value.lastOrNull()?.createdAt
+            // Since timestamp. The note list outlives a mode switch, so Polls
+            // counts only polls: another mode's notes would cut older polls off.
+            val oldest = if (_feedMode.value == FeedMode.POLLS) {
+                _notes.value.lastOrNull { it.kind == NIP88Poll.KIND }?.createdAt
+            } else {
+                _notes.value.lastOrNull()?.createdAt
+            }
             if (oldest != null) {
                 append(",\"since\":${oldest.time / 1000}")
+            } else if (_feedMode.value == FeedMode.POLLS) {
+                // Polls are rare next to notes: a week of them from the people
+                // you follow is often none, so ask for the newest however old.
             } else {
                 val sevenDaysAgo = System.currentTimeMillis() / 1000 - (7 * 24 * 60 * 60)
                 append(",\"since\":$sevenDaysAgo")
@@ -2010,6 +2032,9 @@ class FeedService @Inject constructor(
                     }
                 }
                 if (toAdd.isNotEmpty()) insertNotesDirect(toAdd)
+                // The mention REQ keeps running under Polls (it doubles as
+                // notifications); its notes must not count in the Polls pill.
+                if (_feedMode.value == FeedMode.POLLS) toPending.retainAll { it.kind == NIP88Poll.KIND }
                 if (toPending.isNotEmpty()) stagePendingNotes(toPending)
             }
         }
@@ -2200,6 +2225,7 @@ class FeedService @Inject constructor(
         globalLanguages = config.globalFeedLanguages.toSet(),
         globalRequiresTrust = !config.globalShowsEveryone,
         longFormGlobal = longFormScope() == MediaFeedMode.GLOBAL,
+        pollStatus = _pollStatusFilter.value,
         languageOf = ::languageOf,
         authorOf = ::authorOf,
     )
@@ -2301,6 +2327,13 @@ class FeedService @Inject constructor(
 
     fun setShowReplies(show: Boolean) {
         configStore.update { it.copy(showReplies = show) }
+        recomputeFilteredNotes()
+    }
+
+    /** Polls' Open / Closed / All only re-filters: every poll is already loaded. */
+    fun setPollStatusFilter(filter: com.nostrvault.data.model.PollStatusFilter) {
+        if (_pollStatusFilter.value == filter) return
+        _pollStatusFilter.value = filter
         recomputeFilteredNotes()
     }
 

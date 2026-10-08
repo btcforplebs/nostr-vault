@@ -78,7 +78,9 @@ enum class ModeComposerKind(val route: String, val buttonTitle: String) {
     ARTICLE("article", "Write"),
     RECIPE("recipe", "Recipe"),
     /** A NIP-99 listing for the Marketplace; see MarketplaceSellScreen. */
-    LISTING("listing", "Sell");
+    LISTING("listing", "Sell"),
+    /** A NIP-88 poll for the Polls feed; see PollComposeScreen. */
+    POLL("poll", "Poll");
 
     companion object {
         fun fromRoute(route: String?): ModeComposerKind = entries.firstOrNull { it.route == route } ?: ARTICLE
@@ -110,6 +112,7 @@ class ModeComposeViewModel @Inject constructor(
     private val reelsFeedService: ReelsFeedService,
     private val marketplaceFeedService: com.nostrvault.service.MarketplaceFeedService,
     private val notificationManager: NotificationManager,
+    private val configStore: com.nostrvault.data.local.ConfigStore,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -371,6 +374,41 @@ class ModeComposeViewModel @Inject constructor(
     }
 
     /**
+     * Publishes a kind 1068 poll the way a vote goes out: this device's relay
+     * and Blastr through postEvent, and without waiting to the outside relays
+     * it names for its votes, so voters look where it lives. Port of iOS
+     * PollComposeView.publish.
+     */
+    fun publishPoll(draft: com.nostrvault.data.model.PollDraft, onDone: () -> Unit) {
+        val nowSecs = System.currentTimeMillis() / 1000
+        if (!draft.isComplete(nowSecs)) return
+        val lock = nostrService.lockPostingAccount()
+        val relays = configStore.config.value.writeRelays.filter { it.startsWith("wss://") }
+            .ifEmpty { com.nostrvault.relay.RelayConfiguration.FALLBACK_WRITE_RELAYS }
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            try {
+                val tags = draft.tags(relays)
+                val event = nostrService.signEventAsync(
+                    kind = com.nostrvault.data.model.NIP88Poll.KIND,
+                    content = draft.trimmedQuestion,
+                    tags = tags,
+                    lockedTo = lock,
+                ) ?: throw IllegalStateException("Couldn't sign the poll. Check your key or remote signer in Settings.")
+                nostrService.postEvent(event)
+                nostrService.publishFireAndForget(event, tags.filter { it.size >= 2 && it[0] == "relay" }.map { it[1] })
+                onDone()
+            } catch (e: Exception) {
+                Log.e(TAG, "publishPoll failed", e)
+                if (e is PostingAccount.AccountChangedException) notificationManager.showError(PostingAccount.MESSAGE)
+                _error.value = e.message ?: "Couldn't post the poll."
+            }
+            _busy.value = false
+        }
+    }
+
+    /**
      * Uploads the photos, then publishes a 30402 listing to the owner's relays
      * and the marketplace relays, which are where the grid, Shopstr and
      * Plebeian look. Port of MarketplaceSellView.publish on iPhone.
@@ -509,12 +547,16 @@ fun ModeComposeScreen(
         MarketplaceSellScreen(onDone = onDone, viewModel = viewModel)
         return
     }
+    if (kind == ModeComposerKind.POLL) {
+        PollComposeScreen(onDone = onDone, viewModel = viewModel)
+        return
+    }
     val canPost = when (kind) {
         ModeComposerKind.DIVINE -> clip != null
         ModeComposerKind.ARTICLE -> title.isNotBlank() && body.isNotBlank()
         ModeComposerKind.RECIPE -> title.isNotBlank() &&
             LongFormDraft.lines(ingredients).isNotEmpty() && LongFormDraft.lines(directions).isNotEmpty()
-        ModeComposerKind.LISTING -> false
+        ModeComposerKind.LISTING, ModeComposerKind.POLL -> false
     }
 
     fun submit() {
@@ -527,7 +569,7 @@ fun ModeComposeScreen(
                     title = title, summary = summary, body = body,
                     recipe = LongFormDraft.Recipe(prepTime, cookTime, servings, ingredients, directions, categories),
                 ), onDone)
-            ModeComposerKind.LISTING -> Unit
+            ModeComposerKind.LISTING, ModeComposerKind.POLL -> Unit
         }
     }
 
@@ -541,6 +583,7 @@ fun ModeComposeScreen(
                             ModeComposerKind.ARTICLE -> "New article"
                             ModeComposerKind.RECIPE -> "New recipe"
                             ModeComposerKind.LISTING -> "Sell something"
+                            ModeComposerKind.POLL -> "New poll"
                         }
                     )
                 },

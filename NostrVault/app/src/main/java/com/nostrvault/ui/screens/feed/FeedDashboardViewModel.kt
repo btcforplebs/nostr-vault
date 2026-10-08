@@ -162,6 +162,7 @@ class FeedDashboardViewModel @Inject constructor(
             FeedMode.MARKETPLACE -> marketplaceFeedService.setScope(ReelsScope.FOLLOWING)
             FeedMode.REELS -> reelsFeedService.setScope(ReelsScope.FOLLOWING)
             FeedMode.LIVE -> liveFeedService.setScope(ReelsScope.FOLLOWING)
+            FeedMode.POLLS -> feedService.setLongFormFeedMode(mode, com.nostrvault.data.model.MediaFeedMode.FOLLOWING)
             else -> Unit
         }
         if (feedService.feedMode.value != mode) feedService.switchMode(mode)
