@@ -13,6 +13,11 @@ sealed class Screen(val route: String) {
     data object Profile : Screen("profile/{pubkey}") {
         fun createRoute(pubkey: String) = "profile/$pubkey"
     }
+    /** A profile's Following / Followers lists, open on [tab]; [total] is the profile's follower count. */
+    data object FollowList : Screen("follows/{pubkey}?tab={tab}&total={total}") {
+        fun createRoute(pubkey: String, tab: String, total: Int?) =
+            "follows/$pubkey?tab=$tab&total=${total ?: -1}"
+    }
 
     // Detail screens
     /** Reader for a NIP-23 long-form post; the note screen renders kind-1 threads. */
