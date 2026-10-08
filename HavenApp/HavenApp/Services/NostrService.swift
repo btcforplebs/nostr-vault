@@ -119,11 +119,7 @@ class NostrService: ObservableObject {
 
         // React to active account switches — tear down old connections and event state.
         // Stored in configCancellable (not cancellables) so resetConnections() won't destroy it.
-        configCancellable = ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        configCancellable = ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 self?.handleAccountSwitch()
             }

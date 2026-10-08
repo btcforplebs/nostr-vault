@@ -364,6 +364,8 @@ class ConfigService: ObservableObject {
         
         // 3. Reset in-memory config
         config = HavenConfig.default
+        // The account went with it; services listening for a switch drop its state.
+        refreshActiveAccountHex()
     }
     
     /// Programmatically quit the application
