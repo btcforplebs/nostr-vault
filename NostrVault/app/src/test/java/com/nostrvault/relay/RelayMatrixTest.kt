@@ -105,6 +105,18 @@ class RelayMatrixTest {
         assertTrue(RelayBlocklist.isBlocked("wss://host.example/private/", blocked))
         assertFalse(RelayBlocklist.isBlocked("wss://host.example", blocked))
         assertFalse(RelayBlocklist.isBlocked("wss://good.example", blocked))
+        // Another port on the same host is another relay.
+        assertFalse(RelayBlocklist.isBlocked("wss://bad.example:8443", blocked))
+    }
+
+    @Test
+    fun `blocklist ignores local relays`() {
+        val blocked = listOf("ws://127.0.0.1:4869", "wss://localhost", "wss://bad.example:7777")
+        assertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:4869", blocked))
+        assertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:3355/inbox", blocked))
+        assertFalse(RelayBlocklist.isBlocked("wss://localhost/inbox", blocked))
+        assertTrue(RelayBlocklist.isBlocked("wss://bad.example:7777/x", blocked))
+        assertFalse(RelayBlocklist.isBlocked("wss://bad.example", blocked))
     }
 
     // Recommended

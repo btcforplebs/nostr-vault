@@ -638,13 +638,15 @@ private struct RelayDetailView: View {
                 }
                 Section {
                     ForEach(RelayMatrix.Job.advanced) { toggle($0) }
-                    Button {
-                        block()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Never Connect").font(.appBody).foregroundColor(.red)
-                            Text("Remove it and block it everywhere in the app")
-                                .font(.appCaption).foregroundColor(.secondary)
+                    if RelayMatrix.isPublicRelay(HavenConfig.normalizedRelayURL(url)) {
+                        Button {
+                            block()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Never Connect").font(.appBody).foregroundColor(.red)
+                                Text("Remove it and block it everywhere in the app")
+                                    .font(.appCaption).foregroundColor(.secondary)
+                            }
                         }
                     }
                 } header: {

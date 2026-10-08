@@ -276,7 +276,8 @@ object RelayMatrix {
  * The owner's Never connect list, readable from any thread. [ConfigStore]
  * points [source] at its config; [com.nostrvault.data.remote.WebSocketClient]
  * and the search sockets refuse to connect to anything on it. A blocked relay
- * with no path blocks its whole host.
+ * with no path blocks every path on that host and port. Relays that aren't
+ * public (loopback, LAN, Tor) are never blocked: the app's own relay lives there.
  */
 object RelayBlocklist {
     @Volatile
@@ -285,13 +286,13 @@ object RelayBlocklist {
     fun isBlocked(url: String, blocked: List<String> = source()): Boolean {
         if (blocked.isEmpty()) return false
         val k = RelayMatrix.key(url)
-        val host = hostOf(k)
+        val authority = authorityOf(k)
         return blocked.any { entry ->
             val b = RelayMatrix.key(entry)
-            b.isNotEmpty() && (b == k || (pathOf(b).isEmpty() && hostOf(b) == host))
+            RelayMatrix.isPublicRelay(b) && (b == k || (pathOf(b).isEmpty() && authorityOf(b) == authority))
         }
     }
 
-    private fun hostOf(key: String) = key.substringAfter("://").substringBefore('/').substringBefore(':')
+    private fun authorityOf(key: String) = key.substringAfter("://").substringBefore('/')
     private fun pathOf(key: String) = key.substringAfter("://").substringAfter('/', "")
 }

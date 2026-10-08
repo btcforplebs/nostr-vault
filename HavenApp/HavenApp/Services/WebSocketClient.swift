@@ -135,8 +135,10 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             self.url = url
             self.disconnectLocked()
 
-            // Never connect: the owner blocked this relay.
+            // Never connect: the owner blocked this relay. Reopened by
+            // `relayBlocklistChanged` if it is unblocked.
             if RelayBlocklist.isBlocked(url.absoluteString) {
+                self.refusedByBlocklist = true
                 DispatchQueue.main.async { [weak self] in
                     self?.connectionState = .error
                 }
@@ -167,6 +169,34 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         }
     }
 
+    /// Refused at connect because the relay was blocked. Guarded by `stateQueue`.
+    private var refusedByBlocklist = false
+
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(relayBlocklistChanged),
+                                               name: RelayBlocklist.changed, object: nil)
+    }
+
+    /// Blocking a relay drops a socket already open to it; unblocking reopens
+    /// one that was refused.
+    @objc private func relayBlocklistChanged() {
+        stateQueue.async { [weak self] in
+            guard let self, let url = self.url else { return }
+            let blocked = RelayBlocklist.isBlocked(url.absoluteString)
+            if blocked, self.webSocketTask != nil {
+                self.disconnectLocked()
+                self.refusedByBlocklist = true
+                DispatchQueue.main.async { [weak self] in
+                    self?.connectionState = .error
+                }
+            } else if !blocked, self.refusedByBlocklist {
+                self.refusedByBlocklist = false
+                self.connect(url: url)
+            }
+        }
+    }
+
     func disconnect() {
         // Strong capture: keeps the client alive until disconnectLocked()
         // actually runs and tears down the timer + session on stateQueue.
@@ -177,6 +207,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         // serialization, racing with the session's internal mach-port
         // cleanup and causing an OS_dispatch_mach_msg use-after-free.
         stateQueue.async {
+            self.refusedByBlocklist = false
             self.disconnectLocked()
         }
     }

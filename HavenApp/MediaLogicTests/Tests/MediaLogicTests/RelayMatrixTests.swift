@@ -91,6 +91,20 @@ final class RelayMatrixTests: XCTestCase {
         XCTAssertTrue(RelayBlocklist.isBlocked("wss://host.example/private/"))
         XCTAssertFalse(RelayBlocklist.isBlocked("wss://host.example"))
         XCTAssertFalse(RelayBlocklist.isBlocked("wss://good.example"))
+        // Another port on the same host is another relay.
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://bad.example:8443"))
+    }
+
+    /// The app's own relay lives on loopback: a local relay can't be blocked,
+    /// or blocking one would cut off every other local port too.
+    func testBlocklistIgnoresLocalRelays() {
+        RelayBlocklist.set(["ws://127.0.0.1:4869", "wss://localhost", "wss://bad.example:7777"])
+        defer { RelayBlocklist.set([]) }
+        XCTAssertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:4869"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("ws://127.0.0.1:3355/inbox"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://localhost/inbox"))
+        XCTAssertTrue(RelayBlocklist.isBlocked("wss://bad.example:7777/x"))
+        XCTAssertFalse(RelayBlocklist.isBlocked("wss://bad.example"))
     }
 
     // MARK: - Recommended

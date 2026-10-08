@@ -328,32 +328,47 @@ enum RelayMatrix {
 
 /// The owner's Never connect list, readable from any thread. `ConfigService`
 /// keeps it in step with `HavenConfig.blockedRelays`; `WebSocketClient`
-/// refuses to open a socket to anything on it. A blocked relay with no path
-/// blocks its whole host (`wss://relay.example` also covers
-/// `wss://relay.example/inbox`).
+/// refuses to open a socket to anything on it, and drops or reopens its
+/// socket when the list changes (`changed`). A blocked relay with no path
+/// blocks every path on that host and port (`wss://relay.example` also covers
+/// `wss://relay.example/inbox`, not `wss://relay.example:8443`). Relays that
+/// aren't public (loopback, LAN, Tor) are never blocked: the app's own relay
+/// lives there.
 enum RelayBlocklist {
+    static let changed = Notification.Name("RelayBlocklistChanged")
+
     private static let lock = NSLock()
     private static var keys: Set<String> = []
-    private static var hosts: Set<String> = []
+    private static var authorities: Set<String> = []
 
     static func set(_ urls: [String]) {
         var newKeys = Set<String>()
-        var newHosts = Set<String>()
+        var newAuthorities = Set<String>()
         for url in urls {
             let k = RelayMatrix.key(url)
-            guard !k.isEmpty else { continue }
+            guard !k.isEmpty, RelayMatrix.isPublicRelay(k) else { continue }
             newKeys.insert(k)
-            if let parsed = URL(string: k), let host = parsed.host, parsed.path.isEmpty {
-                newHosts.insert(host)
+            if let parsed = URL(string: k), parsed.path.isEmpty, let authority = authority(parsed) {
+                newAuthorities.insert(authority)
             }
         }
-        lock.lock(); keys = newKeys; hosts = newHosts; lock.unlock()
+        lock.lock()
+        let isChange = newKeys != keys
+        keys = newKeys
+        authorities = newAuthorities
+        lock.unlock()
+        if isChange { NotificationCenter.default.post(name: changed, object: nil) }
     }
 
     static func isBlocked(_ url: String) -> Bool {
         let k = RelayMatrix.key(url)
-        let host = URL(string: k)?.host
+        let parsed = URL(string: k)
         lock.lock(); defer { lock.unlock() }
-        return keys.contains(k) || (host.map(hosts.contains) ?? false)
+        return keys.contains(k) || (parsed.flatMap(authority).map(authorities.contains) ?? false)
+    }
+
+    private static func authority(_ url: URL) -> String? {
+        guard let host = url.host?.lowercased() else { return nil }
+        return url.port.map { "\(host):\($0)" } ?? host
     }
 }

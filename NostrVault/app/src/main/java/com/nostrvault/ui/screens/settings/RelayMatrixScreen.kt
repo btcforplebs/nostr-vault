@@ -25,6 +25,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayMatrix
@@ -121,6 +122,7 @@ class RelayMatrixViewModel @Inject constructor(
     private fun setBlocked(blocked: List<String>) {
         if (blocked == configStore.config.value.blockedRelays) return
         configStore.update { it.copy(blockedRelays = blocked) }
+        WebSocketClient.blocklistChanged()
         refreshSuggestions()
         blockedPending = true
         blockedJob?.cancel()
@@ -700,9 +702,11 @@ private fun RelayDetail(
         Text("ADVANCED", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
         Job.advanced.forEach { JobSwitch(it, row.has(it), accent, onSet) }
-        Column(Modifier.fillMaxWidth().clickable(onClick = onBlock).padding(vertical = 8.dp)) {
-            Text("Never Connect", color = ErrorRed, fontSize = 15.sp)
-            Text("Remove it and block it everywhere in the app", color = SecondaryText, fontSize = 12.sp)
+        if (RelayMatrix.isPublicRelay(DMInbox.normalizedRelayURL(row.url))) {
+            Column(Modifier.fillMaxWidth().clickable(onClick = onBlock).padding(vertical = 8.dp)) {
+                Text("Never Connect", color = ErrorRed, fontSize = 15.sp)
+                Text("Remove it and block it everywhere in the app", color = SecondaryText, fontSize = 12.sp)
+            }
         }
         Text("Write without Read sends your posts here but never loads from it.",
             color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
