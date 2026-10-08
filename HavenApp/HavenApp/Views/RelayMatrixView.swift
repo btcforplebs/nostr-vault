@@ -15,6 +15,7 @@ struct RelayMatrixView: View {
     }
 
     @State private var page: Page = .relays
+    @State private var refusedCertificates: [String] = LocalTLSTrust.refusedHosts
     @State private var followSuggestions: [RelayMatrix.FollowSuggestion] = []
     @State private var followsWithLists = 0
     @State private var followCount = 0
@@ -111,7 +112,7 @@ struct RelayMatrixView: View {
                 if !blocked.isEmpty { neverConnectSection }
                 mediaSection
             case .recommended:
-                if !problems.isEmpty { fixesSection }
+                if !problems.isEmpty || !refusedCertificates.isEmpty { fixesSection }
                 followsSection
                 fastestSection
             }
@@ -167,6 +168,9 @@ struct RelayMatrixView: View {
             probe.probe(([ownRelay] + rows.map(\.url)).filter { !$0.isEmpty })
             refreshSuggestions()
         }
+        .onReceive(NotificationCenter.default.publisher(for: LocalTLSTrust.certificateChanged)) { _ in
+            refusedCertificates = LocalTLSTrust.refusedHosts
+        }
         .onChange(of: page) { _, new in
             guard new == .recommended else { return }
             refreshSuggestions()
@@ -206,11 +210,11 @@ struct RelayMatrixView: View {
             HStack(spacing: 8) {
                 chip("\(rows.count + (ownRelay.isEmpty ? 0 : 1)) relays")
                 if let average = averageMilliseconds { chip("avg \(average) ms") }
-                if !problems.isEmpty {
+                if !problems.isEmpty || !refusedCertificates.isEmpty {
                     Button {
                         page = .recommended
                     } label: {
-                        chip("⚠︎ \(problems.count) to fix", tint: .orange)
+                        chip("⚠︎ \(problems.count + refusedCertificates.count) to fix", tint: .orange)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Shows the fixes")
@@ -242,6 +246,26 @@ struct RelayMatrixView: View {
 
     private var fixesSection: some View {
         Section {
+            ForEach(refusedCertificates, id: \.self) { hostPort in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                        .foregroundColor(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(hostPort) changed its certificate").font(.appBody)
+                        Text("The app won't connect until you trust the new one. Do that only if you reset or reinstalled that relay.")
+                            .font(.appCaption).foregroundColor(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Trust New") {
+                        LocalTLSTrust.forget(hostPort)
+                        refusedCertificates = LocalTLSTrust.refusedHosts
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.havenPurple)
+                    .controlSize(.small)
+                }
+                .padding(.vertical, 2)
+            }
             ForEach(Array(problems.enumerated()), id: \.offset) { _, problem in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: problemIsBroken(problem) ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")

@@ -348,6 +348,8 @@ class ConfigService: ObservableObject {
         
         // 3. Reset in-memory config
         config = HavenConfig.default
+        // The relay's certificate went with its data folder; a new one is coming.
+        LocalTLSTrust.forgetAll()
     }
     
     /// Programmatically quit the application

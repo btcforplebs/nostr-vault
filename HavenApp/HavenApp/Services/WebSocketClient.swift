@@ -3,20 +3,47 @@ import Combine
 import CryptoKit
 import Security
 
-/// Helper to identify if a host is local or on the local network (LAN/mDNS)
-func isLocalNetworkHost(_ host: String?) -> Bool {
-    LocalTLSPolicy.kind(of: host) != .public
-}
-
 /// TLS for hosts a public certificate can't cover: this device's own relay
 /// and relays on the local network, which use self-signed certificates.
-/// Loopback is trusted as is. A LAN host with a certificate the system
-/// accepts is checked normally; otherwise its certificate is pinned the first
+/// Loopback is trusted as is. A LAN host's certificate is pinned the first
 /// time it is seen and must match after that, so another device on the same
-/// Wi-Fi can't stand in for it. Everything else gets default handling.
+/// Wi-Fi can't stand in for it; one the system also accepts still gets the
+/// normal check. Everything else gets default handling.
+///
+/// A relay that comes back with a new certificate (its Mac was reset or
+/// reinstalled) is refused, logged, and listed under Settings › Relays ›
+/// Fixes, where Trust New forgets the old one. Reset App forgets them all.
 enum LocalTLSTrust {
+    /// Posted on the main queue when a pinned host presents another certificate.
+    static let certificateChanged = Notification.Name("LocalTLSCertificateChanged")
+
     private static let pinsKey = "localTLSPins"
     private static let lock = NSLock()
+    private static var refused: Set<String> = []
+
+    /// host:port of relays refused this session for a changed certificate.
+    static var refusedHosts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return refused.sorted()
+    }
+
+    /// Forgets the saved certificate for `hostPort`; the next one is trusted.
+    static func forget(_ hostPort: String) {
+        lock.lock()
+        var pins = UserDefaults.standard.dictionary(forKey: pinsKey) as? [String: String] ?? [:]
+        pins[hostPort] = nil
+        UserDefaults.standard.set(pins, forKey: pinsKey)
+        refused.remove(hostPort)
+        lock.unlock()
+    }
+
+    /// Forgets every saved certificate (Reset App).
+    static func forgetAll() {
+        lock.lock()
+        UserDefaults.standard.removeObject(forKey: pinsKey)
+        refused.removeAll()
+        lock.unlock()
+    }
 
     static func handle(_ challenge: URLAuthenticationChallenge,
                        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -32,10 +59,6 @@ enum LocalTLSTrust {
         case .loopback:
             completionHandler(.useCredential, URLCredential(trust: trust))
         case .lan:
-            if SecTrustEvaluateWithError(trust, nil) {
-                completionHandler(.performDefaultHandling, nil)
-                return
-            }
             guard let fingerprint = leafFingerprint(trust) else {
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
@@ -48,9 +71,21 @@ enum LocalTLSTrust {
                 pins[key] = fingerprint
                 UserDefaults.standard.set(pins, forKey: pinsKey)
             }
+            let isNewRefusal = decision == .reject && refused.insert(key).inserted
             lock.unlock()
             if decision == .reject {
+                if isNewRefusal {
+                    RelayProcessManager.shared.addLog(
+                        "Refused \(key): its certificate is not the one this app saved. If that relay was reset or reinstalled, trust the new one in Settings › Relays › Fixes.",
+                        level: "WARN")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: certificateChanged, object: nil)
+                    }
+                }
                 completionHandler(.cancelAuthenticationChallenge, nil)
+            } else if SecTrustEvaluateWithError(trust, nil) {
+                // Pinned, and the system trusts it too: keep its normal check.
+                completionHandler(.performDefaultHandling, nil)
             } else {
                 completionHandler(.useCredential, URLCredential(trust: trust))
             }
