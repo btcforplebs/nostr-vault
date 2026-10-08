@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
@@ -282,6 +283,8 @@ fun RelayMatrixScreen(
     val unreachable = results.filterValues { it == RelayProbeResult.Unreachable }.keys.filter { it in yours }.sorted()
     val problems = RelayMatrix.problems(lists, cfg.ownHavenDMInboxURL, unreachable)
     val follow by viewModel.follow.collectAsState()
+    val refusedCertificates by LocalTls.refused.collectAsState()
+    val fixCount = problems.size + refusedCertificates.size
 
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showingAdd by remember { mutableStateOf(false) }
@@ -353,15 +356,32 @@ fun RelayMatrixScreen(
                 ) {
                     Chip("${rows.size + if (ownRelay.isEmpty()) 0 else 1} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
-                    if (problems.isNotEmpty()) {
-                        Box(Modifier.clickable { recommended = true }) { Chip("⚠ ${problems.size} to fix", SlowAmber) }
+                    if (fixCount > 0) {
+                        Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }
                     }
                 }
             }
 
             if (recommended) {
+                if (fixCount > 0) item { SectionHeader("Fixes") }
+                items(refusedCertificates, key = { "cert$it" }) { hostPort ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text("!", color = ErrorRed, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.width(20.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("$hostPort changed its certificate", color = PrimaryText, fontSize = 15.sp)
+                            Text("The app won't connect until you trust the new one. Do that only if you reset or reinstalled that relay.",
+                                color = SecondaryText, fontSize = 12.sp)
+                        }
+                        Button(
+                            onClick = { LocalTls.forget(hostPort) },
+                            colors = ButtonDefaults.buttonColors(containerColor = accent),
+                        ) { Text("Trust New") }
+                    }
+                }
                 if (problems.isNotEmpty()) {
-                    item { SectionHeader("Fixes") }
                     items(problems) { problem ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
