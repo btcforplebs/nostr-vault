@@ -193,7 +193,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayStatus,
             title: "Your pocket relay",
-            body: "A real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
+            body: "This is a real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
         ),
         TutorialStep(
             anchor: relayActivity,
@@ -203,7 +203,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayAddress,
             title: "Pocket vs public",
-            body: "This address only works on this phone, so nobody on the network can connect to it. Want a public address? Run Nostr Vault on a Mac with your own domain. That's optional: your pocket relay works fine on its own."
+            body: "This address only works on this phone, so nobody else can connect to it. For a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
         ),
     ]
 
