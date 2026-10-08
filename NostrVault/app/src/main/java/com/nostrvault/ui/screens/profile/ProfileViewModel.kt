@@ -580,6 +580,9 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    /** Your own notes have no trust path, so they get no Web of Trust button. */
+    fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
+
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
     }

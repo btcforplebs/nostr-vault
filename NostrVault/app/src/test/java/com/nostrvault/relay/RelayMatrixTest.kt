@@ -166,4 +166,18 @@ class RelayMatrixTest {
         assertTrue(RelayMatrix.Problem.NoWrite.detail.contains("relay.btcforplebs.com"))
         assertTrue(RelayMatrix.Problem.NoRead.detail.contains("relay.primal.net"))
     }
+
+    @Test
+    fun `search is a grid column`() {
+        assertTrue(Job.SEARCH in Job.columns)
+        assertFalse(Job.SEARCH in Job.advanced)
+        assertEquals(Job.entries.toSet(), (Job.columns + Job.advanced).toSet())
+    }
+
+    @Test
+    fun `an edit probes only relays with no speed yet`() {
+        val known = setOf(RelayMatrix.key("wss://a.example"), RelayMatrix.key("wss://b.example"))
+        assertEquals(listOf("wss://new.example"),
+            RelayMatrix.needingProbe(listOf("wss://A.example/", "wss://b.example", "wss://new.example", ""), known))
+    }
 }

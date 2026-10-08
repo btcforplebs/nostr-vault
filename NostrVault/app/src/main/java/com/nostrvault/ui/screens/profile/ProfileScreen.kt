@@ -42,6 +42,7 @@ import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NostrContentText
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.theme.*
 
 /**
@@ -131,6 +132,8 @@ fun ProfileScreen(
     val currentTrack by com.nostrvault.service.music.MusicPlayer.current.collectAsState()
     val musicPlaying by com.nostrvault.service.music.MusicPlayer.isPlaying.collectAsState()
     var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
     // Coming back from the Sell composer: show the listing just posted.
     var sellLaunched by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
@@ -537,6 +540,7 @@ fun ProfileScreen(
                         onReply = onReply,
                         onQuote = onQuote,
                         onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
                         engagement = engagement,
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
@@ -584,6 +588,15 @@ fun ProfileScreen(
             onMessageSeller = if (isOwnProfile) null else { l -> openListing = null; onMessageUser(l.pubkey, l.messageToSeller) },
             onEventInfo = null,
             onDismiss = { openListing = null },
+        )
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = openOtherProfile,
+            onDismiss = { trustWebAuthor = null },
         )
     }
 

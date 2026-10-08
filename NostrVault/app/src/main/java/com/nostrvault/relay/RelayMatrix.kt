@@ -25,10 +25,17 @@ object RelayMatrix {
 
         companion object {
             /** Grid columns; the rest are tags under the name and switches in the detail. */
-            val columns = listOf(READ, WRITE, DMS)
-            val advanced = listOf(SEARCH, IMPORT)
+            val columns = listOf(READ, WRITE, DMS, SEARCH)
+            val advanced = listOf(IMPORT)
         }
     }
+
+    /**
+     * The relays in [urls] with no speed yet. An edit probes only these, so
+     * the rows already timed keep their dots instead of all going grey.
+     */
+    fun needingProbe(urls: List<String>, known: Set<String>): List<String> =
+        urls.filter { it.isNotEmpty() && key(it) !in known }
 
     /** The lists the matrix edits, as stored. */
     data class Lists(

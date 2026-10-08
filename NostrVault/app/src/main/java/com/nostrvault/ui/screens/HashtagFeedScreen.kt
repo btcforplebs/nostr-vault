@@ -40,6 +40,7 @@ import com.nostrvault.service.InterestListService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.components.GlassPill
+import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.ZapFlight
@@ -541,6 +542,9 @@ abstract class HashtagNotesViewModel(
 
     fun clearToast() { _toast.value = null }
 
+    /** Your own notes have no trust path, so they get no Web of Trust button. */
+    fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
+
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
@@ -900,6 +904,8 @@ internal fun HashtagNote(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
 ) {
+    // Held per note: the map covers the screen, so nothing scrolls it away.
+    var showingTrustWeb by remember { mutableStateOf(false) }
     val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
         note.quotedEventIds.mapNotNull { qid ->
             viewModel.quotedNoteFor(qid)?.let { qid to it }
@@ -920,8 +926,17 @@ internal fun HashtagNote(
         onReply = onReply,
         onQuote = onQuote,
         onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ _: String -> showingTrustWeb = true }),
     )
     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+    if (showingTrustWeb) {
+        TrustWebDialog(
+            author = note.effectiveAuthor,
+            initialPath = null,
+            onProfileClick = onProfileClick,
+            onDismiss = { showingTrustWeb = false },
+        )
+    }
 }
 
 /** Under a group while its next older page loads. */
