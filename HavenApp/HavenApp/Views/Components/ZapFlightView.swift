@@ -287,7 +287,7 @@ struct ZapFlightStage: View {
                 // Anchors are measured in window space; the stage may not sit
                 // exactly at the window's origin, so shift into its own space.
                 let stageOrigin = proxy.frame(in: .global).origin
-                TimelineView(.animation) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
                     Canvas { context, size in
                         context.translateBy(x: -stageOrigin.x, y: -stageOrigin.y)
                         let stage = CGRect(origin: stageOrigin, size: size)

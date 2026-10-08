@@ -274,6 +274,7 @@ class ProfileViewModel @Inject constructor(
         pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
         relayFollowerCount = null
+        vertexFollowerCount = null
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
         _followersCount.value = null
@@ -341,11 +342,12 @@ class ProfileViewModel @Inject constructor(
                     }
                     if (ledger != null && _pubkey.value == pk) {
                         ownLedgerLoaded = true
-                        _followersCount.value = ledger.current.size
+                        if (vertexFollowerCount == null) _followersCount.value = ledger.current.size
                     }
                 }
             }
 
+            fetchVertexFollowerCount(pk)
             if (!own) fetchFollowerCount(pk)
 
             // Fetch metadata if missing.
@@ -374,6 +376,25 @@ class ProfileViewModel @Inject constructor(
     /** Largest NIP-45 COUNT any relay gave for this profile's followers. */
     @Volatile private var relayFollowerCount: Int? = null
 
+    /** Vertex's count, the one npub.world shows. Once it answers, it's the one shown. */
+    @Volatile private var vertexFollowerCount: Int? = null
+
+    /**
+     * Vertex counts follow lists from across Nostr, once per follower, so
+     * its answer replaces the ledger, relay COUNTs and streamed sample, on
+     * your profile too. Port of iOS ProfileView.displayedFollowersCount.
+     */
+    private fun fetchVertexFollowerCount(pk: String) {
+        viewModelScope.launch {
+            val count = nostrService.fetchVertexFollowerCount(pk) ?: return@launch
+            synchronized(this@ProfileViewModel) {
+                if (_pubkey.value != pk) return@launch
+                vertexFollowerCount = count
+                _followersCount.value = count
+            }
+        }
+    }
+
     /**
      * The streamed kind 3s stop at a page per relay, so they undercount anyone
      * with more followers. Relays that answer NIP-45 COUNT give the full
@@ -392,7 +413,7 @@ class ProfileViewModel @Inject constructor(
                 if (_pubkey.value != pk) return@launch
                 val best = maxOf(relayFollowerCount ?: 0, count)
                 relayFollowerCount = best
-                _followersCount.value = maxOf(best, _followersCount.value ?: 0)
+                if (vertexFollowerCount == null) _followersCount.value = maxOf(best, _followersCount.value ?: 0)
             }
         }
     }
@@ -409,7 +430,7 @@ class ProfileViewModel @Inject constructor(
             // Your ledger's count is exact; the relay sample only stands in
             // when the ledger can't be read.
             synchronized(this@ProfileViewModel) {
-                if (followerPubkeys.add(followerPk) && !ownLedgerLoaded) {
+                if (followerPubkeys.add(followerPk) && !ownLedgerLoaded && vertexFollowerCount == null) {
                     _followersCount.value = maxOf(followerPubkeys.size, relayFollowerCount ?: 0)
                 }
             }

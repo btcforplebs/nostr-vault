@@ -1381,9 +1381,35 @@ struct NoteSplitPane<Content: View>: View {
 /// checker's budget.
 private struct OpensRelayTab: ViewModifier {
     @Binding var selectedTab: Int
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     func body(content: Content) -> some View {
         content
+            // Your Vault starts the first time the Relay tab is picked. Not
+            // from VaultView: the tab view builds it while another tab
+            // shows, and it would take the slot Feeds needs. Re-checked when
+            // a status is saved, like Feeds.
+            .task(id: "\(selectedTab).\(tutorialCenter.revision)") {
+                if selectedTab == 4 {
+                    tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
+                }
+            }
+            // A last card's Next goes to the next tutorial's page: Your
+            // Vault is the Relay tab, Wallet Connect the wallet on Profile,
+            // Pocket Relay the relay dashboard on the Relay tab.
+            .onChange(of: tutorialCenter.active) { _, active in
+                if active == .vault || active == .pocketRelay { selectedTab = 4 }
+                // Opened once the wallet sheet it came from has closed and
+                // the Relay tab is showing. Already open when the dashboard
+                // started it, and opening it again does nothing.
+                if active == .pocketRelay {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.6))
+                        NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
+                    }
+                }
+                if active == .walletConnect { selectedTab = 2 }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in selectedTab = 4 }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in selectedTab = 4 }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in selectedTab = 4 }

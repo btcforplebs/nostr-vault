@@ -440,11 +440,7 @@ class DashboardViewModel @Inject constructor(
         // missing forceReload() wiring. Without this, the Relay/Vault tab kept showing
         // the previous account's notes/reactions/zaps mixed in with the new account's.
         viewModelScope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
-                .collect { resetForAccountSwitch() }
+            configStore.accountSwitches.collect { resetForAccountSwitch() }
         }
 
         // Blocking someone (this tab's Block User, the feed, Settings) drops
@@ -2328,6 +2324,8 @@ fun DashboardScreen(
             focusedEventId = null
             viewModel.applyRelayFocusView(request, currentZapsOnly)
             if (request.type == NotificationTarget.FOLLOWERS) return@collectLatest
+            // The feed dashboard opens a list, not a post: nothing to find.
+            if (request.eventId.isEmpty()) return@collectLatest
             // The event can still be arriving from the relay and the lists
             // rebuild on a debounce, so look for up to ~10 s.
             repeat(40) {

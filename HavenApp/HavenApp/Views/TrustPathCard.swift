@@ -8,19 +8,28 @@ struct TrustPathCard: View {
     @EnvironmentObject var nostrService: NostrService
 
     @State private var path: TrustPath?
+    /// iPad: the globe opens full screen instead of inside Event Info's sheet.
+    @State private var showingWeb = false
 
     private var me: String { ConfigService.shared.activeAccountHexPubkey }
 
     var body: some View {
         Group {
             if let path, path.reach != .you {
-                NavigationLink {
-                    TrustWebView(author: author, path: path)
-                } label: {
-                    card(chevron: true)
+                if TrustWebSheet.opensFullScreen {
+                    Button { showingWeb = true } label: { card(chevron: true) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(Text("Shows your web of trust"))
+                        .trustWebPresentation(isPresented: $showingWeb, author: author, path: path)
+                } else {
+                    NavigationLink {
+                        TrustWebView(author: author, path: path)
+                    } label: {
+                        card(chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Text("Shows your web of trust"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint(Text("Shows your web of trust"))
             } else {
                 card(chevron: false)
             }

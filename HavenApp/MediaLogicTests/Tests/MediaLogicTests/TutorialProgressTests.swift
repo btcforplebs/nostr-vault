@@ -11,7 +11,7 @@ final class TutorialProgressTests: XCTestCase {
     private let alice = String(repeating: "a", count: 64)
     private let bob = String(repeating: "b", count: 64)
 
-    func testFillYourVaultStartsFirstAndOnlyOncePerLaunch() {
+    func testFillYourVaultStartsFirstAndAloneOnScreen() {
         var progress = TutorialProgress(store: MemoryStore())
         XCTAssertTrue(progress.startIfEligible(.fillYourVault, account: alice))
         XCTAssertEqual(progress.active, .fillYourVault)
@@ -29,18 +29,32 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertNil(progress.active)
     }
 
-    /// Skipping counts the same as finishing for the gate, and the next
-    /// tutorial waits for the next launch.
-    func testOneTutorialPerLaunch() {
-        let store = MemoryStore()
-        var progress = TutorialProgress(store: store)
+    /// Skipping counts the same as finishing for the gate, and every page
+    /// still starts its own tutorial in the same launch, one at a time.
+    func testEachPageStartsItsTutorialInTheSameLaunch() {
+        var progress = TutorialProgress(store: MemoryStore())
         progress.startIfEligible(.fillYourVault, account: alice)
         progress.skip(.fillYourVault, account: alice)
         XCTAssertNil(progress.active)
+        XCTAssertTrue(progress.startIfEligible(.feeds, account: alice))
+        XCTAssertFalse(progress.startIfEligible(.vault, account: alice))
+
+        progress.skip(.feeds, account: alice)
+        XCTAssertTrue(progress.startIfEligible(.vault, account: alice))
+        XCTAssertEqual(progress.active, .vault)
+    }
+
+    /// Fill your vault's "built" card is up after it's done: nothing starts
+    /// over it until it's put away.
+    func testHeldStopsPageTutorials() {
+        var progress = TutorialProgress(store: MemoryStore())
+        progress.startIfEligible(.fillYourVault, account: alice)
+        progress.finish(.fillYourVault, account: alice)
+        progress.held = true
         XCTAssertFalse(progress.startIfEligible(.feeds, account: alice))
 
-        var nextLaunch = TutorialProgress(store: store)
-        XCTAssertTrue(nextLaunch.startIfEligible(.feeds, account: alice))
+        progress.held = false
+        XCTAssertTrue(progress.startIfEligible(.feeds, account: alice))
     }
 
     func testFinishedTutorialNeverStartsAgainOnItsOwn() {
@@ -77,9 +91,6 @@ final class TutorialProgressTests: XCTestCase {
         progress.replay(.feeds)
         XCTAssertEqual(progress.active, .feeds)
         XCTAssertEqual(progress.status(.feeds, account: alice), .done)
-
-        // A replay doesn't use up the launch's automatic tutorial.
-        XCTAssertFalse(progress.autoStartedThisLaunch)
     }
 
     /// Closing a tutorial that isn't the one on screen saves its status but
@@ -134,9 +145,45 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertEqual(TutorialProgress.key(.pocketRelay, account: alice), "tutorial.pocket-relay")
     }
 
-    func testFeedsCardsAllPointAtThePicker() {
-        XCTAssertEqual(TutorialContent.feeds.count, 6)
-        XCTAssertTrue(TutorialContent.feeds.allSatisfy { $0.anchor == TutorialContent.feedPicker })
+    func testFeedsCardsPointAtTheTwoCorners() {
+        XCTAssertEqual(TutorialContent.feeds.map(\.anchor), [
+            TutorialContent.feedPicker, TutorialContent.feedToolbar, TutorialContent.feedToolbar,
+        ])
+    }
+
+    /// Pocket Relay points at the relay card, its activity, then its address.
+    func testPocketRelayCardsPointAtTheDashboard() {
+        XCTAssertEqual(TutorialContent.pocketRelay.map(\.anchor), [
+            TutorialContent.relayStatus, TutorialContent.relayActivity, TutorialContent.relayAddress,
+        ])
+    }
+
+    /// Only a tutorial that can run is offered as next, so the last card
+    /// never starts one with nothing to draw.
+    func testNextSkipsTutorialsWithoutCards() {
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.feeds.next, .vault)
+        #else
+        XCTAssertNil(TutorialID.feeds.next)
+        #endif
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.vault.next, .walletConnect)
+        #else
+        XCTAssertNil(TutorialID.vault.next)
+        #endif
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.walletConnect.next, .pocketRelay)
+        #else
+        XCTAssertNil(TutorialID.walletConnect.next)
+        #endif
+        XCTAssertNil(TutorialID.pocketRelay.next)
+        XCTAssertNil(TutorialID.importTour.next)
+        // Fill your feed's last card opens Discover and starts Feeds.
+        #if os(iOS)
+        XCTAssertEqual(TutorialID.fillYourVault.next, .feeds)
+        #else
+        XCTAssertNil(TutorialID.fillYourVault.next)
+        #endif
     }
 
     /// The import tour teaches Vault and Pocket relay, so finishing it marks

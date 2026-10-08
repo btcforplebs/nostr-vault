@@ -6,6 +6,7 @@ import android.util.Log
 import coil.ImageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.BlobNoteIndexStore
 import com.nostrvault.data.local.EngagementTracker
@@ -245,10 +246,7 @@ class FeedService @Inject constructor(
         }
 
         scope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
+            configStore.accountSwitches
                 .collect {
                     // The new account's list is unknown until its own load
                     // answers, and a tap queued under the previous account
@@ -617,7 +615,7 @@ class FeedService @Inject constructor(
      * Restores disk snapshot if available, then tops up from relays.
      */
     fun startInitialLoad() {
-        Log.d(TAG, "startInitialLoad: mode=${_feedMode.value}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: mode=${_feedMode.value}")
 
         // Pre-load WOT pubkeys so DISCOVERY and GLOBAL media modes work immediately
         loadWotPubkeys()
@@ -629,7 +627,7 @@ class FeedService @Inject constructor(
 
         scope.launch {
             val restored = restoreFromDiskIfAvailable()
-            Log.d(TAG, "startInitialLoad: snapshot restored=$restored, notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: snapshot restored=$restored, notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
             if (restored) {
                 topUpFromRelays()
             } else {
@@ -765,7 +763,7 @@ class FeedService @Inject constructor(
      * to free network/memory while the relay keeps running via the foreground service.
      */
     fun pauseFeed() {
-        Log.d(TAG, "pauseFeed: persisting snapshot and disconnecting feed clients")
+        if (BuildConfig.DEBUG) Log.d(TAG, "pauseFeed: persisting snapshot and disconnecting feed clients")
         persistCurrentSnapshot()
         saveInteractionState()
         teardownAllFeedClients()
@@ -780,7 +778,7 @@ class FeedService @Inject constructor(
      * while backgrounded.
      */
     fun resumeFeed() {
-        Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
 
         // A launch that restores the saved feed never reaches startInitialLoad,
         // which is otherwise where Global and Discovery get their trust graph.
@@ -789,7 +787,7 @@ class FeedService @Inject constructor(
         // If we still have notes in memory (brief background), just reconnect —
         // no need to hit disk or re-fetch contacts at all.
         if (_notes.value.isNotEmpty()) {
-            Log.d(TAG, "resumeFeed: notes still in memory, reconnecting only")
+            if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes still in memory, reconnecting only")
             // Memory cache may have been evicted while backgrounded — re-warm avatars
             prewarmAvatarCache(_notes.value)
             subscribeToAllRelays()
@@ -876,7 +874,7 @@ class FeedService @Inject constructor(
     private suspend fun loadContactList() {
         val myGeneration = ++contactLoadGeneration
         _isLoadingContacts.value = true
-        Log.d(TAG, "loadContactList: starting, current followedPubkeys=${_followedPubkeys.value.size}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "loadContactList: starting, current followedPubkeys=${_followedPubkeys.value.size}")
 
         // Prime the local-edit guard from THIS account's durable backup so a relay
         // copy older than our last known edit can't clobber it — even on a cold
@@ -902,14 +900,14 @@ class FeedService @Inject constructor(
                 if (myGeneration != contactLoadGeneration) {
                     // Superseded by a newer call (e.g. an account switch) — this
                     // result may belong to a different account entirely, discard it.
-                    Log.d(TAG, "loadContactList: discarding stale result (generation $myGeneration superseded)")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadContactList: discarding stale result (generation $myGeneration superseded)")
                     return@withContext
                 }
                 if (result != null && result.third >= ownContactListCreatedAt &&
                     result.third != refusedContactListCreatedAt
                 ) {
                     val (pubkeys, content, createdAt) = result
-                    Log.d(TAG, "loadContactList: committing ${pubkeys.size} followed pubkeys (created_at=$createdAt)")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadContactList: committing ${pubkeys.size} followed pubkeys (created_at=$createdAt)")
                     withContext(Dispatchers.Main.immediate) {
                         contactListConfirmed = true
                         _followedPubkeys.value = pubkeys
@@ -983,8 +981,8 @@ class FeedService @Inject constructor(
             config.activeBlastrRelays.let { addAll(it) }
         }.distinct().take(5)
 
-        Log.d(TAG, "fetchContactList: trying ${relayUrls.size} relays: $relayUrls")
-        Log.d(TAG, "fetchContactList: activeHexPubkey=${nostrService.activeHexPubkey.take(16)}...")
+        if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: trying ${relayUrls.size} relays: $relayUrls")
+        if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: activeHexPubkey=${nostrService.activeHexPubkey.take(16)}...")
 
         if (relayUrls.isEmpty()) {
             Log.w(TAG, "fetchContactList: no relay URLs configured!")
@@ -1052,7 +1050,7 @@ class FeedService @Inject constructor(
                                         val whitelistedNpubs = configStore.config.value.whitelistedNpubs ?: emptyList()
                                         val contactResult = contactManager.parseContactList(tags, ownerHex, whitelistedNpubs)
                                         val pubkeys = contactResult.pubkeys
-                                        Log.d(TAG, "fetchContactList: kind:3 from $relayUrl tags=${tags.size} parsed=${pubkeys.size} created_at=$createdAt")
+                                        if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: kind:3 from $relayUrl tags=${tags.size} parsed=${pubkeys.size} created_at=$createdAt")
                                         if (pubkeys.isNotEmpty()) {
                                             lock.withLock {
                                                 if (best == null || createdAt > best!!.third) {
@@ -1077,7 +1075,7 @@ class FeedService @Inject constructor(
                     client.connect()
                     val ownerHex = nostrService.activeHexPubkey
                     val filter = """{"kinds":[3],"authors":["$ownerHex"],"limit":1}"""
-                    Log.d(TAG, "fetchContactList: sending REQ to $relayUrl")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: sending REQ to $relayUrl")
                     client.send("[\"REQ\",\"$subId\",$filter]")
 
                     delay(CONTACT_LOAD_TIMEOUT_MS)
@@ -1279,7 +1277,7 @@ class FeedService @Inject constructor(
                 }
             }
             val extended = contactManager.rankExtendedNetwork(mutualCounts)
-            Log.d(
+            if (BuildConfig.DEBUG) Log.d(
                 TAG,
                 "Extended network: ${followLists.size}/${follows.size} follow lists, " +
                     "${mutualCounts.size} candidates, complete=$everyRelayAnswered",
@@ -1709,7 +1707,7 @@ class FeedService @Inject constructor(
             append(",\"limit\":500}")
         }
 
-        Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
         client.send("[\"REQ\",\"$subId\",$filter]")
     }
 
@@ -2331,7 +2329,7 @@ class FeedService @Inject constructor(
                             Log.w(TAG, "WoT cache unreadable: $wotCachePath")
                             return@launch
                         }
-                        Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
                             _wotCacheRead.value = true
                             if (loaded != _wotPubkeys.value) {
@@ -2604,10 +2602,6 @@ class FeedService @Inject constructor(
         _pendingNotes.value = emptyList()
         _newNoteCount.value = 0
         recomputeFilteredNotes()
-    }
-
-    fun markViewed() {
-        _newNoteCount.value = 0
     }
 
     // ── Scroll position tracking ─────────────────────────────────
@@ -3419,19 +3413,6 @@ class FeedService @Inject constructor(
     // Search
     // ══════════════════════════════════════════════════════════════════
 
-    fun searchDebounced(query: String) {
-        _searchQuery.value = query
-        searchDebounceJob?.cancel()
-        if (query.isBlank()) {
-            clearSearch()
-            return
-        }
-        searchDebounceJob = scope.launch {
-            delay(SEARCH_DEBOUNCE_MS)
-            performSearch(query)
-        }
-    }
-
     fun performSearch(query: String) {
         _isSearching.value = true
         _isSearchActive.value = true
@@ -3485,56 +3466,6 @@ class FeedService @Inject constructor(
         interactionSaveJob?.cancel()
         interactionSaveJob = scope.launch(Dispatchers.IO) {
             engagementTracker.saveInteractionState(state, forKey = key)
-        }
-    }
-
-    fun fetchNoteStats(noteId: String) {
-        scope.launch(Dispatchers.IO) {
-            // Connect to local + inbox relays and query for engagement
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.localInboxURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it.take(1)) }
-            }.distinct()
-
-            val stats = NoteStats()
-            val seenReactions = mutableSetOf<String>()
-            val seenReposts = mutableSetOf<String>()
-            val seenZaps = mutableSetOf<String>()
-
-            for (relayUrl in relayUrls) {
-                val subId = "stats-${UUID.randomUUID().toString().take(8)}"
-                val repostFilter = """{"kinds":[6],"#e":["$noteId"]}"""
-                val reactionFilter = """{"kinds":[7],"#e":["$noteId"]}"""
-                val zapFilter = """{"kinds":[9735],"#e":["$noteId"]}"""
-
-                lookupPool.query(relayUrl, subId, listOf(repostFilter, reactionFilter, zapFilter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                    try {
-                        val parsed = json.parseToJsonElement(msg).jsonArray
-                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                            val eventObj = parsed[2].jsonObject
-                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-
-                            when (kind) {
-                                6 -> seenReposts.add(id)
-                                7 -> seenReactions.add(id)
-                                9735 -> seenZaps.add(id)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-
-            withContext(Dispatchers.Main.immediate) {
-                val merged = NoteStats(
-                    repostCount = seenReposts.size,
-                    reactionCount = seenReactions.size,
-                    zapCount = seenZaps.size,
-                )
-                _noteStats.value = _noteStats.value + (noteId to merged)
-            }
         }
     }
 
@@ -3818,7 +3749,7 @@ class FeedService @Inject constructor(
             }
 
         if (urls.isEmpty()) return
-        Log.d(TAG, "Pre-warming ${urls.size} avatar(s) into memory cache")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Pre-warming ${urls.size} avatar(s) into memory cache")
 
         scope.launch(Dispatchers.IO) {
             coroutineScope {
@@ -3876,13 +3807,6 @@ class FeedService @Inject constructor(
     // Local relay operations
     // ══════════════════════════════════════════════════════════════════
 
-    fun addLocalRelayIfReady() {
-        val config = configStore.config.value
-        val localUrl = config.nostrURL ?: return
-        if (feedClients.containsKey(localUrl)) return
-        connectFeedRelay(localUrl)
-    }
-
     /**
      * Keeps a copy of a post you liked on your own relay. Its root stores only
      * your events and its inbox only events that tag you, so a liked post
@@ -3894,14 +3818,6 @@ class FeedService @Inject constructor(
         val raw = rawEventCache[noteId] ?: return
         val feedUrl = configStore.config.value.localRelayURL("feed") ?: return
         feedClients[feedUrl]?.send("[\"EVENT\",$raw]")
-    }
-
-    fun sendToLocalRelay(text: String): Boolean {
-        val config = configStore.config.value
-        val localUrl = config.nostrURL ?: return false
-        val client = feedClients[localUrl] ?: return false
-        client.send(text)
-        return true
     }
 
     // ══════════════════════════════════════════════════════════════════

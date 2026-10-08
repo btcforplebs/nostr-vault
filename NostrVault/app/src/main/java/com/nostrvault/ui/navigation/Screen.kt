@@ -86,6 +86,8 @@ sealed class Screen(val route: String) {
 
     // Dashboard
     data object Dashboard : Screen("dashboard")
+    /** The feed dashboard: your follows' last 24 hours (feed menu > Dashboard). */
+    data object FeedDashboard : Screen("feed_dashboard")
     data object BlossomDashboard : Screen("blossom_dashboard")
     data object LogViewer : Screen("log_viewer")
     data object RelayActivity : Screen("relay_activity")

@@ -121,11 +121,7 @@ class PendingPostManager: ObservableObject {
         // Cancel any pending post when the active account switches,
         // preventing a post composed under one account from being
         // published under a different account's signing key.
-        ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 self?.cancel()
             }

@@ -135,6 +135,8 @@ fun FeedScreen(
     onComposeText: (String) -> Unit = {},
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
+    /** Opens the feed dashboard (feed menu > Dashboard). */
+    onOpenDashboard: () -> Unit = {},
     viewModel: FeedViewModel = hiltViewModel(),
     hashtagsViewModel: HashtagsFeedViewModel = hiltViewModel(),
 ) {
@@ -580,6 +582,7 @@ fun FeedScreen(
                 onSetPopularFilter = viewModel::setPopularFilter,
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
                 onEditFeeds = { showFeedMenuEditor = true },
+                onOpenDashboard = onOpenDashboard,
                 newPostsCount = if (showNewPosts) pendingCount else 0,
                 onLoadNewPosts = loadNewPosts,
             )
@@ -1749,6 +1752,7 @@ private fun FeedTopBar(
     onSetPopularFilter: (PopularFilter) -> Unit,
     onToggleEngagementStats: () -> Unit,
     onEditFeeds: () -> Unit,
+    onOpenDashboard: () -> Unit,
     /** Posts are waiting and the floating "New Posts" button is up. */
     newPostsCount: Int,
     onLoadNewPosts: () -> Unit,
@@ -1860,6 +1864,15 @@ private fun FeedTopBar(
                     )
                 }
                 HorizontalDivider()
+                // Your network's day. Activity only; feed settings are in Settings > Feed.
+                DropdownMenuItem(
+                    text = { Text("Dashboard") },
+                    leadingIcon = { Icon(NostrVaultIcons.GridLayout, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        feedModeExpanded = false
+                        onOpenDashboard()
+                    },
+                )
                 // Last, at the bottom of the list it edits (iOS #303).
                 DropdownMenuItem(
                     text = { Text("Edit Feeds") },

@@ -168,12 +168,16 @@ class DMService: ObservableObject {
 
     func startListening() {
         guard RelayProcessManager.shared.state == .running else {
+            #if DEBUG
             print("⏳ Relay not running yet, deferring DM inbox connection")
+            #endif
             return
         }
 
         guard let chatURL = chatRelayURL() else {
+            #if DEBUG
             print("❌ Failed to construct chat relay URL")
+            #endif
             return
         }
 
@@ -209,14 +213,18 @@ class DMService: ObservableObject {
                 case .connected:
                     // /chat requires NIP-42 AUTH — wait for the AUTH challenge
                     // before sending subscription
+                    #if DEBUG
                     print("✅ DM chat relay connected, awaiting AUTH challenge...")
+                    #endif
                     wasConnected = true
                     self.chatReconnectAttempt = 0
                     self.chatReconnectTask?.cancel()
                     self.chatReconnectTask = nil
                 case .disconnected, .error:
                     // Only a connection that was up can be "lost".
+                    #if DEBUG
                     if wasConnected { print("❌ DM chat relay disconnected") }
+                    #endif
                     wasConnected = false
                     self.isAuthenticated = false
                     self.scheduleChatReconnect()
@@ -226,7 +234,9 @@ class DMService: ObservableObject {
             }
             .store(in: &connectionCancellables)
 
+        #if DEBUG
         print("🔗 Connecting to DM chat relay: \(chatURL)")
+        #endif
         client.connect(url: chatURL)
 
         // Also connect to /inbox for NIP-04 (kind 4) legacy DMs
@@ -253,13 +263,17 @@ class DMService: ObservableObject {
             .sink { [weak self] state in
                 guard let self = self, self.nip04Client === client else { return }
                 if state == .connected {
+                    #if DEBUG
                     print("✅ NIP-04 inbox connected")
+                    #endif
                     self.sendNIP04Subscription(to: client)
                 }
             }
             .store(in: &connectionCancellables)
 
+        #if DEBUG
         print("🔗 Connecting to NIP-04 inbox: \(inboxURL)")
+        #endif
         client.connect(url: inboxURL)
     }
 
@@ -301,7 +315,9 @@ class DMService: ObservableObject {
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
         }
+        #if DEBUG
         print("📡 Subscribed to NIP-04 DMs")
+        #endif
     }
 
     private func inboxRelayURL() -> URL? {
@@ -461,7 +477,9 @@ class DMService: ObservableObject {
                     self.publishAuthenticated(giftWrap, url: relayURL)
                 }
             } catch {
+                #if DEBUG
                 print("DMService: Background DM publish failed: \(error)")
+                #endif
             }
         }
     }
@@ -650,7 +668,9 @@ class DMService: ObservableObject {
             }
         }
 
+        #if DEBUG
         print("🌐 Fetching DMs from \(relays.count) external relays...")
+        #endif
 
         for urlStr in relays {
             guard let url = URL(string: urlStr) else { continue }
@@ -793,7 +813,9 @@ class DMService: ObservableObject {
             relays = relays
                 .map { HavenConfig.normalizedRelayURL($0) }
                 .filter { !$0.isEmpty && !NostrService.isLoopbackRelay($0) && seen.insert($0.lowercased()).inserted }
+            #if DEBUG
             print("🧺 DM sent-copy catch-up from \(relays.count) relays (fresh 10002: \(fresh != nil))")
+            #endif
 
             await withTaskGroup(of: Void.self) { group in
                 for urlStr in relays {
@@ -890,7 +912,9 @@ class DMService: ObservableObject {
                 self.injectExternalDmIntoLocalRelay(eventData, eventId: event.id, kind: event.kind)
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process external message: \(error)")
+            #endif
         }
     }
 
@@ -1017,11 +1041,15 @@ class DMService: ObservableObject {
         let req = ["REQ", "dms", filter] as [Any]
         guard let data = try? JSONSerialization.data(withJSONObject: req),
               let str = String(data: data, encoding: .utf8) else {
+            #if DEBUG
             print("❌ Failed to create subscription filter")
+            #endif
             return
         }
         isLoading = true
+        #if DEBUG
         print("📡 Sending DM subscription: \(str)")
+        #endif
         client.send(text: str)
     }
 
@@ -1039,7 +1067,9 @@ class DMService: ObservableObject {
             case "AUTH":
                 // NIP-42: Relay sent AUTH challenge
                 if let challenge = json[safe: 1] as? String {
+                    #if DEBUG
                     print("🔐 Received AUTH challenge from chat relay")
+                    #endif
                     DispatchQueue.main.async {
                         self.handleAuthChallenge(challenge)
                     }
@@ -1050,7 +1080,9 @@ class DMService: ObservableObject {
                    let success = json[safe: 2] as? Bool {
                     DispatchQueue.main.async {
                         if success {
+                            #if DEBUG
                             print("✅ AUTH successful, subscribing to DMs...")
+                            #endif
                             let wasAuthenticated = self.isAuthenticated
                             self.isAuthenticated = true
                             if let client = self.inboxClient {
@@ -1062,7 +1094,9 @@ class DMService: ObservableObject {
                             }
                         } else {
                             let reason = json[safe: 3] as? String ?? "unknown"
+                            #if DEBUG
                             print("❌ AUTH failed for \(eventId.prefix(8)): \(reason)")
+                            #endif
                         }
                     }
                 }
@@ -1077,13 +1111,17 @@ class DMService: ObservableObject {
             case "EOSE":
                 DispatchQueue.main.async {
                     self.isLoading = false
+                    #if DEBUG
                     print("📭 Finished loading stored DMs")
+                    #endif
                 }
             default:
                 break
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process DM message: \(error)")
+            #endif
         }
     }
 
@@ -1096,7 +1134,9 @@ class DMService: ObservableObject {
         guard canSignAsOwner() else {
             if !warnedAuthUnavailable {
                 warnedAuthUnavailable = true
+                #if DEBUG
                 print("ℹ️ Watch-only: cannot sign NIP-42 AUTH (no owner key) — chat relay left unauthenticated")
+                #endif
             }
             return
         }
@@ -1115,7 +1155,9 @@ class DMService: ObservableObject {
         Task {
             // Always sign AUTH with owner's key since the local relay is owned by the owner account
             guard let authEvent = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags, forceOwner: true) else {
+                #if DEBUG
                 print("Failed to sign NIP-42 AUTH event")
+                #endif
                 return
             }
 
@@ -1124,7 +1166,9 @@ class DMService: ObservableObject {
             let msg = ["AUTH", eventDict] as [Any]
             if let data = try? JSONSerialization.data(withJSONObject: msg),
                let str = String(data: data, encoding: .utf8) {
+                #if DEBUG
                 print("Sending AUTH response...")
+                #endif
                 client.send(text: str)
             }
         }
@@ -1160,7 +1204,9 @@ class DMService: ObservableObject {
                 break
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process NIP-04 message: \(error)")
+            #endif
         }
     }
 
@@ -1177,7 +1223,9 @@ class DMService: ObservableObject {
         guard canDecryptNIP04() else {
             if !warnedNIP04Unavailable {
                 warnedNIP04Unavailable = true
+                #if DEBUG
                 print("ℹ️ Watch-only: NIP-04 DM decryption unavailable (no signing key) — skipping inbound DMs")
+                #endif
             }
             return
         }
@@ -1250,7 +1298,9 @@ class DMService: ObservableObject {
             dmUpdateSubject.send()
             saveConversations()
         } catch {
+            #if DEBUG
             print("Failed to decrypt NIP-04 DM: \(error)")
+            #endif
         }
         } // end Task
     }
@@ -1382,12 +1432,16 @@ class DMService: ObservableObject {
             // The wrap opened to something that is not a chat message (or
             // cannot be opened with this key): it will not change, so do not
             // ask the signer about it again on the next launch.
+            #if DEBUG
             print("Failed to unwrap gift wrap: \(error)")
+            #endif
             guard self.switchGeneration == generation else { return }
             rememberUnreadableGiftWrap(event.id)
         } catch {
             // Signer offline, timed out or refused: try again next launch.
+            #if DEBUG
             print("Failed to unwrap gift wrap: \(error)")
+            #endif
         }
     }
 
@@ -1467,7 +1521,9 @@ class DMService: ObservableObject {
             guard RelayProcessManager.shared.state == .running,
                   self.inboxClient?.connectionState != .connected,
                   self.inboxClient?.connectionState != .connecting else { return }
+            #if DEBUG
             print("🔄 DM chat relay: reconnecting (attempt \(self.chatReconnectAttempt))")
+            #endif
             self.startListening()
         }
     }
@@ -1498,7 +1554,9 @@ class DMService: ObservableObject {
                     self.restartInbox()
                     return
                 }
+                #if DEBUG
                 print("✅ DM chat relay still live — kept (no new NIP-42 AUTH)")
+                #endif
                 // The legacy NIP-04 inbox needs no AUTH, so cycling it is free.
                 self.restartNIP04IfNeeded()
             }
@@ -1558,11 +1616,15 @@ class DMService: ObservableObject {
         if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
             let usable = reachable(dmRelays)
             if !usable.isEmpty {
+                #if DEBUG
                 print("📋 Using NIP-17 DM relays for \(pubkey.prefix(8)): \(usable)")
+                #endif
                 return usable
             }
             if !dmRelays.isEmpty {
+                #if DEBUG
                 print("⚠️ \(pubkey.prefix(8)) advertises only loopback DM relays — falling back")
+                #endif
             }
         }
 
@@ -1579,7 +1641,9 @@ class DMService: ObservableObject {
             if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
                 let usable = reachable(dmRelays)
                 if !usable.isEmpty {
+                    #if DEBUG
                     print("📋 Fetched NIP-17 DM relays for \(pubkey.prefix(8)): \(usable)")
+                    #endif
                     return usable
                 }
             }
@@ -1589,14 +1653,18 @@ class DMService: ObservableObject {
         if let readRelays = NostrService.shared.relayLists[pubkey] {
             let usable = reachable(readRelays)
             if !usable.isEmpty {
+                #if DEBUG
                 print("📋 Using kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
+                #endif
                 return usable
             }
         }
 
         // Fallback: use common relays where most users have inbox
         let fallbackRelays = ConfigService.shared.config.writeRelays
+        #if DEBUG
         print("⚠️ No relay list for \(pubkey.prefix(8)), using fallback relays")
+        #endif
         return fallbackRelays
     }
 
@@ -1670,7 +1738,9 @@ class DMService: ObservableObject {
         func finish(_ ok: Bool, _ note: String) {
             guard !done else { return }
             done = true
+            #if DEBUG
             print(ok ? "📤 DM wrap \(event.id.prefix(8)) accepted by \(url)" : "⚠️ DM wrap \(event.id.prefix(8)) not stored by \(url): \(note)")
+            #endif
             client.disconnect()
             subs.removeAll()
         }
@@ -1781,11 +1851,6 @@ class DMService: ObservableObject {
         }
 
         client.connect(url: urlObj)
-    }
-
-    /// Async wrapper around fireAndForgetPublish for call sites that use `await`.
-    private func publishToRelay(_ event: NostrEvent, url: String) async {
-        fireAndForgetPublish(event, url: url)
     }
 
     private func setupThrottling() {

@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Combine
 #if canImport(ServiceManagement)
 import ServiceManagement
 #endif
@@ -22,6 +23,21 @@ class ConfigService: ObservableObject {
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
     /// whenever the active account changes.
     @Published private(set) var activeAccountHexPubkey: String = ""
+
+    /// Each switch of the active account, as its hex pubkey, delivered on the
+    /// main queue once `config` already names the new account. Leaves out the
+    /// current value and setup's first account (see `isAccountSwitch`).
+    var activeAccountSwitches: AnyPublisher<String, Never> {
+        $activeAccountHexPubkey
+            .scan((previous: String?.none, current: String?.none)) { ($0.current, $1) }
+            .compactMap { pair -> String? in
+                guard let previous = pair.previous, let current = pair.current,
+                      HavenConfig.isAccountSwitch(from: previous, to: current) else { return nil }
+                return current
+            }
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
     
     // Config stored in App Support (standard macOS location for app preferences/state)
     private let configURL: URL
@@ -289,47 +305,6 @@ class ConfigService: ObservableObject {
         }
         #endif
     }
-    /// Create the required files for Haven to run (.env, relay JSON files)
-    func createRequiredFiles() {
-        // Create relay data directory if needed
-        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-        
-        // Create .env file - handled by RelayProcessManager on first run/setup
-        let envContent = RelayConfiguration.formatEnvFile(from: RelayConfiguration.generateEnvDictionary(config: config, relayDataDir: relayDataDir))
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_import.json (same list as HavenConfig.importSeedRelays)
-        let importRelays = """
-        [
-            "wss://relay.primal.net",
-            "wss://relay.damus.io",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net"
-        ]
-        """
-        let importURL = relayDataDir.appendingPathComponent("relays_import.json")
-        try? importRelays.write(to: importURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_blastr.json (same list as HavenConfig.blastrRelays)
-        let blastrRelays = """
-        [
-            "wss://relay.btcforplebs.com",
-            "wss://relay.damus.io",
-            "wss://relay.snort.social"
-        ]
-        """
-        let blastrURL = relayDataDir.appendingPathComponent("relays_blastr.json")
-        try? blastrRelays.write(to: blastrURL, atomically: true, encoding: .utf8)
-        
-        // Create blossom directory
-        let blossomDir = relayDataDir.appendingPathComponent("blossom")
-        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-        
-        #if DEBUG
-        print("Created Haven config files at: \(relayDataDir.path)")
-        #endif
-    }
     
     /// Perform a factory reset: delete data and config using FileManager
     func resetApp() {
@@ -348,6 +323,8 @@ class ConfigService: ObservableObject {
         
         // 3. Reset in-memory config
         config = HavenConfig.default
+        // The account went with it; services listening for a switch drop its state.
+        refreshActiveAccountHex()
         // The relay's certificate went with its data folder; a new one is coming.
         LocalTLSTrust.forgetAll()
     }
@@ -589,10 +566,6 @@ class ConfigService: ObservableObject {
             syncGlobalNIP46Fields(fromNpub: npub)
         }
         save()
-    }
-
-    func getBunkerConfig(forNpub npub: String) -> AccountBunkerConfig? {
-        config.accountBunkerConfigs[npub]
     }
 
     func hasBunkerConfig(forNpub npub: String) -> Bool {

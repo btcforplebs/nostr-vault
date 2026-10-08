@@ -119,11 +119,7 @@ class NostrService: ObservableObject {
 
         // React to active account switches — tear down old connections and event state.
         // Stored in configCancellable (not cancellables) so resetConnections() won't destroy it.
-        configCancellable = ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        configCancellable = ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 self?.handleAccountSwitch()
             }
@@ -748,11 +744,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -766,17 +766,23 @@ class NostrService: ObservableObject {
                 } else {
                     // No credential stored — do NOT fall back to owner key, as that
                     // would silently post from the wrong account.
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -790,7 +796,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -816,13 +824,17 @@ class NostrService: ObservableObject {
             let targetUsesBunker = config.accountSigningModes[target] != "local"
                 && ConfigService.shared.hasBunkerConfig(forNpub: target)
             if targetUsesBunker {
+                #if DEBUG
                 print("NostrService: signEventAsync refused — \(target.prefix(20)) signs with a bunker and is not the active account")
+                #endif
                 return nil
             }
             return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target)
         }
 
+        #if DEBUG
         print("NostrService: signEventAsync mode=\(mode) activeNpub=\(config.activeAccountNpub.prefix(20)) ownerNpub=\(config.ownerNpub.prefix(20)) forceOwner=\(forceOwner)")
+        #endif
 
         // Owner-only events (the local relay's AUTH) while another account is
         // active: they used to go to the ACTIVE account's bunker, which cannot
@@ -846,7 +858,9 @@ class NostrService: ObservableObject {
                 guard let data = signedJSON.data(using: .utf8) else { return nil }
                 return try JSONDecoder().decode(NostrEvent.self, from: data)
             } catch {
+                #if DEBUG
                 print("NostrService: owner-signed kind \(kind) skipped — no live session for the owner's signer: \(error)")
+                #endif
                 return nil
             }
         }
@@ -856,7 +870,9 @@ class NostrService: ObservableObject {
             let signingPubkey = forceOwner ? ownerHexPubkey : activeHexPubkey
 
             guard !signingPubkey.isEmpty else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - no pubkey available")
+                #endif
                 return nil
             }
 
@@ -865,26 +881,40 @@ class NostrService: ObservableObject {
 
             guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
                   let jsonStr = String(data: jsonData, encoding: .utf8) else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - JSON serialization error")
+                #endif
                 return nil
             }
 
             do {
+                #if DEBUG
                 print("NostrService: NIP-46 signing kind \(kind) event (tags=\(finalTags.map { $0.first ?? "?" })), sending to bunker…")
                 print("NostrService: NIP-46 outgoing event JSON: \(jsonStr.prefix(500))")
+                #endif
                 let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr)
+                #if DEBUG
                 print("NostrService: NIP-46 bunker returned \(signedJSON.prefix(300))")
+                #endif
                 guard let signedData = signedJSON.data(using: .utf8) else {
+                    #if DEBUG
                     print("NostrService: NIP-46 sign failed - response not valid UTF-8")
+                    #endif
                     return nil
                 }
                 let event = try JSONDecoder().decode(NostrEvent.self, from: signedData)
+                #if DEBUG
                 print("NostrService: NIP-46 signed event id=\(event.id.prefix(8)) pubkey=\(event.pubkey.prefix(8)) sig=\(event.sig.prefix(8))")
+                #endif
                 return event
             } catch {
+                #if DEBUG
                 print("NostrService: NIP-46 sign FAILED for kind \(kind): \(error)")
+                #endif
                 if kind == 24242 {
+                    #if DEBUG
                     print("NostrService: Blossom auth (kind 24242) signing failed — remote signer may not support this event kind or may require manual approval")
+                    #endif
                 }
                 return nil
             }
@@ -912,11 +942,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -927,17 +961,23 @@ class NostrService: ObservableObject {
                 if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
                     sk = hexKey
                 } else {
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -947,7 +987,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -1043,7 +1085,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10063 server list")
+                #endif
             }
         }
     }
@@ -1071,7 +1115,9 @@ class NostrService: ObservableObject {
     func publishDMRelayList(dmRelays: [String], signAsNpub: String? = nil) {
         let reachable = dmRelays.filter { !Self.isLoopbackRelay($0) }
         guard !reachable.isEmpty else {
+            #if DEBUG
             print("NostrService: No externally reachable DM relays, skipping Kind 10050 publish")
+            #endif
             return
         }
 
@@ -1087,7 +1133,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10050 DM relay list with \(tags.count) relays")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10050 DM relay list")
+                #endif
             }
         }
     }
@@ -1105,7 +1153,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10006 blocked relay list with \(tags.count) relays")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10006 blocked relay list")
+                #endif
             }
         }
     }
@@ -1155,7 +1205,9 @@ class NostrService: ObservableObject {
                 if let hex = Bech32.decode(npub)?.hexString,
                    let newest = await fetchNewestDMRelayList(for: hex, alsoAsk: reachable),
                    Set(newest.relays) == Set(reachable) {
+                    #if DEBUG
                     print("NostrService: DM relay list for \(npub.prefix(12))… already published and unchanged — not re-signing")
+                    #endif
                     continue
                 }
 
@@ -1190,7 +1242,9 @@ class NostrService: ObservableObject {
             }
             configService.config.dmRelaysUpdatedAt = newest.createdAt
             configService.save()
+            #if DEBUG
             print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
+            #endif
             // Adopting can still leave this device holding more than was
             // published (its own Haven inbox, or loopback entries dropped).
             action = HavenConfig.dmInboxSyncAction(
@@ -1400,6 +1454,90 @@ class NostrService: ObservableObject {
         }
     }
 
+    private var vertexCache = VertexReputation.Cache()
+
+    /// `target`'s follower count from Vertex, the source npub.world uses. Nil
+    /// when Vertex can't answer: no local key (a bunker would be asked to sign
+    /// for every profile opened), no credits, or no answer in time. The
+    /// request is signed by the active account and names `target`.
+    func fetchVertexFollowerCount(target: String, timeout: TimeInterval = 6) async -> Int? {
+        let now = Date()
+        if let cached = vertexCache.followers(for: target, now: now) { return cached }
+        guard vertexCache.shouldAsk(now: now),
+              ConfigService.shared.config.activeSigningMode() == "local",
+              let url = URL(string: VertexReputation.relayURL),
+              let request = signEvent(kind: VertexReputation.requestKind, content: "",
+                                      tags: VertexReputation.requestTags(target: target)),
+              let requestData = try? JSONEncoder().encode(request),
+              let requestDict = try? JSONSerialization.jsonObject(with: requestData) else { return nil }
+        let requestId = request.id
+
+        let reply = await withCheckedContinuation { (continuation: CheckedContinuation<VertexReputation.Reply?, Never>) in
+            let lock = NSLock()
+            var resumed = false
+            let client = WebSocketClient()
+            client.isTemporary = true
+            var subs = Set<AnyCancellable>()
+
+            func finish(_ reply: VertexReputation.Reply?) {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                lock.unlock()
+                DispatchQueue.main.async {
+                    client.disconnect()
+                    subs.removeAll()
+                }
+                continuation.resume(returning: reply)
+            }
+
+            DispatchQueue.main.async {
+                let subId = "vertex-\(UUID().uuidString.prefix(6))"
+                client.messageSubject
+                    .sink { message in
+                        guard let data = message.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                              json.first as? String == "EVENT",
+                              let dict = json[safe: 2] as? [String: Any],
+                              let raw = try? JSONSerialization.data(withJSONObject: dict),
+                              let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                              let str = String(data: raw, encoding: .utf8),
+                              NostrEventVerifier.isValid(json: str),
+                              let reply = VertexReputation.reply(
+                                kind: event.kind, pubkey: event.pubkey, tags: event.tags,
+                                content: event.content, requestId: requestId, target: target
+                              ) else { return }
+                        finish(reply)
+                    }
+                    .store(in: &subs)
+                client.$connectionState
+                    .sink { state in
+                        guard state == .connected else { return }
+                        // Listen first, so a fast answer isn't missed.
+                        let filter: [String: Any] = [
+                            "kinds": [VertexReputation.resultKind, VertexReputation.feedbackKind],
+                            "#e": [requestId],
+                        ]
+                        for message in [["REQ", subId, filter], ["EVENT", requestDict]] as [[Any]] {
+                            if let data = try? JSONSerialization.data(withJSONObject: message),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                    }
+                    .store(in: &subs)
+                client.connect(url: url)
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+            }
+        }
+
+        // No answer in time says nothing about credits; only a reply is kept.
+        guard let reply else { return nil }
+        vertexCache.record(reply, for: target, now: Date())
+        if case .followers(let count) = reply { return count }
+        return nil
+    }
+
     /// Ids of the active account's own reactions (kind 7) to `noteId`, from
     /// the account's relay and the blastr relays. For removing a like saved
     /// before its event id was kept.
@@ -1539,7 +1677,9 @@ class NostrService: ObservableObject {
     /// if none has after a few quiet retries. Without it, nothing changes.
     func postEvent(_ event: NostrEvent, directBroadcast: Bool = true,
                    onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)? = nil) {
+        #if DEBUG
         print("NostrService: postEvent called – id=\(event.id.prefix(8)) kind=\(event.kind) sig=\(event.sig.prefix(8))")
+        #endif
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
 
@@ -1621,7 +1761,9 @@ class NostrService: ObservableObject {
                 trackTemporaryClient(localClient)
             }
         } else {
+            #if DEBUG
             print("NostrService: ⚠️ Local relay not ready — event \(event.id.prefix(8)) will reach network via direct blast only")
+            #endif
         }
 
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
@@ -1796,7 +1938,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1822,7 +1966,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported user for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign user reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1836,7 +1982,9 @@ class NostrService: ObservableObject {
     func deleteNote(id: String) {
         Task {
             guard let signed = await signEventAsync(kind: 5, content: "", tags: [["e", id]]) else {
+                #if DEBUG
                 print("NostrService: Failed to sign deletion event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -2864,39 +3012,6 @@ class NostrService: ObservableObject {
 
     nonisolated static func mediaTypeFromMime(_ mime: String?, url: URL) -> MediaItem.MediaType {
         EventPublisher.mediaTypeFromMime(mime, url: url)
-    }
-
-    /// Sniff the first 64 bytes of a remote URL via HTTP Range request to detect mime type.
-    /// Returns (resolvedMime, mediaType) or nil if the request fails.
-    nonisolated static func sniffRemoteMime(url: URL, rpm: RelayProcessManager) -> (mime: String, type: MediaItem.MediaType)? {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("bytes=0-63", forHTTPHeaderField: "Range")
-        request.timeoutInterval = 5
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var resultMime: String?
-
-        // Use a session that ignores TLS errors for localhost
-        let session = TLSSkipSession.shared
-        let task = session.dataTask(with: request) { data, _, _ in
-            if let data = data, data.count >= 4 {
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try? data.write(to: tempURL)
-                let detected = rpm.detectMimeFromBytes(for: tempURL)
-                try? FileManager.default.removeItem(at: tempURL)
-                if detected != "application/octet-stream" {
-                    resultMime = detected
-                }
-            }
-            semaphore.signal()
-        }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 6)
-
-        guard let mime = resultMime else { return nil }
-        let type = mediaTypeFromMime(mime, url: url)
-        return (mime, type)
     }
 
     func extractMediaURLs(from content: String) -> [URL] {

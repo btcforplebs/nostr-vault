@@ -15,9 +15,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -50,6 +53,16 @@ class ConfigStore @Inject constructor(
 
     private val _activeAccountHexPubkey = MutableStateFlow("")
     val activeAccountHexPubkey: StateFlow<String> = _activeAccountHexPubkey.asStateFlow()
+
+    /**
+     * Each switch of the active account, as its hex pubkey. Leaves out the
+     * current value and setup's first account ("" → X), which is not a switch.
+     */
+    val accountSwitches: Flow<String> = activeAccountHexPubkey
+        .runningFold(null as String? to null as String?) { pair, hex -> pair.second to hex }
+        .mapNotNull { (previous, current) ->
+            current?.takeIf { previous != null && isAccountSwitch(previous, it) }
+        }
 
     private val _isSwitchingAccount = MutableStateFlow(false)
     val isSwitchingAccount: StateFlow<Boolean> = _isSwitchingAccount.asStateFlow()
@@ -130,19 +143,32 @@ class ConfigStore @Inject constructor(
             }
         }
 
-        _config.value = loaded
+        setConfig(loaded)
         if (removedStarterPicks) CoroutineScope(Dispatchers.IO).launch { save() }
 
-        // Restore active account hex pubkey from persisted ownerNpub so that
-        // profile navigation works on subsequent app launches (not just setup).
-        if (_activeAccountHexPubkey.value.isEmpty()) {
-            val npub = _config.value.ownerNpub
-            if (npub.startsWith("npub1")) {
-                HavenBridge.decodeNpub(npub)?.let { hex ->
-                    _activeAccountHexPubkey.value = hex
-                }
-            }
+    }
+
+    /**
+     * Every config write goes through here, so [activeAccountHexPubkey] always
+     * names the account the config does: the active account, or the owner when
+     * none is set (as after removing the active account). While setup has no
+     * owner yet the value setup chose with [setActiveAccount] is kept; an
+     * account that can't be decoded clears it.
+     */
+    private fun setConfig(new: HavenConfig) {
+        _config.value = new
+        val npub = new.activeOrOwnerNpub()
+        val hex = when {
+            npub.startsWith("npub1") -> HavenBridge.decodeNpub(npub).orEmpty()
+            // Older configs can hold the account as raw hex.
+            npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
+            else -> ""
         }
+        // No account named yet (setup): keep what setup set. An account that
+        // can't be decoded clears the value, so nothing signs as the account
+        // before it.
+        if (npub.isBlank()) return
+        if (hex != _activeAccountHexPubkey.value) _activeAccountHexPubkey.value = hex
     }
 
     /**
@@ -167,14 +193,14 @@ class ConfigStore @Inject constructor(
 
     /** Update config and auto-save (suspend). */
     suspend fun updateAsync(transform: (HavenConfig) -> HavenConfig) {
-        _config.value = transform(_config.value)
+        setConfig(transform(_config.value))
         save()
         relayApplier.configSaved(_config.value)
     }
 
     /** Update config synchronously (saves in background). */
     fun update(transform: (HavenConfig) -> HavenConfig) {
-        _config.value = transform(_config.value)
+        setConfig(transform(_config.value))
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
             save()
             // After the write: the relay re-reads the config from disk.
@@ -271,11 +297,8 @@ class ConfigStore @Inject constructor(
 
         setSwitchingAccount(true)
         try {
+            // Also moves activeAccountHexPubkey (see setConfig).
             updateAsync { it.copy(activeAccountNpub = newValue.ifEmpty { null }) }
-
-            val resolvedNpub = newValue.ifEmpty { cfg.ownerNpub }
-            _activeAccountHexPubkey.value =
-                if (resolvedNpub.startsWith("npub1")) HavenBridge.decodeNpub(resolvedNpub) ?: "" else ""
 
             val newCfg = _config.value
             if (newCfg.activeSigningMode() == "nip46") {
@@ -333,3 +356,8 @@ class ConfigStore @Inject constructor(
         _activeAccountHexPubkey.value = ""
     }
 }
+
+/** Whether the active account moving from [previous] to [current] is a switch. */
+internal fun isAccountSwitch(previous: String, current: String): Boolean =
+    previous.isNotEmpty() && previous != current
+
