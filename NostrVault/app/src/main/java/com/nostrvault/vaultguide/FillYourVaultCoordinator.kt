@@ -9,6 +9,7 @@ import com.nostrvault.tutorials.TutorialCenter
 import com.nostrvault.tutorials.TutorialID
 import com.nostrvault.tutorials.TutorialStatus
 import com.nostrvault.tutorials.TutorialStore
+import com.nostrvault.tutorials.next
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
  * Applies [FillYourVaultRule] to the active account's follow list: starts the
  * guide for a new account, marks it done without showing it for an account
  * that already follows 5, and finishes it when the feed fills. Also keeps
- * the web of trust (10 follows) once earned, and moves the "Fill your feed" guide between its
+ * the web of trust (5 follows) once built, and moves the "Fill your feed" guide between its
  * screens ([phase]). `FillYourFeedOverlay` draws what this publishes.
  * iOS: FillYourVaultCoordinator.swift.
  *
@@ -45,8 +46,10 @@ object FillYourVaultCoordinator {
     /** The meter for the active account. The guide's views read it. */
     val meter: StateFlow<VaultMeter> = _meter.asStateFlow()
 
-    /** Set when this account first reaches the web of trust (10 follows); the meter plays the bolt once and clears it. */
-    val celebrateVaultMaster = MutableStateFlow(false)
+    private val _celebrateVaultMaster = MutableStateFlow(false)
+    /** Set when this account first builds its web of trust; the meter plays
+     *  the bolt once, then shows the "built" card ([showReadyCard]). */
+    val celebrateVaultMaster: StateFlow<Boolean> = _celebrateVaultMaster.asStateFlow()
 
     private val _phase = MutableStateFlow(FillYourFeedPhase.OFF)
     /** Which of the guide's screens is up. */
@@ -67,9 +70,6 @@ object FillYourVaultCoordinator {
 
     /** The person whose small profile card is open. */
     val profileCardPubkey = MutableStateFlow<String?>(null)
-
-    /** Topics picked in this run, so "Only my web of trust" drops just those. */
-    private var pickedTopics: List<String> = emptyList()
 
     /** True while the meter is drawn. */
     val meterShowing: Boolean get() = FillYourFeedGuide.showsMeter(_phase.value, _meterOn.value)
@@ -110,9 +110,8 @@ object FillYourVaultCoordinator {
             TutorialCenter.active.collect { active ->
                 val isOn = active == TutorialID.FILL_YOUR_VAULT
                 if (isOn && !wasActive) {
-                    pickedTopics = emptyList()
                     val entry = FillYourFeedGuide.entryPhase(_meterOn.value)
-                    _phase.value = entry
+                    setPhase(entry)
                     // Back mid-guide after a relaunch: their topic feed, where
                     // they were finding people (iOS: FeedService's no-follows path).
                     if (entry == FillYourFeedPhase.BROWSING && _meter.value.count < VaultMeter.GOAL &&
@@ -133,44 +132,40 @@ object FillYourVaultCoordinator {
         meterStore?.set(true, account)
         _meterOn.value = true
         meterCollapsed.value = false
-        _phase.value = FillYourFeedPhase.TOPICS
+        setPhase(FillYourFeedPhase.TOPICS)
     }
 
     /** Topics: "Show posts". Follows the picked hashtags and opens the topic feed behind the hint. */
     fun showPosts(topics: List<String>) {
-        pickedTopics = topics
         val service = interests
         if (service != null) {
             val new = topics.filter { !service.isFollowing(it) }
             if (new.isNotEmpty()) scope.launch { service.setFollowing(new, true) }
         }
         feed?.switchMode(FeedMode.HASHTAGS)
-        _phase.value = FillYourFeedPhase.HINT
+        setPhase(FillYourFeedPhase.HINT)
     }
 
     /** Hint: "Got it". */
-    fun dismissHint() { _phase.value = FillYourFeedPhase.BROWSING }
+    fun dismissHint() { setPhase(FillYourFeedPhase.BROWSING) }
 
-    /** "Your feed is ready": go to Following. [keepTopics] false unfollows the hashtags picked in this run. */
-    fun goToFollowing(keepTopics: Boolean) {
-        val service = interests
-        if (!keepTopics && pickedTopics.isNotEmpty() && service != null) {
-            val topics = pickedTopics
-            scope.launch { service.setFollowing(topics, false) }
-        }
-        feed?.switchMode(FeedMode.FOLLOWING)
-        meterCollapsed.value = true
-        _phase.value = FillYourFeedPhase.BROWSING
+    /**
+     * "Your web of trust is built": open Discover to find more people, put
+     * the meter away and start the Feeds tutorial there. The picked topics
+     * stay followed (Logen: keep them, don't ask).
+     */
+    fun goToDiscover() {
+        feed?.switchMode(FeedMode.DISCOVERY)
+        closeGuide()
+        TutorialID.FILL_YOUR_VAULT.next?.let { TutorialCenter.replay(it) }
     }
 
     /** The bolt has crossed the meter: show the web-of-trust card. */
-    fun showMasterCard() {
-        celebrateVaultMaster.value = false
+    fun showReadyCard() {
+        setCelebrate(false)
         meterCollapsed.value = false
-        _phase.value = FillYourFeedPhase.MASTER
+        setPhase(FillYourFeedPhase.READY)
     }
-
-    fun dismissMasterCard() { _phase.value = FillYourFeedPhase.BROWSING }
 
     /** Skip, "Not now" or "Hide the meter": the guide closes and the meter goes away. */
     fun closeGuide() {
@@ -178,7 +173,7 @@ object FillYourVaultCoordinator {
         meterStore?.set(false, account)
         _meterOn.value = false
         profileCardPubkey.value = null
-        _phase.value = FillYourFeedPhase.OFF
+        setPhase(FillYourFeedPhase.OFF)
     }
 
     /** Closing the guide by hand: done past 5, skipped below. */
@@ -201,7 +196,23 @@ object FillYourVaultCoordinator {
         _meterOn.value = meterStore?.isOn(account) == true
         meterCollapsed.value = _meter.value.count >= VaultMeter.GOAL
         profileCardPubkey.value = null
-        if (!TutorialCenter.isActive(TutorialID.FILL_YOUR_VAULT)) _phase.value = FillYourFeedPhase.OFF
+        if (!TutorialCenter.isActive(TutorialID.FILL_YOUR_VAULT)) setPhase(FillYourFeedPhase.OFF)
+    }
+
+    private fun setPhase(phase: FillYourFeedPhase) {
+        _phase.value = phase
+        holdOtherTutorials()
+    }
+
+    private fun setCelebrate(on: Boolean) {
+        _celebrateVaultMaster.value = on
+        holdOtherTutorials()
+    }
+
+    /** Fill your vault is done once 5 are followed, but its bolt and
+     *  "built" card are still up: no page tutorial may start over them. */
+    private fun holdOtherTutorials() {
+        TutorialCenter.held = _celebrateVaultMaster.value || _phase.value == FillYourFeedPhase.READY
     }
 
     private fun update(follows: List<String>, listKnown: Boolean, account: String) {
@@ -215,7 +226,7 @@ object FillYourVaultCoordinator {
         if (known && store?.record(meter, account) == true) {
             meter = VaultMeter.of(follows, account, true)
             // Only the guide's people get the bolt.
-            if (_meterOn.value) celebrateVaultMaster.value = true
+            if (_meterOn.value) setCelebrate(true)
         }
         _meter.value = meter
 
@@ -229,11 +240,12 @@ object FillYourVaultCoordinator {
         )) {
             FillYourVaultRule.Action.NONE -> Unit
             FillYourVaultRule.Action.START -> TutorialCenter.startIfEligible(id, account)
-            FillYourVaultRule.Action.FINISH_SILENTLY -> TutorialCenter.finish(id, account)
+            FillYourVaultRule.Action.FINISH_SILENTLY -> TutorialCenter.finishQuietly(id, account)
             FillYourVaultRule.Action.FINISH -> {
                 TutorialCenter.finish(id, account)
                 profileCardPubkey.value = null
-                _phase.value = FillYourFeedPhase.READY
+                // With the meter up, the bolt plays first and opens the card.
+                if (!_celebrateVaultMaster.value) setPhase(FillYourFeedPhase.READY)
             }
         }
     }

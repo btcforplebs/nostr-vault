@@ -127,7 +127,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: feedToolbar,
             title: "Global and your web of trust",
-            body: "On Global, a shield shows up here. It keeps Global to your web of trust: people you follow and the people they follow, so spam stays out. Tap the shield to see everyone."
+            body: "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone."
         ),
     ]
 
@@ -217,7 +217,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: nil,
             title: "Your notes, your copy",
-            body: "Your notes sit on relays you don't own, and any of them can delete them. Importing saves your own copy on this device."
+            body: "Your notes sit on relays you don't own, and any of those relays can delete them. Importing saves your own copy on this device."
         ),
         TutorialStep(
             anchor: nil,
@@ -227,7 +227,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: nil,
             title: "Public relays vs yours",
-            body: "Public relays are shared servers that everyone posts to. Your vault belongs to you alone. You post to your vault, and it sends the post out to them."
+            body: "Public relays are shared servers that everyone posts to. Yours belongs to you alone. You post to it, and it sends your post out to the public relays."
         ),
         TutorialStep(
             anchor: nil,

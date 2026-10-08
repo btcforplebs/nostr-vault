@@ -56,10 +56,10 @@ class TutorialProgress(private val store: TutorialStore) {
     var active: TutorialID? = null
         private set
 
-    /** Set once a tutorial has shown on its own this launch. A replay from
-     *  Settings doesn't count: the person asked for it. */
-    var autoStartedThisLaunch = false
-        private set
+    /** Set while Fill your vault's bolt or "web of trust is built" card is
+     *  up. Fill your vault is already done by then, so nothing else is
+     *  active, but no page tutorial may start over that card. */
+    var held = false
 
     fun status(id: TutorialID, account: String): TutorialStatus {
         val raw = store.getString(key(id, account)) ?: return TutorialStatus.NOT_STARTED
@@ -68,11 +68,11 @@ class TutorialProgress(private val store: TutorialStore) {
         return TutorialStatus.fromRaw(parts[0]) ?: TutorialStatus.NOT_STARTED
     }
 
-    /** Not seen at this version, nothing else on screen, nothing shown on its
-     *  own yet this launch, and for the page tutorials, Fill your vault
-     *  finished or skipped first so a new account never gets two in a row. */
+    /** Not seen at this version, nothing else on screen or [held], and for
+     *  the page tutorials, Fill your vault finished or skipped first so a new
+     *  account never gets two in a row. */
     fun isEligible(id: TutorialID, account: String): Boolean {
-        if (account.isEmpty() || active != null || autoStartedThisLaunch) return false
+        if (account.isEmpty() || active != null || held) return false
         if (status(id, account) != TutorialStatus.NOT_STARTED) return false
         if (id != TutorialID.FILL_YOUR_VAULT && !id.runsDuringSetup) {
             return status(TutorialID.FILL_YOUR_VAULT, account) != TutorialStatus.NOT_STARTED
@@ -83,7 +83,6 @@ class TutorialProgress(private val store: TutorialStore) {
     fun startIfEligible(id: TutorialID, account: String): Boolean {
         if (!isEligible(id, account)) return false
         active = id
-        autoStartedThisLaunch = true
         return true
     }
 

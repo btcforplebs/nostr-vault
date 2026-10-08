@@ -9,22 +9,27 @@ import com.nostrvault.tutorials.TutorialStore
  *
  * It reads the follow list itself, never taps made inside the guide, so a
  * follow from a profile, search or thread counts the same, and an unfollow
- * takes a slot back. 5 follows completes the guide; 10 makes the owner a
- * the web of trust (10 follows), which is kept once earned (see [VaultMasterStore]).
+ * takes a slot back. 5 follows builds the web of trust and completes the
+ * guide; there is no second goal. Once built it is kept (see [VaultMasterStore]).
  */
 data class VaultMeter(
     /** People followed, not counting the owner. */
     val count: Int,
-    /** The most recent follows, newest last, at most [MASTER_GOAL]. */
+    /** The most recent follows, newest last, at most [GOAL]. Their photos fill the meter's slots. */
     val recent: List<String>,
     val stage: Stage,
 ) {
-    enum class Stage { FILLING, FILLED, MASTER }
+    enum class Stage {
+        /** Fewer than [GOAL] follows: the guide is still filling. */
+        FILLING,
+        /** [GOAL] or more, now or at any point before: the web of trust is built. */
+        MASTER,
+    }
 
-    /** Filled slots in the row being shown: the first 5 until the vault is filled, then all 10. */
-    val slots: Int get() = if (stage == Stage.FILLING) GOAL else MASTER_GOAL
+    /** Slots in the meter's row. */
+    val slots: Int get() = GOAL
 
-    /** "3 of 5", "7 of 10". Capped at the row's size. */
+    /** "3 of 5". Capped at the row's size. */
     val progressText: String get() = "${minOf(count, slots)} of $slots"
 
     /** The short form for the largest text sizes: "3/5". */
@@ -40,25 +45,19 @@ data class VaultMeter(
         }
 
     companion object {
-        /** Follows that complete the guide. */
+        /** Follows that build the web of trust and complete the guide. */
         const val GOAL = 5
-        /** Follows that earn the web of trust (10 follows). */
-        const val MASTER_GOAL = 10
 
         /**
          * @param follows the contact list in its stored order (newest last).
          * @param owner the account's own hex pubkey, which is not a follow.
-         * @param masterEarned whether this account has reached 10 before.
+         * @param masterEarned whether this account has built its web of trust before.
          */
         fun of(follows: List<String>, owner: String, masterEarned: Boolean): VaultMeter {
             val seen = HashSet<String>()
             val people = follows.filter { it != owner && it.isNotEmpty() && seen.add(it) }
-            val stage = when {
-                masterEarned || people.size >= MASTER_GOAL -> Stage.MASTER
-                people.size >= GOAL -> Stage.FILLED
-                else -> Stage.FILLING
-            }
-            return VaultMeter(people.size, people.takeLast(MASTER_GOAL), stage)
+            val stage = if (masterEarned || people.size >= GOAL) Stage.MASTER else Stage.FILLING
+            return VaultMeter(people.size, people.takeLast(GOAL), stage)
         }
 
         /**
@@ -71,7 +70,7 @@ data class VaultMeter(
 }
 
 /**
- * Remembers, per account, that the web of trust (10 follows) was reached, so the gold meter is a
+ * Remembers, per account, that the web of trust (5 follows) was built, so the gold meter is a
  * lasting mark and the bolt plays exactly once.
  */
 class VaultMasterStore(private val store: TutorialStore) {
@@ -79,9 +78,9 @@ class VaultMasterStore(private val store: TutorialStore) {
 
     fun isEarned(owner: String): Boolean = owner.isNotEmpty() && store.getString(key(owner)) == "1"
 
-    /** Returns true only on the call that first reaches the web of trust (10 follows). */
+    /** Returns true only on the call that first builds the web of trust, which is when the bolt plays. */
     fun record(meter: VaultMeter, owner: String): Boolean {
-        if (owner.isEmpty() || meter.count < VaultMeter.MASTER_GOAL || isEarned(owner)) return false
+        if (owner.isEmpty() || meter.count < VaultMeter.GOAL || isEarned(owner)) return false
         store.putString(key(owner), "1")
         return true
     }
@@ -108,7 +107,8 @@ object FillYourVaultRule {
     ): Action {
         if (!listKnown) return Action.NONE
         if (isActive) {
-            // Only crossing 5 finishes it. A replay opened at 7 stays open.
+            // Only crossing 5 finishes it. A replay opened at 7 stays open
+            // until the person closes it.
             return if (previousCount != null && previousCount < VaultMeter.GOAL && count >= VaultMeter.GOAL) {
                 Action.FINISH
             } else {
