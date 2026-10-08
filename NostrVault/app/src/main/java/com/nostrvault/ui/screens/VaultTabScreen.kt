@@ -25,7 +25,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +85,15 @@ fun VaultTabScreen(
     feedService: FeedService,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
+    // The half survives Android killing the app (the photo picker opened
+    // from Media is the usual case): restored before anything reads it, so
+    // Media composes first and its picker gets the result. A route that
+    // picked a half in this process wins; see VaultSection.restore.
+    var restored = true
+    val savedHalf = rememberSaveable { restored = false; mutableStateOf(VaultSection.showsMedia.value) }
+    if (restored) remember { VaultSection.restore(media = savedHalf.value) }
     val showsMedia by VaultSection.showsMedia.collectAsState()
+    SideEffect { savedHalf.value = showsMedia }
     val halves = rememberSaveableStateHolder()
     var showDashboard by remember { mutableStateOf(false) }
     val openDashboard: () -> Unit = {

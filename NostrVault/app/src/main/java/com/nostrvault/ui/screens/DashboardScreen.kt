@@ -138,6 +138,8 @@ class DashboardViewModel @Inject constructor(
     private val feedService: com.nostrvault.service.FeedService,
     private val nwcService: NWCService,
     private val zapHistoryService: ZapHistoryService,
+    /** The list on show, kept across Android killing the app; see [restoreSavedMode]. */
+    private val savedState: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
     /** The shared Blossom mirror run behind "Import Blossom" (iOS MirrorService). */
@@ -162,6 +164,9 @@ class DashboardViewModel @Inject constructor(
         private const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
         private const val SNAPSHOT_FILE = "vault_snapshot.json"
         private const val FOLLOWERS_POLL_MS = 60_000L
+        private const val SAVED_VIEW_MODE = "vault.viewMode"
+        private const val SAVED_NOTE_SCOPE = "vault.noteScope"
+        private const val SAVED_RECIPES = "vault.recipesOnly"
         /** One Articles / Highlights "Load older" page, per query. */
         private const val OLDER_PAGE_SIZE = 50
     }
@@ -396,6 +401,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     init {
+        restoreSavedMode()
         loadStats()
 
         // A new trust graph or follow changes who counts as outside your
@@ -1302,6 +1308,31 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The list and scope on show before Android killed the app, so the tab
+     * comes back where it was. Set straight, without setViewMode's fetches:
+     * nothing has loaded yet. A notification consumed after this still picks
+     * its own list (applyRelayFocusView).
+     */
+    private fun restoreSavedMode() {
+        savedState.get<String>(SAVED_VIEW_MODE)
+            ?.let { name -> VaultViewMode.entries.firstOrNull { it.name == name } }
+            ?.let { _viewMode.value = it }
+        savedState.get<String>(SAVED_NOTE_SCOPE)
+            ?.let { name -> VaultNoteScope.entries.firstOrNull { it.name == name } }
+            ?.let { _noteScope.value = it }
+        _recipesOnly.value = _noteScope.value == VaultNoteScope.ARTICLES && savedState.get<Boolean>(SAVED_RECIPES) == true
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(_viewMode, _noteScope, _recipesOnly) { mode, scope, recipes ->
+                Triple(mode, scope, recipes)
+            }.collect { (mode, scope, recipes) ->
+                savedState[SAVED_VIEW_MODE] = mode.name
+                savedState[SAVED_NOTE_SCOPE] = scope.name
+                savedState[SAVED_RECIPES] = recipes
+            }
+        }
+    }
+
     /** The Vault pill's pick. Media only flips the tab's half; the lists keep their state. */
     fun selectMode(mode: VaultMode) {
         mode.noteScope?.let { setNoteScope(it) }
@@ -1682,7 +1713,7 @@ class DashboardViewModel @Inject constructor(
                     Log.w(TAG, "Spam filter dropped $droppedBySpamFilter notes")
                 }
                 if (filtered.size > cap) {
-                    Log.w(TAG, "Display limit: showing ${cap} of ${filtered.size} filtered notes (${filtered.size - maxDisplayedItems} hidden)")
+                    Log.w(TAG, "Display limit: showing ${cap} of ${filtered.size} filtered notes (${filtered.size - cap} hidden)")
                 }
 
                 val displayedIds = displaySlice.map { it.id }.toSet()
