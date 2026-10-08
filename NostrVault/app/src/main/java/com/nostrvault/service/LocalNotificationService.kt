@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.request.ImageRequest
+import com.nostrvault.BuildConfig
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
@@ -251,16 +252,16 @@ class LocalNotificationService @Inject constructor(
         val rawId = fields["id"].orEmpty()
         if (type != "summary" && rawId.isEmpty()) return
         val id = rawId.ifEmpty { "summary-${System.currentTimeMillis()}" }
-        Log.i(TAG, "marker received: type=$type id=${id.take(8)}")
+        if (BuildConfig.DEBUG) Log.i(TAG, "marker received: type=$type id=${id.take(8)}")
 
         if (!markSeen(id)) {
-            Log.d(TAG, "skip: duplicate ${id.take(8)}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "skip: duplicate ${id.take(8)}")
             return
         }
 
         val config = configStore.config.value
         if (!config.enablePushNotifications && !allowsWithPushOff(type, appInForeground)) {
-            Log.i(TAG, "skip: enablePushNotifications is OFF (turn it on in Settings → Notifications)")
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: enablePushNotifications is OFF (turn it on in Settings → Notifications)")
             return
         }
 
@@ -293,7 +294,7 @@ class LocalNotificationService @Inject constructor(
             else -> false
         }
         if (!allowed) {
-            Log.i(TAG, "skip: '$type' disabled in per-account prefs")
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' disabled in per-account prefs")
             return
         }
 
@@ -301,7 +302,7 @@ class LocalNotificationService @Inject constructor(
         val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
         val trusted = trustedAuthors()
         if (!authorMayNotify(author, type, trusted, own)) {
-            Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
             return
         }
 
@@ -435,7 +436,7 @@ class LocalNotificationService @Inject constructor(
         if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
         val dms = dmService.get()
         if (dms.isOwnSentWrap(id)) {
-            Log.i(TAG, "skip: own sent DM ${id.take(8)}")
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: own sent DM ${id.take(8)}")
             return
         }
         scope.launch {
@@ -610,7 +611,7 @@ class LocalNotificationService @Inject constructor(
 
         // Stable per-event notification id so the same event never double-posts.
         NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
-        Log.i(TAG, "posted notification: \"$title\"")
+        if (BuildConfig.DEBUG) Log.i(TAG, "posted notification: \"$title\"")
     }
 
     /** Load the sender's avatar into a software bitmap via Coil; null on any failure. */
