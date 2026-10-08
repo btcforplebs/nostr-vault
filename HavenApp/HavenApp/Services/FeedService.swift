@@ -1986,19 +1986,6 @@ class FeedService: ObservableObject {
         return true
     }
 
-    /// Subscribe to raw messages on the local relay connection.
-    /// Returns a cancellable, or nil if no local client is connected.
-    func subscribeToLocalRelay(_ handler: @escaping (String) -> Void) -> AnyCancellable? {
-        guard let key = localRelayURL?.absoluteString,
-              let client = feedClients[key],
-              client.connectionState == .connected else {
-            return nil
-        }
-        return client.messageSubject
-            .receive(on: DispatchQueue.main)
-            .sink { msg in handler(msg) }
-    }
-
     /// Background refresh against an already-rendered snapshot. Re-subscribes
     /// to relays so newer notes stream in on top of the cached feed, and
     /// kicks off a contact-list re-fetch in parallel so a stale follow set
@@ -2062,22 +2049,6 @@ class FeedService: ObservableObject {
     }
 
     // MARK: - Search
-
-    /// Debounced search: schedules a relay query after 400ms of inactivity.
-    func searchDebounced(_ query: String) {
-        searchDebounceWork?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            searchResults = []
-            isSearching = false
-            return
-        }
-        let work = DispatchWorkItem { [weak self] in
-            self?.performSearch(query: trimmed)
-        }
-        searchDebounceWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
 
     /// Queries the local relay with the current feed mode's filter set and
     /// filters returned events client-side by content text matching.
@@ -3118,34 +3089,6 @@ class FeedService: ObservableObject {
         if hex == ConfigService.shared.activeAccountHexPubkey,
            hasAttemptedContactLoad, !isLoadingContacts, followedPubkeys.isEmpty {
             contactListConfirmed = true
-        }
-    }
-
-    /// Starts the follow list of a key generated in setup, from the people
-    /// picked on the Discover Accounts step, and opens the Following feed.
-    ///
-    /// `pTags` comes from `ContactManager.newAccountContactTags`. Only setup
-    /// calls this, and only for a key it just generated: such a key has no
-    /// kind 3 anywhere, so there is nothing to fetch first and nothing to
-    /// overwrite. The list counts as confirmed from here on, so following
-    /// someone later doesn't wait for every relay to report that no list exists.
-    /// Publishing goes through `publishContactList` like any other edit.
-    func startNewAccountContactList(_ pTags: [[String]]) {
-        // Owner only = nobody picked. Publish nothing and leave the feed to the
-        // no-follows path in startInitialLoad, which opens the curated feed.
-        guard pTags.count > 1 else { return }
-        contactListPTags = pTags
-        followedPubkeys = pTags.compactMap { $0.count >= 2 ? $0[1] : nil }
-        contactListContent = ""
-        contactListConfirmed = true
-        hasAttemptedContactLoad = true
-        didAutoSwitchToCurated = false
-        publishContactList()
-        if feedMode == .following {
-            recomputeFilteredNotes()
-            resubscribePrimaryIfNeeded()
-        } else {
-            switchMode(.following)
         }
     }
 

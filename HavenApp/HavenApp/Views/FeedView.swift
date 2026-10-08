@@ -3362,43 +3362,6 @@ struct FeedView: View {
     }
 }
 
-// MARK: - Liquid Glass Modifier
-
-private struct LiquidGlassModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26, macOS 26, *) {
-            content.glassEffect(.regular, in: .capsule)
-        } else {
-            content
-                .background {
-                    ZStack {
-                        Capsule().fill(.ultraThinMaterial)
-                        Capsule().fill(Color.havenPurple.opacity(0.06))
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.12), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .center
-                                )
-                            )
-                    }
-                }
-                .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.25), Color.white.opacity(0.08)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.5
-                        )
-                )
-        }
-    }
-}
-
 private struct LiquidGlassVerticalModifier: ViewModifier {
     private let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 

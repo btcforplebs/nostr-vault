@@ -2866,39 +2866,6 @@ class NostrService: ObservableObject {
         EventPublisher.mediaTypeFromMime(mime, url: url)
     }
 
-    /// Sniff the first 64 bytes of a remote URL via HTTP Range request to detect mime type.
-    /// Returns (resolvedMime, mediaType) or nil if the request fails.
-    nonisolated static func sniffRemoteMime(url: URL, rpm: RelayProcessManager) -> (mime: String, type: MediaItem.MediaType)? {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("bytes=0-63", forHTTPHeaderField: "Range")
-        request.timeoutInterval = 5
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var resultMime: String?
-
-        // Use a session that ignores TLS errors for localhost
-        let session = TLSSkipSession.shared
-        let task = session.dataTask(with: request) { data, _, _ in
-            if let data = data, data.count >= 4 {
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try? data.write(to: tempURL)
-                let detected = rpm.detectMimeFromBytes(for: tempURL)
-                try? FileManager.default.removeItem(at: tempURL)
-                if detected != "application/octet-stream" {
-                    resultMime = detected
-                }
-            }
-            semaphore.signal()
-        }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 6)
-
-        guard let mime = resultMime else { return nil }
-        let type = mediaTypeFromMime(mime, url: url)
-        return (mime, type)
-    }
-
     func extractMediaURLs(from content: String) -> [URL] {
         guard let regex = SupportedMediaFormats.mediaURLRegex else { return [] }
         let nsString = content as NSString

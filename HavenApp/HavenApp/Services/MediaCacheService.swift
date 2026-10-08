@@ -328,19 +328,6 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return nil
     }
 
-    /// Returns a local file:// URL if the media is cached or exists in Blossom.
-    /// This is essential for AVFoundation which often fails to play from localhost/127.0.0.1
-    /// or requires specific configurations for local network access.
-    func localFileURL(for url: URL) -> URL? {
-        // Guard: For local relay URLs (including domains), we MUST use HTTP(S) to preserve
-        // the MIME type hints provided by the Blossom server. Resolving to file://
-        // causes AVFoundation to fail on extensionless hashed files.
-        if isLocalURL(url) {
-            return nil
-        }
-        return internalLocalFileURL(for: url)
-    }
-
     /// Internal version that resolves file paths even for local relay URLs.
     /// Used for components like AVAsset thumbnail generation which can handle raw files.
     ///

@@ -1783,11 +1783,6 @@ class DMService: ObservableObject {
         client.connect(url: urlObj)
     }
 
-    /// Async wrapper around fireAndForgetPublish for call sites that use `await`.
-    private func publishToRelay(_ event: NostrEvent, url: String) async {
-        fireAndForgetPublish(event, url: url)
-    }
-
     private func setupThrottling() {
         dmUpdateSubject
             .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)

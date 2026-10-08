@@ -17,7 +17,6 @@ struct MessageComposerView: View {
     @State private var isSending = false
     @State private var sendError: String?
     @State private var searchText = ""
-    @State private var showPhotoPicker = false
 
     private var searchResults: [String] {
         if searchText.count < 2 {
