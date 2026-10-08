@@ -23,7 +23,9 @@ import com.nostrvault.BuildConfig
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.NotificationTarget
 import dagger.Lazy
@@ -147,6 +149,14 @@ class LocalNotificationService @Inject constructor(
          */
         fun allowsWithPushOff(type: String, appInForeground: Boolean): Boolean =
             appInForeground && isDm(type)
+
+        /**
+         * The relay hands over the note's raw text, so a mention would read
+         * `nostr:npub1…`. Show `@name` instead, the way the feed does. A
+         * reaction's preview is its emoji, not note text.
+         */
+        fun notePreview(type: String, preview: String, profiles: Map<String, FeedProfile>): String =
+            if (type == "reaction") preview else NostrMentions.toPlainText(preview, profiles)
 
         /**
          * A decrypted DM as notification text: one line, cut to fit. Null when
@@ -316,8 +326,10 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
-        val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
-        val (title, text) = buildContent(type, profile?.bestName, preview)
+        val profiles = nostrService.get().profiles.value
+        val profile = if (author.length == 64) profiles[author] else null
+        val shown = notePreview(type, preview, profiles)
+        val (title, text) = buildContent(type, profile?.bestName, shown)
         scope.launch {
             val carried = carriedNotes(type, id)
             post(id, title, text, type, author, npub, profile?.pictureURL, carried)
@@ -451,8 +463,10 @@ class LocalNotificationService @Inject constructor(
                 if (appInForeground && dms.visibleConversation == opened.first) return@launch
             }
             val sender = opened?.second?.senderPubkey ?: author
-            val profile = if (sender.length == 64) nostrService.get().profiles.value[sender] else null
-            val text = opened?.second?.content?.let { dmPreview(it) }.orEmpty()
+            val profiles = nostrService.get().profiles.value
+            val profile = if (sender.length == 64) profiles[sender] else null
+            val text = opened?.second?.content
+                ?.let { dmPreview(NostrMentions.toPlainText(it, profiles)) }.orEmpty()
             val (title, body) = buildContent(type, profile?.bestName, text)
             // Once opened, route as a DM with its counterparty so a tap lands in
             // the thread; an unopened gift wrap still opens the inbox.
