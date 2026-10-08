@@ -375,9 +375,9 @@ class ModeComposeViewModel @Inject constructor(
 
     /**
      * Publishes a kind 1068 poll the way a vote goes out: this device's relay
-     * and the write relays through postEvent, then straight to the outside
-     * relays it names for its votes, so voters look where it lives. Port of
-     * iOS PollComposeView.publish.
+     * and Blastr through postEvent, and without waiting to the outside relays
+     * it names for its votes, so voters look where it lives. Port of iOS
+     * PollComposeView.publish.
      */
     fun publishPoll(draft: com.nostrvault.data.model.PollDraft, onDone: () -> Unit) {
         val nowSecs = System.currentTimeMillis() / 1000
@@ -397,11 +397,7 @@ class ModeComposeViewModel @Inject constructor(
                     lockedTo = lock,
                 ) ?: throw IllegalStateException("Couldn't sign the poll. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
-                val named = tags.filter { it.size >= 2 && it[0] == "relay" }.map { it[1] }
-                kotlinx.coroutines.coroutineScope {
-                    named.map { relay -> async { runCatching { nostrService.publishAwaitingOk(event, relay) } } }
-                        .forEach { it.await() }
-                }
+                nostrService.publishFireAndForget(event, tags.filter { it.size >= 2 && it[0] == "relay" }.map { it[1] })
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "publishPoll failed", e)

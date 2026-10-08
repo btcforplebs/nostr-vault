@@ -1710,8 +1710,13 @@ class FeedService @Inject constructor(
                 FeedMode.POPULAR -> return // Handled separately
             }
 
-            // Since timestamp
-            val oldest = _notes.value.lastOrNull()?.createdAt
+            // Since timestamp. The note list outlives a mode switch, so Polls
+            // counts only polls: another mode's notes would cut older polls off.
+            val oldest = if (_feedMode.value == FeedMode.POLLS) {
+                _notes.value.lastOrNull { it.kind == NIP88Poll.KIND }?.createdAt
+            } else {
+                _notes.value.lastOrNull()?.createdAt
+            }
             if (oldest != null) {
                 append(",\"since\":${oldest.time / 1000}")
             } else if (_feedMode.value == FeedMode.POLLS) {
