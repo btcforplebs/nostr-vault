@@ -468,10 +468,13 @@ struct RelayMatrixView: View {
             pinned: [ownRelay, configService.config.ownHavenDMInboxURL])
     }
 
-    /// Follow suggestions still worth showing: not added since the page opened.
+    /// Follow suggestions still worth showing: not added since the page
+    /// opened, and not down.
     private var visibleFollowSuggestions: [RelayMatrix.FollowSuggestion] {
         let taken = Set(rows.map(\.id) + blocked.map(RelayMatrix.key))
-        return followSuggestions.filter { !taken.contains(RelayMatrix.key($0.url)) }
+        return followSuggestions.filter {
+            !taken.contains(RelayMatrix.key($0.url)) && probe.result(for: $0.url) != .unreachable
+        }
     }
 
     private var followsSection: some View {
@@ -502,9 +505,11 @@ struct RelayMatrixView: View {
         for (key, result) in probe.results {
             if case .answered(let ms) = result { milliseconds[key] = ms }
         }
+        // A relay already suggested above isn't repeated here.
         return RelayMatrix.fastest(RelayMatrix.wellKnownRelays, milliseconds: milliseconds,
                                    lists: lists, blocked: blocked,
-                                   pinned: [ownRelay, configService.config.ownHavenDMInboxURL])
+                                   pinned: [ownRelay, configService.config.ownHavenDMInboxURL]
+                                       + visibleFollowSuggestions.map(\.url))
     }
 
     private var fastestSection: some View {

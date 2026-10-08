@@ -298,11 +298,15 @@ fun RelayMatrixScreen(
             viewModel.follow.value.suggestions.map { it.url })
     }
     val taken = (rows.map { it.id } + cfg.blockedRelays.map(RelayMatrix::key)).toSet()
-    val followSuggestions = follow.suggestions.filter { RelayMatrix.key(it.url) !in taken }
+    // Not added since the page opened, and not down.
+    val followSuggestions = follow.suggestions.filter {
+        RelayMatrix.key(it.url) !in taken && results[RelayMatrix.key(it.url)] != RelayProbeResult.Unreachable
+    }
+    // A relay already suggested above isn't repeated.
     val fastest = RelayMatrix.fastest(
         RelayMatrix.wellKnownRelays,
         results.mapNotNull { (k, r) -> (r as? RelayProbeResult.Answered)?.let { k to it.milliseconds } }.toMap(),
-        lists, cfg.blockedRelays, viewModel.pinned(cfg),
+        lists, cfg.blockedRelays, viewModel.pinned(cfg) + followSuggestions.map { it.url },
     )
 
     Scaffold(
