@@ -183,6 +183,10 @@ struct NoteRow: View {
                         .foregroundColor(.white)
                         .lineLimit(1)
 
+                    if event.isFromNostrVault {
+                        NostrVaultBadge(size: 10)
+                    }
+
                     Image(systemName: noteType.icon)
                         .font(.appSystem(size: 9))
                         .foregroundColor(noteType.color)
@@ -289,6 +293,10 @@ struct NoteRow: View {
                         Text(displayName)
                             .font(.appSystem(size: 14, weight: .semibold, design: .default))
                             .lineLimit(1)
+
+                        if event.isFromNostrVault {
+                            NostrVaultBadge()
+                        }
 
                         if event.kind == 6 {
                             HStack(spacing: 3) {
@@ -694,6 +702,10 @@ struct RepostedNoteView: View {
                 Text(innerDisplayName)
                     .font(.appSystem(size: 13, weight: .semibold))
                     .lineLimit(1)
+
+                if inner.isFromNostrVault {
+                    NostrVaultBadge(size: 10)
+                }
 
                 Spacer()
 

@@ -447,12 +447,21 @@ extension View {
 
 // MARK: - Nostr Vault badge
 
-extension FeedNote {
+extension NostrVaultBadge {
     /// Sent from Nostr Vault on any platform: the `client` tag every
     /// Nostr Vault note carries ("Nostr Vault on iOS", "… on Android", …).
-    var isFromNostrVault: Bool {
+    /// The one rule for the feed (`FeedNote`) and the Relay tab (`NostrEvent`).
+    static func isSender(of tags: [[String]]) -> Bool {
         tags.contains { $0.count > 1 && $0[0] == "client" && $0[1].hasPrefix("Nostr Vault") }
     }
+}
+
+extension FeedNote {
+    var isFromNostrVault: Bool { NostrVaultBadge.isSender(of: tags) }
+}
+
+extension NostrEvent {
+    var isFromNostrVault: Bool { NostrVaultBadge.isSender(of: tags) }
 }
 
 /// A tiny vault doorway, the app icon's shape, beside the author's name on
