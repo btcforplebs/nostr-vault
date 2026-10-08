@@ -35,9 +35,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -252,7 +254,7 @@ class MediaGalleryViewModel @Inject constructor(
                     }
 
                     _mediaItems.value = items.values
-                        .filter { it.isImage || it.isVideo || it.mimeType == null }
+                        .filter { it.isImage || it.isVideo || it.isAudio || it.mimeType == null }
                         .sortedByDescending { it.sortTime }
                         .toList()
                 }
@@ -479,6 +481,9 @@ internal fun pastedMediaUrl(text: String): String? {
 
 internal const val MEDIA_GALLERY_PREFS = "media_gallery"
 
+/** iOS `mediaGallery.layoutMode`. */
+private const val LAYOUT_MODE_KEY = "mediaGallery.layoutMode"
+
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
 object MediaGalleryBridge {
     var currentItems: List<BlossomMediaItem> = emptyList()
@@ -497,7 +502,9 @@ data class BlossomMediaItem(
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video") == true
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
-    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
+    /** By type, or by extension when the server only says octet-stream (iOS sniffs the same way). */
+    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true ||
+        (!isImage && !isVideo && com.nostrvault.ui.components.isAudioUrl(localFile?.name ?: displayUrl))
 
     /** Seconds since epoch the gallery orders by, newest first: upload time, else file mtime. */
     val sortTime: Long get() = uploaded ?: lastModified?.div(1000) ?: 0L
@@ -557,8 +564,18 @@ fun MediaGalleryScreen(
     val mediaItems by viewModel.mediaItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
-    var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
-    var layoutMode by remember { mutableStateOf(MediaLayoutMode.GRID) }
+    val context = LocalContext.current
+    // Type filter and layout survive relaunches, like iOS's @AppStorage.
+    val galleryPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
+    var typeSelection by remember {
+        mutableStateOf(MediaTypeSelection.fromKey(galleryPrefs.getString(MediaTypeSelection.STORAGE_KEY, null)))
+    }
+    var layoutMode by remember {
+        mutableStateOf(
+            MediaLayoutMode.entries.firstOrNull { it.name == galleryPrefs.getString(LAYOUT_MODE_KEY, null) }
+                ?: MediaLayoutMode.GRID,
+        )
+    }
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
 
@@ -586,7 +603,6 @@ fun MediaGalleryScreen(
     var reportTarget by remember { mutableStateOf<String?>(null) }
     var blockTarget by remember { mutableStateOf<String?>(null) }
     val colors = LocalNostrVaultColors.current
-    val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
 
@@ -628,14 +644,14 @@ fun MediaGalleryScreen(
     val busySha by viewModel.busySha.collectAsState()
 
     // Sort choice survives relaunches, like iOS's @AppStorage(MediaSortOption.storageKey).
-    val sortPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
+    val sortPrefs = galleryPrefs
     var sortOption by remember {
         mutableStateOf(MediaSortOption.fromKey(sortPrefs.getString(MediaSortOption.STORAGE_KEY, null)))
     }
     var showSortMenu by remember { mutableStateOf(false) }
 
-    val filteredItems = remember(mediaItems, activeFilter, sortOption) {
-        sortOption.sorted(mediaItems.filter { activeFilter.matches(it) })
+    val filteredItems = remember(mediaItems, typeSelection, sortOption) {
+        sortOption.sorted(mediaItems.filter { MediaTypeSelection.matches(typeSelection, it) })
     }
     // Today / This Week / This Month / month headings, only under a date sort.
     val sections = remember(filteredItems, sortOption) {
@@ -659,8 +675,11 @@ fun MediaGalleryScreen(
                     // iOS: the row now also holds the sort menu, and All still
                     // includes those files.
                     MediaTypeFilterPill(
-                        active = activeFilter,
-                        onSelect = { activeFilter = it },
+                        selection = typeSelection,
+                        onSelect = { filter ->
+                            typeSelection = MediaTypeSelection.tap(typeSelection, filter)
+                            galleryPrefs.edit().putString(MediaTypeSelection.STORAGE_KEY, MediaTypeSelection.toKey(typeSelection)).apply()
+                        },
                         filters = MediaTypeFilter.entries - MediaTypeFilter.OTHER,
                     )
 
@@ -713,6 +732,7 @@ fun MediaGalleryScreen(
                             onClick = {
                                 layoutMode = if (layoutMode == MediaLayoutMode.GRID)
                                     MediaLayoutMode.LIST else MediaLayoutMode.GRID
+                                galleryPrefs.edit().putString(LAYOUT_MODE_KEY, layoutMode.name).apply()
                             },
                             modifier = Modifier.size(40.dp),
                         ) {
@@ -866,7 +886,7 @@ fun MediaGalleryScreen(
                     for (section in sections) {
                         if (section.title.isNotEmpty()) {
                             item(
-                                key = "header:${section.title}",
+                                key = gridHeaderKey(section.title),
                                 span = { GridItemSpan(maxLineSpan) },
                                 contentType = "header",
                             ) {
@@ -912,6 +932,13 @@ fun MediaGalleryScreen(
                         }
                     }
                 }
+                // The grid's headings stay pinned at the top, as iOS's
+                // LazyVGrid(pinnedViews: .sectionHeaders) and the list do.
+                PinnedGridHeader(
+                    state = gridState,
+                    sections = sections,
+                    top = padding.calculateTopPadding() + 2.dp,
+                )
             } else {
                 // List view
                 LazyColumn(
@@ -1017,6 +1044,78 @@ fun MediaGalleryScreen(
     }
 }
 
+/**
+ * The heading of the section at the top of the grid, drawn over it once the
+ * section's own heading has scrolled under the top edge; the next heading
+ * pushes it up as it arrives. Compose's grid has no sticky headers before
+ * foundation 1.8, hence an overlay.
+ */
+@Composable
+private fun PinnedGridHeader(
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+    sections: List<MediaDateSection>,
+    top: androidx.compose.ui.unit.Dp,
+) {
+    // Grid key -> its section's heading. Keys are "header:<title>" and sha256s.
+    val titleByKey = remember(sections) {
+        buildMap<Any, String> {
+            for (section in sections) {
+                if (section.title.isEmpty()) continue
+                put(gridHeaderKey(section.title), section.title)
+                section.items.forEach { put(it.sha256, section.title) }
+            }
+        }
+    }
+    if (titleByKey.isEmpty()) return
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val pinned by remember(state, titleByKey) {
+        derivedStateOf {
+            val visible = state.layoutInfo.visibleItemsInfo
+            // Offsets are measured from the content's top edge (below the padding).
+            val first = visible.firstOrNull { it.offset.y + it.size.height > 0 } ?: return@derivedStateOf null
+            val title = titleByKey[first.key] ?: return@derivedStateOf null
+            if (first.key == gridHeaderKey(title) && first.offset.y >= 0) return@derivedStateOf null
+            val next = visible.firstOrNull {
+                (it.key as? String)?.startsWith(GRID_HEADER_PREFIX) == true &&
+                    it.key != gridHeaderKey(title) && it.offset.y > 0
+            }
+            title to (next?.let { (it.offset.y - headerHeight).coerceAtMost(0) } ?: 0)
+        }
+    }
+    pinned?.let { (title, push) ->
+        Box(
+            Modifier
+                .padding(top = top, start = 2.dp, end = 2.dp)
+                .offset { androidx.compose.ui.unit.IntOffset(0, push) }
+                .onSizeChanged { headerHeight = it.height },
+        ) {
+            MediaSectionHeader(title)
+        }
+    }
+}
+
+private const val GRID_HEADER_PREFIX = "header:"
+private fun gridHeaderKey(title: String) = GRID_HEADER_PREFIX + title
+
+/** iOS's audio tile: no picture, so a waveform on Color(red: 0.1, green: 0.1, blue: 0.14). */
+@Composable
+private fun AudioThumbnail(iconSize: androidx.compose.ui.unit.Dp) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A24))
+            .semantics { contentDescription = "Audio" },
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.Waveform,
+            contentDescription = null,
+            tint = LocalNostrVaultColors.current.primary,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
 /** Heading over one dated run of media (iOS `mediaSectionHeader`). */
 @Composable
 internal fun MediaSectionHeader(title: String) {
@@ -1067,16 +1166,20 @@ private fun MediaGridCell(
                 onLongClick = onLongPress,
             ),
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(item.localFile ?: item.displayUrl)
-                .size(360, 360)
-                .crossfade(false) // Instant rendering for grid thumbnails
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (item.isAudio) {
+            AudioThumbnail(iconSize = 36.dp)
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(item.localFile ?: item.displayUrl)
+                    .size(360, 360)
+                    .crossfade(false) // Instant rendering for grid thumbnails
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         if (item.isVideo) {
             Icon(
@@ -1177,16 +1280,20 @@ private fun MediaListRow(
                 .size(60.dp)
                 .clip(RoundedCornerShape(6.dp)),
         ) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(item.localFile ?: item.displayUrl)
-                    .size(160, 160)
-                    .crossfade(false) // Instant rendering for list thumbnails
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (item.isAudio) {
+                AudioThumbnail(iconSize = 24.dp)
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(item.localFile ?: item.displayUrl)
+                        .size(160, 160)
+                        .crossfade(false) // Instant rendering for list thumbnails
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (item.isVideo) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
@@ -1216,6 +1323,7 @@ private fun MediaListRow(
                     text = when {
                         item.isVideo -> "Video"
                         item.isImage -> "Image"
+                        item.isAudio -> "Audio"
                         else -> "Other"
                     },
                     color = SecondaryText,
@@ -1241,6 +1349,31 @@ private fun MediaListRow(
                     Spacer(Modifier.width(8.dp))
                     BlossomBackupBadge(backup = backup)
                 }
+            }
+        }
+
+        // Quick backup actions, as iOS MediaListItem: upload what this phone
+        // has to the servers missing it, or keep a copy of what it lacks.
+        val actionTint = if (backup.busy) SecondaryText else colors.primary
+        if (item.isLocal && backup.summary?.needsMirror == true) {
+            IconButton(onClick = backup.onMirror, enabled = !backup.busy, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (backup.busy) NostrVaultIcons.ArrowUpCircleFill
+                    else NostrVaultIcons.ArrowUpCircle,
+                    contentDescription = if (backup.busy) "Mirroring" else "Mirror to Blossom",
+                    tint = actionTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        } else if (!item.isLocal) {
+            IconButton(onClick = backup.onSaveToVault, enabled = !backup.busy, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (backup.busy) NostrVaultIcons.ArrowDownCircleFill
+                    else NostrVaultIcons.ArrowDownCircle,
+                    contentDescription = if (backup.busy) "Saving" else "Save to Vault",
+                    tint = actionTint,
+                    modifier = Modifier.size(22.dp),
+                )
             }
         }
 
@@ -1436,7 +1569,8 @@ private fun MediaItemContextMenu(
  */
 @Composable
 internal fun MediaTypeFilterPill(
-    active: MediaTypeFilter,
+    /** The types on; see [MediaTypeSelection]. Several can be on at once. */
+    selection: Set<MediaTypeFilter>,
     onSelect: (MediaTypeFilter) -> Unit,
     filters: List<MediaTypeFilter> = MediaTypeFilter.entries,
 ) {
@@ -1453,7 +1587,7 @@ internal fun MediaTypeFilterPill(
             MediaFilterIcon(
                 icon = icon,
                 label = label,
-                selected = active == filter,
+                selected = MediaTypeSelection.isOn(selection, filter),
                 accentColor = colors.primary,
                 onClick = { onSelect(filter) },
             )
@@ -1470,7 +1604,12 @@ private fun MediaFilterIcon(
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .semantics { this.selected = selected },
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
