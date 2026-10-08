@@ -70,6 +70,7 @@ sealed class Screen(val route: String) {
     // Settings
     data object Settings : Screen("settings")
     data object AppearanceSettings : Screen("settings/appearance")
+    data object FeedSettings : Screen("settings/feed")
     data object TutorialsSettings : Screen("settings/tutorials")
     data object AccountSettings : Screen("settings/accounts")
     data object BlockedSettings : Screen("settings/blocked")

@@ -47,13 +47,4 @@ class FeedRelayHealthTest {
     fun dotIsGreyWhileDisconnectedOrPaused() {
         assertEquals("gray", FeedRelayHealth.dotColor("gray", hasNotes = true, connected = 0, total = 3))
     }
-
-    @Test
-    fun rowLabels() {
-        assertEquals("Connected", FeedRelayHealth.label(ConnectionState.CONNECTED))
-        assertEquals("Connecting", FeedRelayHealth.label(ConnectionState.CONNECTING))
-        assertEquals("Connecting", FeedRelayHealth.label(ConnectionState.RECONNECTING))
-        assertEquals("Offline", FeedRelayHealth.label(ConnectionState.DISCONNECTED))
-        assertEquals("Idle", FeedRelayHealth.label(null))
-    }
 }

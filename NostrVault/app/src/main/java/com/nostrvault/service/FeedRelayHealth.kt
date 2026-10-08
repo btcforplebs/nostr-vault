@@ -3,8 +3,8 @@ package com.nostrvault.service
 import com.nostrvault.data.remote.WebSocketClient.ConnectionState
 
 /**
- * Each feed relay's own socket state, for the feed dashboard rows and the dot
- * on the feed button (iOS #281). The feed's overall status only says whether
+ * Each feed relay's own socket state, for the dot on the feed button
+ * (iOS #281). The feed's overall status only says whether
  * notes arrived: it read "Live" and showed every relay as connected while some
  * were down.
  */
@@ -34,13 +34,5 @@ object FeedRelayHealth {
         total > 0 && connected == 0 -> "red"
         connected < total -> "yellow"
         else -> "green"
-    }
-
-    /** A dashboard row's label; null state means the feed is not using that relay. */
-    fun label(state: ConnectionState?): String = when (state) {
-        ConnectionState.CONNECTED -> "Connected"
-        ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> "Connecting"
-        ConnectionState.DISCONNECTED -> "Offline"
-        null -> "Idle"
     }
 }

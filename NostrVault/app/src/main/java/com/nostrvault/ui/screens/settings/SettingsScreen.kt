@@ -92,6 +92,14 @@ fun SettingsScreen(
                     onClick = { onNavigate(Screen.AppearanceSettings) },
                 )
             }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Feed,
+                    title = "Feed",
+                    subtitle = "Reposts, replies, auto-load, feed relays",
+                    onClick = { onNavigate(Screen.FeedSettings) },
+                )
+            }
 
             // ── RELAY CONFIGURATION ───────────────────────────────
             item { SettingsSectionHeader("Relay Configuration") }
