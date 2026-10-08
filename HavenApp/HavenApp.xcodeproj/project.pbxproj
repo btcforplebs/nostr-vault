@@ -55,6 +55,7 @@
 		18D877F6D6B57C3C14907074 /* MediaGalleryGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */; };
 		18EE26703E5765D972FEE57B /* templates in Resources */ = {isa = PBXBuildFile; fileRef = 0FDA644A2B01FFA0F183C0D7 /* templates */; };
 		1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3041B6BA67CC97B2AC442E6D /* FeedView.swift */; };
+		19B615A624A3B6CCAF026B82 /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
 		19BDF752BAF456473D9AD1D9 /* DMThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0D442B3835900C7663D934 /* DMThreadView.swift */; };
 		19DE705D1A987D9C2F2AF4AF /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		1B2B43EEF51EC229CC47FDF8 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
@@ -137,10 +138,12 @@
 		3B87F862800C34B5D341E481 /* QueuedMediaPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */; };
 		3BA3D2C452CC9BAE376259BD /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
 		3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
+		3D00F9E30D5216784C53ADDD /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8222A5F6E491EA57892ADC3 /* TrustMap.swift */; };
 		3D71B8DAC40BC3DDCADB9B40 /* FeedLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2E558FEC2B0ED374B04E74 /* FeedLanguage.swift */; };
 		3D7D31F1738232081D005FD7 /* MediaPostQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */; };
 		3E132F275589C18543105D96 /* ThreadEngagementQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */; };
 		3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */; };
+		3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5E98764373253F27F8526F /* VertexReputation.swift */; };
 		405BE8FAC5DE89B9AC15D061 /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */; };
 		4236E9A3B5C493505B70167F /* InfoButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442B808DA6E67C6BE24C869B /* InfoButton.swift */; };
@@ -287,8 +290,8 @@
 		82260876404FFEC615922E6E /* DashboardBreakdowns.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84CE7CFC2F8380A8CC6B14D /* DashboardBreakdowns.swift */; };
 		8226645A0193B8454E903651 /* ZapHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B7AE001906426D0D833C0D /* ZapHistory.swift */; };
 		8260BA8E12D59DEA80D7BDDC /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
-		82C225B813963E491616A762 /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
 		82B5D5B73A709BBABC6948C7 /* RelayProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105E5C471F2CCABE27A5E705 /* RelayProbe.swift */; };
+		82C225B813963E491616A762 /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
 		82F1C518309EE4C29EF8642F /* GlobalSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */; };
 		83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */; };
@@ -409,8 +412,6 @@
 		B98F984A810E762DDFBBB244 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF859BC17F21BAE82F4F75F /* ZapNotificationBanner.swift */; };
 		BA28A725680810BA41A69746 /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD61BE8DFF662A086B42872 /* NIP17Service.swift */; };
 		BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */; };
-		7A1C0E5B3D2F4A6B8C9D0E20 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */; };
-		7A1C0E5B3D2F4A6B8C9D0E21 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */; };
 		BA8810E4D83750FF74358B10 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED924B5483C85E11E4917120 /* ContentView.swift */; };
 		BADF96FFDAD0786D3A218C25 /* ZapHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B7AE001906426D0D833C0D /* ZapHistory.swift */; };
 		BB0F85C63A35B8A9EC209A91 /* PlainLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44FA8B5C2592FA9E88658049 /* PlainLog.swift */; };
@@ -538,6 +539,7 @@
 		ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
 		EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
+		EDFAB1E4090AA01EB824A3B2 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8222A5F6E491EA57892ADC3 /* TrustMap.swift */; };
 		EE5DFB36A8769509D2517FBD /* FollowListLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27AC592B3A258559EAF7732 /* FollowListLogic.swift */; };
 		EF504DE874026A1BCD53E4AF /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0D1824D5ECD6975EAF3F98 /* VideoThumbnailView.swift */; };
 		EF5D7FAAECF7CDD14283372D /* FreshAccountKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4A5E0A00149D7F14271708 /* FreshAccountKeys.swift */; };
@@ -551,8 +553,8 @@
 		F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */; };
 		F23A281E1A8CBDE567DA596C /* PollCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB5A549483647677783FDC9 /* PollCardView.swift */; };
 		F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */; };
-		F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */; };
 		F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */; };
+		F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */; };
 		F4DE1594633DA412BFEADFFE /* MarketListing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F7D5B8237EEF6E947F2E02 /* MarketListing.swift */; };
 		F503C421DD7BABE44209ED84 /* MarketplaceSellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE757A797972E778F02D705 /* MarketplaceSellView.swift */; };
 		F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
@@ -573,8 +575,8 @@
 		FB131FEF7A8680C64E51C7E9 /* RelayCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E18F538AEEE5F1324B1A390 /* RelayCheck.swift */; };
 		FCCCFD519D53A12A81C43930 /* PendingPostManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665772231EE1D4B0755E95C3 /* PendingPostManager.swift */; };
 		FE0414C0046FC50EA9DD4CFA /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
-		FECF50406D03C77725A672F0 /* VaultTopics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */; };
 		FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
+		FECF50406D03C77725A672F0 /* VaultTopics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */; };
 		FF3796326AA660DE673215DB /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F43AE6D03159B7716D9F71 /* LogStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -620,6 +622,7 @@
 		090FAA33204672CD9F7F6431 /* DashboardRelayRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardRelayRow.swift; sourceTree = "<group>"; };
 		093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillYourFeedGuide.swift; sourceTree = "<group>"; };
 		09F904D883705C247E543061 /* RelayLogParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLogParser.swift; sourceTree = "<group>"; };
+		0B5E98764373253F27F8526F /* VertexReputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexReputation.swift; sourceTree = "<group>"; };
 		0C8B6FCEDA7D89E7935A6C71 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		0DB5A549483647677783FDC9 /* PollCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollCardView.swift; sourceTree = "<group>"; };
 		0DCBFE5F177EF3E08A2B49DF /* NVWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetSnapshot.swift; sourceTree = "<group>"; };
@@ -711,7 +714,6 @@
 		56E533DEBEA3CB947C850BC5 /* FillYourFeedOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillYourFeedOverlay.swift; sourceTree = "<group>"; };
 		5717FE059897D5903CA56549 /* NIP44Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP44Service.swift; sourceTree = "<group>"; };
 		57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPath.swift; sourceTree = "<group>"; };
-		7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMap.swift; sourceTree = "<group>"; };
 		58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerListingsLoader.swift; sourceTree = "<group>"; };
 		5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorStatusSheet.swift; sourceTree = "<group>"; };
 		5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaView.swift; sourceTree = "<group>"; };
@@ -835,8 +837,8 @@
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
 		B3BCEFB561BABBB904949610 /* TutorialsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialsSettingsView.swift; sourceTree = "<group>"; };
 		B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDashboardSheet.swift; sourceTree = "<group>"; };
-		B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollsFeedViews.swift; sourceTree = "<group>"; };
 		B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
+		B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollsFeedViews.swift; sourceTree = "<group>"; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FIPSDetectionService.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
@@ -860,8 +862,8 @@
 		CE87DC6C17138B7274AF82BA /* NoteTagging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTagging.swift; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
 		D0D02100F9C47D8B2A714FBA /* MediaGalleryViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryViewer.swift; sourceTree = "<group>"; };
-		D27AC592B3A258559EAF7732 /* FollowListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListLogic.swift; sourceTree = "<group>"; };
 		D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPathService.swift; sourceTree = "<group>"; };
+		D27AC592B3A258559EAF7732 /* FollowListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListLogic.swift; sourceTree = "<group>"; };
 		D343EC33764F0FED0D74697A /* EventInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventInspector.swift; sourceTree = "<group>"; };
 		D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "HavenApp-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -895,6 +897,7 @@
 		F297619E65F151AFE005D3C9 /* UseNostrSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UseNostrSteps.swift; sourceTree = "<group>"; };
 		F45EAC47FAD37FE1E1C42AC0 /* RelayCheckProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayCheckProbe.swift; sourceTree = "<group>"; };
 		F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryGrid.swift; sourceTree = "<group>"; };
+		F8222A5F6E491EA57892ADC3 /* TrustMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMap.swift; sourceTree = "<group>"; };
 		F8495489F7284415840FE673 /* RetryableAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryableAsyncImage.swift; sourceTree = "<group>"; };
 		F84CE7CFC2F8380A8CC6B14D /* DashboardBreakdowns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardBreakdowns.swift; sourceTree = "<group>"; };
 		F8A73E431CE524CF64925E0D /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
@@ -987,9 +990,9 @@
 				A271B5E3364858651DC05603 /* SettingsView.swift */,
 				B1B4305FF35E5998BE597AC6 /* SetupWizard */,
 				89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */,
-				26FAEF7140CFEC9687E91BA5 /* Tutorials */,
 				4EFB53AF0B545D2F574F9F8D /* TrustPathCard.swift */,
 				E11A7579D4BC164DFC9F4F3D /* TrustWebView.swift */,
+				26FAEF7140CFEC9687E91BA5 /* Tutorials */,
 				2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */,
 				2C108134DDDCA1A08788B743 /* Vault */,
 				E465CC24BD21C2812171299B /* VaultTypes.swift */,
@@ -1285,12 +1288,13 @@
 				B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */,
 				86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */,
 				6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */,
+				F8222A5F6E491EA57892ADC3 /* TrustMap.swift */,
+				57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */,
 				451C1EC5891AAECA7401505F /* TutorialContent.swift */,
 				FD57608996E7CA8D632A0147 /* TutorialProgress.swift */,
-				57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */,
-				7A1C0E5B3D2F4A6B8C9D0E1F /* TrustMap.swift */,
 				2EEB872564518AF0F379EEA9 /* VaultMeter.swift */,
 				FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */,
+				0B5E98764373253F27F8526F /* VertexReputation.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 			);
@@ -1888,16 +1892,16 @@
 				4672FF7145096D1FF96848F9 /* Theming.swift in Sources */,
 				3E132F275589C18543105D96 /* ThreadEngagementQuery.swift in Sources */,
 				BEAE6DBD2E1DEFD5AD821BBF /* TopicFeedFilter.swift in Sources */,
+				3D00F9E30D5216784C53ADDD /* TrustMap.swift in Sources */,
+				BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */,
+				D11A40BAE7126C3D866D0DBA /* TrustPathCard.swift in Sources */,
+				837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */,
+				93DCC2A165397C8BA4F00DF6 /* TrustWebView.swift in Sources */,
 				6BC778F38E2FDE92505F7968 /* TutorialCenter.swift in Sources */,
 				EBD75B2ECB62E5C48B37EC36 /* TutorialContent.swift in Sources */,
 				7F13D2BE9285850ACF41B5A2 /* TutorialProgress.swift in Sources */,
 				886A82BE80C7ED6A5BBF085B /* TutorialStage.swift in Sources */,
 				5B5BD0E20CD42D2982DFECB9 /* TutorialsSettingsView.swift in Sources */,
-				BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */,
-				7A1C0E5B3D2F4A6B8C9D0E20 /* TrustMap.swift in Sources */,
-				D11A40BAE7126C3D866D0DBA /* TrustPathCard.swift in Sources */,
-				837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */,
-				93DCC2A165397C8BA4F00DF6 /* TrustWebView.swift in Sources */,
 				1F95FE3EAEC35F682BAF6EDD /* UGCReportingDialog.swift in Sources */,
 				169C06A9E881325D1CF0287E /* UseNostrSteps.swift in Sources */,
 				5C0AEAD4DE0514BF0CAD6AF3 /* VaultChangeHandlers.swift in Sources */,
@@ -1913,6 +1917,7 @@
 				FECF50406D03C77725A672F0 /* VaultTopics.swift in Sources */,
 				6EEA753398921A40EB49F5D7 /* VaultTypes.swift in Sources */,
 				D25C2A65954161799317E919 /* VaultView.swift in Sources */,
+				19B615A624A3B6CCAF026B82 /* VertexReputation.swift in Sources */,
 				F5C34D13E951219A71472A03 /* VideoPlaybackService.swift in Sources */,
 				DBD32E19582D9012E15F92AD /* VideoPlayerView.swift in Sources */,
 				EF504DE874026A1BCD53E4AF /* VideoThumbnailView.swift in Sources */,
@@ -2172,16 +2177,16 @@
 				00119641B62DB2BBCEB963B0 /* Theming.swift in Sources */,
 				372DC81DD5E2474177F0AE1B /* ThreadEngagementQuery.swift in Sources */,
 				CE12923E39ACFDE970D61E88 /* TopicFeedFilter.swift in Sources */,
+				EDFAB1E4090AA01EB824A3B2 /* TrustMap.swift in Sources */,
+				F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */,
+				76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */,
+				673731663A06785AAD5AA6FD /* TrustPathService.swift in Sources */,
+				56CDAAD91FCF7898373661F0 /* TrustWebView.swift in Sources */,
 				C168BACEB5175CBF47A849A7 /* TutorialCenter.swift in Sources */,
 				B2560F4961E6746935CE3E8E /* TutorialContent.swift in Sources */,
 				5D588B05776909677F6F0BC0 /* TutorialProgress.swift in Sources */,
 				9391F8F2A2C865BCEBA7048C /* TutorialStage.swift in Sources */,
 				E8CFC0AD2D8BACF142CFF12F /* TutorialsSettingsView.swift in Sources */,
-				F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */,
-				7A1C0E5B3D2F4A6B8C9D0E21 /* TrustMap.swift in Sources */,
-				76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */,
-				673731663A06785AAD5AA6FD /* TrustPathService.swift in Sources */,
-				56CDAAD91FCF7898373661F0 /* TrustWebView.swift in Sources */,
 				D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */,
 				386258D4A4CC137F554D7359 /* UseNostrSteps.swift in Sources */,
 				B98B2A4703AA7C738B6B055E /* VaultChangeHandlers.swift in Sources */,
@@ -2197,6 +2202,7 @@
 				DE57A19134F6118ED22022E4 /* VaultTopics.swift in Sources */,
 				B13776688F9EE2460B0A5FDB /* VaultTypes.swift in Sources */,
 				5871EF7B3B1A4E58863FD494 /* VaultView.swift in Sources */,
+				3E53AB37D8C661294466026D /* VertexReputation.swift in Sources */,
 				27414B230CC3AA23BA86C684 /* VideoPlaybackService.swift in Sources */,
 				D6CE5283E2A14894824E1C44 /* VideoPlayerView.swift in Sources */,
 				552053CBD5AFD1A42B1058FF /* VideoThumbnailView.swift in Sources */,
