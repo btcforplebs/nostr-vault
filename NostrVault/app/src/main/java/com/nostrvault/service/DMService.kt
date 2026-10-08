@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.WebSocketClient
@@ -1278,9 +1279,9 @@ class DMService @Inject constructor(
             try {
                 deleteOldKeyCaches()
                 if (key == null) return@launch // no account: nothing to load
-                val dir = configStore.config.value.appSupportDir ?: run { Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
+                val dir = configStore.config.value.appSupportDir ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
                 val file = File(dir, "dm_cache_$key.json")
-                if (!file.exists()) { Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
+                if (!file.exists()) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
 
                 val content = file.readText()
                 val rawConvos = json.decodeFromString<List<DMConversation>>(content)
@@ -1298,7 +1299,7 @@ class DMService @Inject constructor(
                     }
                     if (good.isEmpty()) null else conv.copy(messages = good)
                 }
-                Log.w(TAG, "DBG: loadCache key=$key convos=${convos.size} msgs=${convos.sumOf { it.messages.size }} repairedDropped=$repaired")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache key=$key convos=${convos.size} msgs=${convos.sumOf { it.messages.size }} repairedDropped=$repaired")
 
                 // Seed dedup set with the messages we KEPT (the dropped ones must be
                 // allowed to re-decrypt).
