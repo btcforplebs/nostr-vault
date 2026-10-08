@@ -748,11 +748,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -766,17 +770,23 @@ class NostrService: ObservableObject {
                 } else {
                     // No credential stored — do NOT fall back to owner key, as that
                     // would silently post from the wrong account.
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -790,7 +800,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -816,13 +828,17 @@ class NostrService: ObservableObject {
             let targetUsesBunker = config.accountSigningModes[target] != "local"
                 && ConfigService.shared.hasBunkerConfig(forNpub: target)
             if targetUsesBunker {
+                #if DEBUG
                 print("NostrService: signEventAsync refused — \(target.prefix(20)) signs with a bunker and is not the active account")
+                #endif
                 return nil
             }
             return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target)
         }
 
+        #if DEBUG
         print("NostrService: signEventAsync mode=\(mode) activeNpub=\(config.activeAccountNpub.prefix(20)) ownerNpub=\(config.ownerNpub.prefix(20)) forceOwner=\(forceOwner)")
+        #endif
 
         // Owner-only events (the local relay's AUTH) while another account is
         // active: they used to go to the ACTIVE account's bunker, which cannot
@@ -846,7 +862,9 @@ class NostrService: ObservableObject {
                 guard let data = signedJSON.data(using: .utf8) else { return nil }
                 return try JSONDecoder().decode(NostrEvent.self, from: data)
             } catch {
+                #if DEBUG
                 print("NostrService: owner-signed kind \(kind) skipped — no live session for the owner's signer: \(error)")
+                #endif
                 return nil
             }
         }
@@ -856,7 +874,9 @@ class NostrService: ObservableObject {
             let signingPubkey = forceOwner ? ownerHexPubkey : activeHexPubkey
 
             guard !signingPubkey.isEmpty else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - no pubkey available")
+                #endif
                 return nil
             }
 
@@ -865,26 +885,40 @@ class NostrService: ObservableObject {
 
             guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
                   let jsonStr = String(data: jsonData, encoding: .utf8) else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - JSON serialization error")
+                #endif
                 return nil
             }
 
             do {
+                #if DEBUG
                 print("NostrService: NIP-46 signing kind \(kind) event (tags=\(finalTags.map { $0.first ?? "?" })), sending to bunker…")
                 print("NostrService: NIP-46 outgoing event JSON: \(jsonStr.prefix(500))")
+                #endif
                 let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr)
+                #if DEBUG
                 print("NostrService: NIP-46 bunker returned \(signedJSON.prefix(300))")
+                #endif
                 guard let signedData = signedJSON.data(using: .utf8) else {
+                    #if DEBUG
                     print("NostrService: NIP-46 sign failed - response not valid UTF-8")
+                    #endif
                     return nil
                 }
                 let event = try JSONDecoder().decode(NostrEvent.self, from: signedData)
+                #if DEBUG
                 print("NostrService: NIP-46 signed event id=\(event.id.prefix(8)) pubkey=\(event.pubkey.prefix(8)) sig=\(event.sig.prefix(8))")
+                #endif
                 return event
             } catch {
+                #if DEBUG
                 print("NostrService: NIP-46 sign FAILED for kind \(kind): \(error)")
+                #endif
                 if kind == 24242 {
+                    #if DEBUG
                     print("NostrService: Blossom auth (kind 24242) signing failed — remote signer may not support this event kind or may require manual approval")
+                    #endif
                 }
                 return nil
             }
@@ -912,11 +946,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -927,17 +965,23 @@ class NostrService: ObservableObject {
                 if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
                     sk = hexKey
                 } else {
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -947,7 +991,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -1043,7 +1089,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10063 server list")
+                #endif
             }
         }
     }
@@ -1071,7 +1119,9 @@ class NostrService: ObservableObject {
     func publishDMRelayList(dmRelays: [String], signAsNpub: String? = nil) {
         let reachable = dmRelays.filter { !Self.isLoopbackRelay($0) }
         guard !reachable.isEmpty else {
+            #if DEBUG
             print("NostrService: No externally reachable DM relays, skipping Kind 10050 publish")
+            #endif
             return
         }
 
@@ -1087,7 +1137,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10050 DM relay list with \(tags.count) relays")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10050 DM relay list")
+                #endif
             }
         }
     }
@@ -1105,7 +1157,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10006 blocked relay list with \(tags.count) relays")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10006 blocked relay list")
+                #endif
             }
         }
     }
@@ -1155,7 +1209,9 @@ class NostrService: ObservableObject {
                 if let hex = Bech32.decode(npub)?.hexString,
                    let newest = await fetchNewestDMRelayList(for: hex, alsoAsk: reachable),
                    Set(newest.relays) == Set(reachable) {
+                    #if DEBUG
                     print("NostrService: DM relay list for \(npub.prefix(12))… already published and unchanged — not re-signing")
+                    #endif
                     continue
                 }
 
@@ -1190,7 +1246,9 @@ class NostrService: ObservableObject {
             }
             configService.config.dmRelaysUpdatedAt = newest.createdAt
             configService.save()
+            #if DEBUG
             print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
+            #endif
             // Adopting can still leave this device holding more than was
             // published (its own Haven inbox, or loopback entries dropped).
             action = HavenConfig.dmInboxSyncAction(
@@ -1539,7 +1597,9 @@ class NostrService: ObservableObject {
     /// if none has after a few quiet retries. Without it, nothing changes.
     func postEvent(_ event: NostrEvent, directBroadcast: Bool = true,
                    onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)? = nil) {
+        #if DEBUG
         print("NostrService: postEvent called – id=\(event.id.prefix(8)) kind=\(event.kind) sig=\(event.sig.prefix(8))")
+        #endif
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
 
@@ -1621,7 +1681,9 @@ class NostrService: ObservableObject {
                 trackTemporaryClient(localClient)
             }
         } else {
+            #if DEBUG
             print("NostrService: ⚠️ Local relay not ready — event \(event.id.prefix(8)) will reach network via direct blast only")
+            #endif
         }
 
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
@@ -1796,7 +1858,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1822,7 +1886,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported user for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign user reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1836,7 +1902,9 @@ class NostrService: ObservableObject {
     func deleteNote(id: String) {
         Task {
             guard let signed = await signEventAsync(kind: 5, content: "", tags: [["e", id]]) else {
+                #if DEBUG
                 print("NostrService: Failed to sign deletion event")
+                #endif
                 return
             }
             postEvent(signed)
