@@ -167,6 +167,8 @@ fun ProfileScreen(
     // Report Media / Block User from a Media grid tile's long-press menu.
     var gridReportTarget by remember { mutableStateOf<String?>(null) }
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
+    // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
+    var zapSheetOpen by remember { mutableStateOf(false) }
 
     GlassScaffold(
         // The banner runs up under the toolbar; the toolbar's fade comes in
@@ -278,7 +280,8 @@ fun ProfileScreen(
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
-                    onZap = viewModel::zap,
+                    onZap = { viewModel.zap() },
+                    onZapLongPress = { zapSheetOpen = true },
                     onTrustWeb = { trustWebAuthor = pubkey },
                     onCopyNpub = {
                         npub?.let {
@@ -320,6 +323,10 @@ fun ProfileScreen(
                 ProfileIdentityRows(
                     lightning = lightningAddress,
                     website = website,
+                    // The inline zap chip, beside the copy row (iOS zapInlineButton).
+                    zapSats = viewModel.defaultZapSats.takeIf { canZap && !isOwnProfile },
+                    onZap = { viewModel.zap() },
+                    onZapLongPress = { zapSheetOpen = true },
                     onCopyLightning = {
                         lightningAddress?.let {
                             clipboard.setText(AnnotatedString(it))
@@ -467,47 +474,19 @@ fun ProfileScreen(
                     ) {
                         row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
-                            // Long-press: Report Media / Block User on someone
-                            // else's media, as iOS's MediaGridItem menu offers.
-                            val target = remember(note.pubkey) { viewModel.mediaModerationTarget(note.pubkey) }
-                            var menuOpen by remember { mutableStateOf(false) }
                             Box(Modifier.weight(1f).aspectRatio(1f)) {
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(SecondaryGroupedBg)
-                                        .combinedClickable(
-                                            onClick = {
-                                                com.nostrvault.ui.components.FullScreenMediaRouter.open(
-                                                    mediaItems.map { it.first }, idx, copyLink = true,
-                                                )
-                                            },
-                                            onLongClick = if (target != null) ({ menuOpen = true }) else null,
-                                        ),
+                                ProfileMediaTile(
+                                    url = url,
+                                    author = note.pubkey,
+                                    viewModel = viewModel,
+                                    onOpen = {
+                                        com.nostrvault.ui.components.FullScreenMediaRouter.open(
+                                            mediaItems.map { it.first }, idx, copyLink = true,
+                                        )
+                                    },
+                                    onReport = { gridReportTarget = it },
+                                    onBlock = { gridBlockTarget = it },
                                 )
-                                if (target != null) {
-                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                        DropdownMenuItem(
-                                            text = { Text("Report Media", color = ErrorRed) },
-                                            leadingIcon = {
-                                                Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
-                                            },
-                                            onClick = { menuOpen = false; gridReportTarget = target },
-                                        )
-                                        HorizontalDivider()
-                                        DropdownMenuItem(
-                                            text = { Text("Block User", color = ErrorRed) },
-                                            leadingIcon = {
-                                                Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
-                                            },
-                                            onClick = { menuOpen = false; gridBlockTarget = target },
-                                        )
-                                    }
-                                }
                             }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -628,12 +607,129 @@ fun ProfileScreen(
         )
     }
 
+    if (zapSheetOpen) {
+        com.nostrvault.ui.components.CustomZapSheet(
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            defaultAmount = viewModel.defaultZapSats,
+            onDismiss = { zapSheetOpen = false },
+            onZap = { amount ->
+                zapSheetOpen = false
+                viewModel.zap(amount)
+            },
+        )
+    }
+
     reelIndex?.let { start ->
         if (reels.isNotEmpty()) {
             DiVineViewer(reels, start.coerceIn(0, reels.lastIndex), onDismiss = { reelIndex = null })
         }
     }
 }
+
+/**
+ * One Media grid tile. Audio has no picture, so it gets iOS's dark tile with
+ * a waveform. Long-press opens iOS `MediaGridItem`'s menu: the same on your
+ * own profile, plus Report Media / Block User on someone else's.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ProfileMediaTile(
+    url: String,
+    author: String,
+    viewModel: ProfileViewModel,
+    onOpen: () -> Unit,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val clipboard = LocalClipboardManager.current
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val isAudio = remember(url) { com.nostrvault.ui.components.isAudioUrl(url) }
+    // Keyed by url: rows are by position, so new posts can shift a tile under an open menu.
+    var menuOpen by remember(url) { mutableStateOf(false) }
+    val busyUrl by viewModel.mediaBusyUrl.collectAsState()
+    val presence by viewModel.mirrorPresence.collectAsState()
+    // Ask the servers when the menu opens, so Mirror to Blossom can appear.
+    LaunchedEffect(menuOpen) { if (menuOpen) viewModel.checkMediaBackup(url) }
+
+    val tileModifier = Modifier
+        .fillMaxSize()
+        .clip(RoundedCornerShape(6.dp))
+        .background(if (isAudio) AudioTileBg else SecondaryGroupedBg)
+        .combinedClickable(
+            onClick = onOpen,
+            onLongClick = {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                menuOpen = true
+            },
+            onLongClickLabel = "Media options",
+        )
+    if (isAudio) {
+        Box(contentAlignment = Alignment.Center, modifier = tileModifier.semantics { contentDescription = "Audio" }) {
+            Icon(NostrVaultIcons.Waveform, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
+        }
+    } else {
+        AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = tileModifier)
+    }
+
+    if (menuOpen) {
+        val busy = busyUrl == url
+        val actions = viewModel.mediaMenu(url, author, presence)
+        DropdownMenu(expanded = true, onDismissRequest = { menuOpen = false }) {
+            fun close() { menuOpen = false }
+            actions.forEach { action ->
+                when (action) {
+                    ProfileMediaAction.COPY_LINK -> DropdownMenuItem(
+                        text = { Text("Copy Link") },
+                        leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { clipboard.setText(AnnotatedString(url)); close() },
+                    )
+                    ProfileMediaAction.SAVE_TO_PHOTOS -> DropdownMenuItem(
+                        text = { Text("Save to Photos") },
+                        leadingIcon = { Icon(NostrVaultIcons.Import, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.saveMediaToPhotos(url) },
+                    )
+                    ProfileMediaAction.SAVE_TO_VAULT -> DropdownMenuItem(
+                        text = { Text(if (busy) "Saving…" else "Save to Vault") },
+                        enabled = !busy,
+                        leadingIcon = { Icon(NostrVaultIcons.Storage, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.saveMediaToVault(url) },
+                    )
+                    ProfileMediaAction.MIRROR_TO_BLOSSOM -> DropdownMenuItem(
+                        text = { Text(if (busy) "Mirroring…" else "Mirror to Blossom") },
+                        enabled = !busy,
+                        leadingIcon = { Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.mirrorMediaToBlossom(url) },
+                    )
+                    ProfileMediaAction.MARK_404, ProfileMediaAction.UNMARK_404 -> {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(if (action == ProfileMediaAction.UNMARK_404) "Remove from 404" else "Mark as 404") },
+                            leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { viewModel.toggleMedia404(url); close() },
+                        )
+                    }
+                    ProfileMediaAction.REPORT -> DropdownMenuItem(
+                        text = { Text("Report Media", color = ErrorRed) },
+                        leadingIcon = { Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.mediaModerationTarget(author)?.let(onReport) },
+                    )
+                    ProfileMediaAction.BLOCK -> {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Block User", color = ErrorRed) },
+                            leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                            onClick = { close(); viewModel.mediaModerationTarget(author)?.let(onBlock) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** iOS MediaGridItem's audio tile: Color(red: 0.1, green: 0.1, blue: 0.14). */
+private val AudioTileBg = Color(0xFF1A1A24)
 
 @Composable
 private fun CenteredSpinner(tint: Color) {
@@ -768,6 +864,7 @@ private fun ProfileActionRow(
     onMessage: () -> Unit,
     onBlock: () -> Unit,
     onZap: () -> Unit,
+    onZapLongPress: () -> Unit,
     onTrustWeb: () -> Unit,
     onCopyNpub: () -> Unit,
 ) {
@@ -801,7 +898,7 @@ private fun ProfileActionRow(
                     ActionChip("Message", NostrVaultIcons.Chat, colors.primary, tint, onClick = onMessage, modifier = Modifier.weight(1f))
                 }
                 if (canZap) {
-                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
+                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
                 }
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
                 var menuOpen by remember { mutableStateOf(false) }
@@ -837,6 +934,7 @@ private fun ProfileActionRow(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ActionChip(
     label: String,
@@ -846,7 +944,11 @@ private fun ActionChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     description: String = label,
+    /** A long-press action, with a haptic tick (the zap chip's custom amount). */
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
 ) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -854,7 +956,16 @@ private fun ActionChip(
             .height(32.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(background)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick?.let { action ->
+                    {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        action()
+                    }
+                },
+                onLongClickLabel = longClickLabel,
+            )
             .padding(horizontal = 10.dp),
     ) {
         Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(14.dp))
@@ -935,6 +1046,10 @@ private fun shortInt(n: Int): String = when {
 private fun ProfileIdentityRows(
     lightning: String?,
     website: String?,
+    /** The inline zap chip's amount; null hides it (your own profile, or no wallet). */
+    zapSats: Int?,
+    onZap: () -> Unit,
+    onZapLongPress: () -> Unit,
     onCopyLightning: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -942,7 +1057,9 @@ private fun ProfileIdentityRows(
     if (lightning == null && website == null) return
     Column(modifier = Modifier.fillMaxWidth()) {
         lightning?.let {
-            IdentityRow(NostrVaultIcons.Zap, "LIGHTNING", it, Color(0xFFFF9800), onClick = onCopyLightning)
+            IdentityRow(NostrVaultIcons.Zap, "LIGHTNING", it, Color(0xFFFF9800), onClick = onCopyLightning) {
+                if (zapSats != null) InlineZapChip(zapSats, onZap, onZapLongPress)
+            }
         }
         website?.let {
             val display = it.removePrefix("https://").removePrefix("http://")
@@ -961,20 +1078,60 @@ private fun IdentityRow(
     value: String,
     tint: Color,
     onClick: () -> Unit,
+    /** Sits beside the row's copy target, not in it, so each tap does one thing. */
+    trailing: @Composable () -> Unit = {},
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Black)
-            Text(value, color = PrimaryText, fontSize = 13.sp, maxLines = 1)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick)
+                .padding(start = 16.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(label, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                Text(value, color = PrimaryText, fontSize = 13.sp, maxLines = 1)
+            }
         }
+        trailing()
+    }
+}
+
+/**
+ * The small bolt + amount chip on the LIGHTNING row: tap zaps the default,
+ * long-press picks an amount. iOS `zapInlineButton`.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun InlineZapChip(sats: Int, onZap: () -> Unit, onLongPress: () -> Unit) {
+    val orange = Color(0xFFFF9800)
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier
+            .padding(start = 8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(orange.copy(alpha = 0.15f))
+            .combinedClickable(
+                onClick = onZap,
+                onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+                onLongClickLabel = "Choose an amount",
+            )
+            .semantics(mergeDescendants = true) { contentDescription = "Zap $sats sats" }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Icon(NostrVaultIcons.Zap, contentDescription = null, tint = orange, modifier = Modifier.size(10.dp))
+        Text("$sats", color = orange, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }
 

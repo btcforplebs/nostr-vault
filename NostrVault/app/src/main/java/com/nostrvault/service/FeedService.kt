@@ -253,6 +253,7 @@ class FeedService @Inject constructor(
                     // must not reach this one.
                     contactListConfirmed = false
                     pendingFollowActions.clear()
+                    notificationManager.clearPendingFollows()
                     forceReload()
                     // Likes and zaps are the account's own: the previous
                     // one's showed under Relay > Given (iOS loads them per
@@ -847,27 +848,40 @@ class FeedService @Inject constructor(
         contactManager.mayPublishFollowList(attempted, loading, confirmed)
     }.stateIn(scope, SharingStarted.Eagerly, false)
 
-    private fun queueFollowAction(pubkey: String, follow: Boolean, unavailable: Boolean = false) {
+    private fun queueFollowAction(pubkey: String, follow: Boolean) {
         pendingFollowActions.removeAll { it.pubkey == pubkey }
         pendingFollowActions.add(PendingFollow(pubkey, follow, currentSnapshotKey()))
-        val message = when {
-            unavailable -> "Couldn't load your follow list. Not changing it."
-            follow -> "Following once your follow list loads…"
-            else -> "Unfollowing once your follow list loads…"
-        }
-        notificationManager.showFollow(profileDisplayName(pubkey), FollowKind.FAILED(message))
+        // "Following Name…" with a spinner until the list loads, then the
+        // outcome in the same pill (iOS addPending). A list that could not be
+        // loaded keeps it waiting; the tap is retried, never published blind.
+        notificationManager.addPendingFollow(pubkey, profileDisplayName(pubkey), follow)
         if (!_isLoadingContacts.value) scope.launch { loadContactList() }
     }
 
     /** Applies queued taps only once the real list is known; after a timeout they stay queued. */
     private fun applyPendingFollowActions() {
-        if (!contactManager.mayPublishFollowList(_hasAttemptedContactLoad.value, _isLoadingContacts.value, contactListConfirmed)) return
+        if (!contactManager.mayPublishFollowList(_hasAttemptedContactLoad.value, _isLoadingContacts.value, contactListConfirmed)) {
+            // The load finished without the real list. The taps stay queued
+            // (a later load applies them), but the spinner doesn't spin on.
+            if (_hasAttemptedContactLoad.value && !_isLoadingContacts.value) {
+                pendingFollowActions.forEach {
+                    notificationManager.failPendingFollow(it.pubkey, "Couldn't load your follow list. Not changing it.")
+                }
+            }
+            return
+        }
         if (pendingFollowActions.isEmpty()) return
         val account = currentSnapshotKey()
-        val actions = pendingFollowActions.filter { it.account == account }
+        val (actions, dropped) = pendingFollowActions.partition { it.account == account }
         pendingFollowActions.clear()
+        dropped.forEach { notificationManager.dismissPendingFollow(it.pubkey) }
         for (action in actions) {
             if (action.follow) followUser(action.pubkey) else unfollowUser(action.pubkey)
+            // Applied with no pill of its own (already done, or refused by the
+            // safety check), and not queued again: nothing is pending now.
+            if (pendingFollowActions.none { it.pubkey == action.pubkey }) {
+                notificationManager.dismissPendingFollow(action.pubkey)
+            }
         }
     }
 
@@ -2374,16 +2388,20 @@ class FeedService @Inject constructor(
                 // Re-issue the live primary REQ so the new follow's FUTURE notes
                 // stream in without waiting for a full refresh.
                 resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.FOLLOWED, undo)
+                notificationManager.showFollow(displayName, FollowKind.FOLLOWED, undo, pubkey = pubkey)
                 Result.success(Unit)
             },
             onFailure = {
                 if (it is ContactManager.FollowActionError.ListUnavailable) {
                     // Kept queued and retried; never published against an unknown list.
-                    queueFollowAction(pubkey, follow = true, unavailable = true)
+                    queueFollowAction(pubkey, follow = true)
                     return Result.failure(it)
                 }
-                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"))
+                // A tap made while the list read empty: it was already done (iOS
+                // resolves .alreadyFollowing as followed).
+                val kind = if (it is ContactManager.FollowActionError.AlreadyFollowing) FollowKind.FOLLOWED
+                else FollowKind.FAILED(it.message ?: "Failed")
+                notificationManager.showFollow(displayName, kind, pubkey = pubkey)
                 Result.failure(it)
             },
         )
@@ -2422,16 +2440,16 @@ class FeedService @Inject constructor(
                 // Re-issue the live primary REQ so the relay stops streaming the
                 // unfollowed author's future notes.
                 resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED, undo)
+                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED, undo, pubkey = pubkey)
                 Result.success(Unit)
             },
             onFailure = {
                 if (it is ContactManager.FollowActionError.ListUnavailable) {
                     // Kept queued and retried; never published against an unknown list.
-                    queueFollowAction(pubkey, follow = false, unavailable = true)
+                    queueFollowAction(pubkey, follow = false)
                     return Result.failure(it)
                 }
-                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"))
+                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"), pubkey = pubkey)
                 Result.failure(it)
             },
         )
@@ -3784,6 +3802,7 @@ class FeedService @Inject constructor(
         relayListRequested.clear()
         contactListConfirmed = false
         pendingFollowActions.clear()
+        notificationManager.clearPendingFollows()
         recomputeFilteredNotes()
     }
 

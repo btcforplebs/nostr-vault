@@ -1843,7 +1843,8 @@ internal fun BlossomMediaPickerSheet(
     val colors = LocalNostrVaultColors.current
     var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
+    // The Media tab's type filter, shared both ways as on iOS.
+    val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
     // The Media tab's sort, so the headings match what that tab shows (iOS
     // reads the same MediaSortOption setting).
     val sortOption = remember {
@@ -1852,8 +1853,8 @@ internal fun BlossomMediaPickerSheet(
                 .getString(MediaSortOption.STORAGE_KEY, null),
         )
     }
-    val shownMedia = remember(blossomMedia, activeFilter) {
-        sortOption.sorted(blossomMedia.filter { activeFilter.matches(it) })
+    val shownMedia = remember(blossomMedia, typeSelection) {
+        sortOption.sorted(blossomMedia.filter { MediaTypeSelection.matches(typeSelection, it) })
     }
     val sections = remember(shownMedia) { MediaDateGrouping.sections(shownMedia, sortOption) }
 
@@ -1895,8 +1896,8 @@ internal fun BlossomMediaPickerSheet(
             // The Media tab's filter; the composer attaches photos and videos only.
             Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                 MediaTypeFilterPill(
-                    active = activeFilter,
-                    onSelect = { activeFilter = it },
+                    selection = typeSelection,
+                    onSelect = onTypeTap,
                     filters = listOf(
                         MediaTypeFilter.ALL,
                         MediaTypeFilter.PHOTO,
