@@ -8,6 +8,9 @@ struct BlossomDashboardView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.dismiss) private var dismiss
+    /// Inside the Vault Dashboard: the sections only, under a Blossom heading,
+    /// with no sheet chrome of their own.
+    var embedded = false
 
     @State private var stats = BlossomStats()
     @State private var mirrors: [MirrorInfo] = []
@@ -25,102 +28,47 @@ struct BlossomDashboardView: View {
     @State private var activityLogs: [BlossomActivityLog] = []
 
     var body: some View {
+        if embedded { embeddedBody } else { sheetBody }
+    }
+
+    /// The Vault Dashboard's Blossom half: the same sections, a heading with
+    /// the settings and refresh buttons the sheet keeps in its toolbar.
+    private var embeddedBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "camera.macro")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                Text("Blossom")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button(action: { showingBlossomSettings = true }) {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Blossom settings")
+                Button(action: refreshAll) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoadingStats || isPulling || isPushing)
+                .accessibilityLabel("Refresh Blossom")
+            }
+            .foregroundColor(.havenPurple)
+            .padding(.horizontal)
+            sections
+        }
+        .task { await loadDashboard() }
+        .sheet(isPresented: $showingBlossomSettings) { settingsSheet }
+    }
+
+    private var sheetBody: some View {
         // NavigationStack, not the deprecated NavigationView: on macOS the latter
         // resolves to a split view, so the dashboard opened as an empty sidebar with
         // its content pushed into a detail pane it never fills.
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Stats Section
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "STATISTICS")
-                        StatsSection(stats: stats, isLoading: isLoadingStats)
-                    }
-                    .padding(.horizontal)
-
-                    // Quick Actions
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "QUICK ACTIONS")
-                        QuickActionsSection(
-                            stats: stats,
-                            isPulling: $isPulling,
-                            isPushing: $isPushing,
-                            syncProgress: syncProgress,
-                            syncMessage: syncMessage,
-                            onPull: pullFromNotes,
-                            onPush: pushAllToMirrors,
-                            onRefresh: refreshAll
-                        )
-                    }
-                    .padding(.horizontal)
-
-                    // Mirror Status (Expandable)
-                    if !mirrors.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            SectionHeader(title: "MIRRORS")
-                            MirrorStatusSection(
-                                mirrors: mirrors,
-                                isExpanded: $showMirrorSection,
-                                onTest: testMirrors
-                            )
-                        }
-                        .padding(.horizontal)
-                    }
-
-                    Divider()
-                        .padding(.vertical, 8)
-
-                    // Storage Breakdown
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "STORAGE OVERVIEW")
-                        StorageBreakdownSection(stats: stats)
-                    }
-                    .padding(.horizontal)
-
-                    Divider()
-                        .padding(.vertical, 8)
-
-                    // Activity Console
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "ACTIVITY LOG")
-
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack {
-                                Image(systemName: "terminal.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.havenPurple)
-
-                                Text("CONSOLE")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.secondary.opacity(0.8))
-
-                                Spacer()
-
-                                HStack(spacing: 5) {
-                                    Circle().fill(Color.red.opacity(0.7)).frame(width: 7, height: 7)
-                                    Circle().fill(Color.yellow.opacity(0.7)).frame(width: 7, height: 7)
-                                    Circle().fill(Color.green.opacity(0.7)).frame(width: 7, height: 7)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.platformSecondaryGroupedBackground)
-
-                            Divider()
-
-                            ActivityLogView(logs: activityLogs, syncMessage: syncMessage)
-                                .frame(height: 300)
-                        }
-                        .background(Color.platformTertiaryGroupedBackground)
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.havenPurple.opacity(0.12), lineWidth: 1)
-                        )
-                    }
-                    .padding(.horizontal)
-                }
-                .padding(.vertical)
+                sections
+                    .padding(.vertical)
             }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -157,21 +105,116 @@ struct BlossomDashboardView: View {
         .task {
             await loadDashboard()
         }
-        .sheet(isPresented: $showingBlossomSettings) {
-            NavigationStack {
-                BlossomSettingsView()
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    #endif
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showingBlossomSettings = false }
-                                .foregroundColor(.havenPurple)
+        .sheet(isPresented: $showingBlossomSettings) { settingsSheet }
+    }
+
+    private var settingsSheet: some View {
+        NavigationStack {
+            BlossomSettingsView()
+                .environmentObject(configService)
+                .environmentObject(nostrService)
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { showingBlossomSettings = false }
+                            .foregroundColor(.havenPurple)
+                    }
+                }
+        }
+    }
+
+    private var sections: some View {
+        VStack(spacing: 16) {
+            // Stats Section
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "STATISTICS")
+                StatsSection(stats: stats, isLoading: isLoadingStats)
+            }
+            .padding(.horizontal)
+
+            // Quick Actions
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "QUICK ACTIONS")
+                QuickActionsSection(
+                    stats: stats,
+                    isPulling: $isPulling,
+                    isPushing: $isPushing,
+                    syncProgress: syncProgress,
+                    syncMessage: syncMessage,
+                    onPull: pullFromNotes,
+                    onPush: pushAllToMirrors,
+                    onRefresh: refreshAll
+                )
+            }
+            .padding(.horizontal)
+
+            // Mirror Status (Expandable)
+            if !mirrors.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(title: "MIRRORS")
+                    MirrorStatusSection(
+                        mirrors: mirrors,
+                        isExpanded: $showMirrorSection,
+                        onTest: testMirrors
+                    )
+                }
+                .padding(.horizontal)
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Storage Breakdown
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "STORAGE OVERVIEW")
+                StorageBreakdownSection(stats: stats)
+            }
+            .padding(.horizontal)
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Activity Console
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "ACTIVITY LOG")
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Image(systemName: "terminal.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.havenPurple)
+
+                        Text("CONSOLE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.8))
+
+                        Spacer()
+
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.red.opacity(0.7)).frame(width: 7, height: 7)
+                            Circle().fill(Color.yellow.opacity(0.7)).frame(width: 7, height: 7)
+                            Circle().fill(Color.green.opacity(0.7)).frame(width: 7, height: 7)
                         }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.platformSecondaryGroupedBackground)
+
+                    Divider()
+
+                    ActivityLogView(logs: activityLogs, syncMessage: syncMessage)
+                        .frame(height: 300)
+                }
+                .background(Color.platformTertiaryGroupedBackground)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.havenPurple.opacity(0.12), lineWidth: 1)
+                )
             }
+            .padding(.horizontal)
         }
     }
 

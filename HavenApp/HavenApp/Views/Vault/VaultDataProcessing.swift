@@ -4,6 +4,26 @@ extension VaultView {
 
     // MARK: - Background Processing
 
+    /// A request to show the notes list. The object, when there is one, is the
+    /// Vault tab's scope (Notes, Articles, Highlights); anything else is Notes.
+    func openNotes(_ note: Notification) {
+        let scope = note.object as? VaultNoteScope ?? .notes
+        withAnimation(Motion.toggle) {
+            viewMode = .notes
+            noteScope = scope
+            if scope != .articles { recipesOnly = false }
+        }
+        // Coming back to Notes from Articles or Highlights doesn't change the
+        // list type, so the new-notes dot has to be cleared here.
+        if scope == .notes { markTabViewed(.notes) }
+    }
+
+    /// The kinds the Notes entry lists: all of the relay tab's note kinds,
+    /// less articles and highlights in the Vault tab.
+    var notesListKinds: Set<Int> {
+        VaultNoteScope.notes.kinds(from: NostrService.relayTabNoteKinds, split: vaultTabHostsMedia)
+    }
+
     func scheduleUpdateDisplayData() {
         updateTask?.cancel()
         updateGeneration += 1
@@ -38,11 +58,12 @@ extension VaultView {
             counts[event.kind, default: 0] += 1
         }
 
-        // Notes: NostrService.relayTabNoteKinds
-        let noteKinds = NostrService.relayTabNoteKinds
+        // Notes: the kinds the Notes list shows (the Vault tab lists articles
+        // and highlights apart, and they get no dot).
+        let noteKinds = notesListKinds
         let noteCount = noteKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
         let baselineNotes = noteKinds.reduce(0) { $0 + (notificationBaseline[$1] ?? 0) }
-        if noteCount > baselineNotes && viewMode != .notes {
+        if noteCount > baselineNotes && !(viewMode == .notes && noteScope == .notes) {
             withAnimation(Motion.fade) { hasNewNotes = true }
         }
 
@@ -66,7 +87,7 @@ extension VaultView {
             if hasNewNotes {
                 withAnimation(Motion.fade) { hasNewNotes = false }
             }
-            for kind in NostrService.relayTabNoteKinds {
+            for kind in notesListKinds {
                 notificationBaseline[kind] = events.filter { $0.kind == kind }.count
             }
         case .likes:
@@ -174,6 +195,8 @@ extension VaultView {
     func updateDisplayData() {
         // Capture current state strongly for the background task
         let currentFilter = contentFilter
+        let scopeKinds = noteScope.kinds(from: NostrService.relayTabNoteKinds, split: vaultTabHostsMedia)
+        let currentRecipesOnly = noteScope == .articles && recipesOnly
         let currentSearch = committedSearch
         let currentScope = searchScope
         let currentEvents = nostrService.events
@@ -410,8 +433,8 @@ extension VaultView {
             } else if currentMode == .notes {
                 // MARK: - Notes Mode (NostrService.relayTabNoteKinds)
                 let filtered = currentEvents.filter { event in
-                    let validKinds = NostrService.relayTabNoteKinds
-                    if !validKinds.contains(event.kind) { return false }
+                    if !scopeKinds.contains(event.kind) { return false }
+                    if currentRecipesOnly && !VaultNoteScope.isRecipe(tags: event.tags) { return false }
 
                     if blacklist.contains(event.pubkey) { return false }
 

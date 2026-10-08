@@ -23,6 +23,10 @@ struct VaultView: View {
     @State var initialLoad = false
     @State var isLoadingMore = false
     @State var contentFilter: ContentFilter = .all
+    /// Notes, Articles or Highlights. Only the Vault tab's mode menu changes it.
+    @State var noteScope: VaultNoteScope = .notes
+    /// Articles only: just the recipes.
+    @State var recipesOnly = false
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
     @State var followersFilter: FollowersFilter = .new
@@ -73,6 +77,7 @@ struct VaultView: View {
     @State var focusTask: Task<Void, Never>?
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) var noteDetailSelection
+    @Environment(\.inVaultTab) var vaultTabHostsMedia
 
     /// Opens a note in the split pane's detail column when there is one, and
     /// falls back to the full-screen sheet everywhere else.
@@ -269,6 +274,9 @@ struct VaultView: View {
             }
         }
         // -- handlers from viewContentWithHandlers --
+        .onChange(of: vaultModesWithNews, initial: true) { _, modes in
+            if vaultTabHostsMedia { VaultSection.shared.newModes = modes }
+        }
         .modifier(VaultChangeHandlers(
             viewMode: viewMode,
             likesFilter: likesFilter,
@@ -276,6 +284,7 @@ struct VaultView: View {
             committedSearch: committedSearch,
             searchScope: searchScope,
             contentFilter: contentFilter,
+            noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
@@ -360,9 +369,10 @@ struct VaultView: View {
             // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
             let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
             withAnimation(Motion.toggle) { viewMode = target }
+            if target == .notes { noteScope = .notes; recipesOnly = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .notes }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { note in
+            openNotes(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
@@ -386,7 +396,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView()
+                DashboardView(includesBlossom: vaultTabHostsMedia)
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -399,6 +409,13 @@ struct VaultView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingRelayDashboard = false }
+                        }
+                        if vaultTabHostsMedia {
+                            ToolbarItem(placement: .principal) {
+                                Label(VaultDashboard.title, systemImage: VaultDashboard.symbol)
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.appSystem(size: 17, weight: .bold, design: .rounded))
+                            }
                         }
                     }
             }
@@ -421,7 +438,9 @@ struct VaultView: View {
                     Color.clear.frame(height: 0).id(Self.topAnchor)
                     listContent
 
-                    if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
+                    if sparseNotesScope {
+                        loadOlderButton
+                    } else if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
                         Color.clear
                             .frame(height: 1)
                             .padding(.bottom, 20)
@@ -455,9 +474,9 @@ struct VaultView: View {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
+                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Relay")
+                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -581,9 +600,9 @@ struct VaultView: View {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
+                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Relay")
+                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -730,6 +749,7 @@ struct VaultView: View {
             committedSearch: committedSearch,
             searchScope: searchScope,
             contentFilter: contentFilter,
+            noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
@@ -815,9 +835,10 @@ struct VaultView: View {
             // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
             let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
             withAnimation(Motion.toggle) { viewMode = target }
+            if target == .notes { noteScope = .notes; recipesOnly = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .notes }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { note in
+            openNotes(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
@@ -842,7 +863,7 @@ struct VaultView: View {
         #if os(iOS)
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView()
+                DashboardView(includesBlossom: vaultTabHostsMedia)
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -853,6 +874,13 @@ struct VaultView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingRelayDashboard = false }
+                        }
+                        if vaultTabHostsMedia {
+                            ToolbarItem(placement: .principal) {
+                                Label(VaultDashboard.title, systemImage: VaultDashboard.symbol)
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.appSystem(size: 17, weight: .bold, design: .rounded))
+                            }
                         }
                     }
             }

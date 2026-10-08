@@ -67,6 +67,25 @@ extension VaultView {
 
     // MARK: - Notes List
 
+    /// The empty list's headline for the scope the Vault menu picked.
+    var emptyNotesTitle: String {
+        switch noteScope {
+        case .notes: return "No notes found"
+        case .articles: return recipesOnly ? "No recipes found" : "No articles found"
+        case .highlights: return "No highlights found"
+        }
+    }
+
+    /// Articles and highlights are rare: an empty list usually means none
+    /// were published, not that a filter hid them.
+    var emptyNotesHint: String {
+        switch noteScope {
+        case .notes: return "Try changing your filter settings"
+        case .articles: return recipesOnly ? "Recipes are articles tagged zapcooking or nostrcooking" : "Long-form posts you write or are tagged in land here"
+        case .highlights: return "Highlights you make or that quote you land here"
+        }
+    }
+
     var notesList: some View {
         let isLoading = nostrService.isFetching || relayManager.isBooting || !notesHasLoadedOnce
         return Group {
@@ -103,14 +122,16 @@ extension VaultView {
                         )
 
                     VStack(spacing: 8) {
-                        Text("No notes found")
+                        Text(emptyNotesTitle)
                             .font(.appSystem(size: 18, weight: .bold, design: .default))
                             .tracking(0.2)
 
-                        Text("Try changing your filter settings")
+                        Text(emptyNotesHint)
                             .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.3)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -474,6 +495,14 @@ extension VaultView {
             zapsFilter = .onMyNotes
         default:
             viewMode = .notes
+            // Notes in the Vault tab leave out articles and highlights; land
+            // on the list that holds the target.
+            switch nostrService.events.first(where: { $0.id == request.eventId })?.kind {
+            case VaultNoteScope.articleKind?: noteScope = .articles
+            case VaultNoteScope.highlightKind?: noteScope = .highlights
+            default: noteScope = .notes
+            }
+            recipesOnly = false
             // A reply from outside your network isn't listed under All.
             if let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
                ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,

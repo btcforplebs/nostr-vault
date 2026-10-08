@@ -206,6 +206,9 @@ struct TrustWebView: View {
                 Text("Looking two steps further out. This downloads a few MB of follow lists.")
             } else if deeperFailed.contains(frame.center) {
                 Text("Couldn't reach the relays to look further out.")
+            } else if frame.center == author && author == me {
+                // The WOT tab, before anyone is picked.
+                Text("Everyone you follow, and your web around them. Tap anyone to see how they reach you.")
             } else if frame.center == author {
                 Text("Everyone \(them) follows. Tap a face to see their path.")
             } else if !frame.bridges.isEmpty {
@@ -242,6 +245,9 @@ struct TrustWebView: View {
     /// The globe's words for VoiceOver, which reads the picture as one element.
     private var summary: String {
         guard let frame else { return "Loading who \(name(centerKey)) follows." }
+        if frame.center == me && author == me {
+            return "You, the \(frame.ring.count) people you follow, and your web around them."
+        }
         let them = name(author)
         let who = frame.center == me ? "you follow" : "\(name(frame.center)) follows"
         if frame.bridges.isEmpty {

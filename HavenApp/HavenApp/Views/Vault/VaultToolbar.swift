@@ -6,6 +6,69 @@ extension VaultView {
 
     @ViewBuilder
     var leadingToolbarInline: some View {
+        if vaultTabHostsMedia {
+            VaultModePill(mode: vaultMode, zapsOnly: configService.config.zapsOnlyMode)
+        } else {
+            leadingIconRow
+        }
+    }
+
+    /// The Vault tab's menu entry for what this view is showing.
+    var vaultMode: VaultMode {
+        switch viewMode {
+        case .likes: return .likes
+        case .zaps: return .zaps
+        case .followers: return .followers
+        default:
+            switch noteScope {
+            case .notes: return .notes
+            case .articles: return .articles
+            case .highlights: return .highlights
+            }
+        }
+    }
+
+    /// Articles and Highlights are a few rows among many notes. The list's
+    /// end is always on screen, so loading older pages on sight would walk
+    /// the whole relay; they page by button instead.
+    var sparseNotesScope: Bool {
+        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && searchScope != .profiles
+    }
+
+    var loadOlderButton: some View {
+        Button { loadMore() } label: {
+            HStack(spacing: 6) {
+                if nostrService.isFetching {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                Text("Load older")
+            }
+            .font(.appSystem(size: 14, weight: .semibold))
+            .foregroundColor(.havenPurple)
+            .padding(.horizontal, 16)
+            .frame(height: 36)
+            .background(Capsule().fill(Color.havenPurple.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .disabled(nostrService.isFetching)
+        .padding(.top, 8)
+        .padding(.bottom, 24)
+    }
+
+    /// Modes with something new, for the dots the icon row used to carry.
+    var vaultModesWithNews: Set<VaultMode> {
+        var modes = Set<VaultMode>()
+        if hasNewNotes { modes.insert(.notes) }
+        if hasNewLikes { modes.insert(.likes) }
+        if hasNewZaps { modes.insert(.zaps) }
+        if hasNewFollowers { modes.insert(.followers) }
+        return modes
+    }
+
+    @ViewBuilder
+    var leadingIconRow: some View {
         HStack(spacing: 4) {
             IconFilterButton(icon: "doc.text", tooltip: "Notes", isSelected: viewMode == .notes, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .notes }
@@ -61,6 +124,9 @@ extension VaultView {
                 IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
                 IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
                 IconFilterButton(icon: "person.crop.circle.badge.questionmark", tooltip: "Replies from outside your network", isSelected: contentFilter == .outside, color: .havenPurple, label: labelled ? "Outside" : nil) { contentFilter = .outside }
+                if vaultTabHostsMedia && noteScope == .articles {
+                    IconFilterButton(icon: "fork.knife", tooltip: "Recipes only", isSelected: recipesOnly, color: .havenPurple, label: labelled ? "Recipes" : nil) { recipesOnly.toggle() }
+                }
             } else if viewMode == .likes {
                 IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
                 IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
@@ -73,6 +139,7 @@ extension VaultView {
             }
         }
         .animation(Motion.toggle, value: contentFilter)
+        .animation(Motion.toggle, value: recipesOnly)
         .animation(Motion.toggle, value: followersFilter)
         .animation(Motion.toggle, value: likesFilter)
         .animation(Motion.toggle, value: zapsFilter)

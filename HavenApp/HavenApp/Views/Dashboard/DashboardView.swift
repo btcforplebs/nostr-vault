@@ -22,6 +22,9 @@ struct DashboardView: View {
     @State private var showingShareSheet = false
 
     var isSidebar: Bool = false
+    /// The Vault Dashboard: the relay's dashboard with the Blossom sections
+    /// under it, one sheet for everything the Vault tab stores.
+    var includesBlossom = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -192,6 +195,12 @@ struct DashboardView: View {
 
                         exportStatusView
                             .padding(.horizontal)
+                    }
+
+                    if includesBlossom {
+                        Divider()
+                            .padding(.vertical, 4)
+                        BlossomDashboardView(embedded: true)
                     }
                 }
                 .frame(maxWidth: .infinity)

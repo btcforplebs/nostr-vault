@@ -15,6 +15,7 @@ struct MediaGalleryView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @Environment(\.inVaultTab) var inVaultTab
     @StateObject var feedService = FeedService.shared
     @ObservedObject var blossomCache = BlossomMediaCache.shared
 
@@ -119,6 +120,38 @@ struct MediaGalleryView: View {
         }
     }
 
+    /// In the Vault tab the corner button is the Vault Dashboard's, coloured
+    /// by the relay's health as it is on the relay modes.
+    var dashboardButtonColor: Color { inVaultTab ? statusColor : .havenPurple }
+
+    /// The relay half fetches the same events when the relay starts; in the
+    /// Vault tab the gallery only rescans its files, so the two don't race
+    /// (the gallery's fetch resets the sockets the relay half just opened).
+    func refreshOnRelayStart() {
+        if inVaultTab {
+            loadLocalMedia(force: true)
+            scheduleUpdateDisplayData()
+        } else {
+            refreshAll()
+        }
+    }
+
+    /// An upload or paste shows its progress in the gallery, so in the Vault
+    /// tab bring the Media half forward.
+    func showMediaHalf() {
+        if inVaultTab { VaultSection.shared.showsMedia = true }
+    }
+
+    /// The Vault tab has one dashboard, which the relay half presents; outside
+    /// it (macOS) Blossom keeps its own sheet.
+    func openDashboard() {
+        if inVaultTab {
+            NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
+        } else {
+            showingBlossomMediaList = true
+        }
+    }
+
 
     // MARK: - Body
 
@@ -141,7 +174,11 @@ struct MediaGalleryView: View {
         viewContentPlatform
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                leadingToolbarInline
+                if inVaultTab {
+                    VaultModePill(mode: .media, zapsOnly: configService.config.zapsOnlyMode)
+                } else {
+                    leadingToolbarInline
+                }
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -171,22 +208,22 @@ struct MediaGalleryView: View {
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
                 triggerAutoMirrorIfEnabled()
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
             }
         }
         .modifier(mediaChangeHandlers)
-        .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
-        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { handleUploadFileURLs($0) })
+        .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
-            showingBlossomMediaList = true
+            openDashboard()
         }
         .modifier(mediaSheetsAndPickers)
     }
@@ -236,11 +273,11 @@ struct MediaGalleryView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             ChromeFold(anchor: .bottomTrailing) {
-                Button(action: { showingBlossomMediaList = true }) {
+                Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Blossom")
+                        Text(inVaultTab ? "Vault" : "Blossom")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -248,8 +285,8 @@ struct MediaGalleryView: View {
                     .padding(.horizontal, 18)
                     .background(
                         Capsule()
-                            .fill(Color.havenPurple)
-                            .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
+                            .fill(dashboardButtonColor)
+                            .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
                 // Shares the row above the tab bar with the music mini player.
@@ -303,20 +340,20 @@ struct MediaGalleryView: View {
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
                 triggerAutoMirrorIfEnabled()
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
             }
         }
         .modifier(mediaChangeHandlers)
-        .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
-        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { handleUploadFileURLs($0) })
+        .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -354,11 +391,11 @@ struct MediaGalleryView: View {
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
             ChromeFold(anchor: .bottomTrailing) {
-                Button(action: { showingBlossomMediaList = true }) {
+                Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Blossom")
+                        Text(inVaultTab ? "Vault" : "Blossom")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -366,8 +403,8 @@ struct MediaGalleryView: View {
                     .padding(.horizontal, 18)
                     .background(
                         Capsule()
-                            .fill(Color.havenPurple)
-                            .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
+                            .fill(dashboardButtonColor)
+                            .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
                 // Shares the row above the tab bar with the music mini player.
