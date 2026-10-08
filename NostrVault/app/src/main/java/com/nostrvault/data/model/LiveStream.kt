@@ -8,6 +8,11 @@ package com.nostrvault.data.model
  * URLs can actually be played.
  */
 data class LiveStream(
+    /**
+     * Who is streaming: the first `p` tag marked Host, else the signer. A
+     * service such as zap.stream signs every event with its own key and names
+     * the streamer only in that tag, so the signer alone shows the service.
+     */
     val hostPubkey: String,
     val identifier: String,
     val createdAt: Long,
@@ -42,9 +47,11 @@ data class LiveStream(
      * streams carried `thumb`, and every one also had an `image`.
      */
     val previewImageUrls: List<String> = listOfNotNull(imageUrl),
+    /** Who signed the event. Coordinates (chat, naddr) are built from this. */
+    val authorPubkey: String = hostPubkey,
 ) {
     /** The addressable form: what an naddr for this stream points at. */
-    val address: String get() = "$KIND:$hostPubkey:$identifier"
+    val address: String get() = "$KIND:$authorPubkey:$identifier"
 
     /**
      * Shown only when the stream is running AND something can play it.
@@ -108,8 +115,14 @@ data class LiveStream(
                 }
                 .distinct()
 
+            val taggedHosts = tags
+                .filter { it.size >= 4 && it[0] == "p" && it[3].equals("host", ignoreCase = true) }
+                .map { it[1].trim() }
+                .filter { it.isNotEmpty() }
+
             return LiveStream(
-                hostPubkey = pubkey,
+                hostPubkey = taggedHosts.firstOrNull() ?: pubkey,
+                authorPubkey = pubkey,
                 identifier = identifier,
                 createdAt = createdAt,
                 title = value("title"),
@@ -124,9 +137,7 @@ data class LiveStream(
                     ?.map { it.trim() }
                     ?.filter { it.startsWith("wss://") || it.startsWith("ws://") }
                     ?: emptyList(),
-                hosts = setOf(pubkey) + tags
-                    .filter { it.size >= 4 && it[0] == "p" && it[3].equals("host", ignoreCase = true) }
-                    .map { it[1] },
+                hosts = setOf(pubkey) + taggedHosts,
                 previewImageUrls = previews,
             )
         }
