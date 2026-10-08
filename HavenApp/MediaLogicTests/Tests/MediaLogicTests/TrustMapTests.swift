@@ -35,11 +35,16 @@ final class TrustMapTests: XCTestCase {
 
     func testNextBatchSkipsSeenAndAuthor() {
         let follows = [key(1), key(2), author, key(3)]
-        let filter = TrustMap.nextBatch(author: author, follows: follows, seen: [key(2)])
-        XCTAssertEqual(filter?["authors"] as? [String], [key(1), key(3)])
-        XCTAssertEqual(filter?["#p"] as? [String], [author])
-        XCTAssertEqual(filter?["limit"] as? Int, TrustMap.batchSize)
-        XCTAssertNil(TrustMap.nextBatch(author: author, follows: [key(1), author], seen: [key(1)]))
+        let filters = TrustMap.nextBatch(author: author, follows: follows, seen: [key(2)])
+        XCTAssertEqual(filters.count, 1)
+        XCTAssertEqual(filters[0]["authors"] as? [String], [key(1), key(3)])
+        XCTAssertEqual(filters[0]["#p"] as? [String], [author])
+        XCTAssertEqual(filters[0]["limit"] as? Int, TrustMap.batchSize)
+        XCTAssertTrue(TrustMap.nextBatch(author: author, follows: [key(1), author], seen: [key(1)]).isEmpty)
+        // Someone with thousands of follows is asked about in chunks.
+        let many = (1...2500).map(key)
+        XCTAssertEqual(TrustMap.nextBatch(author: author, follows: many, seen: [], chunkSize: 1000)
+            .compactMap { ($0["authors"] as? [String])?.count }, [1000, 1000, 500])
     }
 
     func testFollowsOfUsesOnlyTheOwnersNewestList() {

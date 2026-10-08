@@ -87,26 +87,33 @@ final class TrustPathService {
         return nil
     }
 
-    /// One "show everyone" batch: up to `TrustMap.batchSize` more lists from
-    /// `follows` that tag the author, skipping signers already `seen`. Empty
-    /// once no relay has any more.
-    func moreBridgeLists(author: String, follows: [String], seen: Set<String>) async -> [[String: Any]] {
-        guard let filter = TrustMap.nextBatch(author: author, follows: follows, seen: seen) else { return [] }
+    /// One "show everyone" batch: more lists from `follows` that tag the
+    /// author, skipping signers already `seen`. Empty once relays answered
+    /// with nothing new; nil when none answered at all, so a timeout isn't
+    /// mistaken for "that's everyone".
+    func moreBridgeLists(author: String, follows: [String], seen: Set<String>) async -> [[String: Any]]? {
+        let filters = TrustMap.nextBatch(author: author, follows: follows, seen: seen)
+        guard !filters.isEmpty else { return [] }
+        let answered = Flag()
         for url in Self.publicRelays().prefix(Self.maxRelays) {
-            let found = await ZapHistoryService.query(filters: [filter], relays: [url], timeout: 6)
+            let found = await ZapHistoryService.query(filters: filters, relays: [url], timeout: 6,
+                                                      onAnswered: { answered.set = true })
             let fresh = found.filter { ($0["pubkey"] as? String).map { !seen.contains($0) } ?? false }
             if !fresh.isEmpty { return fresh }
         }
-        return []
+        return answered.set ? [] : nil
     }
 
     /// "Look deeper": 3-hop routes, you → a follow → someone → the author.
     /// Two requests on one relay, a few MB of follow lists, so only on tap.
+    /// nil when no relay answered, so it can be tried again.
     func deeperChains(author: String, center: String, follows: [String],
-                      trustGraph: Set<String>) async -> [TrustMap.Chain] {
+                      trustGraph: Set<String>) async -> [TrustMap.Chain]? {
+        let answered = Flag()
         for url in Self.publicRelays().prefix(Self.maxRelays) {
             let seeds = await ZapHistoryService.query(filters: [TrustMap.deeperSeedFilter(author: author)],
-                                                      relays: [url], timeout: 8)
+                                                      relays: [url], timeout: 8,
+                                                      onAnswered: { answered.set = true })
             guard !seeds.isEmpty else { continue }
             let via = TrustMap.deeperVia(author: author, me: center, follows: Set(follows),
                                          trustGraph: trustGraph, seeds: seeds)
@@ -115,8 +122,11 @@ final class TrustPathService {
             let links = await ZapHistoryService.query(filters: filters, relays: [url], timeout: 8)
             return TrustMap.chains(me: center, follows: Set(follows), via: via, links: links)
         }
-        return []
+        return answered.set ? [] : nil
     }
+
+    /// Set from a relay callback on the main queue, read after the await.
+    private final class Flag { var set = false }
 
     /// Public relays to ask, in order. Your own relays (this device, the Mac)
     /// only keep events from you and your whitelist, so they never hold a

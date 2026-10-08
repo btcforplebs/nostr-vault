@@ -49,12 +49,16 @@ enum TrustMap {
         return (0..<count).map { sorted[$0 * sorted.count / count] }
     }
 
-    /// The next "show everyone" filter: follows whose lists haven't come back
-    /// yet, tagging the author. nil once every follow has been asked about.
-    static func nextBatch(author: String, follows: [String], seen: Set<String>) -> [String: Any]? {
+    /// The next "show everyone" filters: follows whose lists haven't come
+    /// back yet, tagging the author, in chunks small enough for relays that
+    /// cap a request's size. Empty once every follow has been asked about.
+    static func nextBatch(author: String, follows: [String], seen: Set<String>,
+                          chunkSize: Int = 1000) -> [[String: Any]] {
         let authors = follows.filter { $0 != author && !seen.contains($0) }
-        guard !authors.isEmpty else { return nil }
-        return ["kinds": [3], "authors": authors, "#p": [author], "limit": batchSize]
+        return stride(from: 0, to: authors.count, by: chunkSize).map { start in
+            let chunk = Array(authors[start..<min(start + chunkSize, authors.count)])
+            return ["kinds": [3], "authors": chunk, "#p": [author], "limit": batchSize]
+        }
     }
 
     /// The p-tags of the newest follow list `owner` signed: who they follow.

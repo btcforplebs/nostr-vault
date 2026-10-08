@@ -16,28 +16,50 @@ struct TrustWebView: View {
         let center: String
         /// Everyone `center` follows: the dots on the ring.
         let ring: [String]
+        let ringSet: Set<String>
+        /// Each ring member's spot, worked out once so pinching only scales.
+        let points: [String: CGPoint]
         /// False when no relay had `center`'s follow list, so the empty ring
         /// means "unknown", not "follows no one".
-        var listFound = true
+        let listFound: Bool
         let path: TrustPath
         /// Every bridge found so far, sorted; starts as the card's 5.
         var bridges: [String]
         /// Signers whose lists already came back, so a batch skips them.
         var seen: Set<String>
-        /// No relay had any more lists that tag the author.
-        var exhausted = false
+        /// Relays answered with nothing new: the count is the whole count.
+        var exhausted: Bool
         /// 3-hop routes once "look deeper" ran; nil before.
         var chains: [TrustMap.Chain]?
+
+        init(center: String, ring: [String], listFound: Bool = true, path: TrustPath) {
+            self.center = center
+            self.ring = ring
+            ringSet = Set(ring)
+            points = Dictionary(ring.map { ($0, TrustMapCanvas.dot($0)) }, uniquingKeysWith: { a, _ in a })
+            self.listFound = listFound
+            self.path = path
+            bridges = path.bridges
+            seen = Set(path.bridges)
+            // The card asks for one more list than it shows: no extra means
+            // it already has everyone.
+            exhausted = !path.hasMore
+        }
     }
 
     @State private var crumbs: [String] = []
     @State private var frames: [String: Frame] = [:]
     /// nil until picked: then each frame opens on its own shortest reach.
     @State private var pickedHops: Int?
-    @State private var camera = TrustMapCamera()
     @State private var peek: String?
-    @State private var loadingMore = false
-    @State private var lookingDeeper = false
+    @State private var myFollows: Set<String> = []
+    /// Per person, so re-centering mid-load neither blocks nor mislabels the
+    /// next person's map.
+    @State private var loadingMore: Set<String> = []
+    @State private var lookingDeeper: Set<String> = []
+    /// No relay answered: offer a retry instead of a final answer.
+    @State private var failed: Set<String> = []
+    @State private var deeperFailed: Set<String> = []
     @State private var profilePubkey: String?
     @State private var showingList = false
 
@@ -56,22 +78,16 @@ struct TrustWebView: View {
             GeometryReader { geo in
                 ZStack(alignment: .bottomLeading) {
                     if let frame {
+                        // A fresh camera per person: re-centering starts zoomed out.
                         TrustMapCanvas(frame: frame, me: me, author: author, hops: hops,
-                                       myFollows: Set(FeedService.shared.followedPubkeys),
-                                       size: geo.size, camera: $camera,
+                                       myFollows: myFollows, size: geo.size,
                                        avatar: avatar, name: name,
                                        onTap: tapped, onPeek: { peek = $0 },
                                        onFaces: { nostrService.fetchMissingProfiles(for: $0) })
+                            .id(frame.center)
                     } else {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    if camera.scale > 1.05 {
-                        Text(String(format: "%.1f×", camera.scale))
-                            .font(.appSystem(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .padding(10)
-                            .accessibilityHidden(true)
                     }
                     if let peek { peekCard(peek) }
                 }
@@ -93,8 +109,8 @@ struct TrustWebView: View {
         .onAppear {
             guard frames[me] == nil else { return }
             crumbs = [me]
-            frames[me] = Frame(center: me, ring: FeedService.shared.followedPubkeys, path: path,
-                               bridges: path.bridges, seen: Set(path.bridges))
+            myFollows = Set(FeedService.shared.followedPubkeys)
+            frames[me] = Frame(center: me, ring: FeedService.shared.followedPubkeys, path: path)
             nostrService.fetchMissingProfiles(for: [me, author] + path.bridges)
         }
         .onChange(of: pickedHops) { _, hops in
@@ -180,8 +196,10 @@ struct TrustWebView: View {
             if !frame.listFound {
                 Text("No relay checked had \(name(frame.center))'s follow list, so their ring can't be drawn.")
             } else if hops == 3 {
-                if lookingDeeper {
+                if lookingDeeper.contains(frame.center) {
                     Text("Looking two steps further out. This downloads a few MB of follow lists.")
+                } else if deeperFailed.contains(frame.center) {
+                    Text("Couldn't reach the relays to look deeper.")
                 } else if let chains = frame.chains, !chains.isEmpty {
                     let via = Text("\(Set(chains.map(\.via)).count)").foregroundColor(.havenPurple).bold()
                     Text("\(via) people who follow \(them) are followed by \(center.map { "people \($0) follows" } ?? "people you follow") · 3 hops.")
@@ -237,12 +255,16 @@ struct TrustWebView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
 
-                if canLoadMore(frame) {
+                if hops == 3, deeperFailed.contains(frame.center) {
+                    secondaryButton("Try again", action: lookDeeper)
+                } else if canLoadMore(frame) {
+                    let loading = loadingMore.contains(frame.center)
                     Button(action: showEveryone) {
                         HStack(spacing: 8) {
-                            if loadingMore { ProgressView().controlSize(.small) }
-                            Text(loadingMore ? "Finding more… \(frame.bridges.count) so far"
-                                             : "Show everyone who follows \(name(author))")
+                            if loading { ProgressView().controlSize(.small) }
+                            Text(loading ? "Finding more… \(frame.bridges.count) so far"
+                                 : failed.contains(frame.center) ? "Couldn't reach the relays. Try again"
+                                 : "Show everyone who follows \(name(author))")
                                 .lineLimit(1)
                         }
                         .font(.appSystem(size: 15, weight: .semibold))
@@ -253,7 +275,7 @@ struct TrustWebView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .disabled(loadingMore)
+                    .disabled(loading)
                 }
             }
             if centerKey != me {
@@ -275,6 +297,19 @@ struct TrustWebView: View {
         .padding(.bottom, 12)
     }
 
+    private func secondaryButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.havenPurple)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.platformTertiaryGroupedBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func legendDot(_ color: Color) -> some View {
         Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
     }
@@ -282,7 +317,7 @@ struct TrustWebView: View {
     // MARK: - Peek
 
     private func peekCard(_ pubkey: String) -> some View {
-        let follows = Set(FeedService.shared.followedPubkeys)
+        let follows = myFollows
         let followsAuthor = frame?.bridges.contains(pubkey) == true
             || frame?.chains?.contains { $0.via == pubkey } == true
         let line = [
@@ -365,8 +400,7 @@ struct TrustWebView: View {
             let list = await TrustPathService.shared.followList(of: pubkey)
             let ring = list ?? []
             let found = await TrustPathService.shared.path(for: author, from: pubkey, follows: ring)
-            frames[pubkey] = Frame(center: pubkey, ring: ring, listFound: list != nil, path: found,
-                                   bridges: found.bridges, seen: Set(found.bridges))
+            frames[pubkey] = Frame(center: pubkey, ring: ring, listFound: list != nil, path: found)
             nostrService.fetchMissingProfiles(for: [pubkey] + found.bridges)
             if hops == 3, centerKey == pubkey { lookDeeper() }
         }
@@ -382,24 +416,23 @@ struct TrustWebView: View {
     private func recenter() {
         // 3 hops is a download; don't carry it onto the next person.
         if pickedHops == 3 { pickedHops = nil }
-        if Motion.isReduced {
-            camera = TrustMapCamera()
-        } else {
-            withAnimation(.smooth(duration: 0.35)) { camera = TrustMapCamera() }
-        }
     }
 
     /// "Show everyone": batches of 20 lists until no relay has more, lighting
     /// dots as each batch lands. Stops at `TrustMap.maxBatchedLists` a tap.
     private func showEveryone() {
-        guard let start = frame, !loadingMore else { return }
+        guard let start = frame, !loadingMore.contains(start.center) else { return }
         let key = start.center
-        loadingMore = true
+        loadingMore.insert(key)
+        failed.remove(key)
         Task {
             var fetched = 0
             while let current = frames[key], !current.exhausted, fetched < TrustMap.maxBatchedLists {
-                let lists = await TrustPathService.shared.moreBridgeLists(author: author, follows: current.ring,
-                                                                          seen: current.seen)
+                guard let lists = await TrustPathService.shared.moreBridgeLists(
+                    author: author, follows: current.ring, seen: current.seen) else {
+                    failed.insert(key)
+                    break
+                }
                 guard var updated = frames[key] else { break }
                 fetched += lists.count
                 let fresh = TrustPath.allBridges(author: author, me: key, follows: Set(current.ring),
@@ -412,22 +445,27 @@ struct TrustWebView: View {
             if let lit = frames[key]?.bridges {
                 nostrService.fetchMissingProfiles(for: TrustMap.spread(lit, count: TrustMapCanvas.maxFaces))
             }
-            loadingMore = false
+            loadingMore.remove(key)
         }
     }
 
     private func lookDeeper() {
-        guard let start = frame, !lookingDeeper else { return }
+        guard let start = frame, !lookingDeeper.contains(start.center) else { return }
         let key = start.center
-        lookingDeeper = true
+        lookingDeeper.insert(key)
+        deeperFailed.remove(key)
         Task {
             let graph = key == me ? FeedService.shared.relayTabTrustedPubkeys() : []
             let chains = await TrustPathService.shared.deeperChains(author: author, center: key,
                                                                     follows: start.ring, trustGraph: graph)
-            frames[key]?.chains = chains
-            nostrService.fetchMissingProfiles(
-                for: chains.prefix(TrustMap.shownChains).flatMap { [$0.bridge, $0.via] })
-            lookingDeeper = false
+            if let chains {
+                frames[key]?.chains = chains
+                nostrService.fetchMissingProfiles(
+                    for: chains.prefix(TrustMap.shownChains).flatMap { [$0.bridge, $0.via] })
+            } else {
+                deeperFailed.insert(key)
+            }
+            lookingDeeper.remove(key)
         }
     }
 
@@ -439,8 +477,7 @@ struct TrustWebView: View {
     }
 
     private func mutualCount(_ frame: Frame) -> Int {
-        let mine = Set(FeedService.shared.followedPubkeys)
-        return frame.ring.filter(mine.contains).count
+        frame.ring.filter(myFollows.contains).count
     }
 
     private func avatar(_ pubkey: String, _ size: CGFloat) -> AnyView {
@@ -468,7 +505,6 @@ struct TrustMapCanvas: View {
     let hops: Int
     let myFollows: Set<String>
     let size: CGSize
-    @Binding var camera: TrustMapCamera
     let avatar: (String, CGFloat) -> AnyView
     let name: (String) -> String
     let onTap: (String) -> Void
@@ -489,6 +525,7 @@ struct TrustMapCanvas: View {
     private static let maxScale: CGFloat = 16
     private static let viaR = 1.24
 
+    @State private var camera = TrustMapCamera()
     @State private var pinching = false
     @State private var pinchStart = TrustMapCamera()
     @State private var lastDrag: CGSize = .zero
@@ -510,13 +547,16 @@ struct TrustMapCanvas: View {
         return CGPoint(x: r * cos(rad), y: r * sin(rad))
     }
 
-    private func dot(_ pubkey: String) -> CGPoint {
-        polar(TrustMap.angle(of: pubkey), 1 + Self.bandWidth * TrustMap.band(of: pubkey))
+    /// A ring member's spot, from their key alone.
+    static func dot(_ pubkey: String) -> CGPoint {
+        let rad = (TrustMap.angle(of: pubkey) - 90) * .pi / 180
+        let r = 1 + bandWidth * TrustMap.band(of: pubkey)
+        return CGPoint(x: r * cos(rad), y: r * sin(rad))
     }
 
     private func world(_ pubkey: String, ring: Set<String>) -> CGPoint {
         if pubkey == frame.center { return .zero }
-        if ring.contains(pubkey) { return dot(pubkey) }
+        if let point = frame.points[pubkey] { return point }
         if pubkey == author || pubkey == me { return polar(TrustMap.angle(of: pubkey), Self.outerR) }
         return polar(TrustMap.angle(of: pubkey), Self.viaR)
     }
@@ -574,7 +614,7 @@ struct TrustMapCanvas: View {
             let before = out.count
             // Lit people first, so a zoomed arc names who matters before
             // everyone else around them.
-            for pubkey in frame.ring.filter(lit.contains) + frame.ring.filter({ !lit.contains($0) })
+            for pubkey in litBridges + frame.ring.filter({ !lit.contains($0) })
             where out.count - before < Self.maxZoomFaces {
                 let isLit = lit.contains(pubkey)
                 add(pubkey, 20 * grow, isLit ? .havenPurple : Color.secondary.opacity(0.5), lit: isLit, label: true)
@@ -584,7 +624,7 @@ struct TrustMapCanvas: View {
     }
 
     var body: some View {
-        let ring = Set(frame.ring)
+        let ring = frame.ringSet
         let faces = self.faces(ring: ring)
         let faceKeys = Set(faces.map(\.pubkey))
         ZStack {
@@ -607,6 +647,16 @@ struct TrustMapCanvas: View {
         .gesture(SimultaneousGesture(magnify, pan))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Web of Trust map"))
+        .overlay(alignment: .bottomLeading) {
+            if camera.scale > 1.05 {
+                Text(String(format: "%.1f×", camera.scale))
+                    .font(.appSystem(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .padding(10)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .onAppear { onFaces(faces.map(\.pubkey)) }
     }
 
@@ -703,8 +753,8 @@ struct TrustMapCanvas: View {
         let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
         var dim = Path(), bright = Path(), hot = Path()
         let showMutual = frame.center != me
-        for pubkey in frame.ring where !faces.contains(pubkey) {
-            let p = screen(dot(pubkey))
+        for (pubkey, point) in frame.points where !faces.contains(pubkey) {
+            let p = screen(point)
             guard view.contains(p) else { continue }
             if lit.contains(pubkey) {
                 hot.addEllipse(in: circle(p, 2.6))
@@ -768,7 +818,7 @@ struct TrustMapCanvas: View {
         if clamped != camera.offset {
             withAnimation(Motion.isReduced ? nil : .smooth(duration: 0.25)) { camera.offset = clamped }
         }
-        onFaces(faces(ring: Set(frame.ring)).map(\.pubkey))
+        onFaces(faces(ring: frame.ringSet).map(\.pubkey))
     }
 
     private func reset() {
