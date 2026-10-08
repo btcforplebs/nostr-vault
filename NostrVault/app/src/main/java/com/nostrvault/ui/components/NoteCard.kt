@@ -574,7 +574,7 @@ fun NoteCard(
                 // A NIP-88 poll's question is its content and its options are
                 // tags, so the text path drew the question with nothing to
                 // vote on.
-                PollCard(poll = poll, isFocused = isFocused)
+                PollCard(poll = poll, isFocused = isFocused, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
             } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }

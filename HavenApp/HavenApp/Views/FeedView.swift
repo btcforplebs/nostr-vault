@@ -3900,8 +3900,29 @@ struct FeedNoteRow: View {
         } else if let poll = bodySource.poll {
             // A NIP-88 poll's question is its content and its options are
             // tags, so the plain-text path drew the question with nothing
-            // to vote on.
-            PollCardView(poll: poll, isFocused: isFocused)
+            // to vote on. The question is drawn here, not by the card, so a
+            // picture or link in it goes through the same media path as any
+            // note — drawn as a plain string it showed only the bare URLs
+            // (Logen, 2026-10-07).
+            let attachments = bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs)
+            let question = NostrContentFormatter.format(bodySource.content, mediaURLs: attachments)
+            VStack(alignment: .leading, spacing: 8) {
+                if !String(question.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(question)
+                        .font(.appSystem(size: isFocused ? 19 : 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if !bodySource.mediaURLs.isEmpty {
+                    feedMediaCarousel(urls: bodySource.mediaURLs)
+                }
+                ForEach(LinkCards.shown(bodySource.linkURLs), id: \.self) { url in
+                    LinkPreviewCard(url: url)
+                }
+                PollCardView(poll: poll, isFocused: isFocused, showsQuestion: false)
+            }
+            .padding(.top, 4)
         } else {
             let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs))
             VStack(alignment: .leading, spacing: 8) {

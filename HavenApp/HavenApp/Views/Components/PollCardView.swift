@@ -7,13 +7,17 @@ import SwiftUI
 struct PollCardView: View {
     let poll: NIP88Poll.Poll
     var isFocused: Bool = false
+    /// Off when the note row draws the question itself, with its pictures
+    /// and link cards.
+    var showsQuestion: Bool = true
 
     @StateObject private var model: PollModel
     @State private var picked: Set<String> = []
 
-    init(poll: NIP88Poll.Poll, isFocused: Bool = false) {
+    init(poll: NIP88Poll.Poll, isFocused: Bool = false, showsQuestion: Bool = true) {
         self.poll = poll
         self.isFocused = isFocused
+        self.showsQuestion = showsQuestion
         _model = StateObject(wrappedValue: PollStore.shared.model(for: poll))
     }
 
@@ -25,7 +29,7 @@ struct PollCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !poll.question.isEmpty {
+            if showsQuestion, !poll.question.isEmpty {
                 Text(poll.question)
                     .font(.appSystem(size: isFocused ? 19 : 17, weight: .semibold))
                     .foregroundColor(.primary)
