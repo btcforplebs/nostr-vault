@@ -98,16 +98,22 @@ class NIP46Service: ObservableObject {
 
     private func performConnect(adoptSignerAccount: Bool) async throws -> String {
         let config = ConfigService.shared.config
+        #if DEBUG
         print("[NIP46] connect() called — activeSigningMode=\(config.activeSigningMode()) bunkerURI=\(!config.nip46BunkerURI.isEmpty) signerPK=\(!config.nip46SignerPubkey.isEmpty)")
+        #endif
         guard config.activeSigningMode() == "nip46",
               !config.nip46BunkerURI.isEmpty || (!config.nip46SignerPubkey.isEmpty && !config.nip46RelayURL.isEmpty) else {
+            #if DEBUG
             print("[NIP46] connect() FAILED guard — activeSigningMode=\(config.activeSigningMode()) bunkerURI.isEmpty=\(config.nip46BunkerURI.isEmpty) signerPK.isEmpty=\(config.nip46SignerPubkey.isEmpty) relayURL.isEmpty=\(config.nip46RelayURL.isEmpty)")
+            #endif
             throw NIP46Error.invalidBunkerURI
         }
 
         // Generate client keypair if not yet created
         if config.nip46ClientSecretKey.isEmpty {
+            #if DEBUG
             print("[NIP46] Generating client keypair...")
+            #endif
             guard let keyPairCStr = GenerateKeyPairC() else {
                 throw NIP46Error.signingFailed
             }
@@ -120,9 +126,13 @@ class NIP46Service: ObservableObject {
             ConfigService.shared.config.nip46ClientSecretKey = String(parts[0])
             ConfigService.shared.config.nip46ClientPubkey = String(parts[1])
             ConfigService.shared.save()
+            #if DEBUG
             print("[NIP46] Client keypair generated: \(String(parts[1]).prefix(8))...")
+            #endif
         } else {
+            #if DEBUG
             print("[NIP46] Client keypair already exists: \(config.nip46ClientPubkey.prefix(8))...")
+            #endif
         }
 
         connectionState = .connecting
@@ -165,14 +175,18 @@ class NIP46Service: ObservableObject {
             if cached == expectedHex {
                 connectionState = .connected
                 connectedSignerPubkey = cached
+                #if DEBUG
                 print("[NIP46] connect() reused live session for \(cached.prefix(8))")
+                #endif
                 RelayProcessManager.shared.addLog("NIP-46: Switched to signer \(cached.prefix(8))... (already connected)", level: "INFO")
                 return cached
             }
             NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
         }
 
+        #if DEBUG
         print("[NIP46] Calling NIP46ConnectC with bunkerURL=\(bunkerURL.prefix(40))...")
+        #endif
 
         // Start auth URL polling during connect (ConnectBunker blocks)
         startAuthURLPoller()
@@ -184,19 +198,25 @@ class NIP46Service: ObservableObject {
                 UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (bunkerURL as NSString).utf8String)
             ) else {
+                #if DEBUG
                 print("[NIP46] NIP46ConnectC returned nil")
+                #endif
                 return nil as String?
             }
             let str = String(cString: result)
             free(result)
+            #if DEBUG
             print("[NIP46] NIP46ConnectC returned pubkey=\(str.prefix(8))...")
+            #endif
             return str
         }.value
 
         guard let pubkey = signerPubkey, !pubkey.isEmpty else {
             connectionState = .error
             checkPendingAuthURL()
+            #if DEBUG
             print("[NIP46] connect() FAILED — NIP46ConnectC returned nil")
+            #endif
             throw Self.lastBridgeError() ?? NIP46Error.notConnected
         }
 
@@ -219,7 +239,9 @@ class NIP46Service: ObservableObject {
             authPollerTask?.cancel()
             authPollerTask = nil
             connectionState = nowNpub != accountNpub ? .disconnected : .error
+            #if DEBUG
             print("[NIP46] connect() REJECTED — signer pubkey=\(pubkey.prefix(8)) expected=\(expectedHex.prefix(8)) accountChanged=\(nowNpub != accountNpub)")
+            #endif
             RelayProcessManager.shared.addLog("NIP-46: Signer answered for \(pubkey.prefix(8))…, expected \(expectedHex.prefix(8))… — not connected", level: "ERROR")
             throw NIP46Error.wrongAccount(expected: expectedHex, got: pubkey)
         }
@@ -232,7 +254,9 @@ class NIP46Service: ObservableObject {
         // and must not be re-sent on reconnection attempts. The signer already
         // paired our client pubkey; future connects work without a secret.
         if !ConfigService.shared.config.nip46Secret.isEmpty {
+            #if DEBUG
             print("[NIP46] Clearing consumed bunker secret from config")
+            #endif
             ConfigService.shared.config.nip46Secret = ""
             // Strip secret from the stored bunker URI so reconnection doesn't re-send it
             if var components = URLComponents(string: ConfigService.shared.config.nip46BunkerURI) {
@@ -251,7 +275,9 @@ class NIP46Service: ObservableObject {
             ConfigService.shared.save()
         }
 
+        #if DEBUG
         print("[NIP46] connect() SUCCESS — pubkey=\(pubkey.prefix(8))...")
+        #endif
         RelayProcessManager.shared.addLog("NIP-46: Connected to signer \(pubkey.prefix(8))...", level: "INFO")
         return pubkey
     }
@@ -285,7 +311,9 @@ class NIP46Service: ObservableObject {
             do {
                 _ = try await task.value
             } catch {
+                #if DEBUG
                 print("NIP46Service: Auto-connect failed: \(error.localizedDescription)")
+                #endif
                 if connectionState == .connecting { connectionState = .error }
             }
         }
@@ -331,7 +359,9 @@ class NIP46Service: ObservableObject {
                 // Only if nothing else (a disconnect, an account switch) has
                 // moved the session on while the ping was out.
                 guard connectionState == .connected, outstandingRequests == 0 else { return }
+                #if DEBUG
                 print("NIP46Service: resume ping failed, reconnecting: \(error.localizedDescription)")
+                #endif
                 connectionState = .error
                 connectFromConfig()
             }
@@ -382,7 +412,9 @@ class NIP46Service: ObservableObject {
     }
 
     func signEvent(eventJSON: String) async throws -> String {
+        #if DEBUG
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
+        #endif
         try await ensureConnected()
         let userAction = Self.isUserAction(eventJSON: eventJSON)
         // The session this request goes to, so a late failure can never drop
@@ -437,7 +469,9 @@ class NIP46Service: ObservableObject {
         Self.dropSession(signerKey: sessionKey)
         connectionState = .error
         connectedSignerPubkey = nil
+        #if DEBUG
         print("NIP46Service: signer did not answer a request or a ping; dropped the session, next request logs in again")
+        #endif
         RelayProcessManager.shared.addLog("NIP-46: Signer did not answer — will log in again on the next request", level: "ERROR")
     }
 
@@ -516,11 +550,15 @@ class NIP46Service: ObservableObject {
             return
         }
 
+        #if DEBUG
         print("NIP46Service: ensureConnected – state=\(connectionState.rawValue), attempting reconnect…")
+        #endif
         do {
             try await connect()
         } catch {
+            #if DEBUG
             print("NIP46Service: ensureConnected reconnect failed: \(error.localizedDescription)")
+            #endif
             throw error
         }
         guard connectionState == .connected else {
