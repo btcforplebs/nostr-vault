@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +56,9 @@ class HavenRelaySettingsViewModel @Inject constructor(
 
     /** The Mac address the relay runs with (MAC_RELAY_URL) for the saved config. */
     val configuredMac: String get() = MacSync.macRelayURL(configStore.config.value)
+
+    /** The saved config, for the "Also Used For" addresses. */
+    val config = configStore.config
 
     /** Polls the relay's status file every 2s while the screen shows. */
     suspend fun pollMacSync() {
@@ -154,6 +158,8 @@ fun HavenRelaySettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                // Scrolls: with a relay saved, Also Used For and Sync don't fit.
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(16.dp))
@@ -228,6 +234,22 @@ fun HavenRelaySettingsScreen(
                 }
             }
 
+            // What the saved relay is also used for (iOS MacRelaySettingsView
+            // "Also Used For"). The app adds it to these lists when it reads them.
+            val savedConfig by viewModel.config.collectAsState()
+            val wss = savedConfig.macRelayWssURL
+            if (wss.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                AlsoUsedForSection(
+                    listOf(
+                        "Feed Relays" to wss,
+                        "Import Relays" to wss,
+                        "Blastr Relays" to wss,
+                        "Blossom Mirror" to savedConfig.macRelayHttpsURL,
+                    ),
+                )
+            }
+
             val configuredMac = viewModel.configuredMac
             if (configuredMac.isNotEmpty()) {
                 Spacer(Modifier.height(24.dp))
@@ -237,6 +259,39 @@ fun HavenRelaySettingsScreen(
                     relayReady = relayReady,
                     onCheck = viewModel::checkSyncWithMac,
                 )
+            }
+        }
+    }
+}
+
+/** Read-only: each list that also uses the Haven relay, and the address it uses there. */
+@Composable
+private fun AlsoUsedForSection(rows: List<Pair<String, String>>) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "ALSO USED FOR",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Surface(shape = RoundedCornerShape(10.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                for ((title, address) in rows) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
+                        Icon(NostrVaultIcons.Check, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(title, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                address, color = SecondaryText, fontSize = 12.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

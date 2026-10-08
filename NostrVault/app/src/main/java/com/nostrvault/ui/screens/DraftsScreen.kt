@@ -32,6 +32,11 @@ class DraftsViewModel @Inject constructor(
 ) : ViewModel() {
     val drafts = draftService.drafts
 
+    init {
+        // Pick up drafts saved on another device (iOS: DraftPickerView.onAppear).
+        draftService.refreshFromRelay()
+    }
+
     fun deleteDraft(draftId: String) {
         draftService.deleteDraft(draftId)
     }

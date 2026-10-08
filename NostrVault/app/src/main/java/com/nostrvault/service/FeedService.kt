@@ -1109,14 +1109,14 @@ class FeedService @Inject constructor(
      * events, collecting every distinct version found. Used by Following Backup
      * recovery to restore an older following list. Port of iOS queryRelaysForKind3.
      */
-    suspend fun scanRelaysForKind3(): List<Kind3Event> {
+    /** [ownerHex] is the account whose lists to find; Following Backup can pick one that isn't active. */
+    suspend fun scanRelaysForKind3(ownerHex: String = nostrService.activeHexPubkey): List<Kind3Event> {
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
             config.activeBlastrRelays.let { addAll(it) }
         }.distinct().take(6)
-        val ownerHex = nostrService.activeHexPubkey
         if (relayUrls.isEmpty() || ownerHex.isEmpty()) return emptyList()
 
         val whitelistedNpubs = config.whitelistedNpubs ?: emptyList()
@@ -1155,11 +1155,16 @@ class FeedService @Inject constructor(
                             } catch (_: Exception) {}
                         }
                     }
-                    client.connect()
-                    client.send("[\"REQ\",\"$subId\",{\"kinds\":[3],\"authors\":[\"$ownerHex\"]}]")
-                    delay(CONTACT_LOAD_TIMEOUT_MS)
-                    collector.cancel()
-                    client.disconnect()
+                    // Cancelled mid-scan (Following Backup switching account),
+                    // the socket and its collector still close.
+                    try {
+                        client.connect()
+                        client.send("[\"REQ\",\"$subId\",{\"kinds\":[3],\"authors\":[\"$ownerHex\"]}]")
+                        delay(CONTACT_LOAD_TIMEOUT_MS)
+                    } finally {
+                        collector.cancel()
+                        client.disconnect()
+                    }
                 }
             }.joinAll()
         }

@@ -592,6 +592,27 @@ fun NoteCard(
                 }
             }
 
+            // Media thumbnails. Same order as iOS FeedNoteRow: text, media,
+            // links, quotes.
+            if (!isArticle && note.mediaURLs.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                MediaPreviewRow(
+                    urls = note.mediaURLs,
+                    tags = note.tags,
+                    autoplayVideos = autoplayVideos,
+                )
+            }
+
+            // One card per link. The URLs are out of the text above, so a
+            // card is the only place each link still shows — quotes or not.
+            // Not for an article: its links and images belong to the reader.
+            if (!isArticle) for (link in note.cardLinkURLs) {
+                Spacer(Modifier.height(8.dp))
+                LinkPreviewCard(
+                    url = link,
+                )
+            }
+
             // Quoted notes
             if (note.quotedEventIds.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -613,26 +634,6 @@ fun NoteCard(
                     }
                     Spacer(Modifier.height(4.dp))
                 }
-            }
-
-            // One card per link. The URLs are out of the text above, so a
-            // card is the only place each link still shows — quotes or not.
-            // Not for an article: its links and images belong to the reader.
-            if (!isArticle) for (link in note.cardLinkURLs) {
-                Spacer(Modifier.height(8.dp))
-                LinkPreviewCard(
-                    url = link,
-                )
-            }
-
-            // Media thumbnails
-            if (!isArticle && note.mediaURLs.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                MediaPreviewRow(
-                    urls = note.mediaURLs,
-                    tags = note.tags,
-                    autoplayVideos = autoplayVideos,
-                )
             }
 
             Spacer(Modifier.height(8.dp))

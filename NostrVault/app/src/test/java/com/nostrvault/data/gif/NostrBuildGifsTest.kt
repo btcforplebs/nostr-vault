@@ -31,4 +31,15 @@ class NostrBuildGifsTest {
         assertEquals("https://gifs.nostr.build/api/v1/search?q=cat%20jump&limit=24&offset=48",
             NostrBuildGifs.searchUrl("cat jump", 2))
     }
+
+    @Test fun gifMimeTypeFromMagicBytes() {
+        assertEquals("image/gif", NostrBuildGifs.gifMimeType("GIF89a....".toByteArray()))
+        assertEquals("image/gif", NostrBuildGifs.gifMimeType("GIF87a".toByteArray()))
+        assertEquals("image/webp", NostrBuildGifs.gifMimeType("RIFF\u0000\u0000\u0000\u0000WEBPVP8X".toByteArray()))
+        // An HTML error page, a PNG, a short body: not a GIF.
+        assertEquals(null, NostrBuildGifs.gifMimeType("<html>".toByteArray()))
+        assertEquals(null, NostrBuildGifs.gifMimeType(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte())))
+        assertEquals(null, NostrBuildGifs.gifMimeType("GIF".toByteArray()))
+        assertEquals(null, NostrBuildGifs.gifMimeType("RIFF\u0000\u0000\u0000\u0000WAVE".toByteArray()))
+    }
 }

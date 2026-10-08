@@ -16,10 +16,15 @@ class LongFormScopeTest {
     private val stranger = "d".repeat(64)
 
     private fun article(id: Char, pubkey: String, recipe: Boolean = false) = FeedNote.fromEvent(
-        id = id.toString().repeat(64), pubkey = pubkey, content = "Body",
+        // A recipe needs a recipe-length body, or the test-post rule drops it.
+        id = id.toString().repeat(64), pubkey = pubkey, content = if (recipe) RECIPE_BODY else "Body",
         tags = listOf(listOf("d", "x$id")) + if (recipe) listOf(listOf("t", "zapcooking")) else emptyList(),
         createdAt = 1_790_000_000, kind = 30023,
     )
+
+    private companion object {
+        val RECIPE_BODY = (1..40).joinToString(" ") { "step$it" }
+    }
 
     private val notes = listOf(article('1', friend), article('2', trusted), article('3', stranger))
 
@@ -50,5 +55,18 @@ class LongFormScopeTest {
         val recipes = listOf(article('4', friend, recipe = true), article('5', trusted, recipe = true), article('6', stranger, recipe = true))
         assertEquals(setOf(friend), shown(FeedMode.RECIPES, global = false, requiresTrust = true, wot = setOf(trusted), list = recipes))
         assertEquals(setOf(trusted), shown(FeedMode.RECIPES, global = true, requiresTrust = true, wot = setOf(trusted), list = recipes))
+    }
+
+    /** A test publish ("E2E Curry", a few words) never reaches the recipe grid. */
+    @Test fun `recipe test posts are hidden`() {
+        val test = FeedNote.fromEvent(
+            id = "7".repeat(64), pubkey = friend, content = "Ppp",
+            tags = listOf(listOf("d", "x7"), listOf("t", "zapcooking")), createdAt = 1_790_000_000, kind = 30023,
+        )
+        val real = article('8', friend, recipe = true)
+        assertEquals(listOf(real.id), FeedFilterEngine.filterFeedNotes(
+            notes = listOf(test, real), mode = FeedMode.RECIPES, blocked = emptySet(), showReposts = true, showReplies = true,
+            followedPubkeys = setOf(friend), wotPubkeys = emptySet(), globalRequiresTrust = true, longFormGlobal = false,
+        ).map { it.id })
     }
 }

@@ -517,8 +517,14 @@ private fun ExpandedLayout(
             MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
         }
 
+        // One card per link: the URLs are out of the text above (#170).
+        // Links above quotes, as on iOS VaultNoteRow.
+        for (link in note.cardLinkURLs) {
+            LinkPreviewCard(url = link)
+        }
+
         // Quoted events. This card already knew a quote existed — it suppressed
-        // the link preview below on exactly that condition — and then drew
+        // a link preview on exactly that condition — and then drew
         // nothing for it, so on the relay tab a quote was silently dropped.
         for (qid in note.quotedEventIds) {
             val quoted = quotedNotes[qid]
@@ -533,11 +539,6 @@ private fun ExpandedLayout(
             } else {
                 QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
             }
-        }
-
-        // One card per link: the URLs are out of the text above (#170).
-        for (link in note.cardLinkURLs) {
-            LinkPreviewCard(url = link)
         }
 
         // Engagement bar (iOS lines 338-345)

@@ -282,6 +282,8 @@ class ComposeNoteViewModel @Inject constructor(
         // Start waking sleeping mirror hosts (e.g. the Mac relay) now, so
         // they're reachable by the time the user hits Post.
         blossomService.prewarmMirrors()
+        // Drafts saved on another device show in the picker (iOS: ComposeView.onAppear).
+        draftService.refreshFromRelay()
 
         // Restore content from a resumed draft
         if (resumeDraftId != null) {
@@ -548,6 +550,55 @@ class ComposeNoteViewModel @Inject constructor(
         _attachments.value = _attachments.value + newAttachments
     }
 
+    /** "Save to my Blossom" in the GIF picker (iOS saveGifsToBlossom). */
+    val saveGifsToBlossom: StateFlow<Boolean> = configStore.config
+        .map { it.saveGifsToBlossom }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.saveGifsToBlossom)
+
+    fun setSaveGifsToBlossom(on: Boolean) {
+        configStore.update { it.copy(saveGifsToBlossom = on) }
+    }
+
+    /** A picked GIF is downloading: one at a time, and Post waits for it (iOS isFetchingGif). */
+    private val _isFetchingGif = MutableStateFlow(false)
+    val isFetchingGif: StateFlow<Boolean> = _isFetchingGif.asStateFlow()
+
+    /**
+     * A picked nostr.build GIF: its link goes into the text, or with "Save to
+     * my Blossom" on it is downloaded and attached, so posting uploads it to
+     * your own Blossom servers like any photo. iOS: ComposeView.attachGif.
+     */
+    fun pickGif(gif: com.nostrvault.data.gif.NostrBuildGif) {
+        if (!saveGifsToBlossom.value) {
+            val text = _content.value
+            val sep = if (text.isEmpty() || text.endsWith("\n") || text.endsWith(" ")) "" else "\n"
+            setContent(text + sep + gif.url)
+            return
+        }
+        if (_attachments.value.size >= MAX_ATTACHMENTS) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
+            return
+        }
+        if (_isFetchingGif.value) return
+        _isFetchingGif.value = true
+        viewModelScope.launch {
+            try {
+                val (bytes, mime) = com.nostrvault.data.gif.NostrBuildGifs.download(gif.url)
+                val ext = if (mime == "image/webp") "webp" else "gif"
+                val file = withContext(Dispatchers.IO) {
+                    File(context.cacheDir, "gif-${java.util.UUID.randomUUID()}.$ext").apply { writeBytes(bytes) }
+                }
+                if (_attachments.value.size < MAX_ATTACHMENTS) {
+                    _attachments.value = _attachments.value + Attachment(uri = Uri.fromFile(file), mimeType = mime)
+                }
+            } catch (e: Exception) {
+                _error.value = "Could not fetch GIF: ${e.message ?: "unknown error"}"
+            } finally {
+                _isFetchingGif.value = false
+            }
+        }
+    }
+
     /** Stores the NIP-92 description the author wrote for one attachment. */
     fun setAttachmentAlt(id: String, alt: String) {
         _attachments.value = _attachments.value.map {
@@ -697,6 +748,7 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     fun publish(onPublished: () -> Unit) {
+        if (_isFetchingGif.value) return
         val text = _content.value.trim()
         if (text.isBlank() && _attachments.value.isEmpty()) return
 
@@ -1176,6 +1228,7 @@ fun ComposeNoteScreen(
 ) {
     val content by viewModel.content.collectAsState()
     val drafts by viewModel.drafts.collectAsState()
+    val fetchingGif by viewModel.isFetchingGif.collectAsState()
     val isPublishing by viewModel.isPublishing.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
     val uploadMessage by viewModel.uploadMessage.collectAsState()
@@ -1240,15 +1293,15 @@ fun ComposeNoteScreen(
 
     var showGifPicker by remember { mutableStateOf(false) }
     if (showGifPicker) {
+        val saveGifs by viewModel.saveGifsToBlossom.collectAsState()
         com.nostrvault.ui.components.GifPickerSheet(
             onPick = { gif ->
                 showGifPicker = false
-                // Link the GIF where it lives (nostr.build's terms); never re-host it.
-                val text = viewModel.content.value
-                val sep = if (text.isEmpty() || text.endsWith("\n") || text.endsWith(" ")) "" else "\n"
-                viewModel.setContent(text + sep + gif.url)
+                viewModel.pickGif(gif)
             },
             onDismiss = { showGifPicker = false },
+            saveToBlossom = saveGifs,
+            onSaveToBlossomChange = viewModel::setSaveGifsToBlossom,
         )
     }
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -1316,7 +1369,7 @@ fun ComposeNoteScreen(
                     }
                     Button(
                         onClick = { viewModel.publish(onPublished) },
-                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !isUploading,
+                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !isUploading && !fetchingGif,
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -1534,11 +1587,16 @@ fun ComposeNoteScreen(
                 if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
                     IconButton(
                         onClick = { showGifPicker = true },
+                        enabled = !fetchingGif,
                         modifier = Modifier
                             .size(40.dp)
                             .background(colors.primary.copy(alpha = 0.1f), CircleShape),
                     ) {
-                        Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        if (fetchingGif) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
+                        } else {
+                            Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
 

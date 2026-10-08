@@ -412,6 +412,12 @@ data class HavenConfig(
     val blossomMirrors: List<String> = emptyList(),
     /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
     val autoMirrorMedia: Boolean = false,
+    /**
+     * Picking a nostr.build GIF downloads it and uploads it to your own Blossom
+     * servers with the note, instead of posting nostr.build's link. iOS
+     * saveGifsToBlossom; off by default.
+     */
+    val saveGifsToBlossom: Boolean = false,
 
     // Paths (set at runtime by app)
     val relayDataDir: String? = null,

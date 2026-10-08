@@ -19,6 +19,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.NostrService
+import com.nostrvault.ui.components.AvatarImage
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import com.nostrvault.data.model.FollowingSnapshot
 import com.nostrvault.data.model.Kind3Event
 import com.nostrvault.service.FeedService
@@ -43,9 +52,51 @@ class FollowingBackupViewModel @Inject constructor(
     private val followingBackupService: FollowingBackupService,
     private val feedService: FeedService,
     private val configStore: ConfigStore,
+    private val nostrService: NostrService,
 ) : ViewModel() {
 
-    val snapshots = followingBackupService.snapshots
+    /** Every account on the device, owner first. The picker shows when there's more than one. */
+    val accounts: List<String> get() = configStore.config.value.allAccountNpubs()
+    val ownerNpub: String get() = configStore.config.value.ownerNpub
+    val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
+
+    private val activeNpub: String
+        get() = configStore.config.value.activeAccountNpub ?: configStore.config.value.ownerNpub
+
+    private val _selectedNpub = MutableStateFlow(activeNpub)
+    /** The account whose backups are shown (iOS FollowingBackupSettingsView). */
+    val selectedNpub = _selectedNpub.asStateFlow()
+
+    /** Restore and Re-follow change the active account's list, so they only show for it. */
+    val isViewingActiveAccount: Boolean get() = _selectedNpub.value == activeNpub
+    fun isActive(npub: String): Boolean = npub == activeNpub
+
+    private var scanJob: Job? = null
+
+    fun profileFor(npub: String): FeedProfile? = HavenBridge.decodeNpub(npub)?.let { profiles.value[it] }
+
+    fun ensureProfiles() {
+        val hexes = accounts.mapNotNull { HavenBridge.decodeNpub(it) }
+        if (hexes.isNotEmpty()) nostrService.fetchMissingProfiles(hexes)
+    }
+
+    /** Shows [npub]'s snapshots and drops the last scan, which was another account's. */
+    fun selectAccount(npub: String) {
+        if (npub == _selectedNpub.value) return
+        _selectedNpub.value = npub
+        scanJob?.cancel()
+        _isScanning.value = false
+        _scannedEvents.value = emptyList()
+    }
+
+    /**
+     * The selected account's snapshots, read from its own file. The service's
+     * shared list follows the active account (new snapshots land there), so
+     * it re-reads whenever that list changes.
+     */
+    val snapshots: StateFlow<List<FollowingSnapshot>> =
+        combine(_selectedNpub, followingBackupService.snapshots) { npub, _ -> followingBackupService.snapshotsFor(npub) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, followingBackupService.snapshotsFor(_selectedNpub.value))
 
     private val _scannedEvents = MutableStateFlow<List<Kind3Event>>(emptyList())
     val scannedEvents = _scannedEvents.asStateFlow()
@@ -59,18 +110,14 @@ class FollowingBackupViewModel @Inject constructor(
     val currentFollowedPubkeys: List<String>
         get() = feedService.followedPubkeys.value.toList()
 
-    init {
-        val accountKey = configStore.config.value.activeAccountNpub
-            ?: configStore.config.value.ownerNpub
-        followingBackupService.loadSnapshots(accountKey)
-    }
 
     fun scanRelays() {
         if (_isScanning.value) return
-        viewModelScope.launch {
+        val hex = HavenBridge.decodeNpub(_selectedNpub.value) ?: return
+        scanJob = viewModelScope.launch {
             _isScanning.value = true
             try {
-                _scannedEvents.value = feedService.scanRelaysForKind3()
+                _scannedEvents.value = feedService.scanRelaysForKind3(hex)
             } finally {
                 _isScanning.value = false
             }
@@ -78,10 +125,12 @@ class FollowingBackupViewModel @Inject constructor(
     }
 
     fun restoreList(pTags: List<List<String>>, content: String) {
+        if (!isViewingActiveAccount) return
         feedService.restoreContactList(pTags, content)
     }
 
     fun refollow(pubkey: String) {
+        if (!isViewingActiveAccount) return
         feedService.followUser(pubkey)
     }
 
@@ -94,9 +143,7 @@ class FollowingBackupViewModel @Inject constructor(
     }
 
     fun deleteSnapshot(id: String) {
-        val accountKey = configStore.config.value.activeAccountNpub
-            ?: configStore.config.value.ownerNpub
-        followingBackupService.deleteSnapshot(id, accountKey)
+        followingBackupService.deleteSnapshot(id, _selectedNpub.value)
     }
 }
 
@@ -130,6 +177,12 @@ fun FollowingBackupScreen(
     ) { padding ->
         val scannedEvents by viewModel.scannedEvents.collectAsState()
         val isScanning by viewModel.isScanning.collectAsState()
+        val selectedNpub by viewModel.selectedNpub.collectAsState()
+        val profiles by viewModel.profiles.collectAsState()
+        val accounts = viewModel.accounts
+        // From the collected value, so this scope recomposes on a pick.
+        val isActive = viewModel.isActive(selectedNpub)
+        LaunchedEffect(Unit) { viewModel.ensureProfiles() }
 
         LazyColumn(
             contentPadding = PaddingValues(
@@ -141,6 +194,42 @@ fun FollowingBackupScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            // ── Account picker (iOS: shown with more than one account) ──
+            if (accounts.size > 1) {
+                item {
+                    Text("ACCOUNT", color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
+                }
+                items(accounts, key = { "acct-$it" }) { npub ->
+                    val isOwner = npub == viewModel.ownerNpub
+                    val profile = profiles[HavenBridge.decodeNpub(npub) ?: ""]
+                    val name = profile?.bestName ?: if (isOwner) "Owner" else npub.take(12) + "..."
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = SecondaryGroupedBg,
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.selectAccount(npub) },
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 32.dp),
+                        ) {
+                            AvatarImage(url = profile?.pictureURL, pubkey = HavenBridge.decodeNpub(npub) ?: npub,
+                                size = 30.dp, displayName = profile?.bestName)
+                            Text(name, color = PrimaryText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                            if (isOwner) {
+                                Text("Owner", color = LocalNostrVaultColors.current.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            if (npub == selectedNpub) {
+                                Icon(NostrVaultIcons.Check, contentDescription = "Selected",
+                                    tint = LocalNostrVaultColors.current.primary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Relay recovery section ──────────────────────────────
             item {
                 Column {
@@ -193,14 +282,15 @@ fun FollowingBackupScreen(
                                 fontSize = 13.sp,
                             )
                         }
-                        TextButton(onClick = { viewModel.restoreList(event.pTags, event.content) }) {
+                        if (isActive) TextButton(onClick = { viewModel.restoreList(event.pTags, event.content) }) {
                             Text("Restore")
                         }
                     }
                 }
             }
 
-            item {
+            // The comparisons below are against the active account's follows (iOS hides them too).
+            if (isActive) item {
                 Text(
                     text = "Current: ${viewModel.currentFollowingCount} following",
                     color = SecondaryText,
@@ -266,7 +356,7 @@ fun FollowingBackupScreen(
                                 }
                             }
 
-                            AnimatedVisibility(visible = isExpanded) {
+                            AnimatedVisibility(visible = isExpanded && isActive) {
                                 val removed = remember(snapshot) { viewModel.removedSince(snapshot) }
                                 val added = remember(snapshot) { viewModel.addedSince(snapshot) }
 
@@ -289,7 +379,7 @@ fun FollowingBackupScreen(
                                                     fontSize = 12.sp,
                                                     modifier = Modifier.weight(1f),
                                                 )
-                                                TextButton(
+                                                if (isActive) TextButton(
                                                     onClick = { viewModel.refollow(pk) },
                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                                 ) { Text("Re-follow", fontSize = 12.sp) }

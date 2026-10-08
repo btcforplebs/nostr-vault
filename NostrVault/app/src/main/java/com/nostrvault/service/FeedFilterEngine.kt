@@ -145,6 +145,7 @@ object FeedFilterEngine {
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
+                    !RecipeTopics.looksLikeTestPost(note.tags, note.content) &&
                     longFormAdmits(note.pubkey)
                 // Live streams are not notes; LiveFeedService supplies them.
                 FeedMode.LIVE -> false
