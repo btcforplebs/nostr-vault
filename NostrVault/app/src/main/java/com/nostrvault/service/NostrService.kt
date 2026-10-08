@@ -1467,6 +1467,19 @@ class NostrService @Inject constructor(
     }.getOrNull()
 
     /**
+     * Sends [pubkey]'s newest profile (kind 0), exactly as already signed, to
+     * [relayUrl] in the background. diVine's search and author pages only know
+     * profiles that reach its own relay, which otherwise happens only for
+     * people who have used the diVine app. Nothing is signed, so no signer prompt.
+     */
+    fun sendProfileTo(pubkey: String, relayUrl: String) {
+        scope.launch {
+            val profile = fetchNewestReplaceable(kind = 0, pubkey = pubkey, alsoAsk = emptyList()) ?: return@launch
+            publishFireAndForget(profile, listOf(relayUrl))
+        }
+    }
+
+    /**
      * Also send [event] to [relays] without waiting for their answers, e.g. the
      * relays a poll names for its votes (iOS broadcastRawEvent extraRelays).
      */
