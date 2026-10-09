@@ -118,6 +118,16 @@ object VaultDots {
     /** Something new in a mode other than [current]: the pill's dot, on either half. */
     fun hasNewElsewhere(newModes: Set<VaultMode>, current: VaultMode): Boolean = (newModes - current).isNotEmpty()
 
+    /**
+     * What the pill shows as new: the lit event lists, plus Followers. Likes
+     * never shows in Zaps Only mode, which hides it, even if it lit before
+     * the mode came on.
+     */
+    fun shown(lit: Set<VaultViewMode>, newFollowers: Boolean, zapsOnly: Boolean): Set<VaultMode> =
+        lit.filterNot { zapsOnly && it == VaultViewMode.LIKES }
+            .mapTo(HashSet()) { VaultMode.of(false, it, VaultNoteScope.NOTES) }
+            .apply { if (newFollowers) add(VaultMode.FOLLOWERS) }
+
     /** The lists whose dot comes from their events. Followers' comes from the relay's ledger. */
     val eventLists = listOf(VaultViewMode.NOTES, VaultViewMode.LIKES, VaultViewMode.ZAPS)
 
