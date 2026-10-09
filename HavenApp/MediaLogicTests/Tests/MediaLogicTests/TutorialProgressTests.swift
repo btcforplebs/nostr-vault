@@ -151,6 +151,15 @@ final class TutorialProgressTests: XCTestCase {
         ])
     }
 
+    /// The WOT tutorial points at the globe, the search field, then the
+    /// refresh button.
+    func testWOTCardsPointAtTheWOTTab() {
+        XCTAssertEqual(TutorialContent.wot.map(\.anchor), [
+            TutorialContent.wotGlobe, TutorialContent.wotSearch, TutorialContent.wotRefresh,
+        ])
+        XCTAssertEqual(TutorialProgress.key(.wot, account: alice), "tutorial.wot")
+    }
+
     /// Vault in Your Pocket points at the relay card, its activity, then its
     /// address.
     func testPocketRelayCardsPointAtTheDashboard() {
@@ -173,9 +182,11 @@ final class TutorialProgressTests: XCTestCase {
     /// never starts one with nothing to draw.
     func testNextSkipsTutorialsWithoutCards() {
         #if os(iOS)
-        XCTAssertEqual(TutorialID.feeds.next, .vault)
+        XCTAssertEqual(TutorialID.feeds.next, .wot)
+        XCTAssertEqual(TutorialID.wot.next, .vault)
         #else
         XCTAssertNil(TutorialID.feeds.next)
+        XCTAssertNil(TutorialID.wot.next)
         #endif
         #if os(iOS)
         XCTAssertEqual(TutorialID.vault.next, .pocketRelay)

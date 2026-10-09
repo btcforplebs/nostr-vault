@@ -106,15 +106,16 @@ struct TrustWebView: View {
         GeometryReader { geo in
             if geo.size.width >= Self.wideWidth {
                 HStack(spacing: 0) {
-                    globeArea.overlay(alignment: .topLeading) {
-                        topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
-                    }
+                    globeArea.tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
+                        .overlay(alignment: .topLeading) {
+                            topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
+                        }
                     sidePanel.frame(width: 360)
                 }
             } else {
                 VStack(spacing: 0) {
                     topRows.padding(.top, 8)
-                    globeArea
+                    globeArea.tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
                     footer
                 }
             }
@@ -136,6 +137,7 @@ struct TrustWebView: View {
                     Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
                         .disabled(refreshStep != nil)
                         .accessibilityLabel(Text("Update your Web of Trust"))
+                        .tutorialAnchor(TutorialContent.wotRefresh)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -346,7 +348,7 @@ struct TrustWebView: View {
 
     @ViewBuilder private var topRows: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if isWOTTab { searchField.padding(.horizontal) }
+            if isWOTTab { searchField.tutorialAnchor(TutorialContent.wotSearch).padding(.horizontal) }
             // On the WOT tab a lone "You" chip says nothing the globe doesn't.
             if !isWOTTab || crumbs.count > 1 { crumbRow }
         }

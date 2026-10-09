@@ -16,6 +16,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "Fill Your Feed"
         case .feeds: return "Your Feeds"
+        case .wot: return "Your Web of Trust"
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
         case .pocketRelay: return "Vault in Your Pocket"
@@ -27,6 +28,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "Follow your first people and build your web of trust."
         case .feeds: return "What each feed shows and how to pick yours."
+        case .wot: return "The people you follow, how anyone reaches you, and keeping it fresh."
         case .vault: return "Everything you've posted, kept on this device."
         case .walletConnect: return "Link a wallet so you can send zaps."
         case .pocketRelay: return "A personal relay and media server, and how it differs from public relays."
@@ -38,6 +40,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "person.2.badge.plus"
         case .feeds: return "rectangle.stack"
+        case .wot: return "globe"
         case .vault: return "lock.shield"
         case .walletConnect: return "bolt.fill"
         case .pocketRelay: return "antenna.radiowaves.left.and.right"
@@ -53,6 +56,13 @@ extension TutorialID {
             // Its anchor is the iPhone/iPad feed picker; the Mac has none yet.
             #if os(iOS)
             return TutorialContent.feeds
+            #else
+            return []
+            #endif
+        case .wot:
+            // Its anchors are the WOT tab's globe, search field and refresh button.
+            #if os(iOS)
+            return TutorialContent.wot
             #else
             return []
             #endif
@@ -96,7 +106,7 @@ extension TutorialID {
     /// over to Feeds, and Your Vault's to Vault in Your Pocket: its last
     /// card points at the Vault button that opens the dashboard.
     var next: TutorialID? {
-        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .pocketRelay, .walletConnect]
+        let order: [TutorialID] = [.fillYourVault, .feeds, .wot, .vault, .pocketRelay, .walletConnect]
         guard let index = order.firstIndex(of: self) else { return nil }
         return order[(index + 1)...].first { $0.isAvailable }
     }
@@ -128,7 +138,33 @@ enum TutorialContent {
         TutorialStep(
             anchor: feedToolbar,
             title: "Global and your web of trust",
-            body: "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone."
+            body: "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone. Tap WOT to see your web."
+        ),
+    ]
+
+    /// The WOT tab's globe, its search field and its refresh button.
+    static let wotGlobe = "wot.globe"
+    static let wotSearch = "wot.search"
+    static let wotRefresh = "wot.refresh"
+
+    /// Tal's three stops (#451) in Tod's copy (nostr-vault Tutorial thread
+    /// 2026-10-09): "people you follow", never "graph" or "hops". The list
+    /// button is left out on purpose.
+    static let wot: [TutorialStep] = [
+        TutorialStep(
+            anchor: wotGlobe,
+            title: "Your web of trust",
+            body: "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to follow their path, and use the chips across the top to step back."
+        ),
+        TutorialStep(
+            anchor: wotSearch,
+            title: "Find someone",
+            body: "Type any name to see how that person reaches you, either through someone you follow or “Not in your web”. It's a quick way to know whether to trust an account."
+        ),
+        TutorialStep(
+            anchor: wotRefresh,
+            title: "Keep it fresh",
+            body: "Tap here to re-read who you follow, rebuild your web and load pictures. A full rebuild can take a few minutes, so let the bar finish."
         ),
     ]
 
@@ -187,7 +223,10 @@ enum TutorialContent {
     /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "4. Pocket relay vs
     /// public relay", kept short like the others. Wording is Tod's "vault
     /// in your pocket" copy (nostr-vault Tutorial thread 2026-10-09): a
-    /// personal relay and Blossom server, not a "pocket relay".
+    /// personal relay and Blossom server, not a "pocket relay". Who can
+    /// reach it differs by platform since FIPS mesh sharing: Kiosk mode here
+    /// opens it to anyone on the mesh, Android's Share my relay only to the
+    /// friends you add. Android's lines say so (TutorialWordingParityTest).
     static let pocketRelay: [TutorialStep] = [
         TutorialStep(
             anchor: relayStatus,
@@ -202,7 +241,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayAddress,
             title: "Personal vs public",
-            body: "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
+            body: "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it unless you turn on Kiosk mode in Settings. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
         ),
     ]
 
@@ -220,12 +259,12 @@ enum TutorialContent {
         TutorialStep(
             anchor: nil,
             title: "A vault in your pocket",
-            body: "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it."
+            body: "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it unless you turn on Kiosk mode."
         ),
         TutorialStep(
             anchor: nil,
             title: "Personal vs public relays",
-            body: "Public relays are shared servers that everyone posts to. Your vault is personal and belongs to you alone. You post to it, and it sends your posts out to the public relays."
+            body: "Public relays are shared servers that everyone posts to. Your vault is personal, and you decide whether anyone else can reach it. You post to it, and it sends your posts out to the public relays."
         ),
         TutorialStep(
             anchor: nil,

@@ -24,6 +24,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.NostrService
+import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.tutorialAnchor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -303,6 +307,12 @@ fun TrustWebTab(
 ) {
     val trust = rememberTrustPathServices().trustPathService()
     val me by trust.meUpdates.collectAsState()
+    // The WOT tutorial points into the globe, and starts here the first
+    // time the tab shows (after Fill your vault; see TutorialProgress).
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    LaunchedEffect(me, tutorialRevision) {
+        TutorialCenter.startIfEligible(TutorialID.WOT, me)
+    }
     Box(Modifier.fillMaxSize().background(Color.Black).background(SpaceBrush)) {
         // A new account draws a new globe; the globe keeps up with your follows itself.
         if (me.isNotEmpty()) androidx.compose.runtime.key(me) {
@@ -739,7 +749,8 @@ private fun TrustWebContent(
 
     @Composable
     fun globeArea(modifier: Modifier) {
-        Box(modifier.clipToBounds()) {
+        val anchor = if (isWOTTab) Modifier.tutorialAnchor(TutorialContent.WOT_GLOBE) else Modifier
+        Box(modifier.clipToBounds().then(anchor)) {
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
                 lite = lite,
@@ -807,14 +818,16 @@ private fun TrustWebContent(
         )
         if (isWOTTab) {
             RefreshProgress(state = refreshState, accent = accent)
-            SearchField(
-                query = query,
-                onQueryChange = { query = it },
-                onFocusChange = { searchFocused = it },
-                onSearch = { keyboard?.hide() },
-                onClear = ::clearSearch,
-                accent = accent,
-            )
+            Box(Modifier.tutorialAnchor(TutorialContent.WOT_SEARCH)) {
+                SearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onFocusChange = { searchFocused = it },
+                    onSearch = { keyboard?.hide() },
+                    onClear = ::clearSearch,
+                    accent = accent,
+                )
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1088,7 +1101,8 @@ private fun TopBar(
         )
         Row(Modifier.align(Alignment.CenterEnd)) {
             if (onRefresh != null) {
-                IconButton(onClick = onRefresh, enabled = !refreshing) {
+                IconButton(onClick = onRefresh, enabled = !refreshing,
+                    modifier = Modifier.tutorialAnchor(TutorialContent.WOT_REFRESH)) {
                     Icon(NostrVaultIcons.Refresh, contentDescription = "Refresh",
                         tint = if (refreshing) SecondaryText else accent)
                 }
