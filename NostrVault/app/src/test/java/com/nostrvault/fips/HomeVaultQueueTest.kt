@@ -97,4 +97,22 @@ class HomeVaultQueueTest {
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(404))
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(502))
     }
+
+    @Test
+    fun `publishing 10063 keeps other devices' mesh entries, home vault first`() {
+        val other = "npub1" + "z".repeat(58)
+        val newest = listOf("https://old.example", "fipsmesh://$other/", "fipsmesh://$kiosk/")
+        assertEquals(
+            listOf("fipsmesh://$kiosk/", "https://new.example", "fipsmesh://$other/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://new.example"), homeVaultNpub = kiosk),
+        )
+        // No home vault chosen: mesh entries stay, in their order, after this phone's servers.
+        assertEquals(
+            listOf("https://new.example", "fipsmesh://$other/", "fipsmesh://$kiosk/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://new.example"), homeVaultNpub = null),
+        )
+        // Nothing published yet.
+        assertEquals(listOf("https://a.example"), HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example"), kiosk))
+    }
 }
+

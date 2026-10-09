@@ -122,6 +122,19 @@ object HomeVaultRules {
      * The owner's own mesh vaults this phone can send to: the `fipsmesh://`
      * entries in the owner's 10063, minus this phone's own address.
      */
+    /**
+     * The 10063 a phone publishes: it merges, never replaces. [newest] is the
+     * newest signed list (any device's); [managed] the servers this phone
+     * manages, which replace every non-mesh entry. Every `fipsmesh://` entry
+     * is kept, in order, since other devices put those there; the home
+     * vault's goes first.
+     */
+    fun mergeServerList(newest: List<String>, managed: List<String>, homeVaultNpub: String?): List<String> {
+        val mesh = newest.filter { FipsMediaRouter.meshNpubIn(it) != null }.distinct()
+        val home = mesh.filter { homeVaultNpub != null && FipsMediaRouter.meshNpubIn(it) == homeVaultNpub }
+        return (home + managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + (mesh - home.toSet())).distinct()
+    }
+
     fun candidates(ownerServerList: List<String>, ownMeshNpub: String?): List<String> =
         ownerServerList.mapNotNull { FipsMediaRouter.meshNpubIn(it) }
             .filter { it != ownMeshNpub }

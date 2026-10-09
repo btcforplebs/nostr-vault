@@ -1787,8 +1787,24 @@ class NostrService @Inject constructor(
     fun publishServerList() {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
-        val tags = mirrors.map { listOf("server", it) }
-        signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
+        scope.launch(Dispatchers.IO) {
+            // Merge into the newest signed list, so a kiosk's fipsmesh:// entry
+            // survives this phone editing its own servers. The cache only when
+            // the relays couldn't say; a confirmed "none" starts empty.
+            val owner = ownerHexPubkey
+            val lookup = runCatching {
+                lookupNewestReplaceable(10063, owner, _outboxRelays.value[owner].orEmpty().take(3))
+            }.getOrNull()
+            val newest = when {
+                lookup?.event != null -> profileRepository.parseServerListTags(lookup.event.tags)
+                lookup?.confirmedNone == true -> emptyList()
+                else -> _serverLists.value[owner].orEmpty()
+            }
+            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(
+                newest, mirrors, configStore.config.value.homeVaultNpub,
+            )
+            signAndPost(kind = 10063, content = "", tags = servers.map { listOf("server", it) }, forceOwner = true)
+        }
     }
 
     fun deleteNote(noteId: String) {
