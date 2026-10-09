@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!reduce) {
         const player = new IntersectionObserver((entries) => {
             entries.forEach(({ target, isIntersecting }) => {
-                if (isIntersecting) { target.play().catch(() => {}); }
+                if (isIntersecting && !document.querySelector('dialog[open]')) { target.play().catch(() => {}); }
                 else if (target.muted) { target.pause(); }
             });
         }, { threshold: 0.35 });
