@@ -18,6 +18,9 @@ final class FipsMeshService: ObservableObject {
         var npub: String?
         var exported: [Int]?
         var counters: Counters?
+        /// The mesh pulled `max_serve_bytes` and the engine stopped sharing.
+        var cap_reached: Bool?
+        var max_serve_bytes: UInt64?
 
         struct Counters: Decodable {
             var served_open: UInt64
@@ -43,6 +46,14 @@ final class FipsMeshService: ObservableObject {
 
     private init() {}
 
+    /// What one kiosk session may send to the mesh before sharing stops.
+    static let serveLimitKey = "fipsMeshServeLimitBytes"
+    static let serveLimitChoices: [Int64] = [250 << 20, 1 << 30, 5 << 30]
+    static var serveLimit: Int64 {
+        let v = Int64(UserDefaults.standard.integer(forKey: serveLimitKey))
+        return serveLimitChoices.contains(v) ? v : 1 << 30
+    }
+
     /// The 10063 entry for this phone's vault while kiosk mode is on.
     var meshServerURL: String? {
         guard kioskActive, let npub = status?.npub else { return nil }
@@ -57,10 +68,11 @@ final class FipsMeshService: ObservableObject {
         lastError = nil
         // The relay's mesh port: plain HTTP, blob reads only.
         let port = ConfigService.shared.config.meshPlainPort
+        let limit = Self.serveLimit
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
             await previous?.value
-            let result = Self.startAndShare(port: port)
+            let result = Self.startAndShare(port: port, limit: limit)
             await MainActor.run { self.didStart(gen: gen, result) }
         }
     }
@@ -128,6 +140,7 @@ final class FipsMeshService: ObservableObject {
             }
             kioskActive = true
             UIApplication.shared.isIdleTimerDisabled = true
+            NSLog("FipsMesh: kiosk live, serve limit %lld bytes", Self.serveLimit)
             // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.
             // A banner or Control Center (willResignActive) does not.
             resignObserver = NotificationCenter.default.addObserver(
@@ -147,6 +160,13 @@ final class FipsMeshService: ObservableObject {
         guard let raw = NvFipsStatusJSON() else { return }
         defer { NvFipsFreeString(raw) }
         status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
+        // The engine already stopped sharing; end kiosk so the mesh entry is withdrawn too.
+        if kioskActive, status?.cap_reached == true {
+            let limit = ByteCountFormatter.string(fromByteCount: Int64(status?.max_serve_bytes ?? 0), countStyle: .file)
+            NSLog("FipsMesh: kiosk off, serve limit %@ reached", limit)
+            stopKiosk()
+            lastError = "Kiosk mode turned off: the mesh downloaded \(limit) from this phone, your limit for one session. Turn it on again to share more."
+        }
     }
 
     struct MeshError: Error {
@@ -154,13 +174,13 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// Off the main thread: start can take seconds (relays, UDP bind).
-    nonisolated private static func startAndShare(port: Int) -> Result<Void, MeshError> {
+    nonisolated private static func startAndShare(port: Int, limit: Int64) -> Result<Void, MeshError> {
         guard let nsec = meshNsec() else {
             return .failure(MeshError(message: "Could not create the mesh key"))
         }
         // No start-time peers: anyone can reach this vault, and reading
         // another vault adds its npub on demand.
-        let rc = NvFipsStart(nsec, "{}")
+        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(limit)}")
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         guard let port = UInt16(exactly: port) else {
             return .failure(MeshError(message: "Relay port \(port) is out of range"))
