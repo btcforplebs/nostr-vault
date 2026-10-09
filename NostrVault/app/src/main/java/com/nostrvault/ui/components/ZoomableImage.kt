@@ -50,8 +50,10 @@ fun ZoomableImage(
     onScaleChanged: ((Float) -> Unit)? = null,
     onVerticalDrag: ((Float) -> Unit)? = null,
     onVerticalDragEnd: ((Float) -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val currentOnLongPress by rememberUpdatedState(onLongPress)
     val scope = rememberCoroutineScope()
 
     var scale by remember { mutableFloatStateOf(1f) }
@@ -94,8 +96,10 @@ fun ZoomableImage(
         modifier = modifier
             .onSizeChanged { containerSize = it }
             // Double-tap to zoom
-            .pointerInput(Unit) {
+            // Keyed so a viewer without a long-press action never detects one.
+            .pointerInput(onLongPress != null) {
                 detectTapGestures(
+                    onLongPress = if (onLongPress != null) { _ -> currentOnLongPress?.invoke() } else null,
                     onDoubleTap = { tapOffset ->
                         if (scale > 1.05f) {
                             // Zoom out to 1.0x

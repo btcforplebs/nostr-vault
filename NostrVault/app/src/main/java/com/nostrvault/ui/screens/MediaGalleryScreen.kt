@@ -165,7 +165,7 @@ class MediaGalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _busySha.value = item.sha256
             try {
-                val result = pushMissing(item.sha256)
+                val result = blossomService.pushToMissing(item.sha256)
                 when (result) {
                     null -> notificationManager.showToast("Already on all your Blossom servers")
                     is BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
@@ -188,31 +188,17 @@ class MediaGalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _busySha.value = item.sha256
             try {
-                val saved = blossomService.mirrorUrlToLocal(item.displayUrl)
-                if (saved == null) {
-                    notificationManager.showError("Could not save to your vault")
+                val outcome = blossomService.saveUrlToVault(item.displayUrl)
+                if (outcome == BlossomService.VaultSave.FAILED) {
+                    notificationManager.showError(outcome.message)
                     return@launch
                 }
-                val backedUp = blossomMirrors.value.isNotEmpty() &&
-                    pushMissing(saved).let { it == null || it is BlossomService.MirrorPushResult.AllAccepted }
-                notificationManager.showToast(
-                    if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone",
-                )
+                notificationManager.showToast(outcome.message)
                 loadBlossomMedia()
             } finally {
                 _busySha.value = null
             }
         }
-    }
-
-    /** Null when every server already had it; otherwise the push result. Re-checks after. */
-    private suspend fun pushMissing(sha256: String): BlossomService.MirrorPushResult? {
-        blossomService.checkMirrorPresence(sha256, force = true)
-        val summary = blossomService.backupSummary(sha256)
-        if (summary != null && !summary.needsMirror) return null
-        val result = blossomService.pushLocalToMirrors(sha256, only = summary?.missing)
-        blossomService.checkMirrorPresence(sha256, force = true)
-        return result
     }
 
     private fun loadBlossomMedia() {
@@ -487,6 +473,46 @@ private const val LAYOUT_MODE_KEY = "mediaGallery.layoutMode"
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
 object MediaGalleryBridge {
     var currentItems: List<BlossomMediaItem> = emptyList()
+}
+
+/** What the Media tab shows instead of the grid. Port of iOS `MediaGalleryGrid.mediaContent`. */
+internal enum class MediaEmptyState(val title: String, val detail: String?) {
+    /** Nothing to show yet and a scan is running. */
+    LOADING("Loading media…", "Scanning for uploads"),
+    /** There is media, but the type filter hides all of it. */
+    FILTERED("No media found", "Try changing your filter settings"),
+    /** No media at all. */
+    NONE("No media found", null),
+}
+
+/** Null when there is something to show; [total] is before the filter, [shown] after. */
+internal fun mediaEmptyState(total: Int, shown: Int, isLoading: Boolean): MediaEmptyState? = when {
+    shown > 0 -> null
+    isLoading -> MediaEmptyState.LOADING
+    total > 0 -> MediaEmptyState.FILTERED
+    else -> MediaEmptyState.NONE
+}
+
+@Composable
+private fun MediaEmptyStateView(state: MediaEmptyState) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (state == MediaEmptyState.LOADING) {
+            CircularProgressIndicator(modifier = Modifier.size(40.dp))
+        } else {
+            Icon(
+                imageVector = NostrVaultIcons.Media,
+                contentDescription = null,
+                tint = TertiaryText,
+                modifier = Modifier.size(48.dp),
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(state.title, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        state.detail?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = SecondaryText, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+        }
+    }
 }
 
 data class BlossomMediaItem(
@@ -847,23 +873,15 @@ fun MediaGalleryScreen(
             onRefresh = { viewModel.refresh() },
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (filteredItems.isEmpty() && !isLoading) {
+            val emptyState = mediaEmptyState(total = mediaItems.size, shown = filteredItems.size, isLoading = isLoading)
+            if (emptyState != null) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = padding.calculateTopPadding()),
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Media,
-                            contentDescription = null,
-                            tint = TertiaryText,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text("No media yet", color = SecondaryText, fontSize = 16.sp)
-                    }
+                    MediaEmptyStateView(emptyState)
                 }
             } else if (layoutMode == MediaLayoutMode.GRID) {
                 // Grid view
