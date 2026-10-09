@@ -2,6 +2,7 @@ package wot
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,12 @@ type Progress struct {
 	BatchesDone int    `json:"batchesDone"`
 	// Follow lists read so far, across every phase.
 	Lists int64 `json:"lists"`
+	// People found so far this rebuild: follows, then everyone who clears
+	// the follower bar, as it happens.
+	Found int `json:"found"`
+	// Of those, how many aren't on the graph being replaced. Their pubkeys
+	// come from Newcomers, for the apps' "↑ N new people" pill.
+	New int `json:"new"`
 	// People in the graph once saved.
 	Size       int   `json:"size"`
 	FinishedAt int64 `json:"finishedAt"`
@@ -27,6 +34,9 @@ var (
 	refreshing    atomic.Bool
 	progressMu    sync.Mutex
 	progressState Progress
+	// newcomers is this rebuild's found people who weren't on the old graph,
+	// in the order they were found. Reset when a rebuild starts.
+	newcomers []string
 )
 
 // CurrentProgress is a copy of the latest rebuild's progress.
@@ -50,8 +60,36 @@ func claimRefresh() bool {
 	}
 	updateProgress(func(p *Progress) {
 		*p = Progress{Running: true, Phase: "follows", Size: p.Size, FinishedAt: p.FinishedAt}
+		newcomers = nil
 	})
 	return true
+}
+
+// found records someone joining the web during a rebuild.
+func found(pubkey string, previous map[string]bool) {
+	updateProgress(func(p *Progress) {
+		p.Found++
+		if !previous[pubkey] {
+			p.New++
+			newcomers = append(newcomers, pubkey)
+		}
+	})
+}
+
+// Newcomers is the current (or last) rebuild's newcomers from index from on,
+// and how many there are in all. An app polls it with the total it already
+// has, so each poll only carries the people found since.
+func Newcomers(from int) (pubkeys []string, total int) {
+	progressMu.Lock()
+	defer progressMu.Unlock()
+	total = len(newcomers)
+	if from < 0 {
+		from = 0
+	}
+	if from >= total {
+		return []string{}, total
+	}
+	return slices.Clone(newcomers[from:]), total
 }
 
 func releaseRefresh(phase string, size int) {
