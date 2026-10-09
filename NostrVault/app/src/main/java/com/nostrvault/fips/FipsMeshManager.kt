@@ -105,7 +105,30 @@ class FipsMeshManager @Inject constructor(
         _lastError.value = null
         if (persist) configStore.updateAsync { it.copy(fipsMeshEnabled = true) }
         refresh()
+        watch()
         true
+    }
+
+    private var watchJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Poll while the node runs, wherever the user is. The serve cap is
+     * enforced in the library, but only [refresh] turns the share switch off
+     * to match; left to the Mesh screen's own poll, the switch would stay on
+     * and the next launch would share another full allowance (Tron, #471).
+     */
+    private fun watch() {
+        // One poll at a time. Never cancel a running one: a restart from inside
+        // its own refresh (the cap turning sharing off) would cancel the poll
+        // mid-way and lose the message saying why.
+        if (watchJob?.isActive == true) return
+        watchJob = appScope.launch(Dispatchers.IO) {
+            while (true) {
+                kotlinx.coroutines.delay(WATCH_INTERVAL_MS)
+                refresh()
+                if (!_status.value.running) break
+            }
+        }
     }
 
     /**
@@ -117,10 +140,53 @@ class FipsMeshManager @Inject constructor(
      * public address alone cannot connect the two; with configured-only, only
      * those friends ever see them.
      */
-    private fun startOptions() = FipsStartOptions(
-        peers = configStore.config.value.fipsPeers,
-        lan = true,
-    )
+    private fun startOptions(): FipsStartOptions {
+        // What is left of this sharing session's allowance: neither a restart
+        // for a peer or limit change nor an app launch hands out a fresh one.
+        engineBase = configStore.config.value.fipsServedBytes
+        engineGen++
+        return FipsStartOptions(
+            peers = configStore.config.value.fipsPeers,
+            lan = true,
+            maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
+        )
+    }
+
+    /**
+     * What this sharing session had sent before the running engine started,
+     * from the config file, so neither a restart nor an app launch hands out a
+     * fresh allowance (Tron, #471). The engine's own count adds to it.
+     */
+    @Volatile private var engineBase = 0L
+
+    /** Bumped whenever the engine (and so `engineBase`) is replaced. */
+    @Volatile private var engineGen = 0L
+
+    /** One reaction to a reached cap at a time; the Mesh screen polls too. */
+    private val turningOffForCap = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Restart to apply start-time settings, keeping what was already served. */
+    private suspend fun restartKeepingAllowance() {
+        engineGen++  // a refresh reading the old engine now discards its count
+        if (configStore.config.value.fipsShareRelay) {
+            val served = engineBase + FipsBridge.status().counters.servedTx
+            configStore.updateAsync { it.copy(fipsServedBytes = served) }
+        }
+        FipsBridge.stop()
+        start(persist = false)
+    }
+
+    /** What one sharing session may send before it stops. Applies from the next start. */
+    val serveLimitBytes: StateFlow<Long> = configStore.config
+        .map { it.fipsServeLimitBytes }
+        .stateIn(appScope, SharingStarted.Eagerly, 1L shl 30)
+
+    /** The library takes the limit at start, so a running node restarts to apply it. */
+    suspend fun setServeLimit(bytes: Long) = withContext(Dispatchers.IO) {
+        configStore.updateAsync { it.copy(fipsServeLimitBytes = bytes) }
+        if (_status.value.running) restartKeepingAllowance()
+        refresh()
+    }
 
     /**
      * Replace the list of npubs allowed to reach this device.
@@ -131,10 +197,7 @@ class FipsMeshManager @Inject constructor(
     suspend fun setPeers(npubs: List<String>) = withContext(Dispatchers.IO) {
         val cleaned = npubs.map { it.trim() }.filter { it.startsWith("npub1") }.distinct()
         configStore.updateAsync { it.copy(fipsPeers = cleaned) }
-        if (_status.value.running) {
-            FipsBridge.stop()
-            start(persist = false)
-        }
+        if (_status.value.running) restartKeepingAllowance()
         refresh()
     }
 
@@ -160,8 +223,11 @@ class FipsMeshManager @Inject constructor(
      * Being findable on the mesh and being reachable on it are separate
      * decisions, so this is a separate switch and it is off by default.
      */
-    suspend fun setShareRelay(enabled: Boolean) = withContext(Dispatchers.IO) {
-        configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
+    suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
+        // Switching sharing starts a new session with a full allowance.
+        configStore.updateAsync { it.copy(fipsShareRelay = enabled, fipsServedBytes = 0) }
+        engineGen++
+        engineBase = 0
         if (!_status.value.running) return@withContext
         if (enabled) {
             offerRelay()
@@ -183,11 +249,59 @@ class FipsMeshManager @Inject constructor(
     }
 
     /** Re-read the bridge. Polled: nothing ever calls back into the JVM. */
-    suspend fun refresh() = withContext(Dispatchers.IO) {
-        _status.value = FipsBridge.status()
+    suspend fun refresh(): Unit = withContext(Dispatchers.IO) {
+        // Base and count must belong to the same engine: read the base first and
+        // drop the write if a restart swapped engines meanwhile (Tron, #471).
+        val gen = engineGen
+        val base = engineBase
+        val status = FipsBridge.status()
+        _status.value = status
+        // Keep the session's count on disk as it grows, so an app restart
+        // (Android kills background processes often) resumes it.
+        if (status.running && configStore.config.value.fipsShareRelay && gen == engineGen) {
+            servedToPersist(base, status.counters.servedTx, configStore.config.value.fipsServedBytes)
+                ?.let { served -> configStore.updateAsync { it.copy(fipsServedBytes = served) } }
+        }
+        // The library already stopped sharing; turn the switch off to match, so
+        // the next launch does not share again on its own.
+        if (status.capReached && configStore.config.value.fipsShareRelay &&
+            turningOffForCap.compareAndSet(false, true)
+        ) {
+            try {
+                val mb = configStore.config.value.fipsServeLimitBytes shr 20
+                val limit = if (mb >= 1024 && mb % 1024 == 0L) "${mb / 1024} GB" else "$mb MB"
+                Log.i(TAG, "sharing off: serve limit $limit reached")
+                setShareRelay(false)
+                _lastError.value = "Sharing turned off: the mesh downloaded $limit from this phone, " +
+                    "your limit for one session. Turn it on again to share more."
+            } finally {
+                turningOffForCap.set(false)
+            }
+        }
     }
 
     private companion object {
         const val TAG = "FipsMeshManager"
+        // A limit that takes a gigabyte to reach needs no faster check.
+        const val WATCH_INTERVAL_MS = 30_000L
     }
+}
+
+/**
+ * What a restarted engine may still serve this session. Never 0: the library
+ * reads 0 as "use the default", which would hand out a fresh allowance.
+ */
+internal fun remainingServeBytes(limit: Long, alreadyServed: Long): Long =
+    (limit - alreadyServed).coerceAtLeast(1)
+
+/** Writes of the served count are batched to this much new traffic. */
+internal const val SERVED_PERSIST_STEP = 16L shl 20
+
+/**
+ * The session count to write, or null when it has not grown by a step yet.
+ * `engineBase` is what the session had sent before this engine started.
+ */
+internal fun servedToPersist(engineBase: Long, engineServed: Long, persisted: Long): Long? {
+    val served = engineBase + engineServed
+    return if (served - persisted >= SERVED_PERSIST_STEP) served else null
 }

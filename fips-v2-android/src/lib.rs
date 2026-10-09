@@ -40,6 +40,25 @@ pub struct StartOptions {
     pub udp_port: u16,
     /// Offer private LAN addresses to peers (same-network testing only).
     pub lan: bool,
+    /// Stop sharing once this many bytes have gone to the mesh since sharing
+    /// was turned on. 0 keeps the default; there is no "unlimited".
+    pub max_serve_bytes: u64,
+}
+
+/// What sharing gives the mesh before it stops, unless the app sets its own.
+const DEFAULT_SERVE_TOTAL: u64 = 1 << 30;
+/// One visitor's share of that, so one reader cannot use it all.
+const SERVE_PER_PEER: u64 = 256 << 20;
+/// Parallel loads from one visitor (a gallery opens several at once).
+const SERVE_PER_PEER_OPEN: usize = 6;
+
+fn serve_limits(opts: &StartOptions) -> stack::ServeLimits {
+    let total = if opts.max_serve_bytes == 0 { DEFAULT_SERVE_TOTAL } else { opts.max_serve_bytes };
+    stack::ServeLimits {
+        total_bytes: total,
+        per_peer_bytes: SERVE_PER_PEER.min(total),
+        per_peer_open: SERVE_PER_PEER_OPEN,
+    }
 }
 
 #[derive(Serialize)]
@@ -55,6 +74,9 @@ struct Status {
     /// Friends' vaults open for reading, each on a loopback port.
     reading: Vec<Reading>,
     counters: CountersOut,
+    /// Sharing was turned off because the mesh pulled `max_serve_bytes`.
+    cap_reached: bool,
+    max_serve_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -75,6 +97,7 @@ struct CountersOut {
     read_total: u64,
     read_rx: u64,
     read_tx: u64,
+    served_refused: u64,
 }
 
 impl CountersOut {
@@ -89,6 +112,7 @@ impl CountersOut {
             read_total: get(&c.read_total),
             read_rx: get(&c.read_rx),
             read_tx: get(&c.read_tx),
+            served_refused: get(&c.served_refused),
         }
     }
 }
@@ -247,6 +271,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
 
     // One stack serves and reads over the TUN. It starts with sharing off.
     let ctl = stack::Control::new();
+    ctl.set_limits(serve_limits(opts));
     let stack_ctl = ctl.clone();
     let (to_mesh, from_mesh) = tun;
     let stack_thread = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
@@ -282,10 +307,13 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
 pub fn export(port: u16) -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
-    match run.exported {
-        Some(p) if p == port => return 0,
-        Some(_) => return ERR_ALREADY_EXPORTED,
-        None => {}
+    // After the total cap turned sharing off, sharing again starts a new count.
+    if !run.ctl.cap_reached() {
+        match run.exported {
+            Some(p) if p == port => return 0,
+            Some(_) => return ERR_ALREADY_EXPORTED,
+            None => {}
+        }
     }
     if !run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
         return ERR_START;
@@ -413,16 +441,20 @@ pub fn status_json() -> String {
             peers: Vec::new(),
             reading: Vec::new(),
             counters: CountersOut::default(),
+            cap_reached: false,
+            max_serve_bytes: 0,
         },
         Some(run) => Status {
             running: true,
             npub: Some(run.npub.clone()),
             address: Some(run.address.to_string()),
             uptime_s: run.started.elapsed().as_secs(),
-            exported: run.exported.into_iter().collect(),
+            exported: run.exported.filter(|_| !run.ctl.cap_reached()).into_iter().collect(),
             peers: Vec::new(),
             reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port }).collect(),
             counters: CountersOut::from(&run.ctl.counters),
+            cap_reached: run.ctl.cap_reached(),
+            max_serve_bytes: run.ctl.limits().total_bytes,
         },
     };
     serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())
@@ -681,8 +713,23 @@ mod tests {
             assert!(!cfg.node.control.enabled);
             assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
             assert!(cfg.node.leaf_only, "a phone must never carry other nodes' traffic");
+            // Upstream's 128 on purpose: npubs are free, so a low cap lets a
+            // handful of strangers hold every slot and lock the owner's own
+            // phones out (Tron, #471). The serve caps bound what they can pull.
+            assert_eq!(cfg.node.limits.max_peers, 128);
             assert_eq!(cfg.peers.len(), opts.peers.len());
         }
+    }
+
+    #[test]
+    fn serve_limits_default_and_follow_the_owner() {
+        let d = serve_limits(&StartOptions::default());
+        assert_eq!((d.total_bytes, d.per_peer_bytes, d.per_peer_open), (DEFAULT_SERVE_TOTAL, SERVE_PER_PEER, SERVE_PER_PEER_OPEN));
+        // A total below one visitor's share caps that share too.
+        let small = serve_limits(&StartOptions { max_serve_bytes: 100 << 20, ..Default::default() });
+        assert_eq!((small.total_bytes, small.per_peer_bytes), (100 << 20, 100 << 20));
+        let opts: StartOptions = serde_json::from_str(r#"{"max_serve_bytes": 5368709120}"#).unwrap();
+        assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
     }
 
     #[test]
@@ -951,6 +998,65 @@ mod tests {
             b.thread.join().unwrap();
             assert!(ask(&mut again, "gone").is_err(), "connection survives stop");
             assert_eq!(get(&ca.read_open) + get(&cb.served_open), 0);
+        }
+
+        #[test]
+        fn the_total_cap_turns_sharing_off_until_it_is_turned_on_again() {
+            let (a, b) = pair();
+            // "B:ping" is 6 bytes back to the mesh: the second answer crosses 10.
+            b.ctl.set_limits(stack::ServeLimits { total_bytes: 10, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut ab = open(to_b);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            assert!(!b.ctl.cap_reached(), "under the cap");
+            // The answer that crosses the cap may be cut on its way.
+            let _ = ask(&mut ab, "pong");
+            wait_for("B to reach its cap", || b.ctl.cap_reached());
+            assert!(ask(&mut ab, "more").is_err(), "open connection survives the cap");
+            let mut late = open(to_b);
+            assert!(ask(&mut late, "knock").is_err(), "new connection after the cap");
+
+            // Turning sharing on again starts a new count.
+            b.ctl.set_serve(Some(relay("B2:")));
+            assert!(!b.ctl.cap_reached());
+            let mut again = open(to_b);
+            assert_eq!(ask(&mut again, "hi").unwrap(), "B2:hi");
+        }
+
+        #[test]
+        fn one_visitor_over_its_bytes_is_cut_and_turned_away() {
+            let (a, b) = pair();
+            b.ctl.set_limits(stack::ServeLimits { per_peer_bytes: 10, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut ab = open(to_b);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            // The answer that crosses the cap may arrive before the cut.
+            let _ = ask(&mut ab, "pong");
+            assert!(ask(&mut ab, "more").is_err(), "a visitor over its cap keeps its connection");
+            let mut late = open(to_b);
+            assert!(ask(&mut late, "knock").is_err(), "a visitor over its cap gets a new connection");
+            assert!(b.ctl.counters.served_refused.load(Ordering::Relaxed) >= 2);
+            assert!(!b.ctl.cap_reached(), "one visitor's cap is not the total");
+        }
+
+        #[test]
+        fn one_visitor_holds_only_so_many_connections() {
+            let (a, b) = pair();
+            b.ctl.set_limits(stack::ServeLimits { per_peer_open: 1, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut first = open(to_b);
+            assert_eq!(ask(&mut first, "one").unwrap(), "B:one");
+            let mut second = open(to_b);
+            assert!(ask(&mut second, "two").is_err(), "a second connection past the cap");
+            assert_eq!(ask(&mut first, "still").unwrap(), "B:still", "the first is untouched");
+            drop(first);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            wait_for("B served_open = 0", || get(&b.ctl.counters.served_open) == 0);
+            let mut third = open(to_b);
+            assert_eq!(ask(&mut third, "three").unwrap(), "B:three", "room again once one closes");
         }
 
         #[test]

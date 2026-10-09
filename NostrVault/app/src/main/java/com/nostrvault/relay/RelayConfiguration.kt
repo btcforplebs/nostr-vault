@@ -423,6 +423,13 @@ data class HavenConfig(
     // Npubs allowed to reach this device over the mesh. Nobody else can.
     val fipsPeers: List<String> = emptyList(),
 
+    // What one sharing session may send to the mesh before sharing stops (NIP-F1).
+    val fipsServeLimitBytes: Long = 1L shl 30,
+
+    // Bytes this sharing session has sent the mesh, across engine restarts and
+    // app launches. Reset when sharing is switched off or on.
+    val fipsServedBytes: Long = 0,
+
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
     /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
