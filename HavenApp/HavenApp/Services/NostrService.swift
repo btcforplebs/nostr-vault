@@ -1776,6 +1776,11 @@ class NostrService: ObservableObject {
             #endif
         }
 
+        #if os(iOS)
+        // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
+        HomeVaultSender.shared.enqueue(eventDict: eventDict)
+        #endif
+
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
         if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
             // Find target author's pubkey from 'p' tags (skipping own pubkey)

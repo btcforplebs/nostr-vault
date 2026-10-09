@@ -25,10 +25,10 @@
 		070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 27A87225270090D65AC98D48 /* libhaven.a */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
+		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
 		09EE495904ECC83CD74C087B /* VaultMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EEB872564518AF0F379EEA9 /* VaultMeter.swift */; };
 		09FE21A0505086214027FF1A /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
 		0A01917B3C0DC50066116572 /* PostEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */; };
-		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
 		0A25EF3C485CE440985C8FAA /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		0A7F84AA905A79326F9B2C30 /* FeedFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */; };
 		0B52F47C4995554C676125BB /* ArticleEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */; };
@@ -67,6 +67,7 @@
 		1D654A11277DD0529E08D4B5 /* VaultNetworking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F5705A371573904C7229D4 /* VaultNetworking.swift */; };
 		1DE0D88EB10F64BC56FCF08E /* LockScreenWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E86551C962F13A9A41AB343 /* LockScreenWidget.swift */; };
 		1DE283F1E6062C16E37DAAD5 /* LongFormContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42DB00CA3C4EA172D7C76C2A /* LongFormContent.swift */; };
+		1DF532BE91E594D23B6D4E6C /* HomeVaultSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE79015510D8601B89F75C2C /* HomeVaultSender.swift */; };
 		1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
 		1F63555FC06C83D35B299FFA /* PollCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB5A549483647677783FDC9 /* PollCardView.swift */; };
@@ -222,6 +223,7 @@
 		60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */; };
 		60B57CA574C71ADCEE8194D3 /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
+		61421A1B93DDAD96F59FC85B /* HomeVaultSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE79015510D8601B89F75C2C /* HomeVaultSender.swift */; };
 		617E1B3DC71576368FA56019 /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
 		61911D56C6C501170C8E50C2 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A055572DB0D3E388936721 /* WalletLightningTab.swift */; };
 		6224CB5CF33FB1A934BF1FA8 /* SupportedMediaFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */; };
@@ -857,9 +859,9 @@
 		B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportTourStage.swift; sourceTree = "<group>"; };
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
 		B3BCEFB561BABBB904949610 /* TutorialsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialsSettingsView.swift; sourceTree = "<group>"; };
+		B7AE5C3CB89D22373BCC0664 /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/ios/libnvfips.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListView.swift; sourceTree = "<group>"; };
 		B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollsFeedViews.swift; sourceTree = "<group>"; };
-		B7AE5C3CB89D22373BCC0664 /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/ios/libnvfips.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FIPSDetectionService.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
@@ -881,6 +883,7 @@
 		CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePostPublisher.swift; sourceTree = "<group>"; };
 		CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetLogic.swift; sourceTree = "<group>"; };
 		CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayableLinks.swift; sourceTree = "<group>"; };
+		CE79015510D8601B89F75C2C /* HomeVaultSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeVaultSender.swift; sourceTree = "<group>"; };
 		CE87DC6C17138B7274AF82BA /* NoteTagging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTagging.swift; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
 		D0D02100F9C47D8B2A714FBA /* MediaGalleryViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryViewer.swift; sourceTree = "<group>"; };
@@ -1402,6 +1405,7 @@
 				2D4A5E0A00149D7F14271708 /* FreshAccountKeys.swift */,
 				C39820AB50347E06F0EC2D61 /* GatedArticleService.swift */,
 				671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */,
+				CE79015510D8601B89F75C2C /* HomeVaultSender.swift */,
 				427E36EC7A40E85FF4710BBD /* InterestListService.swift */,
 				C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */,
 				4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */,
@@ -1802,6 +1806,7 @@
 				3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */,
 				317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */,
 				51ED58D5C396F531FC08B75B /* HavenConfig.swift in Sources */,
+				61421A1B93DDAD96F59FC85B /* HomeVaultSender.swift in Sources */,
 				B812DD60EB0D5F8D72E69A0C /* IconFilterButton.swift in Sources */,
 				AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */,
 				7E7815F89FC5E98A810A5A4D /* ImportTourStage.swift in Sources */,
@@ -2102,6 +2107,7 @@
 				783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */,
 				AF4BFB028BF32397C9E696EF /* HavenApp.swift in Sources */,
 				83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */,
+				1DF532BE91E594D23B6D4E6C /* HomeVaultSender.swift in Sources */,
 				F809F887E228DC7489ED5613 /* IconFilterButton.swift in Sources */,
 				1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */,
 				5F6BAF3252F65489ACD6773F /* ImportTourStage.swift in Sources */,

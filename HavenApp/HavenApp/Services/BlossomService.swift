@@ -457,6 +457,15 @@ class BlossomService: @unchecked Sendable {
             return .notSavedOnDevice
         }
 
+        #if os(iOS)
+        // A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
+        let signer = await MainActor.run { nostrService.activeHexPubkey }
+        let size = source.byteCount
+        await MainActor.run {
+            HomeVaultSender.shared.enqueue(blobSha256: sha256, contentType: contentType, signer: signer, byteCount: size)
+        }
+        #endif
+
         // Step 2: Get mirrors on main actor
         let mirrors = await MainActor.run {
             configService.config.activeBlossomMirrors

@@ -40,6 +40,10 @@ final class FipsMeshService: ObservableObject {
     /// Bumped by each start and each cancel. Only the latest start can go live;
     /// an older one that finishes stops the engine instead.
     private var startGen = 0
+    /// The engine is running only to reach other vaults (the home vault
+    /// sender), not to share this one. Kiosk mode reuses it.
+    private var clientActive = false
+    private var clientBackgroundObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -141,6 +145,64 @@ final class FipsMeshService: ObservableObject {
             refresh()
             NostrService.shared.publishServerList()
         }
+    }
+
+    // MARK: - Client: reaching another vault
+
+    /// A loopback base, `http://127.0.0.1:<port>/<token>`, whose requests reach
+    /// `meshNpub`'s vault over the mesh; nil if the engine or the dial fails.
+    /// Starts the engine as a client when nothing is running. A client never
+    /// shares: the relay's mesh door stays shut unless kiosk mode opened it.
+    /// Can take ~10 s (the node finds the vault through its advert).
+    func ingressURL(meshNpub: String) async -> URL? {
+        let sharing = kioskActive || starting
+        let previous = engineOp
+        let op = Task.detached(priority: .userInitiated) { () -> URL? in
+            await previous?.value
+            return Self.startClientAndIngress(meshNpub: meshNpub, closeDoor: !sharing)
+        }
+        engineOp = Task { _ = await op.value }
+        let url = await op.value
+        if url != nil, !kioskActive, !starting, !clientActive {
+            clientActive = true
+            // iOS suspends the engine in the background anyway; stop it cleanly
+            // once the sender has had its background window.
+            clientBackgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+                    MainActor.assumeIsolated { self?.stopClientIfBackground() }
+                }
+            }
+        }
+        return url
+    }
+
+    private func stopClientIfBackground() {
+        guard clientActive, UIApplication.shared.applicationState == .background else { return }
+        clientActive = false
+        if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+        clientBackgroundObserver = nil
+        // Kiosk mode cannot be on in the background, so nothing else needs the engine.
+        guard !kioskActive, !starting else { return }
+        stopEngine()
+        print("FipsMesh: client engine stopped in the background")
+    }
+
+    nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool) -> URL? {
+        guard let nsec = meshNsec() else { return nil }
+        // Idempotent: a running engine (kiosk or an earlier client start) is reused.
+        guard NvFipsStart(nsec, "{}") == 0 else { return nil }
+        if closeDoor { SetMeshServingC(0) }
+        var out: UnsafeMutablePointer<CChar>?
+        let rc = NvFipsIngress(meshNpub, &out)
+        guard rc == 0, let out else {
+            print("FipsMesh: ingress to \(meshNpub.prefix(16)) failed (\(rc))")
+            return nil
+        }
+        defer { NvFipsFreeString(out) }
+        // Never log this: the path holds the token that keeps other apps out.
+        return URL(string: String(cString: out))
     }
 
     func refresh() {
