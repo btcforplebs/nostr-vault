@@ -641,10 +641,6 @@ private fun TrustWebContent(
 /** Past this width (tablets) the globe takes the screen and the words move to a side panel. */
 private val WIDE_WIDTH = 760.dp
 
-/**
- * "47", or "at least 5" while relays may hold more: the count is only the
- * signed lists actually checked, never a number a relay states.
- */
 /** Read once per globe: [TrustMap.isLite] from this phone's memory. */
 private fun isLiteGlobe(context: android.content.Context): Boolean {
     val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
@@ -653,6 +649,10 @@ private fun isLiteGlobe(context: android.content.Context): Boolean {
     return TrustMap.isLite(info.totalMem, am.isLowRamDevice)
 }
 
+/**
+ * "47", or "at least 5" while relays may hold more: the count is only the
+ * signed lists actually checked, never a number a relay states.
+ */
 private fun countText(frame: TrustFrame): String =
     if (frame.exhausted) "${frame.bridges.size}" else "at least ${frame.bridges.size}"
 
