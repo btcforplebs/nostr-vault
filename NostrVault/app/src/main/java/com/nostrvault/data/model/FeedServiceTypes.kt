@@ -316,8 +316,6 @@ data class FeedNote(
             kind: Int,
             repostedBy: String? = null,
         ): FeedNote {
-            // So a blob in this note can be read from the author's vault on the mesh.
-            com.nostrvault.fips.FipsMediaRouter.noteMedia(pubkey, content, tags)
             return FeedNote(
                 id = id,
                 pubkey = pubkey,

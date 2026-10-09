@@ -165,6 +165,9 @@ object RelayConfiguration {
 
             // TLS
             "HAVEN_ENABLE_TLS" to enableTLS,
+
+            // Loopback port the FIPS mesh forwards to: blob reads only.
+            "HAVEN_MESH_PLAIN_PORT" to config.meshPort.toString(),
         )
     }
 
@@ -413,6 +416,11 @@ data class HavenConfig(
     /** The search relays in effect: the user's list, or the defaults. */
     val activeSearchRelays: List<String>
         get() = searchRelays ?: com.nostrvault.data.model.DEFAULT_SEARCH_RELAYS
+
+    /** Loopback port the FIPS mesh forwards to. The relay serves blob reads
+     *  there and nothing else, so mesh peers never reach the relay itself. */
+    val meshPort: Int
+        get() = relayPort + 1
 
 
     /** Computed local relay WebSocket URL.

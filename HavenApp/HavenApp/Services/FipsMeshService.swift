@@ -55,7 +55,7 @@ final class FipsMeshService: ObservableObject {
         startGen += 1
         let gen = startGen
         lastError = nil
-        // The relay's plain-HTTP loopback port: its main port is TLS-only.
+        // The relay's mesh port: plain HTTP, blob reads only.
         let port = ConfigService.shared.config.meshPlainPort
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {

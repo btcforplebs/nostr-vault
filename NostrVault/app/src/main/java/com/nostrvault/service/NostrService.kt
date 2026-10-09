@@ -553,7 +553,6 @@ class NostrService @Inject constructor(
 
         // Extract media URLs from content
         val mediaItems = extractMediaURLs(content, pubkey, tags, createdAt)
-        FipsMediaRouter.noteMedia(pubkey, content, tags)
 
         val event = NostrEvent(
             id = id,
@@ -1047,6 +1046,19 @@ class NostrService @Inject constructor(
      * their vault is on the FIPS mesh.
      */
     fun fetchServerList(pubkey: String) {
+        // NIP-F1: the list lives on the author's own write relays. Not known
+        // yet: ask for their 10002 too, then ask those relays once it lands.
+        if (_outboxRelays.value[pubkey] == null) {
+            fetchRelayList(pubkey)
+            scope.launch {
+                delay(TEMP_CLIENT_DISCONNECT_MS)
+                if (_outboxRelays.value[pubkey] != null) queryServerList(pubkey, outboxOnly = true)
+            }
+        }
+        queryServerList(pubkey)
+    }
+
+    private fun queryServerList(pubkey: String, outboxOnly: Boolean = false) {
         val subId = "servers-${UUID.randomUUID().toString().take(8)}"
         val filter = buildMap<String, Any> {
             put("kinds", listOf(10063))
@@ -1054,8 +1066,9 @@ class NostrService @Inject constructor(
             put("limit", 1)
         }
 
-        val relays = (configStore.config.value.activeBlastrRelays.take(3) +
-            (_outboxRelays.value[pubkey] ?: emptyList()).take(2)).distinct()
+        val outbox = (_outboxRelays.value[pubkey] ?: emptyList()).take(3)
+        val relays = if (outboxOnly) outbox
+            else (outbox + configStore.config.value.activeBlastrRelays.take(3)).distinct()
         for (relayUrl in relays) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {

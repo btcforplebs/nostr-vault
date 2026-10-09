@@ -138,15 +138,16 @@ class FipsMeshManager @Inject constructor(
     }
 
     /**
-     * Offer this device's relay port to the mesh.
+     * Offer this device's media to the mesh.
      *
-     * The Blossom server shares that port with the relay, so one export puts
-     * both on the mesh. There is no un-export — the accept loop lives as long
+     * The export is the relay's mesh port, which serves blob GET/HEAD only:
+     * a mesh peer arrives from loopback, so it must never reach the relay
+     * itself (NIP-F1). There is no un-export — the accept loop lives as long
      * as the endpoint does — which is why [setShareRelay] restarts the bridge
      * to withdraw rather than pretending a flag is enough.
      */
     private fun offerRelay() {
-        val port = configStore.config.value.relayPort
+        val port = configStore.config.value.meshPort
         val rc = FipsBridge.export(port)
         if (rc != 0) Log.w(TAG, "FipsBridgeExport($port) failed: $rc")
     }

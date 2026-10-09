@@ -34,8 +34,8 @@ type relayCycle struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	server *http.Server // nil in import mode
-	// meshServer serves the same handler as plain HTTP on loopback while
-	// server speaks TLS (iOS). The FIPS mesh tunnel carries plain HTTP.
+	// meshServer is the loopback port the FIPS mesh tunnel forwards to:
+	// plain HTTP, blob GET/HEAD only (meshBlobHandler).
 	meshServer *http.Server
 	pool       *nostr.SimplePool
 	wg         sync.WaitGroup

@@ -45,6 +45,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.nostrvault.fips.meshAuthor
 import android.widget.Toast
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.FeedNote
@@ -421,6 +422,7 @@ fun NoteCard(
                 MediaPreviewRow(
                     urls = note.mediaURLs,
                     tags = note.tags,
+                    author = note.pubkey,
                     modifier = Modifier.padding(start = 50.dp),
                 )
             }
@@ -726,12 +728,15 @@ fun MediaPreviewRow(
     urls: List<String>,
     /** The note's tags, read for NIP-92 `imeta dim` so the box is right first time. */
     tags: List<List<String>> = emptyList(),
+    /** The note's author, whose vault may serve this media over the FIPS mesh. */
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     if (urls.size == 1) {
         SingleMediaPreview(
             url = urls.first(),
             tags = tags,
+            author = author,
             onMediaClick = { FullScreenMediaRouter.open(urls, 0) },
             modifier = modifier,
         )
@@ -739,6 +744,7 @@ fun MediaPreviewRow(
         MediaCarousel(
             urls = urls,
             tags = tags,
+            author = author,
             onMediaClick = { index -> FullScreenMediaRouter.open(urls, index) },
             modifier = modifier,
         )
@@ -1020,6 +1026,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
 private fun SingleMediaPreview(
     url: String,
     tags: List<List<String>>,
+    author: String?,
     onMediaClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1031,6 +1038,7 @@ private fun SingleMediaPreview(
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
             .data(url)
+            .meshAuthor(author)
             .size(800)
             .crossfade(100)
             .build(),
@@ -1089,6 +1097,7 @@ private fun SingleMediaPreview(
 private fun MediaCarousel(
     urls: List<String>,
     tags: List<List<String>>,
+    author: String?,
     onMediaClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1125,6 +1134,7 @@ private fun MediaCarousel(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(url)
+                        .meshAuthor(author)
                         .size(800)
                         .crossfade(100)
                         .build(),

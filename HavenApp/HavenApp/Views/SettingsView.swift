@@ -3612,6 +3612,11 @@ struct BlossomSettingsView: View {
                             .foregroundColor(.secondary)
                             .textSelection(.enabled)
                     }
+                    if !ConfigService.shared.config.hasPublicBlossomMirror {
+                        Text("Not listed: add a public Blossom server first, so apps without the mesh can still load your media.")
+                            .font(.appCaption)
+                            .foregroundColor(.orange)
+                    }
                 }
                 if let error = mesh.lastError {
                     Text(error)
@@ -3621,7 +3626,7 @@ struct BlossomSettingsView: View {
             } header: {
                 Text("FIPS Mesh")
             } footer: {
-                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Leaving the app turns kiosk mode off.")
+                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
             }
 
             Section {

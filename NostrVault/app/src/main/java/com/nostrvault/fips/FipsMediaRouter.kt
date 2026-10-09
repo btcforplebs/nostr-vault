@@ -2,16 +2,16 @@ package com.nostrvault.fips
 
 import android.util.Log
 import android.util.LruCache
+import coil.request.ImageRequest
 
 /**
- * Where a blob can be read over the FIPS mesh.
+ * Where a blob can be read over the FIPS mesh (NIP-F1).
  *
  * A vault on the mesh lists `fipsmesh://<npub>/` in its owner's kind 10063.
- * Notes name their media by a normal URL whose path carries the blob's
- * sha256, so reading one over the mesh takes two lookups: blob -> author
- * (recorded as notes arrive, [noteMedia]) and author -> mesh npub (their
- * 10063, [serverLists]). The blob is content-addressed, so the mesh copy is
- * the same bytes as the URL's.
+ * A read is routed only to the author of the note being drawn, passed in
+ * with the image request ([meshAuthor]); never to whoever first mentioned a
+ * blob, or anyone could post someone else's URL and pull readers to their
+ * node. Author -> mesh npub comes from their 10063 ([serverLists]).
  */
 object FipsMediaRouter {
     private const val TAG = "FipsMesh"
@@ -26,7 +26,6 @@ object FipsMediaRouter {
     @Volatile
     var requestServerList: (String) -> Unit = {}
 
-    private val authorBySha = LruCache<String, String>(8192)
     private val requested = LruCache<String, Long>(1024)
 
     private class Ingress(val base: String?, val at: Long)
@@ -37,7 +36,7 @@ object FipsMediaRouter {
     /** How often a missing 10063 is asked for again. */
     private const val REQUEST_RETRY_MS = 5 * 60_000L
 
-    private val urlRegex = Regex("""https?://[^\s<>"']+""")
+    private val meshEntryRegex = Regex("""fipsmesh://(npub1[02-9ac-hj-np-z]{58})/""")
     private val shaRegex = Regex("""(?:^|/)([0-9a-f]{64})(?:\.[A-Za-z0-9]{1,8})?$""")
 
     /** The sha256 a Blossom-style URL names, if it names one. */
@@ -45,25 +44,6 @@ object FipsMediaRouter {
         val path = url.substringBefore('#').substringBefore('?')
         return shaRegex.find(path.lowercase())?.groupValues?.get(1)
     }
-
-    /** Remember who posted each blob in a note, so a read knows whose vault to ask. */
-    fun noteMedia(pubkey: String, content: String, tags: List<List<String>>) {
-        if (pubkey.isEmpty()) return
-        for (m in urlRegex.findAll(content)) record(m.value, pubkey)
-        for (tag in tags) {
-            if (tag.firstOrNull() != "imeta") continue
-            for (part in tag.drop(1)) {
-                if (part.startsWith("url ")) record(part.removePrefix("url "), pubkey)
-            }
-        }
-    }
-
-    private fun record(url: String, pubkey: String) {
-        val sha = sha256In(url) ?: return
-        if (authorBySha.get(sha) == null) authorBySha.put(sha, pubkey)
-    }
-
-    fun authorOf(sha: String): String? = authorBySha.get(sha)
 
     /**
      * The mesh npub [author] lists, or null. A missing list is fetched in
@@ -80,11 +60,12 @@ object FipsMediaRouter {
             }
             return null
         }
-        return list.firstNotNullOfOrNull { s ->
-            if (!s.startsWith(SCHEME)) return@firstNotNullOfOrNull null
-            s.removePrefix(SCHEME).trimEnd('/').takeIf { it.startsWith("npub1") }
-        }
+        return list.firstNotNullOfOrNull { meshNpubIn(it) }
     }
+
+    /** `fipsmesh://<npub>/` exactly, or null: no port, user info, query or other path. */
+    fun meshNpubIn(entry: String): String? =
+        meshEntryRegex.matchEntire(entry)?.groupValues?.get(1)
 
     /**
      * The loopback base for [npub]'s vault, or null when the mesh is off or
@@ -108,3 +89,10 @@ object FipsMediaRouter {
         ingress.remove(npub)
     }
 }
+
+/** The author of the note an image request draws: the only vault NIP-F1 lets it read from. */
+data class MeshAuthor(val pubkey: String)
+
+/** Let this image be read from [pubkey]'s vault on the FIPS mesh. Null leaves it off the mesh. */
+fun ImageRequest.Builder.meshAuthor(pubkey: String?): ImageRequest.Builder =
+    if (pubkey.isNullOrEmpty()) this else tag(MeshAuthor::class.java, MeshAuthor(pubkey))
