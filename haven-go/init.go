@@ -41,6 +41,41 @@ var (
 	privateDB    DBBackend
 )
 
+// isOnionHost reports whether the relay URL's host is a Tor .onion address.
+// It matches the host's last label only, so a clearnet domain that merely
+// contains "onion" (onion.example.com) keeps https/wss.
+func isOnionHost(url string) bool {
+	host := url
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".onion")
+}
+
+// getHTTPScheme returns the appropriate HTTP scheme based on the URL.
+// Returns "http://" for .onion domains (Tor), "https://" for regular domains.
+func getHTTPScheme(url string) string {
+	if isOnionHost(url) {
+		return "http://"
+	}
+	return "https://"
+}
+
+// getWSScheme returns the appropriate WebSocket scheme based on the URL.
+// Returns "ws://" for .onion domains (Tor), "wss://" for regular domains.
+func getWSScheme(url string) string {
+	if isOnionHost(url) {
+		return "ws://"
+	}
+	return "wss://"
+}
+
 var (
 	chatRelay *khatru.Relay
 	chatDB    DBBackend
@@ -264,8 +299,8 @@ func CloseDBs() {
 //     "1" on iOS (App Transport Security requires HTTPS even for localhost),
 //     "0" on macOS/Android (plain HTTP locally, TLS only for a public domain).
 func relayServiceURL(path string) string {
-	scheme := "https"
 	host := config.RelayURL
+	scheme := strings.TrimSuffix(getHTTPScheme(host), "://")
 	if host == "" {
 		host = fmt.Sprintf("127.0.0.1:%d", config.RelayPort)
 		if os.Getenv("HAVEN_ENABLE_TLS") != "1" {
@@ -302,7 +337,7 @@ func initRelays(ctx context.Context) error {
 	initRelayLimits()
 
 	privateRelay.Info.Name = config.PrivateRelayName
-	privateRelay.Info.PubKey = nPubToPubkey(config.PrivateRelayNpub)
+	privateRelay.Info.PubKey = nPubToPubkey("PRIVATE_RELAY_NPUB", config.PrivateRelayNpub)
 	privateRelay.Info.Description = config.PrivateRelayDescription
 	privateRelay.Info.Icon = config.PrivateRelayIcon
 	privateRelay.Info.Version = config.RelayVersion
@@ -325,6 +360,7 @@ func initRelays(ctx context.Context) error {
 			privateRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(privateDB),
 	)
 
 	privateRelay.RejectConnection = append(privateRelay.RejectConnection,
@@ -344,6 +380,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(privateRelay, privateDB)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
+	privateRelay.OverwriteDeletionOutcome = append(privateRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
 
 	mux := privateRelay.Router()
@@ -351,7 +388,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /private", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, "wss://"+config.RelayURL+"/private")
+			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/private")
 			return
 		}
 		data := struct {
@@ -361,9 +398,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.PrivateRelayName,
-			RelayPubkey:      nPubToPubkey(config.PrivateRelayNpub),
+			RelayPubkey:      nPubToPubkey("PRIVATE_RELAY_NPUB", config.PrivateRelayNpub),
 			RelayDescription: config.PrivateRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/private",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/private",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -371,7 +408,7 @@ func initRelays(ctx context.Context) error {
 	})
 
 	chatRelay.Info.Name = config.ChatRelayName
-	chatRelay.Info.PubKey = nPubToPubkey(config.ChatRelayNpub)
+	chatRelay.Info.PubKey = nPubToPubkey("CHAT_RELAY_NPUB", config.ChatRelayNpub)
 	chatRelay.Info.Description = config.ChatRelayDescription
 	chatRelay.Info.Icon = config.ChatRelayIcon
 	chatRelay.Info.Version = config.RelayVersion
@@ -396,6 +433,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		EventMustBeChatRelated,
+		MustNotBeDeleted(chatDB),
 	)
 
 	chatRelay.RejectConnection = append(chatRelay.RejectConnection,
@@ -426,6 +464,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(chatRelay, chatDB)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
+	chatRelay.OverwriteDeletionOutcome = append(chatRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
 
 	mux = chatRelay.Router()
@@ -433,7 +472,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, "wss://"+config.RelayURL+"/chat")
+			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/chat")
 			return
 		}
 		data := struct {
@@ -443,9 +482,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.ChatRelayName,
-			RelayPubkey:      nPubToPubkey(config.ChatRelayNpub),
+			RelayPubkey:      nPubToPubkey("CHAT_RELAY_NPUB", config.ChatRelayNpub),
 			RelayDescription: config.ChatRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/chat",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/chat",
 		}
 		err = tmpl.Execute(w, data)
 		if err != nil {
@@ -454,7 +493,7 @@ func initRelays(ctx context.Context) error {
 	})
 
 	outboxRelay.Info.Name = config.OutboxRelayName
-	outboxRelay.Info.PubKey = nPubToPubkey(config.OutboxRelayNpub)
+	outboxRelay.Info.PubKey = nPubToPubkey("OUTBOX_RELAY_NPUB", config.OutboxRelayNpub)
 	outboxRelay.Info.Description = config.OutboxRelayDescription
 	outboxRelay.Info.Icon = config.OutboxRelayIcon
 	outboxRelay.Info.Version = config.RelayVersion
@@ -476,6 +515,7 @@ func initRelays(ctx context.Context) error {
 			outboxRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(outboxDB),
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
@@ -494,6 +534,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
+	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
 
 	mux = outboxRelay.Router()
@@ -503,7 +544,7 @@ func initRelays(ctx context.Context) error {
 
 		tmpl, err := template.ParseFiles("templates/feed.html")
 		if err != nil {
-			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, "wss://"+config.RelayURL)
+			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL)
 			return
 		}
 
@@ -511,9 +552,9 @@ func initRelays(ctx context.Context) error {
 
 		data := FeedPageData{
 			RelayName:        config.OutboxRelayName,
-			RelayPubkey:      nPubToPubkey(config.OutboxRelayNpub),
+			RelayPubkey:      nPubToPubkey("OUTBOX_RELAY_NPUB", config.OutboxRelayNpub),
 			RelayDescription: config.OutboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL,
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL,
 			Notes:            notes,
 		}
 
@@ -522,7 +563,7 @@ func initRelays(ctx context.Context) error {
 		}
 	})
 
-	blossomServer = blossom.New(outboxRelay, "https://"+config.RelayURL)
+	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
 	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
@@ -565,7 +606,7 @@ func initRelays(ctx context.Context) error {
 	migrateBlossomMetadata(ctx, blossomServer)
 
 	inboxRelay.Info.Name = config.InboxRelayName
-	inboxRelay.Info.PubKey = nPubToPubkey(config.InboxRelayNpub)
+	inboxRelay.Info.PubKey = nPubToPubkey("INBOX_RELAY_NPUB", config.InboxRelayNpub)
 	inboxRelay.Info.Description = config.InboxRelayDescription
 	inboxRelay.Info.Icon = config.InboxRelayIcon
 	inboxRelay.Info.Version = config.RelayVersion
@@ -590,6 +631,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		MustTagWhitelistedPubKey,
+		MustNotBeDeleted(inboxDB),
 	)
 
 	inboxRelay.RejectConnection = append(inboxRelay.RejectConnection,
@@ -632,6 +674,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
+	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)
 
 	mux = inboxRelay.Router()
@@ -639,7 +682,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /inbox", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, "wss://"+config.RelayURL+"/inbox")
+			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/inbox")
 			return
 		}
 		data := struct {
@@ -649,9 +692,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.InboxRelayName,
-			RelayPubkey:      nPubToPubkey(config.InboxRelayNpub),
+			RelayPubkey:      nPubToPubkey("INBOX_RELAY_NPUB", config.InboxRelayNpub),
 			RelayDescription: config.InboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/inbox",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/inbox",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -695,7 +738,7 @@ func initRelays(ctx context.Context) error {
 	feedRelay.ReplaceEvent = append(feedRelay.ReplaceEvent, feedDB.ReplaceEvent)
 
 	feedRelay.Router().HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
-		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, "wss://"+config.RelayURL+"/feed")
+		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, getWSScheme(config.RelayURL)+config.RelayURL+"/feed")
 	})
 
 	return nil

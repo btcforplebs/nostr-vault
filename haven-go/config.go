@@ -108,7 +108,7 @@ func loadConfig() Config {
 
 	cfg := Config{
 		OwnerNpub:                            getEnv("OWNER_NPUB"),
-		OwnerPubKey:                          nPubToPubkey(getEnv("OWNER_NPUB")),
+		OwnerPubKey:                          nPubToPubkey("OWNER_NPUB", getEnv("OWNER_NPUB")),
 		DBEngine:                             getEnvString("DB_ENGINE", "lmdb"),
 		LmdbMapSize:                          getEnvInt64("LMDB_MAPSIZE", 0),
 		BlossomPath:                          getEnvString("BLOSSOM_PATH", "blossom"),
@@ -296,7 +296,7 @@ func getNpubsFromFile(filePath string) map[string]struct{} {
 
 	for _, npub := range npubs {
 		npub = strings.TrimSpace(npub)
-		pk := nPubToPubkey(npub)
+		pk := nPubToPubkey(filePath, npub)
 		if pk != "" {
 			pubKeys[pk] = struct{}{}
 		}
@@ -430,21 +430,37 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-func nPubToPubkey(nPub string) string {
+// nPubToPubkey decodes a bech32 npub into its hex public key. label identifies
+// the source of the value (an env var name or file path) for the log line.
+//
+// Upstream (bitvora/haven#129) exits the process on a bad npub. Nostr Vault
+// runs the relay inside the app, where exiting kills the whole app, so a bad
+// value is logged and skipped (returns "") instead. Taken from upstream: a
+// non-npub bech32 (e.g. an nsec pasted into an npub field) is rejected rather
+// than decoded into a "pubkey", and its raw value is never echoed to the log.
+func nPubToPubkey(label, nPub string) string {
 	if nPub == "" {
 		return ""
 	}
-	_, v, err := nip19.Decode(nPub)
+	prefix, v, err := nip19.Decode(nPub)
 	if err != nil {
-		log.Printf("⚠️ invalid npub %q: %v", nPub, err)
+		if strings.HasPrefix(nPub, "npub1") {
+			log.Printf("⚠️ invalid npub for %s: %q could not be decoded (%v)", label, nPub, err)
+		} else {
+			log.Printf("⚠️ invalid npub for %s: value could not be decoded as an npub (%v)", label, err)
+		}
 		return ""
 	}
-	s, ok := v.(string)
+	if prefix != "npub" {
+		log.Printf("⚠️ invalid npub for %s: expected an npub, got a %q", label, prefix)
+		return ""
+	}
+	pubkey, ok := v.(string)
 	if !ok {
-		log.Printf("⚠️ npub decoded to non-string type: %T", v)
+		log.Printf("⚠️ invalid npub for %s: did not decode to a public key (%T)", label, v)
 		return ""
 	}
-	return s
+	return pubkey
 }
 
 var art = `
