@@ -1,5 +1,7 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.data.model.TrustPathText
+import com.nostrvault.ui.theme.ErrorRed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -273,6 +275,8 @@ fun TrustWebDialog(
 @Composable
 fun TrustWebTab(
     onProfileClick: (String) -> Unit,
+    /** The trust card's Message: opens a DM thread with them. */
+    onMessage: (String) -> Unit,
     reselects: kotlinx.coroutines.flow.Flow<*>,
     /** The floating tab bar's height, so the footer's words sit above it. */
     bottomInset: androidx.compose.ui.unit.Dp,
@@ -289,6 +293,7 @@ fun TrustWebTab(
                 onProfileClick = onProfileClick,
                 onDismiss = null,
                 isWOTTab = true,
+                onMessage = onMessage,
                 reselects = reselects,
                 bottomInset = bottomInset,
             )
@@ -304,6 +309,7 @@ private fun TrustWebContent(
     /** Null in the WOT tab, which has nothing to close. */
     onDismiss: (() -> Unit)?,
     isWOTTab: Boolean = false,
+    onMessage: ((String) -> Unit)? = null,
     reselects: kotlinx.coroutines.flow.Flow<*>? = null,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
@@ -352,6 +358,13 @@ private fun TrustWebContent(
      */
     var newPeople by remember { mutableIntStateOf(0) }
     var webSeen by remember { mutableStateOf<Int?>(null) }
+    /**
+     * The WOT tab's trust card: who was tapped or searched, and how they
+     * reach you (null while it's being traced).
+     */
+    var card by remember { mutableStateOf<String?>(null) }
+    var cardPath by remember { mutableStateOf<TrustPath?>(null) }
+    val feedService = services.feedService()
 
     val centerKey = crumbs.last()
     val frame = frames[centerKey]
@@ -431,7 +444,28 @@ private fun TrustWebContent(
         crumbs = crumbs.take(index + 1)
     }
 
+    fun openCard(pubkey: String) {
+        peek = null
+        card = pubkey
+        cardPath = null
+        nostrService.fetchMissingProfiles(listOf(pubkey))
+        scope.launch {
+            // From you, whoever is in the middle: which of your follows follow them.
+            val found = trust.path(pubkey)
+            if (card != pubkey) return@launch
+            nostrService.fetchMissingProfiles(found.bridges)
+            cardPath = found
+        }
+    }
+
+    fun closeCard() {
+        card = null
+        cardPath = null
+    }
+
     fun tapped(pubkey: String) {
+        // The WOT tab answers "can I trust them?" in a card and stays on you.
+        if (isWOTTab) return if (pubkey == me || pubkey == card) closeCard() else openCard(pubkey)
         if (peek != null) { peek = null; return }
         // The one in the middle: say who they are rather than go nowhere.
         if (pubkey == crumbs.last()) {
@@ -563,6 +597,10 @@ private fun TrustWebContent(
     /** A search row: back to you, then off to them as if their face was tapped. */
     fun pick(pubkey: String) {
         clearSearch()
+        if (isWOTTab) {
+            searchOpen = false
+            return if (pubkey == me) closeCard() else openCard(pubkey)
+        }
         jump(0)
         tapped(pubkey)
     }
@@ -585,6 +623,7 @@ private fun TrustWebContent(
                 showingList = false
                 clearSearch()
                 searchOpen = false
+                closeCard()
                 jump(0)
             }
         }
@@ -758,7 +797,8 @@ private fun TrustWebContent(
                 profiles = profiles, name = ::name,
                 onTap = ::tapped,
                 // A tap on open space also puts the keyboard away.
-                onEmptyTap = { peek = null; if (searchFocused) focusManager.clearFocus() },
+                focus = if (isWOTTab) card else null,
+                onEmptyTap = { peek = null; closeCard(); if (searchFocused) focusManager.clearFocus() },
             )
             Box(Modifier.matchParentSize().padding(overlayPadding)) {
             when {
@@ -797,6 +837,29 @@ private fun TrustWebContent(
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
             }
+            val shown = card
+            if (isWOTTab && shown != null) {
+                val following = shown in myFollows
+                var blocked by remember(shown) { mutableStateOf(feedService.isBlocked(shown)) }
+                TrustCard(
+                    pubkey = shown,
+                    name = ::name,
+                    profiles = profiles,
+                    path = cardPath,
+                    following = following,
+                    blocked = blocked,
+                    accent = accent,
+                    onClose = ::closeCard,
+                    onFollow = { if (following) feedService.unfollowPubkey(shown) else feedService.followPubkey(shown) },
+                    onMessage = onMessage?.let { { it(shown) } },
+                    onProfile = onProfileClick?.let { { openProfile(shown) } },
+                    onBlock = {
+                        if (blocked) feedService.unblockUser(shown) else { feedService.blockUser(shown); closeCard() }
+                        blocked = !blocked
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
             }
         }
     }
@@ -823,7 +886,7 @@ private fun TrustWebContent(
                     searchOpen = searchOpen,
                     onSearch = {
                         if (searchOpen) clearSearch()
-                        else peek = null
+                        else { peek = null; closeCard() }
                         searchOpen = !searchOpen
                     },
                     showingList = showingList,
@@ -1532,6 +1595,121 @@ private fun FooterButton(
     }
 }
 
+/**
+ * The WOT tab's "can I trust them?" card: who they are, the people you follow
+ * who follow them (the post card's answer and words), and what you can do
+ * about it. Block sits behind ⋯ so it can't be hit by accident. iOS
+ * `trustCard`.
+ */
+@Composable
+private fun TrustCard(
+    pubkey: String,
+    name: (String) -> String,
+    profiles: Map<String, FeedProfile>,
+    path: TrustPath?,
+    following: Boolean,
+    blocked: Boolean,
+    accent: Color,
+    onClose: () -> Unit,
+    onFollow: () -> Unit,
+    onMessage: (() -> Unit)?,
+    onProfile: (() -> Unit)?,
+    onBlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(16.dp)
+    var moreOpen by remember { mutableStateOf(false) }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .padding(12.dp)
+            .widthIn(max = 520.dp)
+            .fillMaxWidth()
+            .shadow(16.dp, shape)
+            .clip(shape)
+            .background(Surface2.copy(alpha = 0.96f))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val profile = profiles[pubkey]
+            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 44.dp, displayName = profile?.bestName)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(name(pubkey), color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                profile?.nip05?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(NostrVaultIcons.Dismiss, contentDescription = "Close", tint = SecondaryText, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val bridges = path?.bridges.orEmpty()
+            if (bridges.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy((-10).dp), modifier = Modifier.clearAndSetSemantics { }) {
+                    for (bridge in bridges) {
+                        val profile = profiles[bridge]
+                        AvatarImage(url = profile?.pictureURL, pubkey = bridge, size = 26.dp, displayName = profile?.bestName,
+                            modifier = Modifier.border(2.dp, Color.Black.copy(alpha = 0.6f), CircleShape))
+                    }
+                }
+            }
+            Text(
+                TrustPathText.label(path, name),
+                color = if (path?.reach == TrustPath.Reach.OUTSIDE) SecondaryText else PrimaryText.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The profile page's words: Unfollow says what the tap does.
+            CardButton(if (following) "Unfollow" else "Follow", filled = !following, accent = accent,
+                onClick = onFollow, modifier = Modifier.weight(1f))
+            if (onMessage != null) CardButton("Message", filled = false, accent = accent, onClick = onMessage, modifier = Modifier.weight(1f))
+            if (onProfile != null) CardButton("Profile", filled = false, accent = accent, onClick = onProfile, modifier = Modifier.weight(1f))
+            Box {
+                IconButton(onClick = { moreOpen = true }, modifier = Modifier.size(40.dp)) {
+                    Box(
+                        Modifier.size(width = 40.dp, height = 38.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(NostrVaultIcons.More, contentDescription = "More", tint = SecondaryText, modifier = Modifier.size(18.dp))
+                    }
+                }
+                DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (blocked) "Unblock" else "Block", color = if (blocked) PrimaryText else ErrorRed) },
+                        onClick = {
+                            moreOpen = false
+                            onBlock()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardButton(title: String, filled: Boolean, accent: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (filled) accent else Color.White.copy(alpha = 0.08f))
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Text(title, color = if (filled) Color.White else accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
 @Composable
 private fun PeekCard(
     pubkey: String,
@@ -1696,6 +1874,8 @@ private fun TrustGlobe(
     running: Boolean,
     /** Which part of the web is lit (the WOT tab's layer picker). */
     layer: TrustMap.Layer = TrustMap.Layer.EVERYONE,
+    /** The person the trust card is about: the globe turns to face them. */
+    focus: String? = null,
     summary: String,
     profiles: Map<String, FeedProfile>,
     name: (String) -> String,
@@ -1733,6 +1913,8 @@ private fun TrustGlobe(
     }
 
     LaunchedEffect(layer) { scene.focus(layer) }
+
+    LaunchedEffect(focus) { focus?.let { scene.turn(it) } }
 
     // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
     LaunchedEffect(scene) {
