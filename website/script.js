@@ -1,126 +1,78 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Intersection Observer for fade-in animations
-    const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
-    };
-
+    // Reveal-on-scroll for .fade-in-up blocks.
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 entry.target.classList.add('visible');
+                observer.unobserve(entry.target);
             }
         });
-    }, observerOptions);
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
-    const fadeElements = document.querySelectorAll('.fade-in-up');
-    fadeElements.forEach(el => observer.observe(el));
+    const revealAll = location.search.includes('reveal');
+    document.querySelectorAll('.fade-in-up').forEach(el => revealAll ? el.classList.add('visible') : observer.observe(el));
 
-    // Scroll Morph Animation for Hero
-    const stickyWrapper = document.querySelector('.sticky-scroll-wrapper');
-    const bgImage = document.getElementById('zoom-image-bg');  // fullscreen-view-no-haven.jpeg
-    const fgImage = document.getElementById('zoom-image-fg');  // dashboard.png
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    if (stickyWrapper && bgImage && fgImage) {
-        // Show dashboard immediately
-        fgImage.classList.add('loaded');
-
-        function animate() {
-            const wrapperTop = stickyWrapper.offsetTop;
-            const scrollY = window.scrollY;
-            const wrapperHeight = stickyWrapper.offsetHeight;
-            const windowHeight = window.innerHeight;
-
-            const relativeScroll = scrollY - wrapperTop;
-
-            let progress = 0;
-            if (relativeScroll > -windowHeight) {
-                progress = (relativeScroll + windowHeight) / (wrapperHeight + windowHeight);
-            }
-            progress = Math.max(0, Math.min(1, progress));
-
-            // Use easing for smoother animation
-            // Add a "HOLD" phase: keep it in start position for first 15% of scroll
-            const holdThreshold = 0.15;
-            let effectiveProgress = 0;
-
-            if (progress > holdThreshold) {
-                effectiveProgress = (progress - holdThreshold) / (1 - holdThreshold);
-            }
-
-            const easeOut = t => 1 - Math.pow(1 - t, 3);
-            const easedProgress = easeOut(effectiveProgress);
-
-            // ===== DASHBOARD (foreground) animation =====
-            // Start large (hero) and settle to a natural desktop window size
-            const fgScaleStart = 1.25; // Larger start for "sneak peak" effect
-            const fgScaleEnd = 0.50;
-            const fgScale = fgScaleStart - (easedProgress * (fgScaleStart - fgScaleEnd));
-
-            const fgRotateStart = 8;
-            const fgRotateEnd = 0;
-            const fgRotate = fgRotateStart - (easedProgress * (fgRotateStart - fgRotateEnd));
-
-            // Move to upper-right quadrant relative to the background image
-            const bgWidth = bgImage.offsetWidth;
-            const bgHeight = bgImage.offsetHeight;
-
-            // Calculate target position in pixels relative to image center
-            // X: Move right by ~26% of image width
-            // Y: Move up by ~18% of image height
-            const targetX = bgWidth * 0.26;
-            const targetY = bgHeight * -0.18;
-
-            const fgTranslateXStart = 0;
-            const fgTranslateXEnd = targetX;
-            const fgTranslateX = fgTranslateXStart + (easedProgress * (fgTranslateXEnd - fgTranslateXStart));
-
-            // Start lower down to "sneak a preview" but closer to buttons (gap was too big)
-            const fgTranslateYStart = -0.05 * bgHeight; // Slightly up from center
-            const fgTranslateYEnd = targetY;
-            const fgTranslateY = fgTranslateYStart + (easedProgress * (fgTranslateYEnd - fgTranslateYStart));
-
-            // Apply transform using pixels for translation
-            fgImage.style.transform = `perspective(1000px) rotateX(${fgRotate}deg) scale(${fgScale}) translate(${fgTranslateX}px, ${fgTranslateY}px)`;
-
-            fgImage.style.opacity = 1;
-
-            // ===== BACKGROUND (fullscreen-view) animation =====
-            const bgScaleStart = 1.2;
-            const bgScaleEnd = 1;
-            const bgScale = bgScaleStart - (easedProgress * (bgScaleStart - bgScaleEnd));
-
-            // Fade in the desktop wallpaper as we scroll
-            let bgOpacity = 0;
-            if (progress < 0.2) {
-                bgOpacity = 0;
-            } else if (progress < 0.6) {
-                bgOpacity = (progress - 0.2) / 0.4;
-            } else {
-                bgOpacity = 1;
-            }
-
-            bgImage.style.transform = `scale(${bgScale})`;
-            bgImage.style.opacity = bgOpacity;
-        }
-
-        window.addEventListener('scroll', animate);
-        window.addEventListener('resize', animate);
-
-        const handleLoad = () => animate();
-        if (bgImage.complete) handleLoad();
-        else bgImage.onload = handleLoad;
-
-        animate();
-    }
-
-    // Smooth scrolling for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            e.preventDefault();
-            document.querySelector(this.getAttribute('href')).scrollIntoView({
-                behavior: 'smooth'
-            });
+    // Inline films start muted; a tap toggles sound and restarts from the top.
+    document.querySelectorAll('video.sound-toggle').forEach(video => {
+        const cap = video.parentElement.querySelector('figcaption');
+        video.addEventListener('click', () => {
+            video.muted = !video.muted;
+            if (!video.muted) { video.currentTime = 0; video.play(); }
+            if (cap) cap.textContent = `${cap.dataset.label} \u00b7 ${video.muted ? 'tap for sound' : 'tap to mute'}`;
         });
     });
+
+    // Muted loops play only while on screen, and not at all under Reduce Motion (posters stay).
+    const loops = document.querySelectorAll('.story-loop, video.sound-toggle:not([autoplay])');
+    if (!reduce) {
+        const player = new IntersectionObserver((entries) => {
+            entries.forEach(({ target, isIntersecting }) => {
+                if (isIntersecting && !document.querySelector('dialog[open]')) { target.play().catch(() => {}); }
+                else if (target.muted) { target.pause(); }
+            });
+        }, { threshold: 0.35 });
+        loops.forEach(v => player.observe(v));
+    }
+
+    // Story tiles open the full 30s cut, with sound, in a lightbox.
+    const dialog = document.querySelector('.film-dialog');
+    if (dialog) {
+        const full = dialog.querySelector('video');
+        const close = () => dialog.close();
+        // Background loops hold still while a film plays, and pick up where they were after.
+        let held = [];
+        dialog.addEventListener('close', () => {
+            full.pause(); full.removeAttribute('src'); full.load();
+            held.forEach(v => v.play().catch(() => {})); held = [];
+        });
+        dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
+        dialog.querySelector('.film-close').addEventListener('click', close);
+        document.querySelectorAll('.story').forEach(story => {
+            story.addEventListener('click', () => {
+                held = [...loops].filter(v => !v.paused);
+                held.forEach(v => v.pause());
+                full.src = story.dataset.film;
+                full.setAttribute('aria-label', story.dataset.title);
+                dialog.showModal();
+                full.play().catch(() => {});
+            });
+        });
+    }
+
+    // Hero phones drift slightly with scroll; skipped when the user prefers reduced motion.
+    const phones = document.querySelector('.hero-phones');
+    if (phones && !reduce) {
+        const sides = phones.querySelectorAll('.tilt-left, .tilt-right');
+        let ticking = false;
+        const update = () => {
+            const y = Math.min(window.scrollY, 600) / 600;
+            sides.forEach(el => { el.style.translate = `0 ${y * -24}px`; });
+            ticking = false;
+        };
+        window.addEventListener('scroll', () => {
+            if (!ticking) { requestAnimationFrame(update); ticking = true; }
+        }, { passive: true });
+    }
 });

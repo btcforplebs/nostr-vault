@@ -1,10 +1,13 @@
 package com.nostrvault.ui.components
 
+import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -12,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +29,9 @@ import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /** Three replies is enough to show a conversation is happening without letting one thread own the screen. */
 private const val COLLAPSED_REPLY_LIMIT = 3
@@ -55,6 +63,17 @@ fun FeedThreadCard(
     onProfileClick: (String) -> Unit,
     onOpenThread: (FeedNote) -> Unit,
     onFetchMissingNote: (String) -> Unit = {},
+    /** No relay returned the root after every fetch pass. */
+    rootUnavailable: Boolean = false,
+    /** Holds a tapped line in place in the feed; null outside the feed. */
+    lineAnchor: ThreadLineAnchor? = null,
+    /**
+     * A bare repost as its line shows it: the note it reposted once that has
+     * loaded, otherwise the repost and what to say instead of the text. The
+     * feed passes the resolver its condensed rows use; any other note comes
+     * back as it is.
+     */
+    bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?> = { it to null },
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -63,7 +82,7 @@ fun FeedThreadCard(
 
     val replies = thread.replies
     val visibleReplies = if (!isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
-        replies.take(COLLAPSED_REPLY_LIMIT)
+        thread.latestReplies(COLLAPSED_REPLY_LIMIT)
     } else {
         replies
     }
@@ -84,6 +103,7 @@ fun FeedThreadCard(
     // going to the thread happens from the second tap on the *open* row instead
     // (wired into expandedRow's own onNoteClick by the caller).
     fun tapAction(note: FeedNote): () -> Unit = {
+        lineAnchor?.lineTapped(note.id)
         onOpenNoteChange(note.id)
     }
 
@@ -109,10 +129,24 @@ fun FeedThreadCard(
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
                 onTap = tapAction(root),
+                lineAnchor = lineAnchor,
+                bareRepostDisplay = bareRepostDisplay,
                 expandedRow = expandedRow,
             )
-        } else {
+        } else if (!rootUnavailable) {
+            // A root no relay has, after every pass, gets no line at all: the
+            // replies read as posts, rather than every such card announcing
+            // what it can't show.
             MissingRootHeader()
+        }
+
+        if (hiddenReplyCount > 0) {
+            ThreadFoldButton(
+                icon = NostrVaultIcons.ChevronDown,
+                title = "Show $hiddenReplyCount earlier ${if (hiddenReplyCount == 1) "reply" else "replies"}",
+                themeColor = themeColor,
+                onClick = { onExpandedChange(true) },
+            )
         }
 
         for (entry in visibleReplies) {
@@ -125,18 +159,13 @@ fun FeedThreadCard(
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
                 onTap = tapAction(entry.note),
+                lineAnchor = lineAnchor,
+                bareRepostDisplay = bareRepostDisplay,
                 expandedRow = expandedRow,
             )
         }
 
-        if (hiddenReplyCount > 0) {
-            ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
-                title = "Show $hiddenReplyCount more ${if (hiddenReplyCount == 1) "reply" else "replies"}",
-                themeColor = themeColor,
-                onClick = { onExpandedChange(true) },
-            )
-        } else if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
+        if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
             ThreadFoldButton(
                 icon = NostrVaultIcons.ChevronDown,
                 title = "Show fewer replies",
@@ -188,34 +217,51 @@ private fun ThreadCardLine(
     openNoteId: String?,
     onProfileClick: (String) -> Unit,
     onTap: () -> Unit,
+    lineAnchor: ThreadLineAnchor?,
+    bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?>,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
 ) {
     val note = entry.note
+    // Where the line's top is, so the feed can hold it there after a tap.
+    val anchored = if (lineAnchor != null) {
+        Modifier.onGloballyPositioned { lineAnchor.linePositioned(note.id, it.positionInRoot().y) }
+    } else {
+        Modifier
+    }
     if (openNoteId == note.id) {
         // A line opened in place: the full note, its action bar, and the same
         // rail and indent the condensed line had, so nothing shifts sideways
         // under the tap. Tapping it again goes to the thread (wired by the
         // caller's expandedRow, which reuses onOpenThread as onNoteClick).
-        Row(modifier = Modifier.fillMaxWidth()) {
-            if (entry.depth > 0) {
-                ThreadRail(isOled = LocalOledMode.current, modifier = Modifier.heightIn(min = 1.dp))
-            }
-            Box(modifier = Modifier.weight(1f).padding(start = condensedIndentWidth(entry.depth))) {
-                expandedRow(note, entry.depth)
-            }
+        Box(
+            modifier = anchored
+                .fillMaxWidth()
+                .padding(start = condensedIndentWidth(entry.depth))
+                .then(
+                    if (entry.depth > 0) Modifier.threadRail(LocalNostrVaultColors.current.primary, LocalOledMode.current)
+                    else Modifier,
+                ),
+        ) {
+            expandedRow(note, entry.depth)
         }
     } else {
+        // A bare kind-6 repost carries no text: show the note it reposted,
+        // its text, media and time credited to its author, as the condensed
+        // feed row does. It keeps the repost's id, so taps are unchanged.
+        val (shown, placeholder) = bareRepostDisplay(note)
         CondensedNoteLine(
-            note = note,
-            profile = profileFor(note.pubkey),
+            note = shown,
+            profile = profileFor(shown.pubkey),
             profiles = profiles,
             depth = entry.depth,
             style = CondensedLineStyle.PLAIN,
             isFocused = note.id == focusedNoteId,
             replyCount = replyCount,
-            mediaURLs = note.mediaURLs,
+            contentOverride = placeholder?.text,
+            mediaURLs = shown.mediaURLs,
             onProfileClick = onProfileClick,
             onTap = onTap,
+            modifier = anchored,
         )
     }
 }
@@ -259,5 +305,67 @@ private fun ThreadFoldButton(
         Icon(icon, contentDescription = null, tint = themeColor, modifier = Modifier.size(11.dp))
         Spacer(Modifier.width(6.dp))
         Text(text = title, color = themeColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/**
+ * Keeps a tapped thread line where it was tapped. Opening a line closes the
+ * one that was open; when that sat above — often a photo — everything below
+ * moved up, and the line you tapped could open off screen. The feed records
+ * where each line's top is, and for a moment after a tap scrolls by however
+ * far the tapped line moves, so it stays put. A line whose top was above the
+ * list is brought to its top edge. iOS: ThreadLineTops in FeedThreadCard.swift.
+ *
+ * The cards animate their height, so the line moves over several frames, not
+ * one; the hold follows it for [HOLD_MS] rather than correcting once. Each
+ * correction is a [LazyListState.scrollBy] launched from the layout callback,
+ * not a scroll inside it, and is measured from the line's latest position
+ * when it runs, so corrections never stack. A finger on the list wins.
+ */
+class ThreadLineAnchor(
+    private val scope: CoroutineScope,
+    private val listState: LazyListState,
+) {
+    /** Each line's top, in root coordinates, as last laid out. */
+    private val tops = HashMap<String, Float>()
+
+    /** The list's top edge in root coordinates, inside its content padding. */
+    var viewportTop: Float = 0f
+
+    private var holdId: String? = null
+    private var holdY = 0f
+    private var holdUntil = 0L
+    private var correcting = false
+
+    internal fun lineTapped(noteId: String) {
+        val y = tops[noteId] ?: return
+        holdId = noteId
+        holdY = maxOf(y, viewportTop)
+        holdUntil = SystemClock.uptimeMillis() + HOLD_MS
+    }
+
+    internal fun linePositioned(noteId: String, y: Float) {
+        if (tops.size > 2_000) tops.clear()
+        tops[noteId] = y
+        if (noteId != holdId || correcting) return
+        if (SystemClock.uptimeMillis() > holdUntil) {
+            holdId = null
+            return
+        }
+        if (abs(y - holdY) <= 0.5f) return
+        correcting = true
+        scope.launch {
+            try {
+                val top = holdId?.let { tops[it] } ?: return@launch
+                listState.scrollBy(top - holdY)
+            } finally {
+                correcting = false
+            }
+        }
+    }
+
+    private companion object {
+        /** Long enough for a card's height animation to settle. */
+        const val HOLD_MS = 600L
     }
 }

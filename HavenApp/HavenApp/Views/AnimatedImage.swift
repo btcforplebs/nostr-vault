@@ -77,6 +77,12 @@ struct AnimatedImageHelper {
         let magic = data.prefix(6)
         return magic == Data("GIF87a".utf8) || magic == Data("GIF89a".utf8)
     }
+
+    /// RIFF....WEBP container. Single-frame WebP decodes to one frame and
+    /// shows still, so this is safe to route through the animated path.
+    static func isWebPData(_ data: Data) -> Bool {
+        data.count >= 12 && data.prefix(4) == Data("RIFF".utf8) && data[data.startIndex + 8 ..< data.startIndex + 12] == Data("WEBP".utf8)
+    }
 }
 
 #if os(macOS)
@@ -289,11 +295,20 @@ struct AnimatedImage: UIViewRepresentable {
             guard let data else { return }
 
             let image: UIImage?
-            let isGIF = url.isGIF || AnimatedImageHelper.isGIFData(data)
+            // Animated WebP (nostr.build GIF previews) plays through the same
+            // frame decoder; UIImage(data:) would show only its first frame.
+            let isGIF = url.isGIF || AnimatedImageHelper.isGIFData(data) || AnimatedImageHelper.isWebPData(data)
 
             if isGIF {
                 if self.shouldAnimate {
-                    image = Self.makeAnimatedGIF(data: data)
+                    // A target size bounds every frame's decode, so a small
+                    // animated thumbnail doesn't hold full-size frames.
+                    var maxPixelSize: Int?
+                    if let targetSize = self.targetSize {
+                        let scale = await MainActor.run { UIScreen.main.scale }
+                        maxPixelSize = Int(max(targetSize.width, targetSize.height) * scale)
+                    }
+                    image = Self.makeAnimatedGIF(data: data, maxPixelSize: maxPixelSize)
                 } else {
                     image = UIImage(data: data)
                 }
@@ -336,21 +351,33 @@ struct AnimatedImage: UIViewRepresentable {
 
     /// Decodes all GIF frames via CGImageSource and returns an animating UIImage.
     /// UIImage(data:) only decodes the first frame, so looping requires this.
-    nonisolated private static func makeAnimatedGIF(data: Data) -> UIImage? {
+    nonisolated private static func makeAnimatedGIF(data: Data, maxPixelSize: Int? = nil) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
         guard count > 1 else { return UIImage(data: data) }
+        let thumbnailOptions = maxPixelSize.map {
+            [
+                kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
+                kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue,
+                kCGImageSourceThumbnailMaxPixelSize: $0 as NSNumber
+            ] as CFDictionary
+        }
 
         var frames: [UIImage] = []
         var totalDuration: Double = 0
 
         for i in 0..<count {
-            guard let cgImage = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            let frame = thumbnailOptions.map { CGImageSourceCreateThumbnailAtIndex(source, i, $0) }
+                ?? CGImageSourceCreateImageAtIndex(source, i, nil)
+            guard let cgImage = frame else { continue }
             frames.append(UIImage(cgImage: cgImage))
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
             let gifDict = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let webpDict = props?[kCGImagePropertyWebPDictionary as String] as? [String: Any]
             let delay = gifDict?[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double
                      ?? gifDict?[kCGImagePropertyGIFDelayTime as String] as? Double
+                     ?? webpDict?[kCGImagePropertyWebPUnclampedDelayTime as String] as? Double
+                     ?? webpDict?[kCGImagePropertyWebPDelayTime as String] as? Double
                      ?? 0.1
             totalDuration += max(delay, 0.011)
         }

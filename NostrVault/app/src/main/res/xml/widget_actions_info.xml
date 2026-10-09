@@ -8,4 +8,6 @@
     android:previewLayout="@layout/widget_loading"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
+    android:configure="com.nostrvault.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable|configuration_optional"
     android:widgetCategory="home_screen" />

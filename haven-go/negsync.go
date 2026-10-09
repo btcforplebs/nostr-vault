@@ -300,6 +300,7 @@ func (s *inboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan *
 }
 
 func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
+	observeFollowList(&ev)
 	c := classifyInboxEvent(ctx, &ev)
 	if !c.accept {
 		// Only rejections based on immutable event content are tombstoned.
@@ -312,7 +313,7 @@ func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 		// in memory for this process run so the negentropy vector lists it as a
 		// have and the remote stops re-offering it every round (the 100% CPU
 		// loop). reevaluate() drops it again if the author is later admitted.
-		s.rejects.add(ev.ID, ev.CreatedAt, ev.PubKey)
+		s.rejects.add(ev.ID, ev.CreatedAt, inboxTrustKey(&ev))
 		return nil
 	}
 	dst := s.inbox

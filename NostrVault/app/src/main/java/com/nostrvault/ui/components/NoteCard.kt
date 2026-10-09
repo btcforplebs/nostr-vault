@@ -16,16 +16,30 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -47,11 +61,18 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import android.widget.Toast
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
-import com.nostrvault.data.model.NoteStats
+import com.nostrvault.data.model.PostEngagement
+import com.nostrvault.data.model.poll
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
+import com.nostrvault.service.MediaSaveService
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +86,70 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
+ * What tapping an avatar offers in the feed: Follow/Unfollow and Block,
+ * the iOS FeedView avatar toolbar. Without it
+ * an avatar tap opens the profile, as on screens that pass none.
+ */
+@Stable
+class AvatarMenuActions(
+    /** Your own avatar opens your profile instead; there is no one to follow or block. */
+    val isOwn: (String) -> Boolean,
+    val isFollowed: (String) -> Boolean,
+    val onFollow: (String) -> Unit,
+    val onUnfollow: (String) -> Unit,
+    val onBlock: (String) -> Unit,
+)
+
+/**
+ * [content] (an avatar) that opens the [menu] for [pubkey] when tapped, or
+ * the profile when there is no menu or the avatar is your own.
+ */
+@Composable
+private fun AvatarWithMenu(
+    pubkey: String,
+    displayName: String,
+    menu: AvatarMenuActions?,
+    onProfileClick: (String) -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    if (menu == null || menu.isOwn(pubkey)) {
+        content(Modifier.clickable { onProfileClick(pubkey) })
+        return
+    }
+    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    Box {
+        content(Modifier.clickable(onClickLabel = "Actions for $displayName") { expanded = true })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            val followed = menu.isFollowed(pubkey)
+            DropdownMenuItem(
+                text = { Text(if (followed) "Unfollow" else "Follow", color = PrimaryText) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (followed) Icons.Filled.PersonRemove else NostrVaultIcons.PersonAdd,
+                        contentDescription = null,
+                        tint = if (followed) Color(0xFFFFCC00) else SuccessGreen,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    if (followed) menu.onUnfollow(pubkey) else menu.onFollow(pubkey)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Block", color = ErrorRed) },
+                leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
+                onClick = {
+                    expanded = false
+                    menu.onBlock(pubkey)
+                    Toast.makeText(context, "Blocked $displayName", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+    }
+}
+
+/**
  * Reusable note card used across Feed, Profile, Search, and NoteDetail screens.
  * Renders author header, content, media thumbnails, and engagement actions.
  */
@@ -72,7 +157,6 @@ import kotlin.math.max
 fun NoteCard(
     note: FeedNote,
     profile: FeedProfile?,
-    stats: NoteStats?,
     profiles: Map<String, FeedProfile> = emptyMap(),
     quotedNotes: Map<String, FeedNote> = emptyMap(),
     isLiked: Boolean = false,
@@ -85,6 +169,11 @@ fun NoteCard(
     parentNote: FeedNote? = null,
     repostedByProfile: FeedProfile? = null,
     replyToProfile: FeedProfile? = null,
+    /**
+     * Shown in place of the body while a bare repost waits for its original,
+     * or once no relay had it. Null shows the body.
+     */
+    repostPlaceholder: RepostPlaceholder? = null,
     onNoteClick: (String) -> Unit,
     /**
      * Where a quoted long-form post opens. Null falls back to [onNoteClick],
@@ -98,6 +187,8 @@ fun NoteCard(
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onBroadcast: ((String) -> Unit)? = null,
+    /** Opens the Web of Trust map for the author's pubkey. Null hides the button (pass null on your own notes). */
+    onTrustWeb: ((String) -> Unit)? = null,
     /**
      * Overflow-menu handlers. The menu is anchored to the card's own button, so
      * the card owns it rather than a screen-level dialog keyed by note id.
@@ -110,6 +201,22 @@ fun NoteCard(
     onBlock: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
+    /** Long-press on the bolt: pick an amount. Tap ([onZap]) zaps the default at once. */
+    onLongPressZap: ((String) -> Unit)? = null,
+    /** The author has no lightning address: the bolt draws faint (iOS). */
+    zapDimmed: Boolean = false,
+    /** Asks relays for the parent again after "Could not load original note". */
+    onRetryParent: ((String) -> Unit)? = null,
+    /** Videos play inline, muted and looping, while most on screen (Settings > Autoplay Videos). */
+    autoplayVideos: Boolean = false,
+    /** With it, an avatar tap opens Follow / Block, and the name opens the profile. */
+    avatarMenu: AvatarMenuActions? = null,
+    /**
+     * Likes, reposts, replies, quotes and zap sats, where the screen fetched
+     * them (profiles, [com.nostrvault.service.ProfileEngagementStore]). Each
+     * number goes on its own button; null leaves the buttons bare.
+     */
+    engagement: PostEngagement? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -135,8 +242,8 @@ fun NoteCard(
                 onClick = {
                     val nevent = HavenBridge.encodeNevent(
                         note.effectiveEventId,
-                        note.pubkey,
-                        note.kind,
+                        note.effectiveAuthor,
+                        note.effectiveKind,
                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                         ?: note.effectiveEventId
                     menuClipboard.setText(AnnotatedString(threadLink(nevent)))
@@ -144,6 +251,17 @@ fun NoteCard(
                 },
             ),
         )
+        // iOS lets you select the note's text in place. Here a long-press on
+        // the body would fight the row's tap-to-open and the list's scroll,
+        // so the text is copied whole from the menu instead.
+        if (repostPlaceholder == null && note.content.isNotBlank()) {
+            add(
+                NoteAction(NostrVaultIcons.Copy, "Copy text") {
+                    menuClipboard.setText(AnnotatedString(NostrMentions.toPlainText(note.content, profiles).trim()))
+                    Toast.makeText(menuContext, "Text copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
         onBroadcast?.let { broadcast ->
             add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = { broadcast(note.effectiveEventId) }))
         }
@@ -153,14 +271,18 @@ fun NoteCard(
             }
         } else {
             onReport?.let {
-                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = it))
+                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true, onClick = it))
             }
             onBlock?.let {
-                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = it))
+                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true, onClick = it))
             }
         }
     }
     val connectorColor = colors.primary.copy(alpha = 0.3f)
+    // A holder, not state, and the bounds are worked out only on tap: no
+    // per-frame work while the feed scrolls.
+    val cardCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val zoomView = LocalView.current
 
     // Thread connector lines drawn behind the card
     val drawConnectors = parentIsNext || hasReplyBelow
@@ -199,13 +321,27 @@ fun NoteCard(
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = SecondaryGroupedBg.copy(alpha = 0.85f),
-        // Unfocused cards get a neutral hairline, not accent-at-18%. Every card in
-        // the feed carrying an orange outline spends the accent on structure,
-        // which is what the accent is for drawing the eye *away* from. Focus
-        // still gets the accent, at full strength, where it means something.
+        // The accent outline iOS draws (FeedNoteRow.fullLayout): faint on a
+        // grey card, 30% (40% on a reply) in OLED mode where the card has no
+        // fill to separate it from the black; full strength when focused.
         border = BorderStroke(
-            if (isFocused) 2.dp else if (isOled) 1.dp else 0.8.dp,
-            if (isFocused) colors.primary else SeparatorColor.copy(alpha = if (isOled) 0.9f else 0.6f),
+            when {
+                isFocused -> 2.dp
+                isOled -> 1.5.dp
+                note.isReply -> 0.8.dp
+                else -> 0.5.dp
+            },
+            if (isFocused) {
+                colors.primary
+            } else {
+                colors.primary.copy(
+                    alpha = if (isOled) {
+                        if (note.isReply) 0.40f else 0.30f
+                    } else {
+                        if (note.isReply) 0.15f else 0.06f
+                    },
+                )
+            },
         ),
         // No shadow: 8dp of it is not legible on a near-black surface. The 2dp
         // accent border above is what says "focused".
@@ -213,7 +349,14 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .then(connectorModifier)
-            .clickable { onNoteClick(note.id) },
+            .onGloballyPositioned { cardCoords[0] = it }
+            .clickable {
+                // The thread view zooms open out of this card (iOS #306).
+                cardCoords[0]?.takeIf { it.isAttached }?.boundsInWindow()?.let { b ->
+                    ThreadZoomOrigin.mark(b.center.x, b.center.y, zoomView.width, zoomView.height)
+                }
+                onNoteClick(note.id)
+            },
     ) {
         // Subtle tint overlay matching iOS havenPurple.opacity(0.015) on focused notes
         Box(
@@ -236,9 +379,26 @@ fun NoteCard(
                         connectorColor = connectorColor,
                         onClick = { onNoteClick(parentNote.id) },
                         profiles = profiles,
+                        avatarMenu = avatarMenu,
+                        onProfileClick = onProfileClick,
                     )
                 } else {
-                    ParentNoteSkeleton(connectorColor = connectorColor)
+                    // Skeleton for 12 s, then a failure line with Retry (iOS
+                    // parentFetchFailed) rather than a skeleton that never ends.
+                    val parentId = note.parentEventId
+                    var parentAttempt by remember(parentId) { mutableIntStateOf(0) }
+                    if (rememberPlaceholderTimedOut(parentId, parentAttempt)) {
+                        ParentNoteFailed(
+                            onRetry = onRetryParent?.let { retry ->
+                                {
+                                    parentAttempt++
+                                    retry(parentId)
+                                }
+                            },
+                        )
+                    } else {
+                        ParentNoteSkeleton(connectorColor = connectorColor)
+                    }
                 }
                 // Connector stub bridging parent preview to current note's avatar
                 Box(
@@ -278,27 +438,42 @@ fun NoteCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                // Avatar
-                AvatarImage(
-                    url = profile?.pictureURL,
+                // Avatar: the quick menu in the feed, the profile elsewhere
+                val authorName = profile?.bestName ?: note.pubkey.take(8) + "..."
+                AvatarWithMenu(
                     pubkey = note.pubkey,
-                    size = 40.dp,
-                    displayName = profile?.bestName,
-                    modifier = Modifier.clickable { onProfileClick(note.pubkey) },
-                )
+                    displayName = authorName,
+                    menu = avatarMenu,
+                    onProfileClick = onProfileClick,
+                ) { avatarModifier ->
+                    AvatarImage(
+                        url = profile?.pictureURL,
+                        pubkey = note.pubkey,
+                        size = 40.dp,
+                        displayName = profile?.bestName,
+                        modifier = avatarModifier,
+                    )
+                }
 
                 Spacer(Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = profile?.bestName ?: note.pubkey.take(8) + "...",
+                            text = authorName,
                             color = PrimaryText,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
+                            // The avatar has the menu, so the name is the way
+                            // to the profile (iOS: name tap opens the profile).
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .then(
+                                    if (avatarMenu != null) Modifier.clickable { onProfileClick(note.pubkey) }
+                                    else Modifier,
+                                ),
                         )
 
                         // NIP-05 verification badge
@@ -311,11 +486,15 @@ fun NoteCard(
                                 modifier = Modifier.size(14.dp),
                             )
                         }
+                        if (note.isFromNostrVault) {
+                            Spacer(Modifier.width(4.dp))
+                            NostrVaultBadge(size = 12.dp)
+                        }
 
                         Spacer(Modifier.weight(1f))
 
                         Text(
-                            text = formatTimestamp(note.createdAt.time / 1000),
+                            text = formatTimestamp(note.postedAt.time / 1000),
                             color = SecondaryText,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
@@ -367,17 +546,70 @@ fun NoteCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Content text (rich: clickable mentions, links, hashtags)
-            if (note.content.isNotBlank()) {
-                NostrContentText(
+            // Content text (rich: clickable mentions, links, hashtags). Text,
+            // quotes, links and media run the card's full width under the
+            // avatar row, in every view (iOS #286, Logen: the most room).
+            val isArticle = note.displayKind == ArticleMeta.KIND
+            val poll = remember(note.id, note.displayKind, note.content) { note.poll }
+            if (repostPlaceholder != null) {
+                RepostPlaceholderLine(repostPlaceholder)
+            } else if (isArticle) {
+                // Long-form rides in the notes feed with kinds 1 and 6; its title
+                // is a tag and its body Markdown, so the text path drew the whole
+                // article raw and untitled. iOS ArticleInlineBody.
+                ArticleInlineBody(
+                    note = note,
+                    onClick = { (onArticleClick ?: onNoteClick)(note.effectiveEventId) },
+                )
+            } else if (poll != null) {
+                // A NIP-88 poll's question is its content and its options are
+                // tags, so the text path drew the question with nothing to
+                // vote on.
+                PollCard(poll = poll, isFocused = isFocused, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
+            } else if (note.content.isNotBlank()) {
+                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
+                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                TranslatableNoteText(
+                    noteKey = note.effectiveEventId,
                     content = note.content,
                     profiles = profiles,
-                    mediaURLs = note.mediaURLs.toSet(),
+                    mediaURLs = mediaSet,
+                    linkURLs = linkSet,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
-                    onProfileClick = onProfileClick,
-                    onPlainTextClick = { onNoteClick(note.id) },
-                    modifier = Modifier.padding(start = 50.dp),
+                    onTranslationClick = { onNoteClick(note.id) },
+                ) {
+                    NostrContentText(
+                        content = note.content,
+                        profiles = profiles,
+                        mediaURLs = mediaSet,
+                        linkURLs = linkSet,
+                        fontSize = 17.sp,
+                        lineHeight = 24.sp,
+                        onProfileClick = onProfileClick,
+                        onPlainTextClick = { onNoteClick(note.id) },
+                    )
+                }
+            }
+
+            // Media thumbnails. Same order as iOS FeedNoteRow: text, media,
+            // links, quotes.
+            if (!isArticle && note.mediaURLs.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                MediaPreviewRow(
+                    urls = note.mediaURLs,
+                    tags = note.tags,
+                    autoplayVideos = autoplayVideos,
+                )
+            }
+
+            // One card per link. The URLs are out of the text above, so a
+            // card is the only place each link still shows — quotes or not.
+            // Not for an article: its links and images belong to the reader.
+            if (!isArticle) for (link in note.cardLinkURLs) {
+                Spacer(Modifier.height(8.dp))
+                LinkPreviewCard(
+                    url = link,
                 )
             }
 
@@ -393,36 +625,15 @@ fun NoteCard(
                             profiles = profiles,
                             onClick = onNoteClick,
                             onArticleClick = onArticleClick,
-                            modifier = Modifier.padding(start = 50.dp),
                         )
                     } else {
                         QuotedNotePlaceholder(
                             identifier = qid,
                             onClick = onNoteClick,
-                            modifier = Modifier.padding(start = 50.dp),
                         )
                     }
                     Spacer(Modifier.height(4.dp))
                 }
-            }
-
-            // Link preview (first non-media URL, only if no quoted notes)
-            if (note.quotedEventIds.isEmpty() && note.linkURLs.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                LinkPreviewCard(
-                    url = note.linkURLs.first(),
-                    modifier = Modifier.padding(start = 50.dp),
-                )
-            }
-
-            // Media thumbnails
-            if (note.mediaURLs.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                MediaPreviewRow(
-                    urls = note.mediaURLs,
-                    tags = note.tags,
-                    modifier = Modifier.padding(start = 50.dp),
-                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -432,7 +643,6 @@ fun NoteCard(
             // reposts, not the repost wrapper event.
             EngagementBar(
                 noteId = note.effectiveEventId,
-                stats = stats,
                 isLiked = isLiked,
                 isZapped = isZapped,
                 isReposted = isReposted,
@@ -442,6 +652,10 @@ fun NoteCard(
                 onLike = onLike,
                 onZap = onZap,
                 onLongPressLike = onLongPressLike,
+                onLongPressZap = onLongPressZap,
+                zapDimmed = zapDimmed,
+                engagement = engagement,
+                onTrustWeb = onTrustWeb?.let { open -> { open(note.effectiveAuthor) } },
             )
         }
         } // Box (focused tint overlay)
@@ -449,24 +663,97 @@ fun NoteCard(
 }
 
 /**
+ * A kind-30023 article inside a feed row: cover, title, "Article · N min
+ * read", and the summary (or the top of the body, Markdown stripped). Tapping
+ * opens the reader. The row above already draws the author and the time, so
+ * this is not the Articles feed's own card. iOS ArticleInlineBody.
+ */
+@Composable
+private fun ArticleInlineBody(
+    note: FeedNote,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
+    val preview = remember(note.id) { ArticleMeta.previewText(meta.summary, note.content) }
+    val minutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
+    val accent = LocalNostrVaultColors.current.primary
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClickLabel = "Read article", onClick = onClick),
+    ) {
+        meta.imageUrl?.let { url ->
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(url)
+                    .size(800)
+                    .crossfade(100)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TertiaryGroupedBg),
+            )
+        }
+        Text(
+            text = meta.title,
+            color = PrimaryText,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 23.sp,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = NostrVaultIcons.Articles,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(11.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (minutes != null) "Article · $minutes min read" else "Article",
+                color = accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        preview?.let {
+            Text(
+                text = it,
+                color = SecondaryText,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
  * Action button row. Mirrors the iOS feed note layout: capsule-background
  * icon buttons, left-aligned with fixed spacing, with a spring scale-up on
  * active states.
- * Order: Reply → Repost → Quote → Like → Zap.
+ * Order: Reply → Repost → Quote → Like → Zap, then Web of Trust where offered.
  *
- * Repost, Like and Zap carry their count when there is one. Reply does not:
- * [NoteStats] has no reply count, and inventing one from the loaded thread would
- * be wrong for any note whose replies are not in the cache.
+ * Counts only where the screen fetched [engagement] (profiles), as on iOS:
+ * each button carries its own number ("Reply 5", "Like 64+"), zero shows
+ * none. Elsewhere the numbers belong to the thread view, which shows them as
+ * its own row (ThreadNoteEngagementRow, the hero note's stats).
  *
- * **Five buttons, because seven plus three counts does not fit a phone.** A
- * 360dp device leaves this row 312dp once the card's 10dp a side and the
- * column's 14dp a side are paid for. Seven 32dp buttons at 12dp spacing are
- * 296dp *icon-only* — already over once the old 50dp text indent was on it —
- * and a count adds its glyphs plus a 3dp gap to three of them: 3×58 + 4×32 +
- * 6×8 = 350dp. No arrangement fixes that; membership does. Share and Broadcast
- * moved to the overflow menu (neither carries a count, both are secondary to
- * Reply/Repost/Like/Zap, and Share sits next to Copy link where it belongs),
- * leaving 3×58 + 2×32 = 238dp.
+ * **Five buttons, with Share and Broadcast in the ⋯ menu.** iOS put them in
+ * the row and had no ⋯ menu, so a note there could not be reported, blocked
+ * or copied; both apps now use this row plus the menu. Share sits next to
+ * Copy link there, where it belongs. The one addition is Web of Trust (iOS
+ * d584a294), a sixth uncounted 40dp cell: 240dp of the 312dp row.
  *
  * **Every child is unweighted, deliberately.** An equal `weight(1f)` hands each
  * cell the same width whether it needs 32dp or 58dp, and inside a counted cell
@@ -492,7 +779,6 @@ fun NoteCard(
 @Composable
 internal fun EngagementBar(
     noteId: String,
-    stats: NoteStats?,
     isLiked: Boolean,
     isZapped: Boolean,
     isReposted: Boolean = false,
@@ -502,24 +788,39 @@ internal fun EngagementBar(
     onLike: ((String) -> Unit)?,
     onZap: ((String) -> Unit)?,
     onLongPressLike: ((String) -> Unit)? = null,
+    onLongPressZap: ((String) -> Unit)? = null,
+    zapDimmed: Boolean = false,
+    engagement: PostEngagement? = null,
+    /** Web of Trust for the author; null on your own notes and where it isn't offered. */
+    onTrustWeb: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    fun label(value: Long) = engagement?.let { postEngagementLabel(value, it.isAtLeast(value)) }
+    fun spoken(value: Long, noun: String) =
+        engagement?.let { postEngagementDescription(value, noun, it.isAtLeast(value)) }
     // No spacing here: each button carries its own 4dp a side inside its tap
     // target, so the drawn gap is still 8dp and the pitch is still 40dp, with
     // no dead strip between two targets. See [EngagementButton].
+    // Five counted buttons do not always fit a 360dp phone ("12+", "2.1k+"…),
+    // so a row with profile counts scrolls rather than clipping Zap.
+    val counted = engagement != null
     Row(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (counted) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
     ) {
         // Reply
         if (onReply != null) {
             EngagementButton(
-                icon = NostrVaultIcons.Reply,
+                icon = NostrVaultIcons.ReplyAction,
                 isActive = false,
                 activeColor = SecondaryText,
                 contentDescription = "Reply",
                 onClick = { onReply.invoke(noteId) },
+                count = engagement?.let { label(it.replies.toLong()) },
+                countDescription = engagement?.let { spoken(it.replies.toLong(), "replies") },
             )
         }
 
@@ -530,8 +831,9 @@ internal fun EngagementBar(
                 isActive = isReposted,
                 activeColor = RepostGreen,
                 contentDescription = if (isReposted) "Reposted" else "Repost",
-                count = engagementCountLabel(stats?.repostCount ?: 0),
                 onClick = { onRepost.invoke(noteId) },
+                count = engagement?.let { label(it.reposts.toLong()) },
+                countDescription = engagement?.let { spoken(it.reposts.toLong(), "reposts") },
             )
         }
 
@@ -543,39 +845,55 @@ internal fun EngagementBar(
                 activeColor = SecondaryText,
                 contentDescription = "Quote",
                 onClick = { onQuote.invoke(noteId) },
+                count = engagement?.let { label(it.quotes.toLong()) },
+                countDescription = engagement?.let { spoken(it.quotes.toLong(), "quotes") },
             )
         }
 
-        // Like (with long-press for emoji picker) — hidden entirely in Zaps Only mode
+        // Like: tap reacts or takes it back, hold opens the tapback bar
+        // (its "+" is the emoji picker). Hidden entirely in Zaps Only mode.
         if (onLike != null && !LocalZapsOnlyMode.current) {
-            EngagementButton(
-                icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                isActive = isLiked,
-                activeColor = LikeRed,
-                contentDescription = if (isLiked) "Unlike" else "Like",
-                count = engagementCountLabel(stats?.reactionCount ?: 0),
-                onClick = { onLike.invoke(noteId) },
-                onLongClick = if (onLongPressLike != null) {
-                    { onLongPressLike.invoke(noteId) }
-                } else null,
+            ReactionButton(
+                noteId = noteId,
+                isLiked = isLiked,
+                onTap = { onLike.invoke(noteId) },
+                onMore = onLongPressLike?.let { more -> { more(noteId) } },
+                count = engagement?.let { label(it.likes.toLong()) },
+                countDescription = engagement?.let { spoken(it.likes.toLong(), "likes") },
             )
         }
 
         // Zap
-        if (onZap != null) {
+        if (onZap != null) Box(Modifier.zapFlightTarget(noteId)) {
             EngagementButton(
-                icon = NostrVaultIcons.Zap,
+                icon = if (isZapped) NostrVaultIcons.Zap else NostrVaultIcons.ZapOutline,
                 isActive = isZapped,
                 activeColor = ZapOrange,
                 contentDescription = if (isZapped) "Zapped" else "Zap",
-                count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
                 onClick = { onZap.invoke(noteId) },
+                onLongClick = onLongPressZap?.let { longPress -> { longPress(noteId) } },
+                dimmed = zapDimmed && !isZapped,
+                count = engagement?.let { label(it.zapSats) },
+                countDescription = engagement?.let { spoken(it.zapSats, "sats zapped") },
+            )
+        }
+
+        // Web of Trust: how you reach the author. Opens a map, publishes
+        // nothing, so it never shows as active.
+        if (onTrustWeb != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.WebOfTrust,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Web of Trust",
+                onClick = onTrustWeb,
             )
         }
 
         // Slack stays here, at the end, rather than being spread between the
-        // buttons — see the arrangement note above.
-        Spacer(Modifier.weight(1f))
+        // buttons — see the arrangement note above. A scrolling row has no
+        // slack to hold.
+        if (!counted) Spacer(Modifier.weight(1f))
     }
 }
 
@@ -589,8 +907,12 @@ internal fun EngagementButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     count: String? = null,
+    /** [count] as TalkBack reads it ("at least 64 likes"). */
+    countDescription: String? = null,
+    /** Drawn faint and without the tap pulse: the tap explains why it can't act. */
+    dimmed: Boolean = false,
 ) {
-    val tint = if (isActive) activeColor else SecondaryText
+    val tint = if (isActive) activeColor else if (dimmed) SecondaryText.copy(alpha = 0.35f) else SecondaryText
     val background = if (isActive) {
         activeColor.copy(alpha = 0.18f)
     } else {
@@ -628,7 +950,7 @@ internal fun EngagementButton(
     // publishing anything, so there is no signed event for the bounce to be
     // confirming.
     val tapAndPulse = {
-        if (!Motion.isReduced) pulsing = true
+        if (!Motion.isReduced && !dimmed) pulsing = true
         onClick()
     }
 
@@ -708,6 +1030,8 @@ internal fun EngagementButton(
                 fontWeight = FontWeight.Medium,
                 color = tint,
                 maxLines = 1,
+                modifier = if (countDescription == null) Modifier
+                else Modifier.semantics { this.contentDescription = countDescription },
             )
         }
     }
@@ -721,25 +1045,61 @@ internal fun isVideoUrl(url: String): Boolean {
     return ext in VIDEO_EXTENSIONS
 }
 
+private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "wav", "ogg", "aac", "flac", "opus")
+
+/** An audio file: it plays from a card, not in the photo/video viewer. */
+internal fun isAudioUrl(url: String): Boolean {
+    val ext = url.substringAfterLast('.').substringBefore('?').substringBefore('#').lowercase()
+    return ext in AUDIO_EXTENSIONS
+}
+
 @Composable
 fun MediaPreviewRow(
     urls: List<String>,
     /** The note's tags, read for NIP-92 `imeta dim` so the box is right first time. */
     tags: List<List<String>> = emptyList(),
+    /** Play videos inline (muted, looping, one at a time) instead of a poster. */
+    autoplayVideos: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    // Audio plays from its own card on the app-wide player; the rest open
+    // the viewer. iOS: FeedAudioCard.
+    val (audio, visual) = remember(urls) { urls.partition(::isAudioUrl) }
+    if (audio.isEmpty()) {
+        VisualMediaPreview(visual, tags, autoplayVideos, modifier)
+        return
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos)
+        audio.forEach { com.nostrvault.ui.screens.music.AudioFileCard(it) }
+    }
+}
+
+@Composable
+private fun VisualMediaPreview(
+    urls: List<String>,
+    tags: List<List<String>>,
+    autoplay: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // One id per row, so the viewer can find the photo it opened from.
+    val origin = remember { MediaZoomSources.newOrigin() }
     if (urls.size == 1) {
         SingleMediaPreview(
             url = urls.first(),
             tags = tags,
-            onMediaClick = { FullScreenMediaRouter.open(urls, 0) },
+            sourceKey = MediaSourceKey(origin, 0),
+            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
+            autoplay = autoplay,
             modifier = modifier,
         )
     } else {
         MediaCarousel(
             urls = urls,
             tags = tags,
-            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index) },
+            origin = origin,
+            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
+            autoplay = autoplay,
             modifier = modifier,
         )
     }
@@ -755,15 +1115,29 @@ fun MediaPreviewRow(
  * Rendered as an activity-window overlay via [FullScreenMediaHost] — NOT a Dialog —
  * so Picture-in-Picture (which only captures the activity's own window) can show
  * the playing video. All chrome hides while the activity is in PiP.
+ *
+ * With an [origin], a photo zooms out of its spot in the feed and, on close
+ * (swipe, back, or the X), back into it — iOS #117. It fades instead for a
+ * video, a zoomed-in photo, a spot that has scrolled away, or Reduce Motion.
+ * [onDismiss] runs once the close animation has landed.
+ *
+ * Audio pages play in [AudioPlayer], as iOS's MediaItemRenderer does; a
+ * vertical drag closes video and audio pages as it does a photo. [copyLink]
+ * adds a Copy link button (the profile viewer's, iOS ProfileView).
  */
 @Composable
 internal fun FullScreenMediaPager(
     urls: List<String>,
     initialIndex: Int,
     onDismiss: () -> Unit,
+    origin: Long? = null,
+    copyLink: Boolean = false,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -777,6 +1151,7 @@ internal fun FullScreenMediaPager(
     // Re-evaluate mirror status whenever the visible page changes (the ViewModel is
     // shared across the feed, so only one viewer is ever active).
     LaunchedEffect(currentUrl) { viewModel.onOpen(currentUrl) }
+    LaunchedEffect(pagerState.currentPage) { FullScreenMediaRouter.setPage(pagerState.currentPage) }
 
     // Drag-to-dismiss state, using the same visual formulas as MediaViewerScreen / iOS.
     val dragOffsetY = remember { Animatable(0f) }
@@ -794,21 +1169,138 @@ internal fun FullScreenMediaPager(
         derivedStateOf { (1f - abs(dragOffsetY.value) / 100f).coerceIn(0f, 1f) }
     }
 
-    BackHandler(onBack = onDismiss)
+    // ── Zoom in from / out to the tapped photo ──────────────────────────
+    // 0 = drawn over the source (or invisible, for a fade), 1 = full screen.
+    val progress = remember { Animatable(0f) }
+    // The transform at progress 0; null means cross-fade.
+    var zoomFrom by remember { mutableStateOf<ZoomTransform?>(null) }
+    var sourceRect by remember { mutableStateOf<ZoomRect?>(null) }
+    var containerOrigin by remember { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var closing by remember { mutableStateOf(false) }
+
+    /** The zoom for the item at [page], or null when it should fade. */
+    fun zoomFor(page: Int): Pair<ZoomTransform, ZoomRect>? {
+        if (origin == null || Motion.isReduced || containerSize == IntSize.Zero) return null
+        val url = urls.getOrNull(page) ?: return null
+        if (isVideoUrl(url) || isAudioUrl(url)) return null
+        val source = MediaZoomSources.get(MediaSourceKey(origin, page)) ?: return null
+        if (!MediaZoomGeometry.isOnScreen(source.full, source.visible)) return null
+        val rect = source.full.offset(-containerOrigin.x, -containerOrigin.y)
+        val w = containerSize.width.toFloat()
+        val h = containerSize.height.toFloat()
+        // The viewer draws the image Fit; without a known ratio the source
+        // box's own shape is the best guess (exact for a feed card).
+        val aspect = MediaAspectCache.get(url) ?: (rect.width / rect.height)
+        val fitted = MediaZoomGeometry.fit(aspect, w, h)
+        return MediaZoomGeometry.transform(fitted, rect, source.crop) to rect
+    }
+
+    // Keyed on "laid out yet", not the size, so a rotation mid-zoom doesn't cancel it.
+    val laidOut = containerSize != IntSize.Zero
+    LaunchedEffect(laidOut) {
+        if (!laidOut || closing || progress.value > 0f) return@LaunchedEffect
+        val zoom = zoomFor(pagerState.currentPage)
+        zoomFrom = zoom?.first
+        sourceRect = zoom?.second
+        if (zoom != null && origin != null) {
+            FullScreenMediaRouter.setHiddenSource(MediaSourceKey(origin, pagerState.currentPage))
+        }
+        progress.animateTo(1f, if (zoom != null) Motion.panel() else Motion.fade())
+        // Once full screen the black covers the source; show it again so a page
+        // change can't leave a hole in the carousel underneath.
+        FullScreenMediaRouter.setHiddenSource(null)
+    }
+
+    val close: () -> Unit = close@{
+        if (closing) return@close
+        closing = true
+        val page = pagerState.currentPage
+        val zoom = if (currentScale <= 1.05f) zoomFor(page) else null
+        zoomFrom = zoom?.first
+        sourceRect = zoom?.second
+        if (zoom != null && origin != null) {
+            FullScreenMediaRouter.setHiddenSource(MediaSourceKey(origin, page))
+        }
+        scope.launch {
+            launch { dragOffsetY.animateTo(0f, if (zoom != null) Motion.panel() else Motion.fade()) }
+            progress.animateTo(0f, if (zoom != null) Motion.panel() else Motion.fade())
+            onDismiss()
+        }
+    }
+
+    BackHandler(onBack = close)
+
+    // Drag-to-dismiss, fed by ZoomableImage on a photo and by a drag detector
+    // on a video or audio page.
+    val onVerticalDrag: (Float) -> Unit = { deltaY ->
+        if (currentScale <= 1.05f && !closing) {
+            accumulatedDragY += deltaY
+            scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
+        }
+    }
+    val onVerticalDragEnd: () -> Unit = {
+        if (closing) {
+            // The close animation owns the offset now.
+        } else if (abs(accumulatedDragY) > dismissThresholdPx) {
+            close()
+        } else {
+            scope.launch {
+                dragOffsetY.animateTo(0f, Motion.snapBack())
+            }
+        }
+        accumulatedDragY = 0f
+    }
+
+    val shown by remember { derivedStateOf { progress.value.coerceIn(0f, 1f) } }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = backgroundAlpha))
+            .onGloballyPositioned {
+                containerOrigin = it.positionInWindow()
+                containerSize = it.size
+            }
+            .background(Color.Black.copy(alpha = backgroundAlpha * shown))
             // Swallow taps that no child consumed so they can't reach the UI beneath
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
             HorizontalPager(
                 state = pagerState,
                 // Lock paging while a page is zoomed so pan doesn't flip pages.
-                userScrollEnabled = currentScale <= 1.05f,
+                userScrollEnabled = currentScale <= 1.05f && !closing,
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        val from = zoomFrom
+                        if (from == null) {
+                            alpha = shown
+                        } else {
+                            val t = MediaZoomGeometry.interpolate(from, progress.value)
+                            transformOrigin = TransformOrigin(0f, 0f)
+                            scaleX = t.scale
+                            scaleY = t.scale
+                            translationX = t.translationX
+                            translationY = t.translationY
+                        }
+                    }
+                    .drawWithContent {
+                        val from = zoomFrom
+                        val src = sourceRect
+                        if (from == null || src == null || progress.value >= 1f) {
+                            drawContent()
+                        } else {
+                            // Clip to the source's shape at 0, opening to the full screen.
+                            val clip = MediaZoomGeometry.lerpRect(
+                                MediaZoomGeometry.toLocal(src, from),
+                                ZoomRect(0f, 0f, size.width, size.height),
+                                progress.value,
+                            )
+                            clipRect(clip.left, clip.top, clip.left + clip.width, clip.top + clip.height) {
+                                this@drawWithContent.drawContent()
+                            }
+                        }
+                    }
                     .graphicsLayer {
                         translationY = dragOffsetY.value
                         scaleX = contentScale
@@ -816,34 +1308,41 @@ internal fun FullScreenMediaPager(
                     },
             ) { page ->
                 val url = urls[page]
-                if (isVideoUrl(url)) {
-                    // Only the visible page gets a player, to keep memory at one instance.
-                    if (page == pagerState.currentPage) {
-                        VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
-                    } else {
-                        Box(Modifier.fillMaxSize().background(Color.Black))
+                if (isVideoUrl(url) || isAudioUrl(url)) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = onVerticalDragEnd,
+                                    onDragCancel = onVerticalDragEnd,
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    onVerticalDrag(dragAmount)
+                                }
+                            },
+                    ) {
+                        // Only the visible page gets a player, to keep memory at one instance.
+                        if (page == pagerState.currentPage) {
+                            if (isAudioUrl(url)) {
+                                AudioPlayer(
+                                    uri = url,
+                                    fileName = url.substringAfterLast('/').substringBefore('?').substringBefore('#'),
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
+                            }
+                        }
                     }
                 } else {
                     ZoomableImage(
                         model = url,
                         contentDescription = null,
                         onScaleChanged = { currentScale = it },
-                        onVerticalDrag = { deltaY ->
-                            if (currentScale <= 1.05f) {
-                                accumulatedDragY += deltaY
-                                scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
-                            }
-                        },
-                        onVerticalDragEnd = {
-                            if (abs(accumulatedDragY) > dismissThresholdPx) {
-                                onDismiss()
-                            } else {
-                                scope.launch {
-                                    dragOffsetY.animateTo(0f, Motion.snapBack())
-                                }
-                            }
-                            accumulatedDragY = 0f
-                        },
+                        onVerticalDrag = onVerticalDrag,
+                        onVerticalDragEnd = { onVerticalDragEnd() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -851,13 +1350,13 @@ internal fun FullScreenMediaPager(
 
             if (!isInPiP) {
                 IconButton(
-                    onClick = onDismiss,
+                    onClick = close,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
                         .padding(8.dp)
                         .size(40.dp)
-                        .graphicsLayer { alpha = overlayAlpha }
+                        .graphicsLayer { alpha = overlayAlpha * shown }
                         .background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 ) {
                     Icon(
@@ -868,43 +1367,65 @@ internal fun FullScreenMediaPager(
                 }
             }
 
-            if (!isInPiP && viewModel.canMirror) {
-                MirrorToBlossomPill(
-                    state = mirrorState,
-                    onMirror = { viewModel.mirror(currentUrl) },
+            // Top row, like iOS (PR #120): Save, then Mirror / Mirrored, one-word
+            // labels. Messages go out as system toasts: the in-app pills draw
+            // under this overlay.
+            if (!isInPiP) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
                         .padding(8.dp)
-                        .graphicsLayer { alpha = overlayAlpha },
-                )
+                        .graphicsLayer { alpha = overlayAlpha * shown },
+                ) {
+                    if (copyLink && isShareableMediaUrl(currentUrl)) {
+                        IconButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(currentUrl))
+                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape),
+                        ) {
+                            Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    // A photo or video, as iOS offers Save to Photos; not audio.
+                    if (!isAudioUrl(currentUrl)) {
+                        SaveToGalleryPill(
+                            state = saveState,
+                            onSave = {
+                                viewModel.saveToGallery(currentUrl) { message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        )
+                    }
+                    if (viewModel.canMirror) {
+                        MirrorToBlossomPill(
+                            state = mirrorState,
+                            onMirror = { viewModel.mirror(currentUrl) },
+                        )
+                    }
+                }
             }
 
-            // Page-position dots, only when the note carries more than one item.
+            // Page-position bar, only when the note carries more than one item.
             if (urls.size > 1 && !isInPiP) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                PagePositionBar(
+                    count = urls.size,
+                    index = pagerState.currentPage,
+                    track = Color.White.copy(alpha = 0.35f),
+                    lit = Color.White,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 24.dp)
-                        .graphicsLayer { alpha = overlayAlpha },
-                ) {
-                    repeat(urls.size) { i ->
-                        val selected = i == pagerState.currentPage
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .size(if (selected) 8.dp else 6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (selected) Color.White
-                                    else Color.White.copy(alpha = 0.4f),
-                                ),
-                        )
-                    }
-                }
+                        .graphicsLayer { alpha = overlayAlpha * shown },
+                )
             }
     }
 }
@@ -926,13 +1447,21 @@ private fun MirrorToBlossomPill(
     val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
         state is FeedMediaMirrorViewModel.MirrorState.Failed
 
+    val spoken = when (state) {
+        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Mirroring to Blossom"
+        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Mirrored to Blossom"
+        is FeedMediaMirrorViewModel.MirrorState.Failed -> "Mirror failed, retry"
+        FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to Blossom"
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(CircleShape)
             .background(bg)
             .then(if (clickable) Modifier.clickable(onClick = onMirror) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         when (state) {
             FeedMediaMirrorViewModel.MirrorState.Mirroring -> {
@@ -947,19 +1476,71 @@ private fun MirrorToBlossomPill(
             FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
                 Icon(NostrVaultIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirrored to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirrored", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             is FeedMediaMirrorViewModel.MirrorState.Failed -> {
                 Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror failed — retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             FeedMediaMirrorViewModel.MirrorState.Idle -> {
                 Icon(NostrVaultIcons.Backup, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirror", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/** Capsule that saves the viewed photo or video to the device gallery. */
+@Composable
+private fun SaveToGalleryPill(
+    state: FeedMediaMirrorViewModel.SaveState,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val saved = state == FeedMediaMirrorViewModel.SaveState.Saved
+    val bg = if (saved) Color(0xFF33CC99).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.6f)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(bg)
+            .then(
+                if (state == FeedMediaMirrorViewModel.SaveState.Idle) Modifier.clickable(onClick = onSave)
+                else Modifier,
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (saved) "Saved to gallery" else "Save to gallery"
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        if (state == FeedMediaMirrorViewModel.SaveState.Saving) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = when (state) {
+                FeedMediaMirrorViewModel.SaveState.Saving -> "Saving…"
+                FeedMediaMirrorViewModel.SaveState.Saved -> "Saved"
+                FeedMediaMirrorViewModel.SaveState.Idle -> "Save"
+            },
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -967,7 +1548,36 @@ private fun MirrorToBlossomPill(
 class FeedMediaMirrorViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val mediaCacheService: MediaCacheService,
+    private val mediaSaveService: MediaSaveService,
 ) : ViewModel() {
+
+    enum class SaveState { Idle, Saving, Saved }
+
+    private val _saveState = MutableStateFlow(SaveState.Idle)
+    val saveState = _saveState.asStateFlow()
+
+    /** The URL on screen; a save that finishes after the user paged away leaves the new page's state alone. */
+    private var openUrl: String? = null
+
+    /**
+     * Save the media on screen to the device gallery (MediaStore, no storage
+     * permission on Android 10+). [onMessage] gets one short line for a toast.
+     * Port of iOS FeedMediaViewer.saveToPhotosTapped().
+     */
+    fun saveToGallery(url: String, onMessage: (String) -> Unit) {
+        if (_saveState.value != SaveState.Idle) return
+        viewModelScope.launch {
+            _saveState.value = SaveState.Saving
+            // Feed videos are recognised by extension, so that names the type
+            // when the server only says application/octet-stream.
+            val hint = if (isVideoUrl(url)) MediaSaveService.mimeTypeForExtension(url) else null
+            val result = mediaSaveService.saveToGallery(url, hint)
+            if (openUrl == url) {
+                _saveState.value = if (result.isSuccess) SaveState.Saved else SaveState.Idle
+            }
+            onMessage(if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery")
+        }
+    }
 
     sealed interface MirrorState {
         data object Idle : MirrorState
@@ -988,6 +1598,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
      * otherwise offer the mirror action. Mirrors iOS FeedMediaViewer.updateMirrorStatus().
      */
     fun onOpen(url: String) {
+        openUrl = url
+        _saveState.value = SaveState.Idle
         val hash = extractSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
             MirrorState.Mirrored
@@ -1020,7 +1632,9 @@ class FeedMediaMirrorViewModel @Inject constructor(
 private fun SingleMediaPreview(
     url: String,
     tags: List<List<String>>,
+    sourceKey: MediaSourceKey,
     onMediaClick: (String) -> Unit,
+    autoplay: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1030,7 +1644,7 @@ private fun SingleMediaPreview(
     // 600dp portrait. Matches iOS FeedMediaView (Fit, no crop).
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
-            .data(url)
+            .data(remember(url, tags) { feedImageModel(tags, url) })
             .size(800)
             .crossfade(100)
             .build(),
@@ -1055,25 +1669,38 @@ private fun SingleMediaPreview(
     // pixel.
     val ratio = hintedRatio ?: decodedRatio
 
+    val loaded = painter.state is AsyncImagePainter.State.Success
+
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
         val displayHeight = if (ratio != null) minOf(maxWidth / ratio, cap) else 200.dp
+        // Square to its edges, with no rounded frame, and grey only while
+        // the photo loads (iOS #286, Logen: screen room).
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(displayHeight)
-                .clip(RoundedCornerShape(8.dp))
-                .background(TertiaryGroupedBg)
+                .mediaZoomSource(sourceKey)
+                .clipToBounds()
+                .then(if (loaded) Modifier else Modifier.background(TertiaryGroupedBg))
                 .clickable { onMediaClick(url) },
         ) {
+            BlurHashPreview(
+                url = url,
+                tags = tags,
+                ratio = ratio,
+                loaded = loaded,
+            )
             Image(
                 painter = painter,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-            if (isVideo) {
+            if (isVideo && autoplay) {
+                InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
+            } else if (isVideo) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
                     contentDescription = "Video",
@@ -1085,24 +1712,86 @@ private fun SingleMediaPreview(
     }
 }
 
+/**
+ * What the feed asks Coil for to show [url]: the URL itself, except for a video
+ * whose `imeta` names a poster image (`image`, or the older `thumb`), which is
+ * a small JPEG instead of a frame read out of the video.
+ */
+internal fun feedImageModel(tags: List<List<String>>, url: String): String =
+    if (isVideoUrl(url)) {
+        (imetaField(tags, url, "image") ?: imetaField(tags, url, "thumb"))
+            ?.takeIf { isWebUrl(it) } ?: url
+    } else url
+
+/** A poster comes from the note's author, so only a web URL is fetched, never file: or content:. */
+private fun isWebUrl(s: String): Boolean =
+    s.startsWith("https://", ignoreCase = true) || s.startsWith("http://", ignoreCase = true)
+
+/**
+ * What a photo shows before its pixels arrive: the NIP-92 `blurhash` preview,
+ * stretched over exactly the rect the `Fit` image will occupy. Without a
+ * blurhash it draws nothing and the card fill shows, as before. iOS parity:
+ * `MediaLoadingPlaceholder`.
+ */
+@Composable
+private fun BlurHashPreview(
+    url: String,
+    tags: List<List<String>>,
+    ratio: Float?,
+    loaded: Boolean,
+) {
+    val preview = remember(url, tags) {
+        BlurHash.bitmap(imetaField(tags, url, "blurhash"))?.asImageBitmap()
+    } ?: return
+    // Stay under the arriving image until its 100ms crossfade has finished;
+    // dropping the preview at once would flash the empty card between the two.
+    var gone by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(loaded) {
+        if (loaded) {
+            delay(250)
+            gone = true
+        }
+    }
+    if (gone) return
+    Image(
+        bitmap = preview,
+        contentDescription = null,
+        contentScale = ContentScale.FillBounds,
+        modifier = if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.fillMaxSize(),
+    )
+}
+
 @Composable
 private fun MediaCarousel(
     urls: List<String>,
     tags: List<List<String>>,
+    origin: Long,
     onMediaClick: (Int) -> Unit,
+    autoplay: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(pageCount = { urls.size })
 
+    // Follow the full-screen viewer as it pages, so closing it on the third
+    // photo zooms back into a carousel showing the third photo.
+    val viewerPosition by FullScreenMediaRouter.position.collectAsState()
+    LaunchedEffect(viewerPosition) {
+        val p = viewerPosition ?: return@LaunchedEffect
+        if (p.origin == origin && p.index in urls.indices && p.index != pagerState.currentPage) {
+            pagerState.scrollToPage(p.index)
+        }
+    }
+
     // A pager has one height for every page, so the ratio comes from the first
-    // image — the one you see before you swipe. Pages are drawn Fit inside it,
-    // which letterboxes the others rather than cropping them.
+    // image — the one you see before you swipe — and the first page fits it
+    // exactly. Every page fills the frame edge to edge, cropping a page whose
+    // shape differs, rather than sitting letterboxed in a grey box (iOS #286,
+    // Logen 2026-10-05).
     //
-    // This used to be a hard `aspectRatio(4f / 3f)` with `ContentScale.Crop`, so
-    // a portrait photo displayed whole when posted alone and was centre-cropped
-    // into a landscape box the moment a second image joined it. Faces and text
-    // went off the edges of the same file that rendered fine on its own.
+    // This used to be a hard `aspectRatio(4f / 3f)`, which cropped even the
+    // first photo: a portrait one displayed whole when posted alone lost its
+    // top and bottom the moment a second image joined it.
     val firstRatio = remember(urls, tags) { knownAspectRatio(tags, urls.first()) }
     val pagerRatio = (firstRatio ?: (4f / 3f)).coerceIn(2f / 3f, 16f / 9f)
 
@@ -1112,25 +1801,34 @@ private fun MediaCarousel(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(pagerRatio)
-                .clip(RoundedCornerShape(8.dp)),
+                .clipToBounds(),
         ) { page ->
             val url = urls[page]
+            var loaded by remember(url) { mutableStateOf(false) }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(TertiaryGroupedBg)
+                    .mediaZoomSource(MediaSourceKey(origin, page))
+                    .then(if (loaded) Modifier else Modifier.background(TertiaryGroupedBg))
                     .clickable { onMediaClick(page) },
             ) {
+                BlurHashPreview(
+                    url = url,
+                    tags = tags,
+                    ratio = remember(url, tags) { knownAspectRatio(tags, url) },
+                    loaded = loaded,
+                )
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(url)
+                        .data(remember(url, tags) { feedImageModel(tags, url) })
                         .size(800)
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                    contentScale = ContentScale.Crop,
                     onSuccess = { result ->
+                        loaded = true
                         val d = result.result.drawable
                         if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
                             MediaAspectCache.put(
@@ -1141,7 +1839,14 @@ private fun MediaCarousel(
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (isVideoUrl(url)) {
+                if (isVideoUrl(url) && autoplay && page == pagerState.currentPage) {
+                    // Only the page in view is a candidate; the others keep a poster.
+                    InlineFeedVideo(
+                        key = MediaSourceKey(origin, page),
+                        url = url,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                } else if (isVideoUrl(url)) {
                     Icon(
                         imageVector = NostrVaultIcons.PlayCircle,
                         contentDescription = "Video",
@@ -1152,28 +1857,56 @@ private fun MediaCarousel(
             }
         }
 
-        // Page indicator dots
-        Row(
-            horizontalArrangement = Arrangement.Center,
+        // Page-position bar
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp),
+                .padding(top = 8.dp),
         ) {
-            repeat(urls.size) { i ->
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 2.dp)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (i == pagerState.currentPage)
-                                LocalNostrVaultColors.current.primary
-                            else
-                                SecondaryText.copy(alpha = 0.3f)
-                        ),
-                )
-            }
+            PagePositionBar(
+                count = urls.size,
+                index = pagerState.currentPage,
+                track = SecondaryText.copy(alpha = 0.25f),
+                lit = LocalNostrVaultColors.current.primary,
+            )
         }
+    }
+}
+
+/**
+ * Thin position bar for a multi-image note: a hairline track with one slot per item and
+ * the current slot lit, sliding as the pager settles. Mirrors iOS PagePositionBar.
+ */
+@Composable
+internal fun PagePositionBar(
+    count: Int,
+    index: Int,
+    track: Color,
+    lit: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (count < 2) return
+    // Slots shrink as the count grows so a long post still fits under a narrow card.
+    val slot = (140f / count).coerceIn(8f, 18f).dp
+    val clamped = index.coerceIn(0, count - 1)
+    val offset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = slot * clamped,
+        label = "pagePositionBar",
+    )
+    Box(
+        modifier = modifier
+            .size(width = slot * count, height = 2.5.dp)
+            .clip(RoundedCornerShape(50))
+            .background(track),
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = offset)
+                .size(width = slot, height = 2.5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(lit),
+        )
     }
 }
 
@@ -1192,6 +1925,8 @@ private fun ParentNotePreview(
     connectorColor: Color,
     onClick: () -> Unit,
     profiles: Map<String, FeedProfile> = emptyMap(),
+    avatarMenu: AvatarMenuActions? = null,
+    onProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1207,12 +1942,31 @@ private fun ParentNotePreview(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxHeight(),
         ) {
-            AvatarImage(
-                url = parentProfile?.pictureURL,
-                pubkey = parentNote.pubkey,
-                size = 40.dp,
-                displayName = parentProfile?.bestName,
-            )
+            // Tapping it opens the same quick menu as the note's own avatar;
+            // without a menu it stays part of the preview's tap (iOS).
+            if (avatarMenu != null) {
+                AvatarWithMenu(
+                    pubkey = parentNote.pubkey,
+                    displayName = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
+                    menu = avatarMenu,
+                    onProfileClick = onProfileClick,
+                ) { avatarModifier ->
+                    AvatarImage(
+                        url = parentProfile?.pictureURL,
+                        pubkey = parentNote.pubkey,
+                        size = 40.dp,
+                        displayName = parentProfile?.bestName,
+                        modifier = avatarModifier,
+                    )
+                }
+            } else {
+                AvatarImage(
+                    url = parentProfile?.pictureURL,
+                    pubkey = parentNote.pubkey,
+                    size = 40.dp,
+                    displayName = parentProfile?.bestName,
+                )
+            }
             // Connector line extending down to current note
             Box(
                 modifier = Modifier
@@ -1247,6 +2001,10 @@ private fun ParentNotePreview(
                             tint = Color(0xFF33CC99),
                             modifier = Modifier.size(12.dp),
                         )
+                    }
+                    if (parentNote.isFromNostrVault) {
+                        Spacer(Modifier.width(4.dp))
+                        NostrVaultBadge(size = 10.dp)
                     }
                 }
 
@@ -1293,6 +2051,41 @@ private fun ParentNotePreview(
     }
 }
 
+/** The parent never arrived — likely on no relay we asked. iOS FeedView parentFetchFailed. */
+@Composable
+private fun ParentNoteFailed(onRetry: (() -> Unit)?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.Alert,
+            contentDescription = null,
+            tint = SecondaryText,
+            modifier = Modifier.size(12.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Could not load original note",
+            color = SecondaryText,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f),
+        )
+        if (onRetry != null) {
+            TextButton(onClick = onRetry) {
+                Text(
+                    text = "Retry",
+                    color = LocalNostrVaultColors.current.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
 /**
  * Skeleton placeholder for a parent note that is still being fetched.
  * Matches the iOS skeleton layout (circle + placeholder bars + connector).
@@ -1328,52 +2121,50 @@ private fun ParentNoteSkeleton(
 
         Spacer(Modifier.width(12.dp))
 
-        // Right column: skeleton bars
+        // Right column: one line-height bar per line of the loaded preview
+        // (name, timestamp, two lines of content), in the same text styles, so
+        // the card is already the height the parent will need when it arrives.
         Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(top = 4.dp),
         ) {
-            Row {
-                Box(
-                    modifier = Modifier
-                        .width(80.dp)
-                        .height(12.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(TertiaryGroupedBg),
-                )
-                Spacer(Modifier.weight(1f))
-                Box(
-                    modifier = Modifier
-                        .width(40.dp)
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(TertiaryGroupedBg),
-                )
-            }
-            Spacer(Modifier.height(5.dp))
-            Box(
-                modifier = Modifier
-                    .width(180.dp)
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(TertiaryGroupedBg),
-            )
+            SkeletonTextLine(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, widthFraction = 0.35f, color = TertiaryGroupedBg)
+            SkeletonTextLine(fontSize = 11.sp, widthFraction = 0.12f, color = TertiaryGroupedBg)
+            Spacer(Modifier.height(2.dp))
+            SkeletonTextLine(fontSize = 14.sp, widthFraction = 0.9f, color = TertiaryGroupedBg)
+            SkeletonTextLine(fontSize = 14.sp, widthFraction = 0.55f, color = TertiaryGroupedBg)
         }
     }
 }
 
 // ── Formatting helpers ────────────────────────────────────────────
 
-internal fun formatTimestamp(epochSecs: Long): String {
-    val now = System.currentTimeMillis() / 1000
-    val diff = now - epochSecs
+internal fun formatTimestamp(epochSecs: Long): String =
+    formatTimestamp(epochSecs, System.currentTimeMillis() / 1000)
+
+/**
+ * Relative time for a week, then a date: "Sep 24" for this year,
+ * "Sep 24, 2025" for any other year (iOS `relativeTime`, PR #69).
+ */
+internal fun formatTimestamp(
+    epochSecs: Long,
+    nowSecs: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    locale: java.util.Locale = java.util.Locale.getDefault(),
+): String {
+    val diff = nowSecs - epochSecs
     return when {
         diff < 60 -> "now"
         diff < 3600 -> "${diff / 60}m"
         diff < 86400 -> "${diff / 3600}h"
         diff < 604800 -> "${diff / 86400}d"
-        else -> "${diff / 604800}w"
+        else -> {
+            val date = java.time.Instant.ofEpochSecond(epochSecs).atZone(zone)
+            val sameYear = date.year == java.time.Instant.ofEpochSecond(nowSecs).atZone(zone).year
+            val pattern = if (sameYear) "MMM d" else "MMM d, yyyy"
+            java.time.format.DateTimeFormatter.ofPattern(pattern, locale).format(date)
+        }
     }
 }
 

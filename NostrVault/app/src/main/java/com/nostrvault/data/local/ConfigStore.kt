@@ -1,16 +1,27 @@
 package com.nostrvault.data.local
 
 import android.content.Context
+import android.util.Log
+import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.RelayConfigApplier
+import com.nostrvault.relay.RelayBlocklist
+import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.service.ContactManager
 import com.nostrvault.service.NIP46Service
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -37,11 +48,39 @@ class ConfigStore @Inject constructor(
     private val _config = MutableStateFlow(HavenConfig())
     val config: StateFlow<HavenConfig> = _config.asStateFlow()
 
+    init {
+        RelayBlocklist.source = { _config.value.blockedRelays }
+        LocalTls.pinFile = File(context.filesDir, "local_tls_pins.json")
+    }
+
     private val _activeAccountHexPubkey = MutableStateFlow("")
     val activeAccountHexPubkey: StateFlow<String> = _activeAccountHexPubkey.asStateFlow()
 
+    /**
+     * Each switch of the active account, as its hex pubkey. Leaves out the
+     * current value and setup's first account ("" → X), which is not a switch.
+     */
+    val accountSwitches: Flow<String> = activeAccountHexPubkey
+        .runningFold(null as String? to null as String?) { pair, hex -> pair.second to hex }
+        .mapNotNull { (previous, current) ->
+            current?.takeIf { previous != null && isAccountSwitch(previous, it) }
+        }
+
     private val _isSwitchingAccount = MutableStateFlow(false)
     val isSwitchingAccount: StateFlow<Boolean> = _isSwitchingAccount.asStateFlow()
+
+    /**
+     * Restarts the embedded relay after a save that changes how it would
+     * start; every other save is a no-op for it. Lives here, at the one place
+     * config is saved, so no settings screen needs a "restart to apply" step.
+     */
+    val relayApplier = RelayConfigApplier(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        now = { android.os.SystemClock.elapsedRealtime() },
+        launchedInputs = { RelayForegroundService.launchedInputs },
+        inputsFor = { RelayConfiguration.launchInputs(it, File(context.filesDir, "relay_data")) },
+        restart = { RelayForegroundService.restartForSavedConfig() },
+    )
 
     /** Load config from disk or create defaults. */
     fun reload() {
@@ -49,7 +88,7 @@ class ConfigStore @Inject constructor(
             if (configFile.exists()) {
                 json.decodeFromString<HavenConfig>(configFile.readText())
             } else {
-                HavenConfig()
+                HavenConfig.newInstall()
             }
         } catch (_: Exception) {
             HavenConfig()
@@ -87,18 +126,64 @@ class ConfigStore @Inject constructor(
             )
         }
 
-        _config.value = loaded
-
-        // Restore active account hex pubkey from persisted ownerNpub so that
-        // profile navigation works on subsequent app launches (not just setup).
-        if (_activeAccountHexPubkey.value.isEmpty()) {
-            val npub = _config.value.ownerNpub
-            if (npub.startsWith("npub1")) {
-                HavenBridge.decodeNpub(npub)?.let { hex ->
-                    _activeAccountHexPubkey.value = hex
-                }
+        // Undo what the old Discover Accounts step did: it saved the people
+        // picked there into whitelistedNpubs, which the account switcher lists,
+        // instead of following them. Remove those starter-pack npubs unless
+        // this device can sign for one, i.e. it was added on purpose.
+        var removedStarterPicks = false
+        val whitelisted = loaded.whitelistedNpubs
+        if (!whitelisted.isNullOrEmpty()) {
+            val kept = ContactManager.accountsWithoutStarterPackPicks(whitelisted) { npub ->
+                npub in loaded.accountNpubs ||
+                    loaded.accountBunkerConfigs[npub] != null ||
+                    deviceHoldsKey(npub)
+            }
+            if (kept.size != whitelisted.size) {
+                loaded = loaded.copy(whitelistedNpubs = kept)
+                Log.i("ConfigStore", "removed ${whitelisted.size - kept.size} starter-pack account(s) that setup added by mistake")
+                removedStarterPicks = true
             }
         }
+
+        setConfig(loaded)
+        if (removedStarterPicks) CoroutineScope(Dispatchers.IO).launch { save() }
+
+    }
+
+    /**
+     * Every config write goes through here, so [activeAccountHexPubkey] always
+     * names the account the config does: the active account, or the owner when
+     * none is set (as after removing the active account). While setup has no
+     * owner yet the value setup chose with [setActiveAccount] is kept; an
+     * account that can't be decoded clears it.
+     */
+    private fun setConfig(new: HavenConfig) {
+        _config.value = new
+        val npub = new.activeOrOwnerNpub()
+        val hex = when {
+            npub.startsWith("npub1") -> HavenBridge.decodeNpub(npub).orEmpty()
+            // Older configs can hold the account as raw hex.
+            npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
+            else -> ""
+        }
+        // No account named yet (setup): keep what setup set. An account that
+        // can't be decoded clears the value, so nothing signs as the account
+        // before it.
+        if (npub.isBlank()) return
+        if (hex != _activeAccountHexPubkey.value) _activeAccountHexPubkey.value = hex
+    }
+
+    /**
+     * Whether a key for [npub] is stored on this device. A store that can't be
+     * read counts as holding one, so the starter-pack cleanup never removes an
+     * account it couldn't check.
+     */
+    private fun deviceHoldsKey(npub: String): Boolean = try {
+        val hex = HavenBridge.decodeNpub(npub)
+        CredentialStore.getCredentialHexKey(npub) != null ||
+            (hex != null && CredentialStore.getNsec(hex) != null)
+    } catch (_: Throwable) {
+        true
     }
 
     /** Persist current config to disk. */
@@ -110,14 +195,19 @@ class ConfigStore @Inject constructor(
 
     /** Update config and auto-save (suspend). */
     suspend fun updateAsync(transform: (HavenConfig) -> HavenConfig) {
-        _config.value = transform(_config.value)
+        setConfig(transform(_config.value))
         save()
+        relayApplier.configSaved(_config.value)
     }
 
     /** Update config synchronously (saves in background). */
     fun update(transform: (HavenConfig) -> HavenConfig) {
-        _config.value = transform(_config.value)
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { save() }
+        setConfig(transform(_config.value))
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            save()
+            // After the write: the relay re-reads the config from disk.
+            relayApplier.configSaved(_config.value)
+        }
     }
 
     /** Set active account pubkey. */
@@ -129,9 +219,9 @@ class ConfigStore @Inject constructor(
         _isSwitchingAccount.value = switching
     }
 
-    // ── Blocked / throttle (per active-or-owner account) ──────────────
-    // Mirror of iOS ConfigService.blockProfile/unblockProfile/throttleProfile/
-    // unthrottleProfile. These mutate config only; callers that want the change
+    // ── Blocked (per active-or-owner account) ──────────────
+    // Mirror of iOS ConfigService.blockProfile/unblockProfile.
+    // These mutate config only; callers that want the change
     // reflected on the network should publish the kind-10000 mute list afterwards.
 
     /** Block an npub for the active account. No-op if already blocked. */
@@ -157,29 +247,6 @@ class ConfigStore @Inject constructor(
         }
     }
 
-    /** Throttle an npub to at most [maxPosts] visible posts (1..20). Local-only. */
-    fun throttleProfile(npub: String, maxPosts: Int) {
-        update { cfg ->
-            val key = cfg.activeOrOwnerNpub()
-            val current = cfg.throttledAccountsPerAccount[key] ?: emptyMap()
-            cfg.copy(
-                throttledAccountsPerAccount = cfg.throttledAccountsPerAccount +
-                    (key to (current + (npub to maxPosts.coerceIn(1, 20)))),
-            )
-        }
-    }
-
-    /** Remove a throttle limit for an npub. */
-    fun unthrottleProfile(npub: String) {
-        update { cfg ->
-            val key = cfg.activeOrOwnerNpub()
-            val current = cfg.throttledAccountsPerAccount[key] ?: return@update cfg
-            cfg.copy(
-                throttledAccountsPerAccount = cfg.throttledAccountsPerAccount + (key to (current - npub)),
-            )
-        }
-    }
-
     // ── Multi-account management ──────────────────────────────────────
     // Mirrors iOS ConfigService account handling. The owner is account[0]
     // (synthesized by HavenConfig.allAccountNpubs()); accountNpubs holds the
@@ -199,23 +266,25 @@ class ConfigStore @Inject constructor(
         val currentActive = cfg.activeAccountNpub?.trim().orEmpty()
         if (newValue == currentActive) return
 
+        // The previous account's signer session stays connected in the
+        // background (switching back is then instant); only stop treating it
+        // as the active signer.
         val prevNpub = cfg.activeOrOwnerNpub()
         if (cfg.bunkerConfig(prevNpub) != null && NIP46Service.isConnected.value) {
-            NIP46Service.disconnect()
+            NIP46Service.detachForAccountSwitch()
         }
 
         setSwitchingAccount(true)
         try {
+            // Also moves activeAccountHexPubkey (see setConfig).
             updateAsync { it.copy(activeAccountNpub = newValue.ifEmpty { null }) }
-
-            val resolvedNpub = newValue.ifEmpty { cfg.ownerNpub }
-            _activeAccountHexPubkey.value =
-                if (resolvedNpub.startsWith("npub1")) HavenBridge.decodeNpub(resolvedNpub) ?: "" else ""
 
             val newCfg = _config.value
             if (newCfg.activeSigningMode() == "nip46") {
                 newCfg.bunkerConfig(newCfg.activeOrOwnerNpub())?.let {
-                    NIP46Service.connectForAccount(it)
+                    // Checked against the account: a signer answering as any
+                    // other key is dropped, never kept as connected.
+                    NIP46Service.connectForAccount(it, _activeAccountHexPubkey.value)
                 }
             }
         } finally {
@@ -228,24 +297,33 @@ class ConfigStore @Inject constructor(
         else cfg.copy(accountNpubs = cfg.accountNpubs + npub)
     }
 
-    fun removeAccount(npub: String) = update { cfg ->
-        cfg.copy(
-            accountNpubs = cfg.accountNpubs.filter { it != npub },
-            accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
-            accountSigningModes = cfg.accountSigningModes - npub,
-            publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
-            activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
-        )
+    fun removeAccount(npub: String) {
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], null)?.let(NIP46Service::dropSession)
+        update { cfg ->
+            cfg.copy(
+                accountNpubs = cfg.accountNpubs.filter { it != npub },
+                accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
+                accountSigningModes = cfg.accountSigningModes - npub,
+                publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
+                activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
+            )
+        }
     }
 
     fun setSigningMode(npub: String, mode: String) =
         update { it.copy(accountSigningModes = it.accountSigningModes + (npub to mode)) }
 
-    fun setBunkerConfig(npub: String, bunker: AccountBunkerConfig) =
+    fun setBunkerConfig(npub: String, bunker: AccountBunkerConfig) {
+        // Paired again with another signer: close the old live session, or it
+        // lingers (and, if it was the active one, keeps answering).
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], bunker)?.let(NIP46Service::dropSession)
         update { it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (npub to bunker)) }
+    }
 
-    fun removeBunkerConfig(npub: String) =
+    fun removeBunkerConfig(npub: String) {
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], null)?.let(NIP46Service::dropSession)
         update { it.copy(accountBunkerConfigs = it.accountBunkerConfigs - npub) }
+    }
 
     fun setPublishRelayList(npub: String, enabled: Boolean) =
         update { it.copy(publishRelayListPerAccount = it.publishRelayListPerAccount + (npub to enabled)) }
@@ -253,7 +331,14 @@ class ConfigStore @Inject constructor(
     /** Factory reset -- delete config and all data. */
     suspend fun resetApp() = withContext(Dispatchers.IO) {
         configFile.delete()
-        _config.value = HavenConfig()
+        // The relay's certificate goes with its data; a new one is coming.
+        LocalTls.forgetAll()
+        _config.value = HavenConfig.newInstall()
         _activeAccountHexPubkey.value = ""
     }
 }
+
+/** Whether the active account moving from [previous] to [current] is a switch. */
+internal fun isAccountSwitch(previous: String, current: String): Boolean =
+    previous.isNotEmpty() && previous != current
+

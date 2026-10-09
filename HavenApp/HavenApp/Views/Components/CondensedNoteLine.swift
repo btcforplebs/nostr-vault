@@ -15,11 +15,11 @@ struct CondensedEngagement: Equatable {
 
 /// The single condensed representation of a note.
 ///
-/// Condensed is a property of the feed and nothing else: the feed's condensed
-/// and threaded layouts both draw through here, and the thread view is always
-/// expanded so a reply is one tap from wherever you landed. Keeping density on
-/// one axis is what stops the two surfaces from disagreeing about how dense
-/// "condensed" is.
+/// The feed's condensed and threaded layouts both draw through here, and so
+/// does the thread view's condensed mode, so the surfaces cannot disagree
+/// about how dense "condensed" is. In the thread view only the conversation
+/// around the note goes condensed: the note you are reading stays full size
+/// with its action bar, so a reply is one tap from wherever you landed.
 struct CondensedNoteLine: View {
     enum Style {
         /// Standalone row in the feed: its own bordered card.
@@ -44,10 +44,15 @@ struct CondensedNoteLine: View {
     /// Text to show instead of `note.content` — an article's title, or the
     /// original note's body behind an empty repost.
     var contentOverride: String? = nil
+    /// When the shown note was written, if not `note.createdAt` — a repost
+    /// shows its original's time, not the moment it was reposted.
+    var postedAt: Date? = nil
     /// Media for the thumbnail. Callers resolve reposts before passing it.
     var mediaURLs: [URL] = []
     var engagement: CondensedEngagement = .none
     var showsMediaThumbnail: Bool = true
+    /// A Translate button under the text for posts in another language.
+    var showsTranslate: Bool = false
 
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
@@ -87,10 +92,37 @@ struct CondensedNoteLine: View {
     }
     private var nameSize: CGFloat { isRoot ? 13 : 12 }
     private var bodySize: CGFloat { isRoot ? 14 : 13 }
-    private var bodyLineLimit: Int { isRoot ? 3 : 2 }
+    /// From Settings: a feed row (`.card`) is Compact View; a line in a
+    /// thread card (`.plain`) is Threaded View, where replies show one fewer
+    /// line than the root.
+    private var bodyLineLimit: Int {
+        let range = HavenConfig.lineLimitRange
+        switch style {
+        case .card:
+            return min(max(configService.config.compactLineLimit, range.lowerBound), range.upperBound)
+        case .plain:
+            let root = min(max(configService.config.threadedLineLimit, range.lowerBound), range.upperBound)
+            return isRoot ? root : max(1, root - 1)
+        }
+    }
 
     private var displayContent: String {
         contentOverride ?? note.content
+    }
+
+    /// Links in the body that aren't media. Read from the text shown rather
+    /// than `note.linkURLs`, so a repost's override body counts its own.
+    private var linkURLs: [URL] {
+        let media = Set(mediaURLs.map(\.absoluteString))
+        return NostrContentFormatter.httpURLs(in: displayContent)
+            .filter { !media.contains($0.absoluteString) }
+    }
+
+    /// The body as plain text with no URLs: media shows as the thumbnail and
+    /// links as the chip, and a raw URL would spend the line limit.
+    private var bodyPlainText: String {
+        let text = NostrContentFormatter.stripURLs(mediaURLs + linkURLs, from: displayContent)
+        return NostrContentFormatter.resolveMentionsPlainText(text)
     }
 
     var body: some View {
@@ -108,6 +140,12 @@ struct CondensedNoteLine: View {
                 VStack(alignment: .leading, spacing: 2) {
                     headerRow
                     bodyText
+                    if showsTranslate {
+                        NoteTranslateButton(noteID: note.id, content: contentOverride ?? note.content,
+                                            kind: contentOverride == nil ? note.kind : 1)
+                            .padding(.top, 2)
+                    }
+                    linkChip
                     engagementRow
                 }
 
@@ -149,25 +187,18 @@ struct CondensedNoteLine: View {
                     .font(.appSystem(size: 9))
                     .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
             }
+            if note.isFromNostrVault {
+                NostrVaultBadge(size: 9)
+            }
 
-            Text("· \(CondensedNoteLine.relativeTime(note.createdAt))")
+            Text("· \(CondensedNoteLine.relativeTime(shownDate))")
                 .font(.appSystem(size: 11))
                 .foregroundColor(.secondary)
 
             Spacer(minLength: 4)
 
-            if replyCount > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "text.bubble")
-                        .font(.appSystem(size: 9, weight: .medium))
-                    Text("\(replyCount)")
-                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                }
-                .foregroundColor(.secondary.opacity(isOLED ? 0.6 : 0.7))
-            }
-
             // A reply marker is noise inside a thread — the rail already says it.
-            if note.isReply && depth == 0 && replyCount == 0 {
+            if note.isReply && depth == 0 {
                 Image(systemName: "arrowshape.turn.up.left.fill")
                     .font(.appSystem(size: 10))
                     .foregroundColor(Color.havenPurple.opacity(0.7))
@@ -177,13 +208,21 @@ struct CondensedNoteLine: View {
                     .font(.appSystem(size: 10))
                     .foregroundColor(.green.opacity(0.7))
             }
+            // Same glyph as the full card's Quote button.
+            if !note.quotedEventIds.isEmpty {
+                Image(systemName: "quote.closing")
+                    .font(.appSystem(size: 10))
+                    .foregroundColor(.blue.opacity(0.7))
+                    .accessibilityLabel("Quote")
+            }
         }
     }
 
     @ViewBuilder
     private var bodyText: some View {
-        if !displayContent.isEmpty {
-            Text(NostrContentFormatter.resolveMentionsPlainText(displayContent))
+        let text = bodyPlainText
+        if !text.isEmpty {
+            Text(text)
                 .font(.appSystem(size: bodySize))
                 .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.8 : 0.85)))
                 .lineLimit(bodyLineLimit)
@@ -191,6 +230,33 @@ struct CondensedNoteLine: View {
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// A condensed stand-in for link cards: the first link's domain, plus a
+    /// count of the rest. A full card would undo the condensing.
+    @ViewBuilder
+    private var linkChip: some View {
+        let links = linkURLs
+        if let first = links.first {
+            HStack(spacing: 3) {
+                Image(systemName: "link")
+                    .font(.appSystem(size: 9, weight: .semibold))
+                Text(CondensedNoteLine.domain(of: first))
+                    .font(.appSystem(size: 11, weight: .medium))
+                    .lineLimit(1)
+                if links.count > 1 {
+                    Text("+\(links.count - 1)")
+                        .font(.appSystem(size: 10, weight: .semibold, design: .monospaced))
+                }
+            }
+            .foregroundColor(Color.havenPurple.opacity(isOLED ? 0.85 : 0.9))
+            .padding(.top, 1)
+        }
+    }
+
+    static func domain(of url: URL) -> String {
+        guard let host = url.host else { return url.absoluteString }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     @ViewBuilder
@@ -238,7 +304,7 @@ struct CondensedNoteLine: View {
 
     private func mediaThumbnail(_ url: URL) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            FeedMediaView(url: url, isThumbnail: true)
+            FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true)
                 .frame(width: isRoot ? 80 : 56, height: isRoot ? 80 : 56)
                 .aspectRatio(1, contentMode: .fill)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -299,21 +365,28 @@ struct CondensedNoteLine: View {
 
     private var authorPubkey: String { displayPubkey ?? note.pubkey }
 
+    private var shownDate: Date { postedAt ?? note.originalCreatedAt ?? note.createdAt }
+
     private var displayName: String {
         profile?.bestName ?? CondensedNoteLine.shortKey(authorPubkey)
     }
 
     private var accessibilityLabel: String {
-        var parts = [displayName, CondensedNoteLine.relativeTime(note.createdAt)]
+        var parts = [displayName, CondensedNoteLine.relativeTime(shownDate)]
         if depth > 0 { parts.append("reply, level \(depth)") }
-        if !displayContent.isEmpty {
-            parts.append(NostrContentFormatter.resolveMentionsPlainText(displayContent))
+        let text = bodyPlainText
+        if !text.isEmpty {
+            parts.append(text)
         }
         if replyCount > 0 {
             parts.append("\(replyCount) \(replyCount == 1 ? "reply" : "replies")")
         }
         if !mediaURLs.isEmpty {
             parts.append(mediaURLs.count == 1 ? "1 attachment" : "\(mediaURLs.count) attachments")
+        }
+        let links = linkURLs
+        if !links.isEmpty {
+            parts.append(links.count == 1 ? "link to \(CondensedNoteLine.domain(of: links[0]))" : "\(links.count) links")
         }
         return parts.joined(separator: ", ")
     }
@@ -369,5 +442,72 @@ extension View {
     /// Wrap a run of `CondensedNoteLine`s as a single conversation card.
     func threadCard() -> some View {
         modifier(ThreadCardBackground())
+    }
+}
+
+// MARK: - Nostr Vault badge
+
+extension NostrVaultBadge {
+    /// Sent from Nostr Vault on any platform: the `client` tag every
+    /// Nostr Vault note carries ("Nostr Vault on iOS", "… on Android", …).
+    /// The one rule for the feed (`FeedNote`) and the Relay tab (`NostrEvent`).
+    static func isSender(of tags: [[String]]) -> Bool {
+        tags.contains { $0.count > 1 && $0[0] == "client" && $0[1].hasPrefix("Nostr Vault") }
+    }
+}
+
+extension FeedNote {
+    var isFromNostrVault: Bool { NostrVaultBadge.isSender(of: tags) }
+}
+
+extension NostrEvent {
+    var isFromNostrVault: Bool { NostrVaultBadge.isSender(of: tags) }
+}
+
+/// A tiny vault doorway, the app icon's shape, beside the author's name on
+/// posts sent from Nostr Vault. Drawn rather than the icon image: the icon
+/// is dark and turns into a blob at name size.
+struct NostrVaultBadge: View {
+    var size: CGFloat = 11
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // Lit from the keyhole, like the icon's doorway.
+            VaultDoorway()
+                .fill(RadialGradient(
+                    colors: [Color.havenPurple.opacity(0.55), Color.havenPurple.opacity(0)],
+                    center: UnitPoint(x: 0.5, y: 0.72), startRadius: 0, endRadius: size * 0.6
+                ))
+            // Lighter along the top edge for a little depth.
+            VaultDoorway()
+                .stroke(LinearGradient(colors: [Color.havenPurpleLight, Color.havenPurple],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: max(1, size * 0.12))
+            Circle()
+                .fill(Color.havenPurpleLight)
+                .frame(width: size * 0.26, height: size * 0.26)
+                .shadow(color: Color.havenPurple, radius: size * 0.2)
+                .padding(.bottom, size * 0.2)
+        }
+        .frame(width: size * 0.78, height: size)
+        // Soft glow: a tight bright ring plus a wider haze.
+        .shadow(color: Color.havenPurple.opacity(0.9), radius: size * 0.12)
+        .shadow(color: Color.havenPurple.opacity(0.6), radius: size * 0.35)
+        .accessibilityLabel("Sent from Nostr Vault")
+    }
+}
+
+/// An arch: straight sides, a half-circle top, closed along the base.
+private struct VaultDoorway: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r = rect.width / 2
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addArc(center: CGPoint(x: rect.midX, y: rect.minY + r), radius: r,
+                 startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }

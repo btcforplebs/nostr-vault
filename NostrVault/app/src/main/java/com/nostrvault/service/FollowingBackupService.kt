@@ -36,18 +36,25 @@ class FollowingBackupService @Inject constructor(
     private val _snapshots = MutableStateFlow<List<FollowingSnapshot>>(emptyList())
     val snapshots: StateFlow<List<FollowingSnapshot>> = _snapshots.asStateFlow()
 
+    /** Whose file [snapshots] holds. Writes for another account reload first,
+     *  so one account's list is never saved into another's file (iOS:
+     *  loadedAccountKey). */
+    private var loadedAccountKey: String? = null
+
     fun loadSnapshots(forAccountKey: String) {
+        loadedAccountKey = forAccountKey
+        _snapshots.value = snapshotsFor(forAccountKey)
+    }
+
+    /** [forAccountKey]'s saved snapshots, read from its file without touching [snapshots]. */
+    fun snapshotsFor(forAccountKey: String): List<FollowingSnapshot> {
         val file = snapshotFile(forAccountKey)
-        if (!file.exists()) {
-            _snapshots.value = emptyList()
-            return
-        }
-        try {
-            val store = json.decodeFromString<FollowingSnapshotStore>(file.readText())
-            _snapshots.value = store.snapshots
+        if (!file.exists()) return emptyList()
+        return try {
+            json.decodeFromString<FollowingSnapshotStore>(file.readText()).snapshots
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load snapshots: ${e.message}")
-            _snapshots.value = emptyList()
+            emptyList()
         }
     }
 
@@ -63,6 +70,7 @@ class FollowingBackupService @Inject constructor(
         forAccountKey: String,
     ) {
         if (pubkeys.isEmpty()) return
+        if (loadedAccountKey != forAccountKey) loadSnapshots(forAccountKey)
 
         val currentSet = pubkeys.toSet()
         val latest = _snapshots.value.firstOrNull()
@@ -105,6 +113,7 @@ class FollowingBackupService @Inject constructor(
     }
 
     fun deleteSnapshot(id: String, forAccountKey: String) {
+        if (loadedAccountKey != forAccountKey) loadSnapshots(forAccountKey)
         val updated = _snapshots.value.filter { it.id != id }
         _snapshots.value = updated
         saveSnapshots(forAccountKey, updated)

@@ -31,8 +31,8 @@ struct ImportedVideoFile: Transferable {
 
 private extension View {
     /// Overlays a small numbered badge on the top-trailing corner, matching the
-    /// unread-dot treatment used for conversation/group rows elsewhere in the app
-    /// (see GroupListView/DMInboxView) but with a count instead of a plain dot.
+    /// unread-dot treatment used for conversation rows elsewhere in the app
+    /// (see DMInboxView) but with a count instead of a plain dot.
     func draftCountBadge(_ count: Int, ringColor: Color) -> some View {
         overlay(alignment: .topTrailing) {
             Text("\(count)")
@@ -120,8 +120,10 @@ struct ComposeView: View {
     
     struct Attachment: Identifiable {
         let id = UUID()
-        // Exactly one of `data` or `fileURL` is set. Images use `data` (small,
+        // At most one of `data` or `fileURL` is set. Images use `data` (small,
         // possibly transcoded); videos use `fileURL` so they stream from disk.
+        // Neither is set for media already on the relay, picked from the
+        // Blossom picker: that arrives with `url` set and `isUploaded` true.
         let data: Data?
         let fileURL: URL?
         var type: UTType
@@ -131,6 +133,9 @@ struct ComposeView: View {
         /// NIP-92 `alt` — what this media is, for anyone who cannot see it.
         /// Published inside the attachment's `imeta` tag; empty means omitted.
         var altText: String = ""
+        /// For relay-picked media: the blob in the local Blossom directory,
+        /// read only for `imeta` dimensions and size. Never uploaded or deleted.
+        var relayBlobFile: URL? = nil
     }
 
     /// `sheet(item:)` needs an Identifiable; the attachment's own id is a bare
@@ -324,12 +329,7 @@ struct ComposeView: View {
                     blossomMedia: $blossomMedia,
                     isLoading: $isLoadingBlossomMedia,
                     onSelect: { item in
-                        let url = item.shareURL(with: configService).absoluteString
-                        if content.isEmpty || content.hasSuffix("\n") || content.hasSuffix(" ") {
-                            content += url
-                        } else {
-                            content += " " + url
-                        }
+                        attachRelayMedia(item)
                         showBlossomPicker = false
                     },
                     onAppearLoad: { loadBlossomMedia() }
@@ -481,6 +481,7 @@ struct ComposeView: View {
     private func filterMentionResults(query: String) {
         let followed = FeedService.shared.followedPubkeys
         let followedSet = Set(followed)
+        let wotSet = FeedService.shared.webOfTrustForRanking
         let selfPubkey = nostrService.activeHexPubkey
 
         // Thread participants when replying — valid mention targets even if unfollowed.
@@ -507,7 +508,8 @@ struct ComposeView: View {
         }
 
         // Search the entire profile cache (feed authors, search results, etc.),
-        // not just follows, ranking thread participants and follows first.
+        // not just follows, ranking thread participants, follows, then the rest
+        // of the Web of Trust first.
         let lower = query.lowercased()
         let matches = nostrService.profiles.values.filter { profile in
             profile.pubkey != selfPubkey && (
@@ -517,9 +519,10 @@ struct ComposeView: View {
             )
         }
         let ranked = matches.sorted { a, b in
-            func rank(_ p: FeedProfile) -> (Int, Int, Int) {
+            func rank(_ p: FeedProfile) -> (Int, Int, Int, Int) {
                 (threadSet.contains(p.pubkey) ? 0 : 1,
                  followedSet.contains(p.pubkey) ? 0 : 1,
+                 wotSet.contains(p.pubkey) ? 0 : 1,
                  p.bestName.lowercased().hasPrefix(lower) ? 0 : 1)
             }
             let ra = rank(a), rb = rank(b)
@@ -549,24 +552,7 @@ struct ComposeView: View {
 
     /// Resolves a bare `npub1…`/`nprofile1…` bech32 identifier to a hex pubkey.
     private func resolvePubkey(fromBech32 bech32: String) -> String? {
-        if bech32.lowercased().hasPrefix("npub1") {
-            return Bech32.decode(bech32)?.hexString
-        }
-        if bech32.lowercased().hasPrefix("nprofile1"), let decoded = Bech32.decode(bech32) {
-            // TLV: type 0 = pubkey (32 bytes)
-            var data = decoded.data
-            while data.count >= 2 {
-                let type = data.removeFirst()
-                let length = Int(data.removeFirst())
-                guard data.count >= length else { break }
-                let value = data.prefix(length)
-                if type == 0 && length == 32 {
-                    return value.map { String(format: "%02x", $0) }.joined()
-                }
-                data.removeFirst(length)
-            }
-        }
-        return nil
+        QuoteReference.profilePubkey(fromBech32: bech32)
     }
 
     /// Display token shown in the editor for a mention (e.g. "@Alice").
@@ -740,6 +726,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Add photos")
 
                     PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .videos) {
                         Image(systemName: "video.fill")
@@ -751,6 +738,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Add a video")
 
                     Button(action: handlePasteFromClipboard) {
                         Image(systemName: "wand.and.stars")
@@ -762,25 +750,30 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Paste media from the clipboard")
 
-                    Button(action: { showingGifPicker = true }) {
-                        Group {
-                            if isFetchingGif {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("GIF")
-                                    .font(.appSystem(size: 12, weight: .bold))
+// Hidden when no GIF source is available in this build (no nostr.build
+                    // key, and Tenor not opted in): never show a picker that finds nothing.
+                    if !GifSource.available.isEmpty {
+                        Button(action: { showingGifPicker = true }) {
+                            Group {
+                                if isFetchingGif {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("GIF")
+                                        .font(.appSystem(size: 12, weight: .bold))
+                                }
                             }
+                            .frame(width: 22, height: 22)
+                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                            .padding(8)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
                         }
-                        .frame(width: 22, height: 22)
-                        .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                        .padding(8)
-                        .background(purple.opacity(0.1))
-                        .clipShape(Circle())
+                        .buttonStyle(.plain)
+                        .disabled(isAttachmentLimitReached || isFetchingGif)
+                        .help("Search GIFs from nostr.build or Tenor")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isAttachmentLimitReached || isFetchingGif)
-                    .help("Search GIFs from getyarn.io or Tenor")
 
                     Spacer()
 
@@ -793,6 +786,7 @@ struct ComposeView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .help("Pick from your Blossom media")
                 }
             }
         }
@@ -846,6 +840,7 @@ struct ComposeView: View {
                         .lineLimit(3)
                         .padding(.bottom, 4)
                 }
+
             }
         }
         .padding(12)
@@ -874,6 +869,10 @@ struct ComposeView: View {
                                 Image(platformImage: img)
                                     .resizable()
                                     .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else if let url = attachment.url, attachment.data == nil, attachment.fileURL == nil {
+                                relayMediaThumbnail(url: url, type: attachment.type)
                                     .frame(width: 100, height: 100)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else {
@@ -931,6 +930,19 @@ struct ComposeView: View {
             .padding()
         }
         .frame(height: 120)
+    }
+
+    /// Preview for media picked from the relay: it is already hosted, so it
+    /// renders from its URL the same way the picker grid did.
+    @ViewBuilder
+    private func relayMediaThumbnail(url: URL, type: UTType) -> some View {
+        if type.conforms(to: .movie) || type.conforms(to: .video) {
+            VideoThumbnailView(url: url, mimeType: type.preferredMIMEType)
+        } else if type.conforms(to: .gif) {
+            AnimatedImage(url: url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
+        } else {
+            RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
+        }
     }
 
     /// The ALT affordance on a thumbnail: filled once the attachment has a
@@ -1127,6 +1139,13 @@ struct ComposeView: View {
         return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    /// The Blossom SHA-256 a blob URL is named by, if its last path component
+    /// is one (`<64 hex>` or `<64 hex>.<ext>`).
+    nonisolated static func blossomHash(in url: URL) -> String? {
+        let name = url.deletingPathExtension().lastPathComponent.lowercased()
+        return name.count == 64 && name.allSatisfy(\.isHexDigit) ? name : nil
+    }
+
     /// Pixel dimensions of encoded image bytes, read from the image's own
     /// header rather than by decoding it — an `imeta dim` is worth one header
     /// read, not a full decode of a 12-megapixel photo.
@@ -1176,7 +1195,63 @@ struct ComposeView: View {
             return false
         }
         attachments.append(attachment)
+        prepareUploadAuth(for: attachment)
         return true
+    }
+
+    /// Signs the attachment's Blossom upload authorisation while the author is
+    /// still writing.
+    ///
+    /// Posting a photo used to cost two signer round trips back to back — the
+    /// authorisation, then the note — and a four-photo note five, all of them
+    /// after the tap. The hash is the only thing the authorisation is scoped
+    /// to and it is known the moment the file is attached, so the signer can
+    /// answer for it now; `BlossomService` hands the stored answer to the
+    /// upload. Nothing depends on it finishing: the upload path signs its own
+    /// if this has not landed.
+    private func prepareUploadAuth(for attachment: Attachment) {
+        let blossom = blossomService
+        if let data = attachment.data {
+            Task.detached(priority: .utility) {
+                let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                blossom.prepareUploadAuth(sha256: hash)
+            }
+        } else if let fileURL = attachment.fileURL {
+            Task.detached(priority: .utility) {
+                guard let hash = ComposeView.streamingSHA256(of: fileURL) else { return }
+                blossom.prepareUploadAuth(sha256: hash)
+            }
+        }
+        // Media already on the relay carries neither: it is not uploaded, so
+        // it needs no authorisation.
+    }
+
+    /// Attaches media that already lives on the relay. It shows in the
+    /// attachment strip like a fresh upload, but posting skips the upload and
+    /// publishes its existing URL.
+    private func attachRelayMedia(_ item: MediaItem) {
+        let type: UTType
+        if let mime = item.mimeType, let t = UTType(mimeType: mime) {
+            type = t
+        } else if item.isAnimatedGIF {
+            type = .gif
+        } else {
+            switch item.type {
+            case .video: type = .movie
+            case .audio: type = .audio
+            default: type = .image
+            }
+        }
+        appendAttachment(Attachment(
+            data: nil,
+            fileURL: nil,
+            type: type,
+            url: item.shareURL(with: configService),
+            isUploaded: true,
+            relayBlobFile: configService.relayDataDir
+                .appendingPathComponent(configService.config.blossomPath)
+                .appendingPathComponent(item.url.lastPathComponent)
+        ))
     }
 
     private func cleanupAttachmentTempFiles() {
@@ -1216,19 +1291,33 @@ struct ComposeView: View {
     /// downloads through its own client so the size cap and the GIF-magic
     /// check stay with the service that knows the host.
     private func attachGif(_ item: GifItem) {
+        // nostr.build GIFs are already hosted: post the link unless the user
+        // asked to keep a copy on their own Blossom servers.
+        if item.source == .nostrBuild && !ConfigService.shared.config.saveGifsToBlossom {
+            let link = item.attachURL.absoluteString
+            content += (content.isEmpty || content.hasSuffix("\n") || content.hasSuffix(" ")) ? link : "\n" + link
+            return
+        }
         guard !isAttachmentLimitReached, !isFetchingGif else { return }
         isFetchingGif = true
         Task {
             do {
                 let data: Data
+                var type: UTType = .gif
                 switch item.source {
-                case .yarn:
-                    data = try await YarnClipService.downloadGIF(uuid: item.sourceID)
+                case .nostrBuild:
+                    let file = try await NostrBuildGifService.download(item.attachURL)
+                    data = file.data
+                    if file.isWebP { type = .webP }
                 case .tenor:
+                    #if TENOR_SIDELOAD
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
+                    #else
+                    throw URLError(.unsupportedURL)
+                    #endif
                 }
                 await MainActor.run {
-                    appendAttachment(Attachment(data: data, fileURL: nil, type: .gif))
+                    appendAttachment(Attachment(data: data, fileURL: nil, type: type))
                     isFetchingGif = false
                 }
             } catch {
@@ -1269,13 +1358,7 @@ struct ComposeView: View {
             let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
             if let pasted = URL(string: trimmed),
                (pasted.scheme == "http" || pasted.scheme == "https") {
-                // A getyarn.io clip link (or its y.yarn.co media) pastes as the clip's GIF.
-                let url: URL
-                if let yarnUUID = YarnClipService.clipUUID(from: pasted) {
-                    url = YarnClipService.mediaURL(uuid: yarnUUID, suffix: "_text_hi.gif")
-                } else {
-                    url = pasted
-                }
+                let url = pasted
                 let ext = url.pathExtension.lowercased()
                 let hasKnownExt = SupportedMediaFormats.allExtensions.contains(ext)
                 // Media URL — download and add as attachment
@@ -1334,11 +1417,20 @@ struct ComposeView: View {
         }
     }
 
+    private static let accountChangedMessage = "The account changed while this note was posting, so it was not sent. Your note is saved as a draft."
+
     private func postNote() {
         isPosting = true
         autoSaveTask?.cancel()
         autoSaveTask = nil
         uploadInfoProvider.startUpload(totalCount: attachments.count)
+
+        // The account this note is for, locked now: the signer reads whichever
+        // account is active when it signs, after the media upload, and the
+        // account can change in between (see PostingAccount).
+        let lockedRawNpub = configService.config.activeAccountNpub
+        let lockedNpub = PostingAccount.resolve(active: lockedRawNpub, owner: configService.config.ownerNpub)
+        let lockedHex = configService.activeAccountHexPubkey
 
         // Durably persist the current text to disk BEFORE the (potentially long) post
         // begins, so an unexpected crash during upload/mining/broadcast can't lose it.
@@ -1381,19 +1473,71 @@ struct ComposeView: View {
             // bytes arrive and can read out what the media is.
             var mediaDescriptors: [NoteTagging.MediaDescriptor] = []
 
-            // Upload all attachments and fail if any fail
+            // The same attachments, kept for the waiting-post queue in case an
+            // outside Blossom server doesn't answer. `baseContent` is the text
+            // before any media line is appended.
+            let baseContent = finalContent
+            var queuedMedia: [QueuedMediaPost.Media] = []
+            var unreachableServers: [String] = []
+
+            // Upload all attachments. Each one lands in this device's relay
+            // first; if no outside server takes it, the post waits in
+            // MediaPostQueue instead of being cancelled.
             for i in attachments.indices {
                 uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
                 let mimeType = attachments[i].type.preferredMIMEType ?? "application/octet-stream"
+
+                // Picked from the relay: already hosted, nothing to upload.
+                if attachments[i].data == nil, attachments[i].fileURL == nil,
+                   let hostedURL = attachments[i].url {
+                    let blob = attachments[i].relayBlobFile
+                    var pixelSize: CGSize?
+                    if let blob {
+                        if attachments[i].type.conforms(to: .movie) || attachments[i].type.conforms(to: .video) {
+                            pixelSize = await ComposeView.pixelSize(ofVideoAt: blob)
+                        } else if let data = try? Data(contentsOf: blob, options: .mappedIfSafe) {
+                            pixelSize = ComposeView.pixelSize(ofImageData: data)
+                        }
+                    }
+                    finalContent += "\n\(hostedURL.absoluteString)"
+                    let hostedDescriptor = NoteTagging.MediaDescriptor(
+                        url: hostedURL.absoluteString,
+                        mimeType: mimeType,
+                        sha256: ComposeView.blossomHash(in: hostedURL),
+                        pixelWidth: pixelSize.map { Int($0.width.rounded()) },
+                        pixelHeight: pixelSize.map { Int($0.height.rounded()) },
+                        alt: attachments[i].altText,
+                        byteCount: blob.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path))?[.size] as? Int }
+                    )
+                    mediaDescriptors.append(hostedDescriptor)
+                    queuedMedia.append(QueuedMediaPost.Media(
+                        sha256: hostedDescriptor.sha256, mimeType: mimeType, url: hostedDescriptor.url,
+                        pixelWidth: hostedDescriptor.pixelWidth, pixelHeight: hostedDescriptor.pixelHeight,
+                        alt: hostedDescriptor.alt, byteCount: hostedDescriptor.byteCount
+                    ))
+                    continue
+                }
                 let progressHandler: (Double) -> Void = { progressFraction in
                     self.uploadInfoProvider.updateProgress(progressFraction)
                 }
 
-                let uploadedURL: URL?
+                let outcome: BlossomService.PostUploadOutcome
+                let skipOutside = !unreachableServers.isEmpty
                 var uploadedSHA256: String?
                 var pixelSize: CGSize?
                 var byteCount: Int?
-                if let fileURL = attachments[i].fileURL {
+                if let originalURL = attachments[i].fileURL {
+                    // Never upload where it was taken (MediaPrivacy).
+                    guard let fileURL = await MediaPrivacy.removingLocation(fromFileAt: originalURL) else {
+                        DispatchQueue.main.async {
+                            error = MediaPrivacy.failureMessage
+                            isPosting = false
+                            isUploading = false
+                            uploadInfoProvider.reset()
+                        }
+                        return
+                    }
+                    defer { if fileURL != originalURL { try? FileManager.default.removeItem(at: fileURL) } }
                     guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
                         DispatchQueue.main.async {
                             error = "Failed to read video file for upload."
@@ -1406,30 +1550,62 @@ struct ComposeView: View {
                     uploadedSHA256 = sha256
                     pixelSize = await ComposeView.pixelSize(ofVideoAt: fileURL)
                     byteCount = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int
-                    uploadedURL = await blossomService.uploadAndMirror(
+                    outcome = await blossomService.uploadForPost(
                         fileURL: fileURL,
                         sha256: sha256,
                         contentType: mimeType,
+                        skipOutsideServers: skipOutside,
                         progress: progressHandler
                     )
-                } else if let data = attachments[i].data {
+                } else if let originalData = attachments[i].data {
+                    // Never upload where it was taken (MediaPrivacy).
+                    guard let data = MediaPrivacy.removingLocation(fromImageData: originalData) else {
+                        DispatchQueue.main.async {
+                            error = MediaPrivacy.failureMessage
+                            isPosting = false
+                            isUploading = false
+                            uploadInfoProvider.reset()
+                        }
+                        return
+                    }
                     let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                     uploadedSHA256 = sha256
                     pixelSize = ComposeView.pixelSize(ofImageData: data)
                     byteCount = data.count
-                    uploadedURL = await blossomService.uploadAndMirror(
+                    outcome = await blossomService.uploadForPost(
                         data: data,
                         sha256: sha256,
                         contentType: mimeType,
+                        skipOutsideServers: skipOutside,
                         progress: progressHandler
                     )
                 } else {
-                    uploadedURL = nil
+                    outcome = .notSavedOnDevice
                 }
 
-                guard let url = uploadedURL else {
+                let url: URL
+                switch outcome {
+                case .hosted(let hostedURL):
+                    url = hostedURL
+                case .savedOnDevice(let unreachable):
+                    // Safe on this device; the post will wait for a server.
+                    unreachableServers = unreachable
+                    queuedMedia.append(QueuedMediaPost.Media(
+                        sha256: uploadedSHA256, mimeType: mimeType, url: nil,
+                        pixelWidth: pixelSize.map { Int($0.width.rounded()) },
+                        pixelHeight: pixelSize.map { Int($0.height.rounded()) },
+                        alt: attachments[i].altText, byteCount: byteCount
+                    ))
+                    continue
+                case .noOutsideServer, .notSavedOnDevice:
+                    let message: String
+                    if case .noOutsideServer = outcome {
+                        message = MediaUploadOutcomeMessage.noOutsideServer
+                    } else {
+                        message = MediaUploadOutcomeMessage.notSavedOnDevice
+                    }
                     DispatchQueue.main.async {
-                        error = "Failed to upload media to Blossom mirrors. Check your connection and try again."
+                        error = message
                         isPosting = false
                         isUploading = false
                         uploadInfoProvider.reset()
@@ -1440,7 +1616,7 @@ struct ComposeView: View {
                 attachments[i].isUploaded = true
                 finalContent += "\n\(url.absoluteString)"
 
-                mediaDescriptors.append(NoteTagging.MediaDescriptor(
+                let descriptor = NoteTagging.MediaDescriptor(
                     url: url.absoluteString,
                     mimeType: mimeType,
                     sha256: uploadedSHA256,
@@ -1448,6 +1624,12 @@ struct ComposeView: View {
                     pixelHeight: pixelSize.map { Int($0.height.rounded()) },
                     alt: attachments[i].altText,
                     byteCount: byteCount
+                )
+                mediaDescriptors.append(descriptor)
+                queuedMedia.append(QueuedMediaPost.Media(
+                    sha256: descriptor.sha256, mimeType: mimeType, url: descriptor.url,
+                    pixelWidth: descriptor.pixelWidth, pixelHeight: descriptor.pixelHeight,
+                    alt: descriptor.alt, byteCount: descriptor.byteCount
                 ))
             }
             isUploading = false
@@ -1456,6 +1638,7 @@ struct ComposeView: View {
 
             // 2. Build Event
             var tags: [[String]] = []
+            var eventKind = 1
             let relayHint = ConfigService.shared.config.nostrURL
 
             if let parent = effectiveReplyTo {
@@ -1463,20 +1646,24 @@ struct ComposeView: View {
                 let effectiveParentId: String
                 let effectiveParentPubkey: String
                 let effectiveParentTags: [[String]]
+                let effectiveParentKind: Int
 
                 if parent.kind == 6, let originalId = parent.repostedEventId {
                     effectiveParentId = originalId
                     if let original = FeedService.shared.notes.first(where: { $0.id == originalId }) {
                         effectiveParentPubkey = original.pubkey
                         effectiveParentTags = original.tags
+                        effectiveParentKind = original.kind
                     } else {
                         effectiveParentPubkey = parent.pubkey
                         effectiveParentTags = parent.tags
+                        effectiveParentKind = 1
                     }
                 } else {
                     effectiveParentId = parent.id
                     effectiveParentPubkey = parent.pubkey
                     effectiveParentTags = parent.tags
+                    effectiveParentKind = parent.kind
                 }
 
                 // NIP-10: Determine the thread root from the parent's e-tags
@@ -1486,31 +1673,29 @@ struct ComposeView: View {
                     return tag[3] != "mention"
                 }
 
-                // NIP-10/NIP-01: addressable-event a-tags, alongside the e-tags above.
-                // A parameterized replaceable event (kind 30000–39999, e.g. a long-form
-                // article) gets a new event id every time it's edited, so an e-tag-only
-                // reply silently becomes orphaned from other clients' view of the thread
-                // once the author edits it — the "a" coordinate (kind:pubkey:d-tag) is
-                // what stays stable across edits.
-                func addressableCoordinate(kind: Int, pubkey: String, tags: [[String]]) -> String? {
-                    guard kind >= 30000 && kind < 40000,
-                          let dTag = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else { return nil }
-                    return "\(kind):\(pubkey):\(dTag)"
-                }
                 let parentNonMentionATags = effectiveParentTags.filter { tag in
                     guard tag.count >= 2 && tag[0] == "a" else { return false }
                     guard tag.count >= 4 else { return true }
                     return tag[3] != "mention"
                 }
 
-                if parentNonMentionETags.isEmpty {
+                // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply,
+                // anything else a NIP-22 comment. No switch to explain.
+                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind)
+                if eventKind == NIP10Thread.commentKind {
+                    // NIP-22: on a comment, copy its root and point at it; on
+                    // anything else the parent is the root (E, or A alone for
+                    // addressables and replaceables).
+                    tags.append(contentsOf: NIP10Thread.commentTags(
+                        parentId: effectiveParentId, parentKind: effectiveParentKind,
+                        parentPubkey: effectiveParentPubkey, parentTags: effectiveParentTags,
+                        relayHint: relayHint
+                    ))
+                } else if parentNonMentionETags.isEmpty {
                     // Parent IS the root note — single e-tag with "root" marker.
                     // NIP-10: the optional 5th element is the event author's pubkey,
                     // used by the outbox model to know whose relays to fetch it from.
                     tags.append(["e", effectiveParentId, relayHint, "root", effectiveParentPubkey])
-                    if let coord = addressableCoordinate(kind: parent.kind, pubkey: effectiveParentPubkey, tags: effectiveParentTags) {
-                        tags.append(["a", coord, relayHint, "root"])
-                    }
                 } else {
                     // Parent is itself a reply — find the thread root
                     let threadRootId: String
@@ -1531,21 +1716,17 @@ struct ComposeView: View {
                     }
                     tags.append(["e", effectiveParentId, relayHint, "reply", effectiveParentPubkey])
 
-                    // Root a-tag: we only have the root's event id here (not its kind/
-                    // pubkey/d-tag), so propagate it forward from the parent's own root
-                    // a-tag if it had one.
+                    // A legacy thread under an addressable root carries its
+                    // coordinate forward. a/A tags have no marker field.
                     if let rootATag = parentNonMentionATags.first(where: { $0.count >= 4 && $0[3] == "root" }) ?? parentNonMentionATags.first {
-                        tags.append(["a", rootATag[1], relayHint, "root"])
-                    }
-
-                    // Reply a-tag: the immediate parent might itself be addressable.
-                    if let coord = addressableCoordinate(kind: parent.kind, pubkey: effectiveParentPubkey, tags: effectiveParentTags) {
-                        tags.append(["a", coord, relayHint, "reply"])
+                        tags.append(["a", rootATag[1], relayHint])
                     }
                 }
 
-                // Always tag the parent author
-                tags.append(["p", effectiveParentPubkey])
+                // Always tag the parent author (commentReplyTags already did)
+                if eventKind != NIP10Thread.commentKind {
+                    tags.append(["p", effectiveParentPubkey])
+                }
 
                 // NIP-10: Accumulate p-tags from parent (thread participants), deduplicated
                 var seenPubkeys = Set<String>([effectiveParentPubkey])
@@ -1567,12 +1748,50 @@ struct ComposeView: View {
             }
 
             // Quote post: append nevent reference and q tag (NIP-18)
+            var quoteSuffix: String?
             if let quoted = effectiveQuoteTo {
+                quoteSuffix = "\nnostr:\(quoted.nevent)"
                 finalContent += "\nnostr:\(quoted.nevent)"
-                tags.append(["q", quoted.id, relayHint, quoted.pubkey])
+                tags.append(["q", quoted.id, configService.config.publicRelayHint, quoted.pubkey])
                 if !tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == quoted.pubkey }) {
                     tags.append(["p", quoted.pubkey])
                 }
+            }
+
+            // Some media is only on this device: hand the post to the queue,
+            // which sends it once an outside server takes the media. Everything
+            // above is kept; hashtags and imeta are rebuilt from the final URLs
+            // by QueuedMediaPost.assembled(), exactly as below.
+            if queuedMedia.contains(where: { $0.url == nil }) {
+                let powSnap = PowPreferences.snapshot()
+                let queued = QueuedMediaPost(
+                    accountNpub: lockedRawNpub,
+                    body: baseContent,
+                    media: queuedMedia,
+                    quoteSuffix: quoteSuffix,
+                    baseTags: tags,
+                    kind: eventKind,
+                    powDifficulty: powSnap.noteEnabled ? powSnap.noteDifficulty : 0
+                )
+                let macHost = URL(string: configService.config.macRelayHttpsURL)?.host
+                let hosts = unreachableServers.compactMap { URL(string: $0)?.host }
+                await MainActor.run {
+                    MediaPostQueue.shared.enqueue(queued)
+                    // The queue now holds the post on disk; a draft too would
+                    // offer to post it a second time.
+                    if let id = self.draftId {
+                        Task { await DraftService.shared.deleteDraft(id: id) }
+                    }
+                    ErrorNotificationManager.shared.show(
+                        MediaUploadOutcomeMessage.queued(hosts: hosts, macHost: macHost),
+                        icon: "clock.arrow.circlepath",
+                        style: .warning
+                    )
+                    self.lastSavedContent = self.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    isPosting = false
+                    performDismiss()
+                }
+                return
             }
 
             // NIP-24 `t` tags. Without these a note typed with #bitcoin is
@@ -1584,12 +1803,24 @@ struct ComposeView: View {
             // NIP-92 `imeta`, one per uploaded attachment, in content order.
             tags.append(contentsOf: NoteTagging.imetaTags(for: mediaDescriptors))
 
-            // 3. Mine PoW + Sign
+            // 3. Mine PoW + Sign — but not as an account switched to during the
+            // upload: that would ask the new account's signer to sign this note.
+            let accountUnchanged = await MainActor.run {
+                PostingAccount.resolve(active: configService.config.activeAccountNpub, owner: configService.config.ownerNpub) == lockedNpub
+            }
+            guard accountUnchanged else {
+                await MainActor.run {
+                    ErrorNotificationManager.shared.show(Self.accountChangedMessage)
+                    error = Self.accountChangedMessage
+                    isPosting = false
+                }
+                return
+            }
             let isReply = effectiveReplyTo != nil
             let powSnap = PowPreferences.snapshot()
             let powDifficulty = powSnap.noteEnabled ? powSnap.noteDifficulty : 0
             print("ComposeView: signing \(isReply ? "reply" : "post") – mode=\(configService.config.activeSigningMode()) nip46connected=\(NIP46Service.shared.isConnected) tags=\(tags.count) pow=\(powDifficulty)")
-            guard let event = await nostrService.mineAndSignEventAsync(kind: 1, content: finalContent, tags: tags, difficulty: powDifficulty) else {
+            guard let event = await nostrService.mineAndSignEventAsync(kind: eventKind, content: finalContent, tags: tags, difficulty: powDifficulty) else {
                 await MainActor.run {
                     let signingMode = configService.config.activeSigningMode()
                     print("ComposeView: sign FAILED – signingMode=\(signingMode) activeNpub=\(configService.config.activeAccountNpub.prefix(20)) isReply=\(isReply)")
@@ -1610,6 +1841,24 @@ struct ComposeView: View {
             }
 
             DispatchQueue.main.async {
+                // Checked here, in the same main-queue turn that hands the note to
+                // PendingPostManager (which cancels on any later switch), so no
+                // switch can slip in between the check and the hand-off.
+                guard PostingAccount.signedAsLocked(
+                    lockedNpub: lockedNpub,
+                    lockedHex: lockedHex,
+                    activeNow: configService.config.activeAccountNpub,
+                    owner: configService.config.ownerNpub,
+                    eventPubkey: event.pubkey
+                ) else {
+                    print("ComposeView: account changed while posting – locked=\(lockedNpub.prefix(20)) signed=\(event.pubkey.prefix(8)); not publishing")
+                    // The switch may have torn down this sheet; the banner is seen either way.
+                    ErrorNotificationManager.shared.show(Self.accountChangedMessage)
+                    error = Self.accountChangedMessage
+                    isPosting = false
+                    return
+                }
+
                 // Add to local feed immediately for preview
                 let feedNote = FeedNote(
                     id: event.id,
@@ -1649,46 +1898,62 @@ struct ComposeView: View {
             return
         }
         isLoadingBlossomMedia = true
+        Task {
+            let result = await ComposeView.relayBlossomMedia(
+                relayManager: relayManager, configService: configService, nostrService: nostrService)
+            blossomMedia = result
+            isLoadingBlossomMedia = false
+        }
+    }
+
+    /// Everything in the relay's Blossom store, newest first, as the picker
+    /// lists it. Shared by the composer and the live stream chat.
+    static func relayBlossomMedia(relayManager: RelayProcessManager, configService: ConfigService,
+                                  nostrService: NostrService) async -> [MediaItem] {
         let relayDataDir = configService.relayDataDir
         let blossomPath = configService.config.blossomPath
         let ownerHex = nostrService.activeHexPubkey
         let webURL = configService.config.webURL
         let rpm = relayManager
-
-        Task {
-            let result = await Task.detached(priority: .background) { () -> [MediaItem] in
-                let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
-                guard FileManager.default.fileExists(atPath: blossomDir.path),
-                      let fileURLs = try? FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey]) else {
-                    return []
-                }
-                return fileURLs.compactMap { fileURL -> MediaItem? in
-                    let filename = fileURL.lastPathComponent
-                    if filename.starts(with: ".") || filename == "LOCK" { return nil }
-                    guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
-                    let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
-                    let proof = rpm.detectMimeFromBytes(for: fileURL)
-                    let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
-                    let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
-                    let mediaType: MediaItem.MediaType
-                    if let mime = mimeType {
-                        if mime.hasPrefix("video/") { mediaType = .video }
-                        else if mime.hasPrefix("audio/") { mediaType = .audio }
-                        else if mime.hasPrefix("image/") { mediaType = .image }
-                        else { mediaType = .unknown }
-                    } else {
-                        mediaType = .unknown
-                    }
-                    return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
-                }.sorted { $0.dateAdded > $1.dateAdded }
-            }.value
-
-            await MainActor.run {
-                blossomMedia = result
-                isLoadingBlossomMedia = false
-            }
+        // The Media tab dates a blob by the note that published it, not by the
+        // file's mtime; without this the same photo sits under different
+        // headings in the tab and here.
+        var eventDates: [String: Date] = [:]
+        for item in nostrService.noteMedia {
+            guard let hash = ComposeView.blossomHash(in: item.url) else { continue }
+            if let existing = eventDates[hash], existing >= item.dateAdded { continue }
+            eventDates[hash] = item.dateAdded
         }
+        let publishedDates = eventDates
+
+        return await Task.detached(priority: .background) { () -> [MediaItem] in
+            let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
+            guard FileManager.default.fileExists(atPath: blossomDir.path),
+                  let fileURLs = try? FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey]) else {
+                return []
+            }
+            return fileURLs.compactMap { fileURL -> MediaItem? in
+                let filename = fileURL.lastPathComponent
+                if filename.starts(with: ".") || filename == "LOCK" { return nil }
+                guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
+                let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                let fileDate = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
+                let date = ComposeView.blossomHash(in: fileURL).flatMap { publishedDates[$0] } ?? fileDate
+                let proof = rpm.detectMimeFromBytes(for: fileURL)
+                let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
+                let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
+                let mediaType: MediaItem.MediaType
+                if let mime = mimeType {
+                    if mime.hasPrefix("video/") { mediaType = .video }
+                    else if mime.hasPrefix("audio/") { mediaType = .audio }
+                    else if mime.hasPrefix("image/") { mediaType = .image }
+                    else { mediaType = .unknown }
+                } else {
+                    mediaType = .unknown
+                }
+                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
+            }.sorted { $0.dateAdded > $1.dateAdded }
+        }.value
     }
 
     private func handleCancelTapped() {
@@ -1870,20 +2135,22 @@ class MediaUploadsIndicatorInfoProvider: ObservableObject {
     }
 }
 
+/// Media already on the relay, for attaching to a note. Organised exactly like
+/// the Media tab — same type chips, same sort, same date headings — and it
+/// reads and writes the tab's stored settings, so the two never disagree.
 struct BlossomMediaPickerSheet: View {
     @Binding var blossomMedia: [MediaItem]
     @Binding var isLoading: Bool
     let onSelect: (MediaItem) -> Void
     let onAppearLoad: () -> Void
     @Environment(\.dismiss) var dismiss
-    @State private var selectedFilter: BlossomMediaFilter = .all
 
-    enum BlossomMediaFilter: String, CaseIterable {
-        case all = "All"
-        case photo = "Photo"
-        case video = "Video"
-        case gif = "GIF"
-    }
+    @AppStorage(MediaTypeFilter.storageKey) private var typeFilterRaw: String =
+        MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
+    @AppStorage(MediaSortOption.storageKey) private var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
+
+    private var typeFilter: Set<MediaTypeFilter> { MediaTypeFilter.selection(from: typeFilterRaw) }
+    private var sortOption: MediaSortOption { MediaSortOption(rawValue: sortOptionRaw) ?? .newestFirst }
 
     #if os(macOS)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
@@ -1891,17 +2158,32 @@ struct BlossomMediaPickerSheet: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
     #endif
 
+    /// Every item here is on the relay by construction, so "On relay first"
+    /// reduces to its date tiebreak.
     private var filteredMedia: [MediaItem] {
-        switch selectedFilter {
-        case .all:
-            return blossomMedia
-        case .photo:
-            return blossomMedia.filter { $0.type == .image && !$0.isAnimatedGIF }
-        case .video:
-            return blossomMedia.filter { $0.type == .video }
-        case .gif:
-            return blossomMedia.filter { $0.isAnimatedGIF }
+        let selection = typeFilter
+        return sortOption.sorted(blossomMedia.filter { selection.contains(MediaTypeFilter.category(of: $0)) }) { _ in true }
+    }
+
+    private var sections: [MediaDateSection] {
+        guard sortOption.groupsByDate else {
+            return [MediaDateSection(id: "all", title: "", items: filteredMedia)]
         }
+        return MediaDateSection.sections(for: filteredMedia)
+    }
+
+    /// Same toggle rules as the Media tab: from "all", a tap isolates that
+    /// type; the last selected type cannot be switched off.
+    private func toggle(_ filter: MediaTypeFilter) {
+        var selection = typeFilter
+        if selection.count == MediaTypeFilter.allCases.count {
+            selection = [filter]
+        } else if selection.contains(filter) {
+            if selection.count > 1 { selection.remove(filter) }
+        } else {
+            selection.insert(filter)
+        }
+        withAnimation(Motion.toggle) { typeFilterRaw = MediaTypeFilter.rawSelection(selection) }
     }
 
     var body: some View {
@@ -1922,7 +2204,7 @@ struct BlossomMediaPickerSheet: View {
                         Image(systemName: "camera.macro")
                             .font(.appSystem(size: 48, weight: .thin))
                             .foregroundColor(Color.havenPurple.opacity(0.6))
-                        Text("No \(selectedFilter.rawValue.lowercased()) media")
+                        Text("No media matches these filters")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -1939,13 +2221,20 @@ struct BlossomMediaPickerSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 6) {
-                            ForEach(filteredMedia) { item in
-                                BlossomPickerGridItem(item: item)
-                                    .onTapGesture { onSelect(item) }
+                        LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                            ForEach(sections) { section in
+                                Section {
+                                    ForEach(section.items) { item in
+                                        BlossomPickerGridItem(item: item)
+                                            .onTapGesture { onSelect(item) }
+                                    }
+                                } header: {
+                                    sectionHeader(section.title)
+                                }
                             }
                         }
-                        .padding(8)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                     }
                 }
             }
@@ -1959,30 +2248,95 @@ struct BlossomMediaPickerSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: 4) {
-                        ForEach(BlossomMediaFilter.allCases, id: \.self) { filter in
-                            Button {
-                                selectedFilter = filter
-                            } label: {
-                                Text(filter.rawValue)
-                                    .font(.appSystem(size: 13, weight: selectedFilter == filter ? .semibold : .regular))
-                                    .foregroundColor(selectedFilter == filter ? .white : .secondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        selectedFilter == filter
-                                            ? Color.havenPurple
-                                            : Color.secondary.opacity(0.15)
-                                    )
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    typeFilterButtons
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    sortMenu
                 }
             }
         }
         .onAppear { onAppearLoad() }
+    }
+
+    /// The Media tab's type row: All, Photo, Video, GIF.
+    private var typeFilterButtons: some View {
+        HStack(spacing: 12) {
+            let allSelected = typeFilter.count == MediaTypeFilter.allCases.count
+            let photoSelected = typeFilter.contains(.photo)
+            let videoSelected = typeFilter.contains(.video)
+            let gifSelected = typeFilter.contains(.gif)
+
+            IconFilterButton(
+                icon: allSelected ? "circle.grid.2x2.fill" : "circle.grid.2x2",
+                tooltip: "All Media",
+                isSelected: allSelected,
+                color: .havenPurple
+            ) {
+                withAnimation(Motion.toggle) {
+                    typeFilterRaw = MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
+                }
+            }
+            IconFilterButton(
+                icon: photoSelected ? "photo.fill" : "photo",
+                tooltip: "Photos",
+                isSelected: photoSelected,
+                color: .primary
+            ) { toggle(.photo) }
+            IconFilterButton(
+                icon: videoSelected ? "video.fill" : "video",
+                tooltip: "Videos",
+                isSelected: videoSelected,
+                color: .primary
+            ) { toggle(.video) }
+            IconFilterButton(
+                icon: "GIF",
+                tooltip: "GIFs",
+                isSelected: gifSelected,
+                color: .primary
+            ) { toggle(.gif) }
+        }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(MediaSortOption.allCases) { option in
+                Button {
+                    withAnimation(Motion.toggle) { sortOptionRaw = option.rawValue }
+                } label: {
+                    Label(option.label, systemImage: sortOption == option ? "checkmark" : option.icon)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.havenPurple)
+        }
+        .accessibilityLabel("Sort")
+        #if os(macOS)
+        // A default Menu drops the label's purple and weight on the Mac.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help("Sort")
+        #endif
+    }
+
+    /// Pinned date heading, styled like the Media tab's. Nothing for the
+    /// untitled single section a non-date sort produces.
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        if !title.isEmpty {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.appSystem(size: 13, weight: .bold, design: .rounded))
+                    .tracking(0.3)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial)
+        }
     }
 }
 

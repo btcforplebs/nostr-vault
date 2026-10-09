@@ -1,5 +1,6 @@
 package com.nostrvault.ui.navigation
 
+import com.nostrvault.data.model.VaultViewMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -31,11 +32,29 @@ class DeepLinkRouterTest {
         assertEquals(Screen.DMInbox.route, route("nostrvault://dms"))
         assertEquals(Screen.Search.route, route("nostrvault://search"))
         assertEquals(Screen.Dashboard.route, route("nostrvault://relay"))
-        assertEquals(Screen.MediaGallery.route, route("nostrvault://media"))
+        // Media and Relay are one Vault tab; the link picks its half.
+        assertEquals(Screen.Dashboard.route, route("nostrvault://media"))
+        assertEquals(true, DeepLinkRouter.fromUri("nostrvault://media", decoder)!!.vaultMedia)
+        assertEquals(false, DeepLinkRouter.fromUri("nostrvault://relay", decoder)!!.vaultMedia)
         assertEquals(Screen.Wallet.route, route("nostrvault://wallet"))
-        assertEquals(Screen.GroupList.route, route("nostrvault://groups"))
         assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://compose"))
-        assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://mediapaste"))
+    }
+
+    @Test fun `mediapaste opens the Vault tab's Media half with a paste request`() {
+        val target = DeepLinkRouter.fromUri("nostrvault://mediapaste", decoder)!!
+        assertEquals(Screen.Dashboard.route, target.route)
+        assertEquals(true, target.vaultMedia)
+        assertEquals(true, target.mediaPaste)
+        assertEquals(false, DeepLinkRouter.fromUri("nostrvault://media", decoder)!!.mediaPaste)
+    }
+
+    @Test fun `clipboard paste prefers media, then a link`() {
+        assertEquals(ClipboardMedia.ContentUri("content://x/1"), ClipboardMedia.from("content://x/1", "https://a.example/b.jpg"))
+        assertEquals(ClipboardMedia.Link("https://a.example/b.jpg"), ClipboardMedia.from(null, "  https://a.example/b.jpg \n"))
+        assertEquals(ClipboardMedia.NotALink, ClipboardMedia.from(null, "hello there"))
+        assertEquals(ClipboardMedia.NotALink, ClipboardMedia.from(null, "ftp://a.example/b"))
+        assertEquals(ClipboardMedia.Empty, ClipboardMedia.from(null, "  "))
+        assertEquals(ClipboardMedia.Empty, ClipboardMedia.from(null, null))
     }
 
     @Test fun `bare scheme and trailing slash open the feed`() {
@@ -73,16 +92,88 @@ class DeepLinkRouterTest {
         assertNull(route("nostrvault://note/" + "a".repeat(63)))
     }
 
-    @Test fun `a mention notification opens the note it was about`() {
-        val target = DeepLinkRouter.fromNotification("mention", hexNote, hexAuthor, "npub1abc")
+    private val hexPost = "c".repeat(64)
+
+    private fun eventJson(id: String, kind: Int, tags: String = "[]", content: String = "gm") =
+        """{"id":"$id","pubkey":"$hexAuthor","created_at":1800000000,"kind":$kind,"tags":$tags,"content":"$content","sig":"00"}"""
+
+    @Test fun `a mention notification opens its post from the copy it carries`() {
+        val target = DeepLinkRouter.fromNotification(
+            "mention", hexNote, hexAuthor, "npub1abc", event = eventJson(hexNote, 1, content = "hello"),
+        )
         assertEquals(Screen.NoteDetail.createRoute(hexNote), target?.route)
+        assertEquals("hello", target?.seedNote?.content)
+        assertNull(target?.relayFocus)
         assertEquals("npub1abc", target?.accountNpub)
+    }
+
+    @Test fun `a mention without a carried copy still opens its post, by id`() {
+        for (type in listOf("mention", "reply", "quote")) {
+            val target = DeepLinkRouter.fromNotification(type, hexNote, hexAuthor, null)
+            assertEquals(type, Screen.NoteDetail.createRoute(hexNote), target?.route)
+            assertNull(type, target?.seedNote)
+            assertNull(type, target?.relayFocus)
+        }
+    }
+
+    @Test fun `a like or zap opens the post it is about, not itself`() {
+        val like = eventJson(hexNote, 7, tags = """[["e","$hexPost"],["p","$hexAuthor"]]""", content = "+")
+        val post = eventJson(hexPost, 1, content = "my post")
+        for (type in listOf("reaction", "zap", "repost")) {
+            val carried = DeepLinkRouter.fromNotification(type, hexNote, hexAuthor, null, event = like, target = post)
+            assertEquals(type, Screen.NoteDetail.createRoute(hexPost), carried?.route)
+            assertEquals(type, "my post", carried?.seedNote?.content)
+            // The post was not in the notification: open it by the like's e tag.
+            val byId = DeepLinkRouter.fromNotification(type, hexNote, hexAuthor, null, event = like)
+            assertEquals(type, Screen.NoteDetail.createRoute(hexPost), byId?.route)
+            assertNull(type, byId?.seedNote)
+        }
+    }
+
+    @Test fun `with no post to open, a like or zap falls back to the Relay tab`() {
+        // A zap on a profile has no e tag; an alert with no copy only names the like.
+        val profileZap = eventJson(hexNote, 9735, tags = """[["p","$hexAuthor"]]""")
+        val zap = DeepLinkRouter.fromNotification("zap", hexNote, hexAuthor, null, event = profileZap)
+        assertEquals(Screen.Dashboard.route, zap?.route)
+        assertEquals(RelayFocusRequest("zap", hexNote), zap?.relayFocus)
+        val like = DeepLinkRouter.fromNotification("reaction", hexNote, hexAuthor, null)
+        assertEquals(RelayFocusRequest("reaction", hexNote), like?.relayFocus)
+    }
+
+    @Test fun `a carried copy that is not a whole event is ignored`() {
+        val target = DeepLinkRouter.fromNotification("mention", hexNote, hexAuthor, null, event = """{"id":"$hexNote"}""")
+        assertEquals(Screen.NoteDetail.createRoute(hexNote), target?.route)
+        assertNull(target?.seedNote)
+        assertNull(NotificationNote.decode("not json"))
+        assertNull(NotificationNote.decode(eventJson("abc", 1)))
     }
 
     @Test fun `a DM notification opens the conversation, not the gift wrap`() {
         val target = DeepLinkRouter.fromNotification("dm", hexNote, hexAuthor, null)
         assertEquals(Screen.DMThread.createRoute(hexAuthor), target?.route)
         assertNull(target?.accountNpub)
+        assertNull(target?.relayFocus)
+    }
+
+    @Test fun `a gift wrap notification opens the inbox, not a thread with the wrap key`() {
+        // The marker's author is the one-time wrapping key, not the sender.
+        val target = DeepLinkRouter.fromNotification("giftwrap", hexNote, hexAuthor, null)
+        assertEquals(Screen.DMInbox.route, target?.route)
+    }
+
+    @Test fun `a new follower notification opens the follower's profile`() {
+        val target = DeepLinkRouter.fromNotification("follow", hexNote, hexAuthor, "npub1abc")
+        assertEquals(Screen.Profile.createRoute(hexAuthor), target?.route)
+        assertEquals("npub1abc", target?.accountNpub)
+        assertNull(target?.relayFocus)
+    }
+
+    @Test fun `the folded new-followers alert opens the Followers list`() {
+        val target = DeepLinkRouter.fromNotification("followers", "followers-npub1abc", "", "npub1abc")
+        assertEquals(Screen.Dashboard.route, target?.route)
+        assertEquals("npub1abc", target?.accountNpub)
+        assertEquals(RelayFocusRequest(type = "followers", eventId = ""), target?.relayFocus)
+        assertEquals(VaultViewMode.FOLLOWERS, NotificationTarget.viewFor("followers", zapsOnly = false))
     }
 
     @Test fun `the catch-up summary carries no event id and opens the feed`() {

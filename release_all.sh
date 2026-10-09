@@ -136,6 +136,11 @@ if [ "$SKIP_ANDROID" = 0 ]; then
     log "Android: rebuilding Go relay (.so) and assembling release APK"
     (cd "$ANDROID_DIR" && ./build_haven_android.sh arm64)
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
+    # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
+    # APK whose Go core predates the per-account signer sessions (#168).
+    unzip -p "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" lib/arm64-v8a/libhaven.so \
+        | strings | grep -q NIP46SignEventWithC \
+        || die "APK's libhaven.so is stale (no NIP46SignEventWithC) — rebuild it from master"
     cp "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" "$APK_PATH"
     APK_SHA256="$(shasum -a 256 "$APK_PATH" | awk '{print $1}')"
     echo "  APK: $APK_PATH"
@@ -230,6 +235,10 @@ IOS_ARCHIVE="$DIST/xcarchive/HavenApp-iOS-b${BUILD}.xcarchive"
 if [ "$SKIP_IOS" = 0 ]; then
     log "iOS: archiving HavenApp-iOS"
     rm -rf "$IOS_ARCHIVE"
+    # The App Store build is the default build: Tenor (read from its website
+    # without permission) only compiles in with TENOR_SIDELOAD, which nothing
+    # here sets, and the nostr.build GIF key comes from the gitignored
+    # HavenApp/Config/Secrets.xcconfig -- see GifSource.available.
     xcodebuild archive -project "$XCODE_DIR/HavenApp.xcodeproj" -scheme HavenApp-iOS \
         -configuration Release -destination 'generic/platform=iOS' \
         -archivePath "$IOS_ARCHIVE" -allowProvisioningUpdates -quiet

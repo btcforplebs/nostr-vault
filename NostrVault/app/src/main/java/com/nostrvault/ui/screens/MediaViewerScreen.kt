@@ -36,6 +36,7 @@ import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.components.VideoPlayer
 import com.nostrvault.ui.components.ZoomableImage
+import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +49,16 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.max
+
+/**
+ * The link to share for a Blossom item: its own URL when it has one, otherwise
+ * the first public mirror + sha256. Never a path on this phone.
+ */
+internal fun publicBlossomLink(item: BlossomMediaItem, mirrors: List<String>): String {
+    if (item.displayUrl.startsWith("http")) return item.displayUrl
+    val mirror = mirrors.firstOrNull { !it.contains("localhost") && !it.contains("127.0.0.1") }
+    return if (mirror != null) "$mirror/${item.sha256}" else item.displayUrl
+}
 
 @HiltViewModel
 class MediaViewerViewModel @Inject constructor(
@@ -66,7 +77,11 @@ class MediaViewerViewModel @Inject constructor(
     val totalMirrors: Int
         get() = configStore.config.value.activeBlossomMirrors.size
 
+    /** The blob the viewer is showing, so a late push result doesn't re-check another page. */
+    private var currentSha: String? = null
+
     fun checkMirrors(sha256: String) {
+        currentSha = sha256
         viewModelScope.launch {
             _isCheckingMirrors.value = true
             _mirrorStatus.value = emptyMap()
@@ -81,18 +96,43 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    /** The blob being pushed right now, or null. */
+    private val _pushingSha = MutableStateFlow<String?>(null)
+    val pushingSha = _pushingSha.asStateFlow()
+
+    /**
+     * Upload the blob to the servers the last check found without it (all of
+     * them when nothing has been checked yet), then report what actually
+     * happened and re-check.
+     */
     fun pushToMirrors(sha256: String) {
+        if (_pushingSha.value != null) return
+        // The status map belongs to the page on screen, which is this blob.
+        val missing = if (currentSha == sha256) _mirrorStatus.value.filterValues { !it }.keys else emptySet()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                blossomService.pushLocalToMirrors(sha256)
+            _pushingSha.value = sha256
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    blossomService.pushLocalToMirrors(sha256, only = missing.ifEmpty { null })
+                }
+            } finally {
+                _pushingSha.value = null
             }
-            notificationManager.showToast("Pushed to mirrors")
-            checkMirrors(sha256)
+            announcePush(result)
+            if (currentSha == sha256) checkMirrors(sha256)
         }
     }
 
-    /** Delete the blob from all external mirrors; the local copy is kept. */
-    fun deleteFromMirrors(item: BlossomMediaItem) {
+    private fun announcePush(result: BlossomService.MirrorPushResult) {
+        when (result) {
+            is BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
+            is BlossomService.MirrorPushResult.Partial -> notificationManager.showError(result.message, ErrorStyle.WARNING)
+            else -> notificationManager.showError(result.message)
+        }
+    }
+
+    /** Delete the blob from all external mirrors; the local copy is kept. [onDone] runs after. */
+    fun deleteFromMirrors(item: BlossomMediaItem, onDone: () -> Unit = {}) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
             return
@@ -103,6 +143,7 @@ class MediaViewerViewModel @Inject constructor(
                 if (count > 0) "Deleted from $count mirror(s)" else "Not found on mirrors",
             )
             checkMirrors(item.sha256)
+            onDone()
         }
     }
 
@@ -126,12 +167,8 @@ class MediaViewerViewModel @Inject constructor(
     }
 
     /** Returns the best public Blossom URL for [item] — external mirror preferred over local. */
-    fun blossomLink(item: BlossomMediaItem): String {
-        if (item.displayUrl.startsWith("http")) return item.displayUrl
-        val mirror = configStore.config.value.activeBlossomMirrors
-            .firstOrNull { !it.contains("localhost") && !it.contains("127.0.0.1") }
-        return if (mirror != null) "$mirror/${item.sha256}" else item.displayUrl
-    }
+    fun blossomLink(item: BlossomMediaItem): String =
+        publicBlossomLink(item, configStore.config.value.activeBlossomMirrors)
 
     fun saveToGallery(item: BlossomMediaItem) {
         viewModelScope.launch {
@@ -173,6 +210,7 @@ fun MediaViewerScreen(
 
     val mirrorStatus by viewModel.mirrorStatus.collectAsState()
     val isCheckingMirrors by viewModel.isCheckingMirrors.collectAsState()
+    val pushingSha by viewModel.pushingSha.collectAsState()
     // Hide all viewer chrome while the activity is shown in a PiP window
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     var showMirrorSheet by remember { mutableStateOf(false) }
@@ -369,6 +407,7 @@ fun MediaViewerScreen(
 
         // Mirror status + page indicator at the bottom
         val currentItem = items.getOrNull(pagerState.currentPage)
+        val isPushing = pushingSha != null && pushingSha == currentItem?.sha256
         val mirroredCount = mirrorStatus.values.count { it }
         val total = viewModel.totalMirrors
         val mirrorColor = when {
@@ -386,28 +425,53 @@ fun MediaViewerScreen(
                 .padding(bottom = 4.dp)
                 .graphicsLayer { alpha = overlayAlpha },
         ) {
-            TextButton(onClick = { showMirrorSheet = true }) {
-                if (isCheckingMirrors) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        color = Color.White.copy(alpha = 0.6f),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Checking mirrors…", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
-                } else {
-                    Icon(
-                        imageVector = NostrVaultIcons.Cloud,
-                        contentDescription = null,
-                        tint = mirrorColor,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = if (total == 0) "No mirrors configured" else "$mirroredCount / $total mirrors",
-                        color = mirrorColor,
-                        fontSize = 12.sp,
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { showMirrorSheet = true }) {
+                    if (isPushing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = Color.White.copy(alpha = 0.6f),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pushing to mirrors…", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    } else if (isCheckingMirrors) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = Color.White.copy(alpha = 0.6f),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Checking mirrors…", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    } else {
+                        Icon(
+                            imageVector = NostrVaultIcons.Cloud,
+                            contentDescription = null,
+                            tint = mirrorColor,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (total == 0) "No mirrors configured" else "$mirroredCount / $total mirrors",
+                            color = mirrorColor,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                // Like iOS: offer an upload only when some server lacks the file.
+                if (currentItem != null && currentItem.sha256.isNotEmpty() &&
+                    !isCheckingMirrors && pushingSha == null && total > 0 && mirroredCount < total
+                ) {
+                    TextButton(onClick = { viewModel.pushToMirrors(currentItem.sha256) }) {
+                        Icon(
+                            imageVector = NostrVaultIcons.ArrowUp,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Mirror", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             if (items.size > 1) {
@@ -439,42 +503,56 @@ fun MediaViewerScreen(
                 pendingDelete = null
                 return@let
             }
-            val title: String
-            val body: String
-            val confirmLabel: String
-            when (scope) {
-                DeleteScope.MIRRORS -> {
-                    title = "Delete from mirrors?"
-                    body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
-                    confirmLabel = "Delete from mirrors"
-                }
-                DeleteScope.EVERYWHERE -> {
-                    title = "Delete everywhere?"
-                    body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
-                    confirmLabel = "Delete everywhere"
-                }
-            }
-            AlertDialog(
-                onDismissRequest = { pendingDelete = null },
-                title = { Text(title) },
-                text = { Text(body) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        when (scope) {
-                            DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
-                            DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
-                        }
-                        pendingDelete = null
-                    }) {
-                        Text(confirmLabel, color = Color(0xFFE53935))
+            DeleteBlobConfirmDialog(
+                scope = scope,
+                onConfirm = {
+                    when (scope) {
+                        DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
+                        DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
                     }
+                    pendingDelete = null
                 },
-                dismissButton = {
-                    TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
-                },
+                onDismiss = { pendingDelete = null },
             )
         }
     }
+}
+
+/** Confirmation for a destructive blob delete; shared by the viewer and the Media tab's long-press menu. */
+@Composable
+internal fun DeleteBlobConfirmDialog(
+    scope: DeleteScope,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val title: String
+    val body: String
+    val confirmLabel: String
+    when (scope) {
+        DeleteScope.MIRRORS -> {
+            title = "Delete from mirrors?"
+            body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+            confirmLabel = "Delete from mirrors"
+        }
+        DeleteScope.EVERYWHERE -> {
+            title = "Delete everywhere?"
+            body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+            confirmLabel = "Delete everywhere"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = Color(0xFFE53935))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

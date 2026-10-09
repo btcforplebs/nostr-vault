@@ -16,6 +16,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -23,6 +24,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -31,8 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,11 +51,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.service.MediaPrivacy
+import com.nostrvault.ui.navigation.FloatingButtonRow
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -73,6 +88,7 @@ class MediaGalleryViewModel @Inject constructor(
     val mediaCacheService: MediaCacheService,
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
+    blobNoteIndexStore: com.nostrvault.data.local.BlobNoteIndexStore,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -93,10 +109,110 @@ class MediaGalleryViewModel @Inject constructor(
 
     init {
         loadBlossomMedia()
+        // Auto-Mirror Media: pull own media from the mirrors (iOS triggerAutoMirrorIfEnabled).
+        if (configStore.config.value.autoMirrorMedia) blossomService.runMirror()
     }
 
     fun refresh() {
+        blossomService.forgetMirrorPresence()
         loadBlossomMedia()
+    }
+
+    /** hash → author of the note that posted the blob, where one has been seen. */
+    val blobAuthors = blobNoteIndexStore.authors
+
+    /** The pubkey a tile's Report Media / Block User acts on, or null to hide them. */
+    fun moderationTarget(sha256: String, authors: Map<String, String>): String? =
+        mediaModerationTarget(authors[sha256.lowercase()], nostrService.ownerHexPubkey, nostrService.activeHexPubkey)
+
+    /**
+     * NIP-56 report of a blob's author. A blob has no event to name, so it is
+     * a user report, as iOS's UGCReportingDialog sends with no event id. The
+     * caller also blocks, as reporting does everywhere else in the app.
+     */
+    fun reportAuthor(pubkey: String, reason: String, description: String) {
+        nostrService.reportUser(pubkey, reason, description.ifBlank { null })
+    }
+
+    /** Each Blossom server's answer per blob; the tile badges read this. */
+    val mirrorPresence = blossomService.mirrorPresence
+
+    /** The user's outside Blossom servers, so badges re-check when one is added. */
+    val blossomMirrors = configStore.config
+        .map { it.activeBlossomMirrors }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.activeBlossomMirrors)
+
+    fun backupSummary(sha256: String, presence: Map<String, Map<String, BlobPresence>>): BlossomBackupSummary? =
+        blossomService.backupSummary(sha256, presence)
+
+    /** Asks the servers about [sha256] once per session (or after a refresh). */
+    suspend fun checkBackup(sha256: String) {
+        blossomService.checkMirrorPresence(sha256)
+    }
+
+    private val _busySha = MutableStateFlow<String?>(null)
+    /** The blob being saved or mirrored from the menu right now, or null. */
+    val busySha = _busySha.asStateFlow()
+
+    /**
+     * Uploads a file already on this phone to the servers not known to have
+     * it, then re-checks so the badge shows the new count. Port of iOS
+     * `MediaBackupActions.mirrorMissing`.
+     */
+    fun mirrorMissing(item: BlossomMediaItem) {
+        if (_busySha.value != null) return
+        viewModelScope.launch {
+            _busySha.value = item.sha256
+            try {
+                val result = pushMissing(item.sha256)
+                when (result) {
+                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    is BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
+                    is BlossomService.MirrorPushResult.Partial -> notificationManager.showError(result.message, ErrorStyle.WARNING)
+                    else -> notificationManager.showError(result.message)
+                }
+            } finally {
+                _busySha.value = null
+            }
+        }
+    }
+
+    /**
+     * Stores a file that is only on outside servers in the vault on this
+     * phone, then uploads it to any server that lacks it. Port of iOS
+     * `MediaBackupActions.saveToVault`.
+     */
+    fun saveToVault(item: BlossomMediaItem) {
+        if (_busySha.value != null) return
+        viewModelScope.launch {
+            _busySha.value = item.sha256
+            try {
+                val saved = blossomService.mirrorUrlToLocal(item.displayUrl)
+                if (saved == null) {
+                    notificationManager.showError("Could not save to your vault")
+                    return@launch
+                }
+                val backedUp = blossomMirrors.value.isNotEmpty() &&
+                    pushMissing(saved).let { it == null || it is BlossomService.MirrorPushResult.AllAccepted }
+                notificationManager.showToast(
+                    if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone",
+                )
+                loadBlossomMedia()
+            } finally {
+                _busySha.value = null
+            }
+        }
+    }
+
+    /** Null when every server already had it; otherwise the push result. Re-checks after. */
+    private suspend fun pushMissing(sha256: String): BlossomService.MirrorPushResult? {
+        blossomService.checkMirrorPresence(sha256, force = true)
+        val summary = blossomService.backupSummary(sha256)
+        if (summary != null && !summary.needsMirror) return null
+        val result = blossomService.pushLocalToMirrors(sha256, only = summary?.missing)
+        blossomService.checkMirrorPresence(sha256, force = true)
+        return result
     }
 
     private fun loadBlossomMedia() {
@@ -138,8 +254,8 @@ class MediaGalleryViewModel @Inject constructor(
                     }
 
                     _mediaItems.value = items.values
-                        .filter { it.isImage || it.isVideo || it.mimeType == null }
-                        .sortedByDescending { it.uploaded ?: (it.lastModified?.div(1000)) ?: 0L }
+                        .filter { it.isImage || it.isVideo || it.isAudio || it.mimeType == null }
+                        .sortedByDescending { it.sortTime }
                         .toList()
                 }
             } finally {
@@ -222,57 +338,124 @@ class MediaGalleryViewModel @Inject constructor(
         return json.decodeFromString<List<BlobDescriptor>>(body)
     }
 
-    fun uploadMedia(uri: Uri, contentResolver: android.content.ContentResolver) {
+    /**
+     * Uploads every picked file in turn (iOS photo picker and file importer
+     * both allow several), then reloads once.
+     */
+    fun uploadMedia(uris: List<Uri>, contentResolver: android.content.ContentResolver) {
+        if (_isUploading.value || uris.isEmpty()) return
+        viewModelScope.launch {
+            _isUploading.value = true
+            try {
+                var anySaved = false
+                for (uri in uris) {
+                    if (uploadOne(uri, contentResolver)) anySaved = true
+                }
+                if (anySaved) refresh()
+            } finally {
+                _isUploading.value = false
+            }
+        }
+    }
+
+    /**
+     * Port of iOS `handlePasteFromClipboard`: an image on the clipboard is
+     * uploaded like a picked file; an http(s) link is downloaded into the
+     * vault; anything else says why nothing happened.
+     */
+    fun pasteFromClipboard(context: android.content.Context) {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        val item = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        val uri = item?.uri
+        if (uri != null) {
+            uploadMedia(listOf(uri), context.contentResolver)
+            return
+        }
+        val text = item?.text?.toString()?.trim()
+        if (text.isNullOrEmpty()) {
+            notificationManager.showError("Clipboard is empty or contains unsupported content", ErrorStyle.WARNING)
+            return
+        }
+        val url = pastedMediaUrl(text)
+        if (url == null) {
+            notificationManager.showError("Clipboard does not contain a valid URL or image", ErrorStyle.WARNING)
+            return
+        }
         if (_isUploading.value) return
         viewModelScope.launch {
             _isUploading.value = true
-            val filename = uri.lastPathSegment ?: "media"
+            val filename = url.substringBefore('?').substringBefore('#')
+                .substringAfterLast('/').ifEmpty { "pasted-media" }
             val uploadId = notificationManager.addUpload(filename)
-            // Stream the picked media to a temp file instead of readBytes() — a
-            // large video pulled fully into a ByteArray OOM-kills low-RAM devices
-            // before the upload even starts. The File-based upload path streams
-            // from disk (file.asRequestBody) end to end.
-            var tempFile: File? = null
             try {
-                tempFile = withContext(Dispatchers.IO) {
-                    val f = File.createTempFile("upload_", null, mediaCacheService.cacheDirectory)
-                    val copied = contentResolver.openInputStream(uri)?.use { input ->
-                        f.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
-                        true
-                    } ?: false
-                    if (copied) f else { f.delete(); null }
-                } ?: run {
-                    notificationManager.markUploadFailed(uploadId, "Could not read file")
-                    return@launch
-                }
-
-                val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
-                val sha256 = withContext(Dispatchers.IO) {
-                    blossomService.computeSHA256(tempFile!!)
-                }
-
-                notificationManager.updateUploadProgress(uploadId, 0.3f)
-
-                val resultUrl = withContext(Dispatchers.IO) {
-                    // Vault save: local storage counts as success even if mirrors are down.
-                    blossomService.uploadAndMirror(tempFile!!, sha256, contentType, allowLocalFallback = true)
-                }
-
-                notificationManager.updateUploadProgress(uploadId, 1.0f)
-
-                if (resultUrl != null || blossomService.localBlossomURL() != null) {
+                if (blossomService.mirrorUrlToLocal(url) != null) {
                     notificationManager.markUploadSuccess(uploadId)
                     refresh()
                 } else {
-                    notificationManager.markUploadFailed(uploadId, "Upload failed")
+                    notificationManager.markUploadFailed(uploadId, "Failed to paste media")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Upload failed", e)
-                notificationManager.markUploadFailed(uploadId, e.message ?: "Upload failed")
             } finally {
-                tempFile?.let { withContext(NonCancellable + Dispatchers.IO) { it.delete() } }
                 _isUploading.value = false
             }
+        }
+    }
+
+    /** True when the file reached the vault. Progress and failure go to the upload notification. */
+    private suspend fun uploadOne(uri: Uri, contentResolver: android.content.ContentResolver): Boolean {
+        val filename = uri.lastPathSegment ?: "media"
+        val uploadId = notificationManager.addUpload(filename)
+        // Stream the picked media to a temp file instead of readBytes() — a
+        // large video pulled fully into a ByteArray OOM-kills low-RAM devices
+        // before the upload even starts. The File-based upload path streams
+        // from disk (file.asRequestBody) end to end.
+        var tempFile: File? = null
+        try {
+            tempFile = withContext(Dispatchers.IO) {
+                val f = File.createTempFile("upload_", null, mediaCacheService.cacheDirectory)
+                val copied = contentResolver.openInputStream(uri)?.use { input ->
+                    f.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                    true
+                } ?: false
+                if (copied) f else { f.delete(); null }
+            } ?: run {
+                notificationManager.markUploadFailed(uploadId, "Could not read file")
+                return false
+            }
+
+            val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            if (!withContext(Dispatchers.IO) { MediaPrivacy.removeLocation(tempFile!!, contentType) }) {
+                notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
+                return false
+            }
+            val sha256 = withContext(Dispatchers.IO) {
+                blossomService.computeSHA256(tempFile!!)
+            }
+
+            notificationManager.updateUploadProgress(uploadId, 0.3f)
+
+            val resultUrl = withContext(Dispatchers.IO) {
+                // Vault save: local storage counts as success even if mirrors are down.
+                blossomService.uploadAndMirror(tempFile!!, sha256, contentType, allowLocalFallback = true)
+            }
+
+            notificationManager.updateUploadProgress(uploadId, 1.0f)
+
+            return if (resultUrl != null || blossomService.localBlossomURL() != null) {
+                notificationManager.markUploadSuccess(uploadId)
+                true
+            } else {
+                notificationManager.markUploadFailed(uploadId, "Upload failed")
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Upload failed", e)
+            notificationManager.markUploadFailed(uploadId, e.message ?: "Upload failed")
+            return false
+        } finally {
+            tempFile?.let { withContext(NonCancellable + Dispatchers.IO) { it.delete() } }
         }
     }
 
@@ -280,6 +463,26 @@ class MediaGalleryViewModel @Inject constructor(
         private const val TAG = "MediaGalleryVM"
     }
 }
+
+/**
+ * The http(s) link a pasted string names, or null. Port of the URL check in
+ * iOS `handlePasteFromClipboard`: anything without an http(s) scheme and a
+ * host is not something to download.
+ */
+internal fun pastedMediaUrl(text: String): String? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
+    val uri = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return null
+    if (uri.host.isNullOrEmpty()) return null
+    return trimmed
+}
+
+internal const val MEDIA_GALLERY_PREFS = "media_gallery"
+
+/** iOS `mediaGallery.layoutMode`. */
+private const val LAYOUT_MODE_KEY = "mediaGallery.layoutMode"
 
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
 object MediaGalleryBridge {
@@ -299,7 +502,12 @@ data class BlossomMediaItem(
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video") == true
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
-    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
+    /** By type, or by extension when the server only says octet-stream (iOS sniffs the same way). */
+    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true ||
+        (!isImage && !isVideo && com.nostrvault.ui.components.isAudioUrl(localFile?.name ?: displayUrl))
+
+    /** Seconds since epoch the gallery orders by, newest first: upload time, else file mtime. */
+    val sortTime: Long get() = uploaded ?: lastModified?.div(1000) ?: 0L
 
     /** GIF detection by extension or mime type, matching iOS MediaGallery isGif. */
     val isGif: Boolean get() =
@@ -310,11 +518,34 @@ data class BlossomMediaItem(
 
 data class MediaItem(val url: String, val noteId: String)
 
+/**
+ * Who Report Media / Block User on a tile act on: the author of the note the
+ * blob was posted in, when that is someone else. Null — the items hidden —
+ * when no note is known, or it is yours (owner or the account in use).
+ * iOS MediaGridItem: `item.pubkey != nostrService.activeHexPubkey`.
+ */
+internal fun mediaModerationTarget(author: String?, ownerHex: String, activeHex: String): String? =
+    author?.takeIf { it.isNotEmpty() && it != ownerHex && it != activeHex }
+
 /** Scope for a pending destructive delete in MediaViewerScreen. */
 enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
-enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }
+enum class MediaTypeFilter {
+    ALL, PHOTO, VIDEO, GIF, OTHER;
+
+    /**
+     * Whether [item] belongs under this filter. Shared by the Media tab and
+     * the composer's relay picker so the two can't drift.
+     */
+    fun matches(item: BlossomMediaItem): Boolean = when (this) {
+        ALL -> true
+        PHOTO -> item.isImage && !item.isGif
+        VIDEO -> item.isVideo
+        GIF -> item.isGif
+        OTHER -> !item.isImage && !item.isVideo
+    }
+}
 
 /** Gallery layout mode. */
 enum class MediaLayoutMode { GRID, LIST }
@@ -324,19 +555,34 @@ enum class MediaLayoutMode { GRID, LIST }
 fun MediaGalleryScreen(
     onMediaClick: (Int) -> Unit,
     onNoteClick: (String) -> Unit,
-    onBlossomClick: () -> Unit,
+    /** The Vault Dashboard (relay and Blossom in one), which the Vault tab presents. */
+    onOpenDashboard: () -> Unit,
+    /** The Vault tab's mode pill, on Media. */
+    modePill: @Composable () -> Unit,
+    /** The relay's health, which colours the Vault button as on the relay half. */
+    dashboardColor: androidx.compose.ui.graphics.Color,
     feedService: FeedService,
     viewModel: MediaGalleryViewModel = hiltViewModel(),
+    /** The viewer's save and delete actions, reused by the long-press menu. */
+    mediaActions: MediaViewerViewModel = hiltViewModel(),
 ) {
     val mediaItems by viewModel.mediaItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
-    var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
-    var layoutMode by remember { mutableStateOf(MediaLayoutMode.GRID) }
+    val context = LocalContext.current
+    // Type filter and layout survive relaunches, like iOS's @AppStorage.
+    val galleryPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
+    val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
+    var layoutMode by remember {
+        mutableStateOf(
+            MediaLayoutMode.entries.firstOrNull { it.name == galleryPrefs.getString(LAYOUT_MODE_KEY, null) }
+                ?: MediaLayoutMode.GRID,
+        )
+    }
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
 
-    // Scroll-direction detection → condense the bottom bar + Blossom FAB. Tracks
+    // Where the list is relative to its top: the chrome always shows near it. Tracks
     // whichever container is currently shown (re-armed on the grid/list toggle).
     val isGrid = layoutMode == MediaLayoutMode.GRID
     ScrollCondenseEffect(
@@ -347,18 +593,45 @@ fun MediaGalleryScreen(
         firstVisibleItemScrollOffset = {
             if (isGrid) gridState.firstVisibleItemScrollOffset else listState.firstVisibleItemScrollOffset
         },
-        setScrollingDown = feedService::setFeedScrollingDown,
     )
+    // Tapping the Vault tab again on Media goes to the top of the grid or list
+    // (iOS #275). Only the half on screen is composed, so only it hears this.
+    LaunchedEffect(isGrid) {
+        com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.Dashboard).collect {
+            if (isGrid) gridState.animateScrollToItem(0) else listState.animateScrollToItem(0)
+        }
+    }
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
+    var pendingDelete by remember { mutableStateOf<Pair<BlossomMediaItem, DeleteScope>?>(null) }
+    // Report Media / Block User from the long-press menu: the author's pubkey.
+    var reportTarget by remember { mutableStateOf<String?>(null) }
+    var blockTarget by remember { mutableStateOf<String?>(null) }
     val colors = LocalNostrVaultColors.current
-    val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
 
+    // nostrvault://mediapaste: paste once the tab is on screen. A beat behind,
+    // as iOS does; Android also hides the clipboard until the window has focus.
+    val pasteRequested by com.nostrvault.ui.navigation.PendingMediaPaste.requested.collectAsState()
+    LaunchedEffect(pasteRequested) {
+        if (!pasteRequested) return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        if (com.nostrvault.ui.navigation.PendingMediaPaste.consume()) viewModel.pasteFromClipboard(context)
+    }
+
+    // Upload choices, as on iOS: Photos and Videos pick several at once from
+    // the photo picker, Files opens the document picker (images and videos,
+    // several at once), Paste takes an image or link from the clipboard.
+    var showUploadMenu by remember { mutableStateOf(false) }
     val mediaPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
-        uri?.let { viewModel.uploadMedia(it, context.contentResolver) }
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris: List<Uri> ->
+        viewModel.uploadMedia(uris, context.contentResolver)
+    }
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        viewModel.uploadMedia(uris, context.contentResolver)
     }
 
     // A blob carries no note reference; the sha256 is the only join.
@@ -369,18 +642,24 @@ fun MediaGalleryScreen(
     // a state they cannot see and cannot predict. The index keeps every mapping
     // the feed has ever handed it, so the answer is a property of the blob.
     val noteIdByHash by feedService.blobNoteIndex.collectAsState()
+    val authorByHash by viewModel.blobAuthors.collectAsState()
+    val mirrorPresence by viewModel.mirrorPresence.collectAsState()
+    val blossomMirrors by viewModel.blossomMirrors.collectAsState()
+    val busySha by viewModel.busySha.collectAsState()
 
-    val filteredItems = remember(mediaItems, activeFilter) {
-        mediaItems
-            .filter { item ->
-                when (activeFilter) {
-                    MediaTypeFilter.ALL -> true
-                    MediaTypeFilter.PHOTO -> item.isImage && !item.isGif
-                    MediaTypeFilter.VIDEO -> item.isVideo
-                    MediaTypeFilter.GIF -> item.isGif
-                    MediaTypeFilter.OTHER -> !item.isImage && !item.isVideo
-                }
-            }
+    // Sort choice survives relaunches, like iOS's @AppStorage(MediaSortOption.storageKey).
+    val sortPrefs = galleryPrefs
+    var sortOption by remember {
+        mutableStateOf(MediaSortOption.fromKey(sortPrefs.getString(MediaSortOption.STORAGE_KEY, null)))
+    }
+    var showSortMenu by remember { mutableStateOf(false) }
+
+    val filteredItems = remember(mediaItems, typeSelection, sortOption) {
+        sortOption.sorted(mediaItems.filter { MediaTypeSelection.matches(typeSelection, it) })
+    }
+    // Today / This Week / This Month / month headings, only under a date sort.
+    val sections = remember(filteredItems, sortOption) {
+        MediaDateGrouping.sections(filteredItems, sortOption)
     }
 
     GlassScaffold(
@@ -396,53 +675,61 @@ fun MediaGalleryScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    // Leading: media type filter icons
-                    GlassPill {
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.GridLayout,
-                            label = "All",
-                            selected = activeFilter == MediaTypeFilter.ALL,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.ALL },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Media,
-                            label = "Photos",
-                            selected = activeFilter == MediaTypeFilter.PHOTO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.PHOTO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Video,
-                            label = "Videos",
-                            selected = activeFilter == MediaTypeFilter.VIDEO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.VIDEO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Gif,
-                            label = "GIFs",
-                            selected = activeFilter == MediaTypeFilter.GIF,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.GIF },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Document,
-                            label = "Other",
-                            selected = activeFilter == MediaTypeFilter.OTHER,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.OTHER },
-                        )
-                    }
+                    // Leading: the Vault tab's mode pill. The type filters that
+                    // sat here fold into a menu on the right (iOS mediaTypeMenu).
+                    modePill()
 
                     Spacer(Modifier.weight(1f))
 
-                    // Layout toggle + upload
+                    // Type + sort + layout toggle + upload
                     GlassPill {
+                        MediaTypeMenu(selection = typeSelection, onSelect = onTypeTap)
+                        Box {
+                            IconButton(
+                                onClick = { showSortMenu = true },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.SwapVert,
+                                    contentDescription = "Sort by: ${sortOption.label}",
+                                    tint = SecondaryText,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                                for (option in MediaSortOption.entries) {
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        // A checkmark on the active row: one choice of many.
+                                        leadingIcon = {
+                                            if (option == sortOption) {
+                                                Icon(
+                                                    androidx.compose.material.icons.Icons.Filled.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = colors.primary,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            } else {
+                                                Spacer(Modifier.size(20.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            showSortMenu = false
+                                            sortOption = option
+                                            sortPrefs.edit().putString(MediaSortOption.STORAGE_KEY, option.key).apply()
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 layoutMode = if (layoutMode == MediaLayoutMode.GRID)
                                     MediaLayoutMode.LIST else MediaLayoutMode.GRID
+                                galleryPrefs.edit().putString(LAYOUT_MODE_KEY, layoutMode.name).apply()
                             },
                             modifier = Modifier.size(40.dp),
                         ) {
@@ -455,55 +742,97 @@ fun MediaGalleryScreen(
                                 modifier = Modifier.size(25.dp),
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                mediaPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        Box {
+                            IconButton(
+                                onClick = { showUploadMenu = true },
+                                enabled = !isUploading,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    imageVector = NostrVaultIcons.Create,
+                                    contentDescription = "Upload",
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(25.dp),
                                 )
-                            },
-                            enabled = !isUploading,
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = NostrVaultIcons.Create,
-                                contentDescription = "Upload",
-                                tint = colors.primary,
-                                modifier = Modifier.size(25.dp),
-                            )
+                            }
+                            DropdownMenu(
+                                expanded = showUploadMenu,
+                                onDismissRequest = { showUploadMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Photos") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Media, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        mediaPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Videos") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Video, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        mediaPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Files") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Document, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        filePickerLauncher.launch(arrayOf("image/*", "video/*"))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Magic Paste") },
+                                    leadingIcon = {
+                                        Icon(
+                                            androidx.compose.material.icons.Icons.Filled.ContentPaste,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        viewModel.pasteFromClipboard(context)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         floatingActionButton = {
-            val scrollingDown by feedService.feedScrollingDown.collectAsState()
-            // The FAB hides and shows with the scroll, so it is chrome.
-            val fabSpring = Motion.chrome<Float>()
-            AnimatedVisibility(
-                visible = !scrollingDown,
-                enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
-                exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
-            ) {
+            // The FAB folds with the bars, following the finger.
+            val folded by rememberChromeFolded()
+            Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
-                    onClick = onBlossomClick,
-                    modifier = Modifier.padding(bottom = 88.dp),
-                    color = colors.primary,
+                    onClick = onOpenDashboard,
+                    modifier = Modifier.floatingRowButton(),
+                    color = dashboardColor,
                     shape = CircleShape,
                     shadowElevation = 8.dp,
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .height(FloatingButtonRow.buttonHeight)
+                            .padding(horizontal = 18.dp),
                     ) {
                         Icon(
-                            imageVector = NostrVaultIcons.Blossom,
+                            imageVector = NostrVaultIcons.TabVault,
                             contentDescription = null,
                             tint = PrimaryText,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Blossom",
+                            text = "Vault",
                             color = PrimaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -551,27 +880,62 @@ fun MediaGalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    itemsIndexed(
-                        items = filteredItems,
-                        key = { _, item -> item.sha256 },
-                    ) { index, item ->
-                        MediaGridCell(
-                            item = item,
-                            index = index,
-                            contextMenuTarget = contextMenuTarget,
-                            noteId = noteIdByHash[item.sha256.lowercase()],
-                            onNoteClick = onNoteClick,
-                            onTap = {
-                                MediaGalleryBridge.currentItems = filteredItems
-                                onMediaClick(index)
-                            },
-                            onLongPress = { contextMenuTarget = index },
-                            onDismissMenu = { contextMenuTarget = null },
-                            mediaCacheService = mediaCacheService,
-                            clipboardManager = clipboardManager,
-                        )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            item(
+                                key = gridHeaderKey(section.title),
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "header",
+                            ) {
+                                MediaSectionHeader(section.title)
+                            }
+                        }
+                        itemsIndexed(
+                            items = section.items,
+                            key = { _, item -> item.sha256 },
+                            contentType = { _, _ -> "media" },
+                        ) { offset, item ->
+                            val index = section.startIndex + offset
+                            MediaGridCell(
+                                item = item,
+                                index = index,
+                                backup = BackupBadgeState(
+                                    summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                    mirrorCount = blossomMirrors.size,
+                                    mirrorsKey = blossomMirrors,
+                                    busy = busySha == item.sha256,
+                                    check = { viewModel.checkBackup(item.sha256) },
+                                    onMirror = { viewModel.mirrorMissing(item) },
+                                    onSaveToVault = { viewModel.saveToVault(item) },
+                                ),
+                                contextMenuTarget = contextMenuTarget,
+                                noteId = noteIdByHash[item.sha256.lowercase()],
+                                onNoteClick = onNoteClick,
+                                onTap = {
+                                    MediaGalleryBridge.currentItems = filteredItems
+                                    onMediaClick(index)
+                                },
+                                onLongPress = { contextMenuTarget = index },
+                                onDismissMenu = { contextMenuTarget = null },
+                                mediaCacheService = mediaCacheService,
+                                clipboardManager = clipboardManager,
+                                shareLink = publicBlossomLink(item, blossomMirrors),
+                                onSaveToPhotos = { mediaActions.saveToGallery(item) },
+                                onDelete = { scope -> pendingDelete = item to scope },
+                                moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
+                                onReport = { reportTarget = it },
+                                onBlock = { blockTarget = it },
+                            )
+                        }
                     }
                 }
+                // The grid's headings stay pinned at the top, as iOS's
+                // LazyVGrid(pinnedViews: .sectionHeaders) and the list do.
+                PinnedGridHeader(
+                    state = gridState,
+                    sections = sections,
+                    top = padding.calculateTopPadding() + 2.dp,
+                )
             } else {
                 // List view
                 LazyColumn(
@@ -585,30 +949,184 @@ fun MediaGalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    itemsIndexed(
-                        items = filteredItems,
-                        key = { _, item -> item.sha256 },
-                    ) { index, item ->
-                        MediaListRow(
-                            item = item,
-                            index = index,
-                            contextMenuTarget = contextMenuTarget,
-                            noteId = noteIdByHash[item.sha256.lowercase()],
-                            onNoteClick = onNoteClick,
-                            onTap = {
-                                MediaGalleryBridge.currentItems = filteredItems
-                                onMediaClick(index)
-                            },
-                            onLongPress = { contextMenuTarget = index },
-                            onDismissMenu = { contextMenuTarget = null },
-                            mediaCacheService = mediaCacheService,
-                            clipboardManager = clipboardManager,
-                        )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            stickyHeader(key = "header:${section.title}", contentType = "header") {
+                                MediaSectionHeader(section.title)
+                            }
+                        }
+                        itemsIndexed(
+                            items = section.items,
+                            key = { _, item -> item.sha256 },
+                            contentType = { _, _ -> "media" },
+                        ) { offset, item ->
+                            val index = section.startIndex + offset
+                            MediaListRow(
+                                item = item,
+                                index = index,
+                                backup = BackupBadgeState(
+                                    summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                    mirrorCount = blossomMirrors.size,
+                                    mirrorsKey = blossomMirrors,
+                                    busy = busySha == item.sha256,
+                                    check = { viewModel.checkBackup(item.sha256) },
+                                    onMirror = { viewModel.mirrorMissing(item) },
+                                    onSaveToVault = { viewModel.saveToVault(item) },
+                                ),
+                                contextMenuTarget = contextMenuTarget,
+                                noteId = noteIdByHash[item.sha256.lowercase()],
+                                onNoteClick = onNoteClick,
+                                onTap = {
+                                    MediaGalleryBridge.currentItems = filteredItems
+                                    onMediaClick(index)
+                                },
+                                onLongPress = { contextMenuTarget = index },
+                                onDismissMenu = { contextMenuTarget = null },
+                                mediaCacheService = mediaCacheService,
+                                clipboardManager = clipboardManager,
+                                shareLink = publicBlossomLink(item, blossomMirrors),
+                                onSaveToPhotos = { mediaActions.saveToGallery(item) },
+                                onDelete = { scope -> pendingDelete = item to scope },
+                                moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
+                                onReport = { reportTarget = it },
+                                onBlock = { blockTarget = it },
+                            )
+                        }
                     }
                 }
             }
         }
     }
+
+    pendingDelete?.let { (item, scope) ->
+        DeleteBlobConfirmDialog(
+            scope = scope,
+            onConfirm = {
+                pendingDelete = null
+                when (scope) {
+                    DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item) { viewModel.refresh() }
+                    DeleteScope.EVERYWHERE -> mediaActions.deleteEverywhere(item) { viewModel.refresh() }
+                }
+            },
+            onDismiss = { pendingDelete = null },
+        )
+    }
+
+    // Reporting also blocks the author, as on iOS and everywhere else in the app.
+    reportTarget?.let { pubkey ->
+        com.nostrvault.ui.components.UGCReportDialog(
+            onReport = { reason, description ->
+                reportTarget = null
+                viewModel.reportAuthor(pubkey, reason, description)
+                feedService.blockUser(pubkey)
+            },
+            onDismiss = { reportTarget = null },
+        )
+    }
+    blockTarget?.let { pubkey ->
+        AlertDialog(
+            onDismissRequest = { blockTarget = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    blockTarget = null
+                    feedService.blockUser(pubkey)
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/**
+ * The heading of the section at the top of the grid, drawn over it once the
+ * section's own heading has scrolled under the top edge; the next heading
+ * pushes it up as it arrives. Compose's grid has no sticky headers before
+ * foundation 1.8, hence an overlay.
+ */
+@Composable
+private fun PinnedGridHeader(
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+    sections: List<MediaDateSection>,
+    top: androidx.compose.ui.unit.Dp,
+) {
+    // Grid key -> its section's heading. Keys are "header:<title>" and sha256s.
+    val titleByKey = remember(sections) {
+        buildMap<Any, String> {
+            for (section in sections) {
+                if (section.title.isEmpty()) continue
+                put(gridHeaderKey(section.title), section.title)
+                section.items.forEach { put(it.sha256, section.title) }
+            }
+        }
+    }
+    if (titleByKey.isEmpty()) return
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val pinned by remember(state, titleByKey) {
+        derivedStateOf {
+            val visible = state.layoutInfo.visibleItemsInfo
+            // Offsets are measured from the content's top edge (below the padding).
+            val first = visible.firstOrNull { it.offset.y + it.size.height > 0 } ?: return@derivedStateOf null
+            val title = titleByKey[first.key] ?: return@derivedStateOf null
+            if (first.key == gridHeaderKey(title) && first.offset.y >= 0) return@derivedStateOf null
+            val next = visible.firstOrNull {
+                (it.key as? String)?.startsWith(GRID_HEADER_PREFIX) == true &&
+                    it.key != gridHeaderKey(title) && it.offset.y > 0
+            }
+            title to (next?.let { (it.offset.y - headerHeight).coerceAtMost(0) } ?: 0)
+        }
+    }
+    pinned?.let { (title, push) ->
+        Box(
+            Modifier
+                .padding(top = top, start = 2.dp, end = 2.dp)
+                .offset { androidx.compose.ui.unit.IntOffset(0, push) }
+                .onSizeChanged { headerHeight = it.height },
+        ) {
+            MediaSectionHeader(title)
+        }
+    }
+}
+
+private const val GRID_HEADER_PREFIX = "header:"
+private fun gridHeaderKey(title: String) = GRID_HEADER_PREFIX + title
+
+/** iOS's audio tile: no picture, so a waveform on Color(red: 0.1, green: 0.1, blue: 0.14). */
+@Composable
+private fun AudioThumbnail(iconSize: androidx.compose.ui.unit.Dp) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A24))
+            .semantics { contentDescription = "Audio" },
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.Waveform,
+            contentDescription = null,
+            tint = LocalNostrVaultColors.current.primary,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+/** Heading over one dated run of media (iOS `mediaSectionHeader`). */
+@Composable
+internal fun MediaSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = PrimaryText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.3.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(WindowBackground.copy(alpha = 0.92f))
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+    )
 }
 
 /** Grid cell with context menu. */
@@ -617,6 +1135,7 @@ fun MediaGalleryScreen(
 private fun MediaGridCell(
     item: BlossomMediaItem,
     index: Int,
+    backup: BackupBadgeState,
     contextMenuTarget: Int?,
     noteId: String?,
     onNoteClick: (String) -> Unit,
@@ -625,6 +1144,12 @@ private fun MediaGridCell(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -638,16 +1163,20 @@ private fun MediaGridCell(
                 onLongClick = onLongPress,
             ),
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(item.localFile ?: item.displayUrl)
-                .size(360, 360)
-                .crossfade(false) // Instant rendering for grid thumbnails
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (item.isAudio) {
+            AudioThumbnail(iconSize = 36.dp)
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(item.localFile ?: item.displayUrl)
+                    .size(360, 360)
+                    .crossfade(false) // Instant rendering for grid thumbnails
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         if (item.isVideo) {
             Icon(
@@ -670,15 +1199,37 @@ private fun MediaGridCell(
             )
         }
 
+        // How many of your Blossom servers hold it, so you can spot what is
+        // not backed up without opening it.
+        if (backup.mirrorCount > 0) {
+            BlossomBackupBadge(
+                backup = backup,
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
+            )
+        }
+
         // Context menu
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            backup = backup,
             noteId = noteId,
             onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            shareLink = shareLink,
+            onSaveToPhotos = onSaveToPhotos,
+            onDelete = onDelete,
+            moderationTarget = moderationTarget,
+            onReport = onReport,
+            onBlock = onBlock,
         )
     }
 }
@@ -689,6 +1240,7 @@ private fun MediaGridCell(
 private fun MediaListRow(
     item: BlossomMediaItem,
     index: Int,
+    backup: BackupBadgeState,
     contextMenuTarget: Int?,
     noteId: String?,
     onNoteClick: (String) -> Unit,
@@ -697,6 +1249,12 @@ private fun MediaListRow(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -719,16 +1277,20 @@ private fun MediaListRow(
                 .size(60.dp)
                 .clip(RoundedCornerShape(6.dp)),
         ) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(item.localFile ?: item.displayUrl)
-                    .size(160, 160)
-                    .crossfade(false) // Instant rendering for list thumbnails
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (item.isAudio) {
+                AudioThumbnail(iconSize = 24.dp)
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(item.localFile ?: item.displayUrl)
+                        .size(160, 160)
+                        .crossfade(false) // Instant rendering for list thumbnails
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (item.isVideo) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
@@ -758,6 +1320,7 @@ private fun MediaListRow(
                     text = when {
                         item.isVideo -> "Video"
                         item.isImage -> "Image"
+                        item.isAudio -> "Audio"
                         else -> "Other"
                     },
                     color = SecondaryText,
@@ -779,12 +1342,41 @@ private fun MediaListRow(
                         modifier = Modifier.size(14.dp),
                     )
                 }
+                if (backup.mirrorCount > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    BlossomBackupBadge(backup = backup)
+                }
+            }
+        }
+
+        // Quick backup actions, as iOS MediaListItem: upload what this phone
+        // has to the servers missing it, or keep a copy of what it lacks.
+        val actionTint = if (backup.busy) SecondaryText else colors.primary
+        if (item.isLocal && backup.summary?.needsMirror == true) {
+            IconButton(onClick = backup.onMirror, enabled = !backup.busy, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (backup.busy) NostrVaultIcons.ArrowUpCircleFill
+                    else NostrVaultIcons.ArrowUpCircle,
+                    contentDescription = if (backup.busy) "Mirroring" else "Mirror to Blossom",
+                    tint = actionTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        } else if (!item.isLocal) {
+            IconButton(onClick = backup.onSaveToVault, enabled = !backup.busy, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (backup.busy) NostrVaultIcons.ArrowDownCircleFill
+                    else NostrVaultIcons.ArrowDownCircle,
+                    contentDescription = if (backup.busy) "Saving" else "Save to Vault",
+                    tint = actionTint,
+                    modifier = Modifier.size(22.dp),
+                )
             }
         }
 
         // Quick copy action
         IconButton(
-            onClick = { clipboardManager.setText(AnnotatedString(item.displayUrl)) },
+            onClick = { clipboardManager.setText(AnnotatedString(shareLink)) },
             modifier = Modifier.size(36.dp),
         ) {
             Icon(
@@ -799,11 +1391,18 @@ private fun MediaListRow(
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            backup = backup,
             noteId = noteId,
             onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            shareLink = shareLink,
+            onSaveToPhotos = onSaveToPhotos,
+            onDelete = onDelete,
+            moderationTarget = moderationTarget,
+            onReport = onReport,
+            onBlock = onBlock,
         )
     }
 }
@@ -813,11 +1412,19 @@ private fun MediaListRow(
 private fun MediaItemContextMenu(
     expanded: Boolean,
     item: BlossomMediaItem,
+    backup: BackupBadgeState,
     noteId: String?,
     onNoteClick: (String) -> Unit,
     onDismiss: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    shareLink: String,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
+    /** Someone else's media: offer Report Media and Block User on them. */
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val is404 = remember(item.displayUrl) { mediaCacheService.isKnown404(item.displayUrl) }
 
@@ -846,10 +1453,72 @@ private fun MediaItemContextMenu(
                 Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp))
             },
             onClick = {
-                clipboardManager.setText(AnnotatedString(item.displayUrl))
+                clipboardManager.setText(AnnotatedString(shareLink))
                 onDismiss()
             },
         )
+        if (item.isImage || item.isVideo) {
+            DropdownMenuItem(
+                text = { Text("Save to Photos") },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Import, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onSaveToPhotos()
+                },
+            )
+        }
+        if (!item.isLocal) {
+            DropdownMenuItem(
+                text = { Text(if (backup.busy) "Saving…" else "Save to Vault") },
+                enabled = !backup.busy,
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Storage, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    backup.onSaveToVault()
+                },
+            )
+        } else if (backup.summary?.needsMirror == true) {
+            // On the phone, and some Blossom server does not have it yet.
+            DropdownMenuItem(
+                text = { Text(if (backup.busy) "Mirroring…" else "Mirror to Blossom") },
+                enabled = !backup.busy,
+                leadingIcon = {
+                    Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    backup.onMirror()
+                },
+            )
+        }
+        // Order as iOS: saving and mirroring, then the deletes (each asks
+        // for confirmation first, as in the viewer), then Mark as 404.
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Delete from mirrors", color = ErrorRed) },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                onDismiss()
+                onDelete(DeleteScope.MIRRORS)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Delete everywhere", color = ErrorRed) },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                onDismiss()
+                onDelete(DeleteScope.EVERYWHERE)
+            },
+        )
+        HorizontalDivider()
         DropdownMenuItem(
             text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
             leadingIcon = {
@@ -864,17 +1533,109 @@ private fun MediaItemContextMenu(
                 onDismiss()
             },
         )
-        if (!item.isLocal) {
+        // Last, as on iOS: only for media someone else posted.
+        if (moderationTarget != null) {
             DropdownMenuItem(
-                text = { Text("Mirror to Blossom") },
+                text = { Text("Report Media", color = ErrorRed) },
                 leadingIcon = {
-                    Icon(NostrVaultIcons.Blossom, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
                 },
                 onClick = {
-                    // Blossom mirror integration point
                     onDismiss()
+                    onReport(moderationTarget)
                 },
             )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Block User", color = ErrorRed) },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onBlock(moderationTarget)
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The Media tab's type filter buttons. Also used by the composer's relay
+ * picker, which offers only the [filters] it can attach.
+ */
+@Composable
+internal fun MediaTypeFilterPill(
+    /** The types on; see [MediaTypeSelection]. Several can be on at once. */
+    selection: Set<MediaTypeFilter>,
+    onSelect: (MediaTypeFilter) -> Unit,
+    filters: List<MediaTypeFilter> = MediaTypeFilter.entries,
+) {
+    val colors = LocalNostrVaultColors.current
+    GlassPill {
+        for (filter in filters) {
+            val (icon, label) = when (filter) {
+                MediaTypeFilter.ALL -> NostrVaultIcons.GridLayout to "All"
+                MediaTypeFilter.PHOTO -> NostrVaultIcons.Media to "Photos"
+                MediaTypeFilter.VIDEO -> NostrVaultIcons.Video to "Videos"
+                MediaTypeFilter.GIF -> NostrVaultIcons.Gif to "GIFs"
+                MediaTypeFilter.OTHER -> NostrVaultIcons.Document to "Other"
+            }
+            MediaFilterIcon(
+                icon = icon,
+                label = label,
+                selected = MediaTypeSelection.isOn(selection, filter),
+                accentColor = colors.primary,
+                onClick = { onSelect(filter) },
+            )
+        }
+    }
+}
+
+/**
+ * The type filters as one menu, for the Vault tab, where the mode pill takes
+ * the leading cluster: All Media, then Photos, Videos and GIFs, ticked when
+ * on. Same taps as [MediaTypeFilterPill] (iOS mediaTypeMenu).
+ */
+@Composable
+private fun MediaTypeMenu(
+    selection: Set<MediaTypeFilter>,
+    onSelect: (MediaTypeFilter) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val all = MediaTypeSelection.isAll(selection)
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = NostrVaultIcons.GridLayout,
+                contentDescription = if (all) "Media type: all" else "Media type: filtered",
+                tint = if (all) SecondaryText else colors.primary,
+                modifier = Modifier.size(25.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            for ((filter, label, icon) in listOf(
+                Triple(MediaTypeFilter.ALL, "All Media", NostrVaultIcons.GridLayout),
+                Triple(MediaTypeFilter.PHOTO, "Photos", NostrVaultIcons.Media),
+                Triple(MediaTypeFilter.VIDEO, "Videos", NostrVaultIcons.Video),
+                Triple(MediaTypeFilter.GIF, "GIFs", NostrVaultIcons.Gif),
+            )) {
+                // All ticks only when everything is on; a type, only when narrowed.
+                val on = if (filter == MediaTypeFilter.ALL) all else !all && filter in selection
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = if (on) {
+                        { Icon(NostrVaultIcons.Check, contentDescription = "On", tint = colors.primary, modifier = Modifier.size(18.dp)) }
+                    } else null,
+                    // A type toggles and the menu stays open for the next; All closes it.
+                    onClick = {
+                        onSelect(filter)
+                        if (filter == MediaTypeFilter.ALL) expanded = false
+                    },
+                )
+            }
         }
     }
 }
@@ -888,7 +1649,12 @@ private fun MediaFilterIcon(
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .semantics { this.selected = selected },
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
@@ -903,5 +1669,71 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 -> "$bytes B"
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"
         else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    }
+}
+
+/** One tile's Blossom backup answer and the actions on it. */
+@Stable
+internal class BackupBadgeState(
+    /** Null until every configured server has answered once. */
+    val summary: BlossomBackupSummary?,
+    val mirrorCount: Int,
+    /** The server list, so adding one asks again instead of leaving the count unknown. */
+    val mirrorsKey: List<String>,
+    val busy: Boolean,
+    val check: suspend () -> Unit,
+    val onMirror: () -> Unit,
+    val onSaveToVault: () -> Unit,
+)
+
+/**
+ * The cloud "x/y" badge: green on every server, orange on some, grey on none,
+ * "?" when a server could not be asked. Port of iOS `BlossomBackupBadge`.
+ */
+@Composable
+internal fun BlossomBackupBadge(
+    backup: BackupBadgeState,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    val summary = backup.summary
+    // Re-runs after a pull to refresh clears the answers (summary goes null).
+    LaunchedEffect(backup.mirrorsKey, summary == null) {
+        if (summary == null) backup.check()
+    }
+    val tint = when {
+        summary == null || summary.present == 0 -> SecondaryText
+        summary.isComplete -> Color(0xFF4CAF50)
+        else -> Color(0xFFFF9800)
+    }
+    val total = backup.mirrorCount
+    val text = when {
+        summary == null -> "–/$total"
+        summary.unreachable > 0 && summary.present < summary.total -> "${summary.present}/$total?"
+        else -> "${summary.present}/$total"
+    }
+    val label = when {
+        summary == null -> "Checking your Blossom servers"
+        summary.unreachable > 0 -> "On ${summary.present} of $total Blossom servers, ${summary.unreachable} could not be reached"
+        else -> "On ${summary.present} of $total Blossom servers"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = label },
+    ) {
+        Icon(
+            imageVector = if (summary?.isComplete == true) NostrVaultIcons.CloudDone else NostrVaultIcons.Cloud,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(if (compact) 10.dp else 13.dp),
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = text,
+            color = tint,
+            fontSize = if (compact) 10.sp else 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
+        )
     }
 }

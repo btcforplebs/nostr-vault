@@ -24,7 +24,22 @@ const DefaultWotLevel = 3
 type wotCache struct {
 	Pubkeys   map[string]bool `json:"pubkeys"`
 	Timestamp int64           `json:"timestamp"`
+	// Depth the graph was built at. A cache from another depth is a different
+	// graph: without this, changing the depth setting kept serving the old one
+	// until the TTL ran out. Caches written before this field read as 0 and
+	// are rebuilt once.
+	Depth int `json:"depth"`
+	// Version of how the graph was built. Bump it when a fix changes the
+	// result, so graphs built by the broken code are rebuilt instead of being
+	// served for the rest of their TTL.
+	Version int `json:"version"`
 }
+
+// wotCacheVersion 2: the depth-3 pass no longer drops every contact list a
+// batch had collected when one seed relay was slow to send EOSE.
+// wotCacheVersion 3: an owner who follows nobody is no longer seeded from a
+// starter pack, so graphs built from those seeds are thrown away.
+const wotCacheVersion = 3
 
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
@@ -32,11 +47,6 @@ type SimpleInMemory struct {
 	// Dependencies for Refresh
 	Pool               *nostr.SimplePool
 	WhitelistedPubKeys map[string]struct{}
-
-	// FallbackSeedPubKeys bootstraps the graph for an owner who follows nobody.
-	// Seeding from the whitelist alone gives such an owner a "graph" of exactly
-	// themselves, which carries no trust information — see Refresh.
-	FallbackSeedPubKeys []string
 
 	SeedRelays      []string
 	WotDepth        int
@@ -59,13 +69,6 @@ func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]str
 	}
 }
 
-// WithFallbackSeeds sets the pubkeys used to bootstrap the graph when the owner
-// follows nobody.
-func (wt *SimpleInMemory) WithFallbackSeeds(pubkeys []string) *SimpleInMemory {
-	wt.FallbackSeedPubKeys = pubkeys
-	return wt
-}
-
 // Size reports how many pubkeys the graph currently holds.
 //
 // Has() alone cannot tell "this pubkey is untrusted" apart from "the graph has
@@ -78,6 +81,25 @@ func (wt *SimpleInMemory) Size() int {
 		return 0
 	}
 	return len(*m)
+}
+
+// NamesOnlyOwners reports whether a built graph holds nobody but the
+// whitelisted owners: the owner follows no one yet. Depths 0 and 1 never hold
+// anyone else, so they never count as waiting for follows.
+func (wt *SimpleInMemory) NamesOnlyOwners() bool {
+	if wt.WotDepth < 2 {
+		return false
+	}
+	m := wt.pubkeys.Load()
+	if m == nil {
+		return false
+	}
+	for pk := range *m {
+		if _, owner := wt.WhitelistedPubKeys[pk]; !owner {
+			return false
+		}
+	}
+	return true
 }
 
 func (wt *SimpleInMemory) Has(_ context.Context, pubKey string) bool {
@@ -112,6 +134,15 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 		return false, 0
 	}
 
+	if cache.Version != wotCacheVersion {
+		slog.Info("🔁 WoT cache from an older build, rebuilding", "cached_version", cache.Version, "version", wotCacheVersion)
+		return false, 0
+	}
+	if cache.Depth != wt.WotDepth {
+		slog.Info("🔁 WoT cache built at another depth, rebuilding", "cached_depth", cache.Depth, "depth", wt.WotDepth)
+		return false, 0
+	}
+
 	// Check if cache is still valid
 	now := time.Now().Unix()
 	age := (now - cache.Timestamp) / 60 // age in minutes
@@ -139,6 +170,8 @@ func (wt *SimpleInMemory) SaveCache() {
 	cache := wotCache{
 		Pubkeys:   *m,
 		Timestamp: time.Now().Unix(),
+		Depth:     wt.WotDepth,
+		Version:   wotCacheVersion,
 	}
 
 	data, err := json.Marshal(cache)
@@ -175,36 +208,6 @@ func (wt *SimpleInMemory) Init(ctx context.Context) {
 	wt.Refresh(ctx)
 }
 
-// applyFallbackSeeds bootstraps the graph when the owner follows nobody.
-//
-// Seeding only from the whitelist gives such an owner a one-hop network of
-// nothing and a "graph" containing exactly themselves, which carries no trust
-// information — every feed built on it then either shows nothing or gives up
-// and shows the open firehose. The starter pack stands in as the one-hop
-// network, exactly as if the owner followed those accounts, and the depth-3
-// pass prunes their follows by the same minimum-follower rule.
-//
-// Seeds are written straight into newWot; the follower prune only ever adds to
-// that map, so they survive without a synthetic follower count (faking one
-// would also skew the top-N diagnostics).
-//
-// This never touches the owner's own follow list. It is a local trust graph,
-// not a follow — an owner who follows nobody still follows nobody afterwards.
-// It is also skipped entirely the moment the owner follows one person, so an
-// established account is never diluted by strangers.
-//
-// Reports whether the seeds were applied.
-func (wt *SimpleInMemory) applyFallbackSeeds(oneHopNetwork, newWot map[string]bool) bool {
-	if len(oneHopNetwork) > 0 || len(wt.FallbackSeedPubKeys) == 0 {
-		return false
-	}
-	for _, pk := range wt.FallbackSeedPubKeys {
-		oneHopNetwork[pk] = true
-		newWot[pk] = true
-	}
-	return true
-}
-
 func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	if wt.WotDepth == 0 {
 		return
@@ -221,8 +224,13 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		}
 	}
 
+	// Every depth persists its graph: the apps read wot_cache.json to filter
+	// Global and Discovery, and depths 1 and 2 used to return without saving,
+	// so on Android (depth 2 by default) that file never existed and both
+	// feeds came up empty.
 	if wt.WotDepth == 1 {
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
@@ -249,15 +257,11 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		}
 	}
 
-	if wt.applyFallbackSeeds(oneHopNetwork, newWot) {
-		slog.Info("🌱 owner follows nobody — seeded Web of Trust from the starter pack",
-			"seeds", len(wt.FallbackSeedPubKeys))
-	}
-
 	if wt.WotDepth == 2 {
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
@@ -370,10 +374,12 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 		defer close(ch)
 		runsafe.Run("wot.latestEventByKindAndPubkey", func() {
 			latestEvents := make(map[string]*nostr.Event)
+		collect:
 			for ev := range events {
 				select {
 				case <-ctx.Done():
-					return
+					// Stop collecting, but keep what arrived (see below).
+					break collect
 				default:
 					counter.Add(1)
 					key := fmt.Sprintf("%d:%s", ev.Kind, ev.PubKey)
@@ -382,12 +388,15 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 					}
 				}
 			}
+			// Hand over everything collected, even when ctx has expired. ctx is
+			// the fetch timeout: FetchMany only closes once every seed relay
+			// has sent EOSE, so one slow or dead relay makes the timeout the
+			// normal way a batch ends. Selecting on ctx.Done here dropped what
+			// the healthy relays had already sent (Go picks a ready case at
+			// random), which emptied the depth-3 graph. The consumer in
+			// Refresh always drains ch, so these sends cannot block for good.
 			for _, ev := range latestEvents {
-				select {
-				case <-ctx.Done():
-					return
-				case ch <- ev:
-				}
+				ch <- ev
 			}
 		})
 	}()

@@ -32,6 +32,24 @@ final class FeedThreadGroupingTests: XCTestCase {
         thread.entries.map(\.depth)
     }
 
+    /// Popular: ranked roots come first, their replies are appended after
+    /// them. A fresh reply on a low-ranked post must not lift it above the
+    /// top-ranked one.
+    func testKeepFeedOrderKeepsTheRankingDespiteNewerReplies() {
+        let notes = [
+            TestNote("top", at: 100),
+            TestNote("second", at: 200),
+            TestNote("reply", at: 900, parent: "second", root: "second", author: "bob"),
+        ]
+
+        let ranked = FeedThreadGrouping.build(notes: notes, keepFeedOrder: true)
+        XCTAssertEqual(ranked.map(\.rootId), ["top", "second"])
+        XCTAssertEqual(ranked[1].replies.map(\.id), ["reply"])
+
+        // Without it, the reply's activity reorders them.
+        XCTAssertEqual(FeedThreadGrouping.build(notes: notes).map(\.rootId), ["second", "top"])
+    }
+
     func testStandaloneNotesEachBecomeTheirOwnThread() {
         let notes = [TestNote("b", at: 200), TestNote("a", at: 100)]
         let threads = FeedThreadGrouping.build(notes: notes)
@@ -150,7 +168,65 @@ final class FeedThreadGroupingTests: XCTestCase {
         XCTAssertEqual(total, 2)
     }
 
+    func testLatestRepliesKeepsTheNewestInReadingOrder() {
+        // Reading order is r1, r1a, r2, r2a, r3; the three newest are r2a, r1a, r3.
+        let notes = [
+            TestNote("r2a", at: 600, parent: "r2", root: "root"),
+            TestNote("r1a", at: 500, parent: "r1", root: "root"),
+            TestNote("r3", at: 400, parent: "root", root: "root"),
+            TestNote("r2", at: 300, parent: "root", root: "root"),
+            TestNote("r1", at: 200, parent: "root", root: "root"),
+            TestNote("root", at: 100),
+        ]
+        let thread = FeedThreadGrouping.build(notes: notes)[0]
+
+        XCTAssertEqual(thread.replies.map(\.id), ["r1", "r1a", "r2", "r2a", "r3"])
+        XCTAssertEqual(thread.latestReplies(limit: 3).map(\.id), ["r1a", "r2a", "r3"])
+        XCTAssertEqual(thread.latestReplies(limit: 5).map(\.id), thread.replies.map(\.id))
+    }
+
     func testEmptyFeedProducesNoThreads() {
         XCTAssertTrue(FeedThreadGrouping.build(notes: [TestNote]()).isEmpty)
+    }
+
+    func testFetchedRootShowsWhenTheReplysParentIsMissing() {
+        // r answers p, which no relay returned; r's NIP-10 root tag names
+        // "root", which was fetched. The root is no ancestor of anything in
+        // the pool, so the parent walk alone never added it and the card said
+        // "Loading the start of this thread…" with the root already cached.
+        let root = TestNote("root", at: 100, author: "dave")
+        let notes = [TestNote("r", at: 300, parent: "p", root: "root", author: "bob")]
+
+        let threads = FeedThreadGrouping.build(notes: notes) { $0 == "root" ? root : nil }
+
+        XCTAssertEqual(threads.count, 1)
+        XCTAssertEqual(threads[0].rootId, "root")
+        XCTAssertEqual(threads[0].root?.id, "root")
+        XCTAssertEqual(ids(threads[0]), ["root", "r"])
+        XCTAssertEqual(depths(threads[0]), [0, 1])
+    }
+
+    // MARK: - replyTree (the thread view's condensed replies)
+
+    func testReplyTreeIsDepthFirstOldestFirst() {
+        let pool = [
+            TestNote("b", at: 20, parent: "focus"),
+            TestNote("a", at: 10, parent: "focus"),
+            TestNote("a2", at: 40, parent: "a"),
+            TestNote("a1", at: 30, parent: "a"),
+            TestNote("other", at: 5, parent: "elsewhere"),
+        ]
+        let tree = FeedThreadGrouping.replyTree(under: "focus", in: pool)
+        XCTAssertEqual(tree.map(\.note.id), ["a", "a1", "a2", "b"])
+        XCTAssertEqual(tree.map(\.depth), [1, 2, 2, 1])
+    }
+
+    func testReplyTreeCapsDepthAndSurvivesCycles() {
+        var pool = [TestNote("r1", at: 1, parent: "focus")]
+        for i in 2...7 { pool.append(TestNote("r\(i)", at: Double(i), parent: "r\(i - 1)")) }
+        pool.append(TestNote("focus", at: 0, parent: "r7"))  // a cycle back to the top
+        let tree = FeedThreadGrouping.replyTree(under: "focus", in: pool)
+        XCTAssertEqual(tree.count, 7)
+        XCTAssertEqual(tree.map(\.depth).max(), FeedThreadGrouping.maxDepth)
     }
 }

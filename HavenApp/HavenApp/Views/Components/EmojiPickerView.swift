@@ -276,8 +276,9 @@ struct EmojiPickerView: View {
                                         Text(emoji)
                                             .font(.appSystem(size: 24))
                                             .frame(width: 40, height: 40)
-                                            .background(Color.clear)
-                                            .cornerRadius(8)
+                                            // A clear background is not a hit
+                                            // area; the corners were dead on the Mac.
+                                            .contentShape(RoundedRectangle(cornerRadius: 8))
                                     }
                                     .buttonStyle(.plain)
                                     #if os(iOS)

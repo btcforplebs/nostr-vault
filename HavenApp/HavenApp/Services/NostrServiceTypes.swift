@@ -120,6 +120,7 @@ final class LocalRelaySearchCollector {
             // Some clients write camelCase; haven-go's search matches both.
             profile.displayName = (metadata["display_name"] as? String) ?? (metadata["displayName"] as? String)
             profile.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
+            profile.bannerURL = (metadata["banner"] as? String).flatMap { URL(string: $0) }
             profile.nip05 = metadata["nip05"] as? String
             profile.about = metadata["about"] as? String
             profile.lud16 = metadata["lud16"] as? String

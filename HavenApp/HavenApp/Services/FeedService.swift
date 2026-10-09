@@ -27,6 +27,12 @@ class FeedService: ObservableObject {
     /// feed reverts to Following automatically.
     private var didAutoSwitchToCurated = false
     @Published var mediaFeedMode: MediaFeedMode = .following
+    /// Articles from follows only, or from everyone (filtered by the same
+    /// Web of Trust / Everyone setting as Global).
+    @Published var articlesFeedMode: MediaFeedMode = .following
+    /// Polls' Following / Global, and its Open / Closed / All filter.
+    @Published var pollsFeedMode: MediaFeedMode = .following
+    @Published var pollStatusFilter: PollStatusFilter = .all
     @Published var notes: [FeedNote] = []
     /// O(1) lookup index for notes by ID. Maintained alongside `notes` mutations.
     private(set) var noteIndex: [String: FeedNote] = [:]
@@ -38,6 +44,8 @@ class FeedService: ObservableObject {
     @Published private(set) var referencedNoteUpdates = ReferencedNoteSignal()
     private var pendingReferencedNoteIds: Set<String> = []
     private var referencedNoteFlushScheduled = false
+    /// Size at which `parentNotesCache` is next trimmed. See handleParentNoteFetch.
+    private var parentNotesCacheTrimAt = 500
     private var referencedNoteGeneration = 0
 
     /// Records that a referenced note arrived and schedules a coalesced flush,
@@ -74,29 +82,61 @@ class FeedService: ObservableObject {
     /// and — published, because the view needs it — to keep the Following feed from telling you that
     /// you follow nobody before it has ever asked. See `FollowingFeedState`.
     @Published private(set) var hasAttemptedContactLoad = false
+    /// The user's real follow list is known for this account (see
+    /// ContactManager.loadConfirmsList). Until it is, follow / unfollow never
+    /// publish: a timed-out load leaves an empty or partial list in memory,
+    /// and publishing it would replace every follow on every relay.
+    @Published private(set) var contactListConfirmed = false
     @Published var isLoadingExtendedNetwork = false
     @Published var isLoadingPopular = false
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false
-    /// Set by FeedView scroll tracking — true when user is scrolling down, used to collapse tab bar.
-    @Published var feedScrollingDown = false
     @Published var connectionStatus = "Disconnected"
 
-    /// Three-state connection indicator color
+    /// The dot on the feed button. Once the feed shows notes it reports the
+    /// feed relays themselves — green all up, yellow some down, red none up —
+    /// because `connectionStatus` only says whether notes arrived, and can sit
+    /// on "Loading feed…" for good while one relay hangs mid-connect.
     var connectionDotColor: Color {
         switch connectionStatus {
-        case "Live":
-            return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
         case "Disconnected", "No contacts found":
-            return Color.red.opacity(0.8) // Red
+            // Grey, not red: the app starts out "Disconnected", and a red
+            // dot on launch reads as a notification.
+            return Color(white: 0.6) // Grey
         default:
-            return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
+            guard connectionStatus == "Live" || !filteredNotes.isEmpty else {
+                return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
+            }
+            let health = feedRelayHealth
+            if health.total > 0 && health.connected == 0 {
+                return Color(red: 0.95, green: 0.3, blue: 0.3) // Red
+            }
+            if health.connected < health.total {
+                return Color(red: 0.95, green: 0.85, blue: 0.2) // Yellow
+            }
+            return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
         }
     }
     @Published var newNoteCount: Int = 0
-    @Published var pendingNotes: [FeedNote] = []
+    @Published var pendingNotes: [FeedNote] = [] {
+        didSet { refreshVisiblePendingCount() }
+    }
+    /// How many of `pendingNotes` the current feed would actually show. The
+    /// raw list is unfiltered: in Global with the Web of Trust on, most of it
+    /// is outsiders the filter drops, so counting it raw put "12 New Posts"
+    /// on a button that revealed nothing. Same rule as Android's
+    /// `visiblePendingCount`.
+    @Published private(set) var visiblePendingCount: Int = 0
     @Published var likedEventIds: Set<String> = []
+    /// The emoji (and kind-7 event) behind each entry of `likedEventIds`.
+    @Published var myReactions: [String: EngagementTracker.MyReaction] = [:]
+    /// Reactions this account deleted; see `InteractionState.retractedReactionIds`.
+    var retractedReactionIds: Set<String> = []
+    /// Per note, the reaction currently being signed. A tap that changes or
+    /// removes it before signing ends replaces the token, and the stale
+    /// reaction is then never published.
+    var pendingReactionTokens: [String: UUID] = [:]
     @Published var repostedEventIds: Set<String> = []
     @Published var zappedEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
@@ -129,11 +169,13 @@ class FeedService: ObservableObject {
     func recomputeFilteredNotes() {
         rebuildNoteIndex()
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-        let throttled = ConfigService.shared.activeAccountThrottledHexPubkeys
 
         let newFiltered = FeedFilterEngine.filterFeedNotes(
             notes: notes,
             mode: feedMode,
+            articlesGlobal: articlesFeedMode == .global,
+            pollsGlobal: pollsFeedMode == .global,
+            pollStatus: pollStatusFilter,
             blocked: blocked,
             showReposts: ConfigService.shared.config.showReposts,
             showReplies: ConfigService.shared.config.showReplies,
@@ -141,7 +183,10 @@ class FeedService: ObservableObject {
             wotPubkeys: wotPubkeys,
             popularFilter: popularFilter,
             popularNoteScores: popularNoteScores,
-            throttledPubkeys: throttled
+            globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
+            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+            languageOf: { [unowned self] note in self.language(of: note) },
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         )
 
         // Only publish a change when the visible list actually differs.
@@ -162,13 +207,71 @@ class FeedService: ObservableObject {
             blocked: blocked,
             wotPubkeys: wotPubkeys,
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
-            throttledPubkeys: throttled
+            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         )
 
         if newMedia.count != filteredMediaNotes.count ||
             !zip(newMedia, filteredMediaNotes).allSatisfy({ $0.id == $1.id }) {
             filteredMediaNotes = newMedia
         }
+        refreshVisiblePendingCount()
+    }
+
+    /// Re-counts `visiblePendingCount` through the current feed's filter.
+    /// Runs when the pending list changes and on every recompute, which is
+    /// where the filter's inputs (mode, trust graph, blocked, settings) land.
+    private func refreshVisiblePendingCount() {
+        let count: Int
+        if pendingNotes.isEmpty {
+            count = 0
+        } else {
+            let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+            let authorOf: (String) -> String? = { [unowned self] id in self.findNote(id: id)?.pubkey }
+            if feedMode == .media {
+                count = FeedFilterEngine.filterMediaNotes(
+                    notes: pendingNotes,
+                    blocked: blocked,
+                    wotPubkeys: wotPubkeys,
+                    isGlobalMedia: mediaFeedMode == .global,
+                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+                    authorOf: authorOf
+                ).count
+            } else {
+                count = FeedFilterEngine.filterFeedNotes(
+                    notes: pendingNotes,
+                    mode: feedMode,
+                    articlesGlobal: articlesFeedMode == .global,
+                    pollsGlobal: pollsFeedMode == .global,
+                    pollStatus: pollStatusFilter,
+                    blocked: blocked,
+                    showReposts: ConfigService.shared.config.showReposts,
+                    showReplies: ConfigService.shared.config.showReplies,
+                    followedPubkeys: followedPubkeys,
+                    wotPubkeys: wotPubkeys,
+                    popularFilter: popularFilter,
+                    popularNoteScores: popularNoteScores,
+                    globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
+                    globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
+                    languageOf: { [unowned self] note in self.language(of: note) },
+                    authorOf: authorOf
+                ).count
+            }
+        }
+        if count != visiblePendingCount { visiblePendingCount = count }
+    }
+
+    /// Detected language per note id (nil inner value: could not be told).
+    /// Only filled while the Global feed is narrowed to some languages.
+    private var noteLanguageCache: [String: String?] = [:]
+
+    private func language(of note: FeedNote) -> String? {
+        if let cached = noteLanguageCache[note.id] { return cached }
+        // Bounded well above the 800-note feed cap; a reset just re-detects.
+        if noteLanguageCache.count > 4000 { noteLanguageCache.removeAll(keepingCapacity: true) }
+        let detected = FeedLanguageDetector.detect(FeedLanguageDetector.text(of: note.content, kind: note.kind))
+        noteLanguageCache[note.id] = .some(detected)
+        return detected
     }
 
     /// Cache of raw event JSON strings for NIP-18 repost embedding.
@@ -182,6 +285,18 @@ class FeedService: ObservableObject {
     /// Every write to `rawEventCache` must go through here: a writer that
     /// bypasses `rawEventCacheOrder` lets the dict outgrow the order array,
     /// and eviction's removeFirst then traps (the recurring post-time crash).
+    /// Keeps a copy of a post you liked on your own relay. Your relay's root
+    /// only stores your events and its inbox only events that tag you, so a
+    /// liked post lived nowhere local: Relay > Likes > Given then had to find
+    /// it on outside relays, which on 2026-10-05 returned 47 of 293. The /feed
+    /// store takes any note; it keeps the feed window (7 days, plus a day).
+    func keepLikedNoteLocally(id: String) {
+        guard let json = rawEventCache[id], let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              dict["id"] as? String == id else { return }
+        NostrService.shared.broadcastRawEvent(dict, to: [ConfigService.shared.config.nostrURL + "/feed"])
+    }
+
     func cacheRawEvent(id: String, json: String) {
         if rawEventCache[id] == nil {
             rawEventCacheOrder.append(id)
@@ -224,6 +339,9 @@ class FeedService: ObservableObject {
     /// and re-publish to heal the network. Persisted in the disk snapshot and the
     /// durable following backup so it survives relaunches and the 7-day snapshot TTL.
     private var ownContactListCreatedAt: Int64 = 0
+    /// created_at of a contact list every relay refused and that was rolled
+    /// back. The local relay still holds it, so a reload must not take it.
+    private var refusedContactListCreatedAt: Int64?
     /// Account key `ownContactListCreatedAt` currently belongs to. When the active
     /// account changes the guard is reset so a previous account's (higher)
     /// timestamp never blocks the new account's relay copy.
@@ -233,13 +351,61 @@ class FeedService: ObservableObject {
     /// cached WOT graph (`wot_cache.json`). Used to filter the GLOBAL feed and
     /// Media tab so only notes/media from WOT members are shown.
     @Published private(set) var wotPubkeys: Set<String> = []
+    /// True once the relay's graph file has been read for this account, even
+    /// if it named nobody. Separates "the relay has not built a graph yet"
+    /// from "the graph is built and empty because you follow nobody".
+    @Published private(set) var wotCacheRead = false
 
     /// Popularity scores returned by the local DVM, keyed by note ID.
     /// Used to sort the Popular feed by engagement rank.
     private(set) var popularNoteScores: [String: Double] = [:]
 
+    /// Replies to the Popular and Global posts, fetched only for Threaded View.
+    /// Kept out of `notes`: both feeds list top-level posts (the filter drops
+    /// replies), so without these a threaded card had nothing under it.
+    @Published private(set) var feedThreadReplies: [FeedNote] = []
+    private var threadRepliesRequested: Set<String> = []
+    /// Bumped on every reset, so a fetch that outlives its feed's list
+    /// can't add replies to the next one.
+    private var threadRepliesGeneration = 0
+
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
+
+    /// Each feed relay's own socket state, keyed by `relayStateKey(_:)`. The
+    /// dashboard rows and the dot read this; `connectionStatus` alone only
+    /// says whether the feed has notes. Watched outside `cancellables`, which
+    /// mode and account switches clear while the sockets stay open.
+    @Published private(set) var relayStates: [String: WebSocketClient.ConnectionState] = [:]
+    private var relayStateSinks: [String: AnyCancellable] = [:]
+
+    static func relayStateKey(_ url: String) -> String {
+        var key = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while key.hasSuffix("/") { key.removeLast() }
+        return key
+    }
+
+    /// The socket state of one configured relay, or nil when the feed is not
+    /// using it right now (paused, or a feed served by another service).
+    func relayState(for url: String) -> WebSocketClient.ConnectionState? {
+        relayStates[Self.relayStateKey(url)]
+    }
+
+    /// Configured feed relays the feed is connected to, out of those it uses.
+    var feedRelayHealth: (connected: Int, total: Int) {
+        let states = ConfigService.shared.config.feedRelays.compactMap { relayState(for: $0) }
+        return (states.filter { $0 == .connected }.count, states.count)
+    }
+
+    private func watchRelayState(_ client: WebSocketClient, key: String) {
+        let stateKey = Self.relayStateKey(key)
+        relayStateSinks[key] = client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self, let client, self.feedClients[key] === client else { return }
+                self.relayStates[stateKey] = state
+            }
+    }
     /// Relay keys whose messageSubject/connectionState sinks are currently live.
     /// A warm account switch calls cancellables.removeAll() but deliberately keeps
     /// feed clients connected (to avoid a full relay reconnect) — that call also
@@ -323,15 +489,59 @@ class FeedService: ObservableObject {
         return URL(string: ConfigService.shared.config.nostrURL + "/feed")
     }
 
-    /// Public relays used to supplement the local relay.
-    /// Uses Blastr relays if configured, otherwise well-known defaults.
+    /// Public relays used to supplement the local relay: the read relays.
     private var externalRelayURLs: [URL] {
-        let configured = ConfigService.shared.config.activeFeedRelays
-        let strs = configured.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configured
-        return strs.compactMap { URL(string: $0) }
+        ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
+    }
+
+    /// Follows the feed relays don't reach, asked on their own write relays:
+    /// extra relay URL → the follows to ask it for. See `FeedOutboxPlan`.
+    private var outboxPlan: [String: [String]] = [:]
+
+    /// Relays that gave up on connecting (three errors) and have not connected
+    /// since. Kept across load rounds, unlike `relayErrorCounts`, so the plan
+    /// stops counting a dead feed relay as reaching anyone.
+    private var downRelayKeys = Set<String>()
+
+    /// Recomputes `outboxPlan` from the follow set and the NIP-65 lists known
+    /// so far, and asks for the lists still missing — the plan grows as they
+    /// arrive, through the next reconcile.
+    private func refreshOutboxPlan() {
+        guard isFollowSetMode || (feedMode == .media && mediaFeedMode == .following),
+              !followedPubkeys.isEmpty else {
+            outboxPlan = [:]
+            return
+        }
+        requestRelayLists(for: Set(followedPubkeys))
+        outboxPlan = FeedOutboxPlan.plan(
+            follows: followedPubkeys,
+            writeRelays: NostrService.shared.outboxRelays,
+            feedRelays: externalRelayURLs.map(\.absoluteString),
+            unreachableRelays: Array(downRelayKeys)
+        )
+    }
+
+    /// Every relay the feed subscribes to: the local relay, its inbox and feed
+    /// cache, the feed relays, then the follows' own relays (`outboxPlan`).
+    private func feedRelayURLs() -> [URL] {
+        var urls: [URL] = []
+        if let local = localRelayURL { urls.append(local) }
+        if let inbox = localInboxURL { urls.append(inbox) }
+        if let feed = localFeedURL { urls.append(feed) }
+        urls.append(contentsOf: externalRelayURLs)
+        let have = Set(urls.map(\.absoluteString))
+        for raw in outboxPlan.keys.sorted() where !have.contains(raw) {
+            if let url = URL(string: raw) { urls.append(url) }
+        }
+        return urls
+    }
+
+    /// The follows to ask a given relay for: an outbox relay is asked only for
+    /// the follows it was picked for, every other relay for all of them.
+    private func followAuthors(forRelayKey key: String) -> [String] {
+        // Older-page clients are keyed `page-<url>`.
+        let url = key.hasPrefix("page-") ? String(key.dropFirst(5)) : key
+        return outboxPlan[url] ?? followedPubkeys
     }
 
     /// Used for de-duping relay URLs across the floor + outbox set.
@@ -360,26 +570,86 @@ class FeedService: ObservableObject {
             return
         }
         wotPubkeys = loaded
+        wotCacheRead = true
         #if DEBUG
         print("FeedService: Loaded \(wotPubkeys.count) usable WOT pubkeys from cache")
         #endif
         // Re-filter if we're currently in global mode
-        if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        if isGlobalLikeMode {
             recomputeFilteredNotes()
         }
     }
 
+    /// Who counts as inside your network in the Relay tab: the relay's trust
+    /// graph plus your current follows. The graph is rebuilt about once a day,
+    /// so without the follows someone you just followed stayed "outside".
+    /// Empty while the graph isn't loaded, which counts nobody as outside.
+    func relayTabTrustedPubkeys() -> Set<String> {
+        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        guard !wotPubkeys.isEmpty else { return [] }
+        return wotPubkeys.union(followedPubkeys)
+    }
+
+    /// The one rule every feed with a Global button follows (Global, Media,
+    /// Articles, diVines, Recipes, Live, Marketplace): Global shows your Web of
+    /// Trust until the shield is switched to Everyone. nil means everyone.
+    /// Fails closed like the Global feed: with no graph yet, nobody passes.
+    func globalTrustSet() -> Set<String>? {
+        guard !ConfigService.shared.config.globalShowsEveryone else { return nil }
+        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        return wotPubkeys
+    }
+
+    /// REQ filters for a Global view under `trust`. Everyone: the filter as
+    /// is. Web of Trust: the same filter asked twice, once restricted to
+    /// trusted authors, so a page of strangers cannot crowd out the people
+    /// the view will actually show, and once open, for trusted authors past
+    /// the cap. The caller still drops untrusted authors from both.
+    static func trustScopedFilters(_ base: [String: Any], trust: Set<String>?) -> [[String: Any]] {
+        guard let trust, !trust.isEmpty else { return [base] }
+        var byAuthor = base
+        byAuthor["authors"] = Array(trust.sorted().prefix(trustedAuthorsCap))
+        return [byAuthor, base]
+    }
+
+    /// Authors per trusted-author REQ; relays reject very large filters.
+    static let trustedAuthorsCap = 500
+
     /// True when the Global feed has a trust graph to filter against. The
-    /// relay writes `wot_cache.json` shortly after first launch, seeded from
-    /// the starter pack for an owner who follows nobody — so on a brand-new
-    /// install this is false for a few seconds and the feed legitimately has
-    /// nothing to show yet.
+    /// relay writes `wot_cache.json` shortly after first launch; an owner who
+    /// follows nobody has no graph at all, because nothing but the owner's own
+    /// follows may build one.
     var curatedGraphReady: Bool { !wotPubkeys.isEmpty }
+
+    /// The real follow list has loaded for the active account: the same test
+    /// Follow uses before it publishes. Until then `followedPubkeys` can read
+    /// empty for someone who follows hundreds.
+    var followListIsKnown: Bool {
+        ContactManager.mayPublishFollowList(hasAttemptedLoad: hasAttemptedContactLoad,
+                                            isLoading: isLoadingContacts,
+                                            listConfirmed: contactListConfirmed)
+    }
+
+    /// The graph is built and names nobody: the owner follows no one yet.
+    /// Feeds that fail closed say so, and the topic feed opens up (labelled)
+    /// so there is somewhere to find people to follow.
+    var hasNoWebOfTrustYet: Bool { wotCacheRead && wotPubkeys.isEmpty }
+
+    /// Everyone around the user for ranking search and mention results after
+    /// their follows: the relay's Web of Trust graph plus the extended network
+    /// (follows of follows), whichever has loaded.
+    var webOfTrustForRanking: Set<String> {
+        wotPubkeys.union(extendedNetworkPubkeys)
+    }
 
     /// Status text for a Global feed with no graph yet. Global fails closed, so
     /// without this the user would sit in front of an empty screen labelled
     /// "No notes found" and reasonably conclude the app is broken.
-    private var curatedGraphPendingStatus: String { "Building your starter feed…" }
+    private var curatedGraphPendingStatus: String {
+        hasNoWebOfTrustYet
+            ? "Follow people to build your web of trust"
+            : "Building your web of trust…"
+    }
 
     private var curatedGraphPollAttempts = 0
     private var curatedGraphPollTimer: Timer?
@@ -436,8 +706,11 @@ class FeedService: ObservableObject {
         return "No notes found"
     }
 
-    private var isGlobalLikeMode: Bool {
-        feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+    var isGlobalLikeMode: Bool {
+        feedMode == .global
+            || (feedMode == .media && mediaFeedMode == .global)
+            || (feedMode == .articles && articlesFeedMode == .global)
+            || (feedMode == .polls && pollsFeedMode == .global)
     }
 
     /// Feeds that cannot be rendered without the trust graph. Global filters
@@ -453,6 +726,116 @@ class FeedService: ObservableObject {
     /// account switch and restored when switching back, so re-switching is
     /// instant and the relay top-up runs as a background refresh.
     private var accountSnapshots: [String: AccountFeedSnapshot] = [:]
+
+    /// The last notes of each feed you switched away from, so switching back
+    /// shows them at once and only asks relays for what is newer. Keyed by
+    /// account + feed (+ the media/articles scope), so nothing crosses
+    /// accounts. In memory only; Popular is kept as-is, the others top up.
+    private struct ModeFeedCache {
+        var notes: [FeedNote]
+        var parentNotesCache: [String: FeedNote]
+        var noteStats: [String: NoteStats]
+        var popularNoteScores: [String: Double]
+        var capturedAt: Date
+    }
+    private var modeCaches: [String: ModeFeedCache] = [:]
+    /// Older than this, a cached feed is dropped and the feed loads cold.
+    private static let modeCacheMaxAge: TimeInterval = 15 * 60
+    /// Popular is computed, not streamed; within this it is shown as cached
+    /// with no recompute.
+    private static let popularCacheFreshFor: TimeInterval = 5 * 60
+    /// Feeds with their own service stay connected this long after you leave,
+    /// so a quick look elsewhere and back does not reload them.
+    private static let sideFeedLinger: TimeInterval = 60
+    private var sideFeedDisconnects: [FeedMode: DispatchWorkItem] = [:]
+
+    private func modeCacheKey(_ mode: FeedMode) -> String {
+        // The account the notes on screen were loaded for, as accountSnapshots
+        // uses — not the live config, which can move first during a switch.
+        let account = loadedSnapshotNpub.isEmpty ? currentSnapshotKey() : loadedSnapshotNpub
+        var key = "\(account)|\(mode.rawValue)"
+        if mode == .media { key += "|\(mediaFeedMode)" }
+        if mode == .articles { key += "|\(articlesFeedMode)" }
+        if mode == .polls { key += "|\(pollsFeedMode)" }
+        return key
+    }
+
+    /// Feeds whose notes come through this service's own pipeline.
+    private static func usesNotePipeline(_ mode: FeedMode) -> Bool {
+        switch mode {
+        case .following, .discovery, .global, .popular, .media, .articles, .polls: return true
+        default: return false
+        }
+    }
+
+    private func captureModeCache(for mode: FeedMode) {
+        guard Self.usesNotePipeline(mode), !notes.isEmpty else { return }
+        // Everything that was on screen, notes still waiting behind the "new
+        // posts" pill, plus the newest raw notes. A filtered feed (Global keeps
+        // only trusted authors) can show a handful out of hundreds, and the
+        // newest 200 alone would drop what was visible.
+        var kept = Set<String>()
+        var cached: [FeedNote] = []
+        for note in filteredNotes + pendingNotes + noteBuffer + notes.prefix(200) where kept.insert(note.id).inserted {
+            cached.append(note)
+        }
+        cached.sort {
+            if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
+            return $0.id > $1.id
+        }
+        modeCaches[modeCacheKey(mode)] = ModeFeedCache(
+            notes: cached,
+            parentNotesCache: parentNotesCache,
+            noteStats: noteStats,
+            popularNoteScores: popularNoteScores,
+            capturedAt: Date()
+        )
+    }
+
+    /// Puts a cached feed back on screen. Returns its age, or nil if there was
+    /// nothing fresh enough to show.
+    private func restoreModeCache(for mode: FeedMode) -> TimeInterval? {
+        let key = modeCacheKey(mode)
+        guard let cache = modeCaches[key] else { return nil }
+        let age = Date().timeIntervalSince(cache.capturedAt)
+        guard age < Self.modeCacheMaxAge, !cache.notes.isEmpty else {
+            modeCaches.removeValue(forKey: key)
+            return nil
+        }
+        notes = cache.notes
+        parentNotesCache = cache.parentNotesCache
+        // Seen = exactly what was kept, and resume from the newest kept note:
+        // anything dropped from the cache can then come back from relays
+        // instead of being refused as already seen.
+        seenIds = Set(cache.notes.map(\.id))
+        noteStats = cache.noteStats
+        popularNoteScores = cache.popularNoteScores
+        lastEventTimestamp = cache.notes.map { Int64($0.createdAt.timeIntervalSince1970) }.max() ?? 0
+        return age
+    }
+
+    /// Disconnects a side feed's service once it has gone unused for
+    /// `sideFeedLinger`; coming back sooner cancels it.
+    private func scheduleSideFeedDisconnect(_ mode: FeedMode) {
+        let disconnect: () -> Void
+        switch mode {
+        // A load still running finishes on its own timeout; cutting it off
+        // would leave isLoading set and the next visit would never reload.
+        case .recipes: disconnect = { if !RecipeFeedService.shared.isLoading { RecipeFeedService.shared.disconnect() } }
+        case .marketplace: disconnect = { if !MarketplaceFeedService.shared.isLoading { MarketplaceFeedService.shared.disconnect() } }
+        case .live: disconnect = { LiveFeedService.shared.disconnect() }
+        case .reels: disconnect = { ReelsFeedService.shared.disconnect() }
+        default: return
+        }
+        sideFeedDisconnects[mode]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.feedMode != mode else { return }
+            self.sideFeedDisconnects[mode] = nil
+            disconnect()
+        }
+        sideFeedDisconnects[mode] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sideFeedLinger, execute: work)
+    }
     /// The npub the currently-loaded feed belongs to. Used to know which key
     /// to snapshot against when the active account changes.
     private var loadedSnapshotNpub: String = ""
@@ -489,9 +872,23 @@ class FeedService: ObservableObject {
     /// "unavailable" for these instead of loading forever.
     @Published private(set) var unavailableNoteIds = Set<String>()
 
-    /// Asked on the second pass only, for references neither your relays nor
-    /// the author's carry.
-    private static let fallbackNoteRelays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+    /// Asked on the second pass, for references neither your relays nor the
+    /// author's carry. Picked by measurement, not reputation: on 2026-10-01
+    /// the old set (damus, primal, nos.lol) left 59% of Following-tab thread
+    /// roots unavailable — nos.lol refused connections and damus answered no
+    /// REQ — and these found two thirds of what was left (19% remained).
+    /// Re-measure with `.scratch/roots/probe5.py` in the Buzz nest before
+    /// changing the list.
+    private static let fallbackNoteRelays = [
+        "wss://offchain.pub",
+        "wss://nostr.wine",
+        "wss://nostr.oxtr.dev",
+        "wss://nostr.land",
+        "wss://relay.nostrplebs.com",
+        "wss://relay.snort.social",
+        "wss://relay.primal.net",
+        "wss://relay.damus.io",
+    ]
 
     // Profile saving
     private var profileSaveTimer: Timer?
@@ -540,10 +937,11 @@ class FeedService: ObservableObject {
         // Listen to active account changes to reload the feed automatically.
         // We snapshot the previous account's state into memory and either
         // restore an existing snapshot (instant) or run a cold load.
-        ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
+        // activeAccountSwitches hops to main before delivering: @Published
+        // emits from willSet, and read synchronously `config` would still
+        // name the previous account, so that account's likes were shown
+        // (and saved) under the new one.
+        ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 self.handleAccountSwitch()
@@ -555,6 +953,24 @@ class FeedService: ObservableObject {
             .map { ($0.showReposts, $0.showReplies) }
             .removeDuplicates(by: ==)
             .dropFirst()
+            .sink { [weak self] _ in self?.recomputeFilteredNotes() }
+            .store(in: &configCancellables)
+
+        // Follows' relay lists arrive in batches after the feed is up; once
+        // they settle, ask the new outbox relays (see `refreshOutboxPlan`).
+        NostrService.shared.$outboxRelays
+            .map(\.count)
+            .removeDuplicates()
+            .dropFirst()
+            .debounce(for: .seconds(5), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reconcileFeedSubscriptions() }
+            .store(in: &configCancellables)
+
+        // Blocking someone (here, or a mute list synced from another client)
+        // must drop their posts now. Nothing listened for this before, so a
+        // blocked author stayed on screen until some unrelated note arrived.
+        NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.recomputeFilteredNotes() }
             .store(in: &configCancellables)
 
@@ -651,6 +1067,10 @@ class FeedService: ObservableObject {
         noteStats = snap.noteStats
         likedEventIds = snap.likedEventIds
         zappedEventIds = snap.zappedEventIds
+        // Which emoji went with each like lives only in the account's file.
+        let saved = EngagementTracker.loadInteractionState(forKey: key)
+        myReactions = saved.myReactions
+        retractedReactionIds = saved.retractedReactionIds
         contactListContent = snap.contactListContent
         contactListPTags = snap.contactListPTags
         lastFetchedContactCount = snap.lastFetchedContactCount
@@ -669,6 +1089,8 @@ class FeedService: ObservableObject {
         extendedNetworkPubkeys.removeAll()
         notes.removeAll()
         parentNotesCache.removeAll()
+        parentNotesCacheTrimAt = 500
+        processingQueue.async { [bgAccumulator] in bgAccumulator.resetParentFetchClaims() }
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
@@ -681,8 +1103,11 @@ class FeedService: ObservableObject {
         unavailableNoteIds.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
+        resetFeedThreadReplies()
         isLoadingPopular = false
         likedEventIds.removeAll()
+        myReactions.removeAll()
+        retractedReactionIds.removeAll()
         zappedEventIds.removeAll()
         contactListContent = ""
         contactListPTags.removeAll()
@@ -690,6 +1115,9 @@ class FeedService: ObservableObject {
         ownContactListCreatedAt = 0
         ownContactListAccountKey = ""
         hasAttemptedContactLoad = false
+        contactListConfirmed = false
+        pendingFollowActions.removeAll()
+        FollowNotificationManager.shared.clearPending()
         lastEventTimestamp = 0
         recomputeFilteredNotes()
     }
@@ -859,6 +1287,10 @@ class FeedService: ObservableObject {
 
         // 1. Stash the just-rendered state under the previous npub.
         captureSnapshot(forKey: previousKey)
+        // Write its likes now: a throttled save still waiting would run under
+        // the new account's key. Reactions still being signed are dropped.
+        writeInteractionState()
+        pendingReactionTokens.removeAll()
 
         // 2. Only disconnect feed clients if we need a full refresh (no snapshot available).
         // This prevents unnecessary relay disconnections when switching between accounts
@@ -873,6 +1305,11 @@ class FeedService: ObservableObject {
 
         // 3. Cancel in-flight loading flags + timers so the new flow isn't blocked.
         isLoadingContacts = false
+        // The new account's list is unknown until its own load answers, and a
+        // tap queued under the previous account must not reach this one.
+        contactListConfirmed = false
+        pendingFollowActions.removeAll()
+        FollowNotificationManager.shared.clearPending()
         isLoadingExtendedNetwork = false
         extendedNetworkComputedAt = nil
         isLoadingFeed = false
@@ -929,7 +1366,7 @@ class FeedService: ObservableObject {
             // Background top-up: subscribe to relays but keep the cached feed
             // visible. The inline syncing pill replaces the full-screen spinner.
             topUpFromRelays()
-        } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        } else if isGlobalLikeMode {
             shouldScrollToTopOnLoad = true
             loadWotPubkeys()
             subscribeToAllRelays()
@@ -980,19 +1417,45 @@ class FeedService: ObservableObject {
         let result = EngagementTracker.loadInteractionState(forKey: key)
         self.likedEventIds = result.likedEventIds
         self.zappedEventIds = result.zappedEventIds
+        self.myReactions = result.myReactions
+        self.retractedReactionIds = result.retractedReactionIds
         #if DEBUG
         print("FeedService: Loaded \(result.likedEventIds.count) likes, \(result.zappedEventIds.count) zaps for account \(key.prefix(8))")
         #endif
     }
 
+    private var interactionSaveScheduled = false
+
     func saveInteractionState() {
-        // Throttle saves to at most once per 2 seconds
+        // Throttle saves to at most once per 2 seconds. A save inside the
+        // window runs at its end instead of being dropped: dropping one lost
+        // the newest like (or removal) whenever two came within 2 seconds.
         let now = Date()
-        guard now.timeIntervalSince(interactionSaveThrottle) > 2.0 else { return }
+        let wait = 2.0 - now.timeIntervalSince(interactionSaveThrottle)
+        guard wait <= 0 else {
+            guard !interactionSaveScheduled else { return }
+            interactionSaveScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.05) { [weak self] in
+                guard let self else { return }
+                self.interactionSaveScheduled = false
+                self.saveInteractionState()
+            }
+            return
+        }
         interactionSaveThrottle = now
+        writeInteractionState()
+    }
+
+    /// Saves the current account's interaction state now, unthrottled.
+    private func writeInteractionState() {
         EngagementTracker.saveInteractionState(
-            likedEventIds: likedEventIds,
-            zappedEventIds: zappedEventIds,
+            EngagementTracker.InteractionState(
+                likedEventIds: likedEventIds,
+                zappedEventIds: zappedEventIds,
+                myReactions: myReactions,
+                retractedReactionIds: retractedReactionIds,
+                account: loadedSnapshotNpub
+            ),
             forKey: loadedSnapshotNpub
         )
     }
@@ -1001,6 +1464,8 @@ class FeedService: ObservableObject {
 
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
+        // Music has no relay feed to reload; Hashtags reloads its own.
+        if feedMode == .music || feedMode == .hashtags { return }
 
         // Ask the embedded relay to catch up its inbox/outbox from external
         // relays too, so a feed pull-to-refresh also freshens the Relay tab,
@@ -1014,6 +1479,9 @@ class FeedService: ObservableObject {
             loadPopularFeed()
             return
         }
+        // Global's thread replies were fetched under the old list and trust
+        // setting; Threaded View fetches them again for the reloaded posts.
+        if feedMode == .global { resetFeedThreadReplies() }
 
         #if DEBUG
         print("FeedService: [refresh] start — followedPubkeys=\(followedPubkeys.count) notes=\(notes.count) filtered=\(filteredNotes.count)")
@@ -1046,6 +1514,14 @@ class FeedService: ObservableObject {
             // Nothing here publishes a contact list — the user's follows stay
             // empty until they choose to follow someone.
             let hasBackup = !(FollowingBackupService.shared.snapshots.last?.pubkeys.isEmpty ?? true)
+            if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup
+                && !InterestListService.shared.hashtags.isEmpty {
+                // Topics picked (the Fill your feed guide) but nobody followed
+                // yet: their topic feed is where they find people, and it
+                // stays put when they follow someone.
+                self.switchMode(.hashtags)
+                return
+            }
             if self.followedPubkeys.isEmpty && self.isFollowSetMode && !hasBackup {
                 self.didAutoSwitchToCurated = true
                 self.feedMode = .global
@@ -1086,6 +1562,7 @@ class FeedService: ObservableObject {
         connectionStatus = "Discovering popular notes..."
         notes.removeAll()
         popularNoteScores.removeAll()
+        resetFeedThreadReplies()
         recomputeFilteredNotes()
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1155,21 +1632,80 @@ class FeedService: ObservableObject {
     }
 
 
+    private func resetFeedThreadReplies() {
+        threadRepliesGeneration += 1
+        threadRepliesRequested.removeAll()
+        if !feedThreadReplies.isEmpty { feedThreadReplies = [] }
+    }
+
+    /// Fetches replies to these Popular or Global posts (once per post per
+    /// list) from the local relay and the feed relays. Only signature-checked
+    /// events are kept, and only real replies into one of these threads: a
+    /// note that merely tags a post would open a stray thread of its own.
+    /// Global's replies pass the same trust rule as its posts, or a trusted
+    /// post would carry the open firehose in underneath it.
+    func loadFeedThreadReplies(rootIds: [String]) {
+        guard feedMode == .popular || feedMode == .global else { return }
+        let trusted = feedMode == .global ? globalTrustSet() : nil
+        let wanted = rootIds.filter { !threadRepliesRequested.contains($0) }
+        guard !wanted.isEmpty else { return }
+        threadRepliesRequested.formUnion(wanted)
+        let generation = threadRepliesGeneration
+        let config = ConfigService.shared.config
+        let feedRelays = config.readRelays
+        let relays = ([config.nostrURL] + feedRelays).compactMap { URL(string: $0) }
+        let roots = Set(wanted)
+        Task { @MainActor [weak self] in
+            // Relays cap filter size; ask in chunks.
+            for chunk in stride(from: 0, to: wanted.count, by: 50).map({ Array(wanted[$0..<min($0 + 50, wanted.count)]) }) {
+                let events = await ZapHistoryService.query(
+                    filters: [["kinds": [1], "#e": chunk, "limit": 500]], relays: relays, timeout: 6)
+                guard let self, self.threadRepliesGeneration == generation else { return }
+                let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+                var seen = Set(self.feedThreadReplies.map(\.id))
+                let replies: [FeedNote] = events.compactMap { ev in
+                    guard let id = ev["id"] as? String, let pubkey = ev["pubkey"] as? String,
+                          let content = ev["content"] as? String, let createdAt = ev["created_at"] as? Int64,
+                          let kind = ev["kind"] as? Int, let tags = ev["tags"] as? [[String]],
+                          !blocked.contains(pubkey), trusted?.contains(pubkey) ?? true,
+                          !FeedNote.isNoiseOrSpam(content: content, tags: tags)
+                    else { return nil }
+                    let inThread = NIP10Thread.rootEventId(kind: kind, tags: tags).map(roots.contains)
+                        ?? NIP10Thread.parentEventId(kind: kind, tags: tags).map(roots.contains)
+                        ?? false
+                    guard inThread, seen.insert(id).inserted else { return nil }
+                    return FeedNote(id: id, pubkey: pubkey, content: content,
+                                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                                    tags: tags, kind: kind)
+                }
+                if !replies.isEmpty { self.feedThreadReplies.append(contentsOf: replies) }
+                if !replies.isEmpty {
+                    let missing = Set(replies.map(\.pubkey)).filter { NostrService.shared.profiles[$0] == nil }
+                    if !missing.isEmpty { NostrService.shared.fetchMissingProfiles(for: Array(missing)) }
+                }
+            }
+        }
+    }
+
     func switchMode(_ mode: FeedMode) {
         guard mode != feedMode else { return }
-        if feedMode == .recipes && mode != .recipes {
-            RecipeFeedService.shared.disconnect()
-        }
-        if feedMode == .live && mode != .live {
-            LiveFeedService.shared.disconnect()
-        }
-        if feedMode == .reels && mode != .reels {
-            ReelsFeedService.shared.disconnect()
-        }
+        // Picking a feed is a choice to stay on it: the first follow no
+        // longer pulls a new account from its topic feed back to Following.
+        didAutoSwitchToCurated = false
+        let previous = feedMode
+        // Side feeds linger connected for a minute (see sideFeedLinger).
+        scheduleSideFeedDisconnect(previous)
+        sideFeedDisconnects[mode]?.cancel()
+        sideFeedDisconnects[mode] = nil
+        // Keep what this feed showed, for a quick switch back.
+        captureModeCache(for: previous)
         shouldScrollToTopOnLoad = true
         feedMode = mode
         notes.removeAll()
+        resetFeedThreadReplies()
         parentNotesCache.removeAll()
+        parentNotesCacheTrimAt = 500
+        processingQueue.async { [bgAccumulator] in bgAccumulator.resetParentFetchClaims() }
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
@@ -1186,18 +1722,27 @@ class FeedService: ObservableObject {
         newSinceLastView = Date()
         lastEventTimestamp = 0
         isSyncing = false
+        let cachedAge = Self.usesNotePipeline(mode) ? restoreModeCache(for: mode) : nil
         recomputeFilteredNotes()
         // Disconnect feed clients before re-subscribing.
         disconnectFeedClients()
         cancellables.removeAll()
 
         // Reset global mode flag when switching away from global
-        let isGlobal = mode == .global || (mode == .media && mediaFeedMode == .global)
+        let isGlobal = mode == .global
+            || (mode == .media && mediaFeedMode == .global)
+            || (mode == .articles && articlesFeedMode == .global)
+            || (mode == .polls && pollsFeedMode == .global)
         processingQueue.async { [weak self] in
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
 
-        if mode == .live {
+        if mode == .music {
+            // Wavlake, not relays: MusicBrowserView loads its own catalogue,
+            // and the note pipeline stays idle underneath it.
+        } else if mode == .hashtags {
+            // HashtagsFeedSection queries relays for its tags itself.
+        } else if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
         } else if mode == .reels {
@@ -1209,8 +1754,23 @@ class FeedService: ObservableObject {
             // the note pipeline has nothing to subscribe to here, and starting
             // it would open follow-set subscriptions nothing will read.
             RecipeFeedService.shared.loadIfNeeded()
+        } else if mode == .marketplace {
+            // Same as Recipes: MarketplaceFeedService queries listing relays
+            // itself, so the note pipeline stays idle underneath the grid.
+            MarketplaceFeedService.shared.loadIfNeeded()
         } else if mode == .popular {
-            loadPopularFeed()
+            // Computed, not streamed: a recent result is shown as it was.
+            if let cachedAge, cachedAge < Self.popularCacheFreshFor {
+                connectionStatus = "Live"
+            } else {
+                loadPopularFeed()
+            }
+        } else if cachedAge != nil {
+            // Back to a feed seen minutes ago: its notes are already on screen,
+            // so only ask relays for what is newer (subscriptions resume from
+            // the restored lastEventTimestamp).
+            shouldScrollToTopOnLoad = false
+            topUpFromRelays()
         } else if isGlobal {
             // Global mode doesn't need contacts — subscribe directly
             loadWotPubkeys()
@@ -1244,7 +1804,7 @@ class FeedService: ObservableObject {
             ReelsFeedService.shared.refresh()
         } else if feedMode == .popular {
             loadPopularFeed()
-        } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        } else if isGlobalLikeMode {
             loadWotPubkeys()
             subscribeToAllRelays()
         } else {
@@ -1258,6 +1818,8 @@ class FeedService: ObservableObject {
     private func disconnectFeedClients() {
         feedClients.values.forEach { $0.disconnect() }
         feedClients.removeAll()
+        relayStateSinks.removeAll()
+        relayStates.removeAll()
         // No live subscriptions remain — drop the author-set bookkeeping so a
         // later reconcile doesn't think a relay is still subscribed.
         subscribedAuthorsByRelay.removeAll()
@@ -1316,9 +1878,11 @@ class FeedService: ObservableObject {
     /// sub do not, so their subscriptions never drift on the follow set.
     private var isAuthorFilteredMode: Bool {
         switch feedMode {
-        case .following, .discovery, .articles: return true
+        case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
-        case .global, .popular, .recipes, .live, .reels: return false
+        case .articles: return articlesFeedMode == .following
+        case .polls: return pollsFeedMode == .following
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
         }
     }
 
@@ -1326,25 +1890,32 @@ class FeedService: ObservableObject {
     /// feed, so narrowing the REQ stops a page of results from being almost
     /// entirely kind-1 notes the mode is about to discard.
     private var primaryFeedKinds: [Int] {
-        feedMode == .articles ? [30023] : [1, 6, 30023]
+        switch feedMode {
+        case .articles: return [30023]
+        case .polls: return [NIP88Poll.kind]
+        default: return [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind]
+        }
     }
 
     /// True for the modes whose primary subscription is `authors: followedPubkeys`.
-    /// Articles is Following restricted to kind 30023, so it shares every
-    /// follow-set guard: the empty-follow-set short circuit, pagination, and the
-    /// dead-`authors:[]` REQ guard.
+    /// Articles (Following) is Following restricted to kind 30023, so it shares
+    /// every follow-set guard: the empty-follow-set short circuit, pagination,
+    /// and the dead-`authors:[]` REQ guard. Articles (Global) is global-like.
     var isFollowSetMode: Bool {
-        feedMode == .following || feedMode == .articles
+        feedMode == .following || (feedMode == .articles && articlesFeedMode == .following)
+            || (feedMode == .polls && pollsFeedMode == .following)
     }
 
     /// The authoritative author set the current mode's primary subscription should
     /// carry. Empty means "no valid primary sub" for author-filtered modes.
     private func desiredPrimaryAuthorsForMode() -> [String] {
         switch feedMode {
-        case .following, .articles: return followedPubkeys
+        case .following: return followedPubkeys
+        case .articles: return articlesFeedMode == .following ? followedPubkeys : []
+        case .polls: return pollsFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .live, .reels: return []
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
         }
     }
 
@@ -1353,7 +1924,9 @@ class FeedService: ObservableObject {
     /// have no authors), so the drift check skips them.
     private func desiredPrimaryAuthors(forRelayKey key: String) -> [String]? {
         if key == localInboxURL?.absoluteString { return nil }
-        return isAuthorFilteredMode ? desiredPrimaryAuthorsForMode() : nil
+        guard isAuthorFilteredMode else { return nil }
+        if feedMode != .discovery, let planned = outboxPlan[key] { return planned }
+        return desiredPrimaryAuthorsForMode()
     }
 
     /// Make the live relay subscriptions match the current authoritative inputs
@@ -1368,6 +1941,11 @@ class FeedService: ObservableObject {
         guard !isPaused else { return }
         guard feedMode != .popular else { return }   // popular has no relay subs
         guard feedMode != .reels else { return }     // ReelsFeedService owns its own
+        // Recipes, Marketplace and Live run their own services and Music has
+        // no relay feed. Reconciling here opened an author-less kind-1 REQ
+        // underneath them, so the hidden note pipeline filled with strangers'
+        // posts and a "New Posts" pill appeared over the grid.
+        guard ![.recipes, .marketplace, .live, .music, .hashtags].contains(feedMode) else { return }
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
@@ -1391,15 +1969,22 @@ class FeedService: ObservableObject {
     /// aren't yet (notably the local relay/inbox once boot completes). Existing
     /// connections are left untouched. Absorbs the old `addLocalRelayIfReady`.
     private func ensureRelaySetConnected() {
-        if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        if isGlobalLikeMode {
             loadWotPubkeys()
         }
 
-        var desiredURLs: [URL] = []
-        if let local = localRelayURL { desiredURLs.append(local) }
-        if let inbox = localInboxURL { desiredURLs.append(inbox) }
-        if let feed = localFeedURL { desiredURLs.append(feed) }
-        desiredURLs.append(contentsOf: externalRelayURLs)
+        refreshOutboxPlan()
+        let desiredURLs = feedRelayURLs()
+
+        // An outbox relay the plan dropped (its follows were picked up by
+        // another, or it died) would otherwise stay subscribed — and with no
+        // plan entry it would be re-sent the whole follow list.
+        let desiredKeys = Set(desiredURLs.map(\.absoluteString))
+        for key in feedClients.keys where !key.hasPrefix("page-") && !desiredKeys.contains(key) {
+            feedClients[key]?.disconnect()
+            feedClients.removeValue(forKey: key)
+            subscribedAuthorsByRelay[key] = nil
+        }
 
         let missing = desiredURLs.filter { feedClients[$0.absoluteString] == nil }
         guard !missing.isEmpty else { return }
@@ -1421,7 +2006,9 @@ class FeedService: ObservableObject {
     /// must not re-show the full-screen spinner.
     private func resubscribePrimaryIfNeeded() {
         for (key, client) in feedClients {
-            guard client.connectionState == .connected else { continue }
+            // Older-page clients are one-shot; re-sending them a primary REQ
+            // added stray EOSEs to whatever load was running.
+            guard !key.hasPrefix("page-"), client.connectionState == .connected else { continue }
             // nil-author relays (inbox/global/popular) never drift on follows.
             guard let desired = desiredPrimaryAuthors(forRelayKey: key) else { continue }
             if let current = subscribedAuthorsByRelay[key], Set(current) == Set(desired) {
@@ -1443,25 +2030,12 @@ class FeedService: ObservableObject {
         return true
     }
 
-    /// Subscribe to raw messages on the local relay connection.
-    /// Returns a cancellable, or nil if no local client is connected.
-    func subscribeToLocalRelay(_ handler: @escaping (String) -> Void) -> AnyCancellable? {
-        guard let key = localRelayURL?.absoluteString,
-              let client = feedClients[key],
-              client.connectionState == .connected else {
-            return nil
-        }
-        return client.messageSubject
-            .receive(on: DispatchQueue.main)
-            .sink { msg in handler(msg) }
-    }
-
     /// Background refresh against an already-rendered snapshot. Re-subscribes
     /// to relays so newer notes stream in on top of the cached feed, and
     /// kicks off a contact-list re-fetch in parallel so a stale follow set
     /// gets updated without blocking the visible feed.
     private func topUpFromRelays() {
-        let isGlobalLike = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobalLike = isGlobalLikeMode
         guard !followedPubkeys.isEmpty || isGlobalLike else {
             // Snapshot had no follows — fall back to the cold-start flow.
             // An account switch sets isLoadingContacts before calling here, and
@@ -1520,22 +2094,6 @@ class FeedService: ObservableObject {
 
     // MARK: - Search
 
-    /// Debounced search: schedules a relay query after 400ms of inactivity.
-    func searchDebounced(_ query: String) {
-        searchDebounceWork?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            searchResults = []
-            isSearching = false
-            return
-        }
-        let work = DispatchWorkItem { [weak self] in
-            self?.performSearch(query: trimmed)
-        }
-        searchDebounceWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
-
     /// Queries the local relay with the current feed mode's filter set and
     /// filters returned events client-side by content text matching.
     func performSearch(query: String) {
@@ -1555,13 +2113,14 @@ class FeedService: ObservableObject {
         // your follows" into "search the whole relay" while the UI still says
         // you are in Following or Discovery. No authors means no results.
         //
-        // Articles is scoped to follows because `isFollowSetMode` counts it as
-        // a follow-set feed, which is what the timeline does too.
+        // Articles follows its own scope: follows in Following, anyone in Global.
         let searchAuthors: [String]?
         switch feedMode {
-        case .following, .articles: searchAuthors = followedPubkeys
+        case .following: searchAuthors = followedPubkeys
+        case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
+        case .polls: searchAuthors = pollsFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .live, .reels: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()
@@ -1583,7 +2142,7 @@ class FeedService: ObservableObject {
 
         // Build filter matching current feed mode
         var filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "limit": 2000
         ]
         if let searchAuthors {
@@ -1720,6 +2279,8 @@ class FeedService: ObservableObject {
         }
         fetchingNoteIds.insert(id)
         fetchingNoteTimestamps[id] = Date()
+        // Queued ahead of the request, so it runs before any answer to it.
+        forgetParentFetchClaim(id)
 
         if id.hasPrefix(QuoteReference.coordinatePrefix) {
             fetchMissingNoteByNaddr(coordinate: id)
@@ -1757,22 +2318,7 @@ class FeedService: ObservableObject {
                 continue
             }
 
-            let c = WebSocketClient()
-            c.isTemporary = true
-            c.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
-                .store(in: &cancellables)
-            c.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        c.send(text: reqStr)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { c.disconnect() }
-                    }
-                }
-                .store(in: &cancellables)
-            c.connect(url: url)
+            sendThroughLookupSocket(url: url, req: reqStr, subId: subId)
         }
     }
 
@@ -1813,6 +2359,14 @@ class FeedService: ObservableObject {
     /// Still holding that tag means nothing was unpacked and this note carries
     /// the reposter's identity, so take the author from the repost's `p` tag.
     func quoteTarget(for note: FeedNote) -> FeedNote {
+        originalNote(for: note)
+    }
+
+    /// The note a repost stands for, for anything that acts on it: quoting,
+    /// liking, zapping, and the counts and states a repost row shows. Always
+    /// carries the original's id and author, even before its body arrives;
+    /// see `quoteTarget` for how an embedded copy is told from a bare repost.
+    func originalNote(for note: FeedNote) -> FeedNote {
         guard note.kind == 6, let refId = note.repostedEventId else { return note }
         if let original = findNote(id: refId) { return original }
         let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
@@ -1823,6 +2377,21 @@ class FeedService: ObservableObject {
         let author = note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey
         return FeedNote(id: refId, pubkey: author, content: "",
                         createdAt: note.createdAt, tags: [], kind: 1)
+    }
+
+    /// The note a thread view should open. Opening a kind-6 repost showed the
+    /// original's text over the wrapper's own empty likes and zaps, with no
+    /// conversation above it. Uses the loaded original, else the one the
+    /// repost embeds (same test as `quoteTarget`). A bare repost whose
+    /// original hasn't arrived stays as it is; the thread view already
+    /// handles that wrapper.
+    func threadTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6, let refId = note.repostedEventId else { return note }
+        if let original = findNote(id: refId) { return original }
+        let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
+        guard carriesOriginal else { return note }
+        return FeedNote(id: refId, pubkey: note.pubkey, content: note.content,
+                        createdAt: note.originalCreatedAt ?? note.createdAt, tags: note.tags, kind: 1)
     }
 
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
@@ -1851,17 +2420,27 @@ class FeedService: ObservableObject {
         shouldScrollToTopOnLoad = false
         eoseCount = 0
 
-        var allURLs: [URL] = []
-        if let local = localRelayURL { allURLs.append(local) }
-        if let inbox = localInboxURL { allURLs.append(inbox) }
-        if let feed = localFeedURL { allURLs.append(feed) }
-        allURLs.append(contentsOf: externalRelayURLs)
+        let allURLs = feedRelayURLs()
 
         let totalRelays = allURLs.count
         for url in allURLs {
             connectFeedRelayWithUntil(url: url, until: until, totalRelays: totalRelays)
         }
+
+        // A page client that never connects never sends EOSE, and nothing else
+        // ended the page — one dead relay stopped older pages for good. The
+        // outbox relays come from other people's lists, so that is now likely.
+        pageLoadTimeout?.invalidate()
+        pageLoadTimeout = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isLoadingFeed else { return }
+                self.flushNoteBuffer()
+                self.isLoadingFeed = false
+            }
+        }
     }
+
+    private var pageLoadTimeout: Timer?
 
     func disconnect() {
         feedLoadingTimeout?.invalidate()
@@ -1877,6 +2456,53 @@ class FeedService: ObservableObject {
     // Falls back to a well-known public relay if not found locally.
 
     private var contactLoadingTimeout: Timer?
+
+    /// Follow / unfollow taps made before the follow list had loaded. They
+    /// are applied, in order, as soon as it has — publishing a list before
+    /// then could replace the real one on every relay.
+    private var pendingFollowActions: [(pubkey: String, follow: Bool, account: String)] = []
+
+    /// Starts loading the follow list if nothing has yet. The Popular, Live,
+    /// Reels and Music feeds never load it on their own, so on a launch into
+    /// one of them Follow was refused until you visited Following.
+    func ensureContactListLoading() {
+        guard !isLoadingContacts, !hasAttemptedContactLoad else { return }
+        loadContactList {}
+    }
+
+    /// Applies queued taps only once the real list is known; after a timeout
+    /// they stay queued. Taps made under another account are discarded.
+    private func applyPendingFollowActions() {
+        guard ContactManager.mayPublishFollowList(hasAttemptedLoad: hasAttemptedContactLoad,
+                                                  isLoading: isLoadingContacts,
+                                                  listConfirmed: contactListConfirmed),
+              !pendingFollowActions.isEmpty else { return }
+        let account = currentSnapshotKey()
+        let actions = pendingFollowActions.filter { $0.account == account }
+        pendingFollowActions.removeAll()
+        for action in actions {
+            let result = action.follow ? followUser(action.pubkey) : unfollowUser(action.pubkey)
+            // Turn the tap's "Following…" pill into the confirmation. A list
+            // still unavailable re-queues the action and keeps the pill.
+            switch result {
+            case .success, .failure(.alreadyFollowing):
+                FollowNotificationManager.shared.resolvePending(pubkey: action.pubkey,
+                                                                kind: action.follow ? .followed : .unfollowed)
+            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                break
+            case .failure:
+                FollowNotificationManager.shared.resolvePending(pubkey: action.pubkey, kind: nil)
+            }
+        }
+    }
+
+    private func queueFollowAction(_ pubkey: String, follow: Bool) {
+        pendingFollowActions.removeAll { $0.pubkey == pubkey }
+        pendingFollowActions.append((pubkey, follow, currentSnapshotKey()))
+        if !isLoadingContacts {
+            if hasAttemptedContactLoad { scheduleContactRetry() } else { ensureContactListLoading() }
+        }
+    }
 
     private func loadContactList(completion: @escaping () -> Void) {
         let activeNpub = ConfigService.shared.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1905,6 +2531,9 @@ class FeedService: ObservableObject {
         // await doesn't kick off a duplicate fetch.
         isLoadingContacts = true
         connectionStatus = "Fetching contact list…"
+        // The safety timeout starts now, not after the relay-readiness wait
+        // below: otherwise the window in which Follow is refused ran to 23s.
+        startContactLoadingTimeout(completion: completion)
 
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -1919,7 +2548,7 @@ class FeedService: ObservableObject {
         }
     }
 
-    private func beginContactFetch(ownerHex: String, completion: @escaping () -> Void) {
+    private func startContactLoadingTimeout(completion: @escaping () -> Void) {
         // Safety timeout: if contact loading hasn't finished in 15 seconds, force completion
         contactLoadingTimeout?.invalidate()
         contactLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
@@ -1935,7 +2564,9 @@ class FeedService: ObservableObject {
                 completion()
             }
         }
+    }
 
+    private func beginContactFetch(ownerHex: String, completion: @escaping () -> Void) {
         // Connect to all relays in parallel — use the first one that returns a non-empty contact list.
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
         fetchContactListInParallel(from: candidates, ownerHex: ownerHex, completion: completion)
@@ -1948,6 +2579,12 @@ class FeedService: ObservableObject {
     /// has drifted. Fresh connects are handled by the caller's completion
     /// (e.g. refresh → subscribeToAllRelays); here we only repair live subs.
     private func handleContactLoadResolved() {
+        defer { applyPendingFollowActions() }
+        // Every load ends here (answered or timed out). A key setup just
+        // made has no list anywhere, so "none found" is known for it.
+        if followedPubkeys.isEmpty, FreshAccountKeys.isFresh(ConfigService.shared.activeAccountHexPubkey) {
+            contactListConfirmed = true
+        }
         if followedPubkeys.isEmpty {
             let backup = FollowingBackupService.shared
             backup.loadSnapshots(forAccountKey: currentSnapshotKey())
@@ -1994,7 +2631,7 @@ class FeedService: ObservableObject {
 
         // Shared mutable state protected by main-thread dispatch.
         var completed = false
-        var eoseCount = 0
+        var tally = ContactManager.EOSETally()
         var clients: [WebSocketClient] = []
         // kind-3 is a REPLACEABLE event: keep the NEWEST version across relays, not
         // the first to arrive. Taking first-to-arrive let a stale relay copy
@@ -2014,9 +2651,13 @@ class FeedService: ObservableObject {
             completed = true
             graceWork?.cancel()
             self.contactLoadingTimeout?.invalidate()
+            if ContactManager.loadConfirmsList(foundList: best != nil, relaysAsked: relays.count, relaysAnswered: tally.answered.count) {
+                self.contactListConfirmed = true
+            }
             clients.forEach { $0.disconnect() }
 
-            if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt {
+            if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt,
+               Int64(best.createdAt) != self.refusedContactListCreatedAt {
                 let parsed = ContactManager.parseContactList(
                     pTags: best.pTags,
                     ownerHex: ownerHex,
@@ -2082,8 +2723,13 @@ class FeedService: ObservableObject {
                           let type = json[0] as? String else { return }
 
                     if type == "EVENT", json.count >= 3,
+                       let subId = json[1] as? String, tally.isAnswer(from: url.absoluteString, subId: subId),
                        let eventDict = json[2] as? [String: Any],
                        let kind = eventDict["kind"] as? Int, kind == 3,
+                       // A relay can send anything: only the user's own, validly
+                       // signed list counts.
+                       (eventDict["pubkey"] as? String) == ownerHex,
+                       NostrEventVerifier.isValid(eventDict),
                        let tags = eventDict["tags"] as? [[String]] {
                         let pTags = tags.filter { $0.count >= 2 && $0[0] == "p" }
                         let createdAt = (eventDict["created_at"] as? Int) ?? 0
@@ -2103,11 +2749,11 @@ class FeedService: ObservableObject {
                             graceWork = work
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
                         }
-                    } else if type == "EOSE" {
-                        eoseCount += 1
+                    } else if type == "EOSE", json.count >= 2, let subId = json[1] as? String {
+                        tally.eose(from: url.absoluteString, subId: subId)
                         // Every relay has delivered its stored kind-3 (if any) before
                         // its EOSE — so once all have EOSE'd, `best` is the true newest.
-                        if eoseCount >= relays.count && !completed {
+                        if tally.answered.count >= relays.count && !completed {
                             finalize()
                         }
                     }
@@ -2119,7 +2765,9 @@ class FeedService: ObservableObject {
                 .sink { state in
                     guard !completed, state == .connected else { return }
                     let filter: [String: Any] = ["kinds": [3], "authors": [ownerHex], "limit": 1]
-                    let req = ["REQ", "cl-\(UUID().uuidString.prefix(4))", filter] as [Any]
+                    let subId = "cl-\(UUID().uuidString.prefix(8))"
+                    tally.sent(subId: subId, to: url.absoluteString)
+                    let req = ["REQ", subId, filter] as [Any]
                     if let data = try? JSONSerialization.data(withJSONObject: req),
                        let str = String(data: data, encoding: .utf8) {
                         c.send(text: str)
@@ -2135,6 +2783,14 @@ class FeedService: ObservableObject {
     
     private var extendedNetworkTimeout: Timer?
     
+    /// How many people the follows bring in: the people they follow, fresh
+    /// (the cached tally predates the follows just made).
+    func countExtendedNetwork(completion: @escaping (Int) -> Void) {
+        loadExtendedNetwork(forceRefresh: true) { [weak self] in
+            completion(self?.extendedNetworkPubkeys.count ?? 0)
+        }
+    }
+
     private func loadExtendedNetwork(forceRefresh: Bool = false, completion: @escaping () -> Void) {
         guard !followedPubkeys.isEmpty else {
             completion()
@@ -2329,19 +2985,30 @@ class FeedService: ObservableObject {
     typealias FollowActionError = ContactManager.FollowActionError
 
     @discardableResult
-    func followUser(_ pubkey: String) -> Result<Void, FollowActionError> {
+    /// `onPublishFailed` runs on the main actor if the new list could not be
+    /// signed or every relay refused it; the follow has been rolled back by then.
+    func followUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareFollow(
             pubkey: pubkey,
             currentPTags: contactListPTags,
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
-            isLoading: isLoadingContacts
+            isLoading: isLoadingContacts,
+            listConfirmed: contactListConfirmed
         ) {
+        case .failure(.contactsNotLoaded):
+            queueFollowAction(pubkey, follow: true)
+            return .failure(.contactsNotLoaded)
+        case .failure(.listUnavailable):
+            // Kept queued and retried; never published against an unknown list.
+            queueFollowAction(pubkey, follow: true)
+            return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
+            let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
             contactListPTags = result.pTags
             followedPubkeys = result.pubkeys
-            publishContactList()
+            publishContactList(rollback: previous, onFailure: onPublishFailed)
             // Re-filter so already-loaded notes from the newly-followed author
             // surface immediately in the Following feed.
             recomputeFilteredNotes()
@@ -2360,20 +3027,30 @@ class FeedService: ObservableObject {
     }
 
     @discardableResult
-    func unfollowUser(_ pubkey: String) -> Result<Void, FollowActionError> {
+    /// `onPublishFailed`: as for `followUser`.
+    func unfollowUser(_ pubkey: String, onPublishFailed: (() -> Void)? = nil) -> Result<Void, FollowActionError> {
         switch ContactManager.prepareUnfollow(
             pubkey: pubkey,
             activeAccountHex: ConfigService.shared.activeAccountHexPubkey,
             currentPTags: contactListPTags,
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
-            isLoading: isLoadingContacts
+            isLoading: isLoadingContacts,
+            listConfirmed: contactListConfirmed
         ) {
+        case .failure(.contactsNotLoaded):
+            queueFollowAction(pubkey, follow: false)
+            return .failure(.contactsNotLoaded)
+        case .failure(.listUnavailable):
+            // Kept queued and retried; never published against an unknown list.
+            queueFollowAction(pubkey, follow: false)
+            return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
+            let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
             contactListPTags = result.pTags
             followedPubkeys = result.pubkeys
-            publishContactList()
+            publishContactList(rollback: previous, onFailure: onPublishFailed)
             // Re-filter so the unfollowed author's notes disappear from the
             // Following feed immediately (the filter now excludes non-follows).
             recomputeFilteredNotes()
@@ -2384,7 +3061,13 @@ class FeedService: ObservableObject {
         }
     }
 
-    private func publishContactList() {
+    /// - rollback: the list before this edit. If signing fails or every relay
+    ///   refuses the event, and nothing has changed the list since, it is put
+    ///   back so the screen never shows a follow that was not published.
+    private func publishContactList(
+        rollback: (pTags: [[String]], pubkeys: [String])? = nil,
+        onFailure: (() -> Void)? = nil
+    ) {
         guard !contactListPTags.isEmpty else { return }
         if ContactManager.shouldBlockPublish(currentTagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount) {
             #if DEBUG
@@ -2392,16 +3075,36 @@ class FeedService: ObservableObject {
             #endif
             return
         }
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
         ownContactListAccountKey = currentSnapshotKey()
         ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
+        let attempted = contactListPTags
+        let fail: @MainActor (_ refusedAt: Int64?) -> Void = { [weak self] refusedAt in
+            guard let self else { return }
+            if let rollback, self.contactListPTags == attempted {
+                if let refusedAt { self.refusedContactListCreatedAt = refusedAt }
+                self.contactListPTags = rollback.pTags
+                self.followedPubkeys = rollback.pubkeys
+                self.recomputeFilteredNotes()
+                self.resubscribePrimaryIfNeeded()
+            }
+            onFailure?()
+        }
         Task { [weak self] in
             guard let self = self else { return }
-            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: self.contactListPTags) else { return }
+            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: attempted) else {
+                fail(nil)
+                return
+            }
             self.recordOwnContactList(event: event)
-            NostrService.shared.postEvent(event)
+            NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
+                guard outcome == .refused else { return }
+                Task { @MainActor in fail(event.created_at) }
+            })
         }
     }
 
@@ -2417,6 +3120,20 @@ class FeedService: ObservableObject {
             contactListCreatedAt: event.created_at,
             forAccountKey: currentSnapshotKey()
         )
+    }
+
+    /// A key setup just generated has no kind 3 anywhere, so its empty follow
+    /// list is known without waiting for every relay to say so. Without this
+    /// one silent relay leaves a new account unable to follow anyone (the
+    /// follow is queued) and the Fill your feed guide never starts.
+    func markFreshAccount(_ hex: String) {
+        guard !hex.isEmpty else { return }
+        FreshAccountKeys.mark(hex)
+        // The first load may already have finished without a list.
+        if hex == ConfigService.shared.activeAccountHexPubkey,
+           hasAttemptedContactLoad, !isLoadingContacts, followedPubkeys.isEmpty {
+            contactListConfirmed = true
+        }
     }
 
     /// Restores the contact list from a backup, bypassing the shrinkage safety check.
@@ -2459,23 +3176,21 @@ class FeedService: ObservableObject {
         primaryEoseRelays.removeAll()
         subIdToRelayKey.removeAll()
         relayErrorCounts.removeAll()
+        pageLoadTimeout?.invalidate()   // must not end this load
         connectionStatus = "Loading feed…"
         // Freeze the resume window for this round before any relay connects.
         subscriptionRoundSince = lastEventTimestamp
 
         // Use faster flush interval during initial load for snappier content display.
         // Global mode gets ultra-fast real-time flushing for streaming effect.
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         processingQueue.async { [weak self] in
             self?.bgAccumulator.isInitialLoad = true
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
 
-        var allURLs: [URL] = []
-        if let local = localRelayURL { allURLs.append(local) }
-        if let inbox = localInboxURL { allURLs.append(inbox) }
-        if let feed = localFeedURL { allURLs.append(feed) }
-        allURLs.append(contentsOf: externalRelayURLs)
+        refreshOutboxPlan()
+        let allURLs = feedRelayURLs()
 
         let allKeys = Set(allURLs.map { $0.absoluteString })
 
@@ -2486,6 +3201,10 @@ class FeedService: ObservableObject {
         for key in feedClients.keys where !allKeys.contains(key) {
             feedClients[key]?.disconnect()
             feedClients.removeValue(forKey: key)
+            if !key.hasPrefix("page-") {
+                relayStateSinks.removeValue(forKey: key)
+                relayStates.removeValue(forKey: Self.relayStateKey(key))
+            }
         }
 
         let totalRelays = allURLs.count
@@ -2568,6 +3287,7 @@ class FeedService: ObservableObject {
 
         let c = WebSocketClient()
         feedClients[key] = c
+        watchRelayState(c, key: key)
 
         let isLocalRelay = url.host == "127.0.0.1" || url.host == "localhost"
 
@@ -2590,12 +3310,18 @@ class FeedService: ObservableObject {
                 switch state {
                 case .connected:
                     self.relayErrorCounts[key] = 0
+                    self.downRelayKeys.remove(key)
                     self.sendPrimaryFeedSubscription(client: c, label: key)
                 case .error:
                     let errorCount = (self.relayErrorCounts[key] ?? 0) + 1
                     self.relayErrorCounts[key] = errorCount
 
                     if errorCount >= 3 {
+                        // The follows this relay was reaching get asked
+                        // somewhere else.
+                        if self.downRelayKeys.insert(key).inserted {
+                            DispatchQueue.main.async { [weak self] in self?.reconcileFeedSubscriptions() }
+                        }
                         // After 3 failures, count this relay as done so loading can finish
                         #if DEBUG
                         print("FeedService: Relay \(key) failed \(errorCount) times — counting as EOSE")
@@ -2670,6 +3396,17 @@ class FeedService: ObservableObject {
         let isResume = subscriptionRoundSince > 0 && until == nil
         if isResume {
             return (subscriptionRoundSince - 60, feedMode == .media ? 500 : 500)
+        } else if until != nil {
+            // A page older than `until`: no lower bound, so each relay returns
+            // its newest notes before it however far back they are. Measured
+            // from now, as it was, every page past the first week asked for an
+            // empty window and scrolling back stopped there.
+            return (0, feedMode == .media ? 300 : 500)
+        } else if feedMode == .polls {
+            // Polls are rare next to notes: a week of them from the people
+            // you follow is often none, so the first page is the newest
+            // polls however old.
+            return (0, 500)
         } else {
             return (Int64(Date().timeIntervalSince1970) - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
         }
@@ -2713,7 +3450,7 @@ class FeedService: ObservableObject {
                 filter["#p"] = [ownerHex]
             }
         } else if isFollowingLike {
-            filter["authors"] = followedPubkeys
+            filter["authors"] = followAuthors(forRelayKey: label)
         } else if feedMode == .discovery {
             filter["authors"] = extendedNetworkPubkeys
         }
@@ -2730,7 +3467,7 @@ class FeedService: ObservableObject {
             if isInbox {
                 subscribedAuthorsByRelay[label] = []
             } else if isFollowingLike {
-                subscribedAuthorsByRelay[label] = followedPubkeys
+                subscribedAuthorsByRelay[label] = followAuthors(forRelayKey: label)
             } else if feedMode == .discovery {
                 subscribedAuthorsByRelay[label] = extendedNetworkPubkeys
             } else {
@@ -2742,7 +3479,7 @@ class FeedService: ObservableObject {
     /// Send auxiliary subscriptions (mentions, reactions, zaps) to a relay after
     /// its primary feed EOSE has arrived so feed content isn't bandwidth-starved.
     private func sendAuxiliarySubscriptions(client: WebSocketClient, label: String) {
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         guard !isGlobal else { return }
 
         let ownerHex = NostrService.shared.activeHexPubkey
@@ -2751,9 +3488,10 @@ class FeedService: ObservableObject {
         let (since, _) = feedSinceAndLimit()
         let subId = feedSubId(for: label)
 
-        // Mentions (#p) of the owner (from anyone)
+        // Mentions (#p) of the owner (from anyone). The Polls feed asks for
+        // polls only, or every mention would count in its "N new" pill.
         let mentionsFilter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": feedMode == .polls ? [NIP88Poll.kind] : [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind],
             "since": since,
             "#p": [ownerHex],
             "limit": 50
@@ -2767,7 +3505,9 @@ class FeedService: ObservableObject {
         // Reactions from followed users
         let reactionsFilter: [String: Any] = [
             "kinds": [7],
-            "authors": followedPubkeys,
+            // Plus the account's own reactions, which are what mark a note
+            // as liked by you; the saved set is only a cache of them.
+            "authors": followedPubkeys + [NostrService.shared.activeHexPubkey].filter { !$0.isEmpty && !followedPubkeys.contains($0) },
             "since": since,
             "limit": 150
         ]
@@ -2814,7 +3554,7 @@ class FeedService: ObservableObject {
             "limit": limitVal
         ]
         if isFollowSetMode || (feedMode == .media && mediaFeedMode == .following) {
-            filter["authors"] = followedPubkeys
+            filter["authors"] = followAuthors(forRelayKey: label)
         } else if feedMode == .discovery {
             filter["authors"] = extendedNetworkPubkeys
         }
@@ -2827,7 +3567,7 @@ class FeedService: ObservableObject {
             client.send(text: str)
         }
 
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         guard !isGlobal else { return }
 
         let ownerHex = NostrService.shared.activeHexPubkey
@@ -2845,7 +3585,9 @@ class FeedService: ObservableObject {
 
         let reactionsFilter: [String: Any] = [
             "kinds": [7],
-            "authors": followedPubkeys,
+            // Plus the account's own reactions, which are what mark a note
+            // as liked by you; the saved set is only a cache of them.
+            "authors": followedPubkeys + [NostrService.shared.activeHexPubkey].filter { !$0.isEmpty && !followedPubkeys.contains($0) },
             "since": since,
             "limit": 150,
             "until": until
@@ -2932,8 +3674,9 @@ class FeedService: ObservableObject {
         // 0.8 s note-flush timer.
         if type == "EVENT", json.count >= 2,
            let subId = json[1] as? String, subId.hasPrefix("tfetch-") {
+            guard let ev = verifiedParentEvent(msg) else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.handleParentNoteFetch(msg)
+                self?.handleParentNoteFetch(ev)
             }
             return
         }
@@ -2953,17 +3696,23 @@ class FeedService: ObservableObject {
             return
         }
 
+        // Comments on videos, articles and other kinds are not note threads.
+        if kind == NIP10Thread.commentKind && !NIP10Thread.isNoteComment(kind: kind, tags: tags) {
+            return
+        }
+
         // Handle Reactions (Kind 7) — track for self-like detection + per-note counting
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
                 let acc = self.bgAccumulator
-                let reactorPubkey = pubkey
-                let eventId = id
+                let reaction = EngagementTracker.ReactionEvent(
+                    targetId: targetId, pubkey: pubkey, eventId: id,
+                    content: ev["content"] as? String ?? "")
                 processingQueue.async { [weak self] in
                     // Deduplicate reactions from multiple relays
-                    guard !acc.seenEngagementIds.contains(eventId) else { return }
-                    acc.seenEngagementIds.insert(eventId)
-                    acc.reactionEvents.append((targetId: targetId, pubkey: reactorPubkey))
+                    guard !acc.seenEngagementIds.contains(reaction.eventId) else { return }
+                    acc.seenEngagementIds.insert(reaction.eventId)
+                    acc.reactionEvents.append(reaction)
                     self?.scheduleBackgroundFlush()
                 }
             }
@@ -3002,8 +3751,13 @@ class FeedService: ObservableObject {
             repostedBy: kind == 6 ? pubkey : nil
         )
 
-        // Filter out obvious spam/noise from being processed
-        if FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
+        // Filter out obvious spam/noise from being processed. A repost that
+        // only points at the original (empty content plus an `e` tag) is valid
+        // NIP-18 and the row fetches what it points at — but the empty-content
+        // rule threw it away: 2 of the 9 notes missing from two hours of a
+        // Following feed on 2026-10-04 were these.
+        let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+        if !isBareRepost, FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
             return
         }
 
@@ -3011,7 +3765,7 @@ class FeedService: ObservableObject {
         // For kind 1/30023: serialize the full event dict (includes sig).
         // For kind 6 with embedded content: the content IS the inner event's JSON.
         var rawEntries: [(id: String, json: String)] = []
-        if kind == 1 || kind == 30023 {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind {
             if let data = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let json = String(data: data, encoding: .utf8) {
                 rawEntries.append((id: id, json: json))
@@ -3149,11 +3903,20 @@ class FeedService: ObservableObject {
             let ownerHex = NostrService.shared.activeHexPubkey
 
             // Self-likes: reactions authored by the owner
-            let selfLikes = EngagementTracker.detectSelfLikes(reactions: snap.reactionEvents, ownerHex: ownerHex)
-            if !selfLikes.isEmpty {
+            let selfReactions = EngagementTracker.detectSelfReactions(
+                reactions: snap.reactionEvents, ownerHex: ownerHex, retracted: retractedReactionIds)
+            if !selfReactions.isEmpty {
                 let before = likedEventIds.count
-                likedEventIds.formUnion(selfLikes)
-                if likedEventIds.count > before {
+                likedEventIds.formUnion(selfReactions.keys)
+                var changed = likedEventIds.count > before
+                // Only fills in notes with no known reaction. One made here
+                // (signed, or still signing) is the one to show and to delete
+                // on removal; an older echo of a replaced one must not win.
+                for (noteId, rx) in selfReactions where myReactions[noteId] == nil {
+                    myReactions[noteId] = rx
+                    changed = true
+                }
+                if changed {
                     saveInteractionState()
                 }
             }
@@ -3162,7 +3925,8 @@ class FeedService: ObservableObject {
             noteStats = EngagementTracker.mergeEngagementCounts(
                 reactions: snap.reactionEvents,
                 repostTargets: snap.repostTargets,
-                currentStats: noteStats
+                currentStats: noteStats,
+                retracted: retractedReactionIds
             )
         }
 
@@ -3191,7 +3955,7 @@ class FeedService: ObservableObject {
     private func scheduleNoteFlush() {
         guard noteFlushTimer == nil else { return }
         // Global feed uses ultra-fast flushing for real-time streaming feel
-        let interval: TimeInterval = (feedMode == .global || (feedMode == .media && mediaFeedMode == .global)) ? 0.05 : 0.8
+        let interval: TimeInterval = isGlobalLikeMode ? 0.05 : 0.8
         noteFlushTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteBuffer()
@@ -3206,6 +3970,12 @@ class FeedService: ObservableObject {
 
         let batch = noteBuffer
         noteBuffer.removeAll(keepingCapacity: true)
+
+        // A post that arrives through the feed itself can be the parent (or
+        // repost original, or quote) another row is waiting on. Only fetched
+        // parents used to signal, so those rows kept their loading skeleton
+        // until something unrelated rebuilt them, though the note was here.
+        for note in batch { noteReferencedNoteArrived(note.id) }
 
         // Prefetch media content types for the batch — moves HTTP HEAD detection
         // out of the rendering path so FeedMediaView has cached types when it renders.
@@ -3336,9 +4106,8 @@ class FeedService: ObservableObject {
 
         var requests: [(URL, [String])] = candidates.map { ($0, ids) }
 
-        // Relay hints, and on a second pass the fallback relays: each asked
-        // only for the ids that need it. Capped so one flush can't open a
-        // dozen sockets.
+        // Relay hints and author outboxes: each asked only for the ids that
+        // need it, and capped so one flush can't open dozens of sockets.
         var extra: [String: (URL, [String])] = [:]
         var authorsWithoutRelayList = Set<String>()
         for id in ids {
@@ -3351,27 +4120,51 @@ class FeedService: ObservableObject {
                     authorsWithoutRelayList.insert(author)
                 }
             }
-            if (noteFetchPasses[id] ?? 0) >= 1 {
-                urls.append(contentsOf: Self.fallbackNoteRelays.compactMap { URL(string: $0) })
-            }
             for url in urls {
                 let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
                 guard !seenRelays.contains(key) else { continue }
-                if extra[key] == nil {
-                    guard extra.count < 12 else { continue }
-                    extra[key] = (url, [])
-                }
+                if extra[key] == nil { extra[key] = (url, []) }
                 extra[key]?.1.append(id)
             }
         }
+        // Keep the relays that cover the most missing notes. The cap used to
+        // apply in arrival order, so the first ids' relays filled it and
+        // everything after was asked nowhere: on 2026-10-01 that skipped the
+        // hint or outbox relay for 141 of the 366 roots still missing after
+        // the fallbacks. The retry pass gets a bigger budget, since by then
+        // the authors' relay lists have usually arrived.
+        let hintCap = ids.contains { (noteFetchPasses[$0] ?? 0) >= 1 } ? 24 : 12
+        if extra.count > hintCap {
+            let kept = extra.sorted { $0.value.1.count > $1.value.1.count }.prefix(hintCap)
+            extra = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+        }
         requests.append(contentsOf: extra.values)
+        // Second pass: every fallback relay gets every id still missing. These
+        // sit outside the hint cap above, so busy hint relays can't crowd
+        // them out.
+        let retryIds = ids.filter { (noteFetchPasses[$0] ?? 0) >= 1 }
+        if !retryIds.isEmpty {
+            for url in Self.fallbackNoteRelays.compactMap({ URL(string: $0) }) {
+                let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
+                if seenRelays.contains(key) { continue }
+                if var hinted = extra[key] {
+                    hinted.1 = Array(Set(hinted.1).union(retryIds))
+                    requests.removeAll { (Self.normalizeRelayKey($0.0.absoluteString) ?? $0.0.absoluteString) == key }
+                    requests.append(hinted)
+                } else {
+                    requests.append((url, retryIds))
+                }
+            }
+        }
         // Unknown relay list: fetch it now so the retry pass can ask the
         // author's own relays.
         requestRelayLists(for: authorsWithoutRelayList)
 
         // Check back once the relays have had time to answer: re-ask what's
         // still missing (now including hints and fallbacks), then give up.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+        // The second pass mostly opens fresh sockets to relays the feed isn't
+        // connected to, so it gets longer before the give-up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (retryIds.isEmpty ? 3.5 : 6)) { [weak self] in
             self?.reviewNoteFetch(ids)
         }
 
@@ -3404,31 +4197,125 @@ class FeedService: ObservableObject {
                 continue
             }
 
-            // Fallback: open a temporary connection when no active one is available.
-            let c = WebSocketClient()
-            c.isTemporary = true
-
-            // Temporary connections don't go through handleFeedMsgBackground, so
-            // subscribe the fast-path handler directly on the message subject.
-            c.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
-                .store(in: &cancellables)
-
-            c.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        c.send(text: reqStr)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                            c.disconnect()
-                        }
-                    }
-                }
-                .store(in: &cancellables)
-
-            c.connect(url: url)
+            // No feed connection: borrow a pooled lookup socket for this relay.
+            sendThroughLookupSocket(url: url, req: reqStr, subId: subId)
         }
+    }
+
+    // MARK: - Lookup sockets
+
+    /// One socket per relay for missing-note lookups (thread roots, quotes),
+    /// reused across flushes and closed once it has gone quiet.
+    ///
+    /// Each flush used to open a fresh socket to every relay it asked and drop
+    /// it 8 s later. Scrolling a threaded feed flushes every few hundred ms,
+    /// so on 2026-10-02 the iPhone opened ~500 WebSocket connections a minute
+    /// to the same ~22 relays, 239 of them refused with HTTP 429, and the phone
+    /// ran hot. Now the same relays see one connection each.
+    private struct LookupSocket {
+        let client: WebSocketClient
+        /// REQs waiting for the handshake to finish.
+        var pending: [(req: String, subId: String)] = []
+        var subscriptions = Set<AnyCancellable>()
+        var idleClose: DispatchWorkItem?
+    }
+
+    private var lookupSockets: [String: LookupSocket] = [:]
+    /// Relays that refused or dropped a lookup socket, and when to try again.
+    /// A 429 lands here, so a throttling relay is left alone instead of
+    /// being redialled on the next flush.
+    private var lookupCooldownUntil: [String: Date] = [:]
+
+    /// How long a lookup socket stays open after its last request. Longer than
+    /// the 8 s a relay gets to answer, so a scroll keeps reusing it.
+    private static let lookupIdleSeconds: TimeInterval = 20
+    private static let lookupCooldownSeconds: TimeInterval = 120
+    /// How long a lookup REQ stays open on the relay before we CLOSE it.
+    private static let lookupSubscriptionSeconds: TimeInterval = 8
+
+    private func sendThroughLookupSocket(url: URL, req: String, subId: String) {
+        let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
+        if let until = lookupCooldownUntil[key] {
+            if until > Date() { return }
+            lookupCooldownUntil[key] = nil
+        }
+
+        if var socket = lookupSockets[key] {
+            switch socket.client.connectionState {
+            case .connected:
+                sendLookup(req: req, subId: subId, on: socket.client)
+                scheduleLookupIdleClose(key: key)
+                return
+            case .connecting, .disconnected:
+                // Handshake still in flight (a new client starts out
+                // .disconnected until connect() publishes .connecting).
+                socket.pending.append((req, subId))
+                lookupSockets[key] = socket
+                return
+            case .error:
+                closeLookupSocket(key: key)
+            }
+        }
+
+        let client = WebSocketClient()
+        client.isTemporary = true
+        var socket = LookupSocket(client: client, pending: [(req, subId)])
+
+        client.messageSubject
+            .receive(on: processingQueue)
+            .compactMap { [weak self] msg in self?.verifiedParentEvent(msg) }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ev in self?.handleParentNoteFetch(ev) }
+            .store(in: &socket.subscriptions)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self, let client,
+                      self.lookupSockets[key]?.client === client else { return }
+                switch state {
+                case .connected:
+                    let queued = self.lookupSockets[key]?.pending ?? []
+                    self.lookupSockets[key]?.pending.removeAll()
+                    for item in queued { self.sendLookup(req: item.req, subId: item.subId, on: client) }
+                    self.scheduleLookupIdleClose(key: key)
+                case .error:
+                    // Refused (429 and friends), timed out or dropped.
+                    self.lookupCooldownUntil[key] = Date().addingTimeInterval(Self.lookupCooldownSeconds)
+                    self.closeLookupSocket(key: key)
+                case .connecting, .disconnected:
+                    break
+                }
+            }
+            .store(in: &socket.subscriptions)
+
+        lookupSockets[key] = socket
+        client.connect(url: url)
+    }
+
+    private func sendLookup(req: String, subId: String, on client: WebSocketClient) {
+        client.send(text: req)
+        let closeMsg = ["CLOSE", subId] as [Any]
+        guard let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
+              let closeStr = String(data: closeData, encoding: .utf8) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lookupSubscriptionSeconds) { [weak client] in
+            client?.send(text: closeStr)
+        }
+    }
+
+    private func scheduleLookupIdleClose(key: String) {
+        lookupSockets[key]?.idleClose?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.closeLookupSocket(key: key) }
+        lookupSockets[key]?.idleClose = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lookupIdleSeconds, execute: work)
+    }
+
+    private func closeLookupSocket(key: String) {
+        guard let socket = lookupSockets.removeValue(forKey: key) else { return }
+        socket.idleClose?.cancel()
+        socket.client.disconnect()
+        // Dropping `socket` releases its subscriptions with it. They used to
+        // go into `cancellables`, which kept every finished client alive.
     }
 
     /// Authors whose relay list was already requested, so each is asked once.
@@ -3468,15 +4355,37 @@ class FeedService: ObservableObject {
         scheduleNoteFetchFlush()
     }
 
-    /// Fast-path handler for parent note fetches — inserts directly into notes on the main
-    /// thread without going through the batch accumulator or flush timers.
-    private func handleParentNoteFetch(_ msg: String) {
+    /// Runs on processingQueue. Parses a lookup response and checks its
+    /// signature there, so neither costs the main thread. Once a copy of an
+    /// id verifies, later copies are dropped unchecked: every relay asked
+    /// answers with the same note, and main dropped the extras anyway (the id
+    /// is no longer being fetched). They are dropped, never passed on
+    /// unverified, since a forged event can reuse a real id.
+    private nonisolated func verifiedParentEvent(_ msg: String) -> [String: Any]? {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String,
+              let type = json.first as? String,
               type == "EVENT", json.count >= 3,
               let ev = json[2] as? [String: Any],
-              let id        = ev["id"]        as? String,
+              let id = ev["id"] as? String,
+              !bgAccumulator.parentFetchRecentlyVerified(id),
+              NostrEventVerifier.isValid(ev) else { return nil }
+        bgAccumulator.markParentFetchVerified(id)
+        return ev
+    }
+
+    /// A verified copy that main then dropped must not block the next fetch
+    /// of the same note: without this, its later copies were discarded as
+    /// duplicates for the whole claim window.
+    private func forgetParentFetchClaim(_ id: String) {
+        processingQueue.async { [bgAccumulator] in bgAccumulator.forgetParentFetch(id) }
+    }
+
+    /// Fast-path handler for parent note fetches — inserts directly into notes on the main
+    /// thread without going through the batch accumulator or flush timers.
+    /// `ev` has already passed `verifiedParentEvent`.
+    private func handleParentNoteFetch(_ ev: [String: Any]) {
+        guard let id        = ev["id"]        as? String,
               let pubkey    = ev["pubkey"]     as? String,
               let content   = ev["content"]    as? String,
               let createdAt = ev["created_at"] as? Int64,
@@ -3486,7 +4395,18 @@ class FeedService: ObservableObject {
 
         // Use findNote rather than seenIds: a note can be in seenIds but evicted from
         // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
-        guard findNote(id: id) == nil else { return }
+        guard findNote(id: id) == nil else { forgetParentFetchClaim(id); return }
+
+        // Only what was asked for, and only if it is genuine. These come from
+        // relay hints and outboxes named in other people's notes, so any of
+        // them can answer with a note under any id and any author's name —
+        // and this one is shown as that author's post and can be embedded in
+        // your reposts.
+        let dTag = tags.first { $0.count >= 2 && $0[0] == "d" }?[1] ?? ""
+        let coordinate = "\(QuoteReference.coordinatePrefix)\(kind):\(pubkey):\(dTag)"
+        guard fetchingNoteIds.contains(id) || unavailableNoteIds.contains(id)
+                || fetchingNoteIds.contains(coordinate) || unavailableNoteIds.contains(coordinate)
+        else { forgetParentFetchClaim(id); return }
 
         let note = FeedNote(
             id: id,
@@ -3502,7 +4422,7 @@ class FeedService: ObservableObject {
         // card on "Loading the start of this thread…" forever.
 
         // Cache raw event JSON for NIP-18 repost embedding
-        if kind == 1 || kind == 30023 {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind {
             if let evData = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 cacheRawEvent(id: id, json: evJSON)
@@ -3515,7 +4435,12 @@ class FeedService: ObservableObject {
         fetchingNoteTimestamps.removeValue(forKey: id)
         parentNotesCache[id] = note
         noteReferencedNoteArrived(id)
-        if parentNotesCache.count > 500 {
+        // A reply or bare repost of a blocked author is only recognisable once
+        // the post it points at has loaded, so refilter when that post is theirs.
+        if ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey) {
+            recomputeFilteredNotes()
+        }
+        if parentNotesCache.count > parentNotesCacheTrimAt {
             // Parent edges alone are not what the timeline asks for: a thread
             // card fetches the *root*, which for anything deeper than a direct
             // reply is no note's parent, and quotes and repost originals are
@@ -3524,6 +4449,11 @@ class FeedService: ObservableObject {
             // went back to "Loading the start of this thread...".
             let referencedIds = ReferencedNoteRepair.referencedIds(in: notes)
             parentNotesCache = parentNotesCache.filter { referencedIds.contains($0.key) }
+            // When most of the cache is still referenced, the trim frees almost
+            // nothing, and a fixed 500 re-ran this whole-feed scan on every
+            // later arrival: the main thread pegged and the phone ran hot.
+            // Trim again only after another 250 arrive.
+            parentNotesCacheTrimAt = max(500, parentNotesCache.count + 250)
         }
         NostrService.shared.fetchMissingProfiles(for: [pubkey])
     }
@@ -3643,7 +4573,7 @@ class FeedService: ObservableObject {
     /// (1, 6, 7, 30023, 9735) and deduplicates via the shared injectedEventIds set.
     nonisolated func injectExternalEvent(_ eventDict: [String: Any], eventId: String) {
         guard let kind = eventDict["kind"] as? Int,
-              [1, 6, 7, 30023, 9735].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(eventDict, eventId: eventId)
@@ -3662,7 +4592,7 @@ class FeedService: ObservableObject {
 
         // Only inject feed-relevant event kinds (notes, reactions, reposts, zaps)
         guard let kind = ev["kind"] as? Int,
-              [1, 6, 7, 30023, 9735].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(ev, eventId: eventId)

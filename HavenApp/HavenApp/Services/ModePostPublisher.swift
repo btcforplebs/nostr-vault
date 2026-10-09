@@ -1,0 +1,130 @@
+import Foundation
+import CryptoKit
+
+/// Uploads and publishing shared by the diVine, article and recipe composers.
+///
+/// These are addressable events (kinds 34236 and 30023). The device's relay
+/// stores them through its replace path, which does not blast them onward the
+/// way it does notes, so they are sent to the outside relays directly here.
+@MainActor
+enum ModePostPublisher {
+    struct UploadedBlob {
+        let url: URL
+        let sha256: String
+        let byteCount: Int
+    }
+
+    enum PublishError: LocalizedError {
+        case upload(String)
+        case signing
+        case accountChanged
+
+        var errorDescription: String? {
+            switch self {
+            case .upload(let message): return message
+            case .signing: return "Couldn't sign the post. Check your key or remote signer in Settings."
+            case .accountChanged: return "The account changed while this was posting, so it was not sent. Switch back and post again."
+            }
+        }
+    }
+
+    /// Uploads a file to this device's relay and the outside Blossom servers.
+    /// A post that points at media only this phone holds is unreadable to
+    /// everyone else, so anything short of an outside URL is an error.
+    static func upload(fileURL: URL, mimeType: String, configService: ConfigService, nostrService: NostrService,
+                       progress: ((Double) -> Void)? = nil) async throws -> UploadedBlob {
+        // Never upload where it was taken (MediaPrivacy).
+        guard let cleanURL = await MediaPrivacy.removingLocation(fromFileAt: fileURL) else {
+            throw PublishError.upload(MediaPrivacy.failureMessage)
+        }
+        defer { if cleanURL != fileURL { try? FileManager.default.removeItem(at: cleanURL) } }
+        let fileURL = cleanURL
+        guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
+            throw PublishError.upload("Couldn't read the file to upload.")
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int ?? 0
+        let blossom = BlossomService(configService: configService, nostrService: nostrService)
+        let outcome = await blossom.uploadForPost(fileURL: fileURL, sha256: sha256, contentType: mimeType, progress: progress)
+        return UploadedBlob(url: try hostedURL(outcome), sha256: sha256, byteCount: size)
+    }
+
+    static func upload(data: Data, mimeType: String, configService: ConfigService, nostrService: NostrService) async throws -> UploadedBlob {
+        // Never upload where it was taken (MediaPrivacy).
+        guard let data = MediaPrivacy.removingLocation(fromImageData: data) else {
+            throw PublishError.upload(MediaPrivacy.failureMessage)
+        }
+        let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let blossom = BlossomService(configService: configService, nostrService: nostrService)
+        let outcome = await blossom.uploadForPost(data: data, sha256: sha256, contentType: mimeType)
+        return UploadedBlob(url: try hostedURL(outcome), sha256: sha256, byteCount: data.count)
+    }
+
+    private static func hostedURL(_ outcome: BlossomService.PostUploadOutcome) throws -> URL {
+        switch outcome {
+        case .hosted(let url):
+            return url
+        case .savedOnDevice:
+            throw PublishError.upload("No outside media server took the upload. Try again when one is reachable.")
+        case .noOutsideServer:
+            throw PublishError.upload(MediaUploadOutcomeMessage.noOutsideServer)
+        case .notSavedOnDevice:
+            throw PublishError.upload(MediaUploadOutcomeMessage.notSavedOnDevice)
+        }
+    }
+
+    /// The account active right now, for `publish(lockedTo:)`. Take it when
+    /// Post is tapped, before any upload.
+    static func lockAccount(configService: ConfigService) -> PostingAccount.Lock {
+        PostingAccount.Lock(
+            npub: PostingAccount.resolve(active: configService.config.activeAccountNpub, owner: configService.config.ownerNpub),
+            hex: configService.activeAccountHexPubkey
+        )
+    }
+
+    /// Signs and sends an event to this device's relay, the configured outside
+    /// relays and `extraRelays`. `onRelayResult` reports each outside relay.
+    /// With `lockedTo`, refuses to sign or send unless that account is still
+    /// the active one and the event carries its key.
+    @discardableResult
+    static func publish(kind: Int, content: String, tags: [[String]], extraRelays: [String] = [],
+                        nostrService: NostrService,
+                        lockedTo lock: PostingAccount.Lock? = nil,
+                        onRelayResult: ((String, Bool, String) -> Void)? = nil) async throws -> NostrEvent {
+        let config = { ConfigService.shared.config }
+        if let lock, PostingAccount.resolve(active: config().activeAccountNpub, owner: config().ownerNpub) != lock.npub {
+            throw PublishError.accountChanged
+        }
+        guard let event = await nostrService.signEventAsync(kind: kind, content: content, tags: tags) else {
+            throw PublishError.signing
+        }
+        if let lock, !PostingAccount.signedAsLocked(lockedNpub: lock.npub, lockedHex: lock.hex,
+                                                    activeNow: config().activeAccountNpub, owner: config().ownerNpub,
+                                                    eventPubkey: event.pubkey) {
+            throw PublishError.accountChanged
+        }
+        nostrService.postEvent(event, directBroadcast: false)
+        nostrService.broadcastRawEvent(rawDict(event), extraRelays: extraRelays, onRelayResult: onRelayResult)
+        return event
+    }
+
+    /// Sends `pubkey`'s newest profile (kind 0), exactly as already signed, to
+    /// `relay`. diVine's search and author pages only know profiles that reach
+    /// its own relay, which otherwise happens only for people who have used
+    /// the diVine app. Nothing is signed, so no signer prompt.
+    static func sendProfile(of pubkey: String, to relay: String, nostrService: NostrService) async {
+        guard let profile = await nostrService.fetchNewestReplaceable(kind: 0, for: pubkey, alsoAsk: []) else { return }
+        nostrService.broadcastRawEvent(rawDict(profile), to: [relay])
+    }
+
+    private static func rawDict(_ event: NostrEvent) -> [String: Any] {
+        [
+            "id": event.id,
+            "pubkey": event.pubkey,
+            "created_at": event.created_at,
+            "kind": event.kind,
+            "tags": event.tags,
+            "content": event.content,
+            "sig": event.sig
+        ]
+    }
+}

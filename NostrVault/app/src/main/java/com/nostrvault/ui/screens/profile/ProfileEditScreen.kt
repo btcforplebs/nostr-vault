@@ -6,7 +6,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+import com.nostrvault.ui.components.AvatarImage
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,14 +27,12 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Profile editing screen for name, display_name, about, nip05, lud16, picture, website.
+ * Profile editing screen for name, display_name, about, nip05, lud16, picture, banner, website.
  */
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
@@ -45,6 +52,9 @@ class ProfileEditViewModel @Inject constructor(
     private val _pictureUrl = MutableStateFlow("")
     val pictureUrl = _pictureUrl.asStateFlow()
 
+    private val _bannerUrl = MutableStateFlow("")
+    val bannerUrl = _bannerUrl.asStateFlow()
+
     private val _nip05 = MutableStateFlow("")
     val nip05 = _nip05.asStateFlow()
 
@@ -54,10 +64,16 @@ class ProfileEditViewModel @Inject constructor(
     private val _website = MutableStateFlow("")
     val website = _website.asStateFlow()
 
+    /** Whose profile this is, for the preview's placeholder avatar. */
+    val pubkey: String = configStore.activeAccountHexPubkey.value
+
     private val _isSaving = MutableStateFlow(false)
     val isSaving = _isSaving.asStateFlow()
     private val _saveError = MutableStateFlow<String?>(null)
     val saveError = _saveError.asStateFlow()
+
+    /** What the form showed when opened, by kind-0 key: a save applies only fields changed from it. */
+    private val initialFields: Map<String, String>
 
     init {
         val pubkey = configStore.activeAccountHexPubkey.value
@@ -67,16 +83,30 @@ class ProfileEditViewModel @Inject constructor(
             _name.value = it.name ?: ""
             _about.value = it.about ?: ""
             _pictureUrl.value = it.pictureURL ?: ""
+            _bannerUrl.value = it.bannerURL ?: ""
             _nip05.value = it.nip05 ?: ""
             _lud16.value = it.lud16 ?: ""
             _website.value = it.website ?: ""
         }
+        initialFields = formFields()
     }
+
+    private fun formFields(): Map<String, String> = mapOf(
+        ProfileMetadataMerge.DISPLAY_NAME to _displayName.value,
+        ProfileMetadataMerge.NAME to _name.value,
+        ProfileMetadataMerge.ABOUT to _about.value,
+        ProfileMetadataMerge.PICTURE to _pictureUrl.value,
+        ProfileMetadataMerge.BANNER to _bannerUrl.value,
+        ProfileMetadataMerge.NIP05 to _nip05.value,
+        ProfileMetadataMerge.LUD16 to _lud16.value,
+        ProfileMetadataMerge.WEBSITE to _website.value,
+    )
 
     fun setDisplayName(v: String) { _displayName.value = v }
     fun setName(v: String) { _name.value = v }
     fun setAbout(v: String) { _about.value = v }
     fun setPictureUrl(v: String) { _pictureUrl.value = v }
+    fun setBannerUrl(v: String) { _bannerUrl.value = v }
     fun setNip05(v: String) { _nip05.value = v }
     fun setLud16(v: String) { _lud16.value = v }
     fun setWebsite(v: String) { _website.value = v }
@@ -85,15 +115,21 @@ class ProfileEditViewModel @Inject constructor(
         viewModelScope.launch {
             _isSaving.value = true
             _saveError.value = null
-            val metadataJson = buildJsonObject {
-                if (_displayName.value.isNotBlank()) put("display_name", _displayName.value)
-                if (_name.value.isNotBlank()) put("name", _name.value)
-                if (_about.value.isNotBlank()) put("about", _about.value)
-                if (_pictureUrl.value.isNotBlank()) put("picture", _pictureUrl.value)
-                if (_nip05.value.isNotBlank()) put("nip05", _nip05.value)
-                if (_lud16.value.isNotBlank()) put("lud16", _lud16.value)
-                if (_website.value.isNotBlank()) put("website", _website.value)
-            }.toString()
+            // A kind 0 replaces the whole profile. Start from the newest one on
+            // the relays so lud06 and every key this form doesn't show
+            // survive; if it can't be fetched, publishing would wipe them, so
+            // don't (same rule as the follow list, #180).
+            val pubkey = configStore.activeAccountHexPubkey.value
+            val alsoAsk = nostrService.outboxRelays.value[pubkey].orEmpty() +
+                nostrService.relayLists.value[pubkey].orEmpty()
+            val lookup = nostrService.lookupNewestReplaceable(0, pubkey, alsoAsk)
+            if (lookup.event == null && !lookup.confirmedNone) {
+                _saveError.value = "Couldn't load your current profile from the relays. Nothing was changed; try again."
+                _isSaving.value = false
+                return@launch
+            }
+            val base = ProfileMetadataMerge.parseContent(lookup.event?.content)
+            val metadataJson = ProfileMetadataMerge.merge(base, initialFields, formFields()).toString()
             // A bunker timeout or an Amber rejection throws; uncaught here it
             // crashed the app. Stay on the screen when nothing was published.
             val event = try {
@@ -125,6 +161,7 @@ fun ProfileEditScreen(
     val name by viewModel.name.collectAsState()
     val about by viewModel.about.collectAsState()
     val pictureUrl by viewModel.pictureUrl.collectAsState()
+    val bannerUrl by viewModel.bannerUrl.collectAsState()
     val nip05 by viewModel.nip05.collectAsState()
     val lud16 by viewModel.lud16.collectAsState()
     val website by viewModel.website.collectAsState()
@@ -181,14 +218,87 @@ fun ProfileEditScreen(
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
             }
+            BannerPreview(bannerUrl)
+            ProfilePreview(
+                pubkey = viewModel.pubkey,
+                pictureUrl = pictureUrl,
+                displayName = displayName,
+                name = name,
+                nip05 = nip05,
+                about = about,
+            )
+            HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 16.dp))
             ProfileField("Display Name", displayName, viewModel::setDisplayName)
             ProfileField("Username", name, viewModel::setName)
             ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)
             ProfileField("Profile Picture URL", pictureUrl, viewModel::setPictureUrl)
+            ProfileField("Banner URL", bannerUrl, viewModel::setBannerUrl)
             ProfileField("NIP-05 Identifier", nip05, viewModel::setNip05)
             ProfileField("Lightning Address", lud16, viewModel::setLud16)
             ProfileField("Website", website, viewModel::setWebsite)
             Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/**
+ * The Banner URL at the 3:1 shape the profile draws it in; nothing until the
+ * field holds a link.
+ */
+@Composable
+private fun BannerPreview(bannerUrl: String) {
+    val url = bannerUrl.trim()
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return
+    AsyncImage(
+        model = url,
+        contentDescription = "Banner preview",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(3f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(LocalNostrVaultColors.current.primary.copy(alpha = 0.12f)),
+    )
+    Spacer(Modifier.height(12.dp))
+}
+
+/** How the profile will look, updating as the fields are edited. */
+@Composable
+private fun ProfilePreview(
+    pubkey: String,
+    pictureUrl: String,
+    displayName: String,
+    name: String,
+    nip05: String,
+    about: String,
+) {
+    val colors = LocalNostrVaultColors.current
+    val shownName = displayName.ifBlank { name.ifBlank { "Unnamed" } }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .padding(bottom = 8.dp),
+    ) {
+        AvatarImage(
+            url = pictureUrl.trim().ifEmpty { null },
+            pubkey = pubkey,
+            size = 56.dp,
+            displayName = shownName,
+            modifier = Modifier.border(1.5.dp, colors.primary.copy(alpha = 0.35f), CircleShape),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
+            Text(shownName, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (nip05.isNotBlank()) {
+                Text(nip05, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (about.isNotBlank()) {
+                Text(about, color = PrimaryText.copy(alpha = 0.75f), fontSize = 12.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

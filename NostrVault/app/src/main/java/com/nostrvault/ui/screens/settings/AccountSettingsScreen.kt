@@ -41,9 +41,11 @@ import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NIP46Service
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.NostrConnectPairing
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -101,33 +103,74 @@ class AccountSettingsViewModel @Inject constructor(
     /** Connect a NIP-46 remote signer. Returns the account npub or null. */
     fun connectSigner(bunkerUri: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            val uri = bunkerUri.trim()
             val keypair = HavenBridge.generateKeyPair()
             val parts = keypair?.split(":")
             if (parts == null || parts.size != 2) { onResult(null); return@launch }
-            val clientSec = parts[0]
-            val clientPub = parts[1]
-            val signerPubkey = NIP46Service.connect(clientSec, uri)
-            if (signerPubkey == null) { onResult(null); return@launch }
-            val npub = HavenBridge.encodeNpub(signerPubkey) ?: run { onResult(null); return@launch }
-            configStore.setBunkerConfig(
-                npub,
-                AccountBunkerConfig(
-                    bunkerURI = uri,
-                    signerPubkey = signerPubkey,
-                    clientSecretKey = clientSec,
-                    clientPubkey = clientPub,
-                ),
-            )
-            configStore.addAccount(npub)
-            configStore.setSigningMode(npub, "nip46")
-            ensureProfiles(listOf(npub))
-            onResult(npub)
+            onResult(addSignerAccount(bunkerUri.trim(), parts[0], parts[1]))
         }
     }
 
+    /**
+     * Finishes a nostrconnect:// pairing: stored like a pasted bunker link
+     * (secret-less, with the pairing's own client key), then connected.
+     * Returns the account npub or null. Runs in the view model's scope so
+     * leaving the screen mid-connect doesn't cut the save in half.
+     */
+    suspend fun pairNostrConnect(request: NIP46Service.NostrConnectRequest, signerPubkey: String): String? =
+        viewModelScope.async {
+            addSignerAccount(
+                NIP46Service.bunkerUri(signerPubkey, request.relays),
+                request.clientSecretKey,
+                request.clientPubkey,
+            )
+        }.await()
+
+    private suspend fun addSignerAccount(uri: String, clientSec: String, clientPub: String): String? {
+        val signerPubkey = NIP46Service.connect(clientSec, uri) ?: return null
+        val npub = HavenBridge.encodeNpub(signerPubkey) ?: return null
+        configStore.setBunkerConfig(
+            npub,
+            AccountBunkerConfig(
+                bunkerURI = uri,
+                signerPubkey = signerPubkey,
+                clientSecretKey = clientSec,
+                clientPubkey = clientPub,
+            ),
+        )
+        configStore.addAccount(npub)
+        configStore.setSigningMode(npub, "nip46")
+        ensureProfiles(listOf(npub))
+        return npub
+    }
+
+    /** Bumped when a key is removed: [hasLocalKey] reads the credential store, not config. */
+    private val _keysChanged = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val keysChanged: StateFlow<Int> = _keysChanged
+
+    /**
+     * Deletes the private key stored on this device for [npub], as iOS
+     * "Remove Local Key" does. With a remote signer, signing falls back to it;
+     * without one nothing here can sign for the account (browse-only).
+     */
+    fun removeLocalKey(npub: String) {
+        val cfg = config.value
+        val hex = hexFor(npub)
+        if (npub == cfg.ownerNpub) {
+            configStore.update { it.copy(ownerHexKey = null, ownerNcryptsec = null) }
+            credentialStore.deleteKeychainPassword(npub)
+        } else {
+            credentialStore.deleteCredentialHexKey(npub)
+        }
+        if (hex.isNotEmpty()) credentialStore.deleteNsec(hex)
+        if (cfg.signingMode(npub) == "local" && cfg.bunkerConfig(npub) != null) {
+            configStore.setSigningMode(npub, "nip46")
+        }
+        _keysChanged.value++
+    }
+
     fun disconnectSigner(npub: String) {
-        NIP46Service.disconnect()
+        // Closes this account's signer session (and detaches it if active),
+        // not whichever account's session happens to be active.
         configStore.removeBunkerConfig(npub)
         configStore.setSigningMode(npub, "local")
     }
@@ -168,6 +211,7 @@ fun AccountSettingsScreen(
     val config by viewModel.config.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val nip46Connected by viewModel.nip46Connected.collectAsState()
+    val keysChanged by viewModel.keysChanged.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     val accounts = config.allAccountNpubs()
@@ -224,7 +268,7 @@ fun AccountSettingsScreen(
                         cfg = config,
                         isOwner = isOwner,
                         isActive = isActive,
-                        hasLocalKey = viewModel.hasLocalKey(npub, config),
+                        hasLocalKey = remember(config, keysChanged) { viewModel.hasLocalKey(npub, config) },
                         viewModel = viewModel,
                     )
                 }
@@ -308,6 +352,80 @@ private fun AccountDetail(
     val colors = LocalNostrVaultColors.current
     val hasBunker = cfg.bunkerConfig(npub) != null
     var revealed by remember(npub) { mutableStateOf<String?>(null) }
+    var confirmRemoveKey by remember(npub) { mutableStateOf(false) }
+    var confirmDisconnectSigner by remember(npub) { mutableStateOf(false) }
+    var confirmRemoveAccount by remember(npub) { mutableStateOf(false) }
+
+    // Same titles, messages and buttons as iOS (SettingsView.swift).
+    if (confirmDisconnectSigner) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnectSigner = false },
+            title = { Text("Disconnect Remote Signer") },
+            text = {
+                Text(
+                    if (hasLocalKey) {
+                        "This drops the remote signer connection and its stored session. Signing falls back to the local key on this device; reconnecting needs a fresh bunker URI."
+                    } else {
+                        "This drops the remote signer connection and its stored session, and nothing else here can sign for this account afterwards. Reconnecting needs a fresh bunker URI."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDisconnectSigner = false
+                    viewModel.disconnectSigner(npub)
+                }) { Text("Disconnect", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisconnectSigner = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (confirmRemoveAccount) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveAccount = false },
+            title = { Text("Remove Account") },
+            text = {
+                Text("This removes ${npub.take(12)}… from Nostr Vault, along with any key or signer stored for it. Nothing on the relays changes, but you will need the key again to sign back in.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveAccount = false
+                    viewModel.removeAccount(npub)
+                }) { Text("Remove Account", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveAccount = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (confirmRemoveKey) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveKey = false },
+            title = { Text("Remove Local Key") },
+            text = {
+                Text(
+                    if (hasBunker) {
+                        "This deletes the private key stored on this device. Signing falls back to the remote signer. If you have no backup of the key elsewhere, it cannot be recovered."
+                    } else {
+                        "This deletes the private key stored on this device, and nothing else here can sign for this account afterwards. If you have no backup of the key elsewhere, it cannot be recovered."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveKey = false
+                    revealed = null
+                    viewModel.removeLocalKey(npub)
+                }) { Text("Remove Key", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveKey = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -368,18 +486,21 @@ private fun AccountDetail(
                     }
                 }
             }
+            TextButton(onClick = { confirmRemoveKey = true }) {
+                Text("Remove Local Key", color = ErrorRed)
+            }
         }
 
         // Remote signer
         if (hasBunker) {
-            TextButton(onClick = { viewModel.disconnectSigner(npub) }) {
+            TextButton(onClick = { confirmDisconnectSigner = true }) {
                 Text("Disconnect Remote Signer", color = ErrorRed)
             }
         }
 
         // NIP-65 publish toggle
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-            Text("Publish Inbox Relay (NIP-65)", color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("Publish Relay List (NIP-65)", color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(
                 checked = cfg.publishRelayListPerAccount[npub] ?: false,
                 onCheckedChange = { viewModel.togglePublishRelayList(npub, it) },
@@ -388,7 +509,7 @@ private fun AccountDetail(
         }
 
         if (!isOwner) {
-            TextButton(onClick = { viewModel.removeAccount(npub) }) {
+            TextButton(onClick = { confirmRemoveAccount = true }) {
                 Text("Remove Account", color = ErrorRed)
             }
         }
@@ -460,6 +581,20 @@ private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
 
     Spacer(Modifier.height(12.dp))
     Text("Connect Remote Signer (NIP-46)", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(8.dp))
+    NostrConnectPairing(
+        accent = colors.primary,
+        onPaired = { request, signerPubkey ->
+            if (viewModel.pairNostrConnect(request, signerPubkey) == null) {
+                "Could not connect signer"
+            } else {
+                expanded = false
+                null
+            }
+        },
+    )
+    Spacer(Modifier.height(12.dp))
+    Text("Or paste a bunker link from any signer app.", color = SecondaryText, fontSize = 12.sp)
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = bunkerInput,

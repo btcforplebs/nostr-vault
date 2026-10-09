@@ -8,6 +8,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,10 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,43 +50,46 @@ import coil.compose.AsyncImage
 import com.nostrvault.data.model.Draft
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.MediaUploadOutcomeMessage
+import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.data.model.NoteTagging
+import com.nostrvault.data.model.PostingAccount
+import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.service.BlobDescriptor
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DraftService
 import com.nostrvault.service.FeedService
-import com.nostrvault.service.MediaItem
-import com.nostrvault.service.MediaType
+import com.nostrvault.service.MediaPostQueue
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.PendingPostManager
-import com.nostrvault.service.StatsService
 import com.nostrvault.ui.components.AccountInfo
 import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.components.buildAccountInfos
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.QuotedNoteCard
+import com.nostrvault.ui.notification.ErrorStyle
+import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.nostrvault.data.gif.GifCache
 import javax.inject.Inject
 
 /**
@@ -108,7 +110,39 @@ data class Attachment(
      * Published inside the attachment's `imeta` tag; blank means omitted.
      */
     val altText: String = "",
+    /**
+     * Set when the media is already on a Blossom server (picked from the
+     * relay picker): posting publishes this URL as-is instead of uploading.
+     */
+    val hostedUrl: String? = null,
+    /** The hosted blob's hash, for its `imeta x`. */
+    val sha256: String? = null,
+    /** A local copy of the hosted blob, measured for `imeta dim`. */
+    val localFile: File? = null,
+    /** The hosted blob's size, for `imeta size`. */
+    val byteCount: Long? = null,
 )
+
+/**
+ * A full MIME type for a blob, from the server's `type` when that is one,
+ * else from the file extension; null when neither says. Local blobs are only
+ * classed as "image"/"video", which is not a MIME type and must not reach
+ * `imeta m`.
+ */
+internal fun blobMimeType(serverType: String?, name: String?): String? {
+    if (serverType != null && '/' in serverType && !serverType.endsWith("/*")) return serverType
+    return when (name?.substringBefore('?')?.substringAfterLast('.', "")?.lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "avif" -> "image/avif"
+        "mp4", "m4v" -> "video/mp4"
+        "mov" -> "video/quicktime"
+        "webm" -> "video/webm"
+        else -> null
+    }
+}
 
 /**
  * How many attachments one note carries. The editor's row, the upload progress
@@ -136,8 +170,10 @@ class ComposeNoteViewModel @Inject constructor(
     private val pendingPostManager: PendingPostManager,
     private val draftService: DraftService,
     private val blossomService: BlossomService,
-    private val statsService: StatsService,
     private val configStore: ConfigStore,
+    private val mediaPostQueue: MediaPostQueue,
+    private val notificationManager: NotificationManager,
+    private val blossomPickerMedia: BlossomPickerMedia,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -145,6 +181,8 @@ class ComposeNoteViewModel @Inject constructor(
     private val replyToNoteId: String? = savedStateHandle["replyTo"]
     private val quoteToNoteId: String? = savedStateHandle["quoteTo"]
     private val resumeDraftId: String? = savedStateHandle["draftId"]
+    /** Text to start with, e.g. a song shared from the music player. */
+    private val initialText: String? = savedStateHandle["text"]
 
     /** Stable draft ID for this compose session. */
     private val draftId: String = resumeDraftId ?: java.util.UUID.randomUUID().toString()
@@ -217,7 +255,17 @@ class ComposeNoteViewModel @Inject constructor(
     private val mentionMap = mutableMapOf<String, String>()
 
     val isReply: Boolean get() = replyToNoteId != null
+
     val isQuote: Boolean get() = quoteToNoteId != null
+
+    /**
+     * The note this quote cites. Resolved through [FeedService.quoteTarget] so
+     * quoting a repost cites the original's id and author, not the reposter.
+     */
+    private fun quoteTarget(): FeedNote? = quoteToNoteId?.let { feedService.quoteTarget(it) }
+
+    /** The event id the quote cites (also what a draft stores). */
+    private fun quoteCitedId(): String? = quoteTarget()?.id ?: quoteToNoteId
 
     /**
      * Whether this composer was opened to resume an existing draft. When true the
@@ -231,9 +279,12 @@ class ComposeNoteViewModel @Inject constructor(
 
 
     init {
+        initialText?.takeIf { it.isNotBlank() }?.let { _content.value = it }
         // Start waking sleeping mirror hosts (e.g. the Mac relay) now, so
         // they're reachable by the time the user hits Post.
         blossomService.prewarmMirrors()
+        // Drafts saved on another device show in the picker (iOS: ComposeView.onAppear).
+        draftService.refreshFromRelay()
 
         // Restore content from a resumed draft
         if (resumeDraftId != null) {
@@ -244,20 +295,34 @@ class ComposeNoteViewModel @Inject constructor(
         }
 
         if (replyToNoteId != null) {
-            val parentNote = feedService.findNote(replyToNoteId)
+            // Replying to a repost answers the note it carries, and its author.
+            val parentNote = feedService.quoteTarget(replyToNoteId)
             if (parentNote != null) {
                 val profile = nostrService.profiles.value[parentNote.pubkey]
                 _replyingToName.value = profile?.bestName ?: parentNote.pubkey.take(8) + "..."
             }
         }
         if (quoteToNoteId != null) {
-            val quoted = feedService.findNote(quoteToNoteId)
-            _quotedNote.value = quoted
-            if (quoted != null) {
-                _quotedProfile.value = nostrService.profiles.value[quoted.pubkey]
+            val quoted = quoteTarget()
+            showQuoted(quoted)
+            // A bare repost carries only the original's id and author: fetch the
+            // original so the preview can show its text.
+            if (quoted != null && quoted.content.isEmpty()) {
+                feedService.fetchMissingNote(quoted.id)
+                viewModelScope.launch {
+                    feedService.parentNotesCache.first { cache ->
+                        cache[quoted.id]?.let { it.id == quoted.id && it.kind != 6 } == true
+                    }
+                    showQuoted(quoteTarget())
+                }
             }
             // nostr: reference is appended to content at publish time, not pre-populated
         }
+    }
+
+    private fun showQuoted(quoted: FeedNote?) {
+        _quotedNote.value = quoted
+        _quotedProfile.value = quoted?.let { nostrService.profiles.value[it.pubkey] }
     }
 
     fun setContent(text: String) {
@@ -336,9 +401,11 @@ class ComposeNoteViewModel @Inject constructor(
             (threadProfiles + followedProfiles).take(8)
         } else {
             // Search the entire profile cache (feed authors, search results, etc.),
-            // not just follows, ranking thread participants and follows first.
+            // not just follows, ranking thread participants, follows, then the
+            // rest of the Web of Trust first.
             val lower = query.lowercase()
             val followedSet = followed.toHashSet()
+            val wotSet = feedService.webOfTrustForRanking()
             profilesMap.values.asSequence()
                 .filter { it.pubkey != self }
                 .filter { p ->
@@ -350,6 +417,7 @@ class ComposeNoteViewModel @Inject constructor(
                 .sortedWith(
                     compareByDescending<FeedProfile> { threadPubkeys.contains(it.pubkey) }
                         .thenByDescending { followedSet.contains(it.pubkey) }
+                        .thenByDescending { wotSet.contains(it.pubkey) }
                         .thenByDescending { it.bestName.lowercase().startsWith(lower) }
                         .thenBy { it.bestName.length }
                 )
@@ -483,6 +551,56 @@ class ComposeNoteViewModel @Inject constructor(
         _attachments.value = _attachments.value + newAttachments
     }
 
+    /** "Save to my Blossom" in the GIF picker (iOS saveGifsToBlossom). */
+    val saveGifsToBlossom: StateFlow<Boolean> = configStore.config
+        .map { it.saveGifsToBlossom }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.saveGifsToBlossom)
+
+    fun setSaveGifsToBlossom(on: Boolean) {
+        configStore.update { it.copy(saveGifsToBlossom = on) }
+    }
+
+    /** A picked GIF is downloading: one at a time, and Post waits for it (iOS isFetchingGif). */
+    private val _isFetchingGif = MutableStateFlow(false)
+    val isFetchingGif: StateFlow<Boolean> = _isFetchingGif.asStateFlow()
+
+    /**
+     * A picked nostr.build GIF: its link goes into the text, or with "Save to
+     * my Blossom" on it is downloaded and attached, so posting uploads it to
+     * your own Blossom servers like any photo. iOS: ComposeView.attachGif.
+     */
+    fun pickGif(gif: com.nostrvault.data.gif.NostrBuildGif) {
+        if (!saveGifsToBlossom.value) {
+            val text = _content.value
+            val sep = if (text.isEmpty() || text.endsWith("\n") || text.endsWith(" ")) "" else "\n"
+            setContent(text + sep + gif.url)
+            return
+        }
+        if (_attachments.value.size >= MAX_ATTACHMENTS) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
+            return
+        }
+        if (_isFetchingGif.value) return
+        _isFetchingGif.value = true
+        viewModelScope.launch {
+            try {
+                val (bytes, mime) = com.nostrvault.data.gif.NostrBuildGifs.download(gif.url)
+                val file = withContext(Dispatchers.IO) {
+                    GifCache.newFile(context.cacheDir, mime).apply { writeBytes(bytes) }
+                }
+                if (_attachments.value.size < MAX_ATTACHMENTS) {
+                    _attachments.value = _attachments.value + Attachment(uri = Uri.fromFile(file), mimeType = mime)
+                } else {
+                    file.delete()
+                }
+            } catch (e: Exception) {
+                _error.value = "Could not fetch GIF: ${e.message ?: "unknown error"}"
+            } finally {
+                _isFetchingGif.value = false
+            }
+        }
+    }
+
     /** Stores the NIP-92 description the author wrote for one attachment. */
     fun setAttachmentAlt(id: String, alt: String) {
         _attachments.value = _attachments.value.map {
@@ -491,22 +609,47 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     fun removeAttachment(id: String) {
+        _attachments.value.firstOrNull { it.id == id }?.let { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
         _attachments.value = _attachments.value.filter { it.id != id }
+    }
+
+    /** The downloaded GIFs behind [attachments]; the upload has its own copy by now. */
+    private fun deleteGifCopies(attachments: List<Attachment>) {
+        attachments.forEach { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
+    }
+
+    /** Leaving without posting: drafts keep only text, so the GIF copies have no further use. */
+    override fun onCleared() {
+        deleteGifCopies(_attachments.value)
+        super.onCleared()
     }
 
     fun setShowBlossomPicker(show: Boolean) {
         _showBlossomPicker.value = show
     }
 
-    fun addBlossomMedia(url: String) {
-        val currentContent = _content.value
-        val newContent = if (currentContent.isEmpty() || currentContent.endsWith("\n") || currentContent.endsWith(" ")) {
-            currentContent + url
-        } else {
-            "$currentContent $url"
-        }
-        _content.value = newContent
+    /**
+     * Attaches media picked from the relay picker. It shows in the attachment
+     * strip like a fresh upload; posting publishes its existing URL with an
+     * `imeta` and does not upload it again.
+     */
+    fun addBlossomMedia(item: BlossomMediaItem) {
         _showBlossomPicker.value = false
+        if (_attachments.value.any { it.sha256 == item.sha256 }) return
+        if (_attachments.value.size >= MAX_ATTACHMENTS) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
+            return
+        }
+        val mime = blobMimeType(item.mimeType, item.localFile?.name ?: item.displayUrl)
+        _attachments.value = _attachments.value + Attachment(
+            uri = item.localFile?.let { Uri.fromFile(it) } ?: Uri.parse(item.displayUrl),
+            mimeType = mime ?: if (item.isVideo) "video/*" else "image/*",
+            isVideo = item.isVideo,
+            hostedUrl = item.displayUrl,
+            sha256 = item.sha256,
+            localFile = item.localFile,
+            byteCount = item.size,
+        )
     }
 
     fun handlePasteFromClipboard() {
@@ -573,95 +716,31 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
-    suspend fun loadBlossomMediaItems(): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val config = configStore.config.value
-            val pubkey = nostrService.ownerHexPubkey
-            val localBase = blossomService.localBlossomURL()
-            // Prefer an external mirror so the inserted URL is publicly accessible in published notes
-            val externalBase = config.activeBlossomMirrors
-                .firstOrNull { url -> !url.contains("localhost") && !url.contains("127.0.0.1") }
+    /** The owner's media for the relay picker; see [BlossomPickerMedia]. */
+    suspend fun loadBlossomMediaItems(): List<BlossomMediaItem> = blossomPickerMedia.load()
 
-            // Dedupe across local files, the local relay, and external mirrors by sha256.
-            val items = linkedMapOf<String, MediaItem>()
+    /** Closing now should ask "Save this note as a draft?" (iOS handleCancelTapped). */
+    fun shouldAskToSaveDraft(): Boolean = composeNeedsDraftPrompt(_content.value)
 
-            fun mediaTypeFor(mime: String?, url: String?): MediaType {
-                val m = mime?.lowercase()
-                when {
-                    m != null && m.startsWith("image/") -> return MediaType.IMAGE
-                    m != null && m.startsWith("video/") -> return MediaType.VIDEO
-                    m != null && m.startsWith("audio/") -> return MediaType.AUDIO
-                }
-                return when (url?.substringAfterLast('.', "")?.lowercase()) {
-                    "jpg", "jpeg", "png", "gif", "webp" -> MediaType.IMAGE
-                    "mp4", "mov", "webm", "avi" -> MediaType.VIDEO
-                    "mp3", "m4a", "wav", "ogg" -> MediaType.AUDIO
-                    else -> MediaType.UNKNOWN
-                }
-            }
+    /** "Save Draft": write the draft now rather than waiting on the debounce. */
+    fun saveDraftNow() {
+        autoSaveJob?.cancel()
+        val text = _content.value
+        if (text.isBlank()) return
+        draftService.saveDraft(
+            Draft(
+                id = draftId,
+                content = convertMentionsToNostr(text),
+                replyToId = replyToNoteId,
+                quoteId = quoteCitedId(),
+            )
+        )
+    }
 
-            fun addItem(sha256: String, type: MediaType, fallbackUrl: String?) {
-                if (sha256.length != 64 || !sha256.all { it in "0123456789abcdef" }) return
-                if (type == MediaType.UNKNOWN) return
-                if (items.containsKey(sha256)) return
-                // Use external mirror URL (BUD-01: {server}/{sha256}) so links work in published notes;
-                // fall back to the blob's own URL, then the local relay.
-                val insertUrl = when {
-                    externalBase != null -> "$externalBase/$sha256"
-                    fallbackUrl != null -> fallbackUrl
-                    localBase != null -> "$localBase/$sha256"
-                    else -> return
-                }
-                items[sha256] = MediaItem(
-                    url = insertUrl,
-                    type = type,
-                    pubkey = pubkey,
-                    tags = null,
-                    mimeType = null
-                )
-            }
-
-            // 1. Files cached in the local relay's blossom directory.
-            val blossomDir = config.relayDataDir?.let { File(it, config.blossomPath) }
-            if (blossomDir != null && blossomDir.exists()) {
-                blossomDir.listFiles()?.forEach { file ->
-                    if (!file.isFile) return@forEach
-                    val filename = file.name
-                    if (filename.startsWith(".") || filename == "LOCK") return@forEach
-                    addItem(file.nameWithoutExtension, mediaTypeFor(null, filename), localBase?.let { "$it/$filename" })
-                }
-            }
-
-            // 2. The local relay + external mirrors via the Blossom /list/<pubkey> endpoint,
-            //    so media that lives only on a mirror still appears in the picker.
-            if (pubkey.isNotEmpty()) {
-                val sources = buildList {
-                    add(null) // local relay (default nostrURL base)
-                    addAll(config.activeBlossomMirrors)
-                }
-                val blobLists = coroutineScope {
-                    sources.map { base ->
-                        async {
-                            try {
-                                if (base == null) statsService.fetchBlobList(pubkey)
-                                else statsService.fetchBlobList(pubkey, base)
-                            } catch (e: Exception) {
-                                emptyList<BlobDescriptor>()
-                            }
-                        }
-                    }.awaitAll()
-                }
-                blobLists.flatten().forEach { blob ->
-                    val sha = blob.sha256 ?: return@forEach
-                    addItem(sha, mediaTypeFor(blob.type, blob.url), blob.url)
-                }
-            }
-
-            items.values.sortedByDescending { it.url }
-        } catch (e: Exception) {
-            Log.e("ComposeNote", "Failed to load blossom media items", e)
-            emptyList()
-        }
+    /** "Discard": drop the pending autosave and any draft this session wrote or resumed. */
+    fun discardDraft() {
+        autoSaveJob?.cancel()
+        draftService.deleteDraft(draftId)
     }
 
     private fun scheduleDraftSave() {
@@ -675,7 +754,7 @@ class ComposeNoteViewModel @Inject constructor(
                         id = draftId,
                         content = convertMentionsToNostr(text),
                         replyToId = replyToNoteId,
-                        quoteId = quoteToNoteId,
+                        quoteId = quoteCitedId(),
                     )
                 )
             }
@@ -683,8 +762,14 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     fun publish(onPublished: () -> Unit) {
+        if (_isFetchingGif.value) return
         val text = _content.value.trim()
         if (text.isBlank() && _attachments.value.isEmpty()) return
+
+        // The account this note is for, locked now: the signer reads whichever
+        // account is active when it signs, after the media upload, and the
+        // account can change in between (see PostingAccount).
+        val lock = nostrService.lockPostingAccount()
 
         viewModelScope.launch {
             _isPublishing.value = true
@@ -692,40 +777,101 @@ class ComposeNoteViewModel @Inject constructor(
             try {
                 // 1. Upload attachments first
                 // Convert `@name` display tokens back to canonical `nostr:npub…` references.
-                var finalContent = convertMentionsToNostr(text)
+                val baseContent = convertMentionsToNostr(text)
+                var finalContent = baseContent
                 // NIP-92 descriptors, filled in as each upload lands. Published
                 // as `imeta` tags so a reader can reserve the right box before
                 // the bytes arrive and can read out what the media is.
                 var mediaDescriptors: List<NoteTagging.MediaDescriptor> = emptyList()
+                // The same attachments in queue form. Any with a null url are
+                // saved on this device only; the post then waits in
+                // MediaPostQueue instead of being cancelled.
+                var queuedMedia: List<QueuedMediaPost.Media> = emptyList()
+                var unreachableServers: List<String> = emptyList()
                 if (_attachments.value.isNotEmpty()) {
                     _isUploading.value = true
-                    val uploaded = uploadAttachments()
+                    val result = uploadAttachments()
                     _isUploading.value = false
 
-                    if (uploaded == null) {
-                        _error.value = "Failed to upload media. Check your connection and try again."
-                        _isPublishing.value = false
-                        return@launch
+                    when (result) {
+                        is AttachmentUploadResult.Failed -> {
+                            _error.value = result.message
+                            _isPublishing.value = false
+                            return@launch
+                        }
+                        is AttachmentUploadResult.Done -> {
+                            queuedMedia = result.media
+                            unreachableServers = result.unreachableServers
+                        }
                     }
-                    mediaDescriptors = uploaded
 
-                    // Append media URLs to content
-                    uploaded.forEach { media ->
-                        finalContent += "\n${media.url}"
+                    if (queuedMedia.all { it.url != null }) {
+                        mediaDescriptors = queuedMedia.map { it.descriptor() }
+                        // Append media URLs to content
+                        mediaDescriptors.forEach { media ->
+                            finalContent += "\n${media.url}"
+                        }
                     }
                 }
 
-                // 2. Build tags
-                val tags = buildReplyTags().toMutableList()
-                if (quoteToNoteId != null) {
-                    val relayHint = configStore.config.value.nostrURL ?: ""
-                    val quotedPubkey = feedService.findNote(quoteToNoteId)?.pubkey ?: ""
-                    tags.add(listOf("q", quoteToNoteId, relayHint, quotedPubkey))
+                // 2. Build tags. A reply to a NIP-22 comment is itself a
+                // comment (kind 1111); everything else stays kind 1.
+                val (replyTags, eventKind) = buildReplyTags()
+                val tags = replyTags.toMutableList()
+                var quoteSuffix: String? = null
+                val quotedId = quoteCitedId()
+                if (quotedId != null) {
+                    // No relay hint: this app's relay, embedded or external,
+                    // only ever runs on this phone (see normalizeExternalRelayURL),
+                    // and naming it would point every other client at itself.
+                    val quotedPubkey = quoteTarget()?.pubkey ?: ""
+                    tags.add(listOf("q", quotedId, "", quotedPubkey))
                     if (quotedPubkey.isNotEmpty() && tags.none { it.size >= 2 && it[0] == "p" && it[1] == quotedPubkey }) {
                         tags.add(listOf("p", quotedPubkey))
                     }
-                    val note1 = HavenBridge.hexToNote1(quoteToNoteId)
-                    if (note1 != null) finalContent += "\nnostr:$note1"
+                    val note1 = HavenBridge.hexToNote1(quotedId)
+                    if (note1 != null) {
+                        quoteSuffix = "\nnostr:$note1"
+                        finalContent += "\nnostr:$note1"
+                    }
+                }
+
+                // Some media is only on this device: hand the post to the queue,
+                // which sends it once an outside server takes the media. The
+                // reply/quote/mention tags are kept; hashtags and imeta are
+                // rebuilt from the final URLs by QueuedMediaPost.assembled(),
+                // exactly as below.
+                if (queuedMedia.any { it.url == null }) {
+                    // Mentions read from the same text a direct post reads them
+                    // from, minus the media lines (URLs carry no nostr: refs).
+                    tags.addAll(extractMentionPTags(baseContent + (quoteSuffix ?: ""), tags))
+                    val queued = QueuedMediaPost(
+                        accountNpub = lock.npub,
+                        body = baseContent,
+                        media = queuedMedia,
+                        quoteSuffix = quoteSuffix,
+                        baseTags = tags,
+                        kind = eventKind,
+                    )
+                    mediaPostQueue.enqueue(queued)
+                    // The queue now holds the post on disk; a draft too would
+                    // offer to post it a second time.
+                    autoSaveJob?.cancel()
+                    draftService.deleteDraft(draftId)
+                    val macHost = configStore.config.value.macRelayHttpsURL
+                        .takeIf { it.isNotEmpty() }?.let { hostOf(it) }
+                    notificationManager.showError(
+                        MediaUploadOutcomeMessage.queued(
+                            hosts = unreachableServers.mapNotNull { hostOf(it) },
+                            macHost = macHost,
+                        ),
+                        ErrorStyle.WARNING,
+                    )
+                    _isPublishing.value = false
+                    // Posted or queued: the upload kept its own copy, so the GIF copies go.
+                    deleteGifCopies(_attachments.value)
+                    onPublished()
+                    return@launch
                 }
 
                 // 2b. Add p-tags for inline @mentions (nostr:npub/nprofile refs).
@@ -741,9 +887,14 @@ class ComposeNoteViewModel @Inject constructor(
                 // 2d. NIP-92 `imeta`, one per uploaded attachment, in content order.
                 tags.addAll(NoteTagging.imetaTags(mediaDescriptors))
 
-                // 3. Sign and publish
-                val event = nostrService.signEventAsync(kind = 1, content = finalContent, tags = tags)
+                // 3. Sign and publish — but not as an account switched to during
+                // the upload: that would ask the new account's signer to sign it.
+                val event = nostrService.signEventAsync(kind = eventKind, content = finalContent, tags = tags, lockedTo = lock)
                 if (event != null) {
+                    // Checked again here, on the main thread in the same turn that
+                    // hands the note to PendingPostManager, so no switch can slip
+                    // in between the check and the hand-off.
+                    nostrService.requireStillPostingAs(lock, eventPubkey = event.pubkey)
                     // Optimistic insert: inject the note immediately so the thread
                     // view shows it before relay confirmation (mirrors iOS behavior).
                     feedService.emitOptimisticNote(
@@ -753,27 +904,46 @@ class ComposeNoteViewModel @Inject constructor(
                             content = finalContent,
                             tags = tags,
                             createdAt = event.createdAt,
-                            kind = 1,
+                            kind = eventKind,
                         )
                     )
                     val replyNote = replyToNoteId?.let { feedService.findNote(it) }
-                    val quoteNote = quoteToNoteId?.let { feedService.findNote(it) }
+                    val quoteNote = quoteTarget()
                     pendingPostManager.startPost(
                         event = event,
                         content = finalContent,
                         replyTo = replyNote,
                         quoteTo = quoteNote,
-                    ) { evt ->
-                        nostrService.postEvent(evt)
+                    ) { evt, onOutcome ->
+                        nostrService.postEvent(evt, onBroadcastOutcome = onOutcome)
                     }
                     // Delete draft on successful publish
                     autoSaveJob?.cancel()
                     draftService.deleteDraft(draftId)
+                    // Posted or queued: the upload kept its own copy, so the GIF copies go.
+                    deleteGifCopies(_attachments.value)
                     onPublished()
                 } else {
-                    Log.e("ComposeNote", "signEventAsync returned null for kind=1")
+                    Log.e("ComposeNote", "signEventAsync returned null for kind=$eventKind")
                     _error.value = "Failed to sign note"
                 }
+            } catch (e: PostingAccount.AccountChangedException) {
+                // Keep the note: save it as a draft now (the debounced autosave
+                // may not have run), and show a banner in case the switch closed
+                // this screen.
+                if (text.isNotBlank()) {
+                    draftService.saveDraft(
+                        Draft(
+                            id = draftId,
+                            content = convertMentionsToNostr(text),
+                            replyToId = replyToNoteId,
+                            quoteId = quoteCitedId(),
+                        )
+                    )
+                }
+                val message = if (text.isNotBlank()) PostingAccount.NOTE_MESSAGE else PostingAccount.MESSAGE
+                notificationManager.showError(message)
+                _error.value = message
             } catch (e: Exception) {
                 Log.e("ComposeNote", "publish failed", e)
                 _error.value = e.message ?: "Failed to publish"
@@ -782,10 +952,46 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
-    private suspend fun uploadAttachments(): List<NoteTagging.MediaDescriptor>? = withContext(Dispatchers.IO) {
-        val uploaded = mutableListOf<NoteTagging.MediaDescriptor>()
+    /** How the attachments of one post ended up. */
+    private sealed class AttachmentUploadResult {
+        /**
+         * Every attachment is at least on this device. A null [QueuedMediaPost.Media.url]
+         * means no outside server took it yet; [unreachableServers] is what was tried.
+         */
+        data class Done(
+            val media: List<QueuedMediaPost.Media>,
+            val unreachableServers: List<String>,
+        ) : AttachmentUploadResult()
+
+        /** The post cannot be sent or queued; [message] says why. */
+        data class Failed(val message: String) : AttachmentUploadResult()
+    }
+
+    private suspend fun uploadAttachments(): AttachmentUploadResult = withContext(Dispatchers.IO) {
+        val uploaded = mutableListOf<QueuedMediaPost.Media>()
+        // Set once an attachment found every outside server down; the rest of
+        // this post's attachments are then saved on this device only, instead
+        // of each waiting out the same 10 s retry.
+        var unreachableServers: List<String> = emptyList()
+        val notSaved = AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
 
         for ((index, attachment) in _attachments.value.withIndex()) {
+            // Picked from the relay: already hosted, publish its URL as-is.
+            if (attachment.hostedUrl != null) {
+                val pixelSize = attachment.localFile?.takeIf { it.exists() }?.let { pixelSize(it, attachment.isVideo) }
+                uploaded.add(
+                    QueuedMediaPost.Media(
+                        sha256 = attachment.sha256,
+                        mimeType = attachment.mimeType.takeUnless { it.endsWith("/*") },
+                        url = attachment.hostedUrl,
+                        pixelWidth = pixelSize?.first,
+                        pixelHeight = pixelSize?.second,
+                        alt = attachment.altText,
+                        byteCount = attachment.byteCount,
+                    )
+                )
+                continue
+            }
             withContext(Dispatchers.Main) {
                 val mediaType = if (attachment.isVideo) "video" else "image"
                 _uploadMessage.value = "Uploading $mediaType (${index + 1} of ${_attachments.value.size})..."
@@ -794,13 +1000,20 @@ class ComposeNoteViewModel @Inject constructor(
             try {
                 // Read file from URI
                 val inputStream = context.contentResolver.openInputStream(attachment.uri)
-                    ?: return@withContext null
+                    ?: return@withContext notSaved
 
                 val tempFile = File.createTempFile("upload_", ".tmp", context.cacheDir)
                 tempFile.outputStream().use { output ->
                     inputStream.use { input ->
                         input.copyTo(output)
                     }
+                }
+
+                // The location comes out before the hash: the blob is public
+                // once uploaded (iOS #335).
+                if (!MediaPrivacy.removeLocation(tempFile, attachment.mimeType)) {
+                    tempFile.delete()
+                    return@withContext AttachmentUploadResult.Failed(MediaPrivacy.FAILURE_MESSAGE)
                 }
 
                 // Compute SHA-256
@@ -811,10 +1024,11 @@ class ComposeNoteViewModel @Inject constructor(
                 val byteCount = tempFile.length()
 
                 // Upload with progress
-                val url = blossomService.uploadAndMirror(
+                val outcome = blossomService.uploadForPost(
                     fileURL = tempFile,
                     sha256 = sha256,
                     contentType = attachment.mimeType,
+                    skipOutsideServers = unreachableServers.isNotEmpty(),
                     onProgress = { progress ->
                         viewModelScope.launch(Dispatchers.Main) {
                             val pct = (progress * 100).toInt()
@@ -827,24 +1041,33 @@ class ComposeNoteViewModel @Inject constructor(
                 // Clean up temp file
                 tempFile.delete()
 
-                if (url != null) {
-                    uploaded.add(
-                        NoteTagging.MediaDescriptor(
-                            url = url,
-                            mimeType = attachment.mimeType,
-                            sha256 = sha256,
-                            pixelWidth = pixelSize?.first,
-                            pixelHeight = pixelSize?.second,
-                            alt = attachment.altText,
-                            byteCount = byteCount,
-                        )
-                    )
-                } else {
-                    return@withContext null
+                val url = when (outcome) {
+                    is BlossomService.PostUploadOutcome.Hosted -> outcome.url
+                    is BlossomService.PostUploadOutcome.SavedOnDevice -> {
+                        // Safe on this device; the post will wait for a server.
+                        unreachableServers = outcome.unreachable
+                        null
+                    }
+                    BlossomService.PostUploadOutcome.NoOutsideServer ->
+                        return@withContext AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NO_OUTSIDE_SERVER)
+                    BlossomService.PostUploadOutcome.NotSavedOnDevice ->
+                        return@withContext notSaved
                 }
+
+                uploaded.add(
+                    QueuedMediaPost.Media(
+                        sha256 = sha256,
+                        mimeType = attachment.mimeType,
+                        url = url,
+                        pixelWidth = pixelSize?.first,
+                        pixelHeight = pixelSize?.second,
+                        alt = attachment.altText,
+                        byteCount = byteCount,
+                    )
+                )
             } catch (e: Exception) {
                 Log.e("ComposeNote", "Upload failed", e)
-                return@withContext null
+                return@withContext notSaved
             }
         }
 
@@ -852,8 +1075,12 @@ class ComposeNoteViewModel @Inject constructor(
             _uploadMessage.value = null
         }
 
-        uploaded
+        AttachmentUploadResult.Done(uploaded, unreachableServers)
     }
+
+    /** Host of a server URL, for naming it in a message. */
+    private fun hostOf(url: String): String? =
+        runCatching { java.net.URI(url).host }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     /**
      * Pixel dimensions of a local media file, as `width to height`.
@@ -893,29 +1120,51 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     /**
-     * Build NIP-10 reply tags (e-tags with root/reply markers + p-tag for author).
-     * Returns empty list for new top-level notes.
+     * Build reply tags and the kind to sign them with. Answering a NIP-22
+     * comment (kind 1111) sends a comment scoped to the same root
+     * ([NIP10Thread.commentReplyTags]); everything else is a kind 1 reply
+     * with NIP-10 e-tags (root/reply markers) + p-tag for the author.
+     * Returns an empty list and kind 1 for new top-level notes.
      */
-    private fun buildReplyTags(): List<List<String>> {
-        val parentId = replyToNoteId ?: return emptyList()
-        val parentNote = feedService.findNote(parentId) ?: return emptyList()
+    private fun buildReplyTags(): Pair<List<List<String>>, Int> {
+        val parentId = replyToNoteId ?: return emptyList<List<String>>() to 1
+        // A repost is answered as the note it carries: findNote on the
+        // original's id can return the wrapper, whose kind (6) would make this
+        // a NIP-22 comment and, for a bare repost, name the reposter.
+        val parentNote = feedService.quoteTarget(parentId) ?: return emptyList<List<String>>() to 1
 
         val tags = mutableListOf<List<String>>()
+
+        val effectiveParentKind = parentNote.effectiveKind
+        // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply, anything
+        // else a NIP-22 comment. No switch to explain.
+        val eventKind = NIP10Thread.replyKind(effectiveParentKind)
+        if (eventKind == NIP10Thread.COMMENT_KIND) {
+            // NIP-22: on a comment, copy its root and point at it; on anything
+            // else the parent is the root (E, or A alone for addressables and
+            // replaceables). The tags already name the parent author.
+            tags.addAll(NIP10Thread.commentTags(
+                parentId = parentNote.effectiveEventId,
+                parentKind = effectiveParentKind,
+                parentPubkey = parentNote.pubkey,
+                parentTags = parentNote.tags,
+                relayHint = configStore.config.value.nostrURL ?: "",
+            ))
+            // NIP-10 still holds for notification fan-out: carry the parent's
+            // p tags (thread participants), deduplicated.
+            val seen = mutableSetOf(parentNote.pubkey)
+            for (tag in parentNote.tags) {
+                if (tag.size >= 2 && tag[0] == "p" && seen.add(tag[1])) {
+                    tags.add(listOf("p", tag[1]))
+                }
+            }
+            return tags to eventKind
+        }
 
         // Determine thread structure from parent's tags
         val parentETags = parentNote.tags.filter { it.size >= 2 && it[0] == "e" }
         val parentNonMentionETags = parentETags.filter { it.size < 4 || it[3] != "mention" }
 
-        // NIP-10/NIP-01: addressable-event a-tags, alongside the e-tags above. A
-        // parameterized replaceable event (kind 30000–39999, e.g. a long-form article)
-        // gets a new event id every time it's edited, so an e-tag-only reply silently
-        // becomes orphaned from other clients' view of the thread once the author edits
-        // it — the "a" coordinate (kind:pubkey:d-tag) is what stays stable across edits.
-        fun addressableCoordinate(kind: Int, pubkey: String, noteTags: List<List<String>>): String? {
-            if (kind < 30000 || kind >= 40000) return null
-            val dTag = noteTags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
-            return "$kind:$pubkey:$dTag"
-        }
         val parentNonMentionATags = parentNote.tags.filter { it.size >= 2 && it[0] == "a" }
             .filter { it.size < 4 || it[3] != "mention" }
 
@@ -923,10 +1172,7 @@ class ComposeNoteViewModel @Inject constructor(
             // Parent IS the root note — single e-tag with "root" marker. NIP-10: the
             // optional 5th element is the event author's pubkey, used by the outbox
             // model to know whose relays to fetch it from.
-            tags.add(listOf("e", parentId, "", "root", parentNote.pubkey))
-            addressableCoordinate(parentNote.kind, parentNote.pubkey, parentNote.tags)?.let { coord ->
-                tags.add(listOf("a", coord, "", "root"))
-            }
+            tags.add(listOf("e", parentNote.id, "", "root", parentNote.pubkey))
         } else {
             // Parent is itself a reply — find the thread root
             val rootTag = parentNonMentionETags.firstOrNull { it.size >= 4 && it[3] == "root" }
@@ -937,18 +1183,13 @@ class ComposeNoteViewModel @Inject constructor(
                 if (threadRootPubkey != null) listOf("e", threadRootId, "", "root", threadRootPubkey)
                 else listOf("e", threadRootId, "", "root")
             )
-            tags.add(listOf("e", parentId, "", "reply", parentNote.pubkey))
+            tags.add(listOf("e", parentNote.id, "", "reply", parentNote.pubkey))
 
-            // Root a-tag: we only have the root's event id here (not its kind/pubkey/
-            // d-tag), so propagate it forward from the parent's own root a-tag if it had one.
+            // A legacy thread under an addressable root carries its coordinate
+            // forward. a/A tags have no marker field.
             val rootATag = parentNonMentionATags.firstOrNull { it.size >= 4 && it[3] == "root" }
                 ?: parentNonMentionATags.firstOrNull()
-            rootATag?.let { tags.add(listOf("a", it[1], "", "root")) }
-
-            // Reply a-tag: the immediate parent might itself be addressable.
-            addressableCoordinate(parentNote.kind, parentNote.pubkey, parentNote.tags)?.let { coord ->
-                tags.add(listOf("a", coord, "", "reply"))
-            }
+            rootATag?.let { tags.add(listOf("a", it[1], "")) }
         }
 
         // Always tag the parent author
@@ -964,7 +1205,7 @@ class ComposeNoteViewModel @Inject constructor(
             }
         }
 
-        return tags
+        return tags to eventKind
     }
 
     /**
@@ -985,6 +1226,15 @@ class ComposeNoteViewModel @Inject constructor(
     }
 }
 
+/**
+ * Whether closing the composer with [content] asks to keep it as a draft: more
+ * than a stray word, the same bar iOS ComposeView.handleCancelTapped uses.
+ */
+internal fun composeNeedsDraftPrompt(content: String): Boolean {
+    val trimmed = content.trim()
+    return trimmed.isNotEmpty() && (trimmed.contains(' ') || trimmed.length > 10)
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComposeNoteScreen(
@@ -996,6 +1246,7 @@ fun ComposeNoteScreen(
 ) {
     val content by viewModel.content.collectAsState()
     val drafts by viewModel.drafts.collectAsState()
+    val fetchingGif by viewModel.isFetchingGif.collectAsState()
     val isPublishing by viewModel.isPublishing.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
     val uploadMessage by viewModel.uploadMessage.collectAsState()
@@ -1009,6 +1260,13 @@ fun ComposeNoteScreen(
     val accounts by viewModel.accounts.collectAsState()
     val activeAccount by viewModel.activeAccount.collectAsState()
     var showAccountSwitcher by remember { mutableStateOf(false) }
+    // "Save this note as a draft?" — the X and the back gesture both ask once
+    // there is something worth keeping (iOS ComposeView).
+    var showDraftPrompt by remember { mutableStateOf(false) }
+    val requestClose: () -> Unit = {
+        if (viewModel.shouldAskToSaveDraft()) showDraftPrompt = true else onBack()
+    }
+    BackHandler(enabled = !isPublishing, onBack = requestClose)
     // The attachment whose ALT text is being written; null = sheet closed.
     var altEditorTarget by remember { mutableStateOf<Attachment?>(null) }
     val colors = LocalNostrVaultColors.current
@@ -1027,6 +1285,43 @@ fun ComposeNoteScreen(
     val attachmentLimitReached = attachments.size >= MAX_ATTACHMENTS
 
     // Image picker launcher
+    if (showDraftPrompt) {
+        AlertDialog(
+            onDismissRequest = { showDraftPrompt = false },
+            title = { Text("Save this note as a draft?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDraftPrompt = false
+                    viewModel.saveDraftNow()
+                    onBack()
+                }) { Text("Save Draft") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        showDraftPrompt = false
+                        viewModel.discardDraft()
+                        onBack()
+                    }) { Text("Discard", color = ErrorRed) }
+                    TextButton(onClick = { showDraftPrompt = false }) { Text("Keep Editing") }
+                }
+            },
+        )
+    }
+
+    var showGifPicker by remember { mutableStateOf(false) }
+    if (showGifPicker) {
+        val saveGifs by viewModel.saveGifsToBlossom.collectAsState()
+        com.nostrvault.ui.components.GifPickerSheet(
+            onPick = { gif ->
+                showGifPicker = false
+                viewModel.pickGif(gif)
+            },
+            onDismiss = { showGifPicker = false },
+            saveToBlossom = saveGifs,
+            onSaveToBlossomChange = viewModel::setSaveGifsToBlossom,
+        )
+    }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
@@ -1057,7 +1352,7 @@ fun ComposeNoteScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = requestClose) {
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
                     }
                 },
@@ -1092,7 +1387,7 @@ fun ComposeNoteScreen(
                     }
                     Button(
                         onClick = { viewModel.publish(onPublished) },
-                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !isUploading,
+                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !isUploading && !fetchingGif,
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -1305,6 +1600,24 @@ fun ComposeNoteScreen(
                     )
                 }
 
+                // GIF picker (nostr.build). Hidden when this build has no API
+                // key: a picker that finds nothing must not ship.
+                if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
+                    IconButton(
+                        onClick = { showGifPicker = true },
+                        enabled = !fetchingGif,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(colors.primary.copy(alpha = 0.1f), CircleShape),
+                    ) {
+                        if (fetchingGif) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
+                        } else {
+                            Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+
                 // Video picker button
                 IconButton(
                     onClick = {
@@ -1378,7 +1691,8 @@ fun ComposeNoteScreen(
     if (showBlossomPicker) {
         BlossomMediaPickerSheet(
             onDismiss = { viewModel.setShowBlossomPicker(false) },
-            onSelect = { url -> viewModel.addBlossomMedia(url) }
+            onSelect = { item -> viewModel.addBlossomMedia(item) },
+            loadItems = viewModel::loadBlossomMediaItems,
         )
     }
 
@@ -1595,21 +1909,36 @@ private fun AltTextSheet(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun BlossomMediaPickerSheet(
+internal fun BlossomMediaPickerSheet(
     onDismiss: () -> Unit,
-    onSelect: (String) -> Unit,
-    viewModel: ComposeNoteViewModel = hiltViewModel()
+    onSelect: (BlossomMediaItem) -> Unit,
+    /** Shared with the live stream chat, so the loader comes from the caller. */
+    loadItems: suspend () -> List<BlossomMediaItem>,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
-    var blossomMedia by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    // The Media tab's type filter, shared both ways as on iOS.
+    val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
+    // The Media tab's sort, so the headings match what that tab shows (iOS
+    // reads the same MediaSortOption setting).
+    val sortOption = remember {
+        MediaSortOption.fromKey(
+            context.getSharedPreferences(MEDIA_GALLERY_PREFS, Context.MODE_PRIVATE)
+                .getString(MediaSortOption.STORAGE_KEY, null),
+        )
+    }
+    val shownMedia = remember(blossomMedia, typeSelection) {
+        sortOption.sorted(blossomMedia.filter { MediaTypeSelection.matches(typeSelection, it) })
+    }
+    val sections = remember(shownMedia) { MediaDateGrouping.sections(shownMedia, sortOption) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
                 // Load blossom media from local relay
-                val items = viewModel.loadBlossomMediaItems()
+                val items = loadItems()
                 withContext(Dispatchers.Main) {
                     blossomMedia = items
                     isLoading = false
@@ -1627,18 +1956,32 @@ private fun BlossomMediaPickerSheet(
         onDismissRequest = onDismiss,
         containerColor = WindowBackground
     ) {
+        // The grid runs 8 from the edges; the title and filter keep 16.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(vertical = 16.dp)
         ) {
             Text(
                 text = "Pick from Blossom",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = PrimaryText,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
             )
+            // The Media tab's filter; the composer attaches photos and videos only.
+            Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                MediaTypeFilterPill(
+                    selection = typeSelection,
+                    onSelect = onTypeTap,
+                    filters = listOf(
+                        MediaTypeFilter.ALL,
+                        MediaTypeFilter.PHOTO,
+                        MediaTypeFilter.VIDEO,
+                        MediaTypeFilter.GIF,
+                    ),
+                )
+            }
 
             if (isLoading) {
                 Box(
@@ -1649,7 +1992,7 @@ private fun BlossomMediaPickerSheet(
                 ) {
                     CircularProgressIndicator(color = colors.primary)
                 }
-            } else if (blossomMedia.isEmpty()) {
+            } else if (shownMedia.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1657,48 +2000,63 @@ private fun BlossomMediaPickerSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No media on Blossom",
+                        text = if (blossomMedia.isEmpty()) "No media on Blossom" else "Nothing of this type",
                         color = SecondaryText,
                         fontSize = 14.sp
                     )
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                // The Media tab's date headings, pinned while their run
+                // scrolls, with iOS's 6 between cells, 8 between rows and 8 at
+                // the edges. A grid has no pinned headers in this Compose
+                // version, so rows of three go in a list.
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
                     modifier = Modifier.heightIn(max = 400.dp)
                 ) {
-                    items(blossomMedia) { item ->
-                        Box(
-                            modifier = Modifier
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .combinedClickable(
-                                    onClick = { onSelect(item.url) },
-                                    onLongClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.url))
-                                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                        ) {
-                            AsyncImage(
-                                model = item.url,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            stickyHeader(key = "header:${section.title}") { MediaSectionHeader(section.title) }
+                        }
+                        items(section.items.chunked(3), key = { row -> row.first().sha256 }) { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                row.forEach { item ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .combinedClickable(
+                                                onClick = { onSelect(item) },
+                                                onLongClick = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.displayUrl))
+                                                    Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                    ) {
+                                        AsyncImage(
+                                            model = item.localFile ?: item.displayUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
 
-                            if (item.type == MediaType.VIDEO) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Video",
-                                    tint = Color.White,
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .size(32.dp)
-                                )
+                                        if (item.isVideo) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Video",
+                                                tint = Color.White,
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(32.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                // A short last row keeps its cells the same size.
+                                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }

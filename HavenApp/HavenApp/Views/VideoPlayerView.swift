@@ -13,6 +13,20 @@ import UIKit
 class AudioSessionManager {
     static let shared = AudioSessionManager()
 
+    /// True while the app-wide player (`MusicPlayerService`: a song, or a
+    /// minimized live stream) is playing. Video surfaces hand the session back
+    /// to `.ambient` when they go — and `.ambient` is silenced by the lock
+    /// screen and the ring/silent switch, so doing that under the mini player
+    /// killed its sound the moment the phone locked. Minimizing a live stream
+    /// did it every time: the dismissed video player restored mixing right
+    /// after the mini player had claimed `.playback`.
+    var appAudioIsPlaying = false
+
+    /// Pauses the app-wide player when a video takes the sound over. Taking
+    /// the session deactivates it, which silences the mini player without
+    /// telling it, so it went on showing "playing" with nothing coming out.
+    var pauseAppAudio: (() -> Void)?
+
     #if os(iOS)
     private var interruptionObserver: NSObjectProtocol?
 
@@ -52,6 +66,8 @@ class AudioSessionManager {
         // hit constantly by inline feed players spinning up during scroll; PiPManager
         // restores the mixing session itself when PiP ends.
         if PiPManager.shared.isPiPActive { return }
+        // The mini player owns the session; see `appAudioIsPlaying`.
+        if appAudioIsPlaying { return }
         do {
             let audioSession = AVAudioSession.sharedInstance()
             // Already mixing: nothing to hand back, and deactivating would stop
@@ -83,6 +99,7 @@ class AudioSessionManager {
                 try audioSession.setActive(true)
                 return
             }
+            if appAudioIsPlaying { pauseAppAudio?() }
             // Deactivate current session first to ensure clean transition
             try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
 
@@ -687,6 +704,8 @@ struct InlinePlayerLayer: NSViewRepresentable {
     var videoGravity: AVLayerVideoGravity = .resizeAspectFill
     /// Called with the backing AVPlayerLayer once created (used to wire up PiP on iOS).
     var onLayerReady: ((AVPlayerLayer) -> Void)? = nil
+    /// iOS only: macOS keeps a layer's player playing in the background.
+    var keepsPlayingInBackground = false
 
     func makeNSView(context: Context) -> PlayerNSView {
         let view = PlayerNSView()
@@ -742,19 +761,26 @@ struct InlinePlayerLayer: UIViewRepresentable {
     var videoGravity: AVLayerVideoGravity = .resizeAspectFill
     /// Called with the backing AVPlayerLayer once created (used to wire up PiP).
     var onLayerReady: ((AVPlayerLayer) -> Void)? = nil
+    /// For a player whose sound carries on without its picture — the mini
+    /// player's live stream. iOS pauses any player still attached to a layer
+    /// when the app goes to the background, so showing the stream's video in
+    /// the mini player (or the pop-out window) stopped its sound the moment
+    /// you left the app (Logen, 2026-10-06). The layer lets go of the player
+    /// while the app is away and takes it back on return.
+    var keepsPlayingInBackground = false
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
-        view.playerLayer.player = player
+        view.keepsPlayingInBackground = keepsPlayingInBackground
+        view.attach(player)
         view.playerLayer.videoGravity = videoGravity
         onLayerReady?(view.playerLayer)
         return view
     }
 
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
-        if uiView.playerLayer.player != player {
-            uiView.playerLayer.player = player
-        }
+        uiView.keepsPlayingInBackground = keepsPlayingInBackground
+        uiView.attach(player)
         if uiView.playerLayer.videoGravity != videoGravity {
             uiView.playerLayer.videoGravity = videoGravity
         }
@@ -764,12 +790,55 @@ struct InlinePlayerLayer: UIViewRepresentable {
         // PiP keeps rendering from this layer after the view leaves the hierarchy —
         // unhooking the player here would blank the PiP window.
         if PiPManager.shared.ownsLayer(uiView.playerLayer) { return }
+        uiView.parkedPlayer = nil
         uiView.playerLayer.player = nil
     }
 
     class PlayerUIView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+        var keepsPlayingInBackground = false
+        /// The player let go of while the app is in the background.
+        fileprivate var parkedPlayer: AVPlayer?
+        private var observers: [NSObjectProtocol] = []
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            let center = NotificationCenter.default
+            observers = [
+                center.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                   object: nil, queue: .main) { [weak self] _ in self?.park() },
+                center.addObserver(forName: UIApplication.willEnterForegroundNotification,
+                                   object: nil, queue: .main) { [weak self] _ in self?.unpark() },
+            ]
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+        /// Shows `player`, or holds it until the app is back if it is parked.
+        func attach(_ player: AVPlayer) {
+            if parkedPlayer != nil {
+                parkedPlayer = player
+            } else if playerLayer.player != player {
+                playerLayer.player = player
+            }
+        }
+
+        private func park() {
+            guard keepsPlayingInBackground, let player = playerLayer.player,
+                  !PiPManager.shared.ownsLayer(playerLayer) else { return }
+            parkedPlayer = player
+            playerLayer.player = nil
+        }
+
+        private func unpark() {
+            guard let player = parkedPlayer else { return }
+            parkedPlayer = nil
+            playerLayer.player = player
+        }
     }
 }
 #endif
@@ -825,6 +894,9 @@ struct VideoControlBar: View {
     var onPiP: (() -> Void)? = nil
     /// Called on any control interaction so the container can restart its auto-hide timer.
     var onInteract: (() -> Void)? = nil
+    /// Play for a live stream: rejoins the broadcast instead of `play()`,
+    /// which does nothing on an item left behind the live window.
+    var onResumeLive: (() -> Void)? = nil
 
     @State private var isPlaying: Bool = true
     @State private var isMuted: Bool = false
@@ -836,7 +908,13 @@ struct VideoControlBar: View {
         HStack(spacing: 12) {
             Button {
                 onInteract?()
-                if isPlaying { player.pause() } else { player.play() }
+                if isPlaying {
+                    player.pause()
+                } else if let onResumeLive {
+                    onResumeLive()
+                } else {
+                    player.play()
+                }
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.appSystem(size: 18, weight: .semibold))
@@ -930,6 +1008,12 @@ struct FullScreenVideoPlayer: View {
     var mimeType: String? = nil
     /// Called when PiP takes over so the presenting viewer can dismiss itself.
     var onPiPStart: (() -> Void)? = nil
+    /// Someone else's player to show — the mini player's, for a live stream
+    /// popped out of it. Its sound and audio session stay theirs: nothing is
+    /// started, muted or handed back here, and PiP stays off.
+    var sharedPlayer: AVPlayer? = nil
+    /// Play on a shared player, which its owner rejoins the broadcast for.
+    var onSharedResume: (() -> Void)? = nil
 
     @State private var player: AVPlayer?
     @ObservedObject private var failures = VideoPlaybackFailures.shared
@@ -955,9 +1039,9 @@ struct FullScreenVideoPlayer: View {
             } else if let player = player {
                 InlinePlayerLayer(player: player, videoGravity: .resizeAspect, onLayerReady: { layer in
                     #if os(iOS)
-                    PiPManager.shared.attach(layer: layer, url: url)
+                    if sharedPlayer == nil { PiPManager.shared.attach(layer: layer, url: url) }
                     #endif
-                })
+                }, keepsPlayingInBackground: sharedPlayer != nil)
                 .allowsHitTesting(false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -967,7 +1051,8 @@ struct FullScreenVideoPlayer: View {
             if let player = player, showControls {
                 VStack {
                     Spacer()
-                    VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide)
+                    VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide,
+                                    onResumeLive: sharedPlayer != nil ? onSharedResume : isLive ? { rejoinLive() } : nil)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
                         .background(alignment: .bottom) {
@@ -991,6 +1076,11 @@ struct FullScreenVideoPlayer: View {
             if showControls { scheduleAutoHide() }
         }
         .onAppear {
+            if let sharedPlayer {
+                player = sharedPlayer
+                scheduleAutoHide()
+                return
+            }
             #if os(iOS)
             // Opening a new video full-screen takes over from any running PiP
             if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL != url {
@@ -1004,9 +1094,25 @@ struct FullScreenVideoPlayer: View {
             setupPlayer()
             scheduleAutoHide()
         }
+        #if os(iOS)
+        // Back from another app: a live stream on screen carries on with the
+        // broadcast. Left alone it sat paused behind the live window, and Play
+        // did nothing (Logen, 2026-10-04: after watching video in another app).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            guard isLive, sharedPlayer == nil, let player, player.timeControlStatus != .playing,
+                  VideoPlayerCache.shared.activeFullScreenURL == url else { return }
+            rejoinLive()
+        }
+        #endif
         .onDisappear {
             hideControlsWork?.cancel()
             hideControlsWork = nil
+            if sharedPlayer != nil {
+                // Muted here, the mini player would carry on silent.
+                player?.isMuted = false
+                player = nil
+                return
+            }
             #if os(iOS)
             if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL == url {
                 // PiP owns playback now — leave the player, audio session, and
@@ -1026,10 +1132,17 @@ struct FullScreenVideoPlayer: View {
         }
     }
 
+    private var isLive: Bool { url.pathExtension.lowercased() == "m3u8" }
+
+    private func rejoinLive() {
+        guard let player else { return }
+        VideoPlaybackService.shared.rejoinLive(player, sourceURL: url)
+    }
+
     /// Non-nil only when PiP can actually start right now.
     private var pipAction: (() -> Void)? {
         #if os(iOS)
-        guard pipManager.isPiPPossible else { return nil }
+        guard sharedPlayer == nil, pipManager.isPiPPossible else { return nil }
         return { PiPManager.shared.start() }
         #else
         return nil

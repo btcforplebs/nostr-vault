@@ -32,17 +32,6 @@ class ImportSettingsViewModel @Inject constructor(
 
     fun setStartDate(date: String) = configStore.update { it.copy(importStartDate = date) }
 
-    fun addSeedRelay(url: String) {
-        val clean = url.trim().let { if (it.startsWith("wss://") || it.startsWith("ws://")) it else "wss://$it" }
-        configStore.update { cfg ->
-            if (clean in cfg.importSeedRelays) cfg
-            else cfg.copy(importSeedRelays = cfg.importSeedRelays + clean)
-        }
-    }
-
-    fun removeSeedRelay(url: String) =
-        configStore.update { it.copy(importSeedRelays = it.importSeedRelays.filter { r -> r != url }) }
-
     fun startImport() = relayImportService.importNotes()
 }
 
@@ -56,9 +45,8 @@ fun ImportSettingsScreen(
     val isImporting by viewModel.isImporting.collectAsState()
     val progress by viewModel.importProgress.collectAsState()
     val status by viewModel.statusMessage.collectAsState()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val colors = LocalNostrVaultColors.current
-
-    var newRelay by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -86,11 +74,12 @@ fun ImportSettingsScreen(
                 .padding(16.dp),
         ) {
             SectionLabel("Import Configuration")
-            OutlinedTextField(
+            // Commits on Done / focus loss / leaving: the start date is part of
+            // the relay's start config, so saving it restarts the relay.
+            CommitOnEndTextField(
                 value = config.importStartDate,
-                onValueChange = viewModel::setStartDate,
+                onCommit = viewModel::setStartDate,
                 label = { Text("Start Date (YYYY-MM-DD)") },
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = PrimaryText,
@@ -107,40 +96,11 @@ fun ImportSettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            SectionLabel("Seed Relays")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = newRelay,
-                    onValueChange = { newRelay = it },
-                    placeholder = { Text("wss://relay.example.com") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = PrimaryText,
-                        unfocusedTextColor = PrimaryText,
-                        cursorColor = colors.primary,
-                        focusedBorderColor = colors.primary,
-                    ),
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { viewModel.addSeedRelay(newRelay); newRelay = "" },
-                    enabled = newRelay.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                ) { Text("Add") }
-            }
-            Spacer(Modifier.height(8.dp))
-            config.importSeedRelays.forEach { relay ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                ) {
-                    Text(relay, color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.removeSeedRelay(relay) }) {
-                        Icon(NostrVaultIcons.Dismiss, contentDescription = "Remove", tint = ErrorRed)
-                    }
-                }
-            }
+            Text(
+                "Import pulls from the relays with Import on, in Settings > Relays.",
+                color = SecondaryText, fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             Text(
                 "The import fetches your own notes and notes where you are tagged. " +
                     "Make sure your npub is set correctly.",
@@ -160,7 +120,12 @@ fun ImportSettingsScreen(
                 Text(status, color = SecondaryText, fontSize = 13.sp)
             } else {
                 Button(
-                    onClick = { viewModel.startImport() },
+                    onClick = {
+                        // Commits a start date still being typed before the
+                        // import reads the config.
+                        focusManager.clearFocus()
+                        viewModel.startImport()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 ) { Text("Start Import") }

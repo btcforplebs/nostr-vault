@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -146,10 +147,15 @@ class AmberSignerService @Inject constructor(
      * bug elsewhere), fail loudly here instead of silently signing as the owner
      * while purporting to act for a different account.
      */
-    suspend fun signEvent(unsignedEventJson: String): String? {
+    /**
+     * @param asOwner signing an owner-forced event (relay AUTH, owner lists)
+     *   while another account is active. Amber holds the owner's key, so that
+     *   is allowed; the caller still checks the result's pubkey.
+     */
+    suspend fun signEvent(unsignedEventJson: String, asOwner: Boolean = false): String? {
         val config = configStore.config.value
         val activeNpub = config.activeAccountNpub
-        if (!activeNpub.isNullOrEmpty() && activeNpub != config.ownerNpub) {
+        if (!asOwner && !activeNpub.isNullOrEmpty() && activeNpub != config.ownerNpub) {
             Log.e(TAG, "signEvent: refusing to sign — active account ($activeNpub) is not the owner, and Amber has no per-account identity to sign as")
             return null
         }
@@ -245,7 +251,7 @@ class AmberSignerService @Inject constructor(
         val ok = result != null && !result.rejected &&
             result.resultCode == android.app.Activity.RESULT_OK
         if (ok) result.pubkey?.let { if (it.isNotEmpty()) cachedPubkey = it }
-        Log.w(TAG, "DBG: requestBackgroundPermission ok=$ok")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: requestBackgroundPermission ok=$ok")
         return ok
     }
 
@@ -273,7 +279,7 @@ class AmberSignerService @Inject constructor(
         // no-ops (no prompt, no content query) and DMs never decrypt.
         if (cachedPubkey == null) restoreCachedPubkey()
         val currentUser = cachedPubkey ?: run {
-            Log.w(TAG, "DBG: cryptoOp $intentType cachedPubkey NULL after restore → null")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType cachedPubkey NULL after restore → null")
             return null
         }
 
@@ -291,7 +297,7 @@ class AmberSignerService @Inject constructor(
             withContext(Dispatchers.IO) {
                 tryContentProvider(contentProviderType, payload, currentUser, pubkey)
             }?.let {
-                Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK len=${it.length}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK len=${it.length}")
                 return@withLock it
             }
 
@@ -305,7 +311,7 @@ class AmberSignerService @Inject constructor(
                 withContext(Dispatchers.IO) {
                     tryContentProvider(contentProviderType, payload, currentUser, pubkey)
                 }?.let {
-                    Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK after grant len=${it.length}")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK after grant len=${it.length}")
                     return@withLock it
                 }
             } else {
@@ -315,7 +321,7 @@ class AmberSignerService @Inject constructor(
                 withContext(Dispatchers.IO) {
                     tryContentProvider(contentProviderType, payload, currentUser, pubkey)
                 }?.let {
-                    Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK (post-grant) len=${it.length}")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK (post-grant) len=${it.length}")
                     return@withLock it
                 }
             }
@@ -325,11 +331,11 @@ class AmberSignerService @Inject constructor(
             // auto-cancels ("too many requests" / "signer timed out"). Bail to null;
             // the caller leaves the item queued for a later, silent retry.
             if (silentOnly) {
-                Log.w(TAG, "DBG: cryptoOp $intentType silent-only, CP unavailable → null (no Intent)")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType silent-only, CP unavailable → null (no Intent)")
                 return@withLock null
             }
 
-            Log.w(TAG, "DBG: cryptoOp $intentType ContentProvider miss → Intent fallback")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType ContentProvider miss → Intent fallback")
 
             val requestId = UUID.randomUUID().toString()
             val intent = buildIntent(intentType, requestId).apply {
@@ -341,7 +347,7 @@ class AmberSignerService @Inject constructor(
             val result = withTimeoutOrNull(INTENT_TIMEOUT_MS) {
                 AmberResultBridge.launchAndAwait(intent, requestId)
             } ?: run {
-                Log.w(TAG, "DBG: cryptoOp $intentType Intent TIMEOUT/null")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType Intent TIMEOUT/null")
                 return@withLock null
             }
 
@@ -349,7 +355,7 @@ class AmberSignerService @Inject constructor(
             // (bridge → result.signature), NOT the "result" extra (→ pubkey).
             // Reading result.pubkey was why decrypts returned null despite OK.
             val output = result.signature ?: result.pubkey ?: result.event
-            Log.w(TAG, "DBG: cryptoOp $intentType Intent rejected=${result.rejected} code=${result.resultCode} sig=${result.signature?.length} res=${result.pubkey?.length} evt=${result.event?.length}")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: cryptoOp $intentType Intent rejected=${result.rejected} code=${result.resultCode} sig=${result.signature?.length} res=${result.pubkey?.length} evt=${result.event?.length}")
 
             if (!result.rejected && result.resultCode == android.app.Activity.RESULT_OK) {
                 output
@@ -397,19 +403,19 @@ class AmberSignerService @Inject constructor(
             if (cursor == null) {
                 // Null cursor = Amber hasn't granted this app background (content
                 // resolver) permission for this op. Fall back to the Intent path.
-                Log.w(TAG, "DBG: CP $method NULL cursor (permission not granted?)")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method NULL cursor (permission not granted?)")
                 return null
             }
             cursor.use {
                 if (!it.moveToFirst()) {
-                    Log.w(TAG, "DBG: CP $method empty cursor")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method empty cursor")
                     return null
                 }
-                Log.w(TAG, "DBG: CP $method columns=${it.columnNames.joinToString(",")}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method columns=${it.columnNames.joinToString(",")}")
                 // Reject column means the user denied the op.
                 val rejIdx = it.getColumnIndex("rejected")
                 if (rejIdx >= 0 && it.getString(rejIdx) == "true") {
-                    Log.w(TAG, "DBG: CP $method rejected")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method rejected")
                     return null
                 }
                 // Amber returns crypto output under varying column names across
@@ -419,16 +425,16 @@ class AmberSignerService @Inject constructor(
                     if (idx >= 0) {
                         val v = it.getString(idx)
                         if (!v.isNullOrEmpty()) {
-                            Log.w(TAG, "DBG: CP $method OK via column=$col len=${v.length}")
+                            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method OK via column=$col len=${v.length}")
                             return v
                         }
                     }
                 }
-                Log.w(TAG, "DBG: CP $method no usable column")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method no usable column")
                 null
             }
         } catch (e: Exception) {
-            Log.w(TAG, "DBG: CP $method exception: ${e.message}")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: CP $method exception: ${e.message}")
             null
         }
     }

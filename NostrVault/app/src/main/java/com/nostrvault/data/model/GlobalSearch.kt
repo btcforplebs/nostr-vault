@@ -251,6 +251,8 @@ sealed class SearchWireMessage {
         val content: String,
         val createdAt: Long,
         val tags: List<List<String>>,
+        /** The event as received, for signature checks. */
+        val raw: String = "",
     ) : SearchWireMessage()
 
     data class Eose(val subId: String) : SearchWireMessage()
@@ -286,7 +288,7 @@ sealed class SearchWireMessage {
             } catch (_: Exception) {
                 emptyList()
             }
-            return Event(sid, id, pubkey, kind, content, createdAt, tags)
+            return Event(sid, id, pubkey, kind, content, createdAt, tags, ev.toString())
         }
     }
 }
@@ -310,6 +312,7 @@ fun parseProfileMetadata(pubkey: String, content: String): FeedProfile? = try {
         name = s("name"),
         displayName = s("display_name") ?: s("displayName"),
         pictureURL = s("picture"),
+        bannerURL = s("banner"),
         nip05 = s("nip05"),
         about = s("about"),
         lud16 = s("lud16"),
@@ -354,32 +357,34 @@ class GlobalSearchAccumulator {
     fun hasProfile(pubkey: String): Boolean = profiles.containsKey(pubkey)
     fun hasNote(id: String): Boolean = notes.containsKey(id)
 
-    fun ranked(own: Set<String>, follows: Set<String>): GlobalSearchResults = GlobalSearchResults(
-        profiles = SearchRanking.rankProfiles(profiles.values.map { it.first }, own, follows),
-        notes = SearchRanking.rankNotes(notes.values.toList(), own, follows),
+    fun ranked(own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): GlobalSearchResults = GlobalSearchResults(
+        profiles = SearchRanking.rankProfiles(profiles.values.map { it.first }, own, follows, wot),
+        notes = SearchRanking.rankNotes(notes.values.toList(), own, follows, wot),
     )
 }
 
 /**
- * Own posts first, then follows, then everyone; newest first within a tier.
+ * Own posts first, then follows, then the rest of the Web of Trust, then
+ * everyone; newest first within a tier. iOS: GlobalSearchRanking.
  * Profiles carry no timestamp worth sorting on, so within a tier they keep
  * arrival order (the sort is stable).
  */
 object SearchRanking {
-    fun tier(pubkey: String, own: Set<String>, follows: Set<String>): Int = when (pubkey) {
+    fun tier(pubkey: String, own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): Int = when (pubkey) {
         in own -> 0
         in follows -> 1
-        else -> 2
+        in wot -> 2
+        else -> 3
     }
 
-    fun rankNotes(notes: List<FeedNote>, own: Set<String>, follows: Set<String>): List<FeedNote> =
+    fun rankNotes(notes: List<FeedNote>, own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): List<FeedNote> =
         notes.sortedWith(
-            compareBy<FeedNote> { tier(it.pubkey, own, follows) }
+            compareBy<FeedNote> { tier(it.pubkey, own, follows, wot) }
                 .thenByDescending { it.createdAt.time },
         )
 
-    fun rankProfiles(profiles: List<FeedProfile>, own: Set<String>, follows: Set<String>): List<FeedProfile> =
-        profiles.sortedBy { tier(it.pubkey, own, follows) }
+    fun rankProfiles(profiles: List<FeedProfile>, own: Set<String>, follows: Set<String>, wot: Set<String> = emptySet()): List<FeedProfile> =
+        profiles.sortedBy { tier(it.pubkey, own, follows, wot) }
 }
 
 // ---------------------------------------------------------------------------

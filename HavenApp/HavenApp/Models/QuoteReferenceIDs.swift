@@ -24,4 +24,27 @@ extension QuoteReference {
             return nil
         }
     }
+
+    /// The coordinate of a NIP-53 live stream (kind 30311) that a web link
+    /// points at — `zap.stream/naddr1…`, `shosho.live/live/naddr1…`,
+    /// `njump.me/naddr1…`. Any host, because the naddr in the path is what
+    /// names the stream; nil for anything else.
+    static func liveStreamCoordinate(in url: URL) -> String? {
+        for component in url.pathComponents where component.lowercased().hasPrefix("naddr1") {
+            guard let decoded = Bech32.decode(component.lowercased()),
+                  let coordinate = coordinate(fromNaddrTLV: decoded.data),
+                  parseCoordinate(coordinate)?.kind == 30311 else { continue }
+            return coordinate
+        }
+        return nil
+    }
+
+    /// The hex pubkey behind a `npub1…`/`nprofile1…` mention, or nil — so a
+    /// mention that cannot be read opens nothing rather than a blank profile.
+    static func profilePubkey(fromBech32 identifier: String) -> String? {
+        let id = identifier.lowercased()
+        guard id.hasPrefix("npub1") || id.hasPrefix("nprofile1"),
+              let decoded = Bech32.decode(id) else { return nil }
+        return profilePubkey(hrp: decoded.hrp, payload: decoded.data)
+    }
 }

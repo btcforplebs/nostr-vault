@@ -30,7 +30,7 @@ struct HavenConfig: Codable, Equatable {
     var hasCompletedInitialImport: Bool = false // Browse mode: tracks if first background import has run
     var disableMediaCache: Bool = false
     var autoplayVideos: Bool = true
-    var cacheTTLDays: Int = 7
+    var cacheTTLDays: Int = 3
     var prefetchProfilePictures: Bool = false
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
@@ -48,12 +48,34 @@ struct HavenConfig: Codable, Equatable {
     /// Per-feed layout choice (expanded / condensed / threaded), keyed by
     /// FeedMode.rawValue. Supersedes `feedCompactModes`, which is still read as
     /// the fallback so an upgrade keeps whatever compact setting was in place.
-    var feedLayoutModes: [String: String] = [:]
+    /// New installs open the timeline feeds in Threaded View (Logen,
+    /// 2026-10-08). Saved configs keep their own, including older ones
+    /// without this key (see `init(from:)`).
+    var feedLayoutModes: [String: String] = Dictionary(uniqueKeysWithValues:
+        ["Following", "Discovery", "Global", "Hashtags", "Popular"].map { ($0, "threaded") })
     var noteDetailExpandedEngagement: Bool = false // Persisted stats/engagement toggle for NoteDetailView
     var defaultReactionEmoji: String = "❤️" // Default emoji for quick reactions
     var appIcon: String = "Default" // Selected app icon name
     var zapsOnlyMode: Bool = false // When true, likes/reactions are removed from the UI entirely; zaps become the primary engagement + notification signal
     var disableTabBarAnimation: Bool = false // When true, the bottom tab bar stays fully expanded and never shrinks/hides on scroll
+    /// The floating "New Posts" pill over the feed. Off, waiting posts load
+    /// on pull-to-refresh (or by themselves at the top with Auto-Load).
+    var showNewPostsPill: Bool = true
+    /// Lines of note text a row shows in Compact View.
+    var compactLineLimit: Int = HavenConfig.defaultCompactLineLimit
+    /// Lines of text a thread's root shows in Threaded View; replies show one fewer.
+    var threadedLineLimit: Int = HavenConfig.defaultThreadedLineLimit
+    static let defaultCompactLineLimit = 3
+    static let defaultThreadedLineLimit = 3
+    static let lineLimitRange = 1...12
+    /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
+    var globalFeedLanguages: [String] = []
+    /// A Translate button under posts written in another language.
+    var showTranslateButton: Bool = true
+    /// ISO 639-1 code posts are translated into. Empty follows the device language.
+    var translateTargetLanguage: String = ""
+    /// Global shows everyone, not only people in your Web of Trust. Off by default.
+    var globalShowsEveryone: Bool = false
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -118,10 +140,12 @@ struct HavenConfig: Codable, Equatable {
     // Import
     var importStartDate: String = "2023-01-01"
     var importSeedRelaysFile: String = "relays_import.json"
+    // relay.damus.io replaced nos.lol and nostr.mom (2026-10-07: both timed
+    // out on connect). relay.nostr.build was tried and dropped: it wants
+    // NIP-42 sign-in before it answers, which the import doesn't do.
     var importSeedRelays: [String] = [
         "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
+        "wss://relay.damus.io",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net"
     ]
@@ -131,6 +155,19 @@ struct HavenConfig: Codable, Equatable {
     // Blossom Mirrors
     var blossomMirrors: [String] = []
     var autoMirrorMedia: Bool = false
+    /// Picking a nostr.build GIF downloads it and uploads it to your own
+    /// Blossom servers, instead of posting nostr.build's link.
+    var saveGifsToBlossom: Bool = false
+
+    /// Where a brand-new account's photos go when it has no server of its own.
+    /// blossomMirrors is otherwise empty on a fresh install, and with no
+    /// outside server a photo (the profile picture included) lives only on the
+    /// phone and can't be shown to anyone else. Both accepted an upload signed
+    /// by a never-seen key and returned the blob under its own sha256
+    /// (checked 2026-10-07). nostr.build first at Logen's request (its blobs
+    /// are served from blossom.band), Primal second. Only setup's New to
+    /// Nostr path applies this.
+    static let newAccountBlossomMirrors = ["https://blossom.nostr.build", "https://blossom.primal.net"]
 
     /// Former default mirrors that no longer exist (kylezien is NXDOMAIN,
     /// satellite's CDN is dead — verified 2026-07). Configs written by old
@@ -150,12 +187,12 @@ struct HavenConfig: Codable, Equatable {
 
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
+    // Default broadcast relays (Logen, 2026-10-07). nos.lol and nostr.mom
+    // were timing out on connect.
     var blastrRelays: [String] = [
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net"
+        "wss://relay.damus.io",
+        "wss://relay.snort.social"
     ]
     
     // Feed Reading
@@ -173,10 +210,18 @@ struct HavenConfig: Codable, Equatable {
         "wss://nos.lol",
         "wss://relay.btcforplebs.com"
     ]
+    /// When `dmRelays` last changed, in Unix seconds: the user's own edit, or
+    /// the created_at of a published kind 10050 this device adopted. Devices
+    /// compare it with the newest published list at launch so the most recent
+    /// change wins, instead of each device overwriting the list with whatever
+    /// it happens to hold. nil = never set (the defaults), which any published
+    /// list beats.
+    var dmRelaysUpdatedAt: Int64? = nil
 
-    // NIP-29: Group Relays
-    var groupRelayURLs: [String] = []
-    var joinedGroups: [JoinedGroup] = []
+    /// Relays the app never connects to (Never connect), published as the
+    /// owner's blocked relay list (NIP-51 kind 10006). Enforced in
+    /// `WebSocketClient` through `RelayBlocklist`.
+    var blockedRelays: [String] = []
 
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
@@ -222,9 +267,6 @@ struct HavenConfig: Codable, Equatable {
     // Last processed/published Kind 10000 event timestamp per account (npub: created_at)
     var blockedNpubsLastSyncTimestamp: [String: Int64] = [:]
 
-    // Per-account throttled list (dictionary of account npub: {throttled npub: max visible posts})
-    var throttledAccountsPerAccount: [String: [String: Int]] = [:]
-
     // Backup
     var backupProvider: String = "none" // none, s3
     var backupIntervalHours: Int = 24
@@ -243,7 +285,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
@@ -252,15 +294,14 @@ struct HavenConfig: Codable, Equatable {
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
-        case blossomMirrors, autoMirrorMedia
+        case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
-        case feedRelays, dmRelays
+        case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
         case blockedNpubsLastSyncTimestamp
-        case throttledAccountsPerAccount
         case activeAccountNpub
         case accountCredentials
         case accountBunkerConfigs
@@ -268,7 +309,6 @@ struct HavenConfig: Codable, Equatable {
         case publishRelayListPerAccount
         case backupProvider, backupIntervalHours
         case s3AccessKeyId, s3SecretKey, s3Endpoint, s3Region, s3BucketName
-        case groupRelayURLs, joinedGroups
     }
     
     init() {}
@@ -313,12 +353,21 @@ struct HavenConfig: Codable, Equatable {
         textSizeScale = try container.decodeIfPresent(Double.self, forKey: .textSizeScale) ?? defaults.textSizeScale
         useFeedCompactMode = try container.decodeIfPresent(Bool.self, forKey: .useFeedCompactMode) ?? defaults.useFeedCompactMode
         feedCompactModes = try container.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? defaults.feedCompactModes
-        feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? defaults.feedLayoutModes
+        // Not `defaults`: a config from before this key existed keeps its
+        // legacy compact choice instead of jumping to Threaded View.
+        feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? [:]
         noteDetailExpandedEngagement = try container.decodeIfPresent(Bool.self, forKey: .noteDetailExpandedEngagement) ?? defaults.noteDetailExpandedEngagement
         defaultReactionEmoji = try container.decodeIfPresent(String.self, forKey: .defaultReactionEmoji) ?? defaults.defaultReactionEmoji
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
         disableTabBarAnimation = try container.decodeIfPresent(Bool.self, forKey: .disableTabBarAnimation) ?? defaults.disableTabBarAnimation
+        showNewPostsPill = try container.decodeIfPresent(Bool.self, forKey: .showNewPostsPill) ?? defaults.showNewPostsPill
+        compactLineLimit = try container.decodeIfPresent(Int.self, forKey: .compactLineLimit) ?? defaults.compactLineLimit
+        threadedLineLimit = try container.decodeIfPresent(Int.self, forKey: .threadedLineLimit) ?? defaults.threadedLineLimit
+        globalFeedLanguages = try container.decodeIfPresent([String].self, forKey: .globalFeedLanguages) ?? defaults.globalFeedLanguages
+        showTranslateButton = try container.decodeIfPresent(Bool.self, forKey: .showTranslateButton) ?? defaults.showTranslateButton
+        translateTargetLanguage = try container.decodeIfPresent(String.self, forKey: .translateTargetLanguage) ?? defaults.translateTargetLanguage
+        globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode
         nip46BunkerURI = try container.decodeIfPresent(String.self, forKey: .nip46BunkerURI) ?? defaults.nip46BunkerURI
@@ -382,6 +431,7 @@ struct HavenConfig: Codable, Equatable {
         blossomMirrors = (try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors)
             .filter { !HavenConfig.isDefunctMirror($0) }
         autoMirrorMedia = try container.decodeIfPresent(Bool.self, forKey: .autoMirrorMedia) ?? defaults.autoMirrorMedia
+        saveGifsToBlossom = try container.decodeIfPresent(Bool.self, forKey: .saveGifsToBlossom) ?? defaults.saveGifsToBlossom
 
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
         fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource
@@ -392,9 +442,9 @@ struct HavenConfig: Codable, Equatable {
         
         feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
+        dmRelaysUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .dmRelaysUpdatedAt)
+        blockedRelays = try container.decodeIfPresent([String].self, forKey: .blockedRelays) ?? []
 
-        groupRelayURLs = try container.decodeIfPresent([String].self, forKey: .groupRelayURLs) ?? defaults.groupRelayURLs
-        joinedGroups = try container.decodeIfPresent([JoinedGroup].self, forKey: .joinedGroups) ?? defaults.joinedGroups
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
         whitelistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .whitelistedNpubsFile) ?? defaults.whitelistedNpubsFile
@@ -404,7 +454,6 @@ struct HavenConfig: Codable, Equatable {
         
         blockedNpubsPerAccount = try container.decodeIfPresent([String: [String]].self, forKey: .blockedNpubsPerAccount) ?? defaults.blockedNpubsPerAccount
         blockedNpubsLastSyncTimestamp = try container.decodeIfPresent([String: Int64].self, forKey: .blockedNpubsLastSyncTimestamp) ?? defaults.blockedNpubsLastSyncTimestamp
-        throttledAccountsPerAccount = try container.decodeIfPresent([String: [String: Int]].self, forKey: .throttledAccountsPerAccount) ?? defaults.throttledAccountsPerAccount
 
         activeAccountNpub = try container.decodeIfPresent(String.self, forKey: .activeAccountNpub) ?? defaults.activeAccountNpub
         accountCredentials = try container.decodeIfPresent([String: String].self, forKey: .accountCredentials) ?? defaults.accountCredentials
@@ -505,6 +554,137 @@ struct HavenConfig: Codable, Equatable {
         return base.isEmpty ? "" : "https://\(base)"
     }
 
+    // MARK: - DM Inbox (NIP-17)
+
+    /// The owner's always-on Haven inbox as a DM relay, or "" when there is
+    /// none. On iOS that is the Mac relay; on a Mac it is this relay itself,
+    /// once it has a public address. Only a wss:// address counts: the list it
+    /// joins is published for other people, and a plain ws:// LAN address is
+    /// unreachable to them.
+    var ownHavenDMInboxURL: String {
+        #if os(macOS)
+        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
+        return Self.normalizedRelayURL(nostrURL + "/inbox")
+        #else
+        let base = macRelayNormalizedBase
+        guard !base.isEmpty else { return "" }
+        let typed = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if typed.hasPrefix("ws://") || typed.hasPrefix("http://") { return "" }
+        // A home-network address typed without a scheme would otherwise be
+        // published to everyone as wss://…, put first, and be undeliverable.
+        if Self.isPrivateNetworkHost(base) { return "" }
+        return Self.normalizedRelayURL("wss://\(base)/inbox")
+        #endif
+    }
+
+    /// True for an address only this network can reach: loopback, private
+    /// and link-local IPv4/IPv6 ranges, CGNAT (Tailscale's 100.64.0.0/10),
+    /// `localhost`, `.local`, and bare names with no dot. `hostPort` may carry
+    /// a port and a path ("192.168.1.20:3355/x").
+    static func isPrivateNetworkHost(_ hostPort: String) -> Bool {
+        var host = hostPort.lowercased()
+        if let slash = host.firstIndex(of: "/") { host = String(host[..<slash]) }
+        if host.hasPrefix("[") {
+            // [IPv6]:port
+            host = String(host.dropFirst().prefix { $0 != "]" })
+        } else if host.filter({ $0 == ":" }).count == 1, let colon = host.firstIndex(of: ":") {
+            host = String(host[..<colon])
+        }
+        while host.hasSuffix(".") { host = String(host.dropLast()) }
+        if host.hasPrefix("::ffff:") {
+            // IPv4-mapped IPv6: judge the IPv4 address it carries.
+            let v4 = String(host.dropFirst("::ffff:".count))
+            if v4.contains(".") { return isPrivateNetworkHost(v4) }
+        }
+        if host.isEmpty || host == "localhost" { return true }
+        // Home-network names, plus Tailscale MagicDNS: a .ts.net name only
+        // reaches outsiders through Funnel, so it can't be relied on.
+        for suffix in [".localhost", ".local", ".lan", ".home.arpa", ".internal", ".ts.net"] where host.hasSuffix(suffix) {
+            return true
+        }
+        if host.contains(":") {
+            // IPv6: loopback, unspecified, unique-local fc00::/7, link-local fe80::/10
+            return host == "::1" || host == "::" || host.hasPrefix("fc") || host.hasPrefix("fd")
+                || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
+        }
+        let octets = host.split(separator: ".").map { Int($0) }
+        if octets.count == 4, octets.allSatisfy({ $0 != nil }) {
+            let o = octets.map { $0! }
+            switch (o[0], o[1]) {
+            case (10, _), (127, _), (0, _): return true
+            case (172, 16...31), (192, 168), (169, 254): return true
+            case (100, 64...127): return true
+            default: return false
+            }
+        }
+        return !host.contains(".")
+    }
+
+    /// The one DM inbox list: where other people send this account's DMs,
+    /// where this account's own sent copies go, and where every device reads
+    /// DMs from. The owner's Haven inbox comes first, then `dmRelays`.
+    var dmInboxRelays: [String] {
+        Self.mergedDMInboxRelays(havenInbox: ownHavenDMInboxURL, dmRelays: dmRelays)
+    }
+
+    static func mergedDMInboxRelays(havenInbox: String, dmRelays: [String]) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for raw in [havenInbox] + dmRelays {
+            let url = normalizedRelayURL(raw)
+            guard !url.isEmpty, seen.insert(url.lowercased()).inserted else { continue }
+            result.append(url)
+        }
+        return result
+    }
+
+    /// Whether the active account (as a hex pubkey) moving from `previous` to
+    /// `current` is a switch the app should react to. No account to an
+    /// account is setup finishing, not a switch.
+    static func isAccountSwitch(from previous: String, to current: String) -> Bool {
+        !previous.isEmpty && previous != current
+    }
+
+    /// Trims whitespace and trailing slashes so the same relay typed two ways
+    /// compares equal.
+    static func normalizedRelayURL(_ raw: String) -> String {
+        var url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while url.hasSuffix("/") { url = String(url.dropLast()) }
+        return url
+    }
+
+    /// What launch should do with the DM inbox list, given this device's list
+    /// and the newest one published for the account.
+    enum DMInboxSyncAction: Equatable {
+        /// Take the published list (and its timestamp) as this device's own.
+        case adopt
+        /// Publish this device's list: nothing is published, or ours is newer.
+        case publish
+        /// Already in step.
+        case none
+    }
+
+    /// `published` is the newest kind 10050 found (nil = none found);
+    /// `publishedAt` its created_at. `local` is this device's merged list.
+    static func dmInboxSyncAction(local: [String], localUpdatedAt: Int64?,
+                                  published: [String]?, publishedAt: Int64?) -> DMInboxSyncAction {
+        guard let published, let publishedAt else {
+            // Nothing found. For a list that was never set that means no list
+            // is published, so publish one. A device that has synced before
+            // more likely just couldn't reach the relays this launch, and
+            // publishing would overwrite a newer list it never saw.
+            return localUpdatedAt == nil ? .publish : .none
+        }
+        let localAt = localUpdatedAt ?? 0
+        if publishedAt > localAt { return .adopt }
+        if localAt > publishedAt { return .publish }
+        // Compared as sets: two devices that order the same relays differently
+        // must not keep republishing over each other (each publish can ask the
+        // signer app for an approval).
+        let same = Set(local.map { normalizedRelayURL($0).lowercased() }) == Set(published.map { normalizedRelayURL($0).lowercased() })
+        return same ? .none : .publish
+    }
+
     // MARK: - Blossom Mirrors Configuration
 
     /// Builds the .fips Blossom URL from the configured source, or nil if FIPS publishing is disabled.
@@ -579,6 +759,76 @@ struct HavenConfig: Codable, Equatable {
         return relays
     }
 
+    // MARK: - Relay roles
+
+    /// Where features read when the owner has no read relays.
+    static let fallbackRelays = ["wss://relay.primal.net", "wss://nos.lol"]
+
+    /// Where the owner's events go when there are no write relays: the
+    /// default broadcast list (`blastrRelays`).
+    static let fallbackWriteRelays = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
+
+    /// The relays features read other people's events from: the feed relays
+    /// (Mac relay first), or `fallbackRelays` when there are none. Ask this
+    /// rather than building a list per feature.
+    var readRelays: [String] {
+        let relays = activeFeedRelays
+        return relays.isEmpty ? Self.fallbackRelays : relays
+    }
+
+    /// The relays the owner's events are sent to: the broadcast relays (Mac
+    /// relay first), or `fallbackWriteRelays` when there are none.
+    var writeRelays: [String] {
+        let relays = activeBlastrRelays
+        return relays.isEmpty ? Self.fallbackWriteRelays : relays
+    }
+
+    /// The owner's own relays others can reach: the Haven domain (unless it is
+    /// this device only) and the Mac relay.
+    var ownPublicRelays: [String] {
+        var relays: [String] = []
+        if !isLocal { relays.append("wss://\(sanitizedRelayURL)") }
+        relays.append(macRelayWssURL)
+        return relays
+    }
+
+    /// NIP-65 kind 10002 tags: the relay list other clients use for this
+    /// account. It is the grid's Read and Write columns, so the world sees
+    /// what the owner actually uses.
+    var publicRelayListTags: [[String]] {
+        Self.publicRelayListTags(ownRelays: ownPublicRelays, read: feedRelays, write: blastrRelays)
+    }
+
+    /// The owner's own relays go first with no marker, which NIP-65 reads as
+    /// both read and write, so they always stay in Write. Then each relay in
+    /// both lists has no marker, and one in only one list is marked "read" or
+    /// "write". Only wss:// relays others can reach are listed, once each.
+    static func publicRelayListTags(ownRelays: [String], read: [String], write: [String]) -> [[String]] {
+        func key(_ url: String) -> String { url.lowercased() }
+        func publishable(_ raw: String) -> String? {
+            let url = normalizedRelayURL(raw)
+            guard url.lowercased().hasPrefix("wss://") else { return nil }
+            let hostPort = String(url.dropFirst("wss://".count))
+            guard !hostPort.isEmpty, !isPrivateNetworkHost(hostPort) else { return nil }
+            return url
+        }
+        let readKeys = Set(read.compactMap(publishable).map(key))
+        let writeKeys = Set(write.compactMap(publishable).map(key))
+        var seen = Set<String>()
+        var tags: [[String]] = []
+        for url in ownRelays.compactMap(publishable) where seen.insert(key(url)).inserted {
+            tags.append(["r", url])
+        }
+        for url in (read + write).compactMap(publishable) where seen.insert(key(url)).inserted {
+            switch (readKeys.contains(key(url)), writeKeys.contains(key(url))) {
+            case (true, true): tags.append(["r", url])
+            case (true, false): tags.append(["r", url, "read"])
+            default: tags.append(["r", url, "write"])
+            }
+        }
+        return tags
+    }
+
     // MARK: - Protocol Selection Logic
 
     /// Returns the relay URL without any protocol schemes or trailing slashes
@@ -617,6 +867,14 @@ struct HavenConfig: Codable, Equatable {
         } else {
             return "wss://\(sanitizedRelayURL)"
         }
+    }
+
+    /// The relay to name in a tag's relay hint for other clients: this relay
+    /// when the world can reach it, otherwise none. A loopback or home-network
+    /// address points every other client at itself, or at nothing.
+    var publicRelayHint: String {
+        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
+        return nostrURL
     }
 
     /// Returns the appropriate Web/Blossom URL (https:// on iOS for Blossom, http:// on macOS)

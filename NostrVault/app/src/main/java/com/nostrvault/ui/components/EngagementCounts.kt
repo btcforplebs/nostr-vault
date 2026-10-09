@@ -50,3 +50,14 @@ internal fun zapCountLabel(zapCount: Int, zapAmountSats: Long): String? = when {
     zapCount > 0 -> formatCount(zapCount)
     else -> null
 }
+
+/**
+ * A profile post's count on its button ([com.nostrvault.data.model.PostEngagement]):
+ * compact, with "+" when it is a lower bound and large ("64+"), or null for zero.
+ */
+internal fun postEngagementLabel(value: Long, isAtLeast: Boolean): String? =
+    if (value > 0L) formatCount(value) + if (isAtLeast) "+" else "" else null
+
+/** The same count as TalkBack reads it: "at least 64 likes" when it is a lower bound. */
+internal fun postEngagementDescription(value: Long, noun: String, isAtLeast: Boolean): String? =
+    if (value > 0L) (if (isAtLeast) "at least $value $noun" else "$value $noun") else null

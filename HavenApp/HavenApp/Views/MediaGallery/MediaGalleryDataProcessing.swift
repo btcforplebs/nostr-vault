@@ -65,7 +65,7 @@ extension MediaGalleryView {
                     // belongs in the media feed, not this tab.
                     return item.pubkey == owner
                 case .mine: return item.pubkey == owner
-                case .tagged:
+                case .tagged, .outside:
                     return false
                 case .whitelist:
                     guard let pk = item.pubkey else { return false }
@@ -179,20 +179,7 @@ extension MediaGalleryView {
 
             // Filter by media type
             let typeFilterSet = currentTypeFilter
-            let isGif = { (item: MediaItem) -> Bool in
-                let ext = item.url.pathExtension.lowercased()
-                return ext == "gif" || item.mimeType?.lowercased().contains("gif") == true
-            }
-
-            var filtered = allItems.filter { item in
-                if isGif(item) { return typeFilterSet.contains(.gif) }
-                switch item.type {
-                case .image: return typeFilterSet.contains(.photo)
-                case .video: return typeFilterSet.contains(.video)
-                case .audio: return typeFilterSet.contains(.other)
-                case .unknown: return typeFilterSet.contains(.other)
-                }
-            }
+            var filtered = allItems.filter { typeFilterSet.contains(MediaTypeFilter.category(of: $0)) }
 
             // Apply location filter: blossom (physically in local blossom directory) /
             // cache (cached from feed, not in blossom) / notFound (user-flagged 404) /
@@ -234,26 +221,8 @@ extension MediaGalleryView {
                 return !tagsOwner
             }
 
-            // Apply the chosen order. Every branch falls back to date so the
-            // result is fully determined and does not shuffle between runs.
-            switch currentSort {
-            case .newestFirst:
-                filtered.sort { $0.dateAdded > $1.dateAdded }
-            case .oldestFirst:
-                filtered.sort { $0.dateAdded < $1.dateAdded }
-            case .mediaType:
-                filtered.sort {
-                    let a = Self.typeRank(for: $0), b = Self.typeRank(for: $1)
-                    if a != b { return a < b }
-                    return $0.dateAdded > $1.dateAdded
-                }
-            case .onRelayFirst:
-                filtered.sort {
-                    let a = inBlossomLookup[self.normalizedKeyStatic(for: $0.url)] ?? false
-                    let b = inBlossomLookup[self.normalizedKeyStatic(for: $1.url)] ?? false
-                    if a != b { return a }
-                    return $0.dateAdded > $1.dateAdded
-                }
+            filtered = currentSort.sorted(filtered) {
+                inBlossomLookup[self.normalizedKeyStatic(for: $0.url)] ?? false
             }
             var result = filtered
 

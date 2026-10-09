@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import ImageIO
+import UniformTypeIdentifiers
 
 // MARK: - Design System
 
@@ -238,6 +241,10 @@ struct SetupWizardView: View {
     // Wallet state
     @State private var nwcURI = ""
 
+    // New account state: published once setup completes and the key can sign
+    @State private var profileName = ""
+    @State private var profilePhotoJPEG: Data?
+
     // Error state
     @State private var setupError: String?
     @State private var showSetupError = false
@@ -245,7 +252,10 @@ struct SetupWizardView: View {
     let onComplete: () -> Void
 
     enum SetupPath {
-        case none, full, browse, newToNostr
+        /// `useNostr` is iPhone/iPad's "I use Nostr": one key field decides
+        /// read-only vs can-post, so it replaces `full` and `browse` there.
+        /// The Mac keeps those two (Full Setup there is a public relay).
+        case none, full, browse, newToNostr, useNostr
     }
 
     enum TransitionDirection {
@@ -259,16 +269,23 @@ struct SetupWizardView: View {
     // step total by one on three of the four paths (browse: 4 vs 5 steps;
     // full iOS: 8 vs 9; full macOS: 7 vs 8) so the dots ran out before the
     // wizard did.
+    //
+    // Welcome (step 0) is the front door, not step 1 of N: it shows no dots,
+    // and picking a way in there is what sets the path.
     private var pathSteps: [Int] {
         switch setupPath {
-        case .none: return [0, 1, 2] // welcome, path, identity
-        case .browse: return [0, 1, 2, 4, 8] // welcome, path, identity, import, done
-        case .newToNostr: return [0, 1, 9, 10, 8] // welcome, path, intro, follows, done
-        case .full: return isIOSDevice ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 8]
+        case .none: return []
+        case .browse: return [2, 4, 8] // identity, import, done
+        case .newToNostr: return [9, 10, 11, 8] // keys, password, profile, done (the Fill your feed guide finds people)
+        case .full: return isIOSDevice ? [2, 3, 4, 5, 6, 7, 8] : [2, 3, 4, 5, 6, 8]
+        case .useNostr: return [12, 14, 13] // your key, relay check, import tour
         }
     }
 
     private var totalVisibleSteps: Int { pathSteps.count }
+
+    /// "I use Nostr" with only a public key: nothing to sign with.
+    private var useNostrIsReadOnly: Bool { signingMode != "nip46" && nsec.isEmpty }
 
     private var currentDotIndex: Int {
         pathSteps.firstIndex(of: currentStep) ?? 0
@@ -282,10 +299,17 @@ struct SetupWizardView: View {
             // Ambient gradient
             AmbientGradientView()
 
-            VStack(spacing: 0) {
-                // Back button
-                HStack {
-                    if currentStep > 0 {
+            if currentStep == 0 {
+                // Outside the ScrollView so it can fill the height and pin
+                // its buttons to the bottom.
+                WelcomeStepView(onChoose: choosePath)
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    // Back button
+                    HStack {
                         Button(action: goBack) {
                             HStack(spacing: 4) {
                                 Image(systemName: "chevron.left")
@@ -295,27 +319,26 @@ struct SetupWizardView: View {
                             .foregroundColor(WizardColors.textMuted)
                         }
                         .buttonStyle(.plain)
-                        .transition(.opacity)
+                        Spacer()
                     }
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
-                .frame(height: 36)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .frame(height: 36)
 
-                // Content area
-                ScrollView {
-                    VStack {
-                        stepContent
-                            .frame(maxWidth: 560)
-                            .padding(.horizontal, 24)
+                    // Content area
+                    ScrollView {
+                        VStack {
+                            stepContent
+                                .frame(maxWidth: 560)
+                                .padding(.horizontal, 24)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Step dots
-                StepDots(totalSteps: totalVisibleSteps, currentStep: currentDotIndex)
+                    // Step dots
+                    StepDots(totalSteps: totalVisibleSteps, currentStep: currentDotIndex)
+                }
             }
 
             // Process kill alert overlay
@@ -334,10 +357,6 @@ struct SetupWizardView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch currentStep {
-        case 0:
-            WelcomeStepView(onContinue: { goForward() })
-        case 1:
-            ChoosePathStep(selectedPath: $setupPath, onContinue: { goForward() })
         case 2:
             IdentityStepView(
                 isBrowseMode: setupPath == .browse,
@@ -391,9 +410,7 @@ struct SetupWizardView: View {
             NostrIntroStep(
                 npub: $npub,
                 nsec: $nsec,
-                nsecPassword: $nsecPassword,
                 onContinue: {
-                    saveIntermediateConfig()
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
                         currentStep = 10
@@ -401,39 +418,74 @@ struct SetupWizardView: View {
                 }
             )
         case 10:
-            InitialFollowsStepView(
-                onContinue: { selectedNpubs in
-                    // Follow selected accounts
-                    var currentFollows = configService.config.whitelistedNpubs
-                    for npub in selectedNpubs where !currentFollows.contains(npub) {
-                        currentFollows.append(npub)
-                    }
-                    configService.config.whitelistedNpubs = currentFollows
-                    configService.save()
-
+            KeyPasswordStep(
+                nsecPassword: $nsecPassword,
+                onContinue: {
+                    saveIntermediateConfig()
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 8
+                        currentStep = 11
                     }
-                },
-                onSkip: {
+                }
+            )
+        case 11:
+            NewProfileStep(
+                name: $profileName,
+                photoJPEG: $profilePhotoJPEG,
+                onContinue: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
                         currentStep = 8
                     }
                 }
             )
+        case 12:
+            UseNostrKeyStep(
+                npub: $npub,
+                nsec: $nsec,
+                nsecPassword: $nsecPassword,
+                signingMode: $signingMode,
+                bunkerURI: $bunkerURI,
+                onContinue: { goForward() }
+            )
+        case 14:
+            RelayCheckStep(npub: npub) { goForward() }
+        case 13:
+            ImportTourStep(isReadOnly: useNostrIsReadOnly) { _ in
+                // Kept running or not, the import carries on in
+                // RelayProcessManager; startRelay waits for it.
+                saveAndComplete()
+            }
         default:
             EmptyView()
+        }
+    }
+
+    /// The front door's buttons. New to Nostr goes to the intro, I use Nostr
+    /// (iPhone/iPad) to its key step; full setup and browse (Mac) both start
+    /// at identity.
+    private func choosePath(_ path: SetupPath) {
+        setupPath = path
+        direction = .forward
+        withAnimation(WizardAnimations.springEnter) {
+            switch path {
+            case .newToNostr: currentStep = 9
+            case .useNostr: currentStep = 12
+            default: currentStep = 2
+            }
+        }
+        if path == .newToNostr || path == .useNostr {
+            saveIntermediateConfig()
         }
     }
 
     private func goForward() {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 1 && setupPath == .newToNostr {
-                // New to Nostr: go to intro step
-                currentStep = 9
+            if currentStep == 12 && setupPath == .useNostr {
+                currentStep = 14 // your key → relay check
+            } else if currentStep == 14 {
+                currentStep = 13 // relay check → import tour
             } else if currentStep == 2 && setupPath == .browse {
                 // Browse mode: skip relay config, go to import step
                 currentStep = 4
@@ -448,7 +500,8 @@ struct SetupWizardView: View {
             }
         }
         // Save intermediate config at key points
-        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 10 {
+        // The import tour (13) imports with the saved config, so save first.
+        if currentStep >= 3 || (currentStep == 8 && setupPath == .browse) || currentStep == 9 || currentStep == 11 {
             saveIntermediateConfig()
         }
     }
@@ -456,15 +509,21 @@ struct SetupWizardView: View {
     private func goBack() {
         direction = .backward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 9 {
-                currentStep = 1 // New to Nostr: back to choose path
+            if currentStep == 12 || currentStep == 9 || currentStep == 2 {
+                currentStep = 0 // Back to the front door
+            } else if currentStep == 14 {
+                currentStep = 12 // Relay check: back to your key
+            } else if currentStep == 13 {
+                currentStep = 14 // Import tour: back to the relay check
+            } else if currentStep == 11 {
+                currentStep = 10 // Profile: back to password
             } else if currentStep == 10 {
-                currentStep = 9 // Initial Follows: back to intro
+                currentStep = 9 // Password: back to your keys
             } else if currentStep == 4 && setupPath == .browse {
                 currentStep = 2 // Browse: back from import to identity (skip relay config)
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
-                    currentStep = 10 // New to Nostr: back to initial follows
+                    currentStep = 11 // New to Nostr: back to profile
                 } else if setupPath == .browse {
                     currentStep = 4 // Browse: back to import
                 } else if isIOSDevice {
@@ -483,16 +542,25 @@ struct SetupWizardView: View {
     private func saveIntermediateConfig() {
         configService.config.ownerNpub = npub
         // Browse / New to Nostr mode: set default localhost relay URL so the local relay can start
-        configService.config.relayURL = ((setupPath == .browse || setupPath == .newToNostr) && relayURL.isEmpty)
+        configService.config.relayURL = ((setupPath == .browse || setupPath == .newToNostr || setupPath == .useNostr) && relayURL.isEmpty)
             ? "127.0.0.1:\(configService.config.relayPort)"
             : relayURL
         configService.config.dbEngine = "badger"
         configService.config.signingMode = setupPath == .newToNostr ? "local" : signingMode
         switch setupPath {
         case .browse: configService.config.setupMode = "browse"
+        case .useNostr:
+            // What was pasted decided it: a key or signer can post.
+            configService.config.setupMode = useNostrIsReadOnly ? "browse" : "full"
         case .newToNostr:
             configService.config.setupMode = "newuser"
-            configService.config.defaultFeedMode = "POPULAR"
+            // Following when people were picked. With none, FeedService's
+            // no-follows path moves a new user to the curated Global feed;
+            // Popular is the unfiltered one, which is why it isn't the default.
+            configService.config.defaultFeedMode = "FOLLOWING"
+            if configService.config.blossomMirrors.isEmpty {
+                configService.config.blossomMirrors = HavenConfig.newAccountBlossomMirrors
+            }
         default: configService.config.setupMode = "full"
         }
         configService.config.macRelayURL = macRelayURL
@@ -518,6 +586,11 @@ struct SetupWizardView: View {
         saveIntermediateConfig()
         configService.config.adoptGlobalBunkerConfigForOwner()
         configService.config.hasCompletedSetup = true
+        // New accounts start with notifications on (DMs, replies, mentions and
+        // zaps per NotificationPreferences' defaults) — otherwise a first DM
+        // arrives silently. Set here rather than as the config default so
+        // existing installs keep whatever they had.
+        configService.config.enablePushNotifications = true
         configService.save()
         configService.refreshActiveAccountHex()
 
@@ -527,12 +600,76 @@ struct SetupWizardView: View {
         // brand-new user is effectively unreachable over NIP-17.
         NostrService.shared.republishDMRelayListsForSignableAccounts()
 
+        if setupPath == .newToNostr {
+            publishNewAccount()
+        }
+
         if isIOSDevice {
-            PushNotificationService.shared.requestPermissionAndRegister()
+            // Not on top of the first tutorial or the import pill: ask when
+            // the first tutorial closes. If none does this launch,
+            // AppDelegate asks at the next launch.
+            TutorialCenter.shared.onNextClose = {
+                PushNotificationService.shared.requestPermissionAndRegister()
+            }
         }
 
         onComplete()
         dismiss()
+    }
+
+    /// Publishes what a brand-new account needs to exist for other people:
+    /// a relay list and a profile. Its follow list starts with its first
+    /// follow, in the Fill your feed guide. Runs once, after
+    /// `saveAndComplete` has stored the key, because each event has to be
+    /// signed by it. Only for the New to Nostr path, whose key was generated
+    /// in this run — a key that cannot have any of these events yet.
+    private func publishNewAccount() {
+        guard let ownerHex = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
+        FeedService.shared.markFreshAccount(ownerHex)
+        // Straight into Fill your feed: this key follows nobody and can't
+        // yet, so there is nothing to wait for (the follow-list check can
+        // take 15s or more on slow relays, or never finish).
+        FillYourVaultCoordinator.shared.start()
+        TutorialCenter.shared.startIfEligible(.fillYourVault, account: ownerHex)
+        let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photo = profilePhotoJPEG
+        let configService = self.configService
+
+        Task { @MainActor in
+            let nostr = NostrService.shared
+
+            let relayTags = RelayConfiguration.newAccountRelayListTags(
+                broadcastRelays: RelayConfiguration.directBroadcastRelays(
+                    kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
+                )
+            )
+            if !relayTags.isEmpty,
+               let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags) {
+                nostr.postEvent(relayList)
+            }
+
+            var profile: [String: Any] = [:]
+            if !name.isEmpty {
+                profile[ProfileMetadataMerge.name] = name
+                profile[ProfileMetadataMerge.displayName] = name
+            }
+            if let photo {
+                // The upload signs with this key and stores the blob in the
+                // device's relay before mirroring it, so wait for the relay.
+                // A photo that can't be hosted outside is left off rather
+                // than published as a URL only this phone can serve.
+                _ = await RelayProcessManager.shared.ensureRelayReady(timeout: 30)
+                if let blob = try? await ModePostPublisher.upload(
+                    data: photo, mimeType: "image/jpeg", configService: configService, nostrService: nostr
+                ) {
+                    profile[ProfileMetadataMerge.picture] = blob.url.absoluteString
+                }
+            }
+            guard !profile.isEmpty,
+                  let content = ProfileMetadataMerge.encode(profile),
+                  let metadata = await nostr.signEventAsync(kind: 0, content: content, tags: []) else { return }
+            nostr.postEvent(metadata)
+        }
     }
 
     private var processKillOverlay: some View {
@@ -604,91 +741,293 @@ struct SetupWizardView: View {
     }
 }
 
-// MARK: - Step 0: Welcome
+// MARK: - Step 0: Welcome (the front door)
 
+/// The first screen after install. It used to be five feature paragraphs with
+/// Get Started below the fold, then a separate "how do you want to use it"
+/// screen whose Continue only appeared after picking a card. Now it fits one
+/// phone screen and the three ways in are the buttons themselves.
 private struct WelcomeStepView: View {
-    let onContinue: () -> Void
+    let onChoose: (SetupWizardView.SetupPath) -> Void
+
     @State private var appeared = false
+    @State private var showWhatsInside = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            // Tall phones get a bigger icon so the block fills the space
+            // instead of floating; the SE is already tight.
+            let iconSize: CGFloat = proxy.size.height > 800 ? 112 : 92
+
+            VStack(spacing: 0) {
+                // Centred in the space above the buttons. When it can't fit
+                // (large text scale), only this part scrolls and the buttons
+                // stay pinned.
+                ViewThatFits(in: .vertical) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 16)
+                        hero(iconSize: iconSize)
+                        Spacer(minLength: 16)
+                    }
+                    ScrollView {
+                        hero(iconSize: iconSize).padding(.vertical, 24)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+
+                actions
+                    .padding(.top, 16)
+                    .padding(.bottom, 16)
+            }
+        }
+        .sheet(isPresented: $showWhatsInside) {
+            WhatsInsideSheet()
+        }
+        .onAppear {
+            if Motion.isReduced {
+                appeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.45)) { appeared = true }
+            }
+        }
+    }
+
+    // MARK: Hero
+
+    private func hero(iconSize: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            vaultMark(size: iconSize)
+                .scaleEffect(appeared ? 1 : 0.92)
+                .accessibilityHidden(true)
+
+            Text("Nostr Vault")
+                .font(.appSystem(size: 34, weight: .bold))
+                .foregroundColor(WizardColors.textPrimary)
+                .padding(.top, 24)
+                .accessibilityAddTraits(.isHeader)
+
+            // Broken by hand so it splits at the comma on every width.
+            Text("Your posts, messages and media,\nkept on your own device.")
+                .font(.appSystem(size: 17))
+                .foregroundColor(WizardColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+
+            chips
+                .padding(.top, 24)
+
+            Button { showWhatsInside = true } label: {
+                Text("What's inside?")
+                    .font(.appSystem(size: 13, weight: .medium))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+        }
+        .opacity(appeared ? 1 : 0)
+    }
+
+    /// The icon they just tapped on the home screen, so the first screen
+    /// matches it. Exported from the 1024 AppIcon: `Image("AppIcon")` does not
+    /// load reliably on iOS.
+    private func vaultMark(size: CGFloat) -> some View {
+        let corner = size * 0.2237 // the iOS icon squircle's ratio
+        return ZStack {
+            Circle()
+                .fill(WizardColors.accentPrimary.opacity(0.35))
+                .frame(width: size * 1.6, height: size * 1.6)
+                .blur(radius: 40)
+
+            Image("VaultMark")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        }
+        .frame(height: size + 4)
+    }
+
+    // MARK: Chips
+
+    private static let chipItems: [(icon: String, label: String)] = [
+        ("externaldrive.connected.to.line.below", "Own relay"),
+        ("lock.shield", "Private DMs"),
+        ("bolt.fill", "Zaps")
+    ]
+
+    /// One row when it fits, two rows on a narrow phone, a column at large
+    /// text. Not buttons: they describe, they don't do anything.
+    private var chips: some View {
+        let items = Self.chipItems
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.label) { chip($0.icon, $0.label) }
+            }
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(items.prefix(2), id: \.label) { chip($0.icon, $0.label) }
+                }
+                ForEach(items.suffix(1), id: \.label) { chip($0.icon, $0.label) }
+            }
+            VStack(spacing: 8) {
+                ForEach(items, id: \.label) { chip($0.icon, $0.label) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Includes your own relay, private DMs and zaps")
+    }
+
+    private func chip(_ icon: String, _ label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.accentPrimary)
+            Text(label)
+                .font(.appSystem(size: 13, weight: .medium))
+                .foregroundColor(WizardColors.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
+        .background(Capsule().fill(WizardColors.bgCard))
+        .overlay(Capsule().stroke(WizardColors.borderSubtle, lineWidth: 1))
+        .fixedSize()
+    }
+
+    // MARK: Actions
+
+    /// No entrance delay: these are tappable on the first frame.
+    private var actions: some View {
+        VStack(spacing: 12) {
+            Button { onChoose(.newToNostr) } label: {
+                Text("Create an account").font(.appSystem(size: 17, weight: .semibold))
+            }
+            .buttonStyle(FrontDoorButtonStyle(isPrimary: true))
+
+            // iPhone/iPad: one key field on the next step decides read-only
+            // vs can-post, so this one button covers both. The Mac still
+            // offers browse separately.
+            Button { onChoose(isIOSDevice ? .useNostr : .full) } label: {
+                Text("I already use Nostr").font(.appSystem(size: 17, weight: .semibold))
+            }
+            .buttonStyle(FrontDoorButtonStyle(isPrimary: false))
+
+            if !isIOSDevice {
+                Button { onChoose(.browse) } label: {
+                    Text("Just look around")
+                        .font(.appSystem(size: 15, weight: .medium))
+                        .foregroundColor(WizardColors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: isIOSDevice ? .infinity : 360)
+    }
+}
+
+private struct FrontDoorButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(WizardColors.textPrimary)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background {
+                if isPrimary {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(WizardColors.accentGradient)
+                        .shadow(color: WizardColors.accentGlow, radius: 8, y: 2)
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(WizardColors.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                        )
+                }
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(WizardAnimations.springGentle, value: configuration.isPressed)
+    }
+}
+
+/// The feature descriptions that used to fill the first screen.
+private struct WhatsInsideSheet: View {
+    @Environment(\.dismiss) private var dismiss
 
     private let features: [(icon: String, title: String, line: String)] = [
         ("externaldrive.connected.to.line.below", "Personal Relay", "Run your own relay on-device. Notes are stored locally and broadcast to the network — you always have a copy."),
         ("doc.text.image", "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
         ("lock.shield", "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
-        ("photo.stack", "Blossom Media", "Host images and videos on your machine with Blossom. Mirror media from the network to your local storage."),
+        ("photo.stack", "Blossom Media", "Host images and videos on your device with Blossom. Mirror media from the network to your local storage."),
         ("bolt.fill", "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect.")
     ]
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 20)
-
-            // App icon
-            Image(systemName: "shield.checkered")
-                .font(.appSystem(size: 64, weight: .light))
-                .foregroundStyle(WizardColors.accentGradient)
-                .scaleEffect(appeared ? 1.0 : 0.8)
-                .opacity(appeared ? 1 : 0)
-                .animation(WizardAnimations.springEnter, value: appeared)
-
-            // Title
-            Text(String(localized: "setup.welcome.appName"))
-                .font(.appSystem(size: isIOSDevice ? 32 : 36, weight: .bold, design: .default))
-                .foregroundColor(WizardColors.textPrimary)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
-
-            // Subtitle lines
-            VStack(spacing: 6) {
-                Text(String(localized: "setup.welcome.subtitle1"))
-                Text(String(localized: "setup.welcome.subtitle2"))
+        VStack(spacing: 0) {
+            HStack {
+                Text("What's inside")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .buttonStyle(.plain)
             }
-            .font(.appSystem(size: isIOSDevice ? 15 : 16))
-            .foregroundColor(WizardColors.textSecondary)
-            .multilineTextAlignment(.center)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
-            .animation(WizardAnimations.springEnter.delay(0.4), value: appeared)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
 
-            // Feature cards
-            VStack(spacing: 10) {
-                ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
-                    featureCard(icon: feature.icon, title: feature.title, line: feature.line)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 16)
-                        .animation(WizardAnimations.springEnter.delay(0.6 + Double(index) * WizardAnimations.staggerDelay), value: appeared)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(features, id: \.title) { feature in
+                        featureRow(feature.icon, feature.title, feature.line)
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-
-            // CTA
-            WizardPrimaryButton(title: String(localized: "setup.welcome.getStarted"), action: onContinue)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(1.0), value: appeared)
-
-            Spacer().frame(height: 8)
         }
-        .onAppear { appeared = true }
+        .background(WizardColors.bgPrimary.ignoresSafeArea())
+        #if os(iOS)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        #else
+        .frame(width: 480, height: 560)
+        #endif
     }
 
-    private func featureCard(icon: String, title: String, line: String) -> some View {
-        HStack(spacing: 14) {
+    private func featureRow(_ icon: String, _ title: String, _ line: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.appSystem(size: 20))
                 .foregroundColor(WizardColors.accentPrimary)
-                .shadow(color: WizardColors.accentGlow, radius: 4)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.appSystem(size: isIOSDevice ? 15 : 16, weight: .semibold))
+                    .font(.appSystem(size: 16, weight: .semibold))
                     .foregroundColor(WizardColors.textPrimary)
                 Text(line)
-                    .font(.appSystem(size: isIOSDevice ? 13 : 14))
+                    .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(14)
         .background(WizardColors.bgCard)
@@ -697,372 +1036,230 @@ private struct WelcomeStepView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(WizardColors.borderSubtle, lineWidth: 1)
         )
-    }
-}
-
-// MARK: - Step 1: Choose Path
-
-private struct ChoosePathStep: View {
-    @Binding var selectedPath: SetupWizardView.SetupPath
-    let onContinue: () -> Void
-    @State private var appeared = false
-
-    var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 40)
-
-            Text(String(localized: "setup.path.title"))
-                .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
-                .foregroundColor(WizardColors.textPrimary)
-                .multilineTextAlignment(.center)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(WizardAnimations.springEnter.delay(0.1), value: appeared)
-
-            VStack(spacing: 14) {
-                // New to Nostr card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .newToNostr } }) {
-                    WizardGlassCard(isSelected: selectedPath == .newToNostr) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "sparkles")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .newToNostr ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text("New to Nostr")
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .newToNostr {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text("Quick start -- we'll set everything up for you")
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .newToNostr ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
-
-                // Full Setup card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .full } }) {
-                    WizardGlassCard(isSelected: selectedPath == .full) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "key.fill")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .full ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(String(localized: "setup.path.full.title"))
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .full {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text(String(localized: "setup.path.full.description"))
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .full ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
-                // Browse Mode card
-                Button(action: { withAnimation(WizardAnimations.springEnter) { selectedPath = .browse } }) {
-                    WizardGlassCard(isSelected: selectedPath == .browse) {
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "eye.fill")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(selectedPath == .browse ? WizardColors.accentPrimary : WizardColors.textSecondary)
-                                .frame(width: 36)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(String(localized: "setup.path.browse.title"))
-                                        .font(.appSystem(size: 18, weight: .semibold))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                    Spacer()
-                                    if selectedPath == .browse {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(WizardColors.accentPrimary)
-                                            .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                                Text(String(localized: "setup.path.browse.description"))
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                    .opacity(selectedPath != .none && selectedPath != .browse ? 0.7 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 16)
-                .animation(WizardAnimations.springEnter.delay(0.4), value: appeared)
-            }
-
-            if selectedPath != .none {
-                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
-            Spacer()
-        }
-        .onAppear { appeared = true }
+        .accessibilityElement(children: .combine)
     }
 }
 
 // MARK: - Step 9: Nostr Intro (New to Nostr path)
 
+/// What Nostr is, then the new keypair: both keys explained, and the nsec
+/// backed up before the user can move on. The password is its own step (10)
+/// so neither page needs scrolling.
 private struct NostrIntroStep: View {
     @Binding var npub: String
     @Binding var nsec: String
-    @Binding var nsecPassword: String
     let onContinue: () -> Void
 
     @State private var appeared = false
-    @State private var generatedKeys = false
     @State private var isGenerating = false
     @State private var error: String?
-    @State private var keyPassword = ""
-    @State private var confirmPassword = ""
-    @State private var showPassword = false
+    @State private var savedKey = false
+    @State private var copiedKey: String?
+
+    /// Derived from the binding, not local state, so Back from the password
+    /// step shows the same key instead of offering to generate a new one.
+    private var hasKeys: Bool { !nsec.isEmpty }
 
     var body: some View {
         VStack(spacing: 20) {
-            Spacer().frame(height: 20)
+            Spacer().frame(height: hasKeys ? 4 : 20)
 
-            // Card 1: What is Nostr
-            WizardGlassCard(isSelected: false) {
-                VStack(spacing: 12) {
-                    Text("Welcome to Nostr")
-                        .font(.appSystem(size: 20, weight: .semibold))
-                        .foregroundColor(WizardColors.textPrimary)
-                        .multilineTextAlignment(.center)
-
-                    Text("Nostr is an open social protocol. You own your identity through a cryptographic keypair -- no company controls your account. Your posts are broadcast to relays and can be read by anyone.")
-                        .font(.appSystem(size: 15))
-                        .foregroundColor(WizardColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-                }
-            }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 16)
-            .animation(WizardAnimations.springEnter.delay(0.15), value: appeared)
-
-            // Card 2: Why Nostr Vault is unique
-            WizardGlassCard(isSelected: false) {
-                VStack(spacing: 12) {
-                    Text("Your Personal Archive")
-                        .font(.appSystem(size: 20, weight: .semibold))
-                        .foregroundColor(WizardColors.textPrimary)
-                        .multilineTextAlignment(.center)
-
-                    Text("Nostr Vault runs a HAVEN relay right on your device. Every note, message, and media file you interact with is archived locally. Your data stays with you -- not on someone else's server.")
-                        .font(.appSystem(size: 15))
-                        .foregroundColor(WizardColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(4)
-                }
-            }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 16)
-            .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
-            if generatedKeys {
-                // Card 3: Secret key backup
-                WizardGlassCard(isSelected: false) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your Secret Key")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(WizardColors.textPrimary)
-
-                        Text("Save this somewhere safe. It's the only way to recover your account. Anyone with this key can post as you.")
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(WizardColors.textSecondary)
-                            .lineSpacing(2)
-
-                        Button {
-                            #if os(iOS)
-                            UIPasteboard.general.string = nsec
-                            #else
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(nsec, forType: .string)
-                            #endif
-                        } label: {
-                            Text(nsec)
-                                .font(.appSystem(size: 12, design: .monospaced))
-                                .foregroundColor(WizardColors.accentPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(WizardColors.bgElevated)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("Tap to copy")
-                            .font(.appSystem(size: 11))
-                            .foregroundColor(WizardColors.textMuted)
-                    }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-
-                // Card 4: Password protection
-                WizardGlassCard(isSelected: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Protect Your Key")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(WizardColors.textPrimary)
-
-                        Text("Set a password to encrypt your private key. You'll need this password to use Haven.")
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(WizardColors.textSecondary)
-                            .lineSpacing(2)
-
-                        VStack(spacing: 10) {
-                            HStack {
-                                if showPassword {
-                                    TextField("Password (minimum 8 characters)", text: $keyPassword)
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                        .textFieldStyle(.plain)
-                                        .disableAutocorrection(true)
-                                } else {
-                                    SecureField("Password (minimum 8 characters)", text: $keyPassword)
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textPrimary)
-                                        .textFieldStyle(.plain)
-                                        .disableAutocorrection(true)
-                                }
-                                Button {
-                                    showPassword.toggle()
-                                } label: {
-                                    Image(systemName: showPassword ? "eye.slash" : "eye")
-                                        .font(.appSystem(size: 14))
-                                        .foregroundColor(WizardColors.textMuted)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(12)
-                            .background(WizardColors.bgElevated)
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                            )
-
-                            if showPassword {
-                                TextField("Confirm password", text: $confirmPassword)
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textPrimary)
-                                    .textFieldStyle(.plain)
-                                    .disableAutocorrection(true)
-                                    .padding(12)
-                                    .background(WizardColors.bgElevated)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                    )
-                            } else {
-                                SecureField("Confirm password", text: $confirmPassword)
-                                    .font(.appSystem(size: 14))
-                                    .foregroundColor(WizardColors.textPrimary)
-                                    .textFieldStyle(.plain)
-                                    .disableAutocorrection(true)
-                                    .padding(12)
-                                    .background(WizardColors.bgElevated)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
-                                    )
-                            }
-                        }
-
-                        if !keyPassword.isEmpty && keyPassword.count < 8 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.circle")
-                                    .font(.appSystem(size: 12))
-                                Text("Password must be at least 8 characters")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .foregroundColor(WizardColors.error)
-                        }
-
-                        if !confirmPassword.isEmpty && keyPassword != confirmPassword {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.circle")
-                                    .font(.appSystem(size: 12))
-                                Text("Passwords do not match")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .foregroundColor(WizardColors.error)
-                        }
-                    }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-
-                WizardPrimaryButton(title: "Continue", action: validateAndContinue)
-                    .disabled(!isPasswordValid)
-                    .opacity(isPasswordValid ? 1.0 : 0.5)
+            if hasKeys {
+                keysContent
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                if let errorText = error {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption)
-                        Text(errorText)
-                            .font(.appSystem(size: 13))
-                    }
-                    .foregroundColor(WizardColors.error)
-                }
-
-                WizardPrimaryButton(title: "Create My Account", action: generateKeys)
-                    .disabled(isGenerating)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 10)
-                    .animation(WizardAnimations.springEnter.delay(0.45), value: appeared)
-
-                if isGenerating {
-                    ProgressView()
-                        .tint(WizardColors.accentPrimary)
-                }
+                introContent
             }
 
             Spacer()
         }
         .onAppear { appeared = true }
+    }
+
+    @ViewBuilder
+    private var introContent: some View {
+        // Card 1: What is Nostr
+        WizardGlassCard(isSelected: false) {
+            VStack(spacing: 12) {
+                Text("Welcome to Nostr")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text("Nostr is an open social protocol. You own your identity through a cryptographic keypair -- no company controls your account. Your posts are broadcast to relays and can be read by anyone.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(WizardAnimations.springEnter.delay(0.15), value: appeared)
+
+        // Card 2: Why Nostr Vault is unique
+        WizardGlassCard(isSelected: false) {
+            VStack(spacing: 12) {
+                Text("Your Personal Archive")
+                    .font(.appSystem(size: 20, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text("Nostr Vault runs a HAVEN relay right on your device. Every note, message, and media file you interact with is archived locally. Your data stays with you -- not on someone else's server.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
+
+        if let errorText = error {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption)
+                Text(errorText)
+                    .font(.appSystem(size: 13))
+            }
+            .foregroundColor(WizardColors.error)
+        }
+
+        WizardPrimaryButton(title: "Create My Account", action: generateKeys)
+            .disabled(isGenerating)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(WizardAnimations.springEnter.delay(0.45), value: appeared)
+
+        if isGenerating {
+            ProgressView()
+                .tint(WizardColors.accentPrimary)
+        }
+    }
+
+    private var keysContent: some View {
+        VStack(spacing: 14) {
+            VStack(spacing: 6) {
+                Text("Your Keys")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                Text("Two keys replace a username and password.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            keyCard(
+                icon: "person.crop.circle",
+                title: "Public key",
+                caption: "Your name on Nostr. Share it freely.",
+                value: npub,
+                isSecret: false
+            )
+
+            keyCard(
+                icon: "key.fill",
+                title: "Secret key",
+                caption: "Your password to Nostr. Anyone who has it can post as you, so never share it.",
+                value: nsec,
+                isSecret: true
+            )
+
+            Button {
+                savedKey.toggle()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: savedKey ? "checkmark.square.fill" : "square")
+                        .font(.appSystem(size: 20))
+                        .foregroundColor(savedKey ? WizardColors.accentPrimary : WizardColors.textMuted)
+                    Text("I saved my secret key")
+                        .font(.appSystem(size: 15, weight: .medium))
+                        .foregroundColor(WizardColors.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("I saved my secret key")
+            .accessibilityValue(savedKey ? "Checked" : "Not checked")
+
+            WizardPrimaryButton(title: "Continue", action: onContinue, disabled: !savedKey)
+        }
+    }
+
+    private func keyCard(icon: String, title: String, caption: String, value: String, isSecret: Bool) -> some View {
+        WizardGlassCard(isSelected: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.appSystem(size: 15))
+                        .foregroundColor(isSecret ? WizardColors.accentPrimary : WizardColors.textSecondary)
+                    Text(title)
+                        .font(.appSystem(size: 16, weight: .semibold))
+                        .foregroundColor(WizardColors.textPrimary)
+                    Spacer(minLength: 0)
+                    Text(copiedKey == value ? "Copied" : "Copy")
+                        .font(.appSystem(size: 13, weight: .medium))
+                        .foregroundColor(copiedKey == value ? WizardColors.success : WizardColors.accentPrimary)
+                }
+
+                Text(caption)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(value)
+                    .font(.appSystem(size: 12, design: .monospaced))
+                    .foregroundColor(isSecret ? WizardColors.accentPrimary : WizardColors.textSecondary)
+                    // The npub only needs recognising; the nsec has to be
+                    // readable in full to write it down.
+                    .lineLimit(isSecret ? nil : 1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(WizardColors.bgElevated)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                    )
+
+                if isSecret {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.shield")
+                            .font(.appSystem(size: 12))
+                        Text("Nobody can recover it for you, not even us.")
+                            .font(.appSystem(size: 12))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundColor(WizardColors.textPrimary.opacity(0.85))
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { copy(value) }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Double tap to copy")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func copy(_ value: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = value
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        #endif
+        withAnimation(WizardAnimations.springGentle) { copiedKey = value }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if copiedKey == value {
+                withAnimation(WizardAnimations.springGentle) { copiedKey = nil }
+            }
+        }
     }
 
     private func generateKeys() {
@@ -1084,30 +1281,294 @@ private struct NostrIntroStep: View {
         let sk = String(parts[0])
         let pk = String(parts[1])
 
-        if let pubData = Bech32.hexToData(pk),
-           let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {
-            npub = generatedNpub
+        var newNpub: String?
+        var newNsec: String?
+        if let pubData = Bech32.hexToData(pk) {
+            newNpub = Bech32.encode(hrp: "npub", data: pubData)
         }
-
-        if let secData = Bech32.hexToData(sk),
-           let generatedNsec = Bech32.encode(hrp: "nsec", data: secData) {
-            nsec = generatedNsec
+        if let secData = Bech32.hexToData(sk) {
+            newNsec = Bech32.encode(hrp: "nsec", data: secData)
         }
 
         withAnimation(WizardAnimations.springBounce) {
-            generatedKeys = true
+            if let newNpub { npub = newNpub }
+            if let newNsec { nsec = newNsec }
         }
         isGenerating = false
     }
+}
+
+// MARK: - Step 10: Protect Your Key (New to Nostr path)
+
+/// The password that encrypts the new nsec (NIP-49). Its own page so the
+/// fields sit above the keyboard without scrolling.
+private struct KeyPasswordStep: View {
+    @Binding var nsecPassword: String
+    let onContinue: () -> Void
+
+    @State private var keyPassword = ""
+    @State private var confirmPassword = ""
+    @State private var showPassword = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case password, confirm }
+
+    /// With the keyboard up the icon and subtitle step aside, so the fields,
+    /// the warning and Continue all stay above it on an iPhone SE.
+    private var isTyping: Bool { focusedField != nil }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer().frame(height: isTyping ? 4 : 20)
+
+            VStack(spacing: 8) {
+                if !isTyping {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.appSystem(size: 40))
+                        .foregroundStyle(WizardColors.accentGradient)
+                        .accessibilityHidden(true)
+                        .transition(.opacity)
+                }
+                Text("Protect Your Key")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                if !isTyping {
+                    Text("Choose a password to lock your secret key on this phone.")
+                        .font(.appSystem(size: 15))
+                        .foregroundColor(WizardColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    passwordField("Password (minimum 8 characters)", text: $keyPassword)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .confirm }
+                    Button {
+                        showPassword.toggle()
+                    } label: {
+                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                            .font(.appSystem(size: 14))
+                            .foregroundColor(WizardColors.textMuted)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showPassword ? "Hide password" : "Show password")
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.vertical, 6)
+                .background(WizardColors.bgElevated)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                )
+
+                passwordField("Confirm password", text: $confirmPassword)
+                    .focused($focusedField, equals: .confirm)
+                    .submitLabel(.continue)
+                    .onSubmit(validateAndContinue)
+                    .padding(12)
+                    .background(WizardColors.bgElevated)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                    )
+
+                if !keyPassword.isEmpty && keyPassword.count < 8 {
+                    validationMessage("Password must be at least 8 characters")
+                }
+                if !confirmPassword.isEmpty && keyPassword != confirmPassword {
+                    validationMessage("Passwords do not match")
+                }
+            }
+
+            // Above the warning so it stays above the keyboard while typing;
+            // the warning was already read before a field took focus.
+            WizardPrimaryButton(title: "Continue", action: validateAndContinue, disabled: !isPasswordValid)
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.shield")
+                    .font(.appSystem(size: 16))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .accessibilityHidden(true)
+                Text("Nobody can reset this password or recover your secret key for you, not even us. Write both down.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(WizardColors.accentPrimary.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(WizardColors.borderActive, lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+
+            Spacer()
+        }
+        .animation(WizardAnimations.springGentle, value: isTyping)
+    }
+
+    @ViewBuilder
+    private func passwordField(_ placeholder: String, text: Binding<String>) -> some View {
+        Group {
+            if showPassword {
+                TextField(placeholder, text: text)
+            } else {
+                SecureField(placeholder, text: text)
+            }
+        }
+        .font(.appSystem(size: 14))
+        .foregroundColor(WizardColors.textPrimary)
+        .textFieldStyle(.plain)
+        .disableAutocorrection(true)
+        #if os(iOS)
+        .textInputAutocapitalization(.never)
+        #endif
+    }
+
+    private func validationMessage(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.appSystem(size: 12))
+            Text(text)
+                .font(.appSystem(size: 12))
+        }
+        .foregroundColor(WizardColors.error)
+    }
 
     private var isPasswordValid: Bool {
-        !keyPassword.isEmpty && keyPassword.count >= 8 && keyPassword == confirmPassword
+        keyPassword.count >= 8 && keyPassword == confirmPassword
     }
 
     private func validateAndContinue() {
         guard isPasswordValid else { return }
         nsecPassword = keyPassword
         onContinue()
+    }
+}
+
+// MARK: - Step 11: New Profile
+
+/// Name and photo for a key generated in this run. Nothing is published here:
+/// the wizard publishes the kind 0 once setup completes and the key can sign.
+private struct NewProfileStep: View {
+    @Binding var name: String
+    @Binding var photoJPEG: Data?
+    let onContinue: () -> Void
+
+    @State private var appeared = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photoError: String?
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer().frame(height: 20)
+
+            VStack(spacing: 8) {
+                Text("Your Profile")
+                    .font(.appSystem(size: 24, weight: .bold))
+                    .foregroundColor(WizardColors.textPrimary)
+                Text("This is how people will see you. You can change it later.")
+                    .font(.appSystem(size: 15))
+                    .foregroundColor(WizardColors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(WizardColors.bgElevated)
+                            .frame(width: 104, height: 104)
+                        if let preview = photoJPEG.flatMap(Self.previewImage) {
+                            Image(decorative: preview, scale: 1)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 104, height: 104)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "camera.fill")
+                                .font(.appSystem(size: 28))
+                                .foregroundColor(WizardColors.textMuted)
+                        }
+                    }
+                    .overlay(Circle().stroke(WizardColors.borderActive, lineWidth: 1))
+                    Text(photoJPEG == nil ? "Add Photo" : "Change Photo")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(WizardColors.accentPrimary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(photoJPEG == nil ? "Add profile photo" : "Change profile photo")
+
+            if let photoError {
+                Text(photoError)
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
+            }
+
+            WizardInputField(label: "Name", text: $name, placeholder: "Your name")
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
+                WizardSkipLink(title: "Skip for Now") {
+                    name = ""
+                    photoJPEG = nil
+                    onContinue()
+                }
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .animation(WizardAnimations.springEnter, value: appeared)
+        .onAppear { appeared = true }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    if let jpeg = data.flatMap({ Self.profileJPEG(from: $0) }) {
+                        photoJPEG = jpeg
+                        photoError = nil
+                    } else {
+                        photoError = "Couldn't read that photo. Try another."
+                    }
+                }
+            }
+        }
+    }
+
+    /// A square-friendly JPEG no larger than 512 px on its longest side.
+    /// Drawing a fresh thumbnail also leaves the original's metadata behind,
+    /// location included; the upload strips it again regardless.
+    static func profileJPEG(from data: Data, maxPixel: Int = 512) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+              ] as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return out as Data
+    }
+
+    static func previewImage(_ jpeg: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }
 
@@ -1145,7 +1606,10 @@ private struct IdentityStepView: View {
 
     private var isNpubValid: Bool {
         guard !npub.isEmpty, npub.hasPrefix("npub") else { return false }
-        guard let decoded = Bech32.decode(npub), decoded.hrp == "npub" else { return false }
+        // decode skips the checksum: without it a one-character typo is a
+        // different, valid-looking key that setup would save as the owner.
+        guard Bech32.hasValidChecksum(npub),
+              let decoded = Bech32.decode(npub), decoded.hrp == "npub", decoded.data.count == 32 else { return false }
         return true
     }
 
@@ -1168,7 +1632,11 @@ private struct IdentityStepView: View {
         }
         guard isNpubValid else { return false }
         if selectedMethod == .nip46 { return bunkerConnected }
-        if !nsec.isEmpty && nsecPassword.isEmpty { return false }
+        if !nsec.isEmpty {
+            // The key decides the identity: an nsec whose npub isn't the one
+            // in the field would sign as someone other than the owner.
+            guard derivedNpub == npub, !nsecPassword.isEmpty else { return false }
+        }
         return true
     }
 
@@ -1222,24 +1690,11 @@ private struct IdentityStepView: View {
                                         npub = ""
                                     }
                                 } else if cleaned.hasPrefix("nprofile1") {
-                                    // Decode nprofile TLV to extract pubkey
-                                    if let decoded = Bech32.decode(cleaned), decoded.hrp == "nprofile" {
-                                        let bytes = Array(decoded.data)
-                                        var i = 0
-                                        while i + 2 <= bytes.count {
-                                            let type = bytes[i]
-                                            let length = Int(bytes[i + 1])
-                                            i += 2
-                                            if i + length > bytes.count { break }
-                                            if type == 0 && length == 32 {
-                                                let pubkeyHex = bytes[i..<i+length].map { String(format: "%02x", $0) }.joined()
-                                                if let pubData = Bech32.hexToData(pubkeyHex),
-                                                   let resolvedNpub = Bech32.encode(hrp: "npub", data: pubData) {
-                                                    npub = resolvedNpub
-                                                }
-                                            }
-                                            i += length
-                                        }
+                                    // The same decoder the feed's mention links use.
+                                    if let pubkeyHex = QuoteReference.profilePubkey(fromBech32: cleaned),
+                                       let pubData = Bech32.hexToData(pubkeyHex),
+                                       let resolvedNpub = Bech32.encode(hrp: "npub", data: pubData) {
+                                        npub = resolvedNpub
                                     } else {
                                         npub = ""
                                     }
@@ -1317,7 +1772,7 @@ private struct IdentityStepView: View {
                 }
             } else {
                 // Full mode: standard npub field
-                WizardInputField(label: String(localized: "setup.identity.label.npub"), text: $npub, placeholder: "npub1...", isDisabled: selectedMethod == .nip46 && bunkerConnected)
+                WizardInputField(label: String(localized: "setup.identity.label.npub"), text: $npub, placeholder: "npub1...", isDisabled: (selectedMethod == .nip46 && bunkerConnected) || (selectedMethod == .local && derivedNpub != nil))
                     .opacity(appeared ? 1 : 0)
                     .offset(x: appeared ? 0 : 20)
                     .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
@@ -1357,8 +1812,11 @@ private struct IdentityStepView: View {
                 if selectedMethod == .local {
                     VStack(spacing: 16) {
                         WizardInputField(label: String(localized: "setup.identity.label.nsec"), text: $nsec, placeholder: "nsec1...", isSecure: true)
+                            .onChange(of: nsec) { _, newValue in
+                                fillNpub(fromNsec: newValue)
+                            }
 
-                        if !nsec.isEmpty && !nsec.hasPrefix("nsec") {
+                        if !nsec.isEmpty && derivedNpub == nil {
                             HStack(spacing: 6) {
                                 Image(systemName: "exclamationmark.triangle")
                                     .font(.caption)
@@ -1415,6 +1873,18 @@ private struct IdentityStepView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
                     VStack(spacing: 12) {
+                        if !bunkerConnected {
+                            SignInWithClaveView { request, signerPubkey in
+                                try await signInWithClave(request, signerPubkey: signerPubkey)
+                            }
+                            .tint(WizardColors.accentPrimary)
+
+                            Text("Or paste a bunker link from any signer app")
+                                .font(.appSystem(size: 12))
+                                .foregroundColor(WizardColors.textMuted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
                         WizardInputField(
                             label: String(localized: "setup.identity.label.bunker"),
                             text: $bunkerURI,
@@ -1465,6 +1935,12 @@ private struct IdentityStepView: View {
                                     .controlSize(.small)
                                     .tint(WizardColors.accentPrimary)
                             }
+                        }
+
+                        if isConnectingBunker {
+                            Text("Approve the connection in your signer app")
+                                .font(.appSystem(size: 12, weight: .regular))
+                                .foregroundColor(WizardColors.textSecondary)
                         }
                     }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -1609,6 +2085,30 @@ private struct IdentityStepView: View {
         }
     }
 
+    /// The npub of the nsec field, or nil while it doesn't hold a valid key.
+    private var derivedNpub: String? {
+        guard let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
+              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return nil }
+        let pk = String(cString: pkCStr)
+        free(pkCStr)
+        guard let pubData = Bech32.hexToData(pk) else { return nil }
+        return Bech32.encode(hrp: "npub", data: pubData)
+    }
+
+    /// A pasted nsec is the whole identity: derive its npub so the user
+    /// isn't left with a disabled Continue and an empty npub field to fill
+    /// by hand (or filled with an npub that doesn't match the key).
+    private func fillNpub(fromNsec value: String) {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean != value {
+            nsec = clean // pasted keys often carry a trailing newline
+            return
+        }
+        if let derivedNpub {
+            npub = derivedNpub
+        }
+    }
+
     private func generateNewIdentity() {
         guard let resultCStr = GenerateKeyPairC() else { return }
         let result = String(cString: resultCStr)
@@ -1686,8 +2186,8 @@ private struct IdentityStepView: View {
                 ConfigService.shared.config.signingMode = "nip46"
                 ConfigService.shared.save()
 
-                try await NIP46Service.shared.connect()
-                let pubkey = try await NIP46Service.shared.getPublicKey()
+                // No account exists yet during setup: the signer's key becomes it.
+                let pubkey = try await NIP46Service.shared.connect(adoptSignerAccount: true)
 
                 if let pubData = Bech32.hexToData(pubkey),
                    let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {
@@ -1701,6 +2201,35 @@ private struct IdentityStepView: View {
                 isConnectingBunker = false
                 ConfigService.shared.config.signingMode = "local"
             }
+        }
+    }
+
+    /// Finishes a "Sign in with Clave" pairing: store it the way a pasted
+    /// bunker link is stored, then connect, adopting the signer's key as the
+    /// new account.
+    private func signInWithClave(_ request: NIP46Service.NostrConnectRequest, signerPubkey: String) async throws {
+        let uri = NIP46Service.bunkerURI(signerPubkey: signerPubkey, relays: request.relays)
+        let config = ConfigService.shared
+        config.config.nip46SignerPubkey = signerPubkey
+        config.config.nip46RelayURL = request.relays.first ?? ""
+        config.config.nip46Secret = ""
+        config.config.nip46BunkerURI = uri
+        config.config.nip46ClientSecretKey = request.clientSecretKey
+        config.config.nip46ClientPubkey = request.clientPubkey
+        config.config.signingMode = "nip46"
+        config.save()
+        do {
+            let pubkey = try await NIP46Service.shared.connect(adoptSignerAccount: true)
+            if let pubData = Bech32.hexToData(pubkey),
+               let signerNpub = Bech32.encode(hrp: "npub", data: pubData) {
+                npub = signerNpub
+            }
+            bunkerURI = uri
+            bunkerConnected = true
+            bunkerError = nil
+        } catch {
+            config.config.signingMode = "local"
+            throw error
         }
     }
 
@@ -2014,6 +2543,20 @@ private struct RelayDiagramiOS: View {
     }
 }
 
+// MARK: - Keep screen awake
+
+private extension View {
+    /// Disables the iOS idle timer while this view is on screen. No-op on macOS.
+    func keepsScreenAwake() -> some View {
+        #if os(iOS)
+        onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Step 4: Import Notes
 
 private struct ImportNotesStep: View {
@@ -2075,6 +2618,8 @@ private struct ImportNotesStep: View {
             Spacer().frame(height: 8)
         }
         .onAppear { appeared = true }
+        // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
+        .keepsScreenAwake()
         .fileImporter(
             isPresented: $showingFileImporter,
             allowedContentTypes: [.zip, .json],
@@ -2796,8 +3341,10 @@ private struct CompleteStep: View {
     @State private var buttonPulse: Bool = false
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer().frame(height: 40)
+        // New users get the relay/Blossom explainer too, so their screen
+        // tightens up to keep Start Exploring above the fold on an SE.
+        VStack(spacing: isNewUser ? 18 : 28) {
+            Spacer().frame(height: isNewUser ? 8 : 40)
 
             // Celebration animation
             ZStack {
@@ -2853,7 +3400,23 @@ private struct CompleteStep: View {
             }
 
             if isNewUser {
-                Text("We'll start you on the Popular feed so you can discover interesting people to follow. You can switch to the Following feed anytime.")
+                // How the on-device relay and Blossom reach everyone else.
+                VStack(alignment: .leading, spacing: 12) {
+                    explainerRow(icon: "antenna.radiowaves.left.and.right", text: "Your relay lives on this phone and sends your posts out to public relays so people can see them.")
+                    explainerRow(icon: "photo.on.rectangle", text: "Blossom does the same for photos and videos: they're kept here and copied to public media servers.")
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(WizardColors.bgCard)
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(WizardColors.borderSubtle, lineWidth: 1)
+                )
+                .opacity(showContent ? 1 : 0)
+                .animation(WizardAnimations.fadeIn.delay(1.2), value: showContent)
+
+                Text("Next, a short guide helps you find people to follow.")
                     .font(.appSystem(size: 14))
                     .foregroundColor(WizardColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -2921,6 +3484,21 @@ private struct CompleteStep: View {
                 FloatingArrowController.shared.show()
             }
             #endif
+        }
+    }
+
+    private func explainerRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.appSystem(size: 15))
+                .foregroundColor(WizardColors.accentPrimary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.textSecondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

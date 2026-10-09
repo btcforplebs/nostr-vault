@@ -112,9 +112,7 @@ struct FollowingBackupSettingsView: View {
                 }
                 .disabled(isQuerying)
             } header: {
-                Text("Recover Following List")
-            } footer: {
-                Text("Queries your local relay and external relays for all historical contact list events. Select one to view or restore.")
+                Text("Recover Following List").settingInfo(.accountFollowingBackup)
             }
 
             if !backupService.snapshots.isEmpty {
@@ -292,11 +290,7 @@ struct FollowingBackupSettingsView: View {
            RelayProcessManager.shared.isRunning, !RelayProcessManager.shared.isBooting {
             relayURLs.append(localURL)
         }
-        let feedRelays = ConfigService.shared.config.activeFeedRelays
-        let externalStrs = feedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : feedRelays
+        let externalStrs = ConfigService.shared.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         queryStatus = "Querying \(relayURLs.count) relay\(relayURLs.count == 1 ? "" : "s")..."

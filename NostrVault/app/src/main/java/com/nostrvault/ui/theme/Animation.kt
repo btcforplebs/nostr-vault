@@ -20,6 +20,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * The app's motion vocabulary — the Android half of [Motion.swift].
@@ -101,14 +104,16 @@ object Motion {
     // Reduce Motion
     // ---------------------------------------------------------------------
 
-    @Volatile
-    private var reduced: Boolean = false
+    private val reduced = MutableStateFlow(false)
 
     private var observer: ContentObserver? = null
 
     /** Whether the system is currently asking for reduced motion. */
     val isReduced: Boolean
-        get() = reduced
+        get() = reduced.value
+
+    /** [isReduced] as it changes, for a surface that sleeps between frames. */
+    val reducedUpdates: StateFlow<Boolean> = reduced.asStateFlow()
 
     /**
      * Starts tracking the system animation scale. Call once from
@@ -121,11 +126,11 @@ object Motion {
      */
     fun install(context: Context) {
         val resolver = context.applicationContext.contentResolver
-        reduced = readAnimatorScale(resolver) == 0f
+        reduced.value = readAnimatorScale(resolver) == 0f
         if (observer != null) return
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
-                reduced = readAnimatorScale(resolver) == 0f
+                reduced.value = readAnimatorScale(resolver) == 0f
             }
         }
         resolver.registerContentObserver(

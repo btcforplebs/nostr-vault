@@ -22,6 +22,9 @@ struct DashboardView: View {
     @State private var showingShareSheet = false
 
     var isSidebar: Bool = false
+    /// The Vault Dashboard: the relay's dashboard with the Blossom sections
+    /// under it, one sheet for everything the Vault tab stores.
+    var includesBlossom = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -37,6 +40,10 @@ struct DashboardView: View {
         }
         .onAppear {
             statsService.refreshStats()
+        }
+        // The Pocket Relay tutorial starts the first time the dashboard opens.
+        .task(id: TutorialCenter.shared.revision) {
+            TutorialCenter.shared.startIfEligible(.pocketRelay, account: NostrService.shared.activeHexPubkey)
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
@@ -73,13 +80,11 @@ struct DashboardView: View {
         }
         .sheet(isPresented: $showingFullLogs) {
             NavigationStack {
-                LogsView(logStore: relayManager.logStore)
-                    .environmentObject(relayManager)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showingFullLogs = false }
-                        }
-                    }
+                RelayActivityWindow(logStore: relayManager.logStore) {
+                    showingFullLogs = false
+                }
+                .environmentObject(relayManager)
+                .environmentObject(configService)
             }
             #if os(macOS)
             .frame(minWidth: 600, idealWidth: 700, minHeight: 400, idealHeight: 500)
@@ -128,56 +133,13 @@ struct DashboardView: View {
         .background(Color.platformWindowBackground.ignoresSafeArea())
     }
 
-    /// The full-height console used by the wide layout.
+    /// The full-height console used by the wide layout: the plain-language
+    /// relay activity. The raw log stays in Settings › Logs.
     private var relayConsole: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            consoleHeader(title: "LOCAL RELAY SERVER CONSOLE")
-
-            Divider()
-                .background(Color.platformCardBorder)
-
-            LogsView(logStore: relayManager.logStore, hideHeader: true)
-                .frame(maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformTertiaryGroupedBackground)
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.havenOnline.opacity(0.12), lineWidth: 1)
-        )
+        RelayActivityPanel(logStore: relayManager.logStore)
     }
 
     #endif
-
-    /// `trailing` is the compact console's "View All" affordance. The wide
-    /// console has no trailing control — it used to carry three fake macOS
-    /// window buttons, which look clickable on macOS and do nothing.
-    ///
-    /// Deliberately shows no live log count: `LogStore` is a separate
-    /// observable so log traffic only redraws `LogsView`, and reading its
-    /// count here would either go stale or undo that.
-    private func consoleHeader<Trailing: View>(
-        title: String,
-        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
-    ) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "terminal.fill")
-                .font(.appSystem(size: 10, weight: .bold))
-                .foregroundColor(.havenOnline)
-
-            Text(title)
-                .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            trailing()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.platformConsoleHeaderBackground)
-    }
 
     private func iOSConsoleLayout(geometry: GeometryProxy) -> some View {
         VStack(spacing: 0) {
@@ -234,20 +196,26 @@ struct DashboardView: View {
                         exportStatusView
                             .padding(.horizontal)
                     }
+
+                    if includesBlossom {
+                        Divider()
+                            .padding(.vertical, 4)
+                        BlossomDashboardView(embedded: true)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
             }
             .refreshable {
+                // A light top-up, never a full import. Pull-down used to run
+                // Import Notes, which stops the relay and re-downloads
+                // everything: one stray pull while scrolling (now easy, with
+                // the bars folding on scroll) started it without anyone
+                // asking, and it heated the phone. Import Notes is the button.
                 guard relayManager.isRunning && !relayManager.isImporting else { return }
-                isPreparingImport = true
-                relayManager.importNotes(config: configService.config)
-
-                while relayManager.isImporting {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-                isPreparingImport = false
+                RequestRelaySyncC()
+                statsService.refreshStats()
             }
         }
         .background(Color.platformWindowBackground.ignoresSafeArea())
@@ -368,75 +336,13 @@ struct DashboardView: View {
     }
 
     private var compactLogConsole: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            consoleHeader(title: "CONSOLE") {
-                Button {
-                    showingFullLogs = true
-                } label: {
-                    Text("View All")
-                        .font(.appSystem(size: 10, weight: .semibold))
-                        .foregroundColor(Color.havenPurple)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Divider()
-                .background(Color.platformCardBorder)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(relayManager.logStore.logs.suffix(50)) { log in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text(log.timestamp, style: .time)
-                                    .font(.appSystem(size: 9, design: .monospaced))
-                                    .foregroundColor(.secondary.opacity(0.6))
-                                    .frame(width: 55, alignment: .leading)
-
-                                Text(log.level)
-                                    .font(.appSystem(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(logLevelColor(log.level))
-                                    .frame(width: 35, alignment: .leading)
-
-                                Text(log.message)
-                                    .font(.appSystem(size: 10, design: .monospaced))
-                                    .foregroundColor(.primary.opacity(0.85))
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .id(log.id)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(Text("\(log.level): \(log.message)"))
-                        }
-                    }
-                }
-                .frame(height: 140)
-                .onChange(of: relayManager.logStore.logs.count) { _, _ in
-                    if let lastId = relayManager.logStore.logs.last?.id {
-                        withAnimation {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
-                }
-                .onAppear {
-                    if let lastId = relayManager.logStore.logs.last?.id {
-                        proxy.scrollTo(lastId, anchor: .bottom)
-                    }
-                }
-            }
+        RelayActivityCard(logStore: relayManager.logStore) {
+            showingFullLogs = true
         }
-        .background(Color.platformTertiaryGroupedBackground)
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.havenOnline.opacity(0.12), lineWidth: 1)
-        )
+        .tutorialAnchor(TutorialContent.relayActivity)
         .padding(.horizontal)
     }
 
-    private func logLevelColor(_ level: String) -> Color { .logLevel(level) }
 
     private func geometryHeight(for width: CGFloat) -> CGFloat {
         var height: CGFloat = 350
@@ -862,6 +768,7 @@ struct DashboardView: View {
                 .accessibilityLabel(Text("Relay address"))
                 .accessibilityValue(Text(configService.config.nostrURL))
                 .accessibilityHint(Text("Copies the address to the clipboard"))
+                .tutorialAnchor(TutorialContent.relayAddress)
 
                 if showsMeta {
                     liveMeta
@@ -1005,6 +912,7 @@ struct DashboardView: View {
             )
             .shadow(color: statusColor.opacity(relayManager.isRunning && !relayManager.isBooting ? 0.08 : 0), radius: 10, x: 0, y: 4)
             .animation(Motion.toggle, value: relayManager.isRunning)
+            .tutorialAnchor(TutorialContent.relayStatus)
 
             // Error recovery banner
             if relayManager.isLocked || relayManager.isPortConflict {

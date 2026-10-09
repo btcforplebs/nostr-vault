@@ -453,7 +453,13 @@ struct MediaCacheBreakdownView: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Clear", role: .destructive) {
                     isClearing = true
-                    MediaCacheService.shared.clearCache()
+                    let result = MediaCacheService.shared.clearCache()
+                    let freed = ByteCountFormatter.string(fromByteCount: result.bytesFreed, countStyle: .file)
+                    if result.filesFailed == 0 {
+                        ActionToastManager.shared.show(icon: "trash.fill", message: "Cleared \(freed) of temporary copies", color: Color.havenVerified)
+                    } else {
+                        ErrorNotificationManager.shared.show("Cleared \(freed), but \(result.filesFailed) files could not be removed", icon: "exclamationmark.triangle.fill", style: .warning)
+                    }
                     statsService.refreshStats()
                     Task {
                         await reload()

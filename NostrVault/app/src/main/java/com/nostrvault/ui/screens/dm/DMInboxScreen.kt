@@ -101,7 +101,6 @@ class DMInboxViewModel @Inject constructor(
 fun DMInboxScreen(
     onConversationClick: (String) -> Unit,
     onNewMessage: () -> Unit = {},
-    onGroups: () -> Unit = {},
     viewModel: DMInboxViewModel = hiltViewModel(),
 ) {
     val conversations by viewModel.conversations.collectAsState()
@@ -165,12 +164,6 @@ fun DMInboxScreen(
 
                 // Trailing pill: compose new message
                 GlassPill {
-                    // Groups (NIP-29) lives behind the inbox, the way iOS puts it
-                    // beside Chats: every group screen already existed here, with
-                    // nothing in the app linking to them.
-                    IconButton(onClick = onGroups, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Groups, "Groups", tint = colors.primary, modifier = Modifier.size(25.dp))
-                    }
                     IconButton(onClick = { viewModel.markAllAsRead() }, modifier = Modifier.size(40.dp)) {
                         Icon(NostrVaultIcons.MarkAllRead, "Mark all read", tint = colors.primary, modifier = Modifier.size(25.dp))
                     }

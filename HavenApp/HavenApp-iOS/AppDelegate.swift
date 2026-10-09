@@ -42,13 +42,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 DMService.shared.refresh()
                 NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
             case 1:
-                NotificationCenter.default.post(name: .havenOpenMentions, object: action.eventId)
+                NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "mention", eventId: id) }
             case 7:
                 NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
-            case 6:
+                if let id = action.eventId { RelayFocus.request(type: "reaction", eventId: id) }
+            case 6, 16:
                 NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "repost", eventId: id) }
             case 9735:
                 NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "zap", eventId: id) }
             default:
                 break
             }
@@ -86,6 +90,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Set notification center delegate
         UNUserNotificationCenter.current().delegate = self
 
+        Task { @MainActor in
+            // Posts waiting for an outside media server from an earlier launch.
+            MediaPostQueue.shared.start()
+            // Starts, or quietly finishes, the Fill your feed guide once the
+            // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
+            // in the iOS target; this file is.)
+            FillYourVaultCoordinator.shared.start()
+        }
+
         // Only request local notification permission if the user has already
         // completed setup (has an npub). First-time users will be prompted
         // after the setup wizard finishes. No remote/APNs registration —
@@ -95,6 +108,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 PushNotificationService.shared.requestPermissionAndRegister()
             }
             Self.scheduleAppRefresh()
+
+            // Republish our kind 10050 so senders on any client know where to
+            // deliver DMs. It is replaceable, so this also heals lists written
+            // by older builds (127.0.0.1 entries, or ["r", url] tags no other
+            // client reads). The macOS AppDelegate does the same at launch.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                NostrService.shared.republishDMRelayListsForSignableAccounts()
+            }
         }
 
         return true
@@ -277,6 +299,17 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 
         let userInfo = response.notification.request.content.userInfo
 
+        // The share sheet's "ready to upload" notification. Routed through the
+        // deep-link router so it lands exactly like nostrvault://shareinbox.
+        // Delayed for a cold launch, when ContentView is not listening yet.
+        if let link = userInfo["nv_deeplink"] as? String, let url = URL(string: link) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(url)
+            }
+            completionHandler()
+            return
+        }
+
         if let eventId = userInfo["event_id"] as? String,
            let eventKind = userInfo["event_kind"] as? Int {
             let recipientPubkey = userInfo["recipient_pubkey"] as? String
@@ -294,7 +327,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
             // Tapped a relay NOTIFY-marker notification (LocalNotificationService).
             let notifNpub = userInfo["notif_npub"] as? String
             Task { @MainActor in
-                LocalNotificationService.navigate(type: notifType, id: notifId, npub: notifNpub)
+                LocalNotificationService.navigate(type: notifType, id: notifId, npub: notifNpub, carried: userInfo)
             }
         }
 

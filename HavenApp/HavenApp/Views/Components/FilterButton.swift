@@ -28,6 +28,10 @@ struct FilterButton: View {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(isSelected ? color.opacity(0.5) : Color.clear, lineWidth: 0.8)
             )
+            // An unselected pill has a clear fill, and a .plain button only
+            // takes clicks where something is drawn: on the Mac, the padding
+            // around the title was dead.
+            .contentShape(RoundedRectangle(cornerRadius: 6))
             .animation(Motion.toggle, value: isSelected)
         }
         .buttonStyle(.plain)

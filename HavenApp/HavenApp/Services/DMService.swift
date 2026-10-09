@@ -76,12 +76,27 @@ class DMService: ObservableObject {
     private var seenGiftWrapIds = Set<String>()
     private let maxSeenGiftWrapIds = 10_000
 
+    /// Gift wraps that opened to something that is not a chat message (or
+    /// could never be opened). Saved per account, so a launch does not send
+    /// them to a remote signer again — with NIP-46 each one costs the user's
+    /// signer two NIP-44 decrypts, every launch, forever.
+    private var unreadableGiftWrapIds = Set<String>()
+    private let maxUnreadableGiftWrapIds = 5_000
+
+    /// Gift wraps waiting to be opened. Drained newest first by at most
+    /// `maxGiftWrapWorkers` at a time: the backlog used to start one Task per
+    /// wrap at once, which flooded a remote signer with decrypt requests.
+    private var pendingGiftWraps: [NostrEvent] = []
+    private var giftWrapWorkers = 0
+    private let maxGiftWrapWorkers = 1
+
     /// Rebuild the dedup set from retained conversation messages once it
     /// outgrows the cap — it otherwise accumulates an entry for every gift
     /// wrap ever observed across a long-running session.
     private func trimSeenGiftWrapIdsIfNeeded() {
         guard seenGiftWrapIds.count > maxSeenGiftWrapIds else { return }
         seenGiftWrapIds = Set(conversations.flatMap { $0.messages.map { $0.id } })
+            .union(unreadableGiftWrapIds)
     }
     private var dmUpdateSubject = PassthroughSubject<Void, Never>()
     private let processingQueue = DispatchQueue(label: "com.haven.dm-processing", qos: .userInitiated)
@@ -113,9 +128,13 @@ class DMService: ObservableObject {
         setupThrottling()
         loadConversations()
 
-        // React to account switches only (not every config save)
-        ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
+        // React to account switches only (not every config save). Keyed on the
+        // resolved hex key, not `activeAccountNpub`: a new account finishes setup
+        // as the owner with `activeAccountNpub` still "", so an npub-keyed sink
+        // never fired, this service kept the empty key it read while the setup
+        // wizard was on screen, and every send failed with "No active account
+        // loaded" until the app was relaunched.
+        ConfigService.shared.$activeAccountHexPubkey
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -132,6 +151,9 @@ class DMService: ObservableObject {
                 if state == .running && self.inboxClient == nil {
                     self.startListening()
                 } else if state == .idle {
+                    self.chatReconnectTask?.cancel()
+                    self.chatReconnectTask = nil
+                    self.chatReconnectAttempt = 0
                     self.connectionCancellables.removeAll()
                     self.inboxClient?.disconnect()
                     self.inboxClient = nil
@@ -146,12 +168,16 @@ class DMService: ObservableObject {
 
     func startListening() {
         guard RelayProcessManager.shared.state == .running else {
+            #if DEBUG
             print("⏳ Relay not running yet, deferring DM inbox connection")
+            #endif
             return
         }
 
         guard let chatURL = chatRelayURL() else {
+            #if DEBUG
             print("❌ Failed to construct chat relay URL")
+            #endif
             return
         }
 
@@ -172,7 +198,14 @@ class DMService: ObservableObject {
             }
             .store(in: &connectionCancellables)
 
+        // dropFirst: @Published replays the current value (.disconnected) on
+        // subscribe. removeDuplicates: the ping timer re-sets .disconnected on
+        // a dead socket every 25 s. Between them they printed "disconnected"
+        // three times per foreground and again every 25 s (71 in one report).
+        var wasConnected = false
         client.$connectionState
+            .dropFirst()
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self = self, self.inboxClient === client else { return }
@@ -180,17 +213,30 @@ class DMService: ObservableObject {
                 case .connected:
                     // /chat requires NIP-42 AUTH — wait for the AUTH challenge
                     // before sending subscription
+                    #if DEBUG
                     print("✅ DM chat relay connected, awaiting AUTH challenge...")
+                    #endif
+                    wasConnected = true
+                    self.chatReconnectAttempt = 0
+                    self.chatReconnectTask?.cancel()
+                    self.chatReconnectTask = nil
                 case .disconnected, .error:
-                    print("❌ DM chat relay disconnected")
+                    // Only a connection that was up can be "lost".
+                    #if DEBUG
+                    if wasConnected { print("❌ DM chat relay disconnected") }
+                    #endif
+                    wasConnected = false
                     self.isAuthenticated = false
+                    self.scheduleChatReconnect()
                 default:
                     break
                 }
             }
             .store(in: &connectionCancellables)
 
+        #if DEBUG
         print("🔗 Connecting to DM chat relay: \(chatURL)")
+        #endif
         client.connect(url: chatURL)
 
         // Also connect to /inbox for NIP-04 (kind 4) legacy DMs
@@ -217,13 +263,17 @@ class DMService: ObservableObject {
             .sink { [weak self] state in
                 guard let self = self, self.nip04Client === client else { return }
                 if state == .connected {
+                    #if DEBUG
                     print("✅ NIP-04 inbox connected")
+                    #endif
                     self.sendNIP04Subscription(to: client)
                 }
             }
             .store(in: &connectionCancellables)
 
+        #if DEBUG
         print("🔗 Connecting to NIP-04 inbox: \(inboxURL)")
+        #endif
         client.connect(url: inboxURL)
     }
 
@@ -241,8 +291,21 @@ class DMService: ObservableObject {
             "authors": [ownPubkey]
         ]
 
+        // Gift wraps sent to this relay's /inbox — it is the owner's Haven DM
+        // inbox, the first entry of the published DM relay list — are stored
+        // there, not in /chat, so read them here too.
+        let filterWraps: [String: Any] = [
+            "kinds": [1059],
+            "#p": [ownPubkey]
+        ]
+
         let req1 = ["REQ", "nip04-in", filterTagged] as [Any]
         let req2 = ["REQ", "nip04-out", filterAuthored] as [Any]
+        let req3 = ["REQ", "inbox-wraps", filterWraps] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: req3),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
+        }
 
         if let data = try? JSONSerialization.data(withJSONObject: req1),
            let str = String(data: data, encoding: .utf8) {
@@ -252,7 +315,9 @@ class DMService: ObservableObject {
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
         }
+        #if DEBUG
         print("📡 Subscribed to NIP-04 DMs")
+        #endif
     }
 
     private func inboxRelayURL() -> URL? {
@@ -388,25 +453,33 @@ class DMService: ObservableObject {
 
                 guard self.switchGeneration == generation else { return }
 
+                // Its relay notification must not announce your own message.
+                if self.sentSelfWrapIds.count > 500 { self.sentSelfWrapIds.removeAll() }
+                self.sentSelfWrapIds.insert(selfGiftWrap.id)
+
                 // Publish both to local relay (non-blocking, reuses persistent connection)
                 self.publishToInbox(giftWrap)
                 self.publishToInbox(selfGiftWrap)
 
-                // Fetch relay lists concurrently, then fire-and-forget to external relays
-                async let recipientRelays = self.fetchRecipientDMRelays(recipientHexPubkey)
-                async let ownRelays = self.fetchRecipientDMRelays(ownHexPubkey)
-
-                let rRelays = await recipientRelays
-                let oRelays = await ownRelays
-
-                for relayURL in rRelays {
-                    self.fireAndForgetPublish(giftWrap, url: relayURL)
+                // Your own copy goes to your DM inbox list — the same list
+                // every device reads from — never to whichever of your relay
+                // lists a lookup happens to find first. Looking yours up the
+                // way a recipient's is looked up could land on your general
+                // (kind 10002) relays, which no device reads DMs from, so the
+                // message never appeared on your other devices.
+                let ownRelays = self.ownDMInboxRelays()
+                for relayURL in ownRelays {
+                    self.publishAuthenticated(selfGiftWrap, url: relayURL)
                 }
-                for relayURL in oRelays {
-                    self.fireAndForgetPublish(selfGiftWrap, url: relayURL)
+
+                let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
+                for relayURL in rRelays {
+                    self.publishAuthenticated(giftWrap, url: relayURL)
                 }
             } catch {
+                #if DEBUG
                 print("DMService: Background DM publish failed: \(error)")
+                #endif
             }
         }
     }
@@ -485,6 +558,45 @@ class DMService: ObservableObject {
         }
     }
 
+    /// The conversation whose thread is on screen, so a notification for a
+    /// message already in front of the user can stay quiet.
+    var visibleConversation: String?
+
+    /// Ids of the self-copy wraps this device sent. Every DM you send also
+    /// wraps a copy to yourself; this is how its notification is recognised
+    /// without decrypting it (a NIP-46 signer may not answer in time).
+    private var sentSelfWrapIds = Set<String>()
+
+    func isOwnSentWrap(_ eventId: String) -> Bool {
+        sentSelfWrapIds.contains(eventId)
+    }
+
+    /// The conversation holding the message decrypted from event `eventId`
+    /// (a gift wrap's id, or a NIP-04 event's), and that message.
+    func message(withEventId eventId: String) -> (conversationId: String, message: DMMessage)? {
+        for conversation in conversations {
+            if let message = conversation.messages.last(where: { $0.id == eventId }) {
+                return (conversation.id, message)
+            }
+        }
+        return nil
+    }
+
+    /// Waits for the inbox to decrypt an event the relay has just reported.
+    /// The relay's notification marker and this service's own subscription see
+    /// the same event at nearly the same moment, so the message is usually
+    /// here already or within a beat. Nil when it does not arrive in time —
+    /// another account's inbox, a signer that is offline, or a connection that
+    /// is asleep in the background.
+    func waitForMessage(withEventId eventId: String, timeout: TimeInterval) async -> (conversationId: String, message: DMMessage)? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if let found = message(withEventId: eventId) { return found }
+            guard Date() < deadline else { return nil }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
     func markRead(conversationWith pubkey: String) {
         guard let idx = conversations.firstIndex(where: { $0.id == pubkey }) else { return }
         conversations[idx].unreadCount = 0
@@ -514,22 +626,32 @@ class DMService: ObservableObject {
         fetchFromExternalRelays()
     }
 
-    /// Fetch DMs from the user's known external relays (seed relays / blastr relays)
-    /// to catch any gift wraps not yet imported by the Go relay.
+    /// Fetch DMs from the user's known external relays (the Read relays, then
+    /// the DM inbox) to catch any gift wraps not yet imported by the Go relay.
     func fetchFromExternalRelays() {
         let ownPubkey = loadedAccountPubkey
         guard !ownPubkey.isEmpty else { return }
+        backfillSentCopiesIfNeeded()
 
         let generation = self.switchGeneration
 
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        var relays = ConfigService.shared.config.readRelays
 
-        // Include own DM relays so we can discover sent messages from other devices
+        // Include own DM inbox relays: your sent copies from other devices
+        // land there, as do messages to you.
+        for relay in ownDMInboxRelays() where !relays.contains(relay) {
+            relays.append(relay)
+        }
         if let ownDMRelays = NostrService.shared.dmRelayLists[ownPubkey] {
-            for relay in ownDMRelays where !relays.contains(relay) {
+            for relay in ownDMRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
+                relays.append(relay)
+            }
+        }
+        // And your general (kind 10002) read relays: builds before the DM
+        // inbox list sent your own copies there when that list happened to be
+        // found first, so this is where those messages are.
+        if let ownReadRelays = NostrService.shared.relayLists[ownPubkey] {
+            for relay in ownReadRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
                 relays.append(relay)
             }
         }
@@ -546,7 +668,9 @@ class DMService: ObservableObject {
             }
         }
 
+        #if DEBUG
         print("🌐 Fetching DMs from \(relays.count) external relays...")
+        #endif
 
         for urlStr in relays {
             guard let url = URL(string: urlStr) else { continue }
@@ -579,13 +703,18 @@ class DMService: ObservableObject {
                         // Use 1-hour overlap for clock drift safety
                         let since = max(0, self.lastExternalFetchTimestamp - 3600)
 
-                        // NIP-17 gift wraps
+                        // NIP-17 gift wraps. created_at is randomized up to 2
+                        // days into the past, so the 1-hour overlap above would
+                        // miss most new ones — floor the window at 2 days.
                         var nip17Filter: [String: Any] = [
                             "kinds": [1059],
                             "#p": [ownPubkey],
                             "limit": 500
                         ]
-                        if since > 0 { nip17Filter["since"] = since }
+                        if since > 0 {
+                            let wrapFloor = Int64(Date().timeIntervalSince1970) - (2 * 24 * 3600 + 60)
+                            nip17Filter["since"] = min(since, wrapFloor)
+                        }
                         let req1 = ["REQ", "ext-nip17-\(UUID().uuidString.prefix(6))", nip17Filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req1),
                            let str = String(data: data, encoding: .utf8) {
@@ -632,6 +761,120 @@ class DMService: ObservableObject {
                 }
                 .store(in: &cancellables)
 
+            // A relay that never connects (or errors) used to stay in
+            // externalClients forever: the cleanup above only runs after a
+            // connect, so the list never emptied and the fetch timestamp
+            // never advanced — every later fetch reused a days-old window.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self, self.externalClients.contains(where: { $0 === client }) else { return }
+                client.disconnect()
+                self.externalClients.removeAll { $0 === client }
+                if self.externalClients.isEmpty {
+                    self.lastExternalFetchTimestamp = Int64(Date().timeIntervalSince1970)
+                    self.disconnectInjectionClients()
+                }
+            }
+
+            client.connect(url: url)
+        }
+    }
+
+    /// One-time catch-up, per account, of your own sent copies stranded on
+    /// your general (kind 10002) relays. Before the DM inbox list, a sent
+    /// copy could go to those relays when your 10002 was found before your
+    /// 10050, and no device reads DMs there. The regular fetch only reaches
+    /// ~2 days back (gift wraps are backdated up to 2 days), so older copies
+    /// are never found by it. This asks, with no time window, your newest
+    /// published 10002 relays — fetched fresh, the cache can be long out of
+    /// date — plus the cached ones and your DM inbox list. Marked done only
+    /// after a fresh 10002 lookup answered and every relay was given its
+    /// chance, so a launch without network tries again next time.
+    private var backfillRunning = false
+    private func backfillSentCopiesIfNeeded() {
+        let ownPubkey = loadedAccountPubkey
+        let key = "dm.sentCopyBackfill.v1.\(ownPubkey)"
+        guard !ownPubkey.isEmpty, !backfillRunning, !UserDefaults.standard.bool(forKey: key) else { return }
+        backfillRunning = true
+        let generation = switchGeneration
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.backfillRunning = false }
+            let fresh = await NostrService.shared.fetchNewestReplaceable(kind: 10002, for: ownPubkey, alsoAsk: self.ownDMInboxRelays())
+            guard self.switchGeneration == generation else { return }
+            var relays: [String] = []
+            if let fresh {
+                let parsed = ProfileRepository.parseRelayListTags(fresh.tags)
+                relays += parsed.inbox + parsed.write
+            }
+            relays += NostrService.shared.relayLists[ownPubkey] ?? []
+            relays += self.ownDMInboxRelays()
+            var seen = Set<String>()
+            relays = relays
+                .map { HavenConfig.normalizedRelayURL($0) }
+                .filter { !$0.isEmpty && !NostrService.isLoopbackRelay($0) && seen.insert($0.lowercased()).inserted }
+            #if DEBUG
+            print("🧺 DM sent-copy catch-up from \(relays.count) relays (fresh 10002: \(fresh != nil))")
+            #endif
+
+            await withTaskGroup(of: Void.self) { group in
+                for urlStr in relays {
+                    guard let url = URL(string: urlStr) else { continue }
+                    group.addTask { @MainActor in
+                        await self.backfillFetch(url: url, ownPubkey: ownPubkey, generation: generation)
+                    }
+                }
+            }
+            guard self.switchGeneration == generation, fresh != nil else { return }
+            UserDefaults.standard.set(true, forKey: key)
+        }
+    }
+
+    /// Asks one relay for every gift wrap addressed to you, no time window,
+    /// and hands each to the normal external-message path (which shows it
+    /// and stores it in the local relay). Returns at EOSE or after 12s.
+    @MainActor
+    private func backfillFetch(url: URL, ownPubkey: String, generation: UInt64) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let client = WebSocketClient()
+            client.isTemporary = true
+            var subs = Set<AnyCancellable>()
+            var finished = false
+            let subId = "bf-\(UUID().uuidString.prefix(6))"
+            func finish() {
+                guard !finished else { return }
+                finished = true
+                client.disconnect()
+                subs.removeAll()
+                continuation.resume()
+            }
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] message in
+                    guard let self, !finished, self.switchGeneration == generation else { return }
+                    if message.hasPrefix("[\"EOSE\"") || message.hasPrefix("[\"CLOSED\"") {
+                        // Let queued EVENTs drain through the sink first.
+                        DispatchQueue.main.async { finish() }
+                        return
+                    }
+                    self.processExternalMessage(message, forAccount: ownPubkey)
+                }
+                .store(in: &subs)
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        let req = ["REQ", subId, ["kinds": [1059], "#p": [ownPubkey], "limit": 1000]] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                    } else if case .error = state {
+                        finish()
+                    }
+                }
+                .store(in: &subs)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { finish() }
             client.connect(url: url)
         }
     }
@@ -654,6 +897,9 @@ class DMService: ObservableObject {
                let eventData = json[safe: 2] as? [String: Any],
                let eventJSON = try? JSONSerialization.data(withJSONObject: eventData),
                let event = try? JSONDecoder().decode(NostrEvent.self, from: eventJSON) {
+                // Unsigned or forged: neither show it nor store it locally.
+                guard Self.isAuthentic(event) else { return }
+
                 // Process the DM for display
                 if event.kind == 1059 {
                     self.handleIncomingGiftWrap(event)
@@ -666,7 +912,9 @@ class DMService: ObservableObject {
                 self.injectExternalDmIntoLocalRelay(eventData, eventId: event.id, kind: event.kind)
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process external message: \(error)")
+            #endif
         }
     }
 
@@ -793,11 +1041,15 @@ class DMService: ObservableObject {
         let req = ["REQ", "dms", filter] as [Any]
         guard let data = try? JSONSerialization.data(withJSONObject: req),
               let str = String(data: data, encoding: .utf8) else {
+            #if DEBUG
             print("❌ Failed to create subscription filter")
+            #endif
             return
         }
         isLoading = true
+        #if DEBUG
         print("📡 Sending DM subscription: \(str)")
+        #endif
         client.send(text: str)
     }
 
@@ -815,7 +1067,9 @@ class DMService: ObservableObject {
             case "AUTH":
                 // NIP-42: Relay sent AUTH challenge
                 if let challenge = json[safe: 1] as? String {
+                    #if DEBUG
                     print("🔐 Received AUTH challenge from chat relay")
+                    #endif
                     DispatchQueue.main.async {
                         self.handleAuthChallenge(challenge)
                     }
@@ -826,7 +1080,9 @@ class DMService: ObservableObject {
                    let success = json[safe: 2] as? Bool {
                     DispatchQueue.main.async {
                         if success {
+                            #if DEBUG
                             print("✅ AUTH successful, subscribing to DMs...")
+                            #endif
                             let wasAuthenticated = self.isAuthenticated
                             self.isAuthenticated = true
                             if let client = self.inboxClient {
@@ -838,7 +1094,9 @@ class DMService: ObservableObject {
                             }
                         } else {
                             let reason = json[safe: 3] as? String ?? "unknown"
+                            #if DEBUG
                             print("❌ AUTH failed for \(eventId.prefix(8)): \(reason)")
+                            #endif
                         }
                     }
                 }
@@ -853,13 +1111,17 @@ class DMService: ObservableObject {
             case "EOSE":
                 DispatchQueue.main.async {
                     self.isLoading = false
+                    #if DEBUG
                     print("📭 Finished loading stored DMs")
+                    #endif
                 }
             default:
                 break
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process DM message: \(error)")
+            #endif
         }
     }
 
@@ -872,7 +1134,9 @@ class DMService: ObservableObject {
         guard canSignAsOwner() else {
             if !warnedAuthUnavailable {
                 warnedAuthUnavailable = true
+                #if DEBUG
                 print("ℹ️ Watch-only: cannot sign NIP-42 AUTH (no owner key) — chat relay left unauthenticated")
+                #endif
             }
             return
         }
@@ -891,7 +1155,9 @@ class DMService: ObservableObject {
         Task {
             // Always sign AUTH with owner's key since the local relay is owned by the owner account
             guard let authEvent = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags, forceOwner: true) else {
+                #if DEBUG
                 print("Failed to sign NIP-42 AUTH event")
+                #endif
                 return
             }
 
@@ -900,7 +1166,9 @@ class DMService: ObservableObject {
             let msg = ["AUTH", eventDict] as [Any]
             if let data = try? JSONSerialization.data(withJSONObject: msg),
                let str = String(data: data, encoding: .utf8) {
+                #if DEBUG
                 print("Sending AUTH response...")
+                #endif
                 client.send(text: str)
             }
         }
@@ -924,20 +1192,30 @@ class DMService: ObservableObject {
                    let eventJSON = try? JSONSerialization.data(withJSONObject: eventData),
                    let event = try? JSONDecoder().decode(NostrEvent.self, from: eventJSON) {
                     DispatchQueue.main.async {
-                        self.handleIncomingNIP04(event)
+                        if event.kind == 1059 {
+                            guard Self.isAuthentic(event) else { return }
+                            self.handleIncomingGiftWrap(event)
+                        } else {
+                            self.handleIncomingNIP04(event)
+                        }
                     }
                 }
             default:
                 break
             }
         } catch {
+            #if DEBUG
             print("❌ Failed to process NIP-04 message: \(error)")
+            #endif
         }
     }
 
     private func handleIncomingNIP04(_ event: NostrEvent) {
         guard event.kind == 4 else { return }
         guard !seenGiftWrapIds.contains(event.id) else { return }
+        // Checked before marking the id seen, so a forged copy carrying a real
+        // event's id cannot shadow the real one.
+        guard Self.isAuthentic(event) else { return }
 
         // Watch-only: no key to decrypt NIP-04. Skip WITHOUT marking the event
         // seen (so a later unlock/reconnect can still process it) and warn once,
@@ -945,7 +1223,9 @@ class DMService: ObservableObject {
         guard canDecryptNIP04() else {
             if !warnedNIP04Unavailable {
                 warnedNIP04Unavailable = true
+                #if DEBUG
                 print("ℹ️ Watch-only: NIP-04 DM decryption unavailable (no signing key) — skipping inbound DMs")
+                #endif
             }
             return
         }
@@ -1018,9 +1298,20 @@ class DMService: ObservableObject {
             dmUpdateSubject.send()
             saveConversations()
         } catch {
+            #if DEBUG
             print("Failed to decrypt NIP-04 DM: \(error)")
+            #endif
         }
         } // end Task
+    }
+
+    /// A relay can serve any event under any author. NIP-04 has no MAC, so a
+    /// re-IV'd copy of a real DM decrypts to altered text; only the signature
+    /// ties it to its author.
+    private static func isAuthentic(_ event: NostrEvent) -> Bool {
+        guard let data = try? JSONEncoder().encode(event),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        return NostrEventVerifier.isValid(json: json)
     }
 
     // MARK: - NIP-17 Processing
@@ -1028,13 +1319,41 @@ class DMService: ObservableObject {
     private func handleIncomingGiftWrap(_ event: NostrEvent) {
         guard event.kind == 1059 else { return }
         guard !seenGiftWrapIds.contains(event.id) else { return }
+        guard Self.isAuthentic(event) else { return }
 
         seenGiftWrapIds.insert(event.id)
         trimSeenGiftWrapIdsIfNeeded()
 
-        let generation = self.switchGeneration
+        pendingGiftWraps.append(event)
+        startGiftWrapWorkersIfNeeded()
+    }
 
-        Task {
+    private func startGiftWrapWorkersIfNeeded() {
+        while giftWrapWorkers < maxGiftWrapWorkers && !pendingGiftWraps.isEmpty {
+            giftWrapWorkers += 1
+            let generation = switchGeneration
+            Task { await drainGiftWraps(generation: generation) }
+        }
+    }
+
+    private func drainGiftWraps(generation: UInt64) async {
+        while generation == switchGeneration, let next = popNewestGiftWrap() {
+            await processGiftWrap(next, generation: generation)
+        }
+        giftWrapWorkers -= 1
+        // Work queued for a new account while this worker was finishing.
+        startGiftWrapWorkersIfNeeded()
+    }
+
+    /// Newest first, so the latest messages appear before the backlog.
+    private func popNewestGiftWrap() -> NostrEvent? {
+        guard let index = pendingGiftWraps.indices.max(by: {
+            pendingGiftWraps[$0].created_at < pendingGiftWraps[$1].created_at
+        }) else { return nil }
+        return pendingGiftWraps.remove(at: index)
+    }
+
+    private func processGiftWrap(_ event: NostrEvent, generation: UInt64) async {
         do {
             // Verify account hasn't switched since we started processing
             guard self.switchGeneration == generation else { return }
@@ -1109,10 +1428,29 @@ class DMService: ObservableObject {
             sortConversations()
             dmUpdateSubject.send()
             saveConversations()
-        } catch {
+        } catch let error as NIP17Service.NIP17Error {
+            // The wrap opened to something that is not a chat message (or
+            // cannot be opened with this key): it will not change, so do not
+            // ask the signer about it again on the next launch.
+            #if DEBUG
             print("Failed to unwrap gift wrap: \(error)")
+            #endif
+            guard self.switchGeneration == generation else { return }
+            rememberUnreadableGiftWrap(event.id)
+        } catch {
+            // Signer offline, timed out or refused: try again next launch.
+            #if DEBUG
+            print("Failed to unwrap gift wrap: \(error)")
+            #endif
         }
-        } // end Task
+    }
+
+    private func rememberUnreadableGiftWrap(_ id: String) {
+        guard unreadableGiftWrapIds.insert(id).inserted else { return }
+        if unreadableGiftWrapIds.count > maxUnreadableGiftWrapIds {
+            unreadableGiftWrapIds = Set(unreadableGiftWrapIds.shuffled().prefix(maxUnreadableGiftWrapIds))
+        }
+        saveUnreadableGiftWrapIds()
     }
 
     private func handleAccountSwitch() {
@@ -1144,6 +1482,8 @@ class DMService: ObservableObject {
         loadedAccountPubkey = newPubkey
         conversations = []
         seenGiftWrapIds.removeAll()
+        unreadableGiftWrapIds.removeAll()
+        pendingGiftWraps.removeAll()
         injectedDmIds.removeAll()
         isAuthenticated = false
         pendingAuthChallenge = nil
@@ -1154,13 +1494,100 @@ class DMService: ObservableObject {
         // Load new account's conversations
         loadConversations()
 
-        reconnectInbox()
+        reconnectInbox(force: true)
     }
 
-    private func reconnectInbox() {
+    // MARK: - /chat auto-reconnect
+
+    /// Nothing used to redial a dead /chat socket: DMs stopped arriving until
+    /// the app was next foregrounded or the relay restarted. Retry with
+    /// backoff 1, 2, 4 … 60 s while the relay is running. In the background
+    /// iOS suspends us anyway, and the foreground refresh() reconnects.
+    private var chatReconnectTask: Task<Void, Never>?
+    private var chatReconnectAttempt = 0
+
+    static func chatReconnectDelay(attempt: Int) -> TimeInterval {
+        min(pow(2, Double(min(attempt, 6))), 60)
+    }
+
+    private func scheduleChatReconnect() {
+        guard chatReconnectTask == nil, RelayProcessManager.shared.state == .running else { return }
+        let delay = Self.chatReconnectDelay(attempt: chatReconnectAttempt)
+        chatReconnectAttempt += 1
+        chatReconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.chatReconnectTask = nil
+            guard RelayProcessManager.shared.state == .running,
+                  self.inboxClient?.connectionState != .connected,
+                  self.inboxClient?.connectionState != .connecting else { return }
+            #if DEBUG
+            print("🔄 DM chat relay: reconnecting (attempt \(self.chatReconnectAttempt))")
+            #endif
+            self.startListening()
+        }
+    }
+
+    /// Brings the DM sockets back only when they actually need it.
+    ///
+    /// `/chat` challenges every new connection with NIP-42, so every teardown
+    /// costs a kind 22242 signature. With a remote signer that is a full round
+    /// trip, and one more request queued in front of whatever the person does
+    /// next — and this runs on every foreground, every open of the inbox and
+    /// every pull-to-refresh. So ask the live socket whether it is still there
+    /// (a WebSocket ping, which never reaches the signer) and rebuild only if
+    /// it is not. `force` is for an account switch, where a healthy socket
+    /// still has to go: its subscription and its AUTH belong to the account we
+    /// just left.
+    private func reconnectInbox(force: Bool = false) {
+        guard !force, let chat = inboxClient,
+              chat.connectionState == .connected, isAuthenticated else {
+            restartInbox()
+            return
+        }
+        chat.probeAlive { [weak self] alive in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // Same socket, and it answered: keep it, and with it the AUTH
+                // signature already paid for.
+                guard alive, self.inboxClient === chat, self.isAuthenticated else {
+                    self.restartInbox()
+                    return
+                }
+                #if DEBUG
+                print("✅ DM chat relay still live — kept (no new NIP-42 AUTH)")
+                #endif
+                // The legacy NIP-04 inbox needs no AUTH, so cycling it is free.
+                self.restartNIP04IfNeeded()
+            }
+        }
+    }
+
+    private func restartInbox() {
+        // Drop the old client's subscriptions first, so tearing it down does
+        // not log a "disconnected" (or schedule a reconnect) of its own.
+        connectionCancellables.removeAll()
+        chatReconnectTask?.cancel()
+        chatReconnectTask = nil
         inboxClient?.disconnect()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startListening()
+        }
+    }
+
+    /// Redials the kind 4 inbox when it is the half that died, without
+    /// touching the authenticated /chat socket next to it.
+    private func restartNIP04IfNeeded() {
+        guard let legacy = nip04Client, legacy.connectionState == .connected else {
+            startNIP04Listening()
+            return
+        }
+        legacy.probeAlive { [weak self] alive in
+            guard !alive else { return }
+            DispatchQueue.main.async {
+                guard let self = self, self.nip04Client === legacy else { return }
+                self.startNIP04Listening()
+            }
         }
     }
 
@@ -1189,11 +1616,36 @@ class DMService: ObservableObject {
         if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
             let usable = reachable(dmRelays)
             if !usable.isEmpty {
+                #if DEBUG
                 print("📋 Using NIP-17 DM relays for \(pubkey.prefix(8)): \(usable)")
+                #endif
                 return usable
             }
             if !dmRelays.isEmpty {
+                #if DEBUG
                 print("⚠️ \(pubkey.prefix(8)) advertises only loopback DM relays — falling back")
+                #endif
+            }
+        }
+
+        // No DM relay list known yet: fetch, and wait for it. A general
+        // (kind 10002) list is only a fallback for someone who has published
+        // no DM list, so it must not win just because it arrived first — the
+        // two are fetched together and whichever landed first used to decide.
+        NostrService.shared.fetchRelayList(for: pubkey)
+
+        // Wait up to 4 seconds for the DM relay list to arrive
+        for _ in 0..<8 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+
+            if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
+                let usable = reachable(dmRelays)
+                if !usable.isEmpty {
+                    #if DEBUG
+                    print("📋 Fetched NIP-17 DM relays for \(pubkey.prefix(8)): \(usable)")
+                    #endif
+                    return usable
+                }
             }
         }
 
@@ -1201,42 +1653,18 @@ class DMService: ObservableObject {
         if let readRelays = NostrService.shared.relayLists[pubkey] {
             let usable = reachable(readRelays)
             if !usable.isEmpty {
+                #if DEBUG
                 print("📋 Using kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
+                #endif
                 return usable
             }
         }
 
-        // Trigger a fetch and wait briefly for results
-        NostrService.shared.fetchRelayList(for: pubkey)
-
-        // Wait up to 4 seconds for the relay lists to populate
-        for _ in 0..<8 {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-
-            // Check kind 10050 first
-            if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
-                let usable = reachable(dmRelays)
-                if !usable.isEmpty {
-                    print("📋 Fetched NIP-17 DM relays for \(pubkey.prefix(8)): \(usable)")
-                    return usable
-                }
-            }
-
-            // Then check kind 10002
-            if let readRelays = NostrService.shared.relayLists[pubkey] {
-                let usable = reachable(readRelays)
-                if !usable.isEmpty {
-                    print("📋 Fetched kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
-                    return usable
-                }
-            }
-        }
-
         // Fallback: use common relays where most users have inbox
-        let fallbackRelays = ConfigService.shared.config.activeBlastrRelays.isEmpty
-            ? ["wss://relay.primal.net", "wss://nos.lol"]
-            : ConfigService.shared.config.activeBlastrRelays
+        let fallbackRelays = ConfigService.shared.config.writeRelays
+        #if DEBUG
         print("⚠️ No relay list for \(pubkey.prefix(8)), using fallback relays")
+        #endif
         return fallbackRelays
     }
 
@@ -1271,6 +1699,124 @@ class DMService: ObservableObject {
     /// Fire-and-forget publish to an external relay.
     /// Connects, sends EVENT, and disconnects after a short flush window.
     /// Does NOT block the caller — errors are logged but not propagated.
+    /// This account's DM inbox list, minus loopback entries. For the owner
+    /// that is the published list — the Haven inbox (Mac relay) first. Other
+    /// accounts use the plain DM relays: the owner's Haven inbox only takes
+    /// DMs addressed to the owner.
+    private func ownDMInboxRelays() -> [String] {
+        let config = ConfigService.shared.config
+        let ownerHex = Bech32.decode(config.ownerNpub)?.hexString ?? ""
+        let list = loadedAccountPubkey == ownerHex ? config.dmInboxRelays : config.dmRelays
+        return list.filter { !NostrService.isLoopbackRelay($0) }
+    }
+
+    /// Publishes to a relay that may require NIP-42 AUTH before it accepts a
+    /// write. A Haven inbox (the Mac relay) does: it rejects the event with
+    /// "auth-required" until the owner authenticates, and the plain
+    /// fire-and-forget publish never noticed. Here an auth-required rejection
+    /// is answered with AUTH — signed by the account that is sending, never
+    /// the owner on another account's behalf, which would tie the two
+    /// accounts together for the relay — and the event is sent once more. Relays that need no AUTH accept it on
+    /// the first try. Logs the outcome; never blocks the caller.
+    private func publishAuthenticated(_ event: NostrEvent, url: String) {
+        guard let urlObj = URL(string: url) else { return }
+        let client = WebSocketClient()
+        client.isTemporary = true
+        let eventMsg: String? = {
+            let msg = ["EVENT", eventToDict(event)] as [Any]
+            guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }()
+        guard let eventMsg else { return }
+
+        let sender = loadedAccountPubkey
+        var challenge: String?
+        var authSent = false
+        var authEventId: String?
+        var done = false
+        var subs = Set<AnyCancellable>()
+        func finish(_ ok: Bool, _ note: String) {
+            guard !done else { return }
+            done = true
+            #if DEBUG
+            print(ok ? "📤 DM wrap \(event.id.prefix(8)) accepted by \(url)" : "⚠️ DM wrap \(event.id.prefix(8)) not stored by \(url): \(note)")
+            #endif
+            client.disconnect()
+            subs.removeAll()
+        }
+
+        client.messageSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                guard let self, !done,
+                      let data = message.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                      let type = json.first as? String else { return }
+                switch type {
+                case "AUTH":
+                    challenge = json[safe: 1] as? String
+                case "OK":
+                    guard let id = json[safe: 1] as? String else { return }
+                    let accepted = (json[safe: 2] as? Bool) ?? false
+                    let note = (json[safe: 3] as? String) ?? ""
+                    // khatru handles each message on its own goroutine, so a
+                    // retry sent right behind the AUTH can be judged before
+                    // the AUTH lands. Resend only once the AUTH is accepted.
+                    if let authId = authEventId, id == authId {
+                        if accepted { client.send(text: eventMsg) } else { finish(false, "AUTH rejected: \(note)") }
+                        return
+                    }
+                    guard id == event.id else { return }
+                    if accepted || note.hasPrefix("duplicate") {
+                        finish(true, note)
+                    } else if note.hasPrefix("auth-required"), !authSent, let challenge {
+                        authSent = true
+                        Task { @MainActor in
+                            // signEventAsync signs as the active account; if
+                            // that changed since the send, don't prove the
+                            // wrong identity.
+                            guard NostrService.shared.activeHexPubkey == sender else {
+                                finish(false, "account switched before AUTH")
+                                return
+                            }
+                            let tags = [["relay", url], ["challenge", challenge]]
+                            guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags) else {
+                                finish(false, "could not sign AUTH")
+                                return
+                            }
+                            let msg = ["AUTH", self.eventToDict(auth)] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: msg),
+                               let str = String(data: data, encoding: .utf8) {
+                                authEventId = auth.id
+                                client.send(text: str)
+                            }
+                        }
+                    } else {
+                        finish(false, note)
+                    }
+                default:
+                    break
+                }
+            }
+            .store(in: &subs)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { state in
+                if state == .connected {
+                    client.send(text: eventMsg)
+                } else if case .error = state {
+                    finish(false, "connection failed")
+                }
+            }
+            .store(in: &subs)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            finish(false, "timed out")
+        }
+        client.connect(url: urlObj)
+    }
+
     private func fireAndForgetPublish(_ event: NostrEvent, url: String) {
         guard let urlObj = URL(string: url) else { return }
 
@@ -1307,11 +1853,6 @@ class DMService: ObservableObject {
         client.connect(url: urlObj)
     }
 
-    /// Async wrapper around fireAndForgetPublish for call sites that use `await`.
-    private func publishToRelay(_ event: NostrEvent, url: String) async {
-        fireAndForgetPublish(event, url: url)
-    }
-
     private func setupThrottling() {
         dmUpdateSubject
             .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
@@ -1338,6 +1879,12 @@ class DMService: ObservableObject {
             }
         }
 
+        if let data = try? Data(contentsOf: unreadableFileURL()),
+           let ids = try? JSONDecoder().decode([String].self, from: data) {
+            unreadableGiftWrapIds = Set(ids)
+            seenGiftWrapIds.formUnion(unreadableGiftWrapIds)
+        }
+
         guard let data = try? Data(contentsOf: fileURL) else { return }
         conversations = (try? JSONDecoder().decode([DMConversation].self, from: data)) ?? []
 
@@ -1347,6 +1894,18 @@ class DMService: ObservableObject {
                 seenGiftWrapIds.insert(message.id)
             }
         }
+    }
+
+    private func saveUnreadableGiftWrapIds() {
+        guard let data = try? JSONEncoder().encode(Array(unreadableGiftWrapIds)) else { return }
+        try? data.write(to: unreadableFileURL())
+    }
+
+    /// Beside the conversation cache, same per-account suffix.
+    private func unreadableFileURL() -> URL {
+        let cache = cacheFileURL()
+        let name = cache.lastPathComponent.replacingOccurrences(of: "dm_cache", with: "dm_unreadable")
+        return cache.deletingLastPathComponent().appendingPathComponent(name)
     }
 
     private func saveConversations() {

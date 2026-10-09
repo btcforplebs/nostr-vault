@@ -45,6 +45,25 @@ struct FeedThread<Note: ThreadGroupable>: Identifiable {
         return entries.filter { $0.note.id != root.id }
     }
 
+    /// The `limit` most recent replies, kept in reading order. A reply is what
+    /// lifts a thread to the top of the feed, so a folded card has to show the
+    /// replies that did it rather than the oldest few.
+    func latestReplies(limit: Int) -> [FeedThreadEntry<Note>] {
+        let all = replies
+        guard all.count > limit else { return all }
+        let newest = Set(
+            all.enumerated()
+                .sorted { lhs, rhs in
+                    lhs.element.note.createdAt == rhs.element.note.createdAt
+                        ? lhs.offset > rhs.offset
+                        : lhs.element.note.createdAt > rhs.element.note.createdAt
+                }
+                .prefix(limit)
+                .map(\.element.id)
+        )
+        return all.filter { newest.contains($0.id) }
+    }
+
     /// Distinct authors, root first, in the order they appear in the thread.
     var participantPubkeys: [String] {
         var seen = Set<String>()
@@ -68,9 +87,15 @@ enum FeedThreadGrouping {
     ///   - resolveNote: looks up a note that is referenced but not in `notes`
     ///     (an ancestor the feed never showed). Returning nil is fine — the
     ///     thread is then rooted at the highest ancestor that did load.
-    /// - Returns: threads ordered by `latestActivity`, newest first.
+    ///   - keepFeedOrder: keep threads in the order their roots first appear
+    ///     in `notes` instead of by latest activity. Popular is ranked by
+    ///     score and Global by time, and a reply fetched after the posts
+    ///     must not reshuffle either list.
+    /// - Returns: threads ordered by `latestActivity`, newest first, unless
+    ///   `keepFeedOrder` is set.
     static func build<Note: ThreadGroupable>(
         notes: [Note],
+        keepFeedOrder: Bool = false,
         resolveNote: (String) -> Note? = { _ in nil }
     ) -> [FeedThread<Note>] {
         guard !notes.isEmpty else { return [] }
@@ -149,6 +174,13 @@ enum FeedThreadGrouping {
                 currentId = ancestor.parentEventId
                 hops += 1
             }
+
+            // A root taken from the NIP-10 tag (the reply's parent never
+            // loaded) is no ancestor of anything in the pool, so the walk above
+            // never adds it, and the card kept saying "Loading the start of
+            // this thread…" with the root already fetched.
+            if pool[root] == nil, let resolved = resolveNote(root) { pool[root] = resolved }
+            if let rootNote = pool[root] { add(rootNote, to: root) }
         }
 
         var threads: [FeedThread<Note>] = []
@@ -162,6 +194,7 @@ enum FeedThreadGrouping {
             )
         }
 
+        if keepFeedOrder { return threads }
         return threads.sorted { lhs, rhs in
             if lhs.latestActivity == rhs.latestActivity {
                 return (order.firstIndex(of: lhs.rootId) ?? 0) < (order.firstIndex(of: rhs.rootId) ?? 0)
@@ -217,5 +250,57 @@ enum FeedThreadGrouping {
     /// The `root`-marked e-tag from NIP-10, when the author wrote one.
     private static func taggedRootId<Note: ThreadGroupable>(of note: Note) -> String? {
         note.tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
+    }
+
+    /// The replies under one note, as condensed lines in reading order: each
+    /// reply followed by its own replies, oldest first at every level. Depth
+    /// starts at 1 for a direct reply and is capped at `maxDepth`. A note
+    /// seen twice (a reply cycle, or a duplicate in the pool) is drawn once.
+    static func replyTree<Note: ThreadGroupable>(under parentId: String, in pool: [Note]) -> [FeedThreadEntry<Note>] {
+        var children: [String: [Note]] = [:]
+        for note in pool {
+            if let parent = note.parentEventId { children[parent, default: []].append(note) }
+        }
+        var out: [FeedThreadEntry<Note>] = []
+        var seen: Set<String> = [parentId]
+        func visit(_ id: String, depth: Int) {
+            for child in (children[id] ?? []).sorted(by: { $0.createdAt < $1.createdAt }) {
+                guard seen.insert(child.id).inserted else { continue }
+                out.append(FeedThreadEntry(note: child, depth: min(depth, maxDepth)))
+                visit(child.id, depth: depth + 1)
+            }
+        }
+        visit(parentId, depth: 1)
+        return out
+    }
+}
+
+// MARK: - Thread view reply visibility
+
+/// Which replies a thread view folds as "outside your network".
+enum ThreadReplyVisibility {
+    /// Outside: not in your trusted set (Web of Trust plus follows) and not
+    /// one of the thread's insiders (you, and the authors of the opened note
+    /// and the notes above it). An empty trusted set means the graph has not
+    /// loaded, and then nobody counts as outside.
+    static func isOutside(_ pubkey: String, trusted: Set<String>, insiders: Set<String>) -> Bool {
+        !trusted.isEmpty && !trusted.contains(pubkey) && !insiders.contains(pubkey)
+    }
+
+    /// Every note under `rootId`, at any depth, among `notes`.
+    static func descendants<T>(of rootId: String, in notes: [T],
+                               id: (T) -> String, parentId: (T) -> String?) -> [T] {
+        var children: [String: [T]] = [:]
+        for n in notes { if let p = parentId(n) { children[p, default: []].append(n) } }
+        var result: [T] = []
+        var queue = [rootId]
+        var seen: Set<String> = [rootId]
+        while let next = queue.popLast() {
+            for child in children[next] ?? [] where seen.insert(id(child)).inserted {
+                result.append(child)
+                queue.append(id(child))
+            }
+        }
+        return result
     }
 }

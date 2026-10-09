@@ -1,7 +1,7 @@
 import SwiftUI
 import AVFoundation
 
-/// Reels: full-screen videos, one per page, swiped vertically.
+/// Reels: full-screen diVine videos, one per page, swiped vertically.
 ///
 /// Only the page on screen plays. Its neighbours build their players ahead of
 /// time so a swipe lands on a video that is already buffering — the player
@@ -10,7 +10,6 @@ struct ReelsFeedView: View {
     @ObservedObject private var service = ReelsFeedService.shared
     @ObservedObject var feedService: FeedService
     @EnvironmentObject var nostrService: NostrService
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     let onProfile: (String) -> Void
@@ -18,11 +17,16 @@ struct ReelsFeedView: View {
     let onOpenNote: (FeedNote) -> Void
     let onLike: (FeedNote) -> Void
     let onShowGlobal: () -> Void
+    /// Opens the diVine composer.
+    var onPost: () -> Void = {}
     /// A sheet (reply, profile, thread) is over the feed. The reel under it
     /// must go quiet: a sheet does not end the page's appearance.
     var isCovered: Bool = false
 
     @State private var currentId: String?
+    /// The app is in the foreground. Not `scenePhase`: the iOS app hosts
+    /// SwiftUI from a UIKit scene delegate, where it never reports `.active`.
+    @State private var appIsActive = true
     /// Sound follows the viewer from reel to reel and across launches.
     @AppStorage("reelsMuted") private var isMuted = false
 
@@ -57,8 +61,11 @@ struct ReelsFeedView: View {
                 AudioSessionManager.shared.enableMixingWithOthers()
             }
         }
-        .onChange(of: service.reels) { _, reels in
-            if currentId == nil || !reels.contains(where: { $0.id == currentId }) {
+        .onChange(of: service.reels) { old, reels in
+            // Until the viewer swipes, newer videos land above the first one
+            // and the pager stays at the top, so the top one is on screen.
+            if currentId == nil || currentId == old.first?.id
+                || !reels.contains(where: { $0.id == currentId }) {
                 currentId = reels.first?.id
             }
             nostrService.fetchMissingProfiles(for: Array(Set(reels.prefix(60).map(\.note.pubkey))))
@@ -73,6 +80,12 @@ struct ReelsFeedView: View {
         // A profile sheet can block its author; drop their reels on the way back.
         .onChange(of: isCovered) { _, covered in
             if !covered { service.pruneBlocked() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppActivity.didBecomeActive)) { _ in
+            appIsActive = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppActivity.willResignActive)) { _ in
+            appIsActive = false
         }
         .onChange(of: currentId) { _, id in
             guard let id else { return }
@@ -100,7 +113,7 @@ struct ReelsFeedView: View {
                     ReelPageView(
                         reel: reel,
                         profile: nostrService.profiles[reel.note.pubkey],
-                        isActive: index == currentIndex && scenePhase == .active && !isCovered,
+                        isActive: index == currentIndex && appIsActive && !isCovered,
                         shouldPrepare: abs(index - currentIndex) <= 1,
                         isLiked: feedService.likedEventIds.contains(reel.id),
                         insets: insets,
@@ -108,7 +121,8 @@ struct ReelsFeedView: View {
                         onProfile: { onProfile(reel.note.pubkey) },
                         onReply: { onReply(reel.note) },
                         onOpenNote: { onOpenNote(reel.note) },
-                        onLike: { onLike(reel.note) }
+                        onLike: { onLike(reel.note) },
+                        onPost: onPost
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
                 }
@@ -125,6 +139,7 @@ struct ReelsFeedView: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $currentId)
         .scrollIndicators(.hidden)
+        .hiddenTopScrollEdge()
     }
 
     private var emptyState: some View {
@@ -139,8 +154,17 @@ struct ReelsFeedView: View {
                 .font(.appSystem(size: 13))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
+            Button(action: onPost) {
+                Label("Post a diVine", systemImage: "plus")
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.havenPurple)
+            .controlSize(.large)
+            .padding(.top, 8)
             if service.followSetIsEmpty || (service.scope == .following && !service.loadFailed) {
-                Button("Show everyone's videos") { onShowGlobal() }
+                Button("Show Global videos") { onShowGlobal() }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurpleLight)
                     .padding(.top, 4)
@@ -162,10 +186,35 @@ struct ReelsFeedView: View {
 
     private var emptyMessage: String {
         if service.followSetIsEmpty { return "Switch to Global to see everyone's videos." }
-        if service.loadFailed { return "Reels come from relays, so this one needs a connection." }
+        if service.loadFailed { return "diVines come from relays, so this one needs a connection." }
         return service.scope == .following
-            ? "Nobody you follow has posted a video recently."
-            : "Nothing playable came back from your relays."
+            ? "Nobody you follow has posted a diVine video recently."
+            : "No diVine videos came back from the relays."
+    }
+}
+
+/// App foreground notifications. Not `scenePhase`: the iOS app hosts SwiftUI
+/// from a UIKit scene delegate, where it never reports `.active`.
+enum AppActivity {
+    #if os(iOS)
+    static let didBecomeActive = UIApplication.didBecomeActiveNotification
+    static let willResignActive = UIApplication.willResignActiveNotification
+    #else
+    static let didBecomeActive = NSApplication.didBecomeActiveNotification
+    static let willResignActive = NSApplication.willResignActiveNotification
+    #endif
+}
+
+private extension View {
+    /// The video runs under the top bar, and the page draws its own fade
+    /// there; the system scroll edge would lay a grey band over it.
+    @ViewBuilder
+    func hiddenTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
     }
 }
 
@@ -183,6 +232,7 @@ private struct ReelPageView: View {
     let onReply: () -> Void
     let onOpenNote: () -> Void
     let onLike: () -> Void
+    let onPost: () -> Void
 
     @ObservedObject private var failures = VideoPlaybackFailures.shared
     @State private var player: AVPlayer?
@@ -491,7 +541,10 @@ private struct ReelPageView: View {
     }
 
     private var actionRail: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
+            postButton
+                .padding(.bottom, 6)
+
             railButton(
                 icon: isLiked ? "heart.fill" : "heart",
                 tint: isLiked ? .red : .white,
@@ -500,10 +553,10 @@ private struct ReelPageView: View {
 
             railButton(icon: "bubble.right", label: "Reply", action: onReply)
 
-            railButton(icon: "text.bubble", label: "Open thread", action: onOpenNote)
+            railButton(icon: "text.bubble", label: "Thread", action: onOpenNote)
 
             ShareLink(item: URL(string: "https://mynostrspace.com/thread/\(reel.note.nevent)")!) {
-                railIcon("square.and.arrow.up", tint: .white)
+                railItem("square.and.arrow.up", tint: .white, label: "Share")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Share")
@@ -516,10 +569,47 @@ private struct ReelPageView: View {
         .padding(.bottom, 4)
     }
 
+    /// Posting is the one action that makes something new, so it reads as a
+    /// filled button rather than another white glyph in the column.
+    private var postButton: some View {
+        Button(action: onPost) {
+            VStack(spacing: 3) {
+                Image(systemName: "plus")
+                    .font(.appSystem(size: 22, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 46, height: 46)
+                    .background(Circle().fill(Color.havenPurple))
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .shadow(color: .black.opacity(0.4), radius: 4)
+                Text("Post")
+                    .font(.appSystem(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Post a diVine")
+    }
+
     private func railButton(icon: String, tint: Color = .white, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { railIcon(icon, tint: tint) }
+        Button(action: action) { railItem(icon, tint: tint, label: label) }
             .buttonStyle(.plain)
             .accessibilityLabel(label)
+    }
+
+    private func railItem(_ icon: String, tint: Color, label: String) -> some View {
+        VStack(spacing: 1) {
+            railIcon(icon, tint: tint)
+            Text(label)
+                .font(.appSystem(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .shadow(color: .black.opacity(0.6), radius: 2)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(minWidth: 44)
+        .contentShape(Rectangle())
     }
 
     private func railIcon(_ icon: String, tint: Color) -> some View {
@@ -527,7 +617,6 @@ private struct ReelPageView: View {
             .font(.appSystem(size: 24, weight: .semibold))
             .foregroundColor(tint)
             .shadow(color: .black.opacity(0.45), radius: 4)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            .frame(width: 44, height: 34)
     }
 }

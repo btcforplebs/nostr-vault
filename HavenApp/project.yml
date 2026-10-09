@@ -86,6 +86,10 @@ targets:
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
 
+    # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.relay
@@ -105,8 +109,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CURRENT_PROJECT_VERSION: "15"
-        MARKETING_VERSION: "2.7.0"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "2.7.2"
 
     preBuildScripts:
       - name: Build Go Library (macOS)
@@ -172,6 +176,10 @@ targets:
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
 
+    # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: HavenApp-iOS/HavenApp-iOS.entitlements
@@ -183,8 +191,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "15"
-        MARKETING_VERSION: "2.7.0"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "2.7.2"
 
     preBuildScripts:
       - name: Build Go Library (iOS)
@@ -215,6 +223,7 @@ targets:
         implicit: true
       - package: SilentPaymentsKit
       - target: NostrVaultWidgets
+      - target: NostrVaultShare
 
   # ── Widget Extension (iOS / iPadOS) ───────────────────────
   NostrVaultWidgets:
@@ -240,8 +249,36 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultWidgets/NostrVaultWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "15"
-        MARKETING_VERSION: "2.7.0"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "2.7.2"
+        SKIP_INSTALL: YES
+
+  # ── Share Extension (iOS / iPadOS) ────────────────────────
+  # "Share → Nostr Vault" from any app. It only copies files into the App
+  # Group inbox; the app uploads them (NVShareInbox, ShareInboxImport).
+  NostrVaultShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+
+    sources:
+      - path: NostrVaultShare
+        excludes:
+          - "Info.plist"
+      # Same rule as the widgets: Shared/ only, never Services/ or Views/.
+      - path: HavenApp/Shared
+      - path: Resources/Assets.xcassets
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.relay.share
+        PRODUCT_NAME: "$(TARGET_NAME)"
+        INFOPLIST_FILE: NostrVaultShare/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: NostrVaultShare/NostrVaultShare.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "2.7.2"
         SKIP_INSTALL: YES
 
 schemes:

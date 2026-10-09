@@ -63,6 +63,9 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // Is the relay on this phone running, and where (iOS RelayStatusCard).
+            item { RelayStatusCard() }
+
             // ── PROFILE ───────────────────────────────────────────
             item { SettingsSectionHeader("Profile") }
             item {
@@ -77,7 +80,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Blocked,
                     title = "Blocked",
-                    subtitle = "Block and slow down accounts",
+                    subtitle = "Block accounts",
                     onClick = { onNavigate(Screen.BlockedSettings) },
                 )
             }
@@ -88,8 +91,16 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Appearance,
                     title = "Theme & Display",
-                    subtitle = "Colors, text size, OLED mode",
+                    subtitle = "Text size, feed text, translation",
                     onClick = { onNavigate(Screen.AppearanceSettings) },
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Feed,
+                    title = "Feed",
+                    subtitle = "Reposts, replies, auto-load, feed relays",
+                    onClick = { onNavigate(Screen.FeedSettings) },
                 )
             }
 
@@ -97,18 +108,10 @@ fun SettingsScreen(
             item { SettingsSectionHeader("Relay Configuration") }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Feed,
-                    title = "Feed Relays",
-                    subtitle = "Configure external relay sources",
-                    onClick = { onNavigate(Screen.RelayListEditor) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Blastr,
-                    title = "Blastr",
-                    subtitle = "Broadcast notes to public relays",
-                    onClick = { onNavigate(Screen.BlastrSettings) },
+                    icon = NostrVaultIcons.Relay,
+                    title = "Relays",
+                    subtitle = "Read, Write, DMs, Search and Import, in one place",
+                    onClick = { onNavigate(Screen.Relays) },
                 )
             }
             item {
@@ -123,16 +126,8 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Import,
                     title = "Import",
-                    subtitle = "Fetch notes from seed relays",
+                    subtitle = "Fetch your notes from the relays with Import on",
                     onClick = { onNavigate(Screen.ImportSettings) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Search,
-                    title = "Search Relays",
-                    subtitle = "NIP-50 relays used by Global search",
-                    onClick = { onNavigate(Screen.SearchRelaySettings) },
                 )
             }
             item {
@@ -208,6 +203,17 @@ fun SettingsScreen(
                     title = "Relay Logs",
                     subtitle = "View relay process output",
                     onClick = { onNavigate(Screen.LogViewer) },
+                )
+            }
+
+            // ── HELP ──────────────────────────────────────────────
+            item { SettingsSectionHeader("Help") }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Tutorials,
+                    title = "Tutorials",
+                    subtitle = "Replay the guides",
+                    onClick = { onNavigate(Screen.TutorialsSettings) },
                 )
             }
 

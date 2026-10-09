@@ -106,4 +106,15 @@ final class MediaDateGroupingTests: XCTestCase {
         ])
         XCTAssertEqual(result.map(\.title), ["Today", "This Month", "Today"])
     }
+
+    /// Runs format each month once and reuse it; the reused title must still
+    /// be what `bucketKey` gives that item, including the same month a year
+    /// apart.
+    func testRunTitlesMatchBucketKeyAcrossYears() {
+        let dates = [date(2026, 3, 20), date(2026, 3, 2), date(2025, 3, 20), date(2025, 3, 2), date(2024, 11, 5)]
+        let result = runs(dates.enumerated().map { Item(name: "\($0.offset)", at: $0.element) })
+        XCTAssertEqual(result.map(\.title), [key(dates[0]), key(dates[2]), key(dates[4])])
+        XCTAssertEqual(result.map(\.items.count), [2, 2, 1])
+        XCTAssertNotEqual(result[0].title, result[1].title)
+    }
 }

@@ -25,6 +25,58 @@ class MediaSaveService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "MediaSaveService"
+
+        /**
+         * The type to file a download under. A caller's image/video hint wins,
+         * then the server's Content-Type, then the URL's extension. Blossom
+         * servers often answer `application/octet-stream`, and trusting that
+         * (or defaulting to JPEG) would file a video as a broken photo.
+         * Null when the hint names something the gallery cannot hold (audio,
+         * a document).
+         */
+        internal fun resolveMimeType(hint: String?, contentType: String?, url: String): String? {
+            fun clean(type: String?): String? = type?.substringBefore(';')?.trim()?.lowercase()?.ifEmpty { null }
+            fun media(type: String?): String? = clean(type)?.takeIf { it.startsWith("image/") || it.startsWith("video/") }
+            val cleanHint = clean(hint)
+            if (cleanHint != null && media(cleanHint) == null && cleanHint != "application/octet-stream") return null
+            return media(cleanHint) ?: media(contentType) ?: mimeTypeForExtension(url) ?: "image/jpeg"
+        }
+
+        /** image/video type for a URL's file extension, or null when it has none we know. */
+        internal fun mimeTypeForExtension(url: String): String? {
+            val ext = url.substringBefore('?').substringBefore('#')
+                .substringAfterLast('/').substringAfterLast('.', "").lowercase()
+            return when (ext) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "gif" -> "image/gif"
+                "webp" -> "image/webp"
+                "heic" -> "image/heic"
+                "avif" -> "image/avif"
+                "mp4", "m4v" -> "video/mp4"
+                "mov" -> "video/quicktime"
+                "webm" -> "video/webm"
+                "mkv" -> "video/x-matroska"
+                else -> null
+            }
+        }
+
+        internal fun extensionForMimeType(mimeType: String): String {
+            val type = mimeType.substringBefore(';').trim().lowercase()
+            return when (type) {
+                "image/jpeg" -> "jpg"
+                "image/png" -> "png"
+                "image/gif" -> "gif"
+                "image/webp" -> "webp"
+                "image/heic" -> "heic"
+                "image/avif" -> "avif"
+                "video/mp4" -> "mp4"
+                "video/quicktime" -> "mov"
+                "video/webm" -> "webm"
+                "video/x-matroska" -> "mkv"
+                else -> if (type.startsWith("video/")) "mp4" else "jpg"
+            }
+        }
     }
 
     private val httpClient = OkHttpClient.Builder()
@@ -60,7 +112,8 @@ class MediaSaveService @Inject constructor(
                 }
                 val body = response.body
                     ?: return@withContext Result.failure(Exception("Empty response"))
-                val contentType = mimeType ?: response.header("Content-Type") ?: "image/jpeg"
+                val contentType = resolveMimeType(mimeType, response.header("Content-Type"), url)
+                    ?: return@withContext Result.failure(Exception("Only photos and videos can be saved to the gallery"))
                 val filename = url.substringAfterLast('/').take(12)
                 body.byteStream().use { input -> saveStream(input, filename, contentType) }
             }
@@ -72,6 +125,7 @@ class MediaSaveService @Inject constructor(
 
     private fun saveStream(input: java.io.InputStream, filename: String, mimeType: String): Result<Unit> {
         val isVideo = mimeType.startsWith("video")
+        val extension = extensionForMimeType(mimeType)
         val collection = if (isVideo) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -86,7 +140,6 @@ class MediaSaveService @Inject constructor(
             }
         }
 
-        val extension = mimeTypeToExtension(mimeType)
         val displayName = "NostrVault_${System.currentTimeMillis()}.$extension"
 
         val values = ContentValues().apply {
@@ -119,30 +172,5 @@ class MediaSaveService @Inject constructor(
         }
     }
 
-    private fun guessMimeType(filename: String): String {
-        val ext = filename.substringAfterLast('.', "").lowercase()
-        return when (ext) {
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "mp4" -> "video/mp4"
-            "mov" -> "video/quicktime"
-            "webm" -> "video/webm"
-            else -> "image/jpeg"
-        }
-    }
-
-    private fun mimeTypeToExtension(mimeType: String): String {
-        return when (mimeType.lowercase()) {
-            "image/jpeg" -> "jpg"
-            "image/png" -> "png"
-            "image/gif" -> "gif"
-            "image/webp" -> "webp"
-            "video/mp4" -> "mp4"
-            "video/quicktime" -> "mov"
-            "video/webm" -> "webm"
-            else -> "jpg"
-        }
-    }
+    private fun guessMimeType(filename: String): String = mimeTypeForExtension(filename) ?: "image/jpeg"
 }

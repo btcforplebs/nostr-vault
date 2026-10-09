@@ -1,19 +1,31 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
+import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.rememberChromeFolded
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,6 +51,13 @@ import com.nostrvault.data.model.NoteStats
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.components.TrustWebDialog
+import com.nostrvault.ui.navigation.HashtagLink
+import com.nostrvault.ui.navigation.LocalOpenHashtag
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +158,9 @@ class SearchViewModel @Inject constructor(
 
     fun clearToast() { _toast.value = null }
 
+    /** Your own notes have no trust path, so they get no Web of Trust button. */
+    fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
+
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
@@ -151,7 +173,10 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onSuccess = {
+                    ZapFlight.launch(noteId)
+                    "Zapped $DEFAULT_ZAP_SATS sats"
+                },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }
@@ -314,6 +339,7 @@ class SearchViewModel @Inject constructor(
             query = query,
             includeGlobal = _searchScope.value == SearchScope.GLOBAL,
             follows = feedService.followedPubkeys.value.toSet(),
+            wot = feedService.webOfTrustForRanking(),
         )
         if (started == null) {
             _results.value = GlobalSearchResults()
@@ -449,6 +475,7 @@ fun SearchScreen(
     onProfileClick: (String) -> Unit,
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
+    onCompose: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsState()
@@ -464,10 +491,22 @@ fun SearchScreen(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val noteStats by viewModel.noteStats.collectAsState()
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+
+    // Hashtags and links are read out of the matching notes, as on the iPhone.
+    val hashtagResults = remember(results.notes, query) { SearchResultSections.hashtags(results.notes, query) }
+    val linkResults = remember(results.notes) { SearchResultSections.links(results.notes) }
+    val anyResults = results.profiles.isNotEmpty() || results.notes.isNotEmpty()
+    val showUsers = SearchResultSections.shows(resultFilter, SearchResultFilter.USERS) && results.profiles.isNotEmpty()
+    val showNotes = SearchResultSections.shows(resultFilter, SearchResultFilter.NOTES) && results.notes.isNotEmpty()
+    val showHashtags = SearchResultSections.shows(resultFilter, SearchResultFilter.HASHTAGS) && hashtagResults.isNotEmpty()
+    val showLinks = SearchResultSections.shows(resultFilter, SearchResultFilter.LINKS) && linkResults.isNotEmpty()
     val context = LocalContext.current
+    val openHashtag = LocalOpenHashtag.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // Zap feedback, the same way the profile timeline reports it.
     LaunchedEffect(toast) {
@@ -565,7 +604,7 @@ fun SearchScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = viewModel::setQuery,
-                    placeholder = { Text("Search Nostr...", color = PlaceholderText) },
+                    placeholder = { Text("Search users, notes, hashtags...", color = PlaceholderText) },
                     leadingIcon = {
                         Icon(NostrVaultIcons.Search, null, tint = SecondaryText)
                     },
@@ -577,6 +616,14 @@ fun SearchScreen(
                         }
                     },
                     singleLine = true,
+                    // "#bitcoin" opens the hashtag's feed instead of a word search.
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    // Anything else is already searching as it is typed.
+                    keyboardActions = KeyboardActions(onSearch = {
+                        keyboard?.hide()
+                        val tag = HashtagLink.fromSearchQuery(query)
+                        if (tag != null && openHashtag != null) openHashtag(tag)
+                    }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = colors.primary,
                         unfocusedBorderColor = SeparatorColor,
@@ -585,6 +632,37 @@ fun SearchScreen(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        },
+        floatingActionButton = {
+            // The same gradient "Post" capsule as the feed, folding with the bars.
+            val folded by rememberChromeFolded()
+            Box(Modifier.chromeFab().blockedWhen(folded)) {
+                Surface(
+                    onClick = onCompose,
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    modifier = Modifier
+                        .floatingRowButton()
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(50),
+                            ambientColor = colors.primary.copy(alpha = 0.35f),
+                            spotColor = colors.primary.copy(alpha = 0.35f),
+                        ),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(Brush.linearGradient(listOf(colors.primary, colors.primaryLight)), RoundedCornerShape(50))
+                            .height(48.dp)
+                            .padding(horizontal = 18.dp),
+                    ) {
+                        Icon(NostrVaultIcons.Compose, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Text("Post", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
     ) { padding ->
@@ -658,7 +736,10 @@ fun SearchScreen(
                                 trendingHashtags.forEach { tag ->
                                     TrendingHashtagChip(
                                         tag = tag,
-                                        onClick = { viewModel.setQuery("#$tag") },
+                                        // Opens the hashtag's own feed: posts tagged with it, not a word search.
+                                        onClick = {
+                                            if (openHashtag != null) openHashtag(tag) else viewModel.setQuery("#$tag")
+                                        },
                                         colors = colors,
                                     )
                                 }
@@ -703,9 +784,17 @@ fun SearchScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = "Search for people and notes",
+                            text = "Search",
                             color = SecondaryText,
                             fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Find users, notes, hashtags and links\nOr paste a note1 or nevent1 ID",
+                            color = TertiaryText,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
@@ -726,7 +815,7 @@ fun SearchScreen(
                     }
                 }
 
-                if (isSearching && results.profiles.isEmpty() && results.notes.isEmpty()) {
+                if (isSearching && !anyResults) {
                     item(key = "search-spinner") {
                         Box(
                             contentAlignment = Alignment.Center,
@@ -739,18 +828,19 @@ fun SearchScreen(
                     }
                 }
 
-                // Profiles section
-                if (results.profiles.isNotEmpty()) {
+                // Profiles section. Every match, the way the iPhone lists them;
+                // the Users chip is how to see only people.
+                if (showUsers) {
                     item {
                         Text(
-                            text = "People",
+                            text = "Users",
                             color = SecondaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
-                    items(results.profiles.take(10), key = { it.pubkey }) { profile ->
+                    items(results.profiles, key = { it.pubkey }) { profile ->
                         SearchProfileRow(
                             profile = profile,
                             profiles = profiles,
@@ -764,7 +854,7 @@ fun SearchScreen(
                 }
 
                 // Notes section
-                if (results.notes.isNotEmpty()) {
+                if (showNotes) {
                     item {
                         Text(
                             text = "Notes",
@@ -783,12 +873,6 @@ fun SearchScreen(
                         NoteCard(
                             note = note,
                             profile = viewModel.profileFor(note.pubkey),
-                            // Keyed on `effectiveEventId`, the id the action row
-                            // acts on and the id `FeedService` files the like,
-                            // the repost and the optimistic count under. For a
-                            // kind-6 repost `note.id` is the wrapper, which is
-                            // not what anybody liked.
-                            stats = noteStats[note.effectiveEventId],
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
                             isLiked = note.effectiveEventId in likedIds,
@@ -800,14 +884,41 @@ fun SearchScreen(
                             onRepost = viewModel::repostNote,
                             onReply = onReply,
                             onQuote = onQuote,
-                            onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                            onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                            onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }
                 }
 
+                // Hashtags written in the matching notes
+                if (showHashtags) {
+                    item(key = "hashtags-header") {
+                        SearchSectionHeader("Hashtags")
+                    }
+                    items(hashtagResults, key = { "tag-$it" }) { tag ->
+                        SearchHashtagRow(
+                            tag = tag,
+                            onClick = { viewModel.setQuery("#$tag") },
+                            colors = colors,
+                        )
+                    }
+                    item(key = "hashtags-end") { Spacer(Modifier.height(8.dp)) }
+                }
+
+                // Links the matching notes contain
+                if (showLinks) {
+                    item(key = "links-header") {
+                        SearchSectionHeader("Links")
+                    }
+                    items(linkResults, key = { "link-${it.url}" }) { link ->
+                        SearchLinkRow(link = link, colors = colors)
+                    }
+                    item(key = "links-end") { Spacer(Modifier.height(8.dp)) }
+                }
+
                 // No results
-                if (!isSearching && results.profiles.isEmpty() && results.notes.isEmpty()) {
+                if (!isSearching && !anyResults) {
                     item {
                         Box(
                             contentAlignment = Alignment.Center,
@@ -818,9 +929,39 @@ fun SearchScreen(
                             Text("No results found", color = SecondaryText, fontSize = 15.sp)
                         }
                     }
+                } else if (!isSearching && !showUsers && !showNotes && !showHashtags && !showLinks) {
+                    // The query matched something, just not in the open tab;
+                    // a blank screen there reads as a bug.
+                    item(key = "empty-filter") {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 40.dp),
+                        ) {
+                            Text(
+                                "No ${resultFilter.displayName.lowercase()} matched \u201C${query.trim()}\u201D",
+                                color = SecondaryText,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text("Other tabs have results.", color = TertiaryText, fontSize = 12.sp)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = onProfileClick,
+            onDismiss = { trustWebAuthor = null },
+        )
     }
 }
 
@@ -934,6 +1075,88 @@ private fun SearchProfileRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SearchSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = SecondaryText,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun SearchHashtagRow(
+    tag: String,
+    onClick: () -> Unit,
+    colors: NostrVaultColorScheme,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = SeparatorColor.copy(alpha = 0.08f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text(
+                text = "#$tag",
+                color = colors.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = NostrVaultIcons.Navigate,
+                contentDescription = null,
+                tint = SecondaryText.copy(alpha = 0.5f),
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+/** Opens the link in the browser. */
+@Composable
+private fun SearchLinkRow(
+    link: SearchLink,
+    colors: NostrVaultColorScheme,
+) {
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        onClick = { runCatching { uriHandler.openUri(link.url) } },
+        shape = RoundedCornerShape(8.dp),
+        color = SeparatorColor.copy(alpha = 0.08f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                text = link.title,
+                color = colors.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = link.url,
+                color = SecondaryText,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

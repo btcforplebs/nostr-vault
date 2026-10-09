@@ -119,3 +119,85 @@ extension View {
         ))
     }
 }
+
+/// Which copies of a Blossom blob a media delete removes. The wording matches
+/// Android's `DeleteBlobConfirmDialog` (MediaViewerScreen.kt), so both apps
+/// ask the same question before deleting.
+enum MediaDeleteScope: Identifiable {
+    case mirrors
+    case everywhere
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .mirrors: return "Delete from mirrors?"
+        case .everywhere: return "Delete everywhere?"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .mirrors:
+            return "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+        case .everywhere:
+            return "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+        }
+    }
+
+    var confirmTitle: String {
+        switch self {
+        case .mirrors: return "Delete from mirrors"
+        case .everywhere: return "Delete everywhere"
+        }
+    }
+}
+
+private struct MediaDeleteConfirmation: ViewModifier {
+    @Binding var scope: MediaDeleteScope?
+    let action: (MediaDeleteScope) -> Void
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { scope != nil },
+            set: { if !$0 { scope = nil } }
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(scope?.title ?? "", isPresented: isPresented, presenting: scope) { pending in
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+            Button(pending.confirmTitle, role: .destructive) { action(pending) }
+        } message: { pending in
+            Text(pending.message)
+        }
+    }
+}
+
+extension View {
+    /// Ask before deleting a media blob. Setting `scope` presents the alert;
+    /// confirming runs `action` with it, and either button clears it.
+    func confirmMediaDelete(
+        _ scope: Binding<MediaDeleteScope?>,
+        action: @escaping (MediaDeleteScope) -> Void
+    ) -> some View {
+        modifier(MediaDeleteConfirmation(scope: scope, action: action))
+    }
+}
+
+extension View {
+    /// Ask before blocking someone from a menu. One wording for every menu on
+    /// both apps (Android's feed and Relay tab ask the same): "Block User",
+    /// "Block this user? Their posts will be hidden from your feed.", Cancel /
+    /// Block. The avatar quick menu blocks at once and shows a toast instead.
+    func confirmBlockUser(isPresented: Binding<Bool>, action: @escaping () -> Void) -> some View {
+        confirmDestructive(
+            "Block User",
+            isPresented: isPresented,
+            consequence: "Block this user? Their posts will be hidden from your feed.",
+            confirmTitle: "Block",
+            action: action
+        )
+    }
+}

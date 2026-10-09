@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.feed
 
+import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.lifecycle.ViewModel
@@ -13,12 +14,15 @@ import com.nostrvault.data.model.MediaFeedMode
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.FeedThreadReplies
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.Reel
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.service.LiveFeedService
+import com.nostrvault.service.MarketplaceFeedService
 import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.FeedRelayHealth
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.service.ZapSendService
@@ -46,13 +50,21 @@ class FeedViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     private val zapSendService: ZapSendService,
     private val liveFeedService: LiveFeedService,
+    private val marketplaceFeedService: MarketplaceFeedService,
     private val reelsFeedService: ReelsFeedService,
+    private val interestListService: com.nostrvault.service.InterestListService,
 ) : ViewModel() {
 
     private companion object {
         /** Relays answer metadata in bursts; three UI passes a second is plenty. */
         const val PROFILE_SAMPLE_MS = 300L
     }
+
+    /** The active account's hex pubkey; tutorial progress is saved under it. */
+    val activeHexPubkey: StateFlow<String> = configStore.config
+        .map { nostrService.activeHexPubkey }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, nostrService.activeHexPubkey)
 
     /**
      * Live streams come from their own service rather than the note list: a
@@ -64,6 +76,17 @@ class FeedViewModel @Inject constructor(
     val liveLoading = liveFeedService.isLoading
 
     fun refreshLive() = liveFeedService.refresh()
+
+    val marketListings = marketplaceFeedService.listings
+    val marketLoading = marketplaceFeedService.isLoading
+    val marketCategory = marketplaceFeedService.selectedCategory
+    val marketScope = marketplaceFeedService.listingScope
+    val marketFollowSetIsEmpty = marketplaceFeedService.followSetIsEmpty
+    fun setMarketScope(scope: com.nostrvault.data.model.ReelsScope) = marketplaceFeedService.setScope(scope)
+    fun refreshMarketplace() = marketplaceFeedService.refresh()
+    fun loadMarketplaceIfNeeded() = marketplaceFeedService.loadIfNeeded()
+    fun selectMarketCategory(category: com.nostrvault.data.model.MarketCategory?) =
+        marketplaceFeedService.selectCategory(category)
 
     fun liveStream(address: String) = liveFeedService.streams.value.firstOrNull { it.address == address }
 
@@ -126,7 +149,21 @@ class FeedViewModel @Inject constructor(
     val zappedEventIds: StateFlow<Map<String, Int>> = feedService.zappedEventIds
     val repostedEventIds: StateFlow<Set<String>> = feedService.repostedEventIds
     val connectionStatus: StateFlow<String> = feedService.connectionStatus
-    val connectionColor: StateFlow<String> = feedService.connectionColor
+    /**
+     * The feed button's dot: once notes show, each configured feed relay's own
+     * state (green all up, yellow some down, red none), not just "notes
+     * arrived" (iOS #281). See [FeedRelayHealth.dotColor].
+     */
+    val connectionColor: StateFlow<String> = combine(
+        feedService.connectionColor,
+        feedService.filteredNotes.map { it.isNotEmpty() }.distinctUntilChanged(),
+        feedService.relayStates,
+        configStore.config.map { it.activeFeedRelays }.distinctUntilChanged(),
+    ) { base, hasNotes, states, relays ->
+        val (connected, total) = FeedRelayHealth.health(relays, states)
+        FeedRelayHealth.dotColor(base, hasNotes, connected, total)
+    }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.connectionColor.value)
 
     /// Discovery's empty state needs both of these to say *why* it is empty:
     /// still building, nobody followed, or relays that returned nothing.
@@ -139,12 +176,27 @@ class FeedViewModel @Inject constructor(
     fun setFeedScrollingDown(value: Boolean) = feedService.setFeedScrollingDown(value)
 
     // ── Pending notes (new posts indicator) ────────────────────
-    val pendingNoteCount: StateFlow<Int> = feedService.pendingNotes
-        .map { it.size }
+    // Counted through the current feed's filter, not raw: Global with the Web
+    // of Trust on drops most of what arrives, and a raw count put a "new posts"
+    // pill over nothing. Re-counted when the filter's inputs change (they all
+    // end in a new filtered list or a config change).
+    val pendingNoteCount: StateFlow<Int> = combine(
+        feedService.pendingNotes,
+        feedService.filteredNotes,
+        feedService.filteredMediaNotes,
+        configStore.config,
+    ) { pending, _, _, _ -> feedService.visiblePendingCount(pending) }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun applyPendingNotes() {
         feedService.applyPendingNotes()
+    }
+
+    init {
+        // Starts, or quietly finishes, Fill your vault once the follow list is known.
+        com.nostrvault.vaultguide.FillYourVaultCoordinator.start(feedService, interestListService, activeHexPubkey)
     }
 
     init {
@@ -183,18 +235,20 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    private val _feedMode = MutableStateFlow(
-        configStore.config.value.defaultFeedMode
-            .let { name -> FeedMode.entries.find { it.name == name } }
-            ?: FeedMode.FOLLOWING
-    )
+    // Starts from the service's mode, not a second read of defaultFeedMode.
+    // The service is a singleton built before setup runs, so on a fresh
+    // install the two reads disagreed: the tab said what setup chose while
+    // the service loaded the default, and picking that tab again did nothing.
+    private val _feedMode = MutableStateFlow(feedService.feedMode.value)
     val feedMode: StateFlow<FeedMode> = _feedMode.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    private val _isLoadingMore = MutableStateFlow(false)
-    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+    // The service's own in-flight flag. This was a local flag set true and
+    // false around a non-suspending call, so it was never true long enough for
+    // the spinner to show.
+    val isLoadingMore: StateFlow<Boolean> = feedService.loadingOlder
 
     // ── Filtered notes ───────────────────────────────────────────
     // Use FeedService.filteredNotes which is already filtered by FeedFilterEngine
@@ -203,7 +257,7 @@ class FeedViewModel @Inject constructor(
     val filteredNotes: StateFlow<List<FeedNote>> = feedService.filteredNotes
 
     // Media-only notes for the grid (FeedMode.MEDIA). Already filtered by
-    // FeedFilterEngine.filterMediaNotes (media-bearing, blocked/WoT/throttle rules).
+    // FeedFilterEngine.filterMediaNotes (media-bearing, blocked/WoT rules).
     val mediaNotes: StateFlow<List<FeedNote>> = feedService.filteredMediaNotes
 
     // ── Feed layout mode (expanded / condensed / threaded) ──────────
@@ -216,8 +270,8 @@ class FeedViewModel @Inject constructor(
      * `FeedView.currentFeedSupportsThreading`.
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.REELS -> false
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -273,7 +327,8 @@ class FeedViewModel @Inject constructor(
         // A threaded feed with replies filtered out would show nothing but
         // roots, which is the layout the user just left. Turn replies on with
         // it; the Replies filter still switches them back off.
-        if (resolved == FeedLayoutMode.THREADED && !feedService.showReplies.value) {
+        // Hashtags runs its own subscription; the Replies filter is not its.
+        if (resolved == FeedLayoutMode.THREADED && feedMode != FeedMode.HASHTAGS && !feedService.showReplies.value) {
             feedService.setShowReplies(true)
         }
         _layoutModeToggle.value++
@@ -307,21 +362,58 @@ class FeedViewModel @Inject constructor(
         }
         cache.keys.intersect(gaps)
     }.distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
         threadedModeEnabled,
         resolvedAncestorIds,
-    ) { notes, threaded, _ ->
-        if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        // Blocking can hide a thread's root or an ancestor without changing
+        // the visible note list, so regroup on it directly.
+        configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
+        feedService.feedThreadReplies,
+    ) { notes, threaded, _, _, fetchedReplies ->
+        // Hashtags groups its own sections (HashtagsFeed).
+        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
+            val blocked = feedService.blockedHexForActiveAccount()
+            // Popular holds only top-level posts, and Global's stream rarely
+            // carries the replies to what it shows, so their replies are
+            // fetched separately for this view, and the feed's own order is
+            // kept: a reply landing later doesn't reshuffle the posts.
+            val fetchesReplies = FeedThreadReplies.fetchesReplies(feedService.feedMode.value)
+            if (fetchesReplies) feedService.loadFeedThreadReplies(notes.map { it.id })
+            val pool = if (fetchesReplies) {
+                FeedThreadReplies.attach(notes, fetchedReplies.values, blocked)
+            } else {
+                notes
+            }
+            FeedThreadGrouping.withoutBlocked(
+                FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies) { id ->
+                    // A blocked author's post is never pulled in as context.
+                    feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
+                },
+                blocked,
+            ) { id -> feedService.findNote(id) }
+        }
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
+    /** Retry from "Could not load original note": asks again even if just given up on. */
+    fun retryMissingNote(id: String) = feedService.retryMissingNote(id)
+
     // ── Feed filter toggles (per-mode) ─────────────────────────
 
-    private val _autoLoadEnabled = MutableStateFlow(true)
-    val autoLoadEnabled: StateFlow<Boolean> = _autoLoadEnabled.asStateFlow()
+    /** Persisted, and the same value as Settings' "Auto-Load New Posts". */
+    val autoLoadEnabled: StateFlow<Boolean> = configStore.config
+        .map { it.autoLoadNewPosts }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoLoadNewPosts)
+
+    /** Appearance's "New Posts Pill"; off, pull-to-refresh takes in waiting posts. */
+    val showNewPostsPill: StateFlow<Boolean> = configStore.config
+        .map { it.showNewPostsPill }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showNewPostsPill)
 
     val showReposts: StateFlow<Boolean> = feedService.showReposts
 
@@ -335,17 +427,86 @@ class FeedViewModel @Inject constructor(
 
     val popularFilter: StateFlow<PopularFilter> = feedService.popularFilter
 
+    /** Global (and Media's Global) shows everyone rather than your Web of Trust. */
+    val globalShowsEveryone: StateFlow<Boolean> = configStore.config
+        .map { it.globalShowsEveryone }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.globalShowsEveryone)
+
+    /** Languages Global is narrowed to; empty is every language. */
+    val globalFeedLanguages: StateFlow<List<String>> = configStore.config
+        .map { it.globalFeedLanguages }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.globalFeedLanguages)
+
+    /** Global filters against this graph; empty means the relay hasn't built it yet. */
+    val trustGraphReady: StateFlow<Boolean> = feedService.wotPubkeys
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
+
+    /** The graph is built and empty: this account follows nobody yet. */
+    val noWebOfTrustYet: StateFlow<Boolean> = combine(feedService.wotCacheRead, feedService.wotPubkeys) { read, wot ->
+        read && wot.isEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.hasNoWebOfTrustYet())
+
+    // Declared after _feedMode, which the reload reads.
+    init {
+        reloadOnTrustScopeChange()
+    }
+
+    /** The shield is one app-wide setting; [reloadOnTrustScopeChange] follows every flip. */
+    fun setGlobalShowsEveryone(on: Boolean) {
+        feedService.setGlobalShowsEveryone(on)
+    }
+
+    /**
+     * The note feeds re-filter and reload inside FeedService; feeds with their
+     * own service refetch under the new scope. Watches the setting rather than
+     * the button, so a flip from a hashtag screen reloads this feed too.
+     */
+    private fun reloadOnTrustScopeChange() {
+        viewModelScope.launch {
+            configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged().drop(1).collect {
+                when (_feedMode.value) {
+                    FeedMode.REELS -> reelsFeedService.refresh()
+                    FeedMode.LIVE -> liveFeedService.refresh()
+                    FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    val articlesScope = feedService.articlesFeedMode
+    val recipesScope = feedService.recipesFeedMode
+    val pollsScope = feedService.pollsFeedMode
+    val pollStatus = feedService.pollStatusFilter
+
+    fun setPollStatus(filter: com.nostrvault.data.model.PollStatusFilter) = feedService.setPollStatusFilter(filter)
+    val liveScope = liveFeedService.liveScope
+
+    /**
+     * Following or Global for the given feed. Global starts on the Web of
+     * Trust, so no warning here; only the shield's Everyone has one.
+     */
+    fun setScope(mode: FeedMode, global: Boolean) {
+        val reels = if (global) ReelsScope.GLOBAL else ReelsScope.FOLLOWING
+        val media = if (global) MediaFeedMode.GLOBAL else MediaFeedMode.FOLLOWING
+        when (mode) {
+            FeedMode.MEDIA -> feedService.setMediaFeedMode(media)
+            FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> feedService.setLongFormFeedMode(mode, media)
+            FeedMode.REELS -> reelsFeedService.setScope(reels)
+            FeedMode.LIVE -> liveFeedService.setScope(reels)
+            FeedMode.MARKETPLACE -> marketplaceFeedService.setScope(reels)
+            else -> Unit
+        }
+    }
+    fun setGlobalFeedLanguages(codes: List<String>) = feedService.setGlobalFeedLanguages(codes)
+
     private val _showEngagementStats = MutableStateFlow(false)
     val showEngagementStats: StateFlow<Boolean> = _showEngagementStats.asStateFlow()
 
-    fun toggleAutoLoad() { _autoLoadEnabled.value = !_autoLoadEnabled.value }
+    fun toggleAutoLoad() { configStore.update { it.copy(autoLoadNewPosts = !it.autoLoadNewPosts) } }
     fun toggleShowReposts() { feedService.setShowReposts(!showReposts.value) }
     fun toggleShowReplies() { feedService.setShowReplies(!showReplies.value) }
-    fun toggleMediaFollowing() {
-        feedService.setMediaFeedMode(
-            if (mediaFollowingOnly.value) MediaFeedMode.GLOBAL else MediaFeedMode.FOLLOWING
-        )
-    }
     fun toggleShowEngagementStats() { _showEngagementStats.value = !_showEngagementStats.value }
     fun setPopularFilter(filter: PopularFilter) { feedService.setPopularFilter(filter) }
 
@@ -365,11 +526,20 @@ class FeedViewModel @Inject constructor(
             feedService.setFeedScrollingDown(false)
             reelsFeedService.loadIfNeeded()
         }
+        if (mode == FeedMode.MARKETPLACE) {
+            // Same as Live: the listings come from their own service.
+            marketplaceFeedService.loadIfNeeded()
+            return
+        }
         if (mode == FeedMode.LIVE) {
             // Nothing to switch on the note subscription — Live has its own.
             liveFeedService.refresh()
             return
         }
+        // Music is Wavlake; the note subscription has nothing to switch.
+        if (mode == FeedMode.MUSIC) return
+        // Hashtags runs its own #t REQ (HashtagsFeedViewModel); same as Music.
+        if (mode == FeedMode.HASHTAGS) return
         viewModelScope.launch {
             feedService.switchFeedMode(mode)
         }
@@ -385,6 +555,9 @@ class FeedViewModel @Inject constructor(
             reelsFeedService.refresh()
             return
         }
+        // Refreshing takes in the posts waiting behind the New Posts pill, the
+        // only way to reach them with the pill switched off (iOS #276).
+        feedService.applyPendingNotes()
         viewModelScope.launch {
             _isRefreshing.value = true
             feedService.refresh()
@@ -392,33 +565,29 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    fun loadMore() {
-        if (_isLoadingMore.value) return
-        viewModelScope.launch {
-            _isLoadingMore.value = true
-            feedService.loadOlderNotes()
-            _isLoadingMore.value = false
-        }
-    }
+    fun loadMore() = feedService.loadOlderNotes()
 
-    fun likeNote(noteId: String, emoji: String? = null) {
-        if (likedEventIds.value.contains(noteId) && emoji == null) {
-            // Already liked — start unlike countdown
-            notificationManager.startUnlikeCountdown {
-                feedService.unlikeNote(noteId)
-            }
-            return
-        }
-        viewModelScope.launch {
-            feedService.likeNote(noteId, emoji)
-        }
-    }
+    /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
+    fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
     fun repostNote(noteId: String) {
         viewModelScope.launch {
             feedService.repostNote(noteId)
         }
     }
+
+    /** Feed videos play inline, muted, while on screen (Settings > Advanced > Autoplay Videos). */
+    val autoplayVideos: StateFlow<Boolean> = configStore.config
+        .map { it.autoplayVideos }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoplayVideos)
+
+    /** The bolt only shows with a wallet to pay from (iOS rowData.hasNWC). */
+    val hasWallet: StateFlow<Boolean> = configStore.config
+        .map { !it.nwcURI.isNullOrBlank() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), !configStore.config.value.nwcURI.isNullOrBlank())
+
+    /** One tap on the bolt: the default amount from Wallet settings, no sheet. */
+    fun quickZap(noteId: String) = zapNote(noteId, configStore.config.value.defaultZapAmount)
 
     fun zapNote(noteId: String, amount: Int = 21) {
         viewModelScope.launch {
@@ -429,8 +598,11 @@ class FeedViewModel @Inject constructor(
             }
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
-            zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
-                onSuccess = { _zapMessage.emit("Zapped ⚡$amount sats") },
+            zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount).fold(
+                onSuccess = {
+                    ZapFlight.launch(note.effectiveEventId)
+                    _zapMessage.emit("Zapped $amount sats")
+                },
                 onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
             )
         }
@@ -459,6 +631,55 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
 
+    // Avatar quick menu (iOS FeedView avatar toolbar).
+    fun isFollowing(pubkey: String): Boolean = feedService.isFollowing(pubkey)
+
+    // ── Fill your feed ────────────────────────────────────────────
+
+    /** Follow or unfollow from the guide's profile card. FeedService shows the banner. */
+    fun toggleFollowFromGuide(pubkey: String) {
+        if (feedService.isFollowing(pubkey)) feedService.unfollowUser(pubkey) else feedService.followUser(pubkey)
+    }
+
+    fun unfollowFromGuide(pubkey: String) {
+        feedService.unfollowUser(pubkey)
+    }
+
+    /**
+     * The small profile card's data, from the sources the profile page uses:
+     * notes already on screen first, then the newest 3 from the relays, and
+     * the person's follow list for the count. Never blocks Follow.
+     */
+    suspend fun loadProfileCard(pubkey: String): com.nostrvault.vaultguide.ProfileCardData {
+        if (nostrService.profiles.value[pubkey] == null) nostrService.fetchMissingProfiles(listOf(pubkey))
+        val config = configStore.config.value
+        val relays = buildList {
+            config.nostrURL?.let { add(it) }
+            addAll(config.activeFeedRelays.take(3))
+            addAll(nostrService.outboxRelays.value[pubkey].orEmpty().take(3))
+        }.distinct()
+        val filter = kotlinx.serialization.json.buildJsonObject {
+            put("kinds", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(1))))
+            put("authors", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(pubkey))))
+            put("limit", kotlinx.serialization.json.JsonPrimitive(3))
+        }.toString()
+        val fetched = runCatching { nostrService.queryRawEvents(listOf(filter), relays, 6_000L) }.getOrDefault(emptyList())
+            .mapNotNull { e ->
+                val author = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val content = (e["content"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val at = (e["created_at"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+                if (author == pubkey && content != null && at != null) content to at else null
+            }
+        val shown = feedService.notes.value.filter { it.pubkey == pubkey && it.kind == 1 }
+            .map { it.content to it.createdAt.time / 1000 }
+        val posts = (fetched.ifEmpty { shown }).sortedByDescending { it.second }.distinct().take(3)
+        val following = runCatching { nostrService.fetchNewestReplaceable(3, pubkey, emptyList()) }.getOrNull()
+            ?.tags?.count { it.size >= 2 && it[0] == "p" && it[1] != pubkey }
+        return com.nostrvault.vaultguide.ProfileCardData(followingCount = following, posts = posts, loadingPosts = false)
+    }
+    fun followUser(pubkey: String) { viewModelScope.launch { feedService.followUser(pubkey) } }
+    fun unfollowUser(pubkey: String) { viewModelScope.launch { feedService.unfollowUser(pubkey) } }
+
     /** NIP-56 report. Also blocks the author, matching NoteDetail and iOS. */
     fun reportNote(noteId: String, pubkey: String, reason: String, description: String = "") {
         viewModelScope.launch {
@@ -470,6 +691,9 @@ class FeedViewModel @Inject constructor(
     // Exposed for BroadcastSheet which needs direct service access
     val feedServiceRef: FeedService get() = feedService
     val nostrServiceRef: NostrService get() = nostrService
+
+    /** An artist's npub (from Wavlake) as hex, to open their profile. */
+    fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
     val configStoreRef: ConfigStore get() = configStore
 
     // ── Scroll position persistence ────────────────────────────
@@ -481,6 +705,10 @@ class FeedViewModel @Inject constructor(
         feedService.updateScrollPosition(index, offset)
     }
 
+    fun setFeedScrolling(active: Boolean) {
+        feedService.setFeedScrolling(active)
+    }
+
     fun clearRestoredPosition() {
         feedService.clearRestoredScrollPosition()
     }
@@ -488,6 +716,7 @@ class FeedViewModel @Inject constructor(
     // ── Parent note cache (for inline reply previews) ──────────
 
     val parentNotesCache: StateFlow<Map<String, FeedNote>> = feedService.parentNotesCache
+    val unavailableNoteIds: StateFlow<Set<String>> = feedService.unavailableNoteIds
 
     /** Fetched quoted events, keyed by the lookup key `quotedEventIds` holds. */
     val quotedNotesCache: StateFlow<Map<String, FeedNote>> = feedService.quotedNotes
@@ -500,6 +729,9 @@ class FeedViewModel @Inject constructor(
     fun fetchMissingParentNote(parentEventId: String) {
         feedService.fetchMissingNote(parentEventId)
     }
+
+    /** Off Main: the parent lookup that follows reads this index. */
+    fun warmNoteIndex() = feedService.warmNoteIndex()
 
     fun fetchMissingParentNotes(parentEventIds: List<String>) {
         feedService.fetchMissingNotesBatch(parentEventIds)

@@ -61,4 +61,35 @@ final class FeedLayoutModeTests: XCTestCase {
             .condensed
         )
     }
+
+    // MARK: - Feed picker order
+
+    private let defaults = ["following", "global", "popular", "media", "music"]
+
+    func testNoStoredOrderIsTheDefault() {
+        XCTAssertEqual(FeedMenuOrder.visible(stored: [], hidden: [], defaults: defaults, pinned: "following"), defaults)
+    }
+
+    func testStoredOrderAndHiddenAreApplied() {
+        let shown = FeedMenuOrder.visible(stored: ["media", "following", "global", "popular", "music"],
+                                          hidden: ["popular"], defaults: defaults, pinned: "following")
+        XCTAssertEqual(shown, ["media", "following", "global", "music"])
+    }
+
+    func testTheHomeFeedCannotBeHidden() {
+        let shown = FeedMenuOrder.visible(stored: [], hidden: ["following", "global"], defaults: defaults, pinned: "following")
+        XCTAssertEqual(shown, ["following", "popular", "media", "music"])
+    }
+
+    func testNewFeedsSlotInAndRemovedOnesDrop() {
+        // "music" is new since the order was saved, so it goes in after
+        // "media", the feed before it by default. "recipes" no longer exists.
+        let shown = FeedMenuOrder.ordered(stored: ["media", "recipes", "following", "global", "popular"], defaults: defaults)
+        XCTAssertEqual(shown, ["media", "music", "following", "global", "popular"])
+    }
+
+    func testEncodeRoundTrips() {
+        XCTAssertEqual(FeedMenuOrder.decode(FeedMenuOrder.encode(defaults)), defaults)
+        XCTAssertEqual(FeedMenuOrder.decode(""), [])
+    }
 }

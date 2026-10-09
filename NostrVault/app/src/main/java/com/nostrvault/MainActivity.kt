@@ -14,10 +14,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -29,17 +35,27 @@ import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LocalNotificationService
+import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NoteTranslationPolicy
+import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
+import com.nostrvault.ui.components.InAppBannerHost
+import com.nostrvault.ui.components.LocalNoteTranslation
+import com.nostrvault.ui.components.NoteTranslationContext
+import com.nostrvault.ui.components.deviceLanguageTags
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.navigation.BridgeEntityDecoder
 import com.nostrvault.ui.navigation.DeepLinkRouter
 import com.nostrvault.ui.navigation.NostrVaultNavHost
+import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.AppTheme
+import com.nostrvault.ui.theme.FeedLineLimits
 import com.nostrvault.ui.theme.NostrVaultTheme
 import com.nostrvault.ui.theme.Surface0
 import com.nostrvault.widget.WidgetPublisher
@@ -56,10 +72,14 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var nostrService: NostrService
     @Inject lateinit var logStore: LogStore
     @Inject lateinit var localNotificationService: LocalNotificationService
+    @Inject lateinit var feedActivityNotifier: com.nostrvault.service.FeedActivityNotifier
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
+    @Inject lateinit var noteTranslator: NoteTranslator
     @Inject lateinit var mediaUploadManager: MediaUploadManager
+    @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
+    @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
     @Inject lateinit var fipsMeshManager: FipsMeshManager
 
     private val notificationPermissionLauncher =
@@ -80,6 +100,10 @@ class MainActivity : FragmentActivity() {
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
 
+        // Posts waiting for an outside media server: watch the network and
+        // retry every minute while any wait. Started right after the config
+        // load (a queued post is only signed by the account that wrote it).
+        mediaPostQueue.start()
         // After reload(), never before: the preference lives in the config file
         // and reads false until it has been loaded, which would make this a
         // silent no-op every launch.
@@ -110,7 +134,11 @@ class MainActivity : FragmentActivity() {
                     // so reading it once here is enough.
                     if (config.useExternalRelay) {
                         RelayForegroundService.useExternalRelay(this@MainActivity)
-                    } else {
+                    } else if (!relayImportService.isImporting.value) {
+                        // Setup's import tour can finish with the import still
+                        // running ("Keep it running in the background"). The
+                        // import holds the relay's database and restarts the
+                        // relay itself when it's done.
                         RelayForegroundService.start(this@MainActivity)
                     }
 
@@ -120,6 +148,11 @@ class MainActivity : FragmentActivity() {
                     // what makes them reachable again, including from senders
                     // still running that build.
                     runCatching { nostrService.republishDMRelayList() }
+
+                    // onStart only starts DM listening when setup was already
+                    // complete, so a user who just finished the wizard heard no
+                    // DMs until they opened the DM tab or reopened the app.
+                    dmService.startIfNeeded()
                 }
             }
 
@@ -132,26 +165,67 @@ class MainActivity : FragmentActivity() {
                 textSizeScale = config.textSizeScale,
                 oledMode = true,
                 zapsOnlyMode = config.zapsOnlyMode,
+                feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Surface0,
+                // "Translate post" (Appearance > Translation): one context for
+                // every note card, rebuilt only when the switch or language changes.
+                val noteTranslation = remember(config.showTranslateButton, config.translateTargetLanguage) {
+                    NoteTranslationContext(
+                        translator = noteTranslator,
+                        enabled = config.showTranslateButton,
+                        target = NoteTranslationPolicy.target(
+                            config.translateTargetLanguage,
+                            deviceLanguageTags(),
+                            noteTranslator.supportedLanguages,
+                        ),
+                    )
+                }
+                // The reaction button's tapback bar sends through here.
+                val reactionActions = remember {
+                    com.nostrvault.ui.components.ReactionActions(
+                        myReactions = feedService.myReactions,
+                        defaultReaction = { configStore.config.value.defaultReactionEmoji },
+                        pick = { noteId, emoji -> feedService.likeNote(noteId, emoji) },
+                    )
+                }
+                CompositionLocalProvider(
+                    LocalNoteTranslation provides noteTranslation,
+                    com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        NostrVaultNavHost(
-                            isSetupComplete = config.hasCompletedSetup,
-                            configStore = configStore,
-                            feedService = feedService,
-                            nostrService = nostrService,
-                            logStore = logStore,
-                            dmUnreadCount = dmService.totalUnreadCountFlow,
-                            hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                            notificationManager = notificationManager,
-                            pendingPostManager = pendingPostManager,
-                        )
-                        // Full-screen media viewer overlay — lives in the activity window
-                        // (not a Dialog) so Picture-in-Picture can capture the video.
-                        FullScreenMediaHost()
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Surface0,
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            NostrVaultNavHost(
+                                isSetupComplete = config.hasCompletedSetup,
+                                configStore = configStore,
+                                feedService = feedService,
+                                nostrService = nostrService,
+                                logStore = logStore,
+                                dmUnreadCount = dmService.totalUnreadCountFlow,
+                                hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
+                                notificationManager = notificationManager,
+                                pendingPostManager = pendingPostManager,
+                            )
+                            // Full-screen media viewer overlay — lives in the activity window
+                            // (not a Dialog) so Picture-in-Picture can capture the video.
+                            FullScreenMediaHost()
+                            // DMs that arrive while the app is open.
+                            InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
+                            // An import still running after setup, or started in Settings.
+                            com.nostrvault.setup.ImportRunningPill(
+                                isImporting = relayImportService.isImporting,
+                                statusMessage = relayImportService.importStatusMessage,
+                                hasCompletedSetup = config.hasCompletedSetup,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .statusBarsPadding()
+                                    .padding(top = 60.dp),
+                            )
+                            // Tutorial cards, over every screen; only the card takes touches.
+                            com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
+                        }
                     }
                 }
             }
@@ -182,6 +256,8 @@ class MainActivity : FragmentActivity() {
             eventId = intent.getStringExtra("notif_event_id"),
             author = intent.getStringExtra("notif_author"),
             npub = intent.getStringExtra("notif_npub"),
+            event = intent.getStringExtra(NotificationNote.EVENT_EXTRA),
+            target = intent.getStringExtra(NotificationNote.TARGET_EXTRA),
         )
         if (fromNotification != null) {
             // Consumed: a rotation re-delivers the same intent, and without this
@@ -311,6 +387,9 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         localNotificationService.appInForeground = false
+        // The absence starts now; the feed on screen counts as seen.
+        feedActivityNotifier.onBackground()
+        MusicPlayer.setAppInForeground(false)
         // Entering PiP pauses but does not stop the activity, so this only runs on a
         // real background transition: snapshot the feed and disconnect WebSockets.
         // The Go relay keeps running via the foreground service.
@@ -322,8 +401,17 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         localNotificationService.appInForeground = true
+        feedActivityNotifier.onForeground()
+        // A live stream another app's sound paused while we were away carries on.
+        MusicPlayer.setAppInForeground(true)
+        // Back in the foreground: a sleeping Mac vault may be awake now.
+        mediaPostQueue.retryAll("foreground")
         // Restore the snapshot for instant UI, then reconnect in the background.
         if (configStore.config.value.hasCompletedSetup) {
+            // An import that ended while we were away couldn't restart the relay.
+            if (relayImportService.takeRelayRestartPending() && !configStore.config.value.useExternalRelay) {
+                RelayForegroundService.start(this)
+            }
             feedService.resumeFeed()
             // Start DM listeners once, then catch up from external relays each
             // time the app returns to the foreground.

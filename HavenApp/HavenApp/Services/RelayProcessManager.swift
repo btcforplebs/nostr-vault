@@ -2,6 +2,9 @@ import Foundation
 @preconcurrency import Dispatch
 import Combine
 import UniformTypeIdentifiers
+#if os(iOS)
+import UIKit
+#endif
 
 // Broad MIME types that allow more specific refinements from relay metadata
 private let mimeSubsetRules: [String: Set<String>] = [
@@ -33,6 +36,11 @@ class RelayProcessManager: ObservableObject {
     @Published var isRunning = false
     @Published var isBooting = false
     @Published var isWotSyncing = false
+    /// The relay has logged "subscribing to inbox" this run. With a warm WoT
+    /// cache that line comes BEFORE "listening at" (boot done), so boot-done
+    /// must not turn Syncing on after it: nothing would ever turn it off, and
+    /// an always-on Mac sat on "Syncing" for good (2026-10-03).
+    private var inboxSubscribed = false
     @Published var isImporting = false
     @Published var importCompleted = false
     @Published var isLocked = false
@@ -188,6 +196,9 @@ class RelayProcessManager: ObservableObject {
 
         // Immediately claim the state so no second call can slip through.
         self.state = .booting
+        #if os(iOS)
+        observeForegroundOnce()
+        #endif
         self.lastConfig = config
         self.isReadyForConnections = false
         self.readyForConnectionsTask?.cancel()
@@ -245,22 +256,25 @@ class RelayProcessManager: ObservableObject {
         // We stop writing .env to disk and use environment variables instead
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        
+        // Written from the same inputs applySavedConfig compares, so a setting
+        // the relay reads here can never be missed by the auto-restart.
+        let inputs = RelayConfiguration.launchInputs(config: config, relayDataDir: relayDataDir)
+
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         
         let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
-        if let data = try? encoder.encode(config.activeBlastrRelays) {
+        if let data = try? encoder.encode(inputs.blastrRelays) {
             try? data.write(to: blastrRelaysURL)
         }
 
         let dmRelaysURL = relayDataDir.appendingPathComponent("relays_dm.json")
-        if let data = try? encoder.encode(config.dmRelays) {
+        if let data = try? encoder.encode(inputs.dmRelays) {
             try? data.write(to: dmRelaysURL)
         }
 
         // Write whitelisted_npubs.json (Required by new binary)
         let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
-        if let data = try? encoder.encode(config.whitelistedNpubs) {
+        if let data = try? encoder.encode(inputs.whitelistedNpubs) {
             try? data.write(to: whitelistURL)
         }
         
@@ -283,8 +297,7 @@ class RelayProcessManager: ObservableObject {
         logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
         
         // Prepare environment for C-Shared lib execution
-        let configEnv = generateEnvDictionary(config: config)
-        for (key, value) in configEnv {
+        for (key, value) in inputs.env {
             setenv(key, value, 1)
             if let cKey = strdup(key), let cValue = strdup(value) {
                 SetHavenEnvC(cKey, cValue)
@@ -304,6 +317,7 @@ class RelayProcessManager: ObservableObject {
         self.state = .booting
         isRunning = true
         isBooting = true
+        inboxSubscribed = false
         bootStatusMessage = "Starting system..."
         startBootWatchdog()
         beginRelayActivity()
@@ -378,6 +392,81 @@ class RelayProcessManager: ObservableObject {
         return isRunning && !isBooting
     }
 
+    /// Ready by the flags AND answering HTTP. The flags alone go stale: iOS
+    /// can close the listening socket while the app is suspended and nothing
+    /// flips `isRunning`, so an upload only found out by failing.
+    func ensureRelayServing(timeout: TimeInterval = 15.0) async -> Bool {
+        let started = Date()
+        guard await ensureRelayReady(timeout: timeout) else { return false }
+        let left = timeout - Date().timeIntervalSince(started)
+        return await waitForHTTP(timeout: max(left, Self.httpReadyTimeout))
+    }
+
+    /// How long the HTTP check keeps trying once the flags say running.
+    static let httpReadyTimeout: TimeInterval = 10
+
+    /// HEAD /upload until the relay answers, backing off 0.25s → 2s.
+    func waitForHTTP(timeout: TimeInterval = httpReadyTimeout) async -> Bool {
+        let port = lastConfig?.relayPort ?? ConfigService.shared.config.relayPort
+        let deadline = Date().addingTimeInterval(timeout)
+        var delay: TimeInterval = 0.25
+        while true {
+            if await Self.relayAnswersHTTP(port: port) { return true }
+            if Date().addingTimeInterval(delay) >= deadline { return false }
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            delay = min(delay * 2, 2)
+        }
+    }
+
+    private static let probeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2
+        config.timeoutIntervalForResource = 3
+        return URLSession(configuration: config, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+    }()
+
+    /// One request to the relay's own Blossom endpoint. Any HTTP status
+    /// counts: a 401 or 404 still means the listener is up. Only a connection
+    /// failure or a timeout means it is not.
+    nonisolated static func relayAnswersHTTP(port: Int) async -> Bool {
+        #if os(macOS)
+        guard let url = URL(string: "http://127.0.0.1:\(port)/upload") else { return false }
+        #else
+        guard let url = URL(string: "https://localhost:\(port)/upload") else { return false }
+        #endif
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 2
+        guard let (_, response) = try? await probeSession.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (100..<600).contains(http.statusCode)
+    }
+
+    #if os(iOS)
+    private var foregroundObserver: NSObjectProtocol?
+
+    /// On iOS the app restarts the relay on foreground only when it is idle.
+    /// A relay whose socket died during suspension still reads as running, so
+    /// check that it answers, and restart it if it does not.
+    private func observeForegroundOnce() {
+        guard foregroundObserver == nil else { return }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in await RelayProcessManager.shared.recheckAfterForeground() }
+        }
+    }
+
+    func recheckAfterForeground() async {
+        guard state == .running, isRunning, !isBooting, inFlightRestart == nil, !isApplyingConfig else { return }
+        // A few tries: right after resume the process is still thawing.
+        if await waitForHTTP(timeout: 4) { return }
+        guard state == .running else { return }  // stopped or restarting meanwhile
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay is not answering after the app came back; restarting it"))
+        _ = await gracefulRestart()
+    }
+    #endif
+
     /// Gracefully restart the relay by stopping and restarting it.
     /// Used for automatic recovery when blossom uploads to the local relay fail.
     /// Concurrent callers coalesce onto one in-flight restart, and a cooldown
@@ -389,12 +478,12 @@ class RelayProcessManager: ObservableObject {
         }
         if let last = lastRestartFinished, Date().timeIntervalSince(last) < Self.restartCooldown {
             logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Automatic restart suppressed (cooldown) — waiting for relay readiness instead"))
-            return await ensureRelayReady(timeout: 10.0)
+            return await ensureRelayServing(timeout: 10.0)
         }
         #if os(macOS)
         if SleepWakeMonitor.shared.isInWakeGracePeriod {
             logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Automatic restart skipped — system just woke from sleep; waiting for relay instead"))
-            return await ensureRelayReady(timeout: 15.0)
+            return await ensureRelayServing(timeout: 15.0)
         }
         #endif
         guard let config = lastConfig else {
@@ -412,13 +501,105 @@ class RelayProcessManager: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             self.startRelay(config: config, isRetry: true)
-            return await self.ensureRelayReady(timeout: 30.0)
+            // startRelay only queues the start. Until it has run, state is
+            // still .idle and ensureRelayReady returns false at once, which
+            // is how a post failed at :33 with the relay up at :34.
+            await self.lifecycleChain.value
+            return await self.ensureRelayServing(timeout: 30.0)
         }
         inFlightRestart = restart
         let result = await restart.value
         inFlightRestart = nil
         lastRestartFinished = Date()
         return result
+    }
+
+    /// True while a settings save is restarting the relay onto a new config.
+    @Published private(set) var isApplyingConfig = false
+    private var pendingAppliedConfig: HavenConfig?
+    private var applyConfigTask: Task<Void, Never>?
+
+    /// Whether the running relay would start differently from `config`.
+    /// Only what the relay reads at start counts (see LaunchInputs), so
+    /// theme, feed relays and other app-side settings never restart it.
+    func needsRestart(for config: HavenConfig) -> Bool {
+        guard isRunning, !isImporting, let running = lastConfig else { return false }
+        let dir = ConfigService.shared.relayDataDir
+        return RelayConfiguration.launchInputs(config: config, relayDataDir: dir)
+            != RelayConfiguration.launchInputs(config: running, relayDataDir: dir)
+    }
+
+    /// How long saves must stop arriving before a restart, so a value typed
+    /// with pauses (a port, a domain) restarts the relay once, not per pause.
+    private static let applyQuietPeriod: TimeInterval = 3
+    /// Minimum time between the end of one settings restart and the start of
+    /// the next. Rapid stop/start cycling is what used to corrupt BadgerDB.
+    private static let applyMinimumGap: TimeInterval = 10
+    private var lastApplyRequest = Date.distantPast
+
+    /// Called after Settings saves. Restarts the relay in place when a
+    /// relay-facing setting changed and does nothing otherwise. Saves
+    /// coalesce: a restart waits for `applyQuietPeriod` without new saves and
+    /// for `applyMinimumGap` after the previous restart, then applies only the
+    /// latest config. Shares `inFlightRestart` so a Blossom recovery restart
+    /// waits on this one instead of cycling the relay a second time.
+    func applySavedConfig(_ config: HavenConfig) {
+        pendingAppliedConfig = config
+        lastApplyRequest = Date()
+        guard applyConfigTask == nil else { return }
+        applyConfigTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.pendingAppliedConfig != nil {
+                // Wait until saves have gone quiet and the relay has had its
+                // minimum rest since the last settings restart.
+                while true {
+                    let now = Date()
+                    let quietLeft = Self.applyQuietPeriod - now.timeIntervalSince(self.lastApplyRequest)
+                    let gapLeft = self.lastRestartFinished.map { Self.applyMinimumGap - now.timeIntervalSince($0) } ?? 0
+                    let wait = max(quietLeft, gapLeft)
+                    if wait <= 0 { break }
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    } catch {
+                        // Cancelled: stop without restarting.
+                        self.isApplyingConfig = false
+                        self.applyConfigTask = nil
+                        return
+                    }
+                }
+                if let other = self.inFlightRestart { _ = await other.value }
+                guard let next = self.pendingAppliedConfig else { break }
+                self.pendingAppliedConfig = nil
+
+                // An import stops the relay and restarts it from
+                // pendingImportConfig when it ends; hand it the newer config
+                // so the save is applied then rather than dropped.
+                if self.isImporting {
+                    if self.pendingImportConfig != nil {
+                        self.pendingImportConfig = next
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed during import; they apply when the import ends"))
+                    }
+                    continue
+                }
+                guard self.needsRestart(for: next) else { continue }
+                self.isApplyingConfig = true
+                self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed; restarting relay to apply them"))
+                let restart = Task { @MainActor () -> Bool in
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        self.stopRelay { continuation.resume() }
+                    }
+                    self.startRelay(config: next)
+                    await self.lifecycleChain.value  // see gracefulRestart
+                    return await self.ensureRelayServing(timeout: 30.0)
+                }
+                self.inFlightRestart = restart
+                _ = await restart.value
+                self.inFlightRestart = nil
+                self.lastRestartFinished = Date()
+            }
+            self.isApplyingConfig = false
+            self.applyConfigTask = nil
+        }
     }
 
     func stopRelay(completion: (() -> Void)? = nil) {
@@ -454,6 +635,7 @@ class RelayProcessManager: ObservableObject {
         cancelBootWatchdog()
         isBooting = false
         isWotSyncing = false
+        inboxSubscribed = false
 
         logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
 
@@ -483,6 +665,7 @@ class RelayProcessManager: ObservableObject {
         state = .idle
         isRunning = false
         isWotSyncing = false
+        inboxSubscribed = false
         // Cleared so the dashboard's uptime readout does not keep counting
         // against a run that has already ended.
         startDate = nil
@@ -886,7 +1069,9 @@ class RelayProcessManager: ObservableObject {
                 isBooting = false
                 state = .running  // Transition from .booting to .running
                 bootStatusMessage = ""
-                isWotSyncing = true  // Relay is up, WoT may still be syncing
+                // Relay is up; WoT may still be building, unless the inbox
+                // subscription (which waits on WoT) already started.
+                isWotSyncing = !inboxSubscribed
                 cancelBootWatchdog()
                 #if os(macOS)
                 NetworkSyncService.shared.start()
@@ -904,6 +1089,7 @@ class RelayProcessManager: ObservableObject {
 
         // WoT sync completion (outside isBooting guard since boot already ended)
         if batch.stopWotSyncing {
+            inboxSubscribed = true
             isWotSyncing = false
             bootStatusMessage = ""
         }
@@ -1061,153 +1247,7 @@ class RelayProcessManager: ObservableObject {
         }
     }
 
-    func runBackupToCloud(config: HavenConfig) {
-        enqueueLifecycle { [weak self] in
-            guard let self else { return }
-            let wasRunning = self.isRunning
-            if wasRunning { await self.performStop() }
-            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            self.prepareEnvForBackup(config: config)
-
-            let success: Bool = await withCheckedContinuation { continuation in
-                DispatchQueue.global().async {
-                    continuation.resume(returning: BackupToCloudC() == 0)
-                }
-            }
-            let msg = success ? "Cloud backup complete" : "Cloud backup failed"
-            self.logStore.append(LogEntry(timestamp: Date(), level: success ? "INFO" : "ERROR", message: msg))
-            if wasRunning {
-                await self.performStart(config: config, isRetry: true)
-            }
-        }
-    }
-
-    func runRestoreFromCloud(config: HavenConfig) {
-        enqueueLifecycle { [weak self] in
-            guard let self else { return }
-            let wasRunning = self.isRunning
-            if wasRunning { await self.performStop() }
-            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            self.prepareEnvForBackup(config: config)
-
-            let success: Bool = await withCheckedContinuation { continuation in
-                DispatchQueue.global().async {
-                    continuation.resume(returning: RestoreFromCloudC() == 0)
-                }
-            }
-            let msg = success ? "Cloud restore complete" : "Cloud restore failed"
-            self.logStore.append(LogEntry(timestamp: Date(), level: success ? "INFO" : "ERROR", message: msg))
-            if wasRunning {
-                await self.performStart(config: config, isRetry: true)
-            }
-        }
-    }
-    
     // MARK: - Blossom Backup
-    
-    func runBlossomBackup(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
-        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
-        
-        // Ensure blossom directory exists
-        guard FileManager.default.fileExists(atPath: blossomDir.path) else {
-            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
-            completion(false)
-            return
-        }
-        
-        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
-        
-        // Create a temporary file path
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempZipURL = tempDir.appendingPathComponent("blossom_backup_\(UUID().uuidString).zip")
-        
-        // Launch Go ZipDirectoryC on background thread
-        DispatchQueue.global().async { [weak self] in
-            guard let cSrc = strdup(blossomDir.path), let cDst = strdup(tempZipURL.path) else {
-                free(nil) // no-op, just balances the flow
-                Task { @MainActor in
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Memory allocation failed for Blossom backup"))
-                    completion(false)
-                }
-                return
-            }
-            let result = ZipDirectoryC(cSrc, cDst)
-            free(cSrc)
-            free(cDst)
-
-            Task { @MainActor in
-                if result == 0 {
-                    do {
-                        let destURL = URL(fileURLWithPath: outputPath)
-                        if FileManager.default.fileExists(atPath: destURL.path) {
-                            try FileManager.default.removeItem(at: destURL)
-                        }
-                        try FileManager.default.moveItem(at: tempZipURL, to: destURL)
-                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
-                        completion(true)
-                    } catch {
-                        self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
-                        try? FileManager.default.removeItem(at: tempZipURL)
-                        completion(false)
-                    }
-                } else {
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed in Go process"))
-                    try? FileManager.default.removeItem(at: tempZipURL)
-                    completion(false)
-                }
-            }
-        }
-    }
-
-    func runBlossomImport(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
-        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
-        
-        // Ensure blossom directory exists
-        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-        
-        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
-        
-        // Copy to temp first to avoid sandbox issues with unzip subprocess
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempZipURL = tempDir.appendingPathComponent("blossom_import_\(UUID().uuidString).zip")
-        
-        do {
-            if FileManager.default.fileExists(atPath: tempZipURL.path) {
-                try FileManager.default.removeItem(at: tempZipURL)
-            }
-            try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
-        } catch {
-            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
-            completion(false)
-            return
-        }
-        
-        // Launch Go UnzipDirectoryC on background thread
-        DispatchQueue.global().async { [weak self] in
-            guard let cSrc = strdup(tempZipURL.path), let cDst = strdup(blossomDir.path) else {
-                Task { @MainActor in
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Memory allocation failed for Blossom import"))
-                    completion(false)
-                }
-                return
-            }
-            let result = UnzipDirectoryC(cSrc, cDst)
-            free(cSrc)
-            free(cDst)
-
-            Task { @MainActor in
-                try? FileManager.default.removeItem(at: tempZipURL)
-
-                if result == 0 {
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
-                    completion(true)
-                } else {
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed in Go process"))
-                    completion(false)
-                }
-            }
-        }
-    }
     
     // MARK: - Blossom Extensions Logic
     

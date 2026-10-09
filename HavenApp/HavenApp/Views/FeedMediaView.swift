@@ -9,6 +9,7 @@ enum FeedMediaType {
     case photo
     case gif
     case video
+    case audio
     case unknown
 
     /// Fast classification from file extension alone — no network needed.
@@ -17,6 +18,7 @@ enum FeedMediaType {
         if ext == "gif" { return .gif }
         if SupportedMediaFormats.imageExtensions.contains(ext) { return .photo }
         if SupportedMediaFormats.videoExtensions.contains(ext) { return .video }
+        if SupportedMediaFormats.audioExtensions.contains(ext) { return .audio }
         return ext.isEmpty ? nil : nil // Unknown extension — need HEAD
     }
 
@@ -30,7 +32,8 @@ enum FeedMediaType {
         case .video: self = .video
         case .gif: self = .gif
         case .image: self = .photo
-        case .audio, .unknown: self = .unknown
+        case .audio: self = .audio
+        case .unknown: self = .unknown
         }
     }
 }
@@ -42,6 +45,7 @@ enum FeedMediaType {
 /// - **Photos**: Cached image with aspect ratio preservation and fade-in
 /// - **GIFs**: AnimatedImage (native UIImageView/NSImageView) with auto-play
 /// - **Videos**: Inline muted autoplay with looping
+/// - **Audio**: A play card on the app-wide player
 struct FeedMediaView: View {
     let url: URL
     /// When true, tapping opens the full-screen media viewer.
@@ -55,8 +59,15 @@ struct FeedMediaView: View {
     var portraitMaxHeight: CGFloat = 600
     /// Whether this is displayed as a thumbnail in a grid (use square aspect ratio).
     var isThumbnail: Bool = false
+    /// Plays a GIF thumbnail instead of showing its first frame. For a single
+    /// thumbnail beside a line of text; grids stay still.
+    var animatesThumbnail: Bool = false
+    /// Fills the frame it is given edge to edge, cropping if it must (a
+    /// carousel page), instead of fitting with empty space around it.
+    var fillsFrame: Bool = false
 
     @ObservedObject private var configService = ConfigService.shared
+    @Environment(\.mediaZoomNamespace) private var zoomNamespace
     @State private var mediaType: FeedMediaType?
     @State private var isDetecting: Bool = false
     @State private var videoAspectRatio: CGFloat?
@@ -82,6 +93,9 @@ struct FeedMediaView: View {
             gifView
         case .video:
             videoView
+        case .audio:
+            // Plays in place; there is nothing for the media viewer to show.
+            FeedAudioCard(url: url, isThumbnail: isThumbnail)
         case .photo, .unknown:
             photoView
         }
@@ -91,17 +105,14 @@ struct FeedMediaView: View {
         FeedGIFView(
             url: url,
             isThumbnail: isThumbnail,
+            animatesThumbnail: animatesThumbnail,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     private var videoView: some View {
@@ -128,13 +139,9 @@ struct FeedMediaView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(maxHeight: isThumbnail ? .infinity : videoHeightCap)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     /// Height cap for inline video, mirroring `FeedPhotoView`: portraits get a
@@ -149,17 +156,14 @@ struct FeedMediaView: View {
         FeedPhotoView(
             url: url,
             isThumbnail: isThumbnail,
+            fillsFrame: fillsFrame,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     /// Aspect ratio the note published in its `imeta` `dim`, if any.
@@ -226,6 +230,7 @@ struct FeedMediaView: View {
 private struct FeedPhotoView: View {
     let url: URL
     let isThumbnail: Bool
+    var fillsFrame: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -235,21 +240,25 @@ private struct FeedPhotoView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.platformTertiaryGroupedBackground)
+            // Grey only behind a thumbnail, or while a photo is loading.
+            if isThumbnail || image == nil {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.platformTertiaryGroupedBackground)
+            }
 
             if let image = image {
                 Image(platformImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: isThumbnail ? .fill : .fit)
+                    .aspectRatio(contentMode: isThumbnail || fillsFrame ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
             } else {
                 MediaLoadingPlaceholder(url: url, isLoading: isLoading)
                     .transition(MediaLoadingPlaceholder.removal)
             }
         }
-        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
-        .frame(maxHeight: heightCap)
+        .aspectRatio(isThumbnail || fillsFrame ? nil : displayAspectRatio, contentMode: .fit)
+        .frame(maxHeight: fillsFrame ? .infinity : heightCap)
+        .clipped()
         .onAppear {
             MediaCacheService.shared.setDownloadPriority(.normal, for: url)
             loadImage()
@@ -263,8 +272,14 @@ private struct FeedPhotoView: View {
     /// The decoded image's ratio, or the note's `imeta` `dim` until it lands,
     /// so the row is already the right height when the pixels arrive.
     private var displayAspectRatio: CGFloat? {
-        aspectRatio ?? MediaHints.shared.hint(for: url)?.aspectRatio
+        aspectRatio ?? Self.knownRatios[url] ?? MediaHints.shared.hint(for: url)?.aspectRatio
     }
+
+    /// Ratios of photos already decoded this session. A row that scrolls off
+    /// and back comes back as a new view; without this it opened at the
+    /// placeholder height and snapped to the photo's shape again, moving
+    /// everything below it.
+    @MainActor private static var knownRatios: [URL: CGFloat] = [:]
 
     private var heightCap: CGFloat {
         if isThumbnail { return .infinity }
@@ -278,7 +293,7 @@ private struct FeedPhotoView: View {
         // Fast path: check in-memory decoded image cache (no disk I/O)
         if let cached = MediaCacheService.shared.cachedImage(for: url) {
             self.image = cached
-            self.aspectRatio = ratioFor(cached)
+            self.aspectRatio = ratioFor(cached); Self.knownRatios[url] = self.aspectRatio
             return
         }
 
@@ -296,14 +311,14 @@ private struct FeedPhotoView: View {
                         // mid-scroll. The image's own `.transition` still
                         // fades the pixels in.
                         self.image = downsampled
-                        self.aspectRatio = ratioFor(downsampled)
+                        self.aspectRatio = ratioFor(downsampled); Self.knownRatios[url] = self.aspectRatio
                         self.isLoading = false
                     }
                 } else if let img = PlatformImage(data: data) {
                     MediaCacheService.shared.cacheImage(img, for: url)
                     await MainActor.run {
                         self.image = img
-                        self.aspectRatio = ratioFor(img)
+                        self.aspectRatio = ratioFor(img); Self.knownRatios[url] = self.aspectRatio
                         self.isLoading = false
                     }
                 } else {
@@ -328,6 +343,7 @@ private struct FeedPhotoView: View {
 private struct FeedGIFView: View {
     let url: URL
     let isThumbnail: Bool
+    var animatesThumbnail: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -342,7 +358,8 @@ private struct FeedGIFView: View {
             AnimatedImage(
                 url: url,
                 contentMode: isThumbnail ? .fill : .fit,
-                shouldAnimate: !isThumbnail,
+                shouldAnimate: !isThumbnail || animatesThumbnail,
+                targetSize: isThumbnail && animatesThumbnail ? CGSize(width: 80, height: 80) : nil,
                 onLoad: { size in
                     // Unanimated, as in FeedPhotoView: resize the row at
                     // once and animate only the opacity below.
@@ -359,7 +376,9 @@ private struct FeedGIFView: View {
                     .transition(MediaLoadingPlaceholder.removal)
             }
         }
-        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
+        // A thumbnail fills the square its caller gives it. A nil ratio would
+        // fit the image's own shape and letterbox a wide GIF inside the square.
+        .aspectRatio(isThumbnail ? 1 : displayAspectRatio, contentMode: isThumbnail ? .fill : .fit)
         .frame(maxHeight: heightCap)
     }
 
@@ -606,5 +625,89 @@ enum BlurHashDecoder {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
         )
+    }
+}
+
+// MARK: - FeedAudioCard
+
+/// An audio file shared in a post (an MP3 link, or a Blossom blob that turns
+/// out to be audio): a play button on the app-wide player, so it keeps going
+/// in the mini player and on the lock screen like a Wavlake song.
+struct FeedAudioCard: View {
+    let url: URL
+    /// A grid or one-line thumbnail: just the audio glyph, no controls.
+    var isThumbnail: Bool = false
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    private var title: String {
+        let name = url.deletingPathExtension().lastPathComponent.removingPercentEncoding
+            ?? url.deletingPathExtension().lastPathComponent
+        // A Blossom hash, or no file name at all, says nothing to a person.
+        let isHash = name.count == 64 && name.allSatisfy(\.isHexDigit)
+        return name.isEmpty || name == "/" || isHash ? "Audio" : name
+    }
+
+    private var track: PlayerTrack {
+        PlayerTrack(id: url.absoluteString, title: title, artist: url.host ?? "",
+                    artworkURL: nil, audioURL: url, duration: nil)
+    }
+
+    var body: some View {
+        if isThumbnail {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.platformTertiaryGroupedBackground)
+                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.secondary))
+                .accessibilityLabel("Audio")
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
+        let isCurrent = player.current?.id == url.absoluteString
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.havenPurple.opacity(0.15))
+                .frame(width: 52, height: 52)
+                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.havenPurple))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.appSystem(size: 15, weight: .semibold)).lineLimit(1)
+                if let host = url.host {
+                    Text(host).font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
+                }
+                Label(url.pathExtension.isEmpty ? "Audio" : url.pathExtension.uppercased(), systemImage: "music.note")
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button {
+                if isCurrent { player.togglePlayPause() } else { player.play(tracks: [track]) }
+            } label: {
+                Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.appSystem(size: 38))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(title)" : "Play \(title)")
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.1)))
+    }
+}
+
+private extension View {
+    /// Full-size media in a post runs square to its edges, with no rounded
+    /// frame, border or grey box (Logen: screen room). Grid and one-line
+    /// thumbnails keep their rounded tile.
+    @ViewBuilder
+    func mediaFrame(isThumbnail: Bool) -> some View {
+        if isThumbnail {
+            self.clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.5))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            self.clipped().contentShape(Rectangle())
+        }
     }
 }

@@ -1,33 +1,60 @@
 package com.nostrvault.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.service.FeedService
 import com.nostrvault.service.LiveChatService
+import com.nostrvault.service.LiveFeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.music.LiveRejoinListener
+import com.nostrvault.service.music.MusicPlayer
+import com.nostrvault.service.music.PlayerTrack
+import com.nostrvault.service.music.rejoinLiveEdge
+import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.UGCReportDialog
+import com.nostrvault.ui.components.claimSound
+import com.nostrvault.ui.screens.dm.DMAttachment
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +88,12 @@ fun LiveStreamScreen(
     val sending by viewModel.sending.collectAsState()
     var chatInput by remember { mutableStateOf("") }
     var showZapSheet by remember { mutableStateOf(false) }
+    var showHostMenu by remember { mutableStateOf(false) }
+    var showReportStream by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    var reportingMessage by remember { mutableStateOf<LiveChatService.ChatEntry?>(null) }
+    var showBlossomPicker by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -68,17 +101,68 @@ fun LiveStreamScreen(
         onDispose { viewModel.leave() }
     }
 
-    val player = remember(stream?.streamingUrl) {
+    // The mini player's own player, when this is the stream it has
+    // minimized: read once, as the screen opens. The screen shows that
+    // player's video instead of opening the stream again, so popping out of
+    // the mini player and going back never stops the sound. iOS #301.
+    val sharedPlayer = remember(stream?.address) { stream?.let { MusicPlayer.livePlayer(it.address) } }
+    val ownPlayer = remember(stream?.streamingUrl, sharedPlayer) {
+        if (sharedPlayer != null) return@remember null
         val url = stream?.streamingUrl ?: return@remember null
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(url))
             prepare()
             playWhenReady = true
+            // Play after a pause rejoins the broadcast; left paused, the item
+            // falls behind the live window and resuming it only fails.
+            addListener(LiveRejoinListener(this))
+            // The stream takes the sound: a playing song pauses.
+            claimSound(true)
         }
     }
     // A player left running behind a closed screen keeps the socket and the
     // audio session; releasing on dispose is not optional.
-    DisposableEffect(player) { onDispose { player?.release() } }
+    // A shared player is the mini player's, which carries on.
+    DisposableEffect(ownPlayer) { onDispose { ownPlayer?.release() } }
+    val player: Player? = sharedPlayer ?: ownPlayer
+    // Popped out of a paused mini player, the stream plays; Play rejoins the
+    // broadcast where it is now (LiveRejoinListener in the service).
+    LaunchedEffect(sharedPlayer) {
+        val p = sharedPlayer ?: return@LaunchedEffect
+        if (!p.playWhenReady) {
+            if (p.playbackState == Player.STATE_IDLE) p.prepare()
+            p.play()
+        }
+    }
+
+    // Another app took the sound (its own video, say): coming back to the app
+    // carries on with the broadcast where it is now. Paused by the owner, the
+    // stream stays paused.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // The mini player's own player does this itself (MusicPlayer.setAppInForeground).
+    DisposableEffect(ownPlayer, lifecycleOwner) {
+        val p = ownPlayer ?: return@DisposableEffect onDispose {}
+        var pausedByOtherApp = false
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                pausedByOtherApp = !playWhenReady &&
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START && pausedByOtherApp) {
+                pausedByOtherApp = false
+                p.rejoinLiveEdge()
+                p.play()
+            }
+        }
+        p.addListener(listener)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            p.removeListener(listener)
+        }
+    }
 
     Scaffold(
         containerColor = WindowBackground,
@@ -109,18 +193,61 @@ fun LiveStreamScreen(
         }
 
         Column(modifier = Modifier.padding(padding)) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        this.player = player
-                        useController = true
+            Box {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = true
+                        }
+                    },
+                    // Let go of the surface, so a shared player carries on
+                    // as sound only in the mini player.
+                    onRelease = { it.player = null },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color.Black),
+                )
+                // Minimize: the stream's sound carries on in the mini player and
+                // the notification while you browse; tapping the mini player
+                // brings the video back. iOS: listenInBackground.
+                IconButton(
+                    onClick = {
+                        // Already the mini player's stream: it plays on as it is.
+                        if (sharedPlayer == null) MusicPlayer.playLive(
+                            stream,
+                            PlayerTrack(
+                                id = "live:${stream.address}",
+                                title = stream.title ?: "Live stream",
+                                artist = hostName ?: ("npub…" + stream.hostPubkey.takeLast(6)),
+                                artworkUrl = stream.imageUrl
+                                    ?: stream.previewImageUrls.firstOrNull()
+                                    ?: chatProfiles[stream.hostPubkey]?.pictureURL,
+                                audioUrl = stream.streamingUrl ?: return@IconButton,
+                                durationSec = null,
+                                isLive = true,
+                                hostPubkey = stream.hostPubkey,
+                            ),
+                        )
+                        onBack()
+                    },
+                    modifier = Modifier.padding(6.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    ) {
+                        Icon(
+                            NostrVaultIcons.ChevronDown,
+                            contentDescription = "Minimize, keep listening while you browse",
+                            tint = Color.White,
+                        )
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .background(Color.Black),
-            )
+                }
+            }
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -142,6 +269,31 @@ fun LiveStreamScreen(
                             fontSize = 13.sp,
                         )
                     }
+                    // The report and block affordances any surface showing
+                    // third-party video needs. iOS: LiveStreamPlayerView header.
+                    Box {
+                        IconButton(onClick = { showHostMenu = true }) {
+                            Icon(NostrVaultIcons.More, contentDescription = "Stream options", tint = colors.primary)
+                        }
+                        DropdownMenu(expanded = showHostMenu, onDismissRequest = { showHostMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Report stream") },
+                                leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
+                                onClick = {
+                                    showHostMenu = false
+                                    showReportStream = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Block host", color = ErrorRed) },
+                                leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
+                                onClick = {
+                                    showHostMenu = false
+                                    showBlockConfirm = true
+                                },
+                            )
+                        }
+                    }
                     Button(
                         onClick = { showZapSheet = true },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
@@ -158,7 +310,16 @@ fun LiveStreamScreen(
             LiveChat(
                 messages = messages,
                 profiles = chatProfiles,
-                modifier = Modifier.weight(1f),
+                onReport = { reportingMessage = it },
+                // Touching the chat, to tap or drag it, puts the keyboard away.
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            focusManager.clearFocus()
+                        }
+                    },
             )
 
             Row(
@@ -167,11 +328,23 @@ fun LiveStreamScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
-                    // The player is an overlay inside the feed screen, which
-                    // draws its own floating tab bar underneath everything
-                    // here — without this the message box sits behind it.
-                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 80.dp),
+                    // LiveStreamHost draws this above the floating tab bar, so
+                    // no room is kept for it.
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             ) {
+                // Media from your relay's Blossom store, sent as its link.
+                IconButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        showBlossomPicker = true
+                    },
+                ) {
+                    Icon(
+                        imageVector = NostrVaultIcons.Media,
+                        contentDescription = "Add media from your relay",
+                        tint = colors.primary,
+                    )
+                }
                 OutlinedTextField(
                     value = chatInput,
                     onValueChange = { chatInput = it },
@@ -197,6 +370,59 @@ fun LiveStreamScreen(
             }
         }
 
+        // Reporting also blocks, as the report dialog does everywhere else in
+        // the app — so the stream closes.
+        if (showReportStream) {
+            UGCReportDialog(
+                onReport = { reason, description ->
+                    showReportStream = false
+                    viewModel.reportHost(stream, reason, description)
+                    onBack()
+                },
+                onDismiss = { showReportStream = false },
+            )
+        }
+        reportingMessage?.let { entry ->
+            UGCReportDialog(
+                onReport = { reason, description ->
+                    reportingMessage = null
+                    viewModel.reportMessage(entry, reason, description)
+                },
+                onDismiss = { reportingMessage = null },
+            )
+        }
+        if (showBlockConfirm) {
+            AlertDialog(
+                onDismissRequest = { showBlockConfirm = false },
+                title = { Text("Block this host?") },
+                text = { Text("Their streams and posts stop appearing for you.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showBlockConfirm = false
+                        viewModel.blockHost(stream)
+                        onBack()
+                    }) { Text("Block", color = ErrorRed) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
+                },
+            )
+        }
+
+        if (showBlossomPicker) {
+            BlossomMediaPickerSheet(
+                onDismiss = { showBlossomPicker = false },
+                onSelect = { item ->
+                    // The link goes after anything already typed, ready to send.
+                    val typed = chatInput.trim()
+                    val link = blossomShareLink(item)
+                    chatInput = if (typed.isEmpty()) link else "$typed $link"
+                    showBlossomPicker = false
+                },
+                loadItems = viewModel::loadBlossomMedia,
+            )
+        }
+
         if (showZapSheet) {
             ZapAmountSheet(
                 onPick = { sats ->
@@ -213,10 +439,13 @@ fun LiveStreamScreen(
  * audience experiences them — a 5,000 sat zap is a louder message, not a
  * separate feature.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LiveChat(
     messages: List<LiveChatService.ChatEntry>,
     profiles: Map<String, FeedProfile>,
+    /** Long-press a line to report it. */
+    onReport: (LiveChatService.ChatEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -229,44 +458,125 @@ private fun LiveChat(
 
     if (messages.isEmpty()) {
         Box(contentAlignment = Alignment.Center, modifier = modifier.fillMaxWidth()) {
-            Text("No chat yet", color = TertiaryText, fontSize = 13.sp)
+            Text("No messages yet. Say hello.", color = SecondaryText, fontSize = 13.sp)
         }
         return
     }
 
-    LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
+    // iOS: 8 between rows, 10 above and below the list.
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(vertical = 6.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
         items(messages, key = { it.id }) { entry ->
             val name = profiles[entry.pubkey]?.bestName ?: entry.pubkey.take(8)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 5.dp),
-            ) {
-                if (entry.zapSats != null) {
-                    Text(
-                        // A zap whose amount the receipt did not carry still
-                        // happened — show the bolt, not a zero.
-                        text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
-                        color = colors.primary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                // iOS LiveChatRowView: a 26 avatar, then the name and time over
+                // the text, with a zap shown as an orange capsule on a tinted row.
+                val isZap = entry.zapSats != null
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true },
+                            onLongClickLabel = "Message options",
+                        )
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .then(
+                            if (isZap) {
+                                Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ZapOrange.copy(alpha = 0.12f))
+                                    .padding(8.dp)
+                            } else Modifier,
+                        ),
+                ) {
+                    AvatarImage(
+                        url = profiles[entry.pubkey]?.pictureURL,
+                        pubkey = entry.pubkey,
+                        size = 26.dp,
+                        displayName = name,
                     )
-                    Spacer(Modifier.width(6.dp))
+                    // Image links come out of the text and show as pictures
+                    // under it, whoever sent them.
+                    val parts = remember(entry.content) { DMAttachment.split(entry.content) }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (entry.zapSats != null) {
+                                Text(
+                                    // A zap whose amount the receipt did not carry still
+                                    // happened — show the bolt, not a zero.
+                                    text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
+                                    color = Color.Black,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(ZapOrange.copy(alpha = 0.9f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Text(
+                                text = name,
+                                color = PrimaryText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Text(
+                                text = remember(entry.createdAt) { chatTime(entry.createdAt) },
+                                color = SecondaryText,
+                                fontSize = 10.sp,
+                            )
+                        }
+                        if (parts.text.isNotEmpty()) {
+                            Text(
+                                text = parts.text,
+                                color = PrimaryText,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                        parts.images.forEach { url ->
+                            AsyncImage(
+                                model = url,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .size(180.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                            )
+                        }
+                    }
                 }
-                Text(
-                    text = buildString {
-                        append(name)
-                        append("  ")
-                        append(entry.content)
-                    },
-                    color = if (entry.zapSats != null) colors.primary else PrimaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Report message") },
+                        leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onReport(entry)
+                        },
+                    )
+                }
             }
         }
     }
 }
+
+/** A chat line's time, short style in the phone's locale (iOS `timeStyle = .short`). */
+private fun chatTime(createdAtSecs: Long): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(createdAtSecs * 1000))
 
 /** Fixed amounts, because typing a number mid-stream is not what anyone wants. */
 @Composable
@@ -306,9 +616,15 @@ class LiveStreamViewModel @Inject constructor(
     private val liveChatService: LiveChatService,
     private val zapSendService: ZapSendService,
     private val nostrService: NostrService,
+    private val feedService: FeedService,
+    private val blossomPickerMedia: BlossomPickerMedia,
+    private val liveFeedService: LiveFeedService,
 ) : ViewModel() {
 
     val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
+
+    /** Media for the chat's Blossom picker, the same list the composer shows. */
+    suspend fun loadBlossomMedia(): List<BlossomMediaItem> = blossomPickerMedia.load()
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
     private val _status = MutableStateFlow<String?>(null)
@@ -317,7 +633,12 @@ class LiveStreamViewModel @Inject constructor(
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
-    fun join(stream: LiveStream) = liveChatService.join(stream)
+    fun join(stream: LiveStream) {
+        // One view model serves every stream opened (LiveStreamHost sits
+        // outside the nav graph), so the last stream's "Zapped" must not carry over.
+        _status.value = null
+        liveChatService.join(stream)
+    }
 
     fun leave() = liveChatService.leave()
 
@@ -352,4 +673,34 @@ class LiveStreamViewModel @Inject constructor(
     }
 
     fun clearStatus() { _status.value = null }
+
+    /**
+     * NIP-56 report of the stream's host (the stream event has no id to hand),
+     * then a block, as reporting does everywhere else in the app.
+     */
+    fun reportHost(stream: LiveStream, reason: String, description: String) {
+        viewModelScope.launch {
+            nostrService.reportUser(stream.hostPubkey, reason, description.ifBlank { null })
+            feedService.blockUser(stream.hostPubkey)
+            liveFeedService.removeStreams(byHost = stream.hostPubkey)
+        }
+    }
+
+    fun blockHost(stream: LiveStream) {
+        viewModelScope.launch {
+            feedService.blockUser(stream.hostPubkey)
+            liveFeedService.removeStreams(byHost = stream.hostPubkey)
+        }
+    }
+
+    /**
+     * Reports the event that carries the text — the receipt, for a zap line,
+     * which is attributed to the payer — and blocks its author.
+     */
+    fun reportMessage(entry: LiveChatService.ChatEntry, reason: String, description: String) {
+        viewModelScope.launch {
+            nostrService.reportEvent(entry.id, entry.pubkey, reason, description.ifBlank { null })
+            feedService.blockUser(entry.pubkey)
+        }
+    }
 }

@@ -26,6 +26,35 @@ enum MediaTypeFilter: String, CaseIterable {
     case video = "Video"
     case gif = "GIF"
     case other = "Other"
+
+    /// The chip an item is counted under. Shared by the Media tab and the
+    /// composer's relay picker so the same file lands under the same chip in both.
+    static func category(of item: MediaItem) -> MediaTypeFilter {
+        let ext = item.url.pathExtension.lowercased()
+        if ext == "gif" || item.mimeType?.lowercased().contains("gif") == true { return .gif }
+        switch item.type {
+        case .image: return .photo
+        case .video: return .video
+        case .audio, .unknown: return .other
+        }
+    }
+
+    /// Decodes the persisted selection. An empty selection shows nothing at
+    /// all and there is no UI path back from it, so "none stored" means
+    /// "everything".
+    static func selection(from raw: String) -> Set<MediaTypeFilter> {
+        let stored = Set(raw.split(separator: ",").compactMap { MediaTypeFilter(rawValue: String($0)) })
+        return stored.isEmpty ? Set(allCases) : stored
+    }
+
+    /// Encodes a selection in `allCases` order so the stored string is stable.
+    static func rawSelection(_ selection: Set<MediaTypeFilter>) -> String {
+        allCases.filter { selection.contains($0) }.map(\.rawValue).joined(separator: ",")
+    }
+
+    /// Storage key the Media tab and the composer's relay picker share, so
+    /// organising one organises the other.
+    static let storageKey = "mediaGallery.typeFilter"
 }
 
 // MARK: - Sorting
@@ -62,6 +91,32 @@ enum MediaSortOption: String, CaseIterable, Identifiable {
     /// "Today" heading would sit above items from any month.
     var groupsByDate: Bool {
         self == .newestFirst || self == .oldestFirst
+    }
+
+    /// Shared with the composer's relay picker, like `MediaTypeFilter.storageKey`.
+    static let storageKey = "mediaGallery.sortOption"
+
+    /// Orders `items` for this option. Every branch falls back to date so the
+    /// result is fully determined and does not shuffle between runs.
+    func sorted(_ items: [MediaItem], isOnRelay: (MediaItem) -> Bool) -> [MediaItem] {
+        switch self {
+        case .newestFirst:
+            return items.sorted { $0.dateAdded > $1.dateAdded }
+        case .oldestFirst:
+            return items.sorted { $0.dateAdded < $1.dateAdded }
+        case .mediaType:
+            return items.sorted {
+                let a = MediaGalleryView.typeRank(for: $0), b = MediaGalleryView.typeRank(for: $1)
+                if a != b { return a < b }
+                return $0.dateAdded > $1.dateAdded
+            }
+        case .onRelayFirst:
+            return items.sorted {
+                let a = isOnRelay($0), b = isOnRelay($1)
+                if a != b { return a }
+                return $0.dateAdded > $1.dateAdded
+            }
+        }
     }
 }
 

@@ -10,57 +10,310 @@ struct IdentifiableString: Identifiable {
 
 
 
-@available(iOS 18.0, *)
+/// How far the iPhone chrome (bottom tab bar + feed top bar) is folded away,
+/// driven by the finger rather than by a timed animation.
+///
+/// `progress` follows the scroll 1:1 while the user drags, so a half-drag
+/// leaves the bars half-folded and reversing the drag brings them straight
+/// back. On release it settles to whichever end is nearer, or to the end a
+/// fling is heading for. Both bars read this one value and settle on one
+/// `Motion.chrome` spring, so they can never drift apart.
+///
+/// `@Observable`, not a `FeedService` property: `progress` changes every
+/// frame of a drag, and only the two bars should re-render for it. A
+/// `@Published` write would invalidate every view observing `FeedService`.
+/// Views that need a yes/no (the feed top bar's layout) read `isFolded`,
+/// which only changes at the ends.
+@Observable
+@MainActor
+final class ChromeCollapse {
+    static let shared = ChromeCollapse()
+
+    /// 0 = fully shown, 1 = fully folded.
+    private(set) var progress: CGFloat = 0
+
+    /// True only once the bars are completely folded; false again the moment
+    /// they start coming back, so the top bar's pills can fade in with the
+    /// finger rather than appearing after it.
+    private(set) var isFolded = false
+
+    /// Scroll distance that folds the bars completely — about one bar height,
+    /// so the chrome moves at the same speed as the content under it.
+    static let distance: CGFloat = 60
+
+    /// A fling faster than this (points/second) commits to its direction
+    /// immediately instead of dragging the bars along with the deceleration.
+    static let flingVelocity: CGFloat = 400
+
+    private init() {}
+
+    /// Opacity of what the fold hides: gone by 60%.
+    static func fadeOut(_ p: CGFloat) -> Double { Double(max(0, 1 - p / 0.6)) }
+    /// Opacity of what the fold reveals: starts at 40%. The two curves never
+    /// sit at similar strengths, so outgoing and incoming controls do not
+    /// read as stacked on top of each other.
+    static func fadeIn(_ p: CGFloat) -> Double { Double(max(0, (p - 0.4) / 0.6)) }
+
+    /// Sets progress directly — used while the finger (or its fling) is
+    /// driving the scroll.
+    func track(_ value: CGFloat) {
+        set(value)
+    }
+
+    /// Animates to a resting state.
+    func settle(to value: CGFloat) {
+        guard value != progress else { return }
+        withAnimation(Motion.chrome) { set(value) }
+    }
+
+    /// Brings the bars fully back: tab switch, tapping the folded avatar,
+    /// account switch.
+    func reset() {
+        settle(to: 0)
+    }
+
+    private func set(_ value: CGFloat) {
+        let clamped = min(max(value, 0), 1)
+        if clamped != progress { progress = clamped }
+        let folded = clamped >= 1
+        if folded != isFolded { isFolded = folded }
+    }
+}
+
+/// Fades and slightly shrinks its content with the chrome fold. Its own view
+/// so that reading the per-frame `progress` re-renders only this wrapper,
+/// not the screen that builds the content.
+struct ChromeFold<Content: View>: View {
+    var anchor: UnitPoint = .center
+    /// `true` for content that appears as the bars fold (the lone layout
+    /// button), rather than disappears.
+    var inverted = false
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        let visible = inverted ? ChromeCollapse.fadeIn(p) : ChromeCollapse.fadeOut(p)
+        content
+            .opacity(visible)
+            .scaleEffect(0.85 + 0.15 * visible, anchor: anchor)
+            .allowsHitTesting(visible > 0.5)
+            .accessibilityHidden(visible <= 0.5)
+    }
+}
+
+/// The floating "New Posts" button's fold. It leaves with the bars as you
+/// scroll down, rising back up under the top bar, and returns with them;
+/// folded, the small pill in the top bar's row stands in for it.
+/// Its own view for the same reason as `ChromeFold`.
+struct NewPostsFold<Content: View>: View {
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        let visible = ChromeCollapse.fadeOut(p)
+        content
+            .opacity(visible)
+            .scaleEffect(0.85 + 0.15 * visible, anchor: .top)
+            .offset(y: -16 * (1 - visible))
+            .allowsHitTesting(visible > 0.5)
+            .accessibilityHidden(visible <= 0.5)
+    }
+}
+
+/// The feed top bar's glass pill. With the fold it narrows from its content's
+/// full width to a circle on `alignment`'s edge, the same morph the bottom
+/// tab bar makes.
+///
+/// Only the glass and the clip move. The content keeps its layout, so the
+/// navigation bar hosting it never relayouts mid-drag. The system's own
+/// toolbar glass must be hidden (`hidingSharedToolbarBackground()`): UIKit
+/// animates that platter on its own clock and leaves it behind.
+struct ChromeMorphCapsule<Content: View>: View {
+    var alignment: Alignment
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    @State private var size: CGSize = .zero
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        // Unmeasured on the first pass: draw at the content's own size.
+        let width: CGFloat? = size == .zero ? nil : size.width + (size.height - size.width) * p
+        content
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .mask(alignment: alignment) { Capsule().frame(width: width) }
+            // Taps land only inside the glass: folded, the empty bar where
+            // the pill's content used to be does not open it.
+            .contentShape(AlignedCapsule(width: width, alignment: alignment))
+            .background(alignment: alignment) {
+                Color.clear
+                    .frame(width: width)
+                    .applyGlassCapsule()
+            }
+    }
+}
+
+/// A capsule `width` wide, pinned to `alignment`'s edge of its rect.
+private struct AlignedCapsule: Shape {
+    var width: CGFloat?
+    var alignment: Alignment
+
+    func path(in rect: CGRect) -> Path {
+        let w = min(width ?? rect.width, rect.width)
+        let x: CGFloat
+        switch alignment.horizontal {
+        case .leading: x = rect.minX
+        case .trailing: x = rect.maxX - w
+        default: x = rect.midX - w / 2
+        }
+        return Capsule().path(in: CGRect(x: x, y: rect.minY, width: w, height: rect.height))
+    }
+}
+
+extension ToolbarContent {
+    /// Drops the Liquid Glass platter iOS 26 draws behind toolbar items, for
+    /// items that draw their own glass.
+    @ToolbarContentBuilder
+    func hidingSharedToolbarBackground() -> some ToolbarContent {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
+extension View {
+    /// With the system toolbar glass hidden, iOS 26 switches the scroll edge
+    /// under the top bar to its hard style: a dark band with a cut edge.
+    /// Keep the soft fade the bar had with the system glass.
+    @ViewBuilder
+    func softTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
 @available(macOS 15.0, iOS 18.0, *)
-private struct ScrollDirectionModifier: ViewModifier {
-    @ObservedObject var feedService: FeedService
+private struct ScrollChromeModifier: ViewModifier {
     var isAtTopBinding: Binding<Bool>?
-    @State private var isScrollingDown = false
+
+    /// Per-frame bookkeeping. A plain class held in `@State`, so writing it
+    /// every frame does not invalidate this modifier (and re-emit the whole
+    /// scroll content) the way a `@State` value write would.
+    private final class Tracker {
+        var phase: ScrollPhase = .idle
+        var lastOffset: CGFloat?
+        /// Direction of the finger's most recent movement, +1 = down the list.
+        var lastDirection: CGFloat = 0
+        /// Set when a fling has already chosen where the bars go; the rest
+        /// of that deceleration no longer moves them.
+        var committed = false
+    }
+
+    @State private var tracker = Tracker()
 
     func body(content: Content) -> some View {
         content
             .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentOffset.y
-            } action: { oldValue, newValue in
-                let delta = newValue - oldValue
-                if abs(delta) > 8 {
-                    let scrollingDown = delta > 0
-                    if scrollingDown != isScrollingDown {
-                        isScrollingDown = scrollingDown
-                        // Respect the user's "disable tab bar animation" setting:
-                        // never publish a "scrolling down" flip so the tab bar and
-                        // per-screen FABs stay fully expanded. Force-expand writes
-                        // (below) always run so a stale collapsed state can recover.
-                        if !(scrollingDown && ConfigService.shared.config.disableTabBarAnimation) {
-                            feedService.feedScrollingDown = scrollingDown
-                        }
-                    }
-                }
-                // Only force-expand when truly scrolled back to the very top.
-                // Guard both writes: `onScrollGeometryChange` fires every frame
-                // while the offset changes, and near the top (including the iOS
-                // rubber-band bounce) `newValue` oscillates around 0 every frame.
-                // Writing `feedScrollingDown` unconditionally would publish
-                // `objectWillChange` on the shared FeedService each frame —
-                // re-rendering the tab bar and every feed row dozens of times a
-                // second, the framerate glitch seen at the top of every feed.
-                if newValue <= 0 {
-                    if feedService.feedScrollingDown {
-                        feedService.feedScrollingDown = false
-                    }
-                    if isScrollingDown {
-                        isScrollingDown = false
-                    }
-                }
-
-                // Track whether the user is at the top of the feed
-                if let binding = isAtTopBinding {
-                    let atTop = newValue <= 10
-                    if atTop != binding.wrappedValue {
-                        binding.wrappedValue = atTop
-                    }
-                }
+                // Offset from the top of the content, clamped to the
+                // scrollable range, so rubber-banding past either end
+                // produces no movement.
+                let top = geo.contentOffset.y + geo.contentInsets.top
+                let maxOffset = max(0, geo.contentSize.height + geo.contentInsets.top
+                                    + geo.contentInsets.bottom - geo.containerSize.height)
+                return min(max(top, 0), maxOffset)
+            } action: { _, offset in
+                handle(offset: offset)
             }
+            .onScrollPhaseChange { _, newPhase, context in
+                handle(phase: newPhase, velocity: context.velocity?.dy)
+            }
+    }
+
+    private var chrome: ChromeCollapse { .shared }
+
+    private var isPinnedOpen: Bool {
+        ConfigService.shared.config.disableTabBarAnimation
+    }
+
+    /// The bars can be at most this folded at a given offset, so the top of
+    /// a list always shows them in full and a list shorter than `distance`
+    /// can only fold them partway (and then settles them back open).
+    private func ceiling(at offset: CGFloat) -> CGFloat {
+        offset / ChromeCollapse.distance
+    }
+
+    private func handle(offset: CGFloat) {
+        let last = tracker.lastOffset
+        tracker.lastOffset = offset
+
+        if let binding = isAtTopBinding {
+            let atTop = offset <= 10
+            if atTop != binding.wrappedValue { binding.wrappedValue = atTop }
+        }
+
+        if isPinnedOpen {
+            if chrome.progress != 0 { chrome.track(0) }
+            return
+        }
+
+        switch tracker.phase {
+        case .interacting, .decelerating:
+            // Only the finger and its fling move the bars. A programmatic
+            // scroll (.animating) or a content change while idle — new notes
+            // inserted above, a restored position, load-more — does not.
+            guard let last, !tracker.committed else { break }
+            let delta = offset - last
+            if delta != 0 { tracker.lastDirection = delta > 0 ? 1 : -1 }
+            chrome.track(min(chrome.progress + delta / ChromeCollapse.distance,
+                             ceiling(at: offset)))
+            return
+        default:
+            break
+        }
+
+        // Whatever moved the list, arriving at the top shows the bars.
+        let cap = ceiling(at: offset)
+        if chrome.progress > cap {
+            if tracker.phase == .animating { chrome.track(cap) } else { chrome.settle(to: cap) }
+        }
+    }
+
+    private func handle(phase newPhase: ScrollPhase, velocity: CGFloat?) {
+        let oldPhase = tracker.phase
+        tracker.phase = newPhase
+        guard !isPinnedOpen else { return }
+        let offset = tracker.lastOffset ?? 0
+        let canFold = ceiling(at: offset) >= 1
+
+        switch newPhase {
+        case .interacting:
+            tracker.committed = false
+            tracker.lastDirection = 0
+        case .decelerating:
+            // Lifting the finger mid-fling: a fast fling picks its end now.
+            // Direction comes from the finger's last movement; only the
+            // velocity's magnitude is used.
+            if oldPhase == .interacting, let velocity,
+               abs(velocity) >= ChromeCollapse.flingVelocity, tracker.lastDirection != 0 {
+                chrome.settle(to: tracker.lastDirection > 0 && canFold ? 1 : 0)
+                tracker.committed = true
+            }
+        case .idle:
+            tracker.committed = false
+            // Never leave the bars half-folded.
+            let p = chrome.progress
+            guard p > 0, p < 1 else { return }
+            chrome.settle(to: p >= 0.5 && canFold ? 1 : 0)
+        default:
+            break
+        }
     }
 }
 
@@ -68,7 +321,7 @@ extension View {
     @ViewBuilder
     func scrollDirectionTracking(feedService: FeedService, isAtTop: Binding<Bool>? = nil) -> some View {
         if #available(macOS 15.0, iOS 18.0, *) {
-            self.modifier(ScrollDirectionModifier(feedService: feedService, isAtTopBinding: isAtTop))
+            self.modifier(ScrollChromeModifier(isAtTopBinding: isAtTop))
         } else {
             self
         }
@@ -85,6 +338,7 @@ private struct RowDataCacheObservers: ViewModifier {
     @ObservedObject var nostrService: NostrService
     let onFiltered: () -> Void
     let onLikes: (Set<String>, Set<String>) -> Void
+    let onMyReactions: ([String: EngagementTracker.MyReaction], [String: EngagementTracker.MyReaction]) -> Void
     let onReposts: (Set<String>, Set<String>) -> Void
     let onZaps: ([String: Int], [String: Int]) -> Void
     let onProfiles: (Set<String>) -> Void
@@ -95,6 +349,7 @@ private struct RowDataCacheObservers: ViewModifier {
         content
             .onChange(of: feedService.filteredNotes) { _, _ in onFiltered() }
             .onChange(of: feedService.likedEventIds) { old, new in onLikes(old, new) }
+            .onChange(of: feedService.myReactions) { old, new in onMyReactions(old, new) }
             .onChange(of: feedService.repostedEventIds) { old, new in onReposts(old, new) }
             .onChange(of: feedService.zappedEventIds) { old, new in onZaps(old, new) }
             .onChange(of: nostrService.profileUpdates) { _, signal in onProfiles(signal.pubkeys) }
@@ -103,6 +358,9 @@ private struct RowDataCacheObservers: ViewModifier {
             // potentially every row, so fall back to a full rebuild. Rare event.
             .onChange(of: feedService.followedPubkeys) { _, _ in onFollowsChanged() }
             .onChange(of: feedService.noteStats) { old, new in onNoteStats(old, new) }
+            // Blocking can hide a thread's root or an ancestor without
+            // changing the visible note list, so regroup on it directly.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in onFiltered() }
     }
 }
 
@@ -132,34 +390,58 @@ struct FeedView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @ObservedObject private var pendingManager = PendingPostManager.shared
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
     @State private var composeContext: ComposeContext?
-    @State private var showingRelayStatus = false
+    /// The diVine, article or recipe composer, when the post button opens one.
+    @State private var modeComposer: ModeComposer?
+    @State private var showingFeedMenuEditor = false
+    @State private var showingDashboard = false
+    @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
+    private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
+    @ObservedObject private var fillGuide = FillYourVaultCoordinator.shared
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State private var showingArticle: ArticleRoute?
     @StateObject private var recipeService = RecipeFeedService.shared
+    @StateObject private var marketplaceService = MarketplaceFeedService.shared
+    @State private var selectedListing: MarketListing?
     @StateObject private var liveService = LiveFeedService.shared
     @StateObject private var reelsService = ReelsFeedService.shared
-    @State private var showingGlobalReelsWarning = false
-    @State private var showingGlobalLiveWarning = false
     @State private var playingStream: LiveStream?
     @State private var selectedGridMediaNoteId: String?
     @State private var isShowingGridMediaViewer = false
     @State private var gridMediaSnapshot: [FeedNote] = []
     @State private var galleryDragOffset: CGSize = .zero
     @State private var isRefreshing = false
-    @State private var showingGlobalMediaWarning = false
+    @State private var showingGlobalEveryoneWarning = false
     /// Same warning, raised before Recipes switches to the global set.
-    @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
     @State private var scrolledNoteID: String?
+    @State private var threadLineTops = ThreadLineTops()
+    /// Rows on screen right now, so switching layouts can keep the post you
+    /// were reading in front of you. A plain reference: rows scrolling in and
+    /// out must not re-render the feed.
+    @State private var visibleRows = FeedVisibleRows()
+    /// Row to bring back to the top once a layout switch has re-rendered.
+    @State private var pendingLayoutAnchor: String?
+    /// How that scroll moves: with the rows when they reshape, instantly
+    /// behind the fade otherwise.
+    @State private var pendingLayoutAnimation: Animation?
+    /// The feed is faded out for an instant while switching to or from
+    /// threaded layout.
+    @State private var layoutFadedOut = false
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
     @State private var navigationPath = NavigationPath()
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) private var noteDetailSelection
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     /// Debounce work item for auto-loading pending notes so overlapping
     /// onChange triggers don't queue duplicate applyPendingNotes() calls.
     @State private var autoLoadWork: DispatchWorkItem?
@@ -183,6 +465,8 @@ struct FeedView: View {
     /// layouts so nothing is grouped that will never be drawn.
     @State private var feedThreads: [FeedThread<FeedNote>] = []
     @State private var threadRebuildWork: DispatchWorkItem?
+    /// A gap-fill regroup is already queued; see regroupIfGapFilled.
+    @State private var gapRegroupScheduled = false
 
     // MARK: - Helper Properties
 
@@ -190,7 +474,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live, .reels:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags, .polls:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -201,12 +485,19 @@ struct FeedView: View {
     /// cycle between expanded and condensed without a threaded stop.
     private var currentFeedSupportsThreading: Bool {
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
-        case .media, .articles, .recipes, .live, .reels:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
     }
+
+    /// Whether the layout button has anything to switch. Expanded/condensed
+    /// and threaded only change timeline rows (`isCompactModeActive`,
+    /// `isThreadedModeActive`); grids, card lists and Reels ignore them, so
+    /// the button there cycled an icon and nothing else. The Mac toolbar
+    /// already left it out for these feeds.
+    private var currentFeedHasLayouts: Bool { currentFeedSupportsThreading }
 
     /// The stored layout for the current feed, migrating anyone who had the
     /// old per-feed compact boolean set.
@@ -229,6 +520,34 @@ struct FeedView: View {
     /// choice is visible at once).
     private func setLayoutModeForCurrentFeed(_ mode: FeedLayoutMode) {
         let resolved = mode.clamped(supportsThreading: currentFeedSupportsThreading)
+        // The note you are looking at, read in the layout you are leaving.
+        let readingNoteId = topVisibleNoteId()
+        let threadingChanges = (resolved == .threaded) != isThreadedModeActive
+
+        guard !Motion.isReduced else {
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+            return
+        }
+        if threadingChanges {
+            // Rows become whole conversations (or the reverse): nothing to
+            // morph, so fade out, swap with the post held at the top, fade in.
+            withAnimation(.easeOut(duration: 0.1)) { layoutFadedOut = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(.easeIn(duration: 0.18)) { layoutFadedOut = false }
+                }
+            }
+        } else {
+            // Same posts, taller or shorter: each row reshapes in place while
+            // the scroll follows the post you were reading.
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: .smooth(duration: 0.25))
+        }
+    }
+
+    private func applyLayoutMode(_ resolved: FeedLayoutMode, keeping readingNoteId: String?, animation: Animation?) {
+        pendingLayoutAnimation = animation
+        withAnimation(animation) {
         configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
         // Keep the legacy key in step so a downgrade still lands somewhere sane.
         configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
@@ -246,6 +565,32 @@ struct FeedView: View {
         expandedNoteId = nil
         if needsRefilter { feedService.recomputeFilteredNotes() }
         rebuildThreadsIfNeeded(immediate: true)
+        }
+        if let readingNoteId { pendingLayoutAnchor = rowId(showing: readingNoteId) }
+    }
+
+    /// Topmost note on screen. In threaded layout a card is identified by its
+    /// root; the first of its notes the flat feed also holds stands in for it.
+    private func topVisibleNoteId() -> String? {
+        if isThreadedModeActive {
+            return feedThreads.first { visibleRows.ids.contains($0.rootId) }?.rootId
+        }
+        return feedService.filteredNotes.first { visibleRows.ids.contains($0.id) }?.id
+    }
+
+    /// The row that shows `noteId` in the layout now active: the thread card
+    /// that contains it, or the note itself (or, coming from a thread card,
+    /// its first note in the flat feed).
+    private func rowId(showing noteId: String) -> String? {
+        if isThreadedModeActive {
+            return feedThreads.first { thread in
+                thread.rootId == noteId || thread.entries.contains { $0.note.id == noteId }
+            }?.rootId
+        }
+        if feedService.filteredNotes.contains(where: { $0.id == noteId }) { return noteId }
+        guard let thread = feedThreads.first(where: { $0.rootId == noteId }) else { return nil }
+        let flatIds = Set(feedService.filteredNotes.map(\.id))
+        return thread.entries.first { flatIds.contains($0.note.id) }?.note.id
     }
 
     /// Open the thread at a specific note. Threaded rows can't use
@@ -268,11 +613,12 @@ struct FeedView: View {
     private var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
-        // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live, .reels:
+        // compact mode has nothing to condense. Polls always show the
+        // full card, since the vote bars are the point of the feed.
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
     }
@@ -282,21 +628,134 @@ struct FeedView: View {
         layoutModeForCurrentFeed == .threaded && currentFeedSupportsThreading
     }
 
+    // MARK: - Feed Leading Toolbar
+
+    #if os(iOS)
+    /// The top bar folds with the bottom tab bar: scrolling down leaves only
+    /// the connection dot on the left and the feed-style button on the right,
+    /// and scrolling up brings the rest back. iPhone only — iPad has a sidebar
+    /// instead of the bottom bar this pairs with.
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+
+    /// One tap target: the whole pill opens the feed picker, with the feed
+    /// dashboard at the bottom of it. The icon names the current feed and its
+    /// corner dot carries the connection status the old separate dot showed.
+    /// Folded, only the icon's circle is left.
+    private var feedLeadingToolbar: some View {
+        // Its own Equatable view so the open menu is only rebuilt when the
+        // feed or connection status changes. Built inline, every FeedService
+        // publish (each arriving note) re-rendered the menu while it was open,
+        // which stalled or jumped its scrolling.
+        FeedPickerMenu(
+            mode: feedService.feedMode,
+            connectionStatus: feedService.connectionStatus,
+            dotColor: feedService.connectionDotColor,
+            isCompactWidth: isCompactWidth,
+            modes: menuModes,
+            onSelect: { feedService.switchMode($0) },
+            onEdit: { showingFeedMenuEditor = true },
+            onDashboard: { showingDashboard = true }
+        )
+        .equatable()
+        // The Feeds tutorial points here, and starts here the first time
+        // the feed shows (after Fill your vault; see TutorialProgress).
+        // Re-checked when a status is saved, so an account whose Fill your
+        // vault is marked done after its follow list loads gets Feeds now.
+        .tutorialAnchor(TutorialContent.feedPicker)
+        .task(id: "\(configService.activeAccountHexPubkey).\(tutorialCenter.revision)") {
+            tutorialCenter.startIfEligible(.feeds, account: configService.activeAccountHexPubkey)
+        }
+    }
+    #endif
+
+    /// The floating "New Posts" button is up: unloaded posts, and either
+    /// auto-load is off or the user has scrolled away from the top. Never
+    /// when it's switched off in Appearance settings.
+    private var showsNewPostsButton: Bool {
+        configService.config.showNewPostsPill
+            && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
+    }
+
+    #if os(iOS)
+    /// Folded, the "New Posts" button becomes a small arrow-and-count pill
+    /// centred in the top bar's row, between its two circles.
+    @ViewBuilder
+    private var foldedNewPostsPill: some View {
+        if isCompactWidth && navigationPath.isEmpty && showsNewPostsButton {
+            ChromeFold(inverted: true) {
+                newPostsButton(compact: true) {
+                    NotificationCenter.default.post(name: NSNotification.Name("ScrollToTop"), object: nil)
+                }
+            }
+            // Centred on the bar's top edge, then down to its circles' centre.
+            .frame(height: 0)
+            .offset(y: 22)
+            .transition(.opacity)
+        }
+    }
+    #endif
+
+    private func scrollToTopAfterLoad(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(Motion.scrollJump) {
+                proxy.scrollTo("top", anchor: .top)
+            }
+        }
+    }
+
+    /// The "New Posts" button, full size or as the small folded pill.
+    /// Loads the waiting posts, then `scrollToTop`.
+    private func newPostsButton(compact: Bool, scrollToTop: @escaping () -> Void) -> some View {
+        Button(action: {
+            feedService.applyPendingNotes()
+            scrollToTop()
+        }) {
+            HStack(spacing: compact ? 4 : 8) {
+                Image(systemName: "arrow.up")
+                    .font(.appSystem(size: compact ? 11 : 12, weight: .bold))
+                Text(compact ? (feedService.visiblePendingCount > 99 ? "99+" : "\(feedService.visiblePendingCount)")
+                             : "\(feedService.visiblePendingCount) New Posts")
+                    .font(.appSystem(size: compact ? 12 : 13, weight: .bold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(feedService.visiblePendingCount)))
+            }
+            .padding(.vertical, compact ? 5 : 10)
+            .padding(.horizontal, compact ? 10 : 20)
+            .background(
+                Capsule()
+                    .fill(Color.havenPurple)
+                    .shadow(color: Color.black.opacity(0.4), radius: compact ? 4 : 8, x: 0, y: compact ? 2 : 4)
+            )
+            .foregroundColor(.white)
+            // The small pill's tap target, without growing the pill.
+            .padding(compact ? 8 : 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(feedService.visiblePendingCount) new posts, tap to load")
+        .animation(Motion.fade, value: feedService.visiblePendingCount)
+    }
+
+    /// Cycles expanded → condensed → threaded. Shared by the full trailing
+    /// row and the collapsed top bar, which keeps only this button.
+    private var layoutModeButton: some View {
+        IconFilterButton(
+            icon: layoutModeForCurrentFeed.symbolName,
+            tooltip: layoutModeForCurrentFeed.displayName,
+            isSelected: layoutModeForCurrentFeed != .expanded,
+            color: .havenPurple
+        ) {
+            cycleLayoutModeForCurrentFeed()
+        }
+    }
+
     // MARK: - Feed Trailing Toolbar (inline vs. compact menu)
 
     @ViewBuilder
     private var feedTrailingToolbarInline: some View {
         HStack(spacing: 4) {
-            // Reels is one video per screen — there is no layout to switch.
-            if feedService.feedMode != .reels {
-                IconFilterButton(
-                    icon: layoutModeForCurrentFeed.symbolName,
-                    tooltip: layoutModeForCurrentFeed.displayName,
-                    isSelected: layoutModeForCurrentFeed != .expanded,
-                    color: .havenPurple
-                ) {
-                    cycleLayoutModeForCurrentFeed()
-                }
+            if currentFeedHasLayouts {
+                layoutModeButton
 
                 Divider()
                     .frame(height: 20)
@@ -308,7 +767,10 @@ struct FeedView: View {
                     reelsService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: reelsService.scope == .global, color: .havenPurple) {
-                    showingGlobalReelsWarning = true
+                    reelsService.setScope(.global)
+                }
+                if reelsService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .media {
                 IconFilterButton(icon: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: feedService.mediaFeedMode == .following, color: .havenPurple) {
@@ -316,21 +778,75 @@ struct FeedView: View {
                     feedService.refresh()
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.mediaFeedMode == .global, color: .havenPurple) {
-                    showingGlobalMediaWarning = true
+                    setMediaGlobal()
+                }
+                if feedService.mediaFeedMode == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .recipes {
                 IconFilterButton(icon: recipeService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: recipeService.scope == .following, color: .havenPurple) {
                     recipeService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: recipeService.scope == .global, color: .havenPurple) {
-                    showingGlobalRecipeWarning = true
+                    recipeService.setScope(.global)
                 }
+                if recipeService.scope == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .articles {
+                // Same Following / Global pair as Media. Articles has no
+                // auto-load, reposts or replies buttons, so the pair fits.
+                IconFilterButton(icon: feedService.articlesFeedMode == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: feedService.articlesFeedMode == .following, color: .havenPurple) {
+                    setArticlesFeedMode(.following)
+                }
+                IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.articlesFeedMode == .global, color: .havenPurple) {
+                    setArticlesFeedMode(.global)
+                }
+                if feedService.articlesFeedMode == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .polls {
+                // One scope toggle, not a Following / Global pair: with the
+                // shield, status and auto-load buttons a pair is too wide for
+                // an iPhone, and the whole row falls back to the Filter menu.
+                IconFilterButton(icon: feedService.pollsFeedMode == .following ? "person.2.fill" : "globe", tooltip: feedService.pollsFeedMode == .following ? "Following" : "Global", isSelected: true, color: .havenPurple) {
+                    PollsFeed.setScope(feedService.pollsFeedMode == .following ? .global : .following)
+                }
+                if feedService.pollsFeedMode == .global {
+                    trustScopeButton
+                }
+                PollStatusFilterMenu(selected: feedService.pollStatusFilter, color: .havenPurple)
+                IconFilterButton(icon: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle", tooltip: "Auto-load", isSelected: configService.config.autoLoadNewPosts, color: .havenPurple) {
+                    configService.config.autoLoadNewPosts.toggle()
+                    configService.save()
+                }
+            } else if feedService.feedMode == .marketplace {
+                // Global is the default, and like every Global view it starts
+                // on the Web of Trust; only the shield's Everyone warns.
+                IconFilterButton(icon: marketplaceService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: marketplaceService.scope == .following, color: .havenPurple) {
+                    marketplaceService.setScope(.following)
+                }
+                IconFilterButton(icon: "globe", tooltip: "Global", isSelected: marketplaceService.scope == .global, color: .havenPurple) {
+                    marketplaceService.setScope(.global)
+                }
+                if marketplaceService.scope == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
+            } else if feedService.feedMode == .music {
+                MusicToolbarButtons()
             } else if feedService.feedMode == .live {
                 IconFilterButton(icon: liveService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: liveService.scope == .following, color: .havenPurple) {
                     liveService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: liveService.scope == .global, color: .havenPurple) {
-                    showingGlobalLiveWarning = true
+                    liveService.setScope(.global)
+                }
+                if liveService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .popular {
                 IconFilterButton(icon: feedService.popularFilter == .follows ? "person.2.fill" : "person.2", tooltip: "Follows", isSelected: feedService.popularFilter == .follows, color: .havenPurple) {
@@ -345,6 +861,17 @@ struct FeedView: View {
                     feedService.showPopularEngagement.toggle()
                 }
             } else {
+                if feedService.feedMode == .global {
+                    // One button for who Global shows, so the pill keeps its
+                    // width: the shield is your Web of Trust, the crossed-out
+                    // shield is everyone (behind a warning).
+                    trustScopeButton
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                        configService.config.globalFeedLanguages = codes
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
+                }
                 IconFilterButton(icon: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle", tooltip: "Auto-load", isSelected: configService.config.autoLoadNewPosts, color: .havenPurple) {
                     configService.config.autoLoadNewPosts.toggle()
                     configService.save()
@@ -354,12 +881,103 @@ struct FeedView: View {
                     configService.save()
                     feedService.recomputeFilteredNotes()
                 }
-                IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
-                    configService.config.showReplies.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
+                // Global never shows replies (FeedFilterEngine), so the
+                // toggle would do nothing there.
+                if feedService.feedMode != .global {
+                    IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
+                        configService.config.showReplies.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
                 }
             }
+        }
+    }
+
+    // MARK: - Web of Trust / Everyone
+
+    /// Who every Global view shows (Global, and Media, Articles, diVines,
+    /// Recipes, Live and Marketplace on Global): the shield is your Web of
+    /// Trust, the crossed-out shield is everyone. Not a globe: Global's own
+    /// button already is one, so Everyone read as a second Global. One
+    /// app-wide setting, one button so the pill keeps its width. Everyone is the only step behind the
+    /// sensitive-content warning.
+    @ViewBuilder
+    private var trustScopeButton: some View {
+        let everyone = configService.config.globalShowsEveryone
+        #if os(macOS)
+        Button(action: toggleTrustScope) {
+            Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(everyone ? Color.orange : Color.havenPurple)
+        }
+        .buttonStyle(.plain)
+        .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
+        #else
+        IconFilterButton(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
+        #endif
+    }
+
+    @ViewBuilder
+    private var trustScopeMenuItems: some View {
+        Button {
+            setGlobalShowsEveryone(false)
+        } label: {
+            Label("Web of Trust", systemImage: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark")
+        }
+        Button {
+            if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
+        } label: {
+            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "shield.slash")
+        }
+    }
+
+    /// Articles' Following / Global. Global starts on the Web of Trust, so it
+    /// needs no warning; only the shield's Everyone does.
+    /// Media's Global: the Web of Trust by default, like every Global view.
+    private func setMediaGlobal() {
+        guard feedService.mediaFeedMode != .global else { return }
+        feedService.mediaFeedMode = .global
+        feedService.refresh()
+    }
+
+    private func setArticlesFeedMode(_ mode: MediaFeedMode) {
+        guard feedService.articlesFeedMode != mode else { return }
+        feedService.articlesFeedMode = mode
+        feedService.refresh()
+    }
+
+    /// Reads the setting at tap time rather than from the last render.
+    private func toggleTrustScope() {
+        if configService.config.globalShowsEveryone {
+            setGlobalShowsEveryone(false)
+        } else {
+            showingGlobalEveryoneWarning = true
+        }
+    }
+
+    private func setGlobalShowsEveryone(_ on: Bool) {
+        guard configService.config.globalShowsEveryone != on else { return }
+        configService.config.globalShowsEveryone = on
+        configService.save()
+    }
+
+    /// Runs on every flip of the shield, here or on a hashtag sheet. Re-filters
+    /// straight away, then reloads, so the switch visibly lands both ways:
+    /// back to the Web of Trust the untrusted posts go at once instead of
+    /// lingering in the list and the new-posts count.
+    private func reloadForTrustScope() {
+        feedService.recomputeFilteredNotes()
+        // The shield is one app-wide setting; feeds with their own service
+        // refetch under it, the note feeds re-filter and reload.
+        switch feedService.feedMode {
+        case .reels: reelsService.refresh()
+        case .recipes: recipeService.refresh()
+        case .live: liveService.refresh()
+        case .marketplace: marketplaceService.refresh()
+        // Following and the like never use the shield; a flip from a hashtag
+        // sheet must not reload them.
+        default: if feedService.isGlobalLikeMode { feedService.refresh() }
         }
     }
 
@@ -368,7 +986,7 @@ struct FeedView: View {
         Menu {
             // One entry per layout rather than a cycle — a menu can show where
             // each choice leads, which a single cycling button cannot.
-            if feedService.feedMode != .reels {
+            if currentFeedHasLayouts {
                 ForEach(FeedLayoutMode.allCases, id: \.self) { mode in
                     if mode != .threaded || currentFeedSupportsThreading {
                         Button {
@@ -384,34 +1002,96 @@ struct FeedView: View {
 
             if feedService.feedMode == .reels {
                 Button { reelsService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: reelsService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalReelsWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                Button { reelsService.setScope(.global) } label: {
+                    Label("Global", systemImage: reelsService.scope == .following ? "globe" : "checkmark")
+                }
+                if reelsService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .media {
                 Button {
                     feedService.mediaFeedMode = .following
                     feedService.refresh()
                 } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: feedService.mediaFeedMode == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalMediaWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                Button { setMediaGlobal() } label: {
+                    Label("Global", systemImage: feedService.mediaFeedMode == .following ? "globe" : "checkmark")
+                }
+                if feedService.mediaFeedMode == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .recipes {
                 Button { recipeService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: recipeService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalRecipeWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                Button { recipeService.setScope(.global) } label: {
+                    Label("Global", systemImage: recipeService.scope == .following ? "globe" : "checkmark")
                 }
+                if recipeService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
+            } else if feedService.feedMode == .articles {
+                Button { setArticlesFeedMode(.following) } label: {
+                    Label("Following", systemImage: feedService.articlesFeedMode == .following ? "checkmark" : "person.2")
+                }
+                Button { setArticlesFeedMode(.global) } label: {
+                    Label("Global", systemImage: feedService.articlesFeedMode == .following ? "globe" : "checkmark")
+                }
+                if feedService.articlesFeedMode == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
+            } else if feedService.feedMode == .polls {
+                Button { PollsFeed.setScope(.following) } label: {
+                    Label("Following", systemImage: feedService.pollsFeedMode == .following ? "checkmark" : "person.2")
+                }
+                Button { PollsFeed.setScope(.global) } label: {
+                    Label("Global", systemImage: feedService.pollsFeedMode == .following ? "globe" : "checkmark")
+                }
+                if feedService.pollsFeedMode == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
+                Divider()
+                PollStatusFilterMenuItems(selected: feedService.pollStatusFilter)
+                Divider()
+                Button {
+                    configService.config.autoLoadNewPosts.toggle()
+                    configService.save()
+                } label: {
+                    Label("Auto-load", systemImage: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                }
+            } else if feedService.feedMode == .marketplace {
+                Button { marketplaceService.setScope(.following) } label: {
+                    Label("Following", systemImage: marketplaceService.scope == .following ? "checkmark" : "person.2")
+                }
+                Button { marketplaceService.setScope(.global) } label: {
+                    Label("Global", systemImage: marketplaceService.scope == .global ? "checkmark" : "globe")
+                }
+                if marketplaceService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
+            } else if feedService.feedMode == .hashtags {
+                trustScopeMenuItems
+            } else if feedService.feedMode == .music {
+                MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: liveService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalLiveWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                Button { liveService.setScope(.global) } label: {
+                    Label("Global", systemImage: liveService.scope == .following ? "globe" : "checkmark")
+                }
+                if liveService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .popular {
                 Button {
@@ -445,12 +1125,27 @@ struct FeedView: View {
                 } label: {
                     Label("Reposts", systemImage: "arrow.2.squarepath")
                 }
-                Button {
-                    configService.config.showReplies.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
-                } label: {
-                    Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                // Same rule as the inline toolbar: Global has no replies.
+                if feedService.feedMode != .global {
+                    Button {
+                        configService.config.showReplies.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    } label: {
+                        Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                    }
+                }
+                if feedService.feedMode == .global {
+                    trustScopeMenuItems
+                    Menu {
+                        LanguageFilterMenuItems(selected: configService.config.globalFeedLanguages) { codes in
+                            configService.config.globalFeedLanguages = codes
+                            configService.save()
+                            feedService.recomputeFilteredNotes()
+                        }
+                    } label: {
+                        Label("Languages", systemImage: "character.bubble")
+                    }
                 }
             }
         } label: {
@@ -464,6 +1159,18 @@ struct FeedView: View {
 
     // MARK: - Helper Functions
 
+    /// A tapped name or photo in the feed. While the Fill your feed meter is
+    /// up it opens the small profile card, so a new account looks before it
+    /// follows; otherwise the full profile.
+    private func openProfile(_ pubkey: String) {
+        let guide = FillYourVaultCoordinator.shared
+        if FillYourFeedGuide.opensProfileCard(meterShowing: guide.meterShowing) {
+            guide.profileCardPubkey = pubkey
+        } else {
+            showingProfileKey = IdentifiableString(id: pubkey)
+        }
+    }
+
     @ViewBuilder
     private func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool) -> some View {
         FeedNoteRow(
@@ -476,9 +1183,7 @@ struct FeedView: View {
             onQuote: {
                 composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
             },
-            onProfile: { pubkey in
-                showingProfileKey = IdentifiableString(id: pubkey)
-            },
+            onProfile: { pubkey in openProfile(pubkey) },
             onMedia: { url, urls in
                 showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
             },
@@ -504,6 +1209,50 @@ struct FeedView: View {
 
     var body: some View {
         #if os(iOS)
+        feedStack
+            .onAppear { openNotificationNote() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
+                openNotificationNote()
+            }
+        #else
+        VStack(spacing: 0) {
+            macFeedHeader
+            Divider()
+            rootContent
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    /// Opens the post a tapped notification parked, with no push animation:
+    /// the app should come up already showing it.
+    private func openNotificationNote() {
+        guard let open = NotificationOpen.pending else { return }
+        NotificationOpen.pending = nil
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            switch open {
+            case .note(let note):
+                if let noteDetailSelection {
+                    noteDetailSelection.select(note)
+                } else {
+                    navigationPath = NavigationPath([note])
+                }
+            case .id(let id):
+                if let noteDetailSelection {
+                    noteDetailSelection.select(id: id)
+                } else {
+                    var path = NavigationPath()
+                    path.append(NotificationNoteRoute(id: id))
+                    navigationPath = path
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var feedStack: some View {
         if noteDetailSelection != nil {
             // iPad two-pane layout: the enclosing NoteSplitPane owns the detail
             // column, so the feed must NOT wrap itself in a stack — a private
@@ -530,22 +1279,23 @@ struct FeedView: View {
                     .navigationDestination(for: ArticleRoute.self) { route in
                         ArticleReaderView(note: route.note)
                     }
+                    .navigationDestination(for: NotificationNoteRoute.self) { route in
+                        NoteDetailViewWrapper(noteId: route.id, pushed: true)
+                    }
             }
+            // Over the stack, not in the feed: the navigation bar would
+            // take its taps.
+            .overlay(alignment: .top) { foldedNewPostsPill }
         }
-        #else
-        VStack(spacing: 0) {
-            macFeedHeader
-            Divider()
-            rootContent
-        }
-        #endif
     }
+    #endif
 
     #if os(macOS)
     private var macFeedHeader: some View {
         HStack(spacing: 12) {
             // Connection dot
-            Button(action: { showingRelayStatus = true }) {
+            // Opens Settings > Relays, where the feed relays are edited.
+            Button(action: { NotificationCenter.default.post(name: .havenOpenFeedRelaySettings, object: nil) }) {
                 Circle()
                     .fill(feedService.connectionDotColor)
                     .frame(width: 10, height: 10)
@@ -558,7 +1308,7 @@ struct FeedView: View {
 
             // Feed mode picker
             Menu {
-                ForEach(FeedMode.allCases, id: \.self) { mode in
+                ForEach(menuModes, id: \.self) { mode in
                     Button(action: { feedService.switchMode(mode) }) {
                         let displayName = mode == .discovery ? "Discover" : mode.rawValue
                         if feedService.feedMode == mode {
@@ -568,6 +1318,8 @@ struct FeedView: View {
                         }
                     }
                 }
+                Divider()
+                Button("Edit Feeds…") { showingFeedMenuEditor = true }
             } label: {
                 HStack(spacing: 4) {
                     let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
@@ -577,8 +1329,14 @@ struct FeedView: View {
                         .font(.appSystem(size: 9, weight: .bold))
                 }
                 .foregroundColor(.primary)
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            // .borderlessButton flattens the label's font and colour on the
+            // Mac; this header is macOS-only. The label draws its own chevron.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .help("Switch feed")
             .fixedSize()
 
             Spacer()
@@ -592,13 +1350,17 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Videos from people you follow")
 
-                Button(action: { showingGlobalReelsWarning = true }) {
+                Button(action: { reelsService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(reelsService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Videos from everyone")
+                .help("Global videos: your Web of Trust, or everyone with the shield off")
+
+                if reelsService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .media {
                 Button(action: {
                     feedService.mediaFeedMode = .following
@@ -612,7 +1374,7 @@ struct FeedView: View {
                 .help(String(localized: "feed.help.followingMedia"))
 
                 Button(action: {
-                    showingGlobalMediaWarning = true
+                    setMediaGlobal()
                 }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
@@ -620,6 +1382,58 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "feed.help.globalMedia"))
+
+                if feedService.mediaFeedMode == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .articles {
+                Button(action: { setArticlesFeedMode(.following) }) {
+                    Image(systemName: feedService.articlesFeedMode == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.articlesFeedMode == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Articles from people you follow")
+
+                Button(action: { setArticlesFeedMode(.global) }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.articlesFeedMode == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Global articles: your Web of Trust, or everyone with the shield off")
+
+                if feedService.articlesFeedMode == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .polls {
+                Button(action: { PollsFeed.setScope(.following) }) {
+                    Image(systemName: feedService.pollsFeedMode == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.pollsFeedMode == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Polls from people you follow")
+
+                Button(action: { PollsFeed.setScope(.global) }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.pollsFeedMode == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Global polls: your Web of Trust, or everyone with the shield off")
+
+                if feedService.pollsFeedMode == .global {
+                    trustScopeButton
+                }
+                PollStatusFilterMenu(selected: feedService.pollStatusFilter, color: .havenPurple)
+                Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                    Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(configService.config.autoLoadNewPosts ? String(localized: "feed.help.autoLoadOn") : String(localized: "feed.help.autoLoadOff"))
             } else if feedService.feedMode == .recipes {
                 Button(action: { recipeService.setScope(.following) }) {
                     Image(systemName: recipeService.scope == .following ? "person.2.fill" : "person.2")
@@ -629,13 +1443,43 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Recipes from people you follow")
 
-                Button(action: { showingGlobalRecipeWarning = true }) {
+                Button(action: { recipeService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(recipeService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Recipes from everyone")
+                .help("Global recipes: your Web of Trust, or everyone with the shield off")
+
+                if recipeService.scope == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .marketplace {
+                Button(action: { marketplaceService.setScope(.following) }) {
+                    Image(systemName: marketplaceService.scope == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(marketplaceService.scope == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Listings from people you follow")
+
+                Button(action: { marketplaceService.setScope(.global) }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(marketplaceService.scope == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Global listings: your Web of Trust, or everyone with the shield off")
+
+                if marketplaceService.scope == .global {
+                    trustScopeButton
+                }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
+            } else if feedService.feedMode == .music {
+                MusicToolbarButtons()
             } else if feedService.feedMode == .live {
                 Button(action: { liveService.setScope(.following) }) {
                     Image(systemName: liveService.scope == .following ? "person.2.fill" : "person.2")
@@ -645,13 +1489,17 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Streams from people you follow")
 
-                Button(action: { showingGlobalLiveWarning = true }) {
+                Button(action: { liveService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(liveService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Streams from everyone")
+                .help("Global streams: your Web of Trust, or everyone with the shield off")
+
+                if liveService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .popular {
                 // My Follows filter
                 Button(action: {
@@ -704,14 +1552,26 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help(configService.config.showReposts ? String(localized: "feed.help.hideReposts") : String(localized: "feed.help.showReposts"))
 
-                // Replies toggle
-                Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
-                    Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                // Replies toggle (Global never shows replies)
+                if feedService.feedMode != .global {
+                    Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
+                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
                 }
-                .buttonStyle(.plain)
-                .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
+
+                if feedService.feedMode == .global {
+                    trustScopeButton
+
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                        configService.config.globalFeedLanguages = codes
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
+                }
 
                 // Divider to separate the layout cycle
                 Divider()
@@ -736,8 +1596,13 @@ struct FeedView: View {
     }
     #endif
 
-    @ViewBuilder
+    /// The feed, with the music mini player docked at the bottom where
+    /// there's no iPhone tab bar to carry it (iPad, Mac).
     private var rootContent: some View {
+        rootContentBase.modifier(MiniPlayerInset())
+    }
+
+    private var rootContentBase: some View {
         ZStack {
             // Match the platform theme background
             Color.platformWindowBackground.ignoresSafeArea()
@@ -766,6 +1631,10 @@ struct FeedView: View {
 
                 if feedService.feedMode == .reels {
                     reelsFeedView
+                } else if relayManager.isImporting && feedService.notes.isEmpty {
+                    // The relay is busy importing (I use Nostr's "Keep it
+                    // running"), so nothing loads until it's back.
+                    importingFeedView
                 } else if showLoadingContacts {
                     loadingContactsView
                 } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
@@ -788,47 +1657,45 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 12) {
-                    Button(action: { showingRelayStatus = true }) {
-                        Circle()
-                            .fill(feedService.connectionDotColor)
-                            .frame(width: 10, height: 10)
-                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 30, height: 30)
-                    .applyGlassCircle()
-
-                    Menu {
-                        ForEach(FeedMode.allCases, id: \.self) { mode in
-                            Button(action: { feedService.switchMode(mode) }) {
-                                let displayName = mode == .discovery ? "Discover" : mode.rawValue
-                                if feedService.feedMode == mode {
-                            Label(displayName, systemImage: "checkmark")
-                        } else {
-                            Text(displayName)
-                        }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
-                            Text(displayName)
-                                .font(.appSystem(size: 17, weight: .bold))
-                            Image(systemName: "chevron.down")
-                                .font(.appSystem(size: 9, weight: .bold))
-                        }
-                        .foregroundColor(.white)
-                    }
+                ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
+                    feedLeadingToolbar
                 }
             }
+            .hidingSharedToolbarBackground()
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    feedTrailingToolbarInline
-                    feedTrailingToolbarMenu
+                ChromeMorphCapsule(alignment: .trailing, isEnabled: isCompactWidth) {
+                    ZStack(alignment: .trailing) {
+                        ChromeFold(anchor: .trailing, isEnabled: isCompactWidth) {
+                            // Width only: the pill's vertical padding makes it
+                            // taller than the bar's proposal, which must not
+                            // demote the row to the menu.
+                            ViewThatFits(in: .horizontal) {
+                                feedTrailingToolbarInline
+                                feedTrailingToolbarMenu
+                            }
+                            .padding(.horizontal, 3)
+                        }
+                        // The lone layout button fades in as the full row
+                        // fades out, centred in the circle the pill folds to.
+                        // Feeds without layouts get the filter menu there
+                        // instead, so the circle is never empty.
+                        if isCompactWidth && feedService.feedMode != .reels {
+                            ChromeFold(anchor: .trailing, inverted: true) {
+                                if currentFeedHasLayouts {
+                                    layoutModeButton
+                                        .padding(.horizontal, 4)
+                                } else {
+                                    feedTrailingToolbarMenu
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
+                .tutorialAnchor(TutorialContent.feedToolbar)
             }
+            .hidingSharedToolbarBackground()
         }
         #endif
         .onAppear {
@@ -855,16 +1722,46 @@ struct FeedView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .sheet(item: $modeComposer) { composer in
+            Group {
+                switch composer {
+                case .divine:
+                    DivineComposeView(onDismiss: { modeComposer = nil })
+                case .article:
+                    LongFormComposeView(flavor: .article, onDismiss: { modeComposer = nil })
+                case .recipe:
+                    LongFormComposeView(flavor: .recipe, onDismiss: { modeComposer = nil })
+                case .listing:
+                    MarketplaceSellView(onDismiss: { modeComposer = nil })
+                case .poll:
+                    PollComposeView(onDismiss: { modeComposer = nil })
+                }
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+        }
+        #if !os(iOS)
+        // iOS reopens the composer from SceneDelegate, over any open sheet.
         .onChange(of: pendingManager.editRequest?.id) { _, _ in
             guard let req = pendingManager.editRequest else { return }
             composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId)
             pendingManager.editRequest = nil
         }
-        .sheet(isPresented: $showingRelayStatus) {
-            FeedDashboardSheet(onDismiss: { showingRelayStatus = false })
-                .environmentObject(relayManager)
-                .environmentObject(configService)
-                .environmentObject(nostrService)
+        #endif
+        .sheet(isPresented: $showingDashboard) {
+            FeedDashboardView(
+                onOpenFeed: { mode in
+                    showingDashboard = false
+                    FeedDashboardStore.openOnFollowing(mode)
+                },
+                onDismiss: { showingDashboard = false }
+            )
+        }
+        .sheet(isPresented: $showingFeedMenuEditor) {
+            FeedMenuEditor(onDismiss: { showingFeedMenuEditor = false })
+                #if os(macOS)
+                .frame(minWidth: 360, minHeight: 520)
+                #endif
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
@@ -874,18 +1771,24 @@ struct FeedView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .overlay { FillYourFeedOverlay() }
         .sheet(item: $showingProfileKey) { p in
             ProfileView(pubkey: p.id, onDismiss: { showingProfileKey = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(item: $showingArticle) { route in
-            ArticleReaderView(note: route.note)
+            // In a stack so a comment under the article can open as a note.
+            NavigationStack {
+                ArticleReaderView(note: route.note)
+            }
                 .environmentObject(nostrService)
+                // A Mac sheet sizes to its content; on iPhone a 520pt minimum
+                // is wider than the screen, so the reader drew off both edges.
+                #if os(macOS)
                 .frame(minWidth: 520, minHeight: 480)
+                #endif
         }
         .sheet(isPresented: $isShowingGridMediaViewer) {
             ZStack {
@@ -893,7 +1796,7 @@ struct FeedView: View {
                     .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
                     .ignoresSafeArea()
                 
-                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true) { noteId in
+                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true, showsPositionBar: false) { noteId in
                     if let note = gridMediaSnapshot.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
                         FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
                             #if os(iOS)
@@ -929,22 +1832,18 @@ struct FeedView: View {
                 selectedGridMediaNoteId = nil
             }
         }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalMediaWarning) {
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalEveryoneWarning) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                feedService.mediaFeedMode = .global
-                feedService.refresh()
+                setGlobalShowsEveryone(true)
             }
             Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
+            Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalLiveWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                liveService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
+        .onChange(of: configService.config.globalShowsEveryone) { _, _ in reloadForTrustScope() }
+        .sheet(item: $selectedListing) { listing in
+            MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
+                .environmentObject(nostrService)
         }
         .sheet(item: $playingStream) { stream in
             LiveStreamPlayerView(stream: stream, onBlocked: { pubkey in
@@ -952,22 +1851,6 @@ struct FeedView: View {
             })
             .environmentObject(nostrService)
             .environmentObject(configService)
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalReelsWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                reelsService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalRecipeWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                recipeService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
         }
     }
 
@@ -1026,6 +1909,24 @@ struct FeedView: View {
     }
 
     // MARK: - Empty State
+
+    private var importingFeedView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+                .tint(Color.havenPurple)
+            Text("Your feed fills in as your notes come home")
+                .font(.appSystem(size: 20, weight: .bold))
+                .multilineTextAlignment(.center)
+            Text(ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false).text)
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
 
     private var emptyStateView: some View {
         VStack(spacing: 40) {
@@ -1305,7 +2206,8 @@ struct FeedView: View {
     /// and debounced like the row-data cache so a burst of arriving notes
     /// doesn't regroup the timeline once per note.
     private func rebuildThreadsIfNeeded(immediate: Bool = false) {
-        guard isThreadedModeActive else {
+        // The Hashtags feed groups its own two sections (HashtagsFeedSection).
+        guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             if !feedThreads.isEmpty { feedThreads = [] }
             return
@@ -1313,10 +2215,29 @@ struct FeedView: View {
 
         threadRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
-            feedThreads = FeedThreadGrouping.build(notes: feedService.filteredNotes) { id in
+            let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+            // Popular and Global hold only top-level posts, so their replies
+            // are fetched separately for this view, and the feed's own order
+            // is kept: a reply landing later doesn't reshuffle the posts.
+            let fetchesReplies = feedService.feedMode == .popular || feedService.feedMode == .global
+            if fetchesReplies {
+                feedService.loadFeedThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
+            }
+            let notes = fetchesReplies ? feedService.filteredNotes + feedService.feedThreadReplies : feedService.filteredNotes
+            feedThreads = FeedThreadGrouping.build(notes: notes, keepFeedOrder: fetchesReplies) { id in
                 // Ancestors the timeline never showed still live in the feed
                 // service's caches; pulling them in keeps a conversation whole.
-                feedService.findNote(id: id)
+                // A blocked author's post is never pulled in as context.
+                guard let note = feedService.findNote(id: id),
+                      !blocked.contains(note.pubkey) else { return nil }
+                return note
+            }.filter { thread in
+                // A conversation started by a blocked author goes entirely.
+                // Its root is withheld above, so without this the card would
+                // sit on "Loading the start of this thread…" forever.
+                guard thread.root == nil,
+                      let root = feedService.findNote(id: thread.rootId) else { return true }
+                return !blocked.contains(root.pubkey)
             }
             // Ask for every missing root now, in one batch, rather than from
             // each card's onAppear: a fast scroll reaches cards faster than a
@@ -1412,6 +2333,12 @@ struct FeedView: View {
     /// `FeedNoteRowData: Equatable` makes that comparison free.
     private func resolveRows(matching ids: Set<String>) {
         guard !ids.isEmpty else { return }
+        // A repost row shows its original's likes, zaps and counts, which are
+        // keyed by the original's id, not the row's.
+        var ids = ids
+        for note in feedService.filteredNotes where note.kind == 6 {
+            if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
+        }
         var updated = rowDataCache
         var didChange = false
         for id in ids {
@@ -1429,6 +2356,16 @@ struct FeedView: View {
     /// the set of affected rows.
     private func updateRowDataForLikes(old: Set<String>, new: Set<String>) {
         resolveRows(matching: old.symmetricDifference(new))
+    }
+
+    /// myReactions is keyed by `note.id`: a changed emoji leaves likedEventIds
+    /// alone, so it needs its own refresh.
+    private func updateRowDataForMyReactions(old: [String: EngagementTracker.MyReaction],
+                                             new: [String: EngagementTracker.MyReaction]) {
+        var changed = Set<String>()
+        for (id, rx) in new where old[id]?.content != rx.content { changed.insert(id) }
+        for id in old.keys where new[id] == nil { changed.insert(id) }
+        resolveRows(matching: changed)
     }
 
     /// zappedEventIds is a `[noteID: amount]` dict; collect ids whose amount was
@@ -1511,7 +2448,16 @@ struct FeedView: View {
             if let parentId = note.parentEventId { gapIds.insert(parentId) }
         }
         guard !arrivedIds.isDisjoint(with: gapIds) else { return }
-        rebuildThreadsIfNeeded()
+        // Roots stream in every ~0.1 s while a feed fills, and each rebuild
+        // regroups the whole feed on the main thread; per batch, that kept
+        // the phone hot. Regroup at most every 0.4 s. A throttle, not a
+        // debounce: a steady stream must not postpone the regroup forever.
+        guard !gapRegroupScheduled else { return }
+        gapRegroupScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            gapRegroupScheduled = false
+            rebuildThreadsIfNeeded(immediate: true)
+        }
     }
 
     /// noteStats changed — re-resolve rows whose stats actually differ.
@@ -1605,7 +2551,9 @@ struct FeedView: View {
                 .foregroundColor(.havenPurple.opacity(0.7))
             Text("No articles yet")
                 .font(.appSystem(size: 16, weight: .bold))
-            Text("Long-form posts from people you follow show up here. Nothing to read yet.")
+            Text(feedService.articlesFeedMode == .following
+                 ? "Long-form posts from people you follow show up here. Nothing to read yet."
+                 : "Long-form posts from across Nostr show up here. Nothing to read yet.")
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -1666,7 +2614,7 @@ struct FeedView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             if recipeService.followSetIsEmpty {
-                Button("Show everyone's recipes") { showingGlobalRecipeWarning = true }
+                Button("Show Global recipes") { recipeService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)
@@ -1695,6 +2643,74 @@ struct FeedView: View {
             : "Nothing tagged zapcooking or nostrcooking came back."
     }
 
+    /// Marketplace: NIP-15 products/auctions and NIP-99 classifieds from the
+    /// listing relays. A listing opens as a sheet for the same reason a
+    /// recipe does: it behaves the same in all three containers.
+    @ViewBuilder
+    private var marketplaceGridView: some View {
+        VStack(spacing: 12) {
+            if !marketplaceService.categories.isEmpty {
+                MarketplaceCategoryBar(categories: marketplaceService.categories, selected: $marketplaceService.selectedCategory)
+            }
+
+            if marketplaceService.isLoading && marketplaceService.visibleListings.isEmpty {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Color.havenPurple)
+                    .padding(.vertical, 60)
+            } else if marketplaceService.visibleListings.isEmpty {
+                emptyMarketplaceStateView
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                    ForEach(marketplaceService.visibleListings) { listing in
+                        MarketplaceCardView(listing: listing, profile: nostrService.profiles[listing.pubkey])
+                            .onTapGesture { selectedListing = listing }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.vertical, 16)
+        .onAppear { marketplaceService.loadIfNeeded() }
+        // Sellers are mostly strangers, so their names aren't cached yet.
+        .task(id: marketplaceService.listings.count) {
+            nostrService.fetchMissingProfiles(for: Array(Set(marketplaceService.listings.map(\.pubkey))))
+        }
+    }
+
+    private var emptyMarketplaceStateView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: marketplaceService.loadFailed ? "wifi.slash" : "bag")
+                .font(.appSystem(size: 34))
+                .foregroundColor(.havenPurple.opacity(0.7))
+            Text(marketplaceService.followSetIsEmpty || marketplaceService.scope == .following
+                 ? "No listings from your follows"
+                 : (marketplaceService.loadFailed ? "Could not reach any relay" : "No listings found"))
+                .font(.appSystem(size: 16, weight: .bold))
+            Text(marketplaceService.scope == .following
+                 ? "Nobody you follow is selling anything. Switch to Global to see every listing."
+                 : (marketplaceService.loadFailed
+                    ? "Listings come from other people's relays, so this one needs a connection."
+                    : "No products, auctions or classifieds with a photo came back."))
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            if marketplaceService.scope == .following {
+                Button("Show Global listings") { marketplaceService.setScope(.global) }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 4)
+            } else {
+                Button("Try again") { marketplaceService.refresh() }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 60)
+    }
+
     /// Reels: full-screen vertical video pager, one video per swipe.
     private var reelsFeedView: some View {
         ReelsFeedView(
@@ -1703,16 +2719,109 @@ struct FeedView: View {
             onReply: { composeContext = ComposeContext(replyTo: feedService.replyTarget(for: $0), quoteTo: nil) },
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
-            onShowGlobal: { showingGlobalReelsWarning = true },
-            isCovered: composeContext != nil || showingProfileKey != nil || showingNoteId != nil
-                || showingMediaUrl != nil || showingRelayStatus
+            onShowGlobal: { reelsService.setScope(.global) },
+            onPost: { modeComposer = .divine },
+            isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
+                || showingMediaUrl != nil || showingDashboard
         )
+        // feedList is not on screen in diVines, so the collapsed tab bar's
+        // compose button is answered here.
+        .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
+            guard (note.object as? Int) == 0 else { return }
+            modeComposer = .divine
+        }
     }
 
     /// Live streams: NIP-53 events that are running *and* carry a URL Apple's
     /// player can open. Never cached — a stream is only interesting while it is
     /// live, and a saved one is a gravestone.
     @ViewBuilder
+    /// One conversation card for the threaded layout. `proxy` keeps the
+    /// thread line still when a note opens in place; the Hashtags feed has no
+    /// line tracking of its own and passes nil.
+    private func feedThreadCard(_ thread: FeedThread<FeedNote>, proxy: ScrollViewProxy?) -> some View {
+        FeedThreadCard(
+            thread: thread,
+            // One open note across both condensed
+            // layouts: the same gesture, so the same
+            // selection.
+            openNoteId: $expandedNoteId,
+            isExpanded: Binding(
+                get: { expandedThreadIds.contains(thread.rootId) },
+                set: { isOpen in
+                    if isOpen {
+                        expandedThreadIds.insert(thread.rootId)
+                    } else {
+                        expandedThreadIds.remove(thread.rootId)
+                    }
+                }
+            ),
+            profileFor: { nostrService.profiles[$0] },
+            rowDataFor: { note in
+                rowDataCache[note.id] ?? FeedNoteRowData.resolve(
+                    for: note,
+                    feedService: feedService,
+                    nostrService: nostrService
+                )
+            },
+            onOpen: { openNoteDetail($0) },
+            onReply: {
+                composeContext = ComposeContext(
+                    replyTo: feedService.replyTarget(for: $0),
+                    quoteTo: nil
+                )
+            },
+            onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
+            onProfile: { openProfile($0) },
+            onMedia: { url, urls in
+                showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+            },
+            rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
+            lineTops: proxy == nil ? nil : threadLineTops,
+            onOpenedInPlace: proxy.map { proxy in
+                { id, y in holdThreadLine(id, at: y, proxy: proxy) }
+            }
+        )
+    }
+
+    /// Followed hashtags; rows open and act like the main timeline's, in
+    /// whichever layout the feed's layout button picked.
+    private var hashtagsFeedView: some View {
+        HashtagsFeedSection(threaded: isThreadedModeActive) { note in
+            let isExpanded = expandedNoteId == note.id
+            let row = feedNoteRowContent(
+                note: note,
+                profile: nostrService.profiles[note.pubkey],
+                rowData: rowDataCache[note.id] ?? FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+                parentIsNext: false,
+                isExpanded: isExpanded
+            )
+            .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+            #if os(iOS)
+            // Same as the main timeline: a compact line opens in place on
+            // tap, an expanded one navigates.
+            if !isCompactModeActive || isExpanded {
+                NoteNavigationLink(note: note) { row }
+                    .buttonStyle(.plain)
+            } else {
+                row
+            }
+            #else
+            row.onTapGesture {
+                if !isCompactModeActive { showingNoteId = note.id }
+            }
+            #endif
+        } threadRow: { thread in
+            feedThreadCard(thread, proxy: nil)
+                .padding(.horizontal, 12)
+                .onAppear {
+                    nostrService.fetchMissingProfiles(for: thread.entries.map(\.note.pubkey))
+                    if thread.root == nil { feedService.fetchMissingNote(id: thread.rootId) }
+                }
+        }
+        .environment(\.feedActions, feedActionsValue)
+    }
+
     private var liveGridView: some View {
         VStack(spacing: 12) {
             if liveService.isLoading && liveService.streams.isEmpty {
@@ -1749,7 +2858,7 @@ struct FeedView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             if liveService.followSetIsEmpty {
-                Button("Show everyone's streams") { showingGlobalLiveWarning = true }
+                Button("Show Global streams") { liveService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)
@@ -1796,6 +2905,32 @@ struct FeedView: View {
                             feedService: feedService, nostrService: nostrService)
     }
 
+    /// Keeps a thread line where it was tapped. Opening it closed whatever
+    /// was open; if that sat above, the line would slide up, possibly out of
+    /// view. A line whose top was already above the screen is brought down
+    /// to the top edge.
+    ///
+    /// The scroll runs with no animation from the line's own geometry change,
+    /// so it lands in the same frame as the close. An animated scroll a
+    /// runloop later showed as the line jumping and then sliding back.
+    private func holdThreadLine(_ noteId: String, at y: CGFloat, proxy: ScrollViewProxy) {
+        let height = threadLineTops.viewportHeight
+        guard height > 0 else { return }
+        let fraction = min(max(y / height, 0), 1)
+        let anchor = UnitPoint(x: 0.5, y: fraction)
+        threadLineTops.hold = (noteId, y, {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                proxy.scrollTo(ThreadLineTops.anchorId(for: noteId), anchor: anchor)
+            }
+        })
+        // The open line sat below the tapped one, so nothing above moved.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [threadLineTops] in
+            if threadLineTops.hold?.noteId == noteId { threadLineTops.hold = nil }
+        }
+    }
+
     private var feedList: some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .top) {
@@ -1812,6 +2947,12 @@ struct FeedView: View {
                             articleListView
                         } else if feedService.feedMode == .recipes {
                             recipeGridView
+                        } else if feedService.feedMode == .marketplace {
+                            marketplaceGridView
+                        } else if feedService.feedMode == .hashtags {
+                            hashtagsFeedView
+                        } else if feedService.feedMode == .music {
+                            MusicBrowserView()
                         } else if feedService.feedMode == .live {
                             liveGridView
                         } else {
@@ -1825,48 +2966,17 @@ struct FeedView: View {
                             }
                         }
 
+                        if feedService.feedMode == .polls && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed {
+                            PollsEmptyStateView(scope: feedService.pollsFeedMode, status: feedService.pollStatusFilter,
+                                                onPost: configService.activeAccountHexPubkey.isEmpty ? nil : { modeComposer = .poll })
+                        }
+
                         if isThreadedModeActive {
                             ForEach(feedThreads) { thread in
-                                FeedThreadCard(
-                                    thread: thread,
-                                    // One open note across both condensed
-                                    // layouts: the same gesture, so the same
-                                    // selection.
-                                    openNoteId: $expandedNoteId,
-                                    isExpanded: Binding(
-                                        get: { expandedThreadIds.contains(thread.rootId) },
-                                        set: { isOpen in
-                                            if isOpen {
-                                                expandedThreadIds.insert(thread.rootId)
-                                            } else {
-                                                expandedThreadIds.remove(thread.rootId)
-                                            }
-                                        }
-                                    ),
-                                    profileFor: { nostrService.profiles[$0] },
-                                    rowDataFor: { note in
-                                        rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                                            for: note,
-                                            feedService: feedService,
-                                            nostrService: nostrService
-                                        )
-                                    },
-                                    onOpen: { openNoteDetail($0) },
-                                    onReply: {
-                                        composeContext = ComposeContext(
-                                            replyTo: feedService.replyTarget(for: $0),
-                                            quoteTo: nil
-                                        )
-                                    },
-                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
-                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) },
-                                    onMedia: { url, urls in
-                                        showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                                    },
-                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId)
-                                )
+                                feedThreadCard(thread, proxy: proxy)
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
+                                .trackFeedVisibility(thread.rootId, in: visibleRows)
                             }
                         } else {
                         ForEach(feedService.filteredNotes) { note in
@@ -1896,6 +3006,7 @@ struct FeedView: View {
                                 }
                             }
                             .onAppear { prefetchAhead(ofNote: note.id) }
+                            .trackFeedVisibility(note.id, in: visibleRows)
                             #else
                             let isExpanded = (expandedNoteId == note.id)
                             feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded)
@@ -1935,6 +3046,8 @@ struct FeedView: View {
                     }
                     }
                     .tabBarBottomPadding()
+                    // The last post scrolls clear of the open meter.
+                    .padding(.bottom, fillGuide.meterLift)
                 }
                 // A switched account gets its own scroll view, cross-faded in at
                 // the top. Kept, this one diffed a whole feed of rows into the
@@ -1942,10 +3055,17 @@ struct FeedView: View {
                 // accounts had it, and then animated a scroll to the top on top
                 // of the fade — rows shuffled and slid instead of the feed
                 // simply changing.
+                .coordinateSpace(.named(ThreadLineTops.coordinateSpace))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    threadLineTops.viewportHeight = $0
+                }
                 .id(configService.activeAccountHexPubkey)
                 .transition(.opacity)
                 .refreshable {
                     isRefreshing = true
+                    // Pulling down takes in the posts waiting behind the New
+                    // Posts pill, the only way to reach them with it switched off.
+                    if !feedService.pendingNotes.isEmpty { feedService.applyPendingNotes() }
                     feedService.refresh()
                     // Hold the indicator until loading finishes
                     while feedService.isLoadingFeed {
@@ -1954,8 +3074,20 @@ struct FeedView: View {
                     isRefreshing = false
                 }
                 .tint(Color.secondary.opacity(0.6))
+                .opacity(layoutFadedOut ? 0 : 1)
                 .scrollPosition(id: $scrolledNoteID)
+                .onChange(of: pendingLayoutAnchor) { _, anchor in
+                    guard let anchor else { return }
+                    // Next runloop turn, once the new layout's rows exist.
+                    let animation = pendingLayoutAnimation
+                    DispatchQueue.main.async {
+                        withAnimation(animation) { proxy.scrollTo(anchor, anchor: .top) }
+                        pendingLayoutAnchor = nil
+                        pendingLayoutAnimation = nil
+                    }
+                }
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
+                .softTopScrollEdge()
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
                     if !isLoading && feedService.shouldScrollToTopOnLoad {
                         feedService.shouldScrollToTopOnLoad = false
@@ -1966,7 +3098,7 @@ struct FeedView: View {
                         }
                     }
                 }
-                .onChange(of: feedService.pendingNotes.count) { _, count in
+                .onChange(of: feedService.visiblePendingCount) { _, count in
                     // Auto-apply pending notes when autoLoad is on, but only
                     // if the user is at the top of the feed to avoid disrupting
                     // their scroll position. Debounced to prevent duplicate calls.
@@ -1977,7 +3109,7 @@ struct FeedView: View {
                 .onChange(of: isAtTop) { _, atTop in
                     // When the user scrolls back to the top, auto-apply any
                     // accumulated pending notes if auto-load is enabled.
-                    if atTop && configService.config.autoLoadNewPosts && !feedService.pendingNotes.isEmpty && !feedService.isLoadingFeed {
+                    if atTop && configService.config.autoLoadNewPosts && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed {
                         scheduleAutoLoad(delay: 0.5)
                     }
                 }
@@ -1986,6 +3118,7 @@ struct FeedView: View {
                     nostrService: nostrService,
                     onFiltered: { reconcileRowDataCache(); rebuildThreadsIfNeeded() },
                     onLikes: { updateRowDataForLikes(old: $0, new: $1) },
+                    onMyReactions: { updateRowDataForMyReactions(old: $0, new: $1) },
                     onReposts: { updateRowDataForReposts(old: $0, new: $1) },
                     onZaps: { updateRowDataForZaps(old: $0, new: $1) },
                     onProfiles: { refreshRowsForPubkeys($0) },
@@ -2005,38 +3138,31 @@ struct FeedView: View {
                 .onChange(of: feedService.feedMode) { _, _ in
                     rebuildThreadsIfNeeded(immediate: true)
                 }
+                .onChange(of: feedService.feedThreadReplies.count) { _, _ in
+                    rebuildThreadsIfNeeded()
+                }
 
                 // Floating "New Posts" indicator — shown when auto-load is off,
                 // or when auto-load is on but the user has scrolled down.
-                if !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop) {
-                    Button(action: {
-                        feedService.applyPendingNotes()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(Motion.scrollJump) {
-                                proxy.scrollTo("top", anchor: .top)
-                            }
+                // It folds away with the bars; folded, `foldedNewPostsPill`
+                // stands in for it in the top bar's row.
+                if showsNewPostsButton {
+                    Group {
+                        #if os(iOS)
+                        NewPostsFold(isEnabled: isCompactWidth) {
+                            newPostsButton(compact: false) { scrollToTopAfterLoad(proxy) }
                         }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.up")
-                                .font(.appSystem(size: 12, weight: .bold))
-                            Text("\(feedService.pendingNotes.count) New Posts")
-                                .font(.appSystem(size: 13, weight: .bold))
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 20)
-                        .background(
-                            Capsule()
-                                .fill(Color.havenPurple)
-                                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-                        )
-                        .foregroundColor(.white)
+                        #else
+                        newPostsButton(compact: false) { scrollToTopAfterLoad(proxy) }
+                        #endif
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(feedService.pendingNotes.count) new posts, tap to load")
                     .padding(.top, 12)
+                    // Drops out from under the top bar rather than sliding in
+                    // from off-screen above it.
                     .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
+                        insertion: .offset(y: -16)
+                            .combined(with: .scale(scale: 0.85, anchor: .top))
+                            .combined(with: .opacity),
                         removal: .opacity.combined(with: .scale(scale: 0.8))
                     ))
                     .zIndex(1)
@@ -2072,25 +3198,25 @@ struct FeedView: View {
                 // gates auto-loading new posts) and the tab bar follow it.
                 scrolledNoteID = nil
                 isAtTop = true
-                feedService.feedScrollingDown = false
+                ChromeCollapse.shared.reset()
                 rebuildRowDataCache()
                 rebuildThreadsIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
                 guard (note.object as? Int) == 0 else { return }
-                composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                openComposer()
             }
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button {
-                    composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                    openComposer()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.and.pencil")
+                        Image(systemName: ModeComposer(feedMode: feedService.feedMode)?.symbolName ?? "square.and.pencil")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(String(localized: "feed.action.post"))
+                        Text(ModeComposer(feedMode: feedService.feedMode)?.buttonTitle ?? String(localized: "feed.action.post"))
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -2108,15 +3234,28 @@ struct FeedView: View {
                             .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .accessibilityLabel("Compose new post")
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .accessibilityLabel(ModeComposer(feedMode: feedService.feedMode)?.accessibilityLabel ?? "Compose new post")
+                .buttonStyle(PressScaleButtonStyle())
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
+                // Post keeps priority over the Fill your feed meter.
+                .padding(.bottom, fillGuide.meterLift)
+                .animation(Motion.chrome, value: fillGuide.meterLift)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
             #endif
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
+    }
+
+    /// The post button writes what the feed shows: a diVine in diVines, an
+    /// article in Articles, a recipe in Recipes, a listing in Marketplace,
+    /// a note everywhere else.
+    private func openComposer() {
+        if let composer = ModeComposer(feedMode: feedService.feedMode) {
+            modeComposer = composer
+        } else {
+            composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+        }
     }
 
     private var mediaGridView: some View {
@@ -2235,43 +3374,6 @@ struct FeedView: View {
     }
 }
 
-// MARK: - Liquid Glass Modifier
-
-private struct LiquidGlassModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26, macOS 26, *) {
-            content.glassEffect(.regular, in: .capsule)
-        } else {
-            content
-                .background {
-                    ZStack {
-                        Capsule().fill(.ultraThinMaterial)
-                        Capsule().fill(Color.havenPurple.opacity(0.06))
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.12), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .center
-                                )
-                            )
-                    }
-                }
-                .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.25), Color.white.opacity(0.08)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.5
-                        )
-                )
-        }
-    }
-}
-
 private struct LiquidGlassVerticalModifier: ViewModifier {
     private let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 
@@ -2321,7 +3423,10 @@ struct FeedNoteRow: View {
     var onMedia: ((URL, [URL]) -> Void)? = nil
     var showParent: Bool = true
     var isReplyToNext: Bool = false
-    var layoutMode: NoteLayoutMode = .sideBySide
+    /// `.wide` everywhere (Logen): avatar and name on one line, text and
+    /// media full width under it, so an expanded post looks the same in the
+    /// feed, threaded cards and the thread view, and gets the most room.
+    var layoutMode: NoteLayoutMode = .wide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
     /// Lets a caller shrink the avatar without touching anything else about
@@ -2332,12 +3437,23 @@ struct FeedNoteRow: View {
 
     // Zero ObservableObject subscriptions — all data comes via rowData/actions
     @Environment(\.feedActions) private var actions
+    /// The openURL of the screen around this row: the row overrides it for
+    /// its own subtree, and hands hashtag links back up to it.
+    @Environment(\.openURL) private var inheritedOpenURL
 
     @State private var showingEmojiPicker = false
+    @State private var showingTapbackPopover = false
+    @State private var reactionButtonFrame: CGRect = .zero
+    @GestureState private var holdingReaction = false
     @State private var showLightning = false
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
+    @State private var zapBoltAnchor = ZapFlightAnchor()
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
+    @State private var showingTrustWeb = false
+    @State private var showingReportSheet = false
+    @State private var showingBlockConfirm = false
     @State private var showingNoteIdInRow: String?
     @State private var noLightningAddressAlert = false
     @State private var showingUserMenu = false
@@ -2371,11 +3487,13 @@ struct FeedNoteRow: View {
             depth: 0,
             style: .card,
             contentOverride: compactContentOverride,
+            postedAt: postedAt,
             mediaURLs: note.mediaURLs + originalMedia,
             engagement: CondensedEngagement(
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
                 reposts: rowData.stats.reposts
             ),
+            showsTranslate: note.kind != 30023,
             onProfile: { onProfile?($0) },
             onTap: { onTapRow?() }
         )
@@ -2385,12 +3503,17 @@ struct FeedNoteRow: View {
     /// title, or the original note behind a bare repost.
     private var compactContentOverride: String? {
         if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
-            return original.content
+            return original.condensedTitle ?? original.content
         }
+        // A bare repost still waiting on its original said nothing at all.
+        if repostedNoteIsUnavailable {
+            return String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
+        }
+        if isWaitingForRepostedNote { return String(localized: "feed.note.loadingRepost") }
         // An article's three compact lines are worth far more spent on its
-        // title than on the first three lines of markdown.
-        if note.kind == 30023 { return note.longFormDisplayTitle }
-        return nil
+        // title than on the first three lines of markdown; a poll's on its
+        // question.
+        return note.condensedTitle
     }
 
     // MARK: - Full Layout
@@ -2463,6 +3586,10 @@ struct FeedNoteRow: View {
                                     Image(systemName: "checkmark.seal.fill")
                                         .font(.appCaption2)
                                         .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
+                                }
+
+                                if parent.isFromNostrVault {
+                                    NostrVaultBadge()
                                 }
 
                                 Spacer()
@@ -2604,12 +3731,18 @@ struct FeedNoteRow: View {
                                     .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
                             }
 
+                            if bodySource.isFromNostrVault {
+                                NostrVaultBadge()
+                            }
+
                             Spacer()
 
-                            Text(relativeTime(note.createdAt))
+                            Text(relativeTime(postedAt))
                                 .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .tracking(0.2)
+
+                            moreMenu
                         }
 
                         // Reply indicator - subtle
@@ -2676,12 +3809,18 @@ struct FeedNoteRow: View {
                                 .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
                         }
 
+                        if bodySource.isFromNostrVault {
+                            NostrVaultBadge()
+                        }
+
                         Spacer()
 
-                        Text(relativeTime(note.createdAt))
+                        Text(relativeTime(postedAt))
                             .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.2)
+
+                        moreMenu
                     }
                     .padding(.top, 4)
 
@@ -2728,16 +3867,40 @@ struct FeedNoteRow: View {
         return note
     }
 
+    /// When the note this row shows was written. A repost shows its original's
+    /// time, not the moment it was reposted.
+    private var postedAt: Date {
+        bodySource.originalCreatedAt ?? bodySource.createdAt
+    }
+
+    /// Who a zap on this row pays: the author of the note a repost carries,
+    /// never the person who reposted it.
+    private var zapRecipient: String {
+        FeedService.shared.originalNote(for: note).pubkey
+    }
+
     /// True while an empty-content repost is waiting for the note it reposted.
     private var isWaitingForRepostedNote: Bool {
         note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
             && rowData.resolvedOriginal == nil
     }
 
+    /// An empty-content repost whose original no relay returned (deleted, or
+    /// never reached anywhere we ask). Without this it said "Loading" forever.
+    private var repostedNoteIsUnavailable: Bool {
+        guard isWaitingForRepostedNote, let refId = note.repostedEventId else { return false }
+        return FeedService.shared.unavailableNoteIds.contains(refId)
+    }
+
     @ViewBuilder
     private var noteBodyContent: some View {
         // Content Body — for empty-content reposts this is the reposted note.
-        if isWaitingForRepostedNote {
+        if repostedNoteIsUnavailable {
+            Text(String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable"))
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+        } else if isWaitingForRepostedNote {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
@@ -2751,8 +3914,34 @@ struct FeedNoteRow: View {
             // title lives in a tag and its body is markdown, so the plain-text
             // path below drew the whole article raw and untitled.
             ArticleInlineBody(note: bodySource, isFocused: isFocused)
+        } else if let poll = bodySource.poll {
+            // A NIP-88 poll's question is its content and its options are
+            // tags, so the plain-text path drew the question with nothing
+            // to vote on. The question is drawn here, not by the card, so a
+            // picture or link in it goes through the same media path as any
+            // note — drawn as a plain string it showed only the bare URLs
+            // (Logen, 2026-10-07).
+            let attachments = bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs)
+            let question = NostrContentFormatter.format(bodySource.content, mediaURLs: attachments)
+            VStack(alignment: .leading, spacing: 8) {
+                if !String(question.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(question)
+                        .font(.appSystem(size: isFocused ? 19 : 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if !bodySource.mediaURLs.isEmpty {
+                    feedMediaCarousel(urls: bodySource.mediaURLs)
+                }
+                ForEach(LinkCards.shown(bodySource.linkURLs), id: \.self) { url in
+                    LinkPreviewCard(url: url)
+                }
+                PollCardView(poll: poll, isFocused: isFocused, showsQuestion: false)
+            }
+            .padding(.top, 4)
         } else {
-            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs)
+            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs))
             VStack(alignment: .leading, spacing: 8) {
                 Text(formattedContent)
                     .font(.appSystem(size: 17, weight: .regular, design: .default))
@@ -2760,6 +3949,7 @@ struct FeedNoteRow: View {
                     .lineSpacing(2)
                     .lineLimit(nil)
                     .textSelection(.enabled)
+                NoteTranslateButton(noteID: bodySource.id, content: bodySource.content, kind: bodySource.kind)
             }
             .padding(.top, 4)
 
@@ -2769,9 +3959,10 @@ struct FeedNoteRow: View {
                     .padding(.top, 4)
             }
 
-            // Link Preview
-            if !bodySource.linkURLs.isEmpty {
-                LinkPreviewCard(url: bodySource.linkURLs[0])
+            // Link previews — the text no longer carries the URLs, so every
+            // link gets its card.
+            ForEach(LinkCards.shown(bodySource.linkURLs), id: \.self) { url in
+                LinkPreviewCard(url: url)
                     .padding(.top, 4)
             }
         }
@@ -2780,7 +3971,12 @@ struct FeedNoteRow: View {
         if !bodySource.quotedEventIds.isEmpty {
             VStack(spacing: 8) {
                 ForEach(bodySource.quotedEventIds, id: \.self) { quoteId in
-                    if let quotedNote = actions.findNote(quoteId) {
+                    if let quotedNote = actions.findNote(quoteId), let stream = LiveStream(note: quotedNote) {
+                        // Not wrapped in a link: the tap plays the stream, and
+                        // a stream event has no thread to open.
+                        LiveStreamEmbedView(stream: stream)
+                            .transition(Self.arrivalTransition)
+                    } else if let quotedNote = actions.findNote(quoteId) {
                         NoteNavigationLink(note: quotedNote) {
                             QuotedNoteView(note: quotedNote)
                         }
@@ -2804,14 +4000,17 @@ struct FeedNoteRow: View {
         }
 
 
-        // Actions row - minimal and clean
-        HStack(spacing: 12) {
-            actionButton(icon: "message", action: { onReply?() })
+        // Actions row - minimal and clean. Where the caller fetched the
+        // numbers (profiles), each button carries its own count.
+        let engagement = rowData.engagement
+        HStack(spacing: engagement == nil ? 12 : 8) {
+            actionButton(icon: "message", count: engagement?.replies, countLabel: "replies", action: { onReply?() })
                 .accessibilityLabel("Reply")
 
             actionButton(
                 icon: "arrow.2.squarepath",
                 color: rowData.isReposted ? .green : .secondary,
+                count: engagement?.reposts, countLabel: "reposts",
                 action: {
                     actions.repostNote(note)
                     Motion.firePulse($repostPulse)
@@ -2821,52 +4020,63 @@ struct FeedNoteRow: View {
             .scaleEffect(repostPulse ? Motion.pulseScale : 1.0)
             .animation(Motion.pop, value: repostPulse)
 
-            actionButton(icon: "quote.closing", action: { onQuote?() })
+            actionButton(icon: "quote.closing", count: engagement?.quotes, countLabel: "quotes", action: { onQuote?() })
                 .accessibilityLabel("Quote")
 
             if !rowData.zapsOnlyMode {
-                actionButton(
-                    icon: rowData.isLiked ? "heart.fill" : "heart",
-                    color: rowData.isLiked ? .red : .secondary,
-                    action: { toggleLike() }
-                )
-                .accessibilityLabel(rowData.isLiked ? "Unlike" : "Like")
-                .scaleEffect(likePulse ? Motion.pulseScale : 1.0)
-                .animation(Motion.pop, value: likePulse)
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5)
-                        .onEnded { _ in
-                            #if os(iOS)
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            #endif
-                            showingEmojiPicker = true
+                reactionButton
+                    .popover(isPresented: $showingEmojiPicker) {
+                        EmojiPickerView { emoji in
+                            pickReaction(emoji)
                         }
-                )
-                .popover(isPresented: $showingEmojiPicker) {
-                    EmojiPickerView { emoji in
-                        actions.reactToNote(note, emoji)
+                        #if os(iOS)
+                        .presentationDetents([.height(520)])
+                        #endif
                     }
-                    #if os(iOS)
-                    .presentationDetents([.height(520)])
+                    #if os(macOS)
+                    .popover(isPresented: $showingTapbackPopover, arrowEdge: .top) {
+                        ReactionTapbackBar(
+                            options: ReactionTapback.options(defaultContent: ConfigService.shared.config.defaultReactionEmoji),
+                            current: rowData.isLiked ? reactionDisplayEmoji(rowData.myReaction ?? "+") : nil,
+                            highlighted: nil
+                        ) { index in
+                            showingTapbackPopover = false
+                            let options = ReactionTapback.options(defaultContent: ConfigService.shared.config.defaultReactionEmoji)
+                            if index < options.count {
+                                pickReaction(options[index])
+                            } else {
+                                // One popover has to finish closing before the next opens.
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    showingEmojiPicker = true
+                                }
+                            }
+                        }
+                        .padding(6)
+                    }
                     #endif
-                }
             }
 
-            if rowData.hasNWC {
-                let lud16 = actions.getLightningAddress(note.pubkey)
+            if rowData.hasNWC && PostButtons.showsZap(postButtons) {
+                let lud16 = actions.getLightningAddress(zapRecipient)
                 let isZapped = rowData.zapAmount != nil
                 let hasLightning = lud16 != nil
-                Image(systemName: isZapped ? "bolt.fill" : "bolt")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
-                    .frame(width: 32, height: 32)
+                HStack(spacing: 4) {
+                    Image(systemName: isZapped ? "bolt.fill" : "bolt")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
+                    countText(engagement?.zapSats)
+                }
+                    .padding(.horizontal, (engagement?.zapSats ?? 0) > 0 ? 10 : 0)
+                    .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
                     .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
+                    .zapFlightTarget(zapBoltAnchor)
+                    .overlay { ZapBurstView(isAnimating: $showLightning) }
                     .scaleEffect(zapPulse ? Motion.pulseScale : 1.0)
                     .animation(Motion.pop, value: zapPulse)
                     .contentShape(Capsule())
                     .accessibilityLabel(isZapped ? "Zapped" : "Zap")
+                    .accessibilityValue(countLabel(engagement?.zapSats, "sats zapped"))
                     .accessibilityHint(hasLightning ? "Tap to send sats" : "No lightning address")
                     .onLongPressGesture {
                         if hasLightning {
@@ -2882,41 +4092,65 @@ struct FeedNoteRow: View {
                                 let sent = await actions.zapNote(note, lud16, nil)
                                 if sent { Motion.firePulse($zapPulse) }
                             }
-                            showLightning = true
+                            // Sats fly from your avatar to this button and
+                            // burst on landing; with nowhere to fly from (or
+                            // Reduce Motion) the burst plays on its own.
+                            if !ZapFlightCoordinator.shared.launch(to: zapBoltAnchor, onArrive: { showLightning = true }) {
+                                showLightning = true
+                            }
                         } else {
                             noLightningAddressAlert = true
                         }
                     }
+            } else if let sats = engagement?.zapSats, sats > 0 {
+                // No wallet to zap from, but the sats others sent still show.
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.fill")
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.85))
+                    countText(sats)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(Color.secondary.opacity(0.1))
+                .clipShape(Capsule())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(countLabel(sats, "sats zapped"))
             }
 
-            ShareLink(
-                item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
-                subject: Text(String(localized: "feed.share.subject")),
-                message: Text(String(localized: "feed.share.message"))
-            ) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Capsule())
-            }
+            actionButton(icon: "antenna.radiowaves.left.and.right", action: { showingBroadcastSheet = true })
+                .accessibilityLabel("Event Info")
 
-            Button {
-                showingBroadcastSheet = true
-            } label: {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Capsule())
+            // Your own posts have no path to show.
+            if zapRecipient != ConfigService.shared.activeAccountHexPubkey {
+                actionButton(icon: "point.3.connected.trianglepath.dotted", action: { showingTrustWeb = true })
+                    .accessibilityLabel("Web of Trust")
+                    .accessibilityHint("Shows how you're connected to the author")
             }
-            .buttonStyle(.plain)
 
             Spacer()
         }
         .padding(.top, 4)
+    }
+
+    /// A button's count, compact ("2.1k", "64+"), or nothing for zero.
+    @ViewBuilder
+    private func countText(_ value: Int?) -> some View {
+        if let value, value > 0, let engagement = rowData.engagement {
+            Text(engagement.display(value))
+                .font(.appSystem(size: 12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    /// The count as VoiceOver reads it: "at least 64 likes" when it is a lower bound.
+    private func countLabel(_ value: Int?, _ noun: String) -> String {
+        guard let value, value > 0, let engagement = rowData.engagement else { return "" }
+        let lowerBound = engagement.isLowerBound && value >= PostEngagement.lowerBoundFrom
+        return lowerBound ? "at least \(value) \(noun)" : "\(value) \(noun)"
     }
 
     var body: some View {
@@ -2952,18 +4186,21 @@ struct FeedNoteRow: View {
                 actions.fetchMissingNote(qId)
             }
         }
-        .overlay {
-            LightningAnimationView(isAnimating: $showLightning)
-                .allowsHitTesting(false)
-        }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                if let lud16 = actions.getLightningAddress(note.pubkey) {
+                if let lud16 = actions.getLightningAddress(zapRecipient) {
                     Task {
                         let sent = await actions.zapNote(note, lud16, amount)
                         if sent { Motion.firePulse($zapPulse) }
                     }
-                    showLightning = true
+                    // Same strike as a tap, once the amount sheet has slid
+                    // away — launched under it, the bolt would cross a
+                    // screen the sheet still covers.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if !ZapFlightCoordinator.shared.launch(to: zapBoltAnchor, onArrive: { showLightning = true }) {
+                            showLightning = true
+                        }
+                    }
                 }
             }
             #if os(iOS)
@@ -2976,10 +4213,8 @@ struct FeedNoteRow: View {
             if url.scheme == "nostr" {
                 let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
                 if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
-                    if let decoded = Bech32.decode(identifier) {
-                        onProfile?(decoded.hexString)
-                    } else {
-                        onProfile?(identifier)
+                    if let pubkey = QuoteReference.profilePubkey(fromBech32: identifier) {
+                        onProfile?(pubkey)
                     }
                     return .handled
                 }
@@ -2988,11 +4223,17 @@ struct FeedNoteRow: View {
                     return .handled
                 }
             }
+            // A #hashtag goes up to the screen that presents hashtag feeds.
+            if HashtagLink.tag(from: url) != nil {
+                inheritedOpenURL(url)
+                return .handled
+            }
             return .systemAction
         })
         .sheet(isPresented: $showingBroadcastSheet) {
             EventBroadcastSheet(note: note)
         }
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: zapRecipient)
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteIdInRow.map { IdentifiableString(id: $0) } },
             set: { showingNoteIdInRow = $0?.id }
@@ -3021,6 +4262,22 @@ struct FeedNoteRow: View {
         } message: {
             Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
         }
+        .sheet(isPresented: $showingReportSheet) {
+            UGCReportingDialog(eventId: bodySource.id, pubkey: bodySource.pubkey, onDismiss: { showingReportSheet = false }) { }
+        }
+        .alert("Block User", isPresented: $showingBlockConfirm) {
+            Button("Block", role: .destructive) {
+                actions.blockUser(rowData.displayPubkey)
+                ActionToastManager.shared.show(
+                    icon: "hand.raised.fill",
+                    message: "Blocked \(rowData.displayProfile?.bestName ?? "user")",
+                    color: .red
+                )
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Block this user? Their posts will be hidden from your feed.")
+        }
         .onDisappear { showingUserMenu = false; menuExpanded = false; showingParentUserMenu = false; parentMenuExpanded = false }
     }
 
@@ -3029,6 +4286,10 @@ struct FeedNoteRow: View {
     private func toggleUserMenu() {
         if showingUserMenu {
             dismissMenu(expanded: $menuExpanded, showing: $showingUserMenu)
+        } else if FillYourVaultCoordinator.shared.meterShowing {
+            // Fill your feed: the photo opens the profile card like the name,
+            // rather than a Follow button that skips looking first.
+            onProfile?(rowData.displayPubkey)
         } else if !rowData.isOwnNote {
             withAnimation(Motion.panel) {
                 showingUserMenu = true
@@ -3042,6 +4303,8 @@ struct FeedNoteRow: View {
     private func toggleParentUserMenu() {
         if showingParentUserMenu {
             dismissMenu(expanded: $parentMenuExpanded, showing: $showingParentUserMenu)
+        } else if FillYourVaultCoordinator.shared.meterShowing, let parent = rowData.parentNote {
+            onProfile?(parent.pubkey)
         } else {
             withAnimation(Motion.panel) {
                 showingParentUserMenu = true
@@ -3085,6 +4348,73 @@ struct FeedNoteRow: View {
         }
     }
 
+    /// The ⋯ menu on the note header: the secondary actions that do not
+    /// fit the action bar, in the same order as Android's NoteCard menu.
+    /// On a repost every item acts on the original the row shows, not the
+    /// reposter: Android keys its menu on effectiveEventId the same way.
+    private var moreMenu: some View {
+        Menu {
+            ShareLink(
+                item: URL(string: "https://mynostrspace.com/thread/\(bodySource.nevent)")!,
+                subject: Text(String(localized: "feed.share.subject")),
+                message: Text(String(localized: "feed.share.message"))
+            ) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                copyToPasteboard("https://mynostrspace.com/thread/\(bodySource.nevent)")
+                ActionToastManager.shared.show(icon: "link", message: "Link copied")
+            } label: {
+                Label("Copy Link", systemImage: "link")
+            }
+            if !bodySource.content.isEmpty {
+                Button {
+                    copyToPasteboard(bodySource.content.trimmingCharacters(in: .whitespacesAndNewlines))
+                    ActionToastManager.shared.show(icon: "doc.on.doc", message: "Text copied")
+                } label: {
+                    Label("Copy Text", systemImage: "doc.on.doc")
+                }
+            }
+            Divider()
+            if rowData.isOwnNote {
+                Button(role: .destructive) {
+                    showingDeleteConfirm = true
+                } label: {
+                    Label("Delete Post", systemImage: "trash")
+                }
+            } else {
+                Button(role: .destructive) {
+                    showingReportSheet = true
+                } label: {
+                    Label("Report Post", systemImage: "flag.fill")
+                }
+                Button(role: .destructive) {
+                    showingBlockConfirm = true
+                } label: {
+                    Label("Block User", systemImage: "hand.raised.fill")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.appSystem(size: 14, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 28, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
+    }
+
+    private func copyToPasteboard(_ string: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+        #else
+        UIPasteboard.general.string = string
+        #endif
+    }
+
     @ViewBuilder
     private func glassToolbar(pubkey: String, displayName: String, isFollowed: Bool, expanded: Bool, dismiss: @escaping () -> Void) -> some View {
         VStack(spacing: 2) {
@@ -3094,15 +4424,7 @@ struct FeedNoteRow: View {
                 else { actions.followUser(pubkey) }
                 dismiss()
             }
-            glassIcon("tortoise.fill", tint: .orange, expanded: expanded, index: 1) {
-                actions.throttleUser(pubkey, 3)
-                ActionToastManager.shared.show(
-                    icon: "tortoise.fill",
-                    message: "Slowed down \(displayName)"
-                )
-                dismiss()
-            }
-            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 2) {
+            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 1) {
                 actions.blockUser(pubkey)
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",
@@ -3135,17 +4457,23 @@ struct FeedNoteRow: View {
         )
     }
 
-    private func actionButton(icon: String, color: Color = .secondary, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, color: Color = .secondary, count: Int? = nil, countLabel noun: String = "",
+                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(color)
-            .frame(width: 32, height: 32)
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(color)
+                countText(count)
+            }
+            .padding(.horizontal, (count ?? 0) > 0 ? 10 : 0)
+            .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
             .background(color.opacity(color == .secondary ? 0.1 : 0.15))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .contentShape(Capsule())
+        .accessibilityValue(countLabel(count, noun))
         #if os(macOS)
         .onHover { inside in
             // Handle hover state if needed, though .hoverEffect handles it on iOS
@@ -3176,17 +4504,18 @@ struct FeedNoteRow: View {
                     url: url,
                     onTap: { onMedia?(url, urls) },
                     maxHeight: 400,
-                    isThumbnail: false
+                    isThumbnail: false,
+                    fillsFrame: true
                 )
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
                 #if os(iOS)
                 .transition(.opacity.animation(Motion.media))
                 #endif
             }
+            // Every page fills the whole carousel (fillsFrame) rather than
+            // sitting letterboxed in it.
             .frame(height: 400)
-            // Add a subtle border or background if desired to distinguish bounds
-            // But FeedMediaView already has clipShape and overlay
         }
     }
 
@@ -3232,6 +4561,97 @@ struct FeedNoteRow: View {
     /// liking direction pulses — a pulse is confirmation of the tap that just
     /// happened, not a description of the resulting state, so it must not
     /// also fire when a like arrives from backfill or another client.
+    /// The account's reaction as it should read on the button, if any.
+    private var shownReaction: String? {
+        guard rowData.isLiked else { return nil }
+        return reactionDisplayEmoji(rowData.myReaction ?? "+")
+    }
+
+    /// Tap: react with the default, or take the reaction back. Hold: the
+    /// tapback bar (see `ReactionTapback`); sliding onto an emoji and letting
+    /// go sends it.
+    @ViewBuilder
+    private var reactionButton: some View {
+        let shown = shownReaction
+        let likes = rowData.engagement?.likes
+        HStack(spacing: 4) {
+            if let shown, shown != "❤️" {
+                Text(shown)
+                    .font(.system(size: 16))
+            } else {
+                Image(systemName: shown == nil ? "heart" : "heart.fill")
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(shown == nil ? .secondary : .red)
+            }
+            countText(likes)
+        }
+        .padding(.horizontal, (likes ?? 0) > 0 ? 10 : 0)
+        .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
+        .background(shown == nil ? Color.secondary.opacity(0.1)
+                    : shown == "❤️" ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.18))
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .scaleEffect(likePulse ? Motion.pulseScale : 1.0)
+        .animation(Motion.pop, value: likePulse)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { reactionButtonFrame = $0 }
+        .onTapGesture { toggleLike() }
+        #if os(iOS)
+        .gesture(
+            LongPressGesture(minimumDuration: 0.35)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+                .updating($holdingReaction) { value, holding, _ in
+                    if case .second(true, _) = value { holding = true }
+                }
+                .onChanged { value in
+                    if case .second(true, let drag?) = value {
+                        ReactionTapback.shared.track(drag.location)
+                    }
+                }
+        )
+        .onChange(of: holdingReaction) { _, holding in
+            if holding {
+                openTapback()
+            } else {
+                ReactionTapback.shared.release()
+            }
+        }
+        // Torn down mid-hold, the row can no longer end it.
+        .onDisappear { ReactionTapback.shared.close(for: note.id) }
+        #else
+        .onLongPressGesture(minimumDuration: 0.35) { showingTapbackPopover = true }
+        #endif
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(shown.map { "Your reaction: \($0)" } ?? "React")
+        .accessibilityValue(countLabel(likes, "likes"))
+        .accessibilityHint(shown == nil ? "Hold for more reactions" : "Removes your reaction. Hold to change it")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { toggleLike() }
+        .accessibilityAction(named: "More reactions") { showingEmojiPicker = true }
+    }
+
+    #if os(iOS)
+    private func openTapback() {
+        ReactionTapback.shared.begin(
+            noteId: note.id,
+            anchor: reactionButtonFrame,
+            current: shownReaction,
+            defaultContent: ConfigService.shared.config.defaultReactionEmoji,
+            onPick: { pickReaction($0) },
+            onMore: { showingEmojiPicker = true }
+        )
+    }
+    #endif
+
+    /// Sends `emoji` as the reaction; picking the one already sent takes it back.
+    private func pickReaction(_ emoji: String) {
+        if emoji == shownReaction {
+            actions.unlikeNote(note)
+        } else {
+            actions.reactToNote(note, emoji)
+            Motion.firePulse($likePulse)
+        }
+    }
+
     private func toggleLike() {
         if rowData.isLiked {
             actions.unlikeNote(note)
@@ -3444,13 +4864,22 @@ struct AvatarView: View {
     let url: URL?
     let pubkey: String
     var size: CGFloat = 40
+    /// A neutral silhouette instead of the coloured initial, for lists where
+    /// a pubkey's first hex digit would read as noise.
+    var neutralPlaceholder = false
     @State private var image: PlatformImage?
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(avatarGradient)
-                .frame(width: size, height: size)
+            if neutralPlaceholder {
+                Circle()
+                    .fill(Color.platformTertiaryGroupedBackground)
+                    .frame(width: size, height: size)
+            } else {
+                Circle()
+                    .fill(avatarGradient)
+                    .frame(width: size, height: size)
+            }
 
             if let image = image {
                 Image(platformImage: image)
@@ -3458,6 +4887,11 @@ struct AvatarView: View {
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(Circle())
+            } else if neutralPlaceholder {
+                Image(systemName: "person.fill")
+                    .font(.appSystem(size: size * 0.45))
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .offset(y: size * 0.04)
             } else {
                 Text(String(pubkey.prefix(1)).uppercased())
                     .font(.appSystem(size: max(8, size * 0.325), weight: .bold, design: .monospaced))
@@ -3518,7 +4952,7 @@ struct AvatarView: View {
 /// Placeholder for a quote whose note hasn't arrived. Mirrors `QuotedNoteView`'s
 /// header and a two-line body (redacted) so the card holds roughly its final
 /// height instead of growing out of nothing.
-private struct QuotedNoteSkeleton: View {
+struct QuotedNoteSkeleton: View {
     @State private var shimmer = false
 
     var body: some View {
@@ -3617,3 +5051,211 @@ struct FeedNoteSkeletonRow: View {
     }
 }
 
+/// Which feed rows are on screen. Reference type on purpose: it changes on
+/// every scroll, and nothing should re-render for that — it is read only when
+/// the layout switches.
+final class FeedVisibleRows {
+    var ids: Set<String> = []
+}
+
+extension View {
+    /// Keeps `rows` knowing whether this row is on screen.
+    @ViewBuilder
+    func trackFeedVisibility(_ id: String, in rows: FeedVisibleRows) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            self
+                .onScrollVisibilityChange(threshold: 0.3) { visible in
+                    if visible { rows.ids.insert(id) } else { rows.ids.remove(id) }
+                }
+                .onDisappear { rows.ids.remove(id) }
+        } else {
+            self
+        }
+    }
+}
+
+#if os(iOS)
+/// The feed picker in the top-left of the feed. Equatable on the values it
+/// shows, so it does not rebuild for unrelated FeedService changes while open.
+struct FeedPickerMenu: View, Equatable {
+    let mode: FeedMode
+    let connectionStatus: String
+    let dotColor: Color
+    let isCompactWidth: Bool
+    /// The feeds to list, in the reader's order.
+    let modes: [FeedMode]
+    let onSelect: (FeedMode) -> Void
+    let onEdit: () -> Void
+    let onDashboard: () -> Void
+
+    static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
+        lhs.mode == rhs.mode
+            && lhs.modes == rhs.modes
+            && lhs.connectionStatus == rhs.connectionStatus
+            // The dot also follows relay health while the status stays "Live".
+            && lhs.dotColor == rhs.dotColor
+            && lhs.isCompactWidth == rhs.isCompactWidth
+    }
+
+    var body: some View {
+        Menu {
+            Picker(selection: Binding(
+                get: { mode },
+                set: { onSelect($0) }
+            )) {
+                ForEach(modes, id: \.self) { mode in
+                    Label(mode.displayName, systemImage: mode.symbolName)
+                        .tag(mode)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            // Your network's day. Activity only; feed settings are in Settings > Feed.
+            Button(action: onDashboard) {
+                Label("Dashboard", systemImage: "square.grid.2x2")
+            }
+
+            // Last, at the bottom of the list it edits.
+            Button(action: onEdit) {
+                Label("Edit Feeds", systemImage: "slider.horizontal.3")
+            }
+        } label: {
+            HStack(spacing: 0) {
+                // No glass ring of its own: glassEffect takes touches even
+                // with hit testing off, which left the icon the one spot that
+                // did not open the menu. Folded, the pill itself is the ring.
+                Image(systemName: mode.symbolName)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 30, height: 30)
+                    .overlay(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(dotColor)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: dotColor.opacity(0.6), radius: 2)
+                            .offset(x: -1, y: -1)
+                    }
+
+                // Always laid out, only faded: removing it would resize the
+                // toolbar item and make the navigation bar relayout mid-fold.
+                ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
+                    HStack(spacing: 3) {
+                        Text(mode.displayName)
+                            .font(.appSystem(size: 17, weight: .bold))
+                        Image(systemName: "chevron.down")
+                            .font(.appSystem(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 12)
+                }
+            }
+            .padding(.leading, 7)
+            .padding(.vertical, 7)
+            // The toolbar proposes a narrow width; without this the feed
+            // name truncates away and only the icon and chevron are left.
+            .fixedSize()
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Feed: \(mode.displayName)")
+        .accessibilityValue(connectionStatus)
+        .accessibilityHint("Switch feeds or open the feed dashboard")
+    }
+}
+#endif
+
+// MARK: - Feed picker editor
+
+/// Show, hide and reorder the feeds in the feed picker. Following is the
+/// home feed, so it is always shown. Hiding the feed you're on takes you
+/// back to Following.
+struct FeedMenuEditor: View {
+    let onDismiss: () -> Void
+    @AppStorage(FeedMode.menuOrderKey) private var orderRaw = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var hiddenRaw = ""
+    @State private var order: [FeedMode] = []
+    @State private var hidden: Set<FeedMode> = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(order, id: \.self) { mode in
+                        row(mode)
+                    }
+                    .onMove { from, to in
+                        order.move(fromOffsets: from, toOffset: to)
+                        save()
+                    }
+                } footer: {
+                    Text("Tap a feed to show or hide it. Drag to change the order. Following is always shown.")
+                }
+                Section {
+                    Button("Reset to Default") {
+                        order = FeedMode.allCases
+                        hidden = []
+                        save()
+                    }
+                    .disabled(order == FeedMode.allCases && hidden.isEmpty)
+                }
+            }
+            #if os(iOS)
+            // Always reorderable: the drag handles are the point of this screen.
+            .environment(\.editMode, .constant(.active))
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .navigationTitle("Edit Feeds")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+        .onAppear {
+            order = FeedMode.menuOrder(orderRaw)
+            hidden = Set(FeedMenuOrder.decode(hiddenRaw).compactMap(FeedMode.init(rawValue:)))
+        }
+    }
+
+    private func row(_ mode: FeedMode) -> some View {
+        let isPinned = mode == .following
+        let isShown = isPinned || !hidden.contains(mode)
+        return Button {
+            guard !isPinned else { return }
+            if isShown { hidden.insert(mode) } else { hidden.remove(mode) }
+            save()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isShown ? "checkmark.circle.fill" : "circle")
+                    .font(.appSystem(size: 20))
+                    .foregroundColor(isShown ? (isPinned ? .secondary : .havenPurple) : .secondary)
+                Image(systemName: mode.symbolName)
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .foregroundColor(isShown ? .havenPurple : .secondary)
+                    .frame(width: 24)
+                Text(mode.displayName)
+                    .foregroundColor(isShown ? .primary : .secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(mode.displayName))
+        .accessibilityValue(Text(isShown ? "Shown" : "Hidden"))
+        .accessibilityHint(isPinned ? Text("Always shown") : Text("Shows or hides this feed"))
+    }
+
+    private func save() {
+        orderRaw = order == FeedMode.allCases ? "" : FeedMenuOrder.encode(order.map(\.rawValue))
+        hiddenRaw = FeedMenuOrder.encode(order.filter { hidden.contains($0) }.map(\.rawValue))
+        // Hiding the feed you're on would leave the picker without it.
+        let feedService = FeedService.shared
+        if hidden.contains(feedService.feedMode) { feedService.switchMode(.following) }
+    }
+}

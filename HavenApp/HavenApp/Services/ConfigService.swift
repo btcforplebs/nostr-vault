@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Combine
 #if canImport(ServiceManagement)
 import ServiceManagement
 #endif
@@ -11,13 +12,32 @@ import AppKit
 @MainActor
 class ConfigService: ObservableObject {
     static let shared = ConfigService()
-    @Published var config: HavenConfig
+    @Published var config: HavenConfig {
+        didSet {
+            if config.blockedRelays != oldValue.blockedRelays { RelayBlocklist.set(config.blockedRelays) }
+        }
+    }
     @Published var isSwitchingAccount: Bool = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
     /// whenever the active account changes.
     @Published private(set) var activeAccountHexPubkey: String = ""
+
+    /// Each switch of the active account, as its hex pubkey, delivered on the
+    /// main queue once `config` already names the new account. Leaves out the
+    /// current value and setup's first account (see `isAccountSwitch`).
+    var activeAccountSwitches: AnyPublisher<String, Never> {
+        $activeAccountHexPubkey
+            .scan((previous: String?.none, current: String?.none)) { ($0.current, $1) }
+            .compactMap { pair -> String? in
+                guard let previous = pair.previous, let current = pair.current,
+                      HavenConfig.isAccountSwitch(from: previous, to: current) else { return nil }
+                return current
+            }
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
     
     // Config stored in App Support (standard macOS location for app preferences/state)
     private let configURL: URL
@@ -91,6 +111,7 @@ class ConfigService: ObservableObject {
         }
         
         loadRelayLists()
+        removeStarterPackPicksFromAccounts()
         
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,6 +129,7 @@ class ConfigService: ObservableObject {
 
         // Seed the @Published hex pubkey from the loaded config
         refreshActiveAccountHex()
+        RelayBlocklist.set(config.blockedRelays)
     }
     
     func reload() {
@@ -239,8 +261,6 @@ class ConfigService: ObservableObject {
         
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         
-        writeStarterPackSeeds(encoder: encoder)
-
         if !config.blastrRelays.isEmpty {
             let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
             if let data = try? encoder.encode(config.blastrRelays) {
@@ -253,12 +273,12 @@ class ConfigService: ObservableObject {
              }
         }
 
-        // Save whitelisted npubs
-        if !config.whitelistedNpubs.isEmpty {
-            let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
-            if let data = try? encoder.encode(config.whitelistedNpubs) {
-                try? data.write(to: npubsURL)
-            }
+        // Save whitelisted npubs. Written even when empty: loadRelayLists reads
+        // this file back over config.json, so skipping the write when the list
+        // is emptied brings the last removed account back on the next launch.
+        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: npubsURL)
         }
         
         // Save blacklisted npubs
@@ -285,50 +305,6 @@ class ConfigService: ObservableObject {
         }
         #endif
     }
-    /// Create the required files for Haven to run (.env, relay JSON files)
-    func createRequiredFiles() {
-        // Create relay data directory if needed
-        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-        
-        // Create .env file - handled by RelayProcessManager on first run/setup
-        let envContent = RelayConfiguration.formatEnvFile(from: RelayConfiguration.generateEnvDictionary(config: config, relayDataDir: relayDataDir))
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_import.json
-        let importRelays = """
-        [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-            "wss://nostr.mom",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net"
-        ]
-        """
-        let importURL = relayDataDir.appendingPathComponent("relays_import.json")
-        try? importRelays.write(to: importURL, atomically: true, encoding: .utf8)
-        
-        // Create relays_blastr.json
-        let blastrRelays = """
-        [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-            "wss://nostr.mom",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net"
-        ]
-        """
-        let blastrURL = relayDataDir.appendingPathComponent("relays_blastr.json")
-        try? blastrRelays.write(to: blastrURL, atomically: true, encoding: .utf8)
-        
-        // Create blossom directory
-        let blossomDir = relayDataDir.appendingPathComponent("blossom")
-        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-        
-        #if DEBUG
-        print("Created Haven config files at: \(relayDataDir.path)")
-        #endif
-    }
     
     /// Perform a factory reset: delete data and config using FileManager
     func resetApp() {
@@ -347,6 +323,10 @@ class ConfigService: ObservableObject {
         
         // 3. Reset in-memory config
         config = HavenConfig.default
+        // The account went with it; services listening for a switch drop its state.
+        refreshActiveAccountHex()
+        // The relay's certificate went with its data folder; a new one is coming.
+        LocalTLSTrust.forgetAll()
     }
     
     /// Programmatically quit the application
@@ -473,8 +453,11 @@ class ConfigService: ObservableObject {
         let previousNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
         // Also stop a connect still in flight — otherwise it lands after the
         // switch and the new account's posts go to the old account's signer.
+        // The previous account's signer session stays connected in the
+        // background (switching back is then instant); only stop treating it
+        // as the active signer.
         if hasBunkerConfig(forNpub: previousNpub) && NIP46Service.shared.connectionState != .disconnected {
-            NIP46Service.shared.disconnect()
+            NIP46Service.shared.detachForAccountSwitch()
         }
 
         isSwitchingAccount = true
@@ -532,6 +515,24 @@ class ConfigService: ObservableObject {
         return nil
     }
     
+    /// Undoes what the old Discover Accounts step did: it saved the people
+    /// picked there as extra accounts instead of following them. Removes those
+    /// starter-pack npubs from the account list unless this device holds a key
+    /// or signer for one, in which case the user added it on purpose.
+    private func removeStarterPackPicksFromAccounts() {
+        let kept = ContactManager.accountsWithoutStarterPackPicks(config.whitelistedNpubs) { npub in
+            hasCredential(forNpub: npub) || hasBunkerConfig(forNpub: npub)
+        }
+        guard kept.count != config.whitelistedNpubs.count else { return }
+        let removed = Set(config.whitelistedNpubs).subtracting(kept)
+        config.whitelistedNpubs = kept
+        if removed.contains(config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            config.activeAccountNpub = ""
+        }
+        // Not RelayProcessManager.addLog: this runs inside ConfigService.init.
+        print("ConfigService: removed \(removed.count) starter-pack account(s) that setup added by mistake")
+    }
+
     /// Returns whether a signing credential is stored for the given npub.
     func hasCredential(forNpub npub: String) -> Bool {
         guard let stored = config.accountCredentials[npub] else { return false }
@@ -548,6 +549,16 @@ class ConfigService: ObservableObject {
     // MARK: - Per-Account NIP-46 Bunker Configuration
 
     func setBunkerConfig(_ bunkerConfig: AccountBunkerConfig, forNpub npub: String) {
+        // Paired again (new client key or signer): close the old live session,
+        // or switching to this account would reuse it instead of the new link.
+        if let old = config.accountBunkerConfigs[npub],
+           old.clientPubkey != bunkerConfig.clientPubkey || old.signerPubkey != bunkerConfig.signerPubkey {
+            NIP46Service.dropSession(signerKey: NIP46Service.signerKey(bunkerURI: old.bunkerURI, signerPubkey: old.signerPubkey))
+            // The active account's session is gone: stop calling it connected,
+            // so the connect that follows actually runs.
+            let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+            if npub == activeNpub { NIP46Service.shared.detachForAccountSwitch() }
+        }
         config.accountBunkerConfigs[npub] = bunkerConfig
         // Sync to global fields if this is the active account and signing mode is nip46
         let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
@@ -557,16 +568,17 @@ class ConfigService: ObservableObject {
         save()
     }
 
-    func getBunkerConfig(forNpub npub: String) -> AccountBunkerConfig? {
-        config.accountBunkerConfigs[npub]
-    }
-
     func hasBunkerConfig(forNpub npub: String) -> Bool {
         guard let cfg = config.accountBunkerConfigs[npub] else { return false }
         return !cfg.bunkerURI.isEmpty || !cfg.signerPubkey.isEmpty
     }
 
     func removeBunkerConfig(forNpub npub: String) {
+        if let old = config.accountBunkerConfigs[npub] {
+            NIP46Service.dropSession(signerKey: NIP46Service.signerKey(bunkerURI: old.bunkerURI, signerPubkey: old.signerPubkey))
+            let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+            if npub == activeNpub { NIP46Service.shared.detachForAccountSwitch() }
+        }
         config.accountBunkerConfigs.removeValue(forKey: npub)
         // If no accounts use NIP-46 anymore, reset global signing mode
         if config.accountBunkerConfigs.isEmpty {
@@ -728,49 +740,6 @@ class ConfigService: ObservableObject {
         free(cJSON)
     }
 
-    // MARK: - Throttle (Slow Down)
-
-    /// Returns the active browsing account's throttled hex pubkeys and their max visible post limits.
-    var activeAccountThrottledHexPubkeys: [String: Int] {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-        let throttled = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-
-        var hexMap: [String: Int] = [:]
-        for (npub, limit) in throttled {
-            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
-            if clean.isEmpty { continue }
-            if let decoded = Bech32.decode(clean) {
-                hexMap[decoded.hexString] = limit
-            }
-        }
-        return hexMap
-    }
-
-    func throttleProfile(_ npub: String, maxPosts: Int) {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-
-        var current = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        current[npub] = maxPosts
-        config.throttledAccountsPerAccount[targetNpub] = current
-        save()
-
-        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
-    }
-
-    func unthrottleProfile(_ npub: String) {
-        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
-
-        var current = config.throttledAccountsPerAccount[targetNpub] ?? [:]
-        current.removeValue(forKey: npub)
-        config.throttledAccountsPerAccount[targetNpub] = current
-        save()
-
-        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
-    }
-
     /// Whether a local URL can be rewritten to an external share link.
     /// Returns true for URLs that are already external, or local URLs when
     /// macRelayHttpsURL or an active Blossom mirror is configured.
@@ -811,39 +780,6 @@ class ConfigService: ObservableObject {
         }
 
         return url
-    }
-
-
-    /// Hands the bundled starter packs to the Go relay as a flat list of npubs.
-    ///
-    /// The relay seeds its Web of Trust from these when the owner follows
-    /// nobody — otherwise a new account's trust graph contains one pubkey,
-    /// itself, and every feed built on it shows either nothing or the open
-    /// firehose. The relay carries its own copy as a fallback for running
-    /// headless, but `starter_packs.json` in the app bundle is the source of
-    /// truth and this write is what keeps the two from drifting: edit the
-    /// bundled file and both the Initial Follows step and the trust graph
-    /// follow.
-    ///
-    /// Writing nothing is better than writing an empty list — the relay treats
-    /// an empty override as unusable and keeps its fallback, but leaving a
-    /// stale file behind would be worse.
-    private func writeStarterPackSeeds(encoder: JSONEncoder) {
-        guard let packs = StarterPacksData.load() else { return }
-        var seen = Set<String>()
-        var npubs: [String] = []
-        for pack in packs.packs {
-            for account in pack.accounts where !account.npub.isEmpty {
-                if seen.insert(account.npub).inserted {
-                    npubs.append(account.npub)
-                }
-            }
-        }
-        guard !npubs.isEmpty else { return }
-        let url = relayDataDir.appendingPathComponent("starter_pack.json")
-        if let data = try? encoder.encode(npubs) {
-            try? data.write(to: url)
-        }
     }
 
 }

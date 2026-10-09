@@ -119,11 +119,7 @@ class NostrService: ObservableObject {
 
         // React to active account switches — tear down old connections and event state.
         // Stored in configCancellable (not cancellables) so resetConnections() won't destroy it.
-        configCancellable = ConfigService.shared.$config
-            .map { $0.activeAccountNpub }
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        configCancellable = ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
                 self?.handleAccountSwitch()
             }
@@ -214,19 +210,38 @@ class NostrService: ObservableObject {
             }
     }
 
+    /// Asked for profile metadata on top of the broadcast relays; the same list
+    /// as Android's `PROFILE_RELAYS`. Without them a profile the phone had not
+    /// cached never loaded: of the default broadcast relays nos.lol and
+    /// nostr.mom are down and primal lacks most profiles, while purplepag.es
+    /// had every one tried (jack, ODELL, fiatjaf; 2026-10-06).
+    static let profileIndexRelays = [
+        "wss://offchain.pub",
+        "wss://relay.damus.io",
+        "wss://user.kindpag.es",
+        "wss://purplepag.es",
+    ]
+
     private func flushMetadataRequests() {
         guard !profileFetchQueue.isEmpty else { return }
         let pubkeys = Array(profileFetchQueue)
         profileFetchQueue.removeAll()
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
+        relays += Self.profileIndexRelays
+
+        // A lookup that found nothing must be able to run again, or a profile
+        // missed once stays a bare key until the app restarts.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self else { return }
+            for pubkey in pubkeys where self.profiles[pubkey] == nil {
+                self.profilesInFlight.remove(pubkey)
+            }
         }
 
         #if DEBUG
-        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Blastr relays")
+        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Read relays")
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
@@ -324,11 +339,8 @@ class NostrService: ObservableObject {
         guard (relayLists[pubkey] == nil || dmRelayLists[pubkey] == nil) && !relaysInFlight.contains(pubkey) else { return }
         relaysInFlight.insert(pubkey)
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
 
         // Include cached outbox (write) relays for this user — their kind 10002/10050
         // is most likely to be found on their own write relays.
@@ -434,6 +446,7 @@ class NostrService: ObservableObject {
         request.cachedProfiles = profiles
         request.own = Set([activeHexPubkey, ownerHexPubkey].filter { !$0.isEmpty })
         request.follows = Set(follows)
+        request.wot = FeedService.shared.webOfTrustForRanking
 
         let session = GlobalSearchSession(request: request) { [weak self] snapshot in
             guard let self = self else { return }
@@ -555,6 +568,12 @@ class NostrService: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// Bumped every time `events` is wiped by `resetConnections`. One-shot
+    /// fetches whose results live only in `events` (receipts pulled from feed
+    /// relays, notes fetched by id) compare against it to know they must run
+    /// again; the local relay subscription refills itself, they do not.
+    private(set) var eventsResetGeneration = 0
+
     func resetConnections() {
         for (urlString, subId) in activeSubscriptions {
             if let client = clients[urlString] {
@@ -619,6 +638,7 @@ class NostrService: ObservableObject {
 
         // 2. Clear Viewer tab event state — these belong to the previous account
         events.removeAll()
+        eventsResetGeneration += 1
         noteMedia.removeAll()
         clearSeen()
 
@@ -724,11 +744,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -742,17 +766,23 @@ class NostrService: ObservableObject {
                 } else {
                     // No credential stored — do NOT fall back to owner key, as that
                     // would silently post from the wrong account.
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -766,7 +796,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -792,20 +824,55 @@ class NostrService: ObservableObject {
             let targetUsesBunker = config.accountSigningModes[target] != "local"
                 && ConfigService.shared.hasBunkerConfig(forNpub: target)
             if targetUsesBunker {
+                #if DEBUG
                 print("NostrService: signEventAsync refused — \(target.prefix(20)) signs with a bunker and is not the active account")
+                #endif
                 return nil
             }
             return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target)
         }
 
+        #if DEBUG
         print("NostrService: signEventAsync mode=\(mode) activeNpub=\(config.activeAccountNpub.prefix(20)) ownerNpub=\(config.ownerNpub.prefix(20)) forceOwner=\(forceOwner)")
+        #endif
+
+        // Owner-only events (the local relay's AUTH) while another account is
+        // active: they used to go to the ACTIVE account's bunker, which cannot
+        // sign for the owner's key, so every reconnect sent a doomed request
+        // to that signer. Route them to the owner's own signer instead.
+        if forceOwner, !ownerHexPubkey.isEmpty, ownerHexPubkey != activeHexPubkey {
+            let ownerNpub = config.ownerNpub
+            let ownerUsesBunker = config.accountSigningModes[ownerNpub] == "nip46"
+                && ConfigService.shared.hasBunkerConfig(forNpub: ownerNpub)
+            guard ownerUsesBunker, let ownerSigner = config.accountBunkerConfigs[ownerNpub]?.signerPubkey, !ownerSigner.isEmpty else {
+                return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true)
+            }
+            let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
+            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: ownerHexPubkey, kind: kind, content: content, tags: finalTags)
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
+                  let jsonStr = String(data: jsonData, encoding: .utf8) else { return nil }
+            do {
+                // Only through a session that is already live; never a new
+                // login just for this.
+                let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr, withSigner: ownerSigner)
+                guard let data = signedJSON.data(using: .utf8) else { return nil }
+                return try JSONDecoder().decode(NostrEvent.self, from: data)
+            } catch {
+                #if DEBUG
+                print("NostrService: owner-signed kind \(kind) skipped — no live session for the owner's signer: \(error)")
+                #endif
+                return nil
+            }
+        }
 
         if mode == "nip46" {
             // Determine the signing pubkey from the active account (or owner if forced)
             let signingPubkey = forceOwner ? ownerHexPubkey : activeHexPubkey
 
             guard !signingPubkey.isEmpty else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - no pubkey available")
+                #endif
                 return nil
             }
 
@@ -814,26 +881,40 @@ class NostrService: ObservableObject {
 
             guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
                   let jsonStr = String(data: jsonData, encoding: .utf8) else {
+                #if DEBUG
                 print("NostrService: NIP-46 sign failed - JSON serialization error")
+                #endif
                 return nil
             }
 
             do {
+                #if DEBUG
                 print("NostrService: NIP-46 signing kind \(kind) event (tags=\(finalTags.map { $0.first ?? "?" })), sending to bunker…")
                 print("NostrService: NIP-46 outgoing event JSON: \(jsonStr.prefix(500))")
+                #endif
                 let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr)
+                #if DEBUG
                 print("NostrService: NIP-46 bunker returned \(signedJSON.prefix(300))")
+                #endif
                 guard let signedData = signedJSON.data(using: .utf8) else {
+                    #if DEBUG
                     print("NostrService: NIP-46 sign failed - response not valid UTF-8")
+                    #endif
                     return nil
                 }
                 let event = try JSONDecoder().decode(NostrEvent.self, from: signedData)
+                #if DEBUG
                 print("NostrService: NIP-46 signed event id=\(event.id.prefix(8)) pubkey=\(event.pubkey.prefix(8)) sig=\(event.sig.prefix(8))")
+                #endif
                 return event
             } catch {
+                #if DEBUG
                 print("NostrService: NIP-46 sign FAILED for kind \(kind): \(error)")
+                #endif
                 if kind == 24242 {
+                    #if DEBUG
                     print("NostrService: Blossom auth (kind 24242) signing failed — remote signer may not support this event kind or may require manual approval")
+                    #endif
                 }
                 return nil
             }
@@ -861,11 +942,15 @@ class NostrService: ObservableObject {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
+                        #if DEBUG
                         print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        #endif
                         return nil
                     }
                 } else {
+                    #if DEBUG
                     print("NostrService: NIP-49 key exists but no password in Keychain")
+                    #endif
                     return nil
                 }
             } else {
@@ -876,17 +961,23 @@ class NostrService: ObservableObject {
                 if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
                     sk = hexKey
                 } else {
+                    #if DEBUG
                     print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                    #endif
                     return nil
                 }
             } catch {
+                #if DEBUG
                 print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
                 return nil
             }
         }
 
         guard let sk = sk, !sk.isEmpty else {
+            #if DEBUG
             print("NostrService: Cannot sign - no private key available")
+            #endif
             return nil
         }
 
@@ -896,7 +987,9 @@ class NostrService: ObservableObject {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            #if DEBUG
             print("NostrService: Failed to serialize event to JSON")
+            #endif
             return nil
         }
 
@@ -1000,7 +1093,9 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10063 server list")
+                #endif
             }
         }
     }
@@ -1028,12 +1123,16 @@ class NostrService: ObservableObject {
     func publishDMRelayList(dmRelays: [String], signAsNpub: String? = nil) {
         let reachable = dmRelays.filter { !Self.isLoopbackRelay($0) }
         guard !reachable.isEmpty else {
+            #if DEBUG
             print("NostrService: No externally reachable DM relays, skipping Kind 10050 publish")
+            #endif
             return
         }
 
-        // Build ["r", relay_url] tags for DM relays
-        let tags = reachable.map { ["r", $0] }
+        // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
+        // which no other client reads — they saw an empty list and had nowhere
+        // to deliver our DMs.
+        let tags = reachable.map { ["relay", $0] }
 
         Task {
             if let event = await signEventAsync(kind: 10050, content: "", tags: tags, signAsNpub: signAsNpub) {
@@ -1042,28 +1141,49 @@ class NostrService: ObservableObject {
                 print("NostrService: Published Kind 10050 DM relay list with \(tags.count) relays")
                 #endif
             } else {
+                #if DEBUG
                 print("NostrService: Failed to sign Kind 10050 DM relay list")
+                #endif
             }
         }
     }
 
-    /// Republishes kind 10050 for every account that can sign.
+    /// NIP-51: publishes the owner's blocked relay list (kind 10006), the
+    /// relays set to Never connect. Public `relay` tags, empty content. An
+    /// empty list is published too, so unblocking the last relay clears it.
+    func publishBlockedRelayList() {
+        let config = ConfigService.shared.config
+        let tags = config.blockedRelays.map { ["relay", HavenConfig.normalizedRelayURL($0)] }
+        Task {
+            if let event = await signEventAsync(kind: 10006, content: "", tags: tags, signAsNpub: config.ownerNpub) {
+                postEvent(event)
+                #if DEBUG
+                print("NostrService: Published Kind 10006 blocked relay list with \(tags.count) relays")
+                #endif
+            } else {
+                #if DEBUG
+                print("NostrService: Failed to sign Kind 10006 blocked relay list")
+                #endif
+            }
+        }
+    }
+
+    /// Brings the owner's DM inbox list (kind 10050) into step across devices,
+    /// and republishes kind 10050 for every other account that can sign.
     ///
-    /// Builds shipped a 10050 that led with `wss://127.0.0.1:<port>`, which made
-    /// those accounts undeliverable — senders wrote the gift wrap to their own
-    /// machine. 10050 is a replaceable event, so putting a clean one out
-    /// overwrites the broken one on every relay that holds it, and from then on
-    /// *any* sender reaches them, including ones still running the old build.
-    /// That's why this isn't gated behind the publish-relay-list toggle the way
-    /// kind 10002 is: a broken 10050 silently breaks DMs, so healing it can't be
-    /// opt-in.
+    /// The owner's list is one list for all devices: the newest published
+    /// 10050 is adopted unless this device changed its list more recently, in
+    /// which case this device's list is published. Before, every device
+    /// republished its own settings at launch, so whichever device opened last
+    /// silently replaced the list the others had set.
+    ///
+    /// Publishing also heals lists from older builds (`wss://127.0.0.1:<port>`
+    /// entries, which made senders write the gift wrap to their own machine).
+    /// That's why this isn't gated behind the publish-relay-list toggle the
+    /// way kind 10002 is: a broken 10050 silently breaks DMs.
     @MainActor
     func republishDMRelayListsForSignableAccounts() {
         let config = ConfigService.shared.config
-        guard !config.isLocal else { return }
-
-        let reachable = config.dmRelays.filter { !Self.isLoopbackRelay($0) }
-        guard !reachable.isEmpty else { return }
 
         var accounts: [String] = config.whitelistedNpubs
         if !config.ownerNpub.isEmpty && !accounts.contains(config.ownerNpub) {
@@ -1071,12 +1191,33 @@ class NostrService: ObservableObject {
         }
 
         Task {
-            for npub in accounts {
-                let isOwner = npub == config.ownerNpub
-                let canSign = isOwner
-                    ? (!config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil || ConfigService.shared.hasBunkerConfig(forNpub: npub))
-                    : (ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub))
+            await syncOwnerDMInboxList()
+
+            // Not gated on `config.isLocal`: the dmRelays list is remote either
+            // way, and new-user setup always lands on a local relay URL.
+            // Other accounts keep the plain list: the owner's Haven inbox
+            // only takes DMs for the owner.
+            let reachable = ConfigService.shared.config.dmRelays.filter { !Self.isLoopbackRelay($0) }
+            guard !reachable.isEmpty else { return }
+            for npub in accounts where npub != config.ownerNpub {
+                let canSign = ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub)
                 guard canSign else { continue }
+
+                // Only when it would change something. This ran on every
+                // launch and signed the same list again every time; with a
+                // remote signer that is a request to the person's signer app
+                // for nothing, queued in front of whatever they do first. A
+                // published list we cannot read (nobody answered, or it holds
+                // loopback entries from an older build) still gets republished
+                // — healing those is why this is not behind a toggle.
+                if let hex = Bech32.decode(npub)?.hexString,
+                   let newest = await fetchNewestDMRelayList(for: hex, alsoAsk: reachable),
+                   Set(newest.relays) == Set(reachable) {
+                    #if DEBUG
+                    print("NostrService: DM relay list for \(npub.prefix(12))… already published and unchanged — not re-signing")
+                    #endif
+                    continue
+                }
 
                 publishDMRelayList(dmRelays: reachable, signAsNpub: npub)
                 try? await Task.sleep(nanoseconds: 500_000_000)
@@ -1084,27 +1225,419 @@ class NostrService: ObservableObject {
         }
     }
 
-    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event advertising this relay
-    /// as the account's inbox. Call when the user enables the toggle or on app launch.
+    /// Adopts or publishes the owner's DM inbox list — see
+    /// `republishDMRelayListsForSignableAccounts`.
     @MainActor
-    func publishRelayList(forNpub accountNpub: String) {
-        let config = ConfigService.shared.config
-        guard !config.isLocal else {
+    func syncOwnerDMInboxList() async {
+        let configService = ConfigService.shared
+        let config = configService.config
+        guard !config.ownerNpub.isEmpty,
+              let ownerHex = Bech32.decode(config.ownerNpub)?.hexString else { return }
+        let canSign = !config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil
+            || configService.hasBunkerConfig(forNpub: config.ownerNpub)
+
+        let newest = await fetchNewestDMRelayList(for: ownerHex, alsoAsk: config.dmInboxRelays)
+        let published = newest?.relays.filter { !Self.isLoopbackRelay($0) }
+
+        var action = HavenConfig.dmInboxSyncAction(
+            local: configService.config.dmInboxRelays,
+            localUpdatedAt: configService.config.dmRelaysUpdatedAt,
+            published: published, publishedAt: newest?.createdAt)
+
+        if action == .adopt, let published, let newest {
+            if !published.isEmpty {
+                configService.config.dmRelays = published
+            }
+            configService.config.dmRelaysUpdatedAt = newest.createdAt
+            configService.save()
             #if DEBUG
-            print("NostrService: Relay is local-only, skipping Kind 10002 publish")
+            print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
             #endif
-            return
+            // Adopting can still leave this device holding more than was
+            // published (its own Haven inbox, or loopback entries dropped).
+            action = HavenConfig.dmInboxSyncAction(
+                local: configService.config.dmInboxRelays,
+                localUpdatedAt: newest.createdAt,
+                published: newest.relays, publishedAt: newest.createdAt)
         }
 
-        let publicURL = "wss://\(config.sanitizedRelayURL)"
+        guard action == .publish, canSign else { return }
+        publishOwnerDMInboxList()
+    }
 
-        // Build NIP-65 tags: no marker means both read and write
-        var tags: [[String]] = [["r", publicURL]]
+    /// Publishes this device's DM inbox list for the owner and stamps it as the
+    /// newest change. Call after the user edits the list or the Haven inbox
+    /// address changes.
+    @MainActor
+    func publishOwnerDMInboxList() {
+        let configService = ConfigService.shared
+        let reachable = configService.config.dmInboxRelays.filter { !Self.isLoopbackRelay($0) }
+        guard !reachable.isEmpty else { return }
+        configService.config.dmRelaysUpdatedAt = Int64(Date().timeIntervalSince1970)
+        configService.save()
+        publishDMRelayList(dmRelays: reachable, signAsNpub: configService.config.ownerNpub)
+    }
 
-        // Include the Mac relay in the relay list if configured (both platforms)
-        let macRelay = config.macRelayWssURL
-        if !macRelay.isEmpty {
-            tags.append(["r", macRelay])
+    /// The newest signed kind 10050 for `pubkey` across the blastr relays, the
+    /// account's cached outbox relays and `alsoAsk`, or nil if none answered
+    /// within the timeout. Asks fresh rather than trusting `dmRelayLists`,
+    /// which is cached across launches and would let a device adopt its own
+    /// stale copy.
+    func fetchNewestDMRelayList(for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> (relays: [String], createdAt: Int64)? {
+        guard let winner = await fetchNewestReplaceable(kind: 10050, for: pubkey, alsoAsk: alsoAsk, timeout: timeout) else { return nil }
+        return (ProfileRepository.parseDMRelayListTags(winner.tags), winner.created_at)
+    }
+
+    /// The newest signed replaceable event of `kind` by `pubkey` across the
+    /// blastr relays, the account's cached outbox relays and `alsoAsk`, or nil
+    /// if none answered within the timeout. Asks fresh: the profile caches can
+    /// hold a list that was replaced long ago.
+    func fetchNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> NostrEvent? {
+        await lookupNewestReplaceable(kind: kind, for: pubkey, alsoAsk: alsoAsk, timeout: timeout).event
+    }
+
+    /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
+    /// every relay asked answered EOSE for this request without the event.
+    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
+        var urls = ConfigService.shared.config.writeRelays
+        for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
+            urls.append(extra)
+        }
+        let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return ReplaceableLookup(event: nil, asked: 0, answered: 0) }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<ReplaceableLookup<NostrEvent>, Never>) in
+            let lock = NSLock()
+            var best: NostrEvent?
+            // Relays done (EOSE or CLOSED), each counted once; only an EOSE
+            // for the request sent there counts as an answer.
+            var finished = Set<Int>()
+            var answered = Set<Int>()
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count)
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                continuation.resume(returning: result)
+            }
+
+            DispatchQueue.main.async {
+                for (index, url) in targets.enumerated() {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "repl-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                               event.kind == kind, event.pubkey == pubkey,
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                if best == nil || event.created_at > best!.created_at { best = event }
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                if type == "EOSE", json[safe: 1] as? String == subId, !finished.contains(index) {
+                                    answered.insert(index)
+                                }
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [kind], "authors": [pubkey], "limit": 1]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+            }
+        }
+    }
+
+    /// The newest `limit` notes (kind 1) by `author`, newest first, from the
+    /// local relay, the feed relays and the author's outbox relays. Empty if
+    /// none answered within the timeout. For the small profile card, which
+    /// must never wait on a slow relay to offer Follow.
+    func fetchRecentNotes(author: String, limit: Int = 3, timeout: TimeInterval = 6) async -> [NostrEvent] {
+        var urls: [String] = []
+        if RelayProcessManager.shared.isRunning, !RelayProcessManager.shared.isBooting {
+            urls.append(ConfigService.shared.config.nostrURL)
+        }
+        let feedRelays = ConfigService.shared.config.activeFeedRelays
+        urls += (feedRelays.isEmpty ? ["wss://relay.primal.net", "wss://relay.nos.social"] : Array(feedRelays.prefix(3)))
+        urls += (outboxRelays[author] ?? []).prefix(3)
+        var seen = Set<String>()
+        let targets = urls.filter { seen.insert($0).inserted }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return [] }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[NostrEvent], Never>) in
+            let lock = NSLock()
+            var found: [String: NostrEvent] = [:]
+            var finished = Set<Int>()
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let notes = found.values.sorted { $0.created_at > $1.created_at }.prefix(limit)
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                continuation.resume(returning: Array(notes))
+            }
+
+            DispatchQueue.main.async {
+                for (index, url) in targets.enumerated() {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "recent-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                               event.kind == 1, event.pubkey == author,
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                found[event.id] = event
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [1], "authors": [author], "limit": limit]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+            }
+        }
+    }
+
+    private var vertexCache = VertexReputation.Cache()
+
+    /// `target`'s follower count from Vertex, the source npub.world uses. Nil
+    /// when Vertex can't answer: no local key (a bunker would be asked to sign
+    /// for every profile opened), no credits, or no answer in time. The
+    /// request is signed by the active account and names `target`.
+    func fetchVertexFollowerCount(target: String, timeout: TimeInterval = 6) async -> Int? {
+        let now = Date()
+        if let cached = vertexCache.followers(for: target, now: now) { return cached }
+        guard vertexCache.shouldAsk(now: now),
+              ConfigService.shared.config.activeSigningMode() == "local",
+              let url = URL(string: VertexReputation.relayURL),
+              let request = signEvent(kind: VertexReputation.requestKind, content: "",
+                                      tags: VertexReputation.requestTags(target: target)),
+              let requestData = try? JSONEncoder().encode(request),
+              let requestDict = try? JSONSerialization.jsonObject(with: requestData) else { return nil }
+        let requestId = request.id
+
+        let reply = await withCheckedContinuation { (continuation: CheckedContinuation<VertexReputation.Reply?, Never>) in
+            let lock = NSLock()
+            var resumed = false
+            let client = WebSocketClient()
+            client.isTemporary = true
+            var subs = Set<AnyCancellable>()
+
+            func finish(_ reply: VertexReputation.Reply?) {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                lock.unlock()
+                DispatchQueue.main.async {
+                    client.disconnect()
+                    subs.removeAll()
+                }
+                continuation.resume(returning: reply)
+            }
+
+            DispatchQueue.main.async {
+                let subId = "vertex-\(UUID().uuidString.prefix(6))"
+                client.messageSubject
+                    .sink { message in
+                        guard let data = message.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                              json.first as? String == "EVENT",
+                              let dict = json[safe: 2] as? [String: Any],
+                              let raw = try? JSONSerialization.data(withJSONObject: dict),
+                              let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                              let str = String(data: raw, encoding: .utf8),
+                              NostrEventVerifier.isValid(json: str),
+                              let reply = VertexReputation.reply(
+                                kind: event.kind, pubkey: event.pubkey, tags: event.tags,
+                                content: event.content, requestId: requestId, target: target
+                              ) else { return }
+                        finish(reply)
+                    }
+                    .store(in: &subs)
+                client.$connectionState
+                    .sink { state in
+                        guard state == .connected else { return }
+                        // Listen first, so a fast answer isn't missed.
+                        let filter: [String: Any] = [
+                            "kinds": [VertexReputation.resultKind, VertexReputation.feedbackKind],
+                            "#e": [requestId],
+                        ]
+                        for message in [["REQ", subId, filter], ["EVENT", requestDict]] as [[Any]] {
+                            if let data = try? JSONSerialization.data(withJSONObject: message),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                    }
+                    .store(in: &subs)
+                client.connect(url: url)
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(nil) }
+            }
+        }
+
+        // No answer in time says nothing about credits; only a reply is kept.
+        guard let reply else { return nil }
+        vertexCache.record(reply, for: target, now: Date())
+        if case .followers(let count) = reply { return count }
+        return nil
+    }
+
+    /// Ids of the active account's own reactions (kind 7) to `noteId`, from
+    /// the account's relay and the blastr relays. For removing a like saved
+    /// before its event id was kept.
+    func fetchOwnReactionIds(to noteId: String, timeout: TimeInterval = 5) async -> [String] {
+        let pubkey = activeHexPubkey
+        guard !pubkey.isEmpty else { return [] }
+        var urls = ConfigService.shared.config.writeRelays
+        let own = ConfigService.shared.config.nostrURL
+        if !own.isEmpty, !urls.contains(own) { urls.append(own) }
+        let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return [] }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[String], Never>) in
+            let lock = NSLock()
+            var ids = Set<String>()
+            var finished = Set<Int>()
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let result = Array(ids)
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                continuation.resume(returning: result)
+            }
+
+            DispatchQueue.main.async {
+                for (index, url) in targets.enumerated() {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "myrx-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               dict["kind"] as? Int == 7, dict["pubkey"] as? String == pubkey,
+                               let id = dict["id"] as? String,
+                               let tags = dict["tags"] as? [[String]],
+                               tags.contains(where: { $0.count >= 2 && $0[0] == "e" && $0[1] == noteId }),
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                ids.insert(id)
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [7], "authors": [pubkey], "#e": [noteId], "limit": 20]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+            }
+        }
+    }
+
+    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event: the owner's
+    /// own relays plus the Read and Write relays (`HavenConfig.publicRelayListTags`).
+    /// Call when the user enables the toggle or on app launch.
+    @MainActor
+    func publishRelayList(forNpub accountNpub: String) {
+        let tags = ConfigService.shared.config.publicRelayListTags
+        guard !tags.isEmpty else {
+            #if DEBUG
+            print("NostrService: No public relays to list, skipping Kind 10002 publish")
+            #endif
+            return
         }
 
         Task {
@@ -1125,7 +1658,6 @@ class NostrService: ObservableObject {
     @MainActor
     func publishRelayListsForEnabledAccounts() {
         let config = ConfigService.shared.config
-        guard !config.isLocal else { return }
 
         let enabledAccounts = config.publishRelayListPerAccount.filter { $0.value }.map { $0.key }
         guard !enabledAccounts.isEmpty else { return }
@@ -1146,8 +1678,16 @@ class NostrService: ObservableObject {
     }
 
     /// Posts an event to the local relay and broadcasts to configured relays
-    func postEvent(_ event: NostrEvent) {
+    /// - Parameter directBroadcast: false when the caller broadcasts the event
+    ///   itself (ModePostPublisher does, to report each relay's answer).
+    /// `onBroadcastOutcome`, when given, is called once on the main thread:
+    /// `.accepted` as soon as one broadcast relay takes the event, `.refused`
+    /// if none has after a few quiet retries. Without it, nothing changes.
+    func postEvent(_ event: NostrEvent, directBroadcast: Bool = true,
+                   onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)? = nil) {
+        #if DEBUG
         print("NostrService: postEvent called – id=\(event.id.prefix(8)) kind=\(event.kind) sig=\(event.sig.prefix(8))")
+        #endif
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
 
@@ -1159,7 +1699,9 @@ class NostrService: ObservableObject {
                 self.events.sort(by: { $0.created_at > $1.created_at })
 
                 // Extract media URLs and add to noteMedia
-                let urls = self.extractMediaURLs(from: event.content)
+                let urls = NoteTagging.contentMediaIsAuthors(kind: event.kind)
+                    ? self.extractMediaURLs(from: event.content)
+                    : []
                 let items = urls.map { url in
                     let mime = Self.mimeFromExtension(url)
                     let mediaType = Self.mediaTypeFromMime(mime, url: url)
@@ -1190,7 +1732,7 @@ class NostrService: ObservableObject {
 
         // Cache raw event JSON immediately so rebroadcast + NIP-18 repost embedding
         // work without waiting for the event to echo back from the relay.
-        if event.kind == 1 || event.kind == 6 || event.kind == 30023 {
+        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind || event.kind == NIP88Poll.kind {
             if let evData = try? JSONSerialization.data(withJSONObject: eventDict, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 FeedService.shared.cacheRawEvent(id: event.id, json: evJSON)
@@ -1227,11 +1769,13 @@ class NostrService: ObservableObject {
                 trackTemporaryClient(localClient)
             }
         } else {
+            #if DEBUG
             print("NostrService: ⚠️ Local relay not ready — event \(event.id.prefix(8)) will reach network via direct blast only")
+            #endif
         }
 
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
-        if event.kind == 1 || event.kind == 6 || event.kind == 7 {
+        if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
             // Find target author's pubkey from 'p' tags (skipping own pubkey)
             let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != activeHexPubkey }?[1]
 
@@ -1270,26 +1814,70 @@ class NostrService: ObservableObject {
             }
         }
 
-        // 3. Profile Broadcast: Send Kind 0 to blastr relays directly
-        //    (replaceable events don't trigger the Go relay's StoreEvent blast)
-        if event.kind == 0 {
-            broadcastRawEvent(eventDict)
+        // 3. Direct broadcast: every event goes to the blastr relays from here
+        //    too, not only through the local relay. See
+        //    RelayConfiguration.directBroadcastRelays for why.
+        if directBroadcast {
+            let relays = RelayConfiguration.directBroadcastRelays(
+                kind: event.kind,
+                tags: event.tags,
+                blastrRelays: ConfigService.shared.config.activeBlastrRelays
+            )
+            if let onBroadcastOutcome {
+                broadcastConfirmed(eventDict, to: relays, attemptsLeft: 3, completion: onBroadcastOutcome)
+            } else {
+                broadcastRawEvent(eventDict, to: relays)
+            }
+        } else {
+            onBroadcastOutcome?(.refused)
         }
 
+    }
+
+    /// Sends to `relays` and reports a single outcome. When every relay
+    /// refuses or times out it tries again, a little later each time, before
+    /// giving up: a slow relay shouldn't read as a failed post.
+    private func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
+                                    completion: @escaping (BroadcastTally.Outcome) -> Void) {
+        var tally = BroadcastTally(relayCount: relays.count)
+        if tally.outcome != nil {
+            completion(.refused)
+            return
+        }
+        broadcastRawEvent(eventDict, to: relays) { [weak self] relay, success, message in
+            switch tally.record(relay: relay, success: success, message: message) {
+            case .accepted?:
+                completion(.accepted)
+            case .refused? where attemptsLeft > 1:
+                let delay: TimeInterval = attemptsLeft > 2 ? 3 : 8
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self?.broadcastConfirmed(eventDict, to: relays, attemptsLeft: attemptsLeft - 1, completion: completion)
+                }
+            case .refused?:
+                completion(.refused)
+            case nil:
+                break
+            }
+        }
     }
 
     /// Broadcasts a raw signed event dict (including sig) to configured Blastr relays.
     /// Use this to re-broadcast an existing event without re-signing it.
     /// If `onRelayResult` is provided, it's called for each relay with (relayURL, success, message).
-    func broadcastRawEvent(_ eventDict: [String: Any], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
+    /// `extraRelays` are sent to as well, e.g. diVine's relay for a diVine.
+    func broadcastRawEvent(_ eventDict: [String: Any], extraRelays: [String] = [], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
+        var relays = ConfigService.shared.config.writeRelays
+        for extra in extraRelays where !relays.contains(extra) {
+            relays.append(extra)
+        }
+        broadcastRawEvent(eventDict, to: relays, onRelayResult: onRelayResult)
+    }
+
+    /// Broadcasts a raw signed event dict to exactly `relays`, no defaults added.
+    func broadcastRawEvent(_ eventDict: [String: Any], to relays: [String], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
         let msg = ["EVENT", eventDict] as [Any]
         guard let data = try? JSONSerialization.data(withJSONObject: msg),
               let str = String(data: data, encoding: .utf8) else { return }
-
-        var relays = ConfigService.shared.config.activeBlastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.primal.net", "wss://nos.lol"]
-        }
 
         for urlStr in relays {
             guard let url = URL(string: urlStr) else { continue }
@@ -1358,7 +1946,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1384,7 +1974,9 @@ class NostrService: ObservableObject {
 
         Task {
             guard let signed = await signEventAsync(kind: 1984, content: description ?? "Reported user for \(reason)", tags: tags) else {
+                #if DEBUG
                 print("NostrService: Failed to sign user reporting event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1398,7 +1990,9 @@ class NostrService: ObservableObject {
     func deleteNote(id: String) {
         Task {
             guard let signed = await signEventAsync(kind: 5, content: "", tags: [["e", id]]) else {
+                #if DEBUG
                 print("NostrService: Failed to sign deletion event")
+                #endif
                 return
             }
             postEvent(signed)
@@ -1437,6 +2031,11 @@ class NostrService: ObservableObject {
         // Check if relay manager says it's running AND not booting
         return RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
     }
+
+    /// What the Relay tab counts as a post: notes, reposts, articles, NIP-22
+    /// comments and highlights. Comments and highlights that tag you were
+    /// never requested, so they never showed up there.
+    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802, NIP88Poll.kind]
 
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
         // Count only the subscriptions we actually open/request below — NOT every
@@ -1651,7 +2250,7 @@ class NostrService: ObservableObject {
         // Giving notes their own filter guarantees they load independent of how
         // many reactions/zaps share the window — same rationale as bounding
         // long-form bodies separately.
-        let noteKinds = [1, 6, 30023]
+        let noteKinds = Self.relayTabNoteKinds
         let metaKinds = [0, 3, 4, 7, 1063, 9735, 10000, 10063]
         let noteLimit = isHistorical ? 100 : 400
         let metaLimit = isHistorical ? 100 : 200
@@ -1805,9 +2404,10 @@ class NostrService: ObservableObject {
             if event.kind == 0 {
                 let content = event.content
                 let pubkey = event.pubkey
+                let createdAt = event.created_at
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: self.profiles[pubkey]),
+                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: self.profiles[pubkey], createdAt: createdAt),
                        result.changed {
                         self.profiles[pubkey] = result.profile
                         self.profilesInFlight.remove(pubkey)
@@ -1900,7 +2500,7 @@ class NostrService: ObservableObject {
                     let mediaType = Self.mediaTypeFromMime(mime, url: url)
                     items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime))
                 }
-            } else {
+            } else if NoteTagging.contentMediaIsAuthors(kind: event.kind) {
                 let urls = extractMediaURLs(from: event.content)
                 items = urls.map { url in
                     let mime = Self.mimeFromExtension(url)
@@ -2052,9 +2652,7 @@ class NostrService: ObservableObject {
 
         let config = ConfigService.shared.config
         var urls = [config.nostrURL].compactMap { URL(string: $0) }
-        let externals = config.activeFeedRelays.isEmpty
-            ? ["wss://relay.primal.net", "wss://nos.lol"]
-            : config.activeFeedRelays
+        let externals = config.readRelays
         urls.append(contentsOf: externals.compactMap { URL(string: $0) })
         guard !urls.isEmpty else { return }
 
@@ -2087,6 +2685,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
@@ -2130,6 +2731,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
@@ -2159,9 +2763,77 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// One page of older events of the given kinds, for a list that pages on
+    /// its own (the Vault tab's Articles and Highlights). It runs on its own
+    /// connection and leaves the shared fetch state alone, so it neither moves
+    /// the Notes list's paging nor clears `isFetching` under it. `done` gets
+    /// how many events came back, 0 meaning there is nothing older, or nil
+    /// when no relay could be asked or none answered.
+    func fetchOlder(kinds: [Int], authors: [String], until: Int64, limit: Int = 50,
+                    from relayURLs: [URL], done: @escaping (Int?) -> Void) {
+        let urls = relayURLs.filter { !isLocalRelay($0) || isLocalRelayReady }
+        guard !urls.isEmpty, !authors.isEmpty else { done(nil); return }
+
+        let filter: [String: Any] = ["kinds": kinds, "authors": authors, "until": until, "limit": limit]
+        let safeFilter = UncheckedSendable(value: filter)
+        let subId = "older-\(UUID().uuidString.prefix(6))"
+        let page = OlderPage(pending: urls.count)
+        let finish: () -> Void = {
+            guard !page.finished else { return }
+            page.finished = true
+            page.clients.forEach { $0.disconnect() }
+            page.clients.removeAll()
+            done(page.pending == urls.count ? nil : page.ids.count)
+        }
+        // A relay that never answers mustn't leave the button spinning.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { finish() }
+
+        for url in urls {
+            let urlString = url.absoluteString
+            let client = WebSocketClient()
+            client.isTemporary = true
+            trackTemporaryClient(client)
+            page.clients.append(client)
+            client.messageSubject
+                .receive(on: processingQueue)
+                .sink { [weak self, weak client] message in
+                    guard let data = message.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          json.count >= 2, json[1] as? String == subId,
+                          let type = json[0] as? String else { return }
+                    if type == "EVENT" {
+                        let id = (json[safe: 2] as? [String: Any])?["id"] as? String
+                        DispatchQueue.main.async { if let id { page.ids.insert(id) } }
+                        self?.processMessage(message, from: urlString)
+                    } else if type == "EOSE" || type == "CLOSED" {
+                        DispatchQueue.main.async {
+                            client?.disconnect()
+                            page.pending -= 1
+                            if page.pending <= 0 { finish() }
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            client.$connectionState
+                .first(where: { $0 == .connected })
+                .receive(on: DispatchQueue.main)
+                .sink { [weak client] _ in
+                    let req = ["REQ", subId, safeFilter.value] as [Any]
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let str = String(data: data, encoding: .utf8) {
+                        client?.send(text: str)
+                    }
+                }
+                .store(in: &cancellables)
+            client.connect(url: url)
+        }
+    }
+
     /// Fetches zap receipts (kind 9735) with a larger limit to cover more history.
-    func fetchZapReceipts(from relayURLs: [URL], limit: Int = 1000) {
-        let filter: [String: Any] = ["kinds": [9735], "limit": limit]
+    /// `tagFilter` narrows the request, e.g. `["#P": [me]]` for zaps you sent.
+    func fetchZapReceipts(from relayURLs: [URL], limit: Int = 1000, tagFilter: [String: [String]] = [:]) {
+        var filter: [String: Any] = ["kinds": [9735], "limit": limit]
+        for (key, values) in tagFilter { filter[key] = values }
 
         for url in relayURLs {
             let urlString = url.absoluteString
@@ -2179,6 +2851,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
@@ -2411,39 +3086,6 @@ class NostrService: ObservableObject {
 
     nonisolated static func mediaTypeFromMime(_ mime: String?, url: URL) -> MediaItem.MediaType {
         EventPublisher.mediaTypeFromMime(mime, url: url)
-    }
-
-    /// Sniff the first 64 bytes of a remote URL via HTTP Range request to detect mime type.
-    /// Returns (resolvedMime, mediaType) or nil if the request fails.
-    nonisolated static func sniffRemoteMime(url: URL, rpm: RelayProcessManager) -> (mime: String, type: MediaItem.MediaType)? {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("bytes=0-63", forHTTPHeaderField: "Range")
-        request.timeoutInterval = 5
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var resultMime: String?
-
-        // Use a session that ignores TLS errors for localhost
-        let session = TLSSkipSession.shared
-        let task = session.dataTask(with: request) { data, _, _ in
-            if let data = data, data.count >= 4 {
-                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                try? data.write(to: tempURL)
-                let detected = rpm.detectMimeFromBytes(for: tempURL)
-                try? FileManager.default.removeItem(at: tempURL)
-                if detected != "application/octet-stream" {
-                    resultMime = detected
-                }
-            }
-            semaphore.signal()
-        }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 6)
-
-        guard let mime = resultMime else { return nil }
-        let type = mediaTypeFromMime(mime, url: url)
-        return (mime, type)
     }
 
     func extractMediaURLs(from content: String) -> [URL] {
@@ -2739,4 +3381,14 @@ final class LocalRelaySearchSession {
         cancellables.removeAll()
         streams.removeAll()
     }
+}
+
+/// The running tally of one `fetchOlder` page. Touched only on the main queue.
+private final class OlderPage: @unchecked Sendable {
+    var pending: Int
+    var ids = Set<String>()
+    var finished = false
+    /// Closed when the page finishes, timeout included.
+    var clients: [WebSocketClient] = []
+    init(pending: Int) { self.pending = pending }
 }

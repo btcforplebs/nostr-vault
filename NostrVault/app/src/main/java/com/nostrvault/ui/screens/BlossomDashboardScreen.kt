@@ -17,14 +17,32 @@ import com.nostrvault.ui.screens.dashboard.*
 import com.nostrvault.ui.theme.*
 
 /**
- * Blossom media server dashboard: stats, mirror management, pull/push sync, activity log.
+ * Blossom's dashboard (stats, mirror management, pull/push sync, activity
+ * log), as the Vault Dashboard's lower half: its sections under a Blossom
+ * heading with a refresh button (iOS `BlossomDashboardView(embedded: true)`).
+ * It used to be a screen of its own, opened from the Media tab.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BlossomDashboardScreen(
-    onBack: () -> Unit,
-    viewModel: BlossomDashboardViewModel = hiltViewModel(),
-) {
+internal fun BlossomDashboardSections(viewModel: BlossomDashboardViewModel = hiltViewModel()) {
+    LaunchedEffect(viewModel) { viewModel.reloadIfStale() }
+    val colors = LocalNostrVaultColors.current
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+            Icon(NostrVaultIcons.Blossom, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Blossom", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = viewModel::loadDashboard, modifier = Modifier.size(32.dp)) {
+                Icon(NostrVaultIcons.Refresh, "Refresh Blossom", tint = SecondaryText, modifier = Modifier.size(18.dp))
+            }
+        }
+        BlossomDashboardBody(viewModel)
+    }
+}
+
+/** Blossom's stats, quick actions, mirrors and activity log. */
+@Composable
+private fun ColumnScope.BlossomDashboardBody(viewModel: BlossomDashboardViewModel) {
     val totalFiles by viewModel.totalFiles.collectAsState()
     val totalSize by viewModel.totalSize.collectAsState()
     val isLoadingStats by viewModel.isLoadingStats.collectAsState()
@@ -41,36 +59,7 @@ fun BlossomDashboardScreen(
     val backupPercentage = if (totalFiles > 0) (backedUpCount * 100) / totalFiles else 0
     val needsBackupCount = (totalFiles - backedUpCount).coerceAtLeast(0)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Blossom Media") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(NostrVaultIcons.Back, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::loadDashboard) {
-                        Icon(NostrVaultIcons.Refresh, "Refresh", tint = SecondaryText)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = WindowBackground,
-                    titleContentColor = PrimaryText,
-                    navigationIconContentColor = PrimaryText,
-                ),
-            )
-        },
-        containerColor = WindowBackground,
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
+
             // ── Stats cards ──────────────────────────────────────
 
             if (isLoadingStats) {
@@ -224,9 +213,8 @@ fun BlossomDashboardScreen(
             )
 
             BlossomActivityLogView(logs = activityLogs)
-        }
-    }
 }
+
 
 @Composable
 private fun BlossomStatCard(

@@ -5,6 +5,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
 import Photos
+import UserNotifications
 #endif
 
 struct MediaGalleryView: View {
@@ -14,13 +15,18 @@ struct MediaGalleryView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @Environment(\.inVaultTab) var inVaultTab
     @StateObject var feedService = FeedService.shared
     @ObservedObject var blossomCache = BlossomMediaCache.shared
 
     // MARK: - State
 
     @State var navigationPath = NavigationPath()
+    /// Scroll target for tapping the Media tab again.
+    static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
+    /// The viewer's Delete menu choice, waiting on its confirmation.
+    @State var pendingViewerDelete: MediaDeleteScope?
     @State var initialLoad = false
     @State var mediaSourceFilter: MediaSourceFilter = .all
     @State var mediaLocationFilter: MediaLocationFilter = .all
@@ -28,28 +34,16 @@ struct MediaGalleryView: View {
 
     // Type filter, layout and sort survive leaving the tab and relaunching.
     // Stored as raw strings because AppStorage cannot hold a Set or a bare enum.
-    @AppStorage("mediaGallery.typeFilter") var mediaTypeFilterRaw: String =
-        MediaTypeFilter.allCases.map(\.rawValue).joined(separator: ",")
+    @AppStorage(MediaTypeFilter.storageKey) var mediaTypeFilterRaw: String =
+        MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
     @AppStorage("mediaGallery.layoutMode") var mediaLayoutModeRaw: String = MediaLayoutMode.grid.rawValue
-    @AppStorage("mediaGallery.sortOption") var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
+    @AppStorage(MediaSortOption.storageKey) var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
 
     /// Selected media types. Reading rebuilds the set from storage; writing
     /// normalises to `allCases` order so the stored string is stable.
     var mediaTypeFilter: Set<MediaTypeFilter> {
-        get {
-            let stored = Set(mediaTypeFilterRaw
-                .split(separator: ",")
-                .compactMap { MediaTypeFilter(rawValue: String($0)) })
-            // An empty selection shows nothing at all and there is no UI path
-            // back from it, so treat "none stored" as "everything".
-            return stored.isEmpty ? Set(MediaTypeFilter.allCases) : stored
-        }
-        nonmutating set {
-            mediaTypeFilterRaw = MediaTypeFilter.allCases
-                .filter { newValue.contains($0) }
-                .map(\.rawValue)
-                .joined(separator: ",")
-        }
+        get { MediaTypeFilter.selection(from: mediaTypeFilterRaw) }
+        nonmutating set { mediaTypeFilterRaw = MediaTypeFilter.rawSelection(newValue) }
     }
 
     var mediaLayoutMode: MediaLayoutMode {
@@ -63,7 +57,13 @@ struct MediaGalleryView: View {
     }
 
     // Cached display data (computed in background)
-    @State var displayMedia: [MediaItem] = []
+    @State var displayMedia: [MediaItem] = [] {
+        willSet { mediaSections = Self.sections(for: newValue, sortOption: sortOption) }
+    }
+
+    /// `displayMedia` split into dated runs. Kept in state rather than computed
+    /// in `body`, which re-ran the grouping on every redraw of the grid.
+    @State var mediaSections: [MediaDateSection] = []
 
     // Stable loading state so the empty-state message doesn't flash
     // before the display data has been computed at least once.
@@ -120,6 +120,38 @@ struct MediaGalleryView: View {
         }
     }
 
+    /// In the Vault tab the corner button is the Vault Dashboard's, coloured
+    /// by the relay's health as it is on the relay modes.
+    var dashboardButtonColor: Color { inVaultTab ? statusColor : .havenPurple }
+
+    /// The relay half fetches the same events when the relay starts; in the
+    /// Vault tab the gallery only rescans its files, so the two don't race
+    /// (the gallery's fetch resets the sockets the relay half just opened).
+    func refreshOnRelayStart() {
+        if inVaultTab {
+            loadLocalMedia(force: true)
+            scheduleUpdateDisplayData()
+        } else {
+            refreshAll()
+        }
+    }
+
+    /// An upload or paste shows its progress in the gallery, so in the Vault
+    /// tab bring the Media half forward.
+    func showMediaHalf() {
+        if inVaultTab { VaultSection.shared.showsMedia = true }
+    }
+
+    /// The Vault tab has one dashboard, which the relay half presents; outside
+    /// it (macOS) Blossom keeps its own sheet.
+    func openDashboard() {
+        if inVaultTab {
+            NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
+        } else {
+            showingBlossomMediaList = true
+        }
+    }
+
 
     // MARK: - Body
 
@@ -142,7 +174,11 @@ struct MediaGalleryView: View {
         viewContentPlatform
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                leadingToolbarInline
+                if inVaultTab {
+                    VaultModePill(mode: .media, zapsOnly: configService.config.zapsOnlyMode)
+                } else {
+                    leadingToolbarInline
+                }
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -172,19 +208,23 @@ struct MediaGalleryView: View {
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
                 triggerAutoMirrorIfEnabled()
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
             }
         }
         .modifier(mediaChangeHandlers)
-        .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
+        .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
+        .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
+            openDashboard()
+        }
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -198,8 +238,10 @@ struct MediaGalleryView: View {
         ZStack {
             Color.platformWindowBackground.ignoresSafeArea()
 
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
                     listContent
 
                     if !displayMedia.isEmpty {
@@ -218,14 +260,24 @@ struct MediaGalleryView: View {
                 refreshAll()
             }
             .scrollDirectionTracking(feedService: feedService)
+            // Tapping the Media tab again: back to the grid from a pushed
+            // view, or up to the top, as the Feed tab does.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("MediaScrollToTop"))) { _ in
+                if !navigationPath.isEmpty {
+                    navigationPath = NavigationPath()
+                } else {
+                    withAnimation(Motion.scrollJump) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                }
+            }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
-                Button(action: { showingBlossomMediaList = true }) {
+            ChromeFold(anchor: .bottomTrailing) {
+                Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Blossom")
+                        Text(inVaultTab ? "Vault" : "Blossom")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -233,17 +285,15 @@ struct MediaGalleryView: View {
                     .padding(.horizontal, 18)
                     .background(
                         Capsule()
-                            .fill(Color.havenPurple)
-                            .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
+                            .fill(dashboardButtonColor)
+                            .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #else
         // The GeometryReader here existed only to compute an `isNarrow` flag the
         // content never read.
@@ -290,19 +340,20 @@ struct MediaGalleryView: View {
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
                 triggerAutoMirrorIfEnabled()
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
-                refreshAll()
+                refreshOnRelayStart()
                 initialLoad = true
             }
         }
         .modifier(mediaChangeHandlers)
-        .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
+        .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -339,12 +390,12 @@ struct MediaGalleryView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
-                Button(action: { showingBlossomMediaList = true }) {
+            ChromeFold(anchor: .bottomTrailing) {
+                Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Blossom")
+                        Text(inVaultTab ? "Vault" : "Blossom")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -352,17 +403,15 @@ struct MediaGalleryView: View {
                     .padding(.horizontal, 18)
                     .background(
                         Capsule()
-                            .fill(Color.havenPurple)
-                            .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
+                            .fill(dashboardButtonColor)
+                            .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #endif
     }
 
@@ -481,6 +530,59 @@ struct MagicPasteFromWidget: ViewModifier {
     }
 }
 
+// MARK: - Share sheet inbox
+
+/// Uploads what the share extension dropped in the App Group inbox: when the
+/// gallery appears, when a "ready to upload" notification or the app opening
+/// asks for it, and once the device relay is up (a cold launch from the
+/// notification lands here before the relay can take an upload).
+struct ShareInboxImport: ViewModifier {
+    let isRelayReady: Bool
+    let upload: ([URL]) -> Void
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .onAppear { importIfReady() }
+            .onChange(of: isRelayReady) { _, _ in importIfReady() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenImportShareInbox)) { _ in
+                importIfReady()
+            }
+        #else
+        content
+        #endif
+    }
+
+    #if os(iOS)
+    private func importIfReady() {
+        guard isRelayReady, NVShareInbox.hasPending else { return }
+        let claimedDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nv-share-claimed", isDirectory: true)
+        removeStaleClaims(in: claimedDir)
+        let urls = NVShareInbox.claimAll(into: claimedDir)
+        guard !urls.isEmpty else { return }
+        upload(urls)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [NVShareInbox.notificationID]
+        )
+    }
+
+    /// `handleUploadFileURLs` copies each file before it uploads and cannot
+    /// say when it is done, so claimed files are cleared on the next import
+    /// once they are an hour old rather than straight away.
+    private func removeStaleClaims(in dir: URL) {
+        let cutoff = Date().addingTimeInterval(-3600)
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff { try? FileManager.default.removeItem(at: file) }
+        }
+    }
+    #endif
+}
+
 // MARK: - MediaGalleryChangeHandlers
 
 /// Extracted onChange / onReceive modifiers to reduce type-checker complexity in MediaGalleryView.
@@ -521,6 +623,9 @@ struct MediaGalleryChangeHandlers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .blossomDirectoryChanged)) { _ in
                 onBlossomDirectoryChanged()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .havenMediaCacheCleared)) { _ in
+                onScheduleUpdate()
             }
     }
 }

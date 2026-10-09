@@ -17,7 +17,7 @@ final class LiveChatTests: XCTestCase {
     // MARK: - Addressing
 
     func testAddressIsTheStreamCoordinate() {
-        XCTAssertEqual(LiveChat.address(hostPubkey: host, identifier: "abc"), "30311:\(host):abc")
+        XCTAssertEqual(LiveChat.address(authorPubkey: host, identifier: "abc"), "30311:\(host):abc")
     }
 
     /// zap.stream publishes a stream on the host's behalf. Paying the author
@@ -85,6 +85,30 @@ final class LiveChatTests: XCTestCase {
         // A youtube.com/live page was in a real `streaming` tag.
         let unplayable = ["https://youtube.com/live/YbnlF1CRqok", "rtmp://e/live.m3u8", "https://e/watch?v=x.m3u8"]
         for raw in unplayable { XCTAssertFalse(LiveChat.isPlayableStreamURL(URL(string: raw)!), raw) }
+    }
+
+    /// zap.stream's events carry HLS and `moq://` side by side (measured
+    /// 2026-10-04, HLS first). Order is not part of the format, so the HLS one
+    /// must win from either position.
+    func testPlayableStreamURLSkipsAnUnplayableFirstStreamingTag() {
+        let hls = "https://api-uk.zap.stream/537a/hls/live.m3u8"
+        let moqFirst = [["d", "x"], ["streaming", "moq://api-uk.zap.stream:1443/"], ["streaming", hls]]
+        XCTAssertEqual(LiveChat.playableStreamURL(tags: moqFirst)?.absoluteString, hls)
+        let hlsFirst = [["streaming", hls], ["streaming", "moq://api-uk.zap.stream:1443/"]]
+        XCTAssertEqual(LiveChat.playableStreamURL(tags: hlsFirst)?.absoluteString, hls)
+        XCTAssertNil(LiveChat.playableStreamURL(tags: [["streaming", "moq://e:1443/"], ["streaming", "rtmp://e/live.m3u8"]]))
+        XCTAssertNil(LiveChat.playableStreamURL(tags: [["streaming"]]))
+    }
+
+    /// The live frame (`thumb`) leads, the cover (`image`) is the fallback.
+    func testPreviewImagesPutTheLiveFrameBeforeTheCover() {
+        let thumb = "https://api-uk.zap.stream/537a/thumb.webp?n=1791135949"
+        let cover = "https://blossom.nogood.studio/6d5b"
+        let both = [["image", cover], ["thumb", thumb]]
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: both).map(\.absoluteString), [thumb, cover])
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["image", cover]]).map(\.absoluteString), [cover])
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["thumb", cover], ["image", cover]]).count, 1, "no duplicate")
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["image", " "], ["thumb", "data:image/png;base64,AA"]]), [])
     }
 
     // MARK: - Where the chat is
@@ -182,6 +206,17 @@ final class LiveChatTests: XCTestCase {
                     ["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: nil)]]
         XCTAssertEqual(LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5,
                                         content: "", tags: tags)?.zapSats, 250_000)
+    }
+
+    /// Note detail and the Relay tab total receipts with no request in hand:
+    /// an invoice-only receipt must count its sats, not 0.
+    func testReceiptOnlyAmountReadsTheRequestThenTheInvoice() {
+        let invoiceOnly = [["bolt11", "lnbc2500u1pvjluezpp5abcdef"],
+                           ["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: nil)]]
+        XCTAssertEqual(LiveChat.zapAmountSats(receiptTags: invoiceOnly), 250_000)
+        let tagged = [["bolt11", "lnbc2500u1pvjluezpp5abcdef"],
+                      ["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: "21000")]]
+        XCTAssertEqual(LiveChat.zapAmountSats(receiptTags: tagged), 21)
     }
 
     func testBolt11Multipliers() {

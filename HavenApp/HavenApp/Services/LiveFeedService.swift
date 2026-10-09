@@ -17,8 +17,8 @@ final class LiveFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var loadFailed = false
     @Published private(set) var followSetIsEmpty = false
-    /// Following by default. Live video is unmoderated third-party content, so
-    /// the global set is opt-in behind the sensitive-content warning.
+    /// Following by default. Global is filtered by the Web of Trust shield;
+    /// Everyone (unfiltered) is behind the sensitive-content warning.
     @Published private(set) var scope: RecipeScope = .following
 
     private var clients: [WebSocketClient] = []
@@ -37,11 +37,20 @@ final class LiveFeedService: ObservableObject {
     }
 
     /// Live streams are the one feed where stale is actively wrong — a stream
-    /// that ended two minutes ago still says `live` in memory. Always refetch.
+    /// that ended two minutes ago still says `live` in memory. So refetch,
+    /// except right after a load: a quick look at another feed and back
+    /// within a minute keeps the grid it just showed.
     func loadIfNeeded() {
         guard !isLoading else { return }
+        if let lastLoadedAt, Date().timeIntervalSince(lastLoadedAt) < Self.reuseFor, !streams.isEmpty,
+           lastLoadedAccount == FeedService.shared.currentSnapshotKey() { return }
         refresh()
     }
+
+    private static let reuseFor: TimeInterval = 60
+    private var lastLoadedAt: Date?
+    /// The account the grid was loaded for; another account never reuses it.
+    private var lastLoadedAccount: String?
 
     func refresh() {
         disconnect()
@@ -68,6 +77,11 @@ final class LiveFeedService: ObservableObject {
                 ["kinds": [30311], "#p": followed, "limit": 300],
             ]
             follows = Set(followed)
+        } else if let trust = FeedService.shared.globalTrustSet() {
+            // Global on the Web of Trust: same host check as Following, against
+            // the trust graph. Streams are rare enough that the open REQ above
+            // already covers them; no author-restricted second filter.
+            follows = trust
         }
 
         let relayURLs = Self.relayURLs
@@ -128,8 +142,7 @@ final class LiveFeedService: ObservableObject {
     /// even when the owner has not configured it, since this feed is
     /// external-only by design.
     static var relayURLs: [URL] {
-        var strings = ConfigService.shared.config.activeFeedRelays
-        if strings.isEmpty { strings = ["wss://relay.primal.net", "wss://nos.lol"] }
+        var strings = ConfigService.shared.config.readRelays
         if !strings.contains(LiveChat.streamRelay) { strings.append(LiveChat.streamRelay) }
         return strings.compactMap { URL(string: $0) }
     }
@@ -157,7 +170,7 @@ final class LiveFeedService: ObservableObject {
         if let follows, !LiveChat.isFollowed(authorPubkey: pubkey, tags: tags, follows: follows) { return }
         guard let stream = LiveStream(id: id, pubkey: pubkey, createdAt: createdAt, tags: tags),
               // A block on the streamer has to reach their service-published streams too.
-              !blocked.contains(stream.zapPubkey)
+              !blocked.contains(stream.hostPubkey)
         else { return }
 
         // Addressable: the newest event for an address wins, which is how a
@@ -183,6 +196,8 @@ final class LiveFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
+        lastLoadedAt = Date()
+        lastLoadedAccount = FeedService.shared.currentSnapshotKey()
         loadFailed = streams.isEmpty && !followSetIsEmpty
         disconnect()
     }
@@ -193,12 +208,23 @@ struct LiveStream: Identifiable, Equatable {
     /// The 30311 event's own id, which a zap for this stream tags alongside
     /// the address.
     let eventId: String
+    /// Who is streaming: the `p` tag marked Host, else the author. zap.stream
+    /// and shosho.live sign every stream with their own service key, so the
+    /// author alone names the service (NoGood Radio showed "zap.stream",
+    /// 2026-10-08). Shown, zapped, blocked and reported as the streamer.
     let hostPubkey: String
+    /// Who signed the event. The address is built from this, so chat and
+    /// naddr links point at the event that actually exists.
+    let authorPubkey: String
     let identifier: String
     let createdAt: Int64
     let title: String?
     let summary: String?
     let imageURL: URL?
+    /// What the tile tries to draw, best first: the live frame, then the
+    /// cover art. `imageURL` stays the cover — it is the steadier picture for
+    /// the lock screen.
+    let previewImageURLs: [URL]
     let streamingURL: URL?
     let status: String?
     /// NIP-53 `ends`: when the host said the stream finished.
@@ -206,11 +232,7 @@ struct LiveStream: Identifiable, Equatable {
     let participants: Int?
     /// Relays the stream itself says its chat is on (NIP-53 `relays` tag).
     let chatRelays: [String]
-    /// Who a zap pays. Usually the author, but zap.stream publishes on the
-    /// host's behalf, and then the author is the service.
-    let zapPubkey: String
-
-    var address: String { LiveChat.address(hostPubkey: hostPubkey, identifier: identifier) }
+    var address: String { LiveChat.address(authorPubkey: authorPubkey, identifier: identifier) }
     var id: String { address }
 
     /// Shown only when the stream is running AND something can play it.
@@ -236,8 +258,8 @@ struct LiveStream: Identifiable, Equatable {
 
         guard let identifier = value("d") else { return nil }
         self.eventId = id
-        self.hostPubkey = pubkey
-        self.zapPubkey = LiveChat.hostPubkey(authorPubkey: pubkey, tags: tags)
+        self.authorPubkey = pubkey
+        self.hostPubkey = LiveChat.hostPubkey(authorPubkey: pubkey, tags: tags)
         self.identifier = identifier
         self.createdAt = createdAt
         self.title = value("title")
@@ -250,13 +272,11 @@ struct LiveStream: Identifiable, Equatable {
             .map { $0.compactMap(LiveChat.normalizedRelay) } ?? []
         self.participants = value("current_participants").flatMap { Int($0) }
 
+        self.previewImageURLs = LiveChat.previewImageURLs(tags: tags)
+
         // AVPlayer speaks HTTP(S) HLS. The sample also carried rtmp, ftp, a
         // `zapcast:` scheme and plain web pages — none of which it can open,
         // so a tile for one is a tile that can only disappoint.
-        if let raw = value("streaming"), let url = URL(string: raw), LiveChat.isPlayableStreamURL(url) {
-            self.streamingURL = url
-        } else {
-            self.streamingURL = nil
-        }
+        self.streamingURL = LiveChat.playableStreamURL(tags: tags)
     }
 }

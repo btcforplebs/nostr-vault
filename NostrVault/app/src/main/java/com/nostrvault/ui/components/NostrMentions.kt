@@ -42,15 +42,7 @@ object NostrMentions {
     private fun decodeBech32(identifier: String): String? {
         return when {
             identifier.startsWith("npub1", ignoreCase = true) -> HavenBridge.decodeNpub(identifier)
-            identifier.startsWith("nprofile1", ignoreCase = true) -> {
-                // decodeNprofile returns JSON: {"pubkey":"...","relays":[...]}
-                val json = HavenBridge.decodeNprofile(identifier) ?: return null
-                val keyStart = json.indexOf("\"pubkey\":\"")
-                if (keyStart < 0) return null
-                val start = keyStart + 10
-                val end = json.indexOf("\"", start)
-                if (end < 0) null else json.substring(start, end)
-            }
+            identifier.startsWith("nprofile1", ignoreCase = true) -> HavenBridge.decodeNprofilePubkey(identifier)
             else -> null
         }
     }
@@ -87,6 +79,7 @@ object NostrMentions {
         content: String,
         profiles: Map<String, FeedProfile>,
         mediaURLs: Set<String> = emptySet(),
+        linkURLs: Set<String> = emptySet(),
     ): String {
         var text = MENTION_REGEX.replace(content) { match ->
             val identifier = match.groupValues[1]
@@ -94,7 +87,25 @@ object NostrMentions {
             if (pubkey != null) "@${displayName(pubkey, profiles)}" else "@${identifier.take(10)}…"
         }
         text = QUOTE_REGEX.replace(text, "")
-        for (url in mediaURLs) text = text.replace(url, "")
-        return text.trim()
+        return stripUrls(text, mediaURLs + linkURLs)
     }
+
+    private val SPACE_RUN = Regex("""[ \t]{2,}""")
+
+    /**
+     * Remove [urls] from [text], longest first so `a.com` cannot cut into
+     * `a.com/page`, then close the gap each one left: a URL taken from
+     * mid-sentence leaves one space, and a note that was only a URL becomes
+     * empty. Newlines are kept. Same rule as iOS `stripURLs` (#170).
+     */
+    fun stripUrls(text: String, urls: Collection<String>): String {
+        var out = text
+        for (url in urls.filter { it.isNotEmpty() }.sortedByDescending { it.length }) {
+            out = out.replace(url, "")
+        }
+        return collapseGaps(out).trim()
+    }
+
+    /** Runs of spaces or tabs become one space; newlines are left alone. */
+    fun collapseGaps(text: String): String = SPACE_RUN.replace(text, " ")
 }

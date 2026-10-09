@@ -115,6 +115,13 @@ final class GlobalSearchLogicTests: XCTestCase {
         XCTAssertEqual(ranked, ["me", "friend", "x", "y"])
     }
 
+    /// Web of Trust people rank after follows and ahead of everyone else.
+    func testWebOfTrustRanksAfterFollowsBeforeEveryone() {
+        let ranked = GlobalSearchRanking.rankProfiles(["x", "trusted", "friend", "y", "me"],
+                                                      own: ["me"], follows: ["friend"], wot: ["trusted", "friend"])
+        XCTAssertEqual(ranked, ["me", "friend", "trusted", "x", "y"])
+    }
+
     // MARK: Source status
 
     func testProfileOnlyRelayThatClosesNotesStillAnswers() {

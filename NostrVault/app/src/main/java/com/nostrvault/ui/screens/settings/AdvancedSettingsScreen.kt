@@ -43,6 +43,8 @@ class AdvancedSettingsViewModel @Inject constructor(
     private val mediaCacheService: MediaCacheService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
+    /** True while a saved change is restarting the relay onto it. */
+    val isRestartingRelay: StateFlow<Boolean> = configStore.relayApplier.isRestarting
 
     fun setMaxEvents(v: Int) = save { it.copy(outboxMaxEventsPerMinute = v.coerceIn(10, 1000)) }
     fun setMaxConnections(v: Int) = save { it.copy(outboxMaxConnectionsPerMinute = v.coerceIn(1, 100)) }
@@ -54,6 +56,7 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setWotMinFollowers(v: Int) = save { it.copy(chatRelayMinFollowers = v.coerceIn(0, 100)) }
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
+    fun setUseLocalBlossomCache(v: Boolean) = save { it.copy(useLocalBlossomCache = v) }
 
     fun clearMediaCache() = mediaCacheService.clearCache()
 
@@ -95,9 +98,11 @@ fun AdvancedSettingsScreen(
     viewModel: AdvancedSettingsViewModel = hiltViewModel(),
 ) {
     val config by viewModel.config.collectAsState()
+    val isRestartingRelay by viewModel.isRestartingRelay.collectAsState()
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     var showResetDialog by remember { mutableStateOf(false) }
+    var confirmClearCache by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -132,7 +137,8 @@ fun AdvancedSettingsScreen(
             StepperRow("Max Connections / min", config.outboxMaxConnectionsPerMinute, 1..100, 1) {
                 viewModel.setMaxConnections(it)
             }
-            Caption("Protects your relay from spam and abuse. Restart the relay to apply.")
+            Caption("Protects your relay from spam and abuse. Changes restart the relay automatically.")
+            if (isRestartingRelay) Caption("Restarting relay…")
 
             Spacer(Modifier.height(20.dp))
 
@@ -147,8 +153,14 @@ fun AdvancedSettingsScreen(
             ToggleRow("Autoplay Videos", config.autoplayVideos, viewModel::setAutoplay)
             ToggleRow("Disable Media Cache", config.disableMediaCache, viewModel::setDisableMediaCache)
             ToggleRow("Prefetch Profile Pictures", config.prefetchAvatars, viewModel::setPrefetch)
+            ToggleRow("Use Local Blossom Cache", config.useLocalBlossomCache, viewModel::setUseLocalBlossomCache)
+            Caption(
+                "Loads media through a Blossom cache app on this phone, such as Morganite " +
+                    "(127.0.0.1:24242), when it is running. Media you have seen once then loads " +
+                    "from the phone, offline too. Uploads never go through it."
+            )
             PickerRow("Cache TTL", CACHE_TTL_OPTIONS, config.cacheTTLDays) { viewModel.setCacheTTL(it) }
-            TextButton(onClick = { viewModel.clearMediaCache() }) {
+            TextButton(onClick = { confirmClearCache = true }) {
                 Text("Clear Media Cache", color = ErrorRed)
             }
 
@@ -166,18 +178,9 @@ fun AdvancedSettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Diagnostics & Startup ─────────────────────────────
-            SectionLabel("Diagnostics & Startup")
+            // ── Startup ───────────────────────────────────────────
+            SectionLabel("Startup")
             ToggleRow("Auto-start Relay", config.autoStartRelay, viewModel::setAutoStartRelay)
-            if (!config.useExternalRelay) {
-                OutlinedButton(
-                    onClick = {
-                        RelayForegroundService.stop(context)
-                        RelayForegroundService.start(context)
-                    },
-                    modifier = Modifier.padding(top = 8.dp),
-                ) { Text("Restart Relay") }
-            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -201,6 +204,26 @@ fun AdvancedSettingsScreen(
 
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (confirmClearCache) {
+        // Same title, message and buttons as the iOS Media & Cache screen.
+        AlertDialog(
+            onDismissRequest = { confirmClearCache = false },
+            title = { Text("Clear Media Cache?") },
+            text = {
+                Text("Removes temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearCache = false
+                    viewModel.clearMediaCache()
+                }) { Text("Clear", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearCache = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showResetDialog) {

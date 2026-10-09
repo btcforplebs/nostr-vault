@@ -56,6 +56,7 @@ extension MediaGalleryView {
     @ViewBuilder
     var trailingToolbarInline: some View {
         HStack(spacing: 4) {
+            if inVaultTab { mediaTypeMenu }
             sortMenu
             layoutToggleButton
             uploadButton
@@ -67,6 +68,25 @@ extension MediaGalleryView {
                     Button("Cancel", role: .cancel) { }
                 }
         }
+    }
+
+    /// In the Vault tab the mode row takes the leading cluster, so the type
+    /// filters fold into one menu here.
+    var mediaTypeMenu: some View {
+        let all = mediaTypeFilter.count == MediaTypeFilter.allCases.count
+        return Menu {
+            Button { selectAllMediaTypes() } label: { Label("All Media", systemImage: all ? "checkmark" : "circle.grid.2x2") }
+            Button { toggleMediaTypeFilter(.photo) } label: { Label("Photos", systemImage: mediaTypeFilter.contains(.photo) && !all ? "checkmark" : "photo") }
+            Button { toggleMediaTypeFilter(.video) } label: { Label("Videos", systemImage: mediaTypeFilter.contains(.video) && !all ? "checkmark" : "video") }
+            Button { toggleMediaTypeFilter(.gif) } label: { Label("GIFs", systemImage: mediaTypeFilter.contains(.gif) && !all ? "checkmark" : "photo.stack") }
+        } label: {
+            Image(systemName: all ? "circle.grid.2x2" : "circle.grid.2x2.fill")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.havenPurple)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Media type")
     }
 
     // MARK: - Trailing Toolbar (compact menu)
@@ -143,6 +163,11 @@ extension MediaGalleryView {
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
+        #if os(macOS)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        #endif
         .help("Sort by")
     }
 
@@ -178,7 +203,9 @@ extension MediaGalleryView {
                         isSelected: mediaTypeFilter.contains(typeFilter)
                     ) {
                         if mediaTypeFilter.contains(typeFilter) {
-                            mediaTypeFilter.remove(typeFilter)
+                            // Keep one on, as iOS does: with none the gallery is
+                            // just "No media found".
+                            if mediaTypeFilter.count > 1 { mediaTypeFilter.remove(typeFilter) }
                         } else {
                             mediaTypeFilter.insert(typeFilter)
                         }
@@ -232,8 +259,15 @@ extension MediaGalleryView {
             )
             .cornerRadius(12)
             .shadow(color: Color.havenPurple.opacity(0.3), radius: 4, x: 0, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .menuStyle(.automatic)
+        #if os(macOS)
+        // The default and .automatic menu styles drop the label's colour, frame
+        // and background on macOS and add a chevron; .button + .plain keep them.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        #endif
     }
 
     // MARK: - Filter Functions

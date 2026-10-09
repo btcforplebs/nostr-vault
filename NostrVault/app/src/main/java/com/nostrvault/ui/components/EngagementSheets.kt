@@ -208,6 +208,9 @@ fun RepostersSheet(
     profiles: Map<String, FeedProfile>,
     onProfileClick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** The same list of people serves quotes too ("Quoted By", iOS QuotersListView). */
+    title: String = "Reposts",
+    emptyText: String = "No reposts yet",
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -221,7 +224,7 @@ fun RepostersSheet(
                 .padding(bottom = 32.dp),
         ) {
             Text(
-                text = "Reposts",
+                text = title,
                 color = PrimaryText,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
@@ -231,7 +234,7 @@ fun RepostersSheet(
 
             if (reposts.isEmpty()) {
                 Text(
-                    text = "No reposts yet",
+                    text = emptyText,
                     color = SecondaryText,
                     fontSize = 14.sp,
                     modifier = Modifier

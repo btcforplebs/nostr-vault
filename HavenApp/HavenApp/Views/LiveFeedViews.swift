@@ -1,35 +1,27 @@
 import SwiftUI
+import AVFoundation
 
 /// One tile in the Live grid: thumbnail, a LIVE pill, and the viewer count when
 /// the host publishes one.
 struct LiveStreamCardView: View {
     let stream: LiveStream
     let profile: FeedProfile?
+    /// False draws an ENDED pill — a stream embedded in a note outlives its
+    /// broadcast, unlike a Live-tab tile.
+    var isLive: Bool = true
+    var thumbnailHeight: CGFloat = 120
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
-                Group {
-                    if let imageURL = stream.imageURL {
-                        RetryableAsyncImage(url: imageURL, contentMode: .fill, targetSize: CGSize(width: 600, height: 340))
-                    } else {
-                        // Half the live streams publish no image, so this is the
-                        // common case, not a fallback.
-                        ZStack {
-                            Rectangle().fill(Color.havenPurplePale)
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(.havenPurple.opacity(0.7))
-                        }
-                    }
-                }
-                .frame(height: 120)
+                LiveStreamThumbnail(urls: stream.previewImageURLs)
+                .frame(height: thumbnailHeight)
                 .frame(maxWidth: .infinity)
                 .clipped()
 
                 HStack(spacing: 6) {
-                    livePill
-                    if let participants = stream.participants {
+                    if isLive { livePill } else { endedPill }
+                    if isLive, let participants = stream.participants {
                         Label("\(participants)", systemImage: "person.2.fill")
                             .font(.appSystem(size: 10, weight: .semibold))
                             .padding(.horizontal, 6)
@@ -66,6 +58,16 @@ struct LiveStreamCardView: View {
         .contentShape(Rectangle())
     }
 
+    private var endedPill: some View {
+        Text("ENDED")
+            .font(.appSystem(size: 10, weight: .bold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.black.opacity(0.55))
+            .foregroundColor(.white.opacity(0.8))
+            .clipShape(Capsule())
+    }
+
     private var livePill: some View {
         HStack(spacing: 4) {
             Circle().fill(Color.red).frame(width: 6, height: 6)
@@ -76,6 +78,101 @@ struct LiveStreamCardView: View {
         .background(Color.black.opacity(0.55))
         .foregroundColor(.white)
         .clipShape(Capsule())
+    }
+}
+
+/// A live tile's picture: the stream's live frame, else its cover art, else a
+/// placeholder.
+///
+/// Not `RetryableAsyncImage`, which keeps every picture on disk by URL for
+/// good. Cloudflare Stream and the fly.dev radio hosts serve each new frame at
+/// one fixed URL, so the first frame ever fetched stayed on the tile forever;
+/// and a cover that failed to load drew a "Media Missing / Error 404" card on
+/// a stream that was playing fine. A stream's picture is only true while it is
+/// on air, so it is kept in memory for a minute and then fetched again.
+struct LiveStreamThumbnail: View {
+    let urls: [URL]
+    @State private var image: PlatformImage?
+
+    var body: some View {
+        ZStack {
+            // Many streams publish no picture at all, so this is a common
+            // case, not only a fallback.
+            Rectangle().fill(Color.havenPurplePale)
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.appSystem(size: 28))
+                .foregroundColor(.havenPurple.opacity(0.7))
+            if let image {
+                // An overlay on a clear rectangle, so a fill-scaled picture is
+                // cropped to the tile instead of widening it.
+                Color.clear
+                    .overlay {
+                        Image(platformImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .clipped()
+                    .transition(.opacity)
+            }
+        }
+        .task(id: urls) {
+            // Again every minute while the tile is on screen, so a fixed-URL
+            // frame moves on too; the task ends when the tile goes.
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(LiveThumbnailCache.maxAge))
+            }
+        }
+    }
+
+    private func load() async {
+        let cache = LiveThumbnailCache.shared
+        if let held = cache.entry(for: urls) {
+            image = held.image
+            if held.isFresh { return }
+        }
+        for url in urls {
+            if Task.isCancelled { return }
+            guard let fetched = await cache.fetch(url) else { continue }
+            if Task.isCancelled { return }
+            withAnimation(Motion.fade) { image = fetched }
+            return
+        }
+    }
+}
+
+/// Live-tile pictures, in memory only (see `LiveStreamThumbnail`).
+@MainActor
+final class LiveThumbnailCache {
+    static let shared = LiveThumbnailCache()
+    static let maxAge: TimeInterval = 60
+
+    struct Entry {
+        let image: PlatformImage
+        let fetchedAt: Date
+        var isFresh: Bool { Date().timeIntervalSince(fetchedAt) < LiveThumbnailCache.maxAge }
+    }
+
+    private var entries: [URL: Entry] = [:]
+
+    /// The best picture already held for these candidates, in their order.
+    func entry(for urls: [URL]) -> Entry? {
+        urls.lazy.compactMap { self.entries[$0] }.first
+    }
+
+    /// Fetches past every HTTP cache — a fixed-URL frame must be new each time.
+    /// zap.stream serves its `thumb.webp` as application/octet-stream, so the
+    /// bytes decide what it is, not the content type.
+    func fetch(_ url: URL) async -> PlatformImage? {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let image = await ImageDownsampler.downsample(data: data, maxDimension: 600)
+        else { return nil }
+        if entries.count > 200 { entries.removeAll() }
+        entries[url] = Entry(image: image, fetchedAt: Date())
+        return image
     }
 }
 
@@ -97,8 +194,25 @@ struct LiveStreamPlayerView: View {
     @State private var draft = ""
     @State private var zapSheet: ZapSheetContext?
     @State private var zapFailure: String?
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @State private var noLightningAddress = false
     @FocusState private var composerFocused: Bool
+    @State private var showingBlossomPicker = false
+    @State private var blossomMedia: [MediaItem] = []
+    @State private var isLoadingBlossomMedia = false
+    /// The mini player's player, when this is the stream it has minimized —
+    /// read once, as the window opens. The window shows that player's video
+    /// instead of opening the stream again: a second player meant the sound
+    /// stopped, reconnected and skipped on every pop-out and swipe away
+    /// (Logen, 2026-10-05).
+    @State private var miniPlayer: AVPlayer?
+
+    init(stream: LiveStream, onBlocked: ((String) -> Void)? = nil) {
+        self.stream = stream
+        self.onBlocked = onBlocked
+        let mini = MusicPlayerService.shared
+        _miniPlayer = State(initialValue: mini.liveStream?.address == stream.address ? mini.livePlayer : nil)
+    }
 
     private var profile: FeedProfile? { nostrService.profiles[stream.hostPubkey] }
     private var hostName: String {
@@ -108,8 +222,31 @@ struct LiveStreamPlayerView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let url = stream.streamingURL {
-                VideoPlayerView(url: url)
+                // The player with picture-in-picture: starting PiP closes this
+                // sheet, and the stream keeps playing in its floating window
+                // while you browse the rest of the app.
+                FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() },
+                                      sharedPlayer: miniPlayer,
+                                      onSharedResume: { MusicPlayerService.shared.resume() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .overlay(alignment: .topLeading) {
+                        // Minimize: the stream's sound carries on in the mini
+                        // player and on the lock screen while you browse; tap
+                        // Watch in the player to get the video back.
+                        Button(action: listenInBackground) {
+                            Image(systemName: "chevron.down")
+                                .font(.appSystem(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(Color.black.opacity(0.45)))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .accessibilityLabel("Minimize")
+                        .accessibilityHint("Keeps playing the sound while you browse")
+                    }
                     // A 16:9 video sized to the width of a phone in landscape
                     // is taller than the screen, and a VStack that cannot fit
                     // its children pushes the last one — the composer — off the
@@ -134,10 +271,14 @@ struct LiveStreamPlayerView: View {
         }
         .background(Color.platformWindowBackground)
         .onAppear {
-            nostrService.fetchMissingProfiles(for: [stream.hostPubkey, stream.zapPubkey])
+            nostrService.fetchMissingProfiles(for: [stream.hostPubkey])
             chat.connect(to: stream)
         }
-        .onDisappear { chat.disconnect() }
+        .onDisappear {
+            chat.disconnect()
+            // A shared player is the mini player's, which carries on.
+            if miniPlayer == nil { releaseVideo() }
+        }
         .sheet(isPresented: $showingReportDialog) {
             // Reporting also blocks, which is what the existing dialog does
             // everywhere else in the app — so the stream must leave the grid.
@@ -159,6 +300,18 @@ struct LiveStreamPlayerView: View {
             .environmentObject(nostrService)
             .environmentObject(configService)
         }
+        .sheet(isPresented: $showingBlossomPicker) {
+            BlossomMediaPickerSheet(
+                blossomMedia: $blossomMedia,
+                isLoading: $isLoadingBlossomMedia,
+                onSelect: { item in
+                    insertMedia(item)
+                    showingBlossomPicker = false
+                },
+                onAppearLoad: { loadBlossomMedia() }
+            )
+            .environmentObject(configService)
+        }
         .sheet(item: $zapSheet) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
                 sendZap(amountSats: amount)
@@ -168,6 +321,12 @@ struct LiveStreamPlayerView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif
+        }
+        // The video has its own sound; don't play the mini player over it.
+        // Sharing the mini player's, the sound is the video's and plays on.
+        .onAppear {
+            let mini = MusicPlayerService.shared
+            if miniPlayer == nil { mini.pause() } else if !mini.isPlaying { mini.resume() }
         }
         .alert("Block this host?", isPresented: $showingBlockConfirm) {
             Button("Block", role: .destructive) {
@@ -224,8 +383,18 @@ struct LiveStreamPlayerView: View {
                     Image(systemName: "ellipsis.circle")
                         .font(.appSystem(size: 16))
                         .foregroundColor(.havenPurple)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
+                #if os(macOS)
+                // .borderlessButton flattens the label's tint on the Mac.
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .help("More")
+                #else
                 .menuStyle(.borderlessButton)
+                #endif
                 .fixedSize()
             }
         }
@@ -265,6 +434,9 @@ struct LiveStreamPlayerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
             }
+            // Drag the chat down, or tap it, to put the keyboard away.
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: chat.messages.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(Self.chatBottomAnchor, anchor: .bottom)
@@ -280,6 +452,18 @@ struct LiveStreamPlayerView: View {
 
     private var composer: some View {
         HStack(spacing: 10) {
+            // Media from your relay's Blossom store, sent as its link.
+            Button {
+                composerFocused = false
+                showingBlossomPicker = true
+            } label: {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.appSystem(size: 17, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add media from your relay")
+
             TextField("Say something…", text: $draft)
                 .textFieldStyle(.plain)
                 .font(.appSystem(size: 14))
@@ -290,15 +474,17 @@ struct LiveStreamPlayerView: View {
                 .background(Color.controlBackgroundColor)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-            Button {
-                zapSheet = ZapSheetContext(defaultAmount: max(1, configService.config.defaultZapAmount / 1000))
-            } label: {
-                Image(systemName: "bolt.fill")
-                    .font(.appSystem(size: 16, weight: .bold))
-                    .foregroundColor(.orange)
+            if PostButtons.showsZap(postButtons) {
+                Button {
+                    zapSheet = ZapSheetContext(defaultAmount: max(1, configService.config.defaultZapAmount / 1000))
+                } label: {
+                    Image(systemName: "bolt.fill")
+                        .font(.appSystem(size: 16, weight: .bold))
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Zap this stream")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Zap this stream")
 
             Button {
                 sendMessage()
@@ -328,10 +514,64 @@ struct LiveStreamPlayerView: View {
         }
     }
 
+    /// The picked file's link goes into the message, on its own line after
+    /// anything already typed, ready to send.
+    private func insertMedia(_ item: MediaItem) {
+        let link = item.shareURL(with: configService).absoluteString
+        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = typed.isEmpty ? link : typed + " " + link
+    }
+
+    private func loadBlossomMedia() {
+        guard !isLoadingBlossomMedia else { return }
+        let relay = RelayProcessManager.shared
+        guard relay.isRunning && !relay.isBooting else {
+            blossomMedia = []
+            return
+        }
+        isLoadingBlossomMedia = true
+        Task {
+            blossomMedia = await ComposeView.relayBlossomMedia(
+                relayManager: relay, configService: configService, nostrService: nostrService)
+            isLoadingBlossomMedia = false
+        }
+    }
+
+    private func listenInBackground() {
+        // Already the mini player's stream: it plays on as it is.
+        if miniPlayer != nil { dismiss(); return }
+        MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(
+            id: "live:\(stream.address)",
+            title: stream.title ?? "Live stream",
+            artist: hostName,
+            artworkURL: stream.imageURL ?? stream.previewImageURLs.first ?? profile?.pictureURL,
+            audioURL: stream.streamingURL,
+            duration: nil,
+            isLive: true,
+            hostPubkey: stream.hostPubkey
+        ))
+        dismiss()
+    }
+
+    /// Stops the stream's video once its player has gone. `FullScreenVideoPlayer`
+    /// only mutes on the way out, leaving the player in `VideoPlayerCache`,
+    /// which suits a feed video the feed cell picks up again — but nothing
+    /// picks up a live stream, so it kept downloading video, muted, until three
+    /// newer videos pushed it out. That is also under the minimized audio,
+    /// which is a separate player. PiP is the one owner allowed to keep it.
+    private func releaseVideo() {
+        guard let url = stream.streamingURL else { return }
+        #if os(iOS)
+        if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL == url { return }
+        #endif
+        VideoPlayerCache.shared.removePlayer(for: url)
+        VideoPlaybackService.shared.invalidateLadder(for: url)
+    }
+
     /// A stream zap pays the host named in the event, and carries the stream's
     /// address so the receipt lands in this chat rather than nowhere.
     private func sendZap(amountSats: Int) {
-        guard let lud16 = lightningAddress(for: stream.zapPubkey) else {
+        guard let lud16 = lightningAddress(for: stream.hostPubkey) else {
             noLightningAddress = true
             return
         }
@@ -341,7 +581,7 @@ struct LiveStreamPlayerView: View {
             do {
                 try await ZapService.shared.zapNote(
                     noteId: stream.eventId,
-                    notePubkey: stream.zapPubkey,
+                    notePubkey: stream.hostPubkey,
                     lud16: lud16,
                     amountSats: amountSats,
                     message: comment.isEmpty ? "Zap from Nostr Vault" : comment,
@@ -406,11 +646,17 @@ struct LiveChatRowView: View {
                         .foregroundColor(.secondary)
                 }
 
-                if !message.text.isEmpty {
-                    Text(message.text)
+                let parts = Self.split(message.text)
+                if !parts.text.isEmpty {
+                    Text(parts.text)
                         .font(.appSystem(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(parts.images, id: \.self) { url in
+                    RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 400, height: 400))
+                        .frame(width: 180, height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
         }
@@ -427,4 +673,86 @@ struct LiveChatRowView: View {
         formatter.dateStyle = .none
         return formatter
     }()
+
+    /// Image links come out of the text and show as pictures under it.
+    static func split(_ text: String) -> (text: String, images: [URL]) {
+        var images: [URL] = []
+        var kept: [Substring] = []
+        for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+            let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("https://") || trimmed.hasPrefix("http://"),
+               let url = URL(string: trimmed),
+               SupportedMediaFormats.imageExtensions.contains(url.pathExtension.lowercased()) {
+                if !images.contains(url) { images.append(url) }
+            } else {
+                kept.append(word)
+            }
+        }
+        return (kept.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines), images)
+    }
+}
+
+// MARK: - In a note
+
+/// A live stream inside a note — quoted with `nostr:naddr1…` or linked from
+/// zap.stream and friends. The Live-tab tile, so a stream looks the same
+/// wherever it shows up, and a tap opens the same player.
+struct LiveStreamEmbedView: View {
+    let stream: LiveStream
+
+    @EnvironmentObject var nostrService: NostrService
+    @State private var playing: LiveStream?
+
+    var body: some View {
+        // Read once per render: an embed scrolled back to after its stream
+        // ended must stop offering to play it.
+        let isLive = stream.isPlayableLive(at: Int64(Date().timeIntervalSince1970))
+        LiveStreamCardView(
+            stream: stream,
+            profile: nostrService.profiles[stream.hostPubkey],
+            isLive: isLive,
+            thumbnailHeight: 170
+        )
+        .opacity(isLive ? 1 : 0.75)
+        .onTapGesture { if isLive { playing = stream } }
+        .accessibilityAddTraits(isLive ? .isButton : [])
+        .accessibilityHint(isLive ? Text("Plays the live stream") : Text("This stream has ended"))
+        .sheet(item: $playing) { stream in
+            LiveStreamPlayerView(stream: stream)
+                .environmentObject(nostrService)
+                .environmentObject(ConfigService.shared)
+        }
+    }
+}
+
+extension LiveStream {
+    /// A stream from a note-shaped event, as quotes and the feed store it.
+    init?(note: FeedNote) {
+        guard note.kind == 30311 else { return nil }
+        self.init(id: note.id, pubkey: note.pubkey,
+                  createdAt: Int64(note.createdAt.timeIntervalSince1970), tags: note.tags)
+    }
+}
+
+/// A stream known only by its coordinate, as a link names it: fetched through
+/// the same lookup quoted notes use, then embedded.
+struct LiveStreamReferenceView: View {
+    let coordinate: String
+    let fallbackURL: URL
+
+    @EnvironmentObject var nostrService: NostrService
+    @ObservedObject private var feedService = FeedService.shared
+
+    var body: some View {
+        if let note = feedService.findNote(id: coordinate), let stream = LiveStream(note: note) {
+            LiveStreamEmbedView(stream: stream)
+        } else if feedService.unavailableNoteIds.contains(coordinate) {
+            LinkFallbackCard(url: fallbackURL)
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.platformTertiaryGroupedBackground)
+                .frame(height: 230)
+                .onAppear { feedService.fetchMissingNote(id: coordinate) }
+        }
+    }
 }

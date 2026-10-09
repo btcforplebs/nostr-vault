@@ -49,6 +49,10 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     /// The event ID of the original note referenced by a kind 6 repost (from e-tags).
     let repostedEventId: String?
 
+    /// When the reposted note was written, from a kind 6 repost's embedded
+    /// event. `createdAt` stays the repost's own time, which orders the feed.
+    let originalCreatedAt: Date?
+
     init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int, repostedBy: String? = nil) {
         // NIP-18: a kind 6 repost SHOULD embed the full original event as stringified JSON
         // in `content`. When present, swap to the inner author/content/tags so the UI renders
@@ -61,6 +65,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         var resolvedContent = content
         var resolvedTags = tags
         var resolvedRepostedBy = repostedBy
+        var resolvedOriginalCreatedAt: Date?
 
         if kind == 6,
            let data = content.data(using: .utf8),
@@ -73,6 +78,9 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
                 resolvedTags = innerTags
             }
             if resolvedRepostedBy == nil { resolvedRepostedBy = pubkey }
+            if let innerCreatedAt = (inner["created_at"] as? NSNumber)?.doubleValue {
+                resolvedOriginalCreatedAt = Date(timeIntervalSince1970: innerCreatedAt)
+            }
         }
 
         self.id = id
@@ -92,9 +100,10 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         // Kind 6 reposts have e-tags but are not replies
         self.isReply = kind != 6 && !nonMentionETags.isEmpty
         self.replyToPubkey = kind != 6 ? resolvedTags.first { $0.count >= 2 && $0[0] == "p" }?[1] : nil
-        self.parentEventId = kind != 6 ? resolvedTags.last { $0.count >= 2 && $0[0] == "e" }?[1] : nil
+        self.parentEventId = kind != 6 ? NIP10Thread.parentEventId(kind: kind, tags: resolvedTags) : nil
 
         self.repostedEventId = outerRepostedEventId
+        self.originalCreatedAt = resolvedOriginalCreatedAt
 
         // Cache regex-derived properties (expensive — only compute once)
         let contentURLs = Self.parseMediaURLs(from: resolvedContent)
@@ -147,11 +156,6 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
     }()
 
-    /// Matches any HTTP(S) URL in content for link preview extraction.
-    private static let httpURLRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
-    }()
-
     private static func parseMediaURLs(from content: String) -> [URL] {
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
@@ -177,7 +181,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
 
     /// Extracts non-media HTTP(S) URLs from content for link preview cards.
     private static func parseLinkURLs(from content: String, excludingMedia mediaURLs: [URL]) -> [URL] {
-        guard let regex = httpURLRegex else { return [] }
+        let regex = NoteURLs.cardRegex
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         let mediaSet = Set(mediaURLs.map { $0.absoluteString })
@@ -194,6 +198,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     enum CodingKeys: String, CodingKey {
         case id, pubkey, content, createdAt, tags, kind, repostedBy
         case isReply, replyToPubkey, parentEventId, mediaURLs, linkURLs, quotedEventIds, repostedEventId
+        case originalCreatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -212,6 +217,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.linkURLs = try c.decodeIfPresent([URL].self, forKey: .linkURLs) ?? []
         self.quotedEventIds = try c.decode([String].self, forKey: .quotedEventIds)
         self.repostedEventId = try c.decodeIfPresent(String.self, forKey: .repostedEventId)
+        self.originalCreatedAt = try c.decodeIfPresent(Date.self, forKey: .originalCreatedAt)
         MediaHints.shared.register(tags: tags)
     }
 
@@ -231,6 +237,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         try c.encode(linkURLs, forKey: .linkURLs)
         try c.encode(quotedEventIds, forKey: .quotedEventIds)
         try c.encodeIfPresent(repostedEventId, forKey: .repostedEventId)
+        try c.encodeIfPresent(originalCreatedAt, forKey: .originalCreatedAt)
     }
 
     /// Technical heuristic to filter out spam, bots, empty, duplicate, or telemetry noise.
@@ -317,9 +324,9 @@ extension FeedNote: ThreadGroupable {
 final class BackgroundAccumulator: @unchecked Sendable {
     var notes: [FeedNote] = []
     var profiles: [String] = []
-    /// Reaction events: (target note ID, reactor pubkey). Used for both self-like
-    /// detection and per-note reaction counting.
-    var reactionEvents: [(targetId: String, pubkey: String)] = []
+    /// Reaction events. Used for both self-like detection and per-note
+    /// reaction counting.
+    var reactionEvents: [EngagementTracker.ReactionEvent] = []
     /// Note IDs that were reposted (from kind 6 events).
     var repostTargets: [String] = []
     /// Raw event JSON strings for NIP-18 repost embedding (id → stringified JSON with sig).
@@ -330,6 +337,35 @@ final class BackgroundAccumulator: @unchecked Sendable {
     /// from multiple relays. NOT drained — persists across flushes.
     var seenEngagementIds = Set<String>()
     private static let maxEngagementIds = 20_000
+
+    /// When each lookup response id was last verified. Every relay asked
+    /// answers with the same note; only the first valid copy is worth a
+    /// signature check. Entries lapse after a few seconds so a later re-fetch of the
+    /// same note (after a cache trim or feed switch) is verified again.
+    private var parentFetchClaims: [String: Date] = [:]
+    private static let parentFetchClaimWindow: TimeInterval = 10
+
+    /// True if a copy of `id` already passed verification within the window.
+    func parentFetchRecentlyVerified(_ id: String, now: Date = Date()) -> Bool {
+        guard let at = parentFetchClaims[id] else { return false }
+        return now.timeIntervalSince(at) < Self.parentFetchClaimWindow
+    }
+
+    /// Record that a copy of `id` passed verification. Only valid copies are
+    /// recorded, so a relay answering first with a forgery cannot shadow the
+    /// genuine note.
+    func markParentFetchVerified(_ id: String, now: Date = Date()) {
+        if parentFetchClaims.count > 2_000 {
+            parentFetchClaims = parentFetchClaims.filter {
+                now.timeIntervalSince($0.value) < Self.parentFetchClaimWindow
+            }
+        }
+        parentFetchClaims[id] = now
+    }
+
+    func forgetParentFetch(_ id: String) { parentFetchClaims[id] = nil }
+
+    func resetParentFetchClaims() { parentFetchClaims.removeAll() }
 
     static let flushIntervalFast: TimeInterval = 0.2
     static let flushIntervalNormal: TimeInterval = 0.5
@@ -351,7 +387,7 @@ final class BackgroundAccumulator: @unchecked Sendable {
     struct Snapshot {
         let notes: [FeedNote]
         let profiles: [String]
-        let reactionEvents: [(targetId: String, pubkey: String)]
+        let reactionEvents: [EngagementTracker.ReactionEvent]
         let repostTargets: [String]
         let rawEventEntries: [(id: String, json: String)]
     }
@@ -402,12 +438,75 @@ enum FeedMode: String, CaseIterable {
     case following = "Following"
     case discovery = "Discovery"
     case global = "Global"
+    case hashtags = "Hashtags"
     case popular = "Popular"
     case media = "Media"
     case reels = "Reels"
     case articles = "Articles"
     case recipes = "Recipes"
+    case marketplace = "Marketplace"
     case live = "Live"
+    case polls = "Polls"
+    case music = "Music"
+}
+
+extension FeedMode {
+    /// Name shown in the feed picker and the top bar.
+    var displayName: String {
+        switch self {
+        case .discovery: return "Discover"
+        case .reels: return "diVines"
+        default: return rawValue
+        }
+    }
+
+    /// Icon for the feed picker and the top bar. Popular, Articles, Recipes
+    /// and Live match their empty-state icons.
+    var symbolName: String {
+        switch self {
+        case .following: return "person.2"
+        case .discovery: return "sparkles"
+        case .global: return "globe"
+        case .hashtags: return "number"
+        case .popular: return "flame"
+        case .media: return "photo.on.rectangle"
+        case .reels: return "play.rectangle"
+        case .articles: return "doc.richtext"
+        case .recipes: return "fork.knife"
+        case .marketplace: return "bag"
+        case .live: return "dot.radiowaves.left.and.right"
+        case .polls: return "chart.bar.xaxis"
+        case .music: return "music.note"
+        }
+    }
+}
+
+extension FeedMode {
+    /// The reader's feed picker: order and hidden feeds, as comma-separated
+    /// raw values (see `FeedMenuOrder`). Following is the home feed and
+    /// can't be hidden.
+    static let menuOrderKey = "feedMenu.order"
+    static let menuHiddenKey = "feedMenu.hidden"
+
+    /// Every feed, in the reader's order, hidden ones included: the editor's list.
+    static func menuOrder(_ orderRaw: String) -> [FeedMode] {
+        FeedMenuOrder.ordered(stored: FeedMenuOrder.decode(orderRaw), defaults: allCases.map(\.rawValue))
+            .compactMap(FeedMode.init(rawValue:))
+    }
+
+    /// The feeds the picker lists, in the reader's order.
+    static func menuModes(order orderRaw: String, hidden hiddenRaw: String) -> [FeedMode] {
+        FeedMenuOrder.visible(stored: FeedMenuOrder.decode(orderRaw), hidden: FeedMenuOrder.decode(hiddenRaw),
+                              defaults: allCases.map(\.rawValue), pinned: FeedMode.following.rawValue)
+            .compactMap(FeedMode.init(rawValue:))
+    }
+
+    /// The same, read straight from settings, for menus built on demand.
+    static var menuModes: [FeedMode] {
+        let defaults = UserDefaults.standard
+        return menuModes(order: defaults.string(forKey: menuOrderKey) ?? "",
+                         hidden: defaults.string(forKey: menuHiddenKey) ?? "")
+    }
 }
 
 /// Per-account, in-memory snapshot of the feed state. Captured before switching

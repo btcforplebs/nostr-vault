@@ -6,23 +6,36 @@ extension VaultView {
 
     @ViewBuilder
     var listContent: some View {
-        VStack(spacing: 0) {
-            Group {
-                if searchScope == .profiles && !committedSearch.isEmpty {
-                    profileSearchResults
-                } else if viewMode == .notes {
-                    notesList
-                } else if viewMode == .likes {
-                    likesList
-                } else if viewMode == .zaps {
-                    zapsList
+        // The reader sits inside each platform's ScrollView, so one copy serves
+        // the iOS, wide-mac and compact-mac layouts.
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                Group {
+                    if searchScope == .profiles && !committedSearch.isEmpty {
+                        profileSearchResults
+                    } else if viewMode == .notes {
+                        notesList
+                    } else if viewMode == .likes {
+                        likesList
+                    } else if viewMode == .zaps {
+                        zapsList
+                    } else if viewMode == .followers {
+                        followersList
+                    }
                 }
+                .animation(.none, value: viewMode)
+                .id("\(viewMode)-\(searchScope)-\(committedSearch.isEmpty)")
             }
-            .animation(.none, value: viewMode)
-            .id("\(viewMode)-\(searchScope)-\(committedSearch.isEmpty)")
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+            // onAppear covers a tap that mounted this tab; onReceive, one that
+            // arrived while it was already on screen.
+            .onAppear { consumeRelayFocus(proxy: proxy) }
+            .task(id: followersOwnerHex) { await pollFollowers() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenFocusRelayEvent)) { _ in
+                consumeRelayFocus(proxy: proxy)
+            }
         }
-        .padding(.vertical, 16)
-        .contentShape(Rectangle())
     }
 
     // MARK: - nostr: links
@@ -32,10 +45,16 @@ extension VaultView {
     /// a quoted article there fell through to the system and did nothing.
     var nostrLinkAction: OpenURLAction {
         OpenURLAction { url in
+            if HashtagLink.tag(from: url) != nil {
+                inheritedOpenURL(url)
+                return .handled
+            }
             guard url.scheme == "nostr" else { return .systemAction }
             let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
             if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
-                self.showingProfilePubkey = id
+                if let pubkey = QuoteReference.profilePubkey(fromBech32: id) {
+                    self.showingProfilePubkey = pubkey
+                }
                 return .handled
             }
             if id.hasPrefix("note1") || id.hasPrefix("nevent1") || id.hasPrefix("naddr1") {
@@ -47,6 +66,25 @@ extension VaultView {
     }
 
     // MARK: - Notes List
+
+    /// The empty list's headline for the scope the Vault menu picked.
+    var emptyNotesTitle: String {
+        switch noteScope {
+        case .notes: return "No notes found"
+        case .articles: return recipesOnly ? "No recipes found" : "No articles found"
+        case .highlights: return "No highlights found"
+        }
+    }
+
+    /// Articles and highlights are rare: an empty list usually means none
+    /// were published, not that a filter hid them.
+    var emptyNotesHint: String {
+        switch noteScope {
+        case .notes: return "Try changing your filter settings"
+        case .articles: return recipesOnly ? "Recipes are articles tagged zapcooking or nostrcooking" : "Long-form posts you write or are tagged in land here"
+        case .highlights: return "Highlights you make or that quote you land here"
+        }
+    }
 
     var notesList: some View {
         let isLoading = nostrService.isFetching || relayManager.isBooting || !notesHasLoadedOnce
@@ -84,14 +122,16 @@ extension VaultView {
                         )
 
                     VStack(spacing: 8) {
-                        Text("No notes found")
+                        Text(emptyNotesTitle)
                             .font(.appSystem(size: 18, weight: .bold, design: .default))
                             .tracking(0.2)
 
-                        Text("Try changing your filter settings")
+                        Text(emptyNotesHint)
                             .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.3)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,44 +143,48 @@ extension VaultView {
                     ForEach(displayNotes) { event in
                         let showEngagement = event.pubkey == owner || whitelisted.contains(event.pubkey)
                         #if os(iOS)
-                        NavigationLink(destination: NoteDetailView(note: FeedNote(
+                        NoteNavigationLink(note: FeedNote(
                             id: event.id,
                             pubkey: event.pubkey,
                             content: event.content,
                             createdAt: event.createdAtDate,
                             tags: event.tags,
                             kind: event.kind
-                        ))) {
+                        )) {
                             NoteRow(
                                 event: event,
-                                layoutMode: noteLayoutMode,
+                                layoutMode: rowLayoutMode,
                                 reactors: showEngagement ? reactionMap[event.id] : nil,
                                 latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                                 zappers: showEngagement ? zapMap[event.id] : nil,
                                 reposterPubkeys: showEngagement ? repostMap[event.id] : nil,
                                 quoterPubkeys: showEngagement ? quoteMap[event.id] : nil
                             )
+                            .relayFocusOutline(focusedEventId == event.id)
                             // Likes and Zaps rows carry this same inset; Notes rows
                             // were flush to the pane edges, the one filter that read
                             // differently from the other two.
                             .padding(.horizontal, 16)
                         }
                         .buttonStyle(.plain)
+                        .onAppear { loadMoreIfLast(event) }
                         #else
                         NoteRow(
                             event: event,
-                            layoutMode: noteLayoutMode,
+                            layoutMode: rowLayoutMode,
                             reactors: showEngagement ? reactionMap[event.id] : nil,
                             latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                             zappers: showEngagement ? zapMap[event.id] : nil,
                             reposterPubkeys: showEngagement ? repostMap[event.id] : nil,
                             quoterPubkeys: showEngagement ? quoteMap[event.id] : nil
                         )
+                        .relayFocusOutline(focusedEventId == event.id)
                         .padding(.horizontal, 16)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             self.openNote(event.id)
                         }
+                        .onAppear { loadMoreIfLast(event) }
                         #endif
                     }
                 }
@@ -214,15 +258,16 @@ extension VaultView {
                         let rowReactionDate = likesFilter != .myLikes ? latestReactionDates[event.id] : nil
                         VStack(alignment: .leading, spacing: 0) {
                             #if os(iOS)
-                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            NoteNavigationLink(note: FeedNote(
                                 id: event.id,
                                 pubkey: event.pubkey,
                                 content: event.content,
                                 createdAt: event.createdAtDate,
                                 tags: event.tags,
                                 kind: event.kind
-                            ))) {
-                                NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                            )) {
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                                    .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                                     .onAppear {
                                         if event.id == displayLikedNotes.last?.id {
@@ -232,8 +277,13 @@ extension VaultView {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                                .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    self.openNote(event.id)
+                                }
                                 .onAppear {
                                     if event.id == displayLikedNotes.last?.id {
                                         loadMoreItems()
@@ -256,9 +306,11 @@ extension VaultView {
         // ~always true here while the feed/relay fetches), or the Zaps view spins
         // forever when there are no zaps yet. Show the spinner only until the
         // initial settle completes (bounded ~6s, see updateZapsSettleState).
+        // The wallet's history can outlast that settle (one NWC call can take
+        // 15s), so "Given" keeps spinning while it is still being read.
         let showLoading = displayZappedNotes.isEmpty
-            && !zapsHasLoadedOnce
-            && !zapsInitialSettled
+            && ((!zapsHasLoadedOnce && !zapsInitialSettled)
+                || (zapsFilter == .myZaps && walletGivenLoading))
         return Group {
             if showLoading {
                 VStack(spacing: 32) {
@@ -307,18 +359,19 @@ extension VaultView {
                     ForEach(displayZappedNotes) { event in
                         // Same unification as the Likes filter — zaps belong in the
                         // card's engagement bar under the post, not in a row above it.
-                        let rowZappers = zapsFilter != .myZaps ? zapMap[event.id] : nil
+                        let rowZappers = zapMap[event.id]
                         VStack(alignment: .leading, spacing: 0) {
                             #if os(iOS)
-                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            NoteNavigationLink(note: FeedNote(
                                 id: event.id,
                                 pubkey: event.pubkey,
                                 content: event.content,
                                 createdAt: event.createdAtDate,
                                 tags: event.tags,
                                 kind: event.kind
-                            ))) {
-                                NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, zappers: rowZappers)
+                            )) {
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
+                                    .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                                     .onAppear {
                                         if event.id == displayZappedNotes.last?.id {
@@ -328,8 +381,13 @@ extension VaultView {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, zappers: rowZappers)
+                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
+                                .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    self.openNote(event.id)
+                                }
                                 .onAppear {
                                     if event.id == displayZappedNotes.last?.id {
                                         loadMoreItems()
@@ -385,5 +443,157 @@ extension VaultView {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+}
+
+// MARK: - Notification focus
+
+/// Where a tapped notification should land inside the Relay tab.
+struct RelayFocusRequest {
+    let type: String
+    let eventId: String
+}
+
+/// Parks a notification's target until the Relay tab can scroll to it. The tab
+/// is created lazily, so a tap on a cold launch (or before the tab was ever
+/// opened) posts before anything is listening; parking is what lets the tab
+/// pick the target up as it mounts.
+@MainActor
+enum RelayFocus {
+    static var pending: RelayFocusRequest?
+
+    static func request(type: String, eventId: String) {
+        pending = RelayFocusRequest(type: type, eventId: eventId)
+        NotificationCenter.default.post(name: .havenFocusRelayEvent, object: nil)
+    }
+}
+
+extension VaultView {
+
+    /// Switches to the filter that holds the notification's event, scrolls to
+    /// it and outlines it. Falls back to opening the post when it never shows
+    /// up in the list (older than the loaded page), so a tap always lands on it.
+    func consumeRelayFocus(proxy: ScrollViewProxy) {
+        guard let request = RelayFocus.pending else { return }
+        RelayFocus.pending = nil
+
+        navigationPath = NavigationPath()
+        showingNoteId = nil
+        committedSearch = ""
+        isSearchActive = false
+        // A follower alert lands on the Followers list; there is no event to find.
+        if request.type == "followers" {
+            viewMode = .followers
+            return
+        }
+        switch request.type {
+        case "reaction" where !configService.config.zapsOnlyMode:
+            viewMode = .likes
+            likesFilter = .onMyNotes
+        case "zap":
+            viewMode = .zaps
+            zapsFilter = .onMyNotes
+        default:
+            viewMode = .notes
+            // Notes in the Vault tab leave out articles and highlights; land
+            // on the list that holds the target.
+            switch nostrService.events.first(where: { $0.id == request.eventId })?.kind {
+            case VaultNoteScope.articleKind?: noteScope = .articles
+            case VaultNoteScope.highlightKind?: noteScope = .highlights
+            default: noteScope = .notes
+            }
+            recipesOnly = false
+            // A reply from outside your network isn't listed under All.
+            if let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
+               ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,
+                                       whitelist: configService.whitelistedHexPubkeys,
+                                       trusted: FeedService.shared.relayTabTrustedPubkeys()) {
+                contentFilter = .outside
+            } else {
+                contentFilter = .all
+            }
+        }
+
+        focusTask?.cancel()
+        focusTask = Task { @MainActor in
+            // The event can still be arriving from the relay and the display
+            // lists rebuild on a debounce, so look for up to ~10 s.
+            for _ in 0..<40 {
+                if Task.isCancelled { return }
+                if let id = focusTargetId(for: request) {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation(Motion.toggle) { proxy.scrollTo(id, anchor: .center) }
+                    focusedEventId = id
+                    try? await Task.sleep(for: .seconds(3))
+                    if focusedEventId == id {
+                        withAnimation(.easeOut(duration: 0.6)) { focusedEventId = nil }
+                    }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            if Task.isCancelled { return }
+            openNote(fallbackNoteId(for: request))
+        }
+    }
+
+    /// The notification's own event first, then what it points at — a
+    /// reaction, zap receipt or repost is listed under the note it targets.
+    /// NIP-25 puts the target in the last `e` tag, hence reversed.
+    private func focusCandidates(for request: RelayFocusRequest) -> [String] {
+        var ids = [request.eventId]
+        if let event = nostrService.events.first(where: { $0.id == request.eventId }) {
+            ids += event.tags
+                .filter { $0.count >= 2 && $0[0] == "e" }
+                .map { $0[1] }
+                .reversed()
+        }
+        return ids
+    }
+
+    /// The post to open when the event never showed up in the list. A reply
+    /// or mention opens on itself: the thread view puts it at the top with the
+    /// post it answers scrollable above. Opening what it points at (your post)
+    /// landed on your post with the reply out of sight below it. A reaction,
+    /// zap or repost opens the post it targets, since it has no body of its own.
+    private func fallbackNoteId(for request: RelayFocusRequest) -> String {
+        switch request.type {
+        case "reply", "mention", "quote":
+            return request.eventId
+        default:
+            return focusCandidates(for: request).dropFirst().first ?? request.eventId
+        }
+    }
+
+        private func focusTargetId(for request: RelayFocusRequest) -> String? {
+        let shown: [NostrEvent]
+        switch viewMode {
+        case .likes: shown = displayLikedNotes
+        case .zaps: shown = displayZappedNotes
+        default: shown = displayNotes
+        }
+        let shownIds = Set(shown.map(\.id))
+        return focusCandidates(for: request).first(where: shownIds.contains)
+    }
+}
+
+extension VaultView {
+    /// The last Notes row showing raises the cap on how many are listed. Without
+    /// it the list stopped at 100 notes (50 after a filter change): older ones
+    /// kept loading from the relay underneath but were never shown.
+    func loadMoreIfLast(_ event: NostrEvent) {
+        if event.id == displayNotes.last?.id { loadMoreItems() }
+    }
+}
+
+extension View {
+    /// Outlines the row a notification tap landed on. Same radius as `NoteRow`'s card.
+    func relayFocusOutline(_ isFocused: Bool) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.havenPurple, lineWidth: 2)
+                .opacity(isFocused ? 1 : 0)
+                .allowsHitTesting(false)
+        )
     }
 }

@@ -31,17 +31,26 @@ enum ZapValidationService {
         return receiptPubkey.lowercased() == authorized.lowercased()
     }
 
+    /// The pubkey `recipientPubkey`'s LNURL service names as its zap-receipt
+    /// publisher, or nil when that can't be determined. For callers that
+    /// must fail closed, unlike `isValidReceipt`.
+    static func authorizedPublisher(for recipientPubkey: String) async -> String? {
+        await resolveAuthorizedPublisher(for: recipientPubkey)
+    }
+
     private static func resolveAuthorizedPublisher(for recipientPubkey: String) async -> String? {
         if let cached = authorizedPublisherCache[recipientPubkey] {
             return cached
         }
 
-        let profile = NostrService.shared.profiles[recipientPubkey]
+        // No profile yet is not an answer: caching nil here would leave this
+        // recipient unresolved for the whole session once it loads.
+        guard let profile = NostrService.shared.profiles[recipientPubkey] else { return nil }
         let resolved: String?
         do {
-            if let lud16 = profile?.lud16, !lud16.isEmpty {
+            if let lud16 = profile.lud16, !lud16.isEmpty {
                 resolved = try await LNURLService.resolveAddress(lud16).nostrPubkey
-            } else if let lud06 = profile?.lud06, !lud06.isEmpty {
+            } else if let lud06 = profile.lud06, !lud06.isEmpty {
                 resolved = try await LNURLService.resolveRawLNURL(lud06).nostrPubkey
             } else {
                 resolved = nil

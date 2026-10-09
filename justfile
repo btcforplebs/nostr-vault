@@ -11,20 +11,26 @@ android-build:
     NDK_BIN="{{ndk_home}}/toolchains/llvm/prebuilt/darwin-x86_64/bin"
     GO_SRC="{{justfile_directory()}}/haven-go"
     JNILIBS="{{justfile_directory()}}/NostrVault/app/src/main/jniLibs"
-    mkdir -p "$JNILIBS/arm64-v8a"
     JNI_SRC="{{justfile_directory()}}/NostrVault/app/src/main/java/com/nostrvault/relay/HavenBridgeJNI.c"
-    echo "Building libhaven.so for arm64-v8a (with JNI bridge)..."
-    # Copy JNI bridge into Go source so CGO compiles it into libhaven.so
+    # Every ABI the APK ships, from the same Go source. Building only arm64
+    # left armv7 / x86_64 phones on months-old Go core code.
     cp "$JNI_SRC" "$GO_SRC/HavenBridgeJNI.c"
+    trap 'rm -f "$GO_SRC/HavenBridgeJNI.c"' EXIT
     cd "$GO_SRC"
-    CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
-        CC="${NDK_BIN}/aarch64-linux-android26-clang" \
-        CGO_CFLAGS="-DMDB_USE_ROBUST=0" \
-        go build -buildmode=c-shared -tags cshared -trimpath \
-        -ldflags="-s -w" \
-        -o "$JNILIBS/arm64-v8a/libhaven.so" .
-    rm -f "$GO_SRC/HavenBridgeJNI.c"
-    rm -f "$JNILIBS/arm64-v8a/libhaven.h"
+    for spec in "arm64-v8a arm64 aarch64-linux-android26-clang" \
+                "armeabi-v7a arm armv7a-linux-androideabi26-clang" \
+                "x86_64 amd64 x86_64-linux-android26-clang"; do
+        set -- $spec
+        echo "Building libhaven.so for $1 (with JNI bridge)..."
+        mkdir -p "$JNILIBS/$1"
+        CGO_ENABLED=1 GOOS=android GOARCH=$2 GOARM=7 \
+            CC="${NDK_BIN}/$3" \
+            CGO_CFLAGS="-DMDB_USE_ROBUST=0" \
+            go build -buildmode=c-shared -tags cshared -trimpath \
+            -ldflags="-s -w" \
+            -o "$JNILIBS/$1/libhaven.so" .
+        rm -f "$JNILIBS/$1/libhaven.h"
+    done
     echo "Building APK..."
     cd {{justfile_directory()}}/NostrVault && ./gradlew assembleRelease
 

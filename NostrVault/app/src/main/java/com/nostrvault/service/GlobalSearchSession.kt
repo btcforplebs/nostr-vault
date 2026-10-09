@@ -17,6 +17,7 @@ import com.nostrvault.data.model.SearchWireMessage
 import com.nostrvault.data.model.finalSourceStatus
 import com.nostrvault.data.model.parseProfileMetadata
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -65,6 +66,8 @@ class GlobalSearchSession(
     private val plan: Plan,
     private val own: Set<String>,
     private val follows: Set<String>,
+    /** The rest of the Web of Trust, ranked after follows. */
+    private val wot: Set<String> = emptySet(),
     private val cachedProfiles: Collection<FeedProfile> = emptyList(),
     private val onFinished: (GlobalSearchResults) -> Unit = {},
 ) {
@@ -426,6 +429,9 @@ class GlobalSearchSession(
             }
             0 -> {
                 val profile = parseProfileMetadata(ev.pubkey, ev.content) ?: return
+                // Search results can seed the profile cache (lightning address
+                // included), so an unsigned or forged kind-0 is dropped here.
+                if (!HavenBridge.verifyEvent(ev.raw)) return
                 if (verify && !matcher.matchesProfileContent(ev.content, ev.pubkey)) return
                 synchronized(lock) {
                     accumulator.addProfile(profile, ev.createdAt)
@@ -452,7 +458,7 @@ class GlobalSearchSession(
     }
 
     private fun publish(running: Boolean): GlobalSearchResults = synchronized(lock) {
-        val results = accumulator.ranked(own, follows)
+        val results = accumulator.ranked(own, follows, wot)
         if (!cancelled) {
             _state.value = GlobalSearchState(results = results, sources = sources.toList(), isRunning = running)
         }
@@ -517,8 +523,9 @@ private class SearchSocket private constructor(url: String, http: OkHttpClient) 
     }
 
     companion object {
+        /** Null for a URL that can't be a socket, or a relay set to Never connect. */
         fun open(url: String, http: OkHttpClient): SearchSocket? = try {
-            SearchSocket(url, http)
+            if (com.nostrvault.relay.RelayBlocklist.isBlocked(url)) null else SearchSocket(url, http)
         } catch (_: IllegalArgumentException) {
             null
         }

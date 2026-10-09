@@ -12,13 +12,19 @@ struct MediaListItem: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @State private var showingReportDialog = false
+    @State private var pendingDelete: MediaDeleteScope?
+    @State private var showingBlockConfirm = false
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
-    @State private var mirroredCount: Int? = nil
-    @State private var totalMirrors: Int = 0
+    @State private var onPhone = false
+    @ObservedObject private var backupStore = BlossomBackupStore.shared
 
     var body: some View {
-        Button(action: onSelect) {
+        // Not a Button around the whole row: the row holds its own Upload,
+        // Save to Vault and Copy link buttons, and on iOS a Button nested in
+        // a Button never gets the tap, so all three opened the viewer
+        // instead. The open action covers everything but those three.
+        HStack(spacing: 12) {
             HStack(spacing: 12) {
                 // Thumbnail
                 Color.clear
@@ -58,83 +64,82 @@ struct MediaListItem: View {
                     .foregroundColor(.havenPurple)
                     .frame(width: 32)
 
-                // Location Status
+                // Location Status: on this phone or not, plus how many of
+                // your Blossom servers hold it.
                 VStack(alignment: .leading, spacing: 4) {
-                    if !isRemoteMedia {
-                        HStack(spacing: 8) {
-                            // Local storage — icon only
+                    HStack(spacing: 8) {
+                        if onPhone {
                             Image(systemName: "internaldrive.fill")
                                 .font(.appSystem(size: 13))
                                 .foregroundColor(.green)
-
-                            // Blossom mirror count (x/x)
-                            if totalMirrors > 0 {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "cloud.fill")
-                                        .font(.appSystem(size: 11))
-                                    Text(mirrorCountText)
-                                        .font(.appSystem(size: 13, weight: .medium))
-                                }
-                                .foregroundColor(mirrorTint)
+                                .accessibilityLabel("On phone")
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "link")
+                                    .font(.appSystem(size: 11))
+                                Text(item.url.host ?? "Link only")
+                                    .font(.appSystem(size: 13, weight: .medium))
+                                    .lineLimit(1)
                             }
+                            .foregroundColor(.blue)
                         }
-                    } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "cloud.fill")
-                                .font(.appSystem(size: 11))
-                            Text(item.url.host ?? "Remote")
-                                .font(.appSystem(size: 13, weight: .medium))
-                                .lineLimit(1)
+                        if let hash {
+                            BlossomBackupBadge(hash: hash)
                         }
-                        .foregroundColor(.blue)
                     }
                 }
 
                 Spacer()
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onSelect)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
 
-                // Action Buttons
-                HStack(spacing: 8) {
-                    // Upload to mirrors (only for local items with mirrors configured)
-                    if !isRemoteMedia && !configService.config.activeBlossomMirrors.isEmpty {
-                        Button(action: pushToMirrors) {
-                            Image(systemName: isPushingToMirrors ? "arrow.up.circle.fill" : "arrow.up.circle")
-                                .font(.appSystem(size: 22))
-                                .foregroundColor(isPushingToMirrors ? .secondary : .havenPurple)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isPushingToMirrors)
-                    }
-
-                    // Download to local (only for remote items not on local)
-                    if !isOnMirror && configService.hasExternalShareURL(for: URL(string: "https://localhost")!) {
-                        Button(action: mirrorToLocalRelay) {
-                            Image(systemName: isMirroringToLocal ? "arrow.down.circle.fill" : "arrow.down.circle")
-                                .font(.appSystem(size: 22))
-                                .foregroundColor(isMirroringToLocal ? .secondary : .havenPurple)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isMirroringToLocal)
-                    }
-
-                    // Copy link
-                    Button(action: {
-                        PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
-                    }) {
-                        Image(systemName: "doc.on.doc")
+            // Action Buttons
+            HStack(spacing: 8) {
+                // Upload only when it is on the phone and some server lacks it
+                if needsMirror {
+                    Button(action: pushToMirrors) {
+                        Image(systemName: isPushingToMirrors ? "arrow.up.circle.fill" : "arrow.up.circle")
                             .font(.appSystem(size: 22))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(isPushingToMirrors ? .secondary : .havenPurple)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isPushingToMirrors)
                 }
-                .padding(.trailing, 8)
+
+                // Save to Vault (only when it is not on the phone yet)
+                if !onPhone {
+                    Button(action: mirrorToLocalRelay) {
+                        Image(systemName: isMirroringToLocal ? "arrow.down.circle.fill" : "arrow.down.circle")
+                            .font(.appSystem(size: 22))
+                            .foregroundColor(isMirroringToLocal ? .secondary : .havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isMirroringToLocal)
+                }
+
+                // Copy link
+                Button(action: {
+                    PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.appSystem(size: 22))
+                        .foregroundColor(.havenPurple)
+                }
+                .buttonStyle(.plain)
             }
-            .padding(12)
-            .background(Color(red: 0.1, green: 0.1, blue: 0.14).opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.trailing, 8)
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .background(Color(red: 0.1, green: 0.1, blue: 0.14).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .task(id: item.id) {
-            await loadMirrorCount()
+            refreshOnPhone()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenMediaCacheCleared)) { _ in
+            refreshOnPhone()
         }
         .contextMenu {
             Button(action: {
@@ -152,36 +157,36 @@ struct MediaListItem: View {
             }
             #endif
 
-            if !isOnMirror && configService.hasExternalShareURL(for: URL(string: "https://localhost")!) {
+            if !onPhone {
                 Button(action: {
                     mirrorToLocalRelay()
                 }) {
-                    Label(isMirroringToLocal ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.down.circle")
+                    Label(isMirroringToLocal ? "Saving..." : "Save to Vault", systemImage: "internaldrive")
                 }
                 .disabled(isMirroringToLocal)
             }
 
-            if !isRemoteMedia && !configService.config.activeBlossomMirrors.isEmpty {
+            if needsMirror {
                 Button(action: {
                     pushToMirrors()
                 }) {
-                    Label(isPushingToMirrors ? "Pushing..." : "Push to Mirrors", systemImage: "arrow.up.circle")
+                    Label(isPushingToMirrors ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.up.circle")
                 }
                 .disabled(isPushingToMirrors)
             }
 
             if onDeleteFromMirrors != nil || onDeleteEverywhere != nil {
                 Menu {
-                    if let onDeleteFromMirrors = onDeleteFromMirrors {
+                    if onDeleteFromMirrors != nil {
                         Button(role: .destructive, action: {
-                            onDeleteFromMirrors(item)
+                            pendingDelete = .mirrors
                         }) {
                             Label("Delete from mirrors", systemImage: "trash")
                         }
                     }
-                    if let onDeleteEverywhere = onDeleteEverywhere {
+                    if onDeleteEverywhere != nil {
                         Button(role: .destructive, action: {
-                            onDeleteEverywhere(item)
+                            pendingDelete = .everywhere
                         }) {
                             Label("Delete everywhere", systemImage: "trash.fill")
                         }
@@ -216,13 +221,23 @@ struct MediaListItem: View {
                 Divider()
 
                 Button(action: {
-                    guard let data = Bech32.hexToData(pubkey),
-                          let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-                    configService.blockProfile(npub)
+                    showingBlockConfirm = true
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
+        }
+        .confirmMediaDelete($pendingDelete) { scope in
+            switch scope {
+            case .mirrors: onDeleteFromMirrors?(item)
+            case .everywhere: onDeleteEverywhere?(item)
+            }
+        }
+        .confirmBlockUser(isPresented: $showingBlockConfirm) {
+            guard let pubkey = item.pubkey,
+                  let data = Bech32.hexToData(pubkey),
+                  let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+            configService.blockProfile(npub)
         }
         .sheet(isPresented: $showingReportDialog) {
             UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "", onDismiss: { showingReportDialog = false }) {
@@ -233,79 +248,43 @@ struct MediaListItem: View {
         }
     }
 
-    private var isRemoteMedia: Bool {
-        let host = item.url.host?.lowercased() ?? ""
-        return host != "localhost" && host != "127.0.0.1" && host != "0.0.0.0"
+    private var hash: String? { MediaCacheService.blossomHash(in: item.url) }
+
+    /// On the phone and at least one Blossom server is not known to have it.
+    private var needsMirror: Bool {
+        guard onPhone, let hash else { return false }
+        return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror == true
     }
 
-    private var isOnMirror: Bool {
-        let currentMirrorHosts: Set<String> = Set(
-            configService.config.activeBlossomMirrors.compactMap {
-                URL(string: $0)?.host?.lowercased()
-            }
-        )
-        guard let host = item.url.host?.lowercased() else { return false }
-        return currentMirrorHosts.contains(host) || host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+    private func refreshOnPhone() {
+        onPhone = MediaCacheService.shared.getSource(for: item.url) == .blossom
     }
 
     private func mirrorToLocalRelay() {
         isMirroringToLocal = true
-        Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let success = await service.downloadFromURL(url: item.url)
-            await MainActor.run {
-                isMirroringToLocal = false
-                if success {
-                    ActionToastManager.shared.show(
-                        icon: "internaldrive.fill",
-                        message: String(localized: "media.mirror.saved"),
-                        color: Color.havenVerified
-                    )
-                } else {
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.mirror.failed"),
-                        icon: "exclamationmark.icloud.fill"
-                    )
-                }
-                if success {
-                    onMirrorComplete?()
-                }
-            }
+        Task { @MainActor in
+            let outcome = await MediaBackupActions.saveToVault(url: item.url, configService: configService, nostrService: nostrService)
+            isMirroringToLocal = false
+            refreshOnPhone()
+            MediaBackupActions.announce(outcome)
+            if outcome != .failed { onMirrorComplete?() }
         }
     }
 
     private func pushToMirrors() {
+        guard let hash else {
+            ErrorNotificationManager.shared.show(
+                String(localized: "media.push.error.noHash"),
+                icon: "exclamationmark.icloud.fill",
+                style: .warning
+            )
+            return
+        }
         isPushingToMirrors = true
-        Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let sha256 = item.url.deletingPathExtension().lastPathComponent
-            guard sha256.count == 64 && sha256.allSatisfy({ $0.isHexDigit }) else {
-                await MainActor.run {
-                    isPushingToMirrors = false
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.push.error.noHash"),
-                        icon: "exclamationmark.icloud.fill",
-                        style: .warning
-                    )
-                }
-                return
-            }
-            let success = await service.pushLocalToMirrors(sha256: sha256)
-            await MainActor.run {
-                isPushingToMirrors = false
-                if success {
-                    ActionToastManager.shared.show(
-                        icon: "icloud.and.arrow.up.fill",
-                        message: String(localized: "media.push.succeeded"),
-                        color: Color.havenVerified
-                    )
-                } else {
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.push.failed"),
-                        icon: "exclamationmark.icloud.fill"
-                    )
-                }
-            }
+        Task { @MainActor in
+            let ok = await MediaBackupActions.mirrorMissing(hash: hash, configService: configService, nostrService: nostrService)
+            isPushingToMirrors = false
+            MediaBackupActions.announceMirror(ok)
         }
     }
 
@@ -342,35 +321,4 @@ struct MediaListItem: View {
         saveMediaToPhotos(item: item)
     }
     #endif
-
-    /// Cloud label text, e.g. "2/3". Shows the total while the count is loading.
-    private var mirrorCountText: String {
-        if let count = mirroredCount {
-            return "\(count)/\(totalMirrors)"
-        }
-        return "–/\(totalMirrors)"
-    }
-
-    /// Tint for the cloud badge: gray while loading / not mirrored, orange when
-    /// partially mirrored, green when present on every configured mirror.
-    private var mirrorTint: Color {
-        guard let count = mirroredCount, count > 0 else { return .secondary }
-        return count >= totalMirrors ? .green : .orange
-    }
-
-    /// Checks how many configured Blossom mirrors hold this blob.
-    private func loadMirrorCount() async {
-        guard !isRemoteMedia else { return }
-        let mirrors = configService.config.activeBlossomMirrors
-        await MainActor.run { totalMirrors = mirrors.count }
-        guard !mirrors.isEmpty else { return }
-
-        let sha256 = item.url.deletingPathExtension().lastPathComponent
-        guard sha256.count == 64, sha256.allSatisfy({ $0.isHexDigit }) else { return }
-
-        let service = BlossomService(configService: configService, nostrService: nostrService)
-        let status = await service.checkMirrorStatus(sha256: sha256)
-        let count = status.values.filter { $0 }.count
-        await MainActor.run { mirroredCount = count }
-    }
 }

@@ -2,6 +2,9 @@ import SwiftUI
 import AVKit
 import CryptoKit
 import os.log
+#if os(iOS)
+import Photos
+#endif
 
 struct IdentifiableURL: Identifiable {
     let id = UUID()
@@ -25,13 +28,17 @@ struct FeedMediaPager: View {
     let urls: [URL]
     let selected: URL
     var onDismiss: (() -> Void)? = nil
+    /// The page now showing, so the zoom can close into that photo's spot.
+    var onPage: ((URL) -> Void)? = nil
 
     @State private var selection: URL
+    @Environment(\.mediaZoomPresented) private var zoomPresented
 
-    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil) {
+    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
         self.selected = selected
         self.onDismiss = onDismiss
+        self.onPage = onPage
         _selection = State(initialValue: selected)
     }
 
@@ -41,7 +48,9 @@ struct FeedMediaPager: View {
             FeedMediaViewer(url: selected, onDismiss: onDismiss)
         } else {
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Each page draws its own black, which fades as it is pulled
+                // away; a fixed black here would hide the post behind it.
+                if !zoomPresented { Color.black.ignoresSafeArea() }
                 TabView(selection: $selection) {
                     ForEach(urls, id: \.absoluteString) { url in
                         FeedMediaViewer(url: url, enableDragDismiss: true, onDismiss: onDismiss)
@@ -54,6 +63,7 @@ struct FeedMediaPager: View {
                 // MediaGalleryViewer's pager does.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
+                .onChange(of: selection) { _, page in onPage?(page) }
             }
         }
         #else
@@ -67,6 +77,7 @@ struct FeedMediaViewer: View {
     var enableDragDismiss: Bool = true
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.mediaZoomPresented) private var zoomPresented
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
@@ -78,6 +89,23 @@ struct FeedMediaViewer: View {
     @State private var isVideo: Bool = false
     @State private var isGIF: Bool = false
     @State private var isLoadingType: Bool = true
+    /// Set as the swipe lets go to close: the photo glides home while the
+    /// black and the buttons stay gone, instead of coming back as `offset`
+    /// animates to zero.
+    @State private var isClosing = false
+
+    init(url: URL, enableDragDismiss: Bool = true, onDismiss: (() -> Void)? = nil) {
+        self.url = url
+        self.enableDragDismiss = enableDragDismiss
+        self.onDismiss = onDismiss
+        // A kind the feed already resolved is known before the first frame,
+        // so the zoom never catches a spinner.
+        if let kind = MediaKindResolver.cachedKind(for: url) {
+            _isVideo = State(initialValue: kind == .video)
+            _isGIF = State(initialValue: kind == .gif)
+            _isLoadingType = State(initialValue: false)
+        }
+    }
 
     @State private var isMirroring: Bool = false
     @State private var mirrorStatus: MirrorStatus? = nil
@@ -87,8 +115,12 @@ struct FeedMediaViewer: View {
     /// server the user happens to list as a mirror is NOT their backup.
     @State private var isOnMirror: Bool = false
     @State private var isDeleting: Bool = false
+    @State private var pendingDelete: MediaDeleteScope?
     @State private var deleteStatus: DeleteStatus? = nil
     @State private var isCopied: Bool = false
+    @State private var photosSave: PhotosSave = .idle
+
+    enum PhotosSave { case idle, saving, saved }
 
     enum MirrorStatus {
         case loading
@@ -108,11 +140,41 @@ struct FeedMediaViewer: View {
         BlossomService(configService: configService, nostrService: nostrService)
     }
     
+    /// Under the zoom, the system's own swipe-down moves the photo; this
+    /// reports how far it has been pulled.
+    @StateObject private var zoomSwipe = ZoomSwipeWatch()
+
+    /// The photo shrinks as you pull it down, so it reads as being put back.
+    private var dragShrink: CGFloat {
+        scale > 1 ? 1 : max(0.6, 1 - abs(offset.height) / 900)
+    }
+
+    private var controlsOpacity: Double {
+        if isClosing { return 0 }
+        if zoomPresented { return max(0, 1 - abs(zoomSwipe.pull) / 60) }
+        return scale > 1 ? 1 : max(0, 1 - abs(offset.height) / 150)
+    }
+
+    private var backdropOpacity: Double {
+        if isClosing { return 0 }
+        // The black goes first, so only the photo travels into the post.
+        if zoomPresented { return max(0, 1 - abs(zoomSwipe.pull) / 120) }
+        return max(0.1, 1.0 - (abs(offset.height) / 500.0))
+    }
+
+    /// Which way a drag at rest scale is going, decided on its first ~10pt
+    /// and kept: a sideways page swipe that drifts must not move the photo.
+    private enum DragAxis { case undecided, vertical, horizontal }
+    @State private var dragAxis: DragAxis = .undecided
+
     var body: some View {
         ZStack {
             Color.black
-                .opacity(max(0.1, 1.0 - (abs(offset.height) / 500.0)))
+                // Under the zoom the cover is see-through, so the post shows
+                // through as you pull the photo away.
+                .opacity(backdropOpacity)
                 .ignoresSafeArea()
+                .background { if zoomPresented { ZoomSwipeProbe(watch: zoomSwipe) } }
             
             Group {
                 if isLoadingType {
@@ -126,7 +188,7 @@ struct FeedMediaViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(scale)
+            .scaleEffect(scale * dragShrink)
             .offset(offset)
             .gesture(
                 MagnificationGesture()
@@ -145,8 +207,12 @@ struct FeedMediaViewer: View {
                         }
                     }
             )
+            // Under the zoom the system's swipe-down closes the viewer and
+            // carries the photo into its spot in one motion. A drag here
+            // stops that swipe from starting, so it only pans a zoomed-in
+            // photo.
             .simultaneousGestureIf(
-                enableDragDismiss,
+                enableDragDismiss && (!zoomPresented || scale > 1),
                 DragGesture()
                     .onChanged { value in
                         if scale > 1.0 {
@@ -157,18 +223,39 @@ struct FeedMediaViewer: View {
                         } else {
                             // Swipe to dismiss tracking - ONLY vertical when not zoomed
                             // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
-                            offset = CGSize(width: 0, height: value.translation.height)
+                            let t = value.translation
+                            if dragAxis == .undecided, hypot(t.width, t.height) > 10 {
+                                dragAxis = abs(t.height) > abs(t.width) ? .vertical : .horizontal
+                            }
+                            if dragAxis == .vertical {
+                                offset = CGSize(width: 0, height: t.height)
+                            }
                         }
                     }
                     .onEnded { value in
+                        defer { dragAxis = .undecided }
                         if scale > 1.0 {
                             lastOffset = offset
-                        } else {
-                            // Check height for dismissal
-                            if abs(value.translation.height) > 100 {
+                        } else if dragAxis == .vertical {
+                            // Close when it is pulled far enough, or flicked
+                            // on in the same direction — pulling down and
+                            // pushing back up does not close it.
+                            let pulled = value.translation.height
+                            let carried = value.predictedEndTranslation.height
+                            let sameWay = (pulled >= 0) == (carried >= 0)
+                            if sameWay && (abs(pulled) > 100 || abs(carried) > 260) {
+                                withAnimation(.smooth(duration: 0.3)) {
+                                    isClosing = true
+                                }
                                 performDismiss()
                             } else {
-                                withAnimation(Motion.snapBack) {
+                                // Spring back carrying the finger's speed.
+                                // initialVelocity is in "whole distance per
+                                // second" toward zero, so divide by the signed
+                                // distance still to travel.
+                                let distance = offset.height == 0 ? 1 : offset.height
+                                let release = -value.velocity.height / distance
+                                withAnimation(.interpolatingSpring(stiffness: 260, damping: 26, initialVelocity: release)) {
                                     offset = .zero
                                     lastOffset = .zero
                                 }
@@ -193,98 +280,15 @@ struct FeedMediaViewer: View {
             
             VStack {
                 HStack {
-                    if !isLoadingType && !isMirroring {
-                        let hash = extractSHA256FromURL()
-                        let port = configService.config.relayPort
-                        #if os(macOS)
-                        let localURL = URL(string: "http://127.0.0.1:\(port)/\(hash)")
-                        #else
-                        let localURL = URL(string: "https://localhost:\(port)/\(hash)")
-                        #endif
-                        
-                        if let localURL = localURL, configService.hasExternalShareURL(for: localURL) {
-                            if isOnMirror {
-                                HStack(spacing: 8) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.appSystem(size: 16, weight: .semibold))
-                                        Text("Mirrored to Blossom")
-                                            .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                    }
-                                    .foregroundColor(.white.opacity(0.95))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 14)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8))
-                                            .overlay(
-                                                Capsule()
-                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                            )
-                                    )
-
-                                    Button(action: {
-                                        let link = getMirroredLink()
-                                        PlatformClipboard.copy(link)
-                                        withAnimation(Motion.pop) {
-                                            isCopied = true
-                                        }
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                            withAnimation(Motion.fade) {
-                                                isCopied = false
-                                            }
-                                        }
-                                    }) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill")
-                                                .font(.appSystem(size: 14, weight: .semibold))
-                                            Text(isCopied ? "Copied!" : "Copy Link")
-                                                .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                        }
-                                        .foregroundColor(.white.opacity(0.95))
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 14)
-                                        .background(
-                                            Capsule()
-                                                .fill(isCopied ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8) : Color.white.opacity(0.2))
-                                                .overlay(
-                                                    Capsule()
-                                                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                                )
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .shadow(color: Color.black.opacity(0.3), radius: 4)
-                                .padding(20)
-                            } else {
-                                Button {
-                                    mirrorToBlossomTapped()
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.appSystem(size: 16, weight: .semibold))
-                                        Text("Mirror to Blossom")
-                                            .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                    }
-                                    .foregroundColor(.white.opacity(0.95))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 14)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.black.opacity(0.6))
-                                            .overlay(
-                                                Capsule()
-                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                            )
-                                    )
-                                    .shadow(color: Color.black.opacity(0.3), radius: 4)
-                                    .padding(20)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+                    // Short labels, and icons only when even those don't fit
+                    // (larger text, narrow phones): a squeezed capsule wraps
+                    // its label one letter per line.
+                    ViewThatFits(in: .horizontal) {
+                        topActions(showLabels: true)
+                        topActions(showLabels: false)
                     }
+                    .padding(.leading, 16)
+                    .padding(.vertical, 20)
                     Spacer()
                     Button {
                         performDismiss()
@@ -292,7 +296,8 @@ struct FeedMediaViewer: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.appSystem(size: 32))
                             .foregroundColor(.white.opacity(0.8))
-                            .padding(20)
+                            .padding(.vertical, 20)
+                            .padding(.horizontal, 16)
                             .shadow(radius: 4)
                     }
                     .buttonStyle(.plain)
@@ -302,13 +307,13 @@ struct FeedMediaViewer: View {
                 if !isLoadingType && isDeleting {
                     HStack(spacing: 16) {
                         Button(role: .destructive) {
-                            deleteFromMirrorsTapped()
+                            pendingDelete = .mirrors
                         } label: {
                             Label("Delete from mirrors", systemImage: "trash")
                         }
 
                         Button(role: .destructive) {
-                            deleteEverywhereTapped()
+                            pendingDelete = .everywhere
                         } label: {
                             Label("Delete everywhere", systemImage: "trash.fill")
                         }
@@ -326,6 +331,9 @@ struct FeedMediaViewer: View {
                     .padding(16)
                 }
             }
+            // The buttons get out of the way as soon as you pull, like Photos.
+            .opacity(controlsOpacity)
+            .allowsHitTesting(offset == .zero || scale > 1.0)
             .onLongPressGesture {
                 if !isLoadingType && !isMirroring {
                     withAnimation(Motion.fade) {
@@ -342,7 +350,14 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
+        .confirmMediaDelete($pendingDelete) { scope in
+            switch scope {
+            case .mirrors: deleteFromMirrorsTapped()
+            case .everywhere: deleteEverywhereTapped()
+            }
+        }
         .task(id: url) {
+            photosSave = .idle
             updateMirrorStatus()
         }
         #if os(iOS)
@@ -399,6 +414,153 @@ struct FeedMediaViewer: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
         }
+    }
+
+    #if os(iOS)
+    /// Downloads the media as shown and adds it to the Photos library.
+    /// A video goes in as a file so Photos keeps it a video.
+    private func saveToPhotosTapped() {
+        photosSave = .saving
+        let mediaURL = url
+        let asVideo = isVideo
+        Task {
+            func fail(_ message: String) async {
+                await MainActor.run {
+                    photosSave = .idle
+                    ErrorNotificationManager.shared.show(message, icon: "exclamationmark.triangle.fill")
+                }
+            }
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                await fail("Allow Nostr Vault to add to Photos in Settings")
+                return
+            }
+            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
+            do {
+                let (data, response) = try await session.data(from: mediaURL)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    await fail("Couldn't download the media (HTTP \(http.statusCode))")
+                    return
+                }
+                if asVideo {
+                    let ext = mediaURL.pathExtension.isEmpty ? "mp4" : mediaURL.pathExtension
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
+                    try data.write(to: tempURL)
+                    defer { try? FileManager.default.removeItem(at: tempURL) }
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
+                    }
+                } else {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+                    }
+                }
+                await MainActor.run { photosSave = .saved }
+            } catch {
+                logger.error("Save to Photos failed: \(error.localizedDescription)")
+                await fail("Couldn't save to Photos")
+            }
+        }
+    }
+    #endif
+
+    // MARK: - Top-row actions
+
+    private static let doneGreen = Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8)
+
+    /// Save, then Mirror (or Mirrored + Copy). Labels drop out when
+    /// [showLabels] is false, leaving the icon in each capsule.
+    @ViewBuilder
+    private func topActions(showLabels: Bool) -> some View {
+        HStack(spacing: 6) {
+            #if os(iOS)
+            if !isLoadingType && !isDeleting {
+                Button {
+                    saveToPhotosTapped()
+                } label: {
+                    actionCapsule(
+                        icon: photosSave == .saved ? "checkmark.circle.fill" : "square.and.arrow.down",
+                        label: photosSave == .saved ? "Saved" : "Save",
+                        showLabel: showLabels,
+                        fill: photosSave == .saved ? Self.doneGreen : Color.black.opacity(0.6),
+                        busy: photosSave == .saving
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(photosSave != .idle)
+                .accessibilityLabel(photosSave == .saved ? "Saved to Photos" : "Save to Photos")
+            }
+            #endif
+            if !isLoadingType && !isMirroring, let localURL = viewerLocalURL(),
+               configService.hasExternalShareURL(for: localURL) {
+                if isOnMirror {
+                    actionCapsule(icon: "checkmark.circle.fill", label: "Mirrored", showLabel: showLabels, fill: Self.doneGreen)
+                        .accessibilityLabel("Mirrored to Blossom")
+                    Button {
+                        PlatformClipboard.copy(getMirroredLink())
+                        withAnimation(Motion.pop) { isCopied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            withAnimation(Motion.fade) { isCopied = false }
+                        }
+                    } label: {
+                        actionCapsule(
+                            icon: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill",
+                            label: isCopied ? "Copied" : "Copy",
+                            showLabel: showLabels,
+                            fill: isCopied ? Self.doneGreen : Color.white.opacity(0.2)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isCopied ? "Link copied" : "Copy link")
+                } else {
+                    Button {
+                        mirrorToBlossomTapped()
+                    } label: {
+                        actionCapsule(icon: "arrow.down.circle.fill", label: "Mirror", showLabel: showLabels, fill: Color.black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mirror to Blossom")
+                }
+            }
+        }
+        .shadow(color: Color.black.opacity(0.3), radius: 4)
+    }
+
+    private func actionCapsule(icon: String, label: String, showLabel: Bool, fill: Color, busy: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if busy {
+                ProgressView().controlSize(.small).tint(.white)
+            } else {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 15, weight: .semibold))
+            }
+            if showLabel {
+                Text(label)
+                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .foregroundColor(.white.opacity(0.95))
+        .padding(.vertical, 8)
+        .padding(.horizontal, showLabel ? 11 : 9)
+        .background(
+            Capsule()
+                .fill(fill)
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+        )
+    }
+
+    /// The vault's own URL for this blob, which is what the mirror check keys on.
+    private func viewerLocalURL() -> URL? {
+        let hash = extractSHA256FromURL()
+        let port = configService.config.relayPort
+        #if os(macOS)
+        return URL(string: "http://127.0.0.1:\(port)/\(hash)")
+        #else
+        return URL(string: "https://localhost:\(port)/\(hash)")
+        #endif
     }
 
     private func mirrorToBlossomTapped() {
@@ -756,8 +918,17 @@ struct FeedMediaViewer: View {
 /// Uses MediaCacheService instead of AsyncImage to avoid re-downloads.
 struct MediaViewerPhoto: View {
     let url: URL
+    /// Starts with the copy the feed already decoded, so the zoom grows out
+    /// of the photo rather than an empty frame; the full-size one replaces it
+    /// once loaded.
     @State private var image: PlatformImage?
     @State private var loadFailed = false
+    @State private var loadedFull = false
+
+    init(url: URL) {
+        self.url = url
+        _image = State(initialValue: MediaCacheService.shared.cachedImage(for: url))
+    }
 
     var body: some View {
         ZStack {
@@ -787,19 +958,20 @@ struct MediaViewerPhoto: View {
     }
 
     private func loadImage() {
-        guard image == nil, !loadFailed else { return }
+        guard !loadedFull, !loadFailed else { return }
         Task {
             guard let data = await MediaCacheService.shared.fetchData(url: url) else {
-                await MainActor.run { self.loadFailed = true }
+                // Keep the feed's copy on screen if there is one.
+                await MainActor.run { if self.image == nil { self.loadFailed = true } }
                 return
             }
             // Screen-bounded decode: the pager keeps neighbor pages alive, so
             // full-resolution originals (50-190 MB decoded) stack up fast.
             let downsampled = await ImageDownsampler.downsampleToScreen(data: data)
             if let img = downsampled ?? PlatformImage(data: data) {
-                await MainActor.run { self.image = img }
+                await MainActor.run { self.image = img; self.loadedFull = true }
             } else {
-                await MainActor.run { self.loadFailed = true }
+                await MainActor.run { if self.image == nil { self.loadFailed = true } }
             }
         }
     }
@@ -812,6 +984,202 @@ extension View {
             self.simultaneousGesture(gesture)
         } else {
             self
+        }
+    }
+}
+
+// MARK: - Zoom presentation
+
+/// Follows the zoom transition's swipe-down on the presented viewer, so the
+/// black and the buttons can fade with it. Once the finger lifts, `pull`
+/// returns to zero only if the swipe put the viewer back; on a close it
+/// holds, or the black would come back during the flight into the post.
+final class ZoomSwipeWatch: NSObject, ObservableObject {
+    @Published private(set) var pull: CGFloat = 0
+
+    #if os(iOS)
+    private weak var swipe: UIGestureRecognizer?
+
+    /// UIKit's name for the zoom transition's swipe-down recognizer. If a
+    /// later iOS renames it, the swipe still closes the viewer; only the
+    /// fade is lost.
+    private static let swipeName = "com.apple.UIKit.ZoomInteractiveDismissSwipeDown"
+
+    // Each page of a pager attaches to the same recognizer, and pages come
+    // and go while the cover stays up.
+    deinit { swipe?.removeTarget(self, action: nil) }
+
+    func attach(from view: UIView) {
+        guard swipe == nil else { return }
+        var ancestor: UIView? = view
+        while let v = ancestor {
+            if let g = v.gestureRecognizers?.first(where: { $0.name == Self.swipeName }) {
+                g.addTarget(self, action: #selector(track(_:)))
+                swipe = g
+                return
+            }
+            ancestor = v.superview
+        }
+    }
+
+    @objc private func track(_ g: UIGestureRecognizer) {
+        switch g.state {
+        case .began, .changed:
+            if let pan = g as? UIPanGestureRecognizer {
+                pull = pan.translation(in: nil).y
+            }
+        case .ended, .cancelled, .failed:
+            settle(from: g.view)
+        default:
+            break
+        }
+    }
+
+    private func settle(from view: UIView?) {
+        var responder: UIResponder? = view
+        while let r = responder, !(r is UIViewController) { responder = r.next }
+        guard var controller = responder as? UIViewController else { return restore() }
+        while let parent = controller.parent { controller = parent }
+        guard controller.isBeingDismissed, let coordinator = controller.transitionCoordinator else {
+            return restore()
+        }
+        if coordinator.isInteractive {
+            coordinator.notifyWhenInteractionChanges { [weak self] in
+                if $0.isCancelled { self?.restore() }
+            }
+        } else if coordinator.isCancelled {
+            restore()
+        }
+    }
+
+    private func restore() {
+        guard pull != 0 else { return }
+        withAnimation(Motion.snapBack) { pull = 0 }
+    }
+    #endif
+}
+
+#if os(iOS)
+/// Finds the zoom's swipe-down once the viewer is on screen.
+private struct ZoomSwipeProbe: UIViewRepresentable {
+    let watch: ZoomSwipeWatch
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.watch = watch
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {}
+
+    final class ProbeView: UIView {
+        weak var watch: ZoomSwipeWatch?
+        // The presentation may install the swipe after this view joins the
+        // window, so look again on layout until it is found.
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { watch?.attach(from: self) }
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if window != nil { watch?.attach(from: self) }
+        }
+    }
+}
+#else
+private struct ZoomSwipeProbe: View {
+    let watch: ZoomSwipeWatch
+    var body: some View { EmptyView() }
+}
+#endif
+
+/// Namespace the tapped thumbnail and the full-screen viewer share, so the
+/// viewer grows out of the photo's spot on screen and shrinks back into it.
+private struct MediaZoomNamespaceKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+/// True inside a viewer presented with the zoom transition: the system then
+/// owns swipe-down-to-dismiss, so the viewer's own drag must not fight it.
+private struct MediaZoomPresentedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var mediaZoomNamespace: Namespace.ID? {
+        get { self[MediaZoomNamespaceKey.self] }
+        set { self[MediaZoomNamespaceKey.self] = newValue }
+    }
+    var mediaZoomPresented: Bool {
+        get { self[MediaZoomPresentedKey.self] }
+        set { self[MediaZoomPresentedKey.self] = newValue }
+    }
+    /// The photo the open viewer is showing. An inline carousel holding it
+    /// turns to it, so the zoom closes into a photo that is on screen.
+    var mediaViewerPage: URL? {
+        get { self[MediaViewerPageKey.self] }
+        set { self[MediaViewerPageKey.self] = newValue }
+    }
+}
+
+private struct MediaViewerPageKey: EnvironmentKey {
+    static let defaultValue: URL? = nil
+}
+
+extension View {
+    /// Marks a tappable thumbnail as the place the viewer zooms out of.
+    @ViewBuilder
+    func mediaZoomSource(_ url: URL, namespace: Namespace.ID?) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *), let namespace {
+            self.matchedTransitionSource(id: url.absoluteString, in: namespace)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// Presents the media viewer for `item`. On iOS 18+ it zooms out of the
+    /// tapped photo and swipes back down into it; earlier iOS and macOS keep
+    /// the sheet.
+    func mediaViewer(item: Binding<IdentifiableURL?>, namespace: Namespace.ID) -> some View {
+        modifier(MediaViewerPresentation(item: item, namespace: namespace))
+    }
+}
+
+private struct MediaViewerPresentation: ViewModifier {
+    @Binding var item: IdentifiableURL?
+    let namespace: Namespace.ID
+    /// The page swiped to in the viewer; nil until the first swipe.
+    @State private var page: URL?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            content
+                .environment(\.mediaZoomNamespace, namespace)
+                .environment(\.mediaViewerPage, item == nil ? nil : page)
+                .fullScreenCover(item: $item, onDismiss: { page = nil }) { media in
+                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil }, onPage: { page = $0 })
+                        .environment(\.mediaZoomPresented, true)
+                        .presentationBackground(.clear)
+                        // Close into the photo on screen, not the one tapped.
+                        .navigationTransition(.zoom(sourceID: (page ?? media.url).absoluteString, in: namespace))
+                }
+        } else {
+            sheetFallback(content)
+        }
+        #else
+        sheetFallback(content)
+        #endif
+    }
+
+    private func sheetFallback(_ content: Content) -> some View {
+        content.sheet(item: $item) { media in
+            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
         }
     }
 }

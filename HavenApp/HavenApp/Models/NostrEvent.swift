@@ -68,26 +68,13 @@ struct NostrEvent: Codable, Identifiable {
     }
     
     var parentEventId: String? {
-        // Look for 'e' tags. NIP-10 says the last 'e' tag is usually the one being replied to
-        // unless there are explicit markers like "reply" or "root".
-        let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
-        if eTags.isEmpty { return nil }
-        
-        // Check for explicit "reply" marker
-        if let replyTag = eTags.first(where: { $0.count >= 4 && $0[3] == "reply" }) {
-            return replyTag[1]
-        }
-        
-        // If no "reply" marker, but there is a "root" marker, and more than one 'e' tag,
-        // the one without "root" is likely the reply. 
-        // For simplicity, we'll take the LAST 'e' tag as per common legacy behavior.
-        return eTags.last?[1]
+        NIP10Thread.parentEventId(kind: kind, tags: tags)
     }
 
     /// A kind 6 repost always carries an `e` tag pointing at what it repeats, and a
     /// quote carries one marked "mention" (NIP-10) — neither is a reply. `parentEventId`
-    /// deliberately still resolves both, because thread building needs the edge; only
-    /// the reply *classification* excludes them. This matches `FeedNote.isReply` and
+    /// skips mention-marked tags too (a quote is not a parent), but still resolves a
+    /// repost's tag; only the reply *classification* excludes reposts. This matches `FeedNote.isReply` and
     /// Android's `FeedServiceTypes.kt`, which have always drawn the line here.
     var isReply: Bool {
         guard kind != 6 else { return false }
@@ -103,10 +90,6 @@ struct NostrEvent: Codable, Identifiable {
 
     private static let blossomRegex: NSRegularExpression? = {
         try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
-    }()
-
-    private static let httpURLRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
     }()
 
     var mediaURLs: [URL] {
@@ -147,7 +130,7 @@ struct NostrEvent: Codable, Identifiable {
     }
 
     var linkURLs: [URL] {
-        guard let regex = Self.httpURLRegex else { return [] }
+        let regex = NoteURLs.cardRegex
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         let mediaSet = Set(mediaURLs.map { $0.absoluteString })

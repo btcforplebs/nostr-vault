@@ -56,6 +56,7 @@ extern void SetHavenEnvC(const char* key, const char* value);
 extern void StartRelayC(int importMode);
 extern void StopRelayC(void);
 extern void RequestRelaySyncC(void);
+extern void RequestMacSyncCheckC(void);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
 extern int BackupToCloudC(void);
@@ -63,6 +64,7 @@ extern int RestoreFromCloudC(void);
 extern int ZipDirectoryC(const char* dirPath, const char* zipPath);
 extern int UnzipDirectoryC(const char* zipPath, const char* destPath);
 extern char* SignEventC(const char* jsonStr, const char* sk);
+extern int VerifyEventC(const char* jsonStr);
 extern char* MineAndSignEventC(const char* jsonStr, const char* sk, int difficulty, int maxAttempts);
 extern char* GenerateKeyPairC(void);
 extern char* GetPublicKeyC(const char* sk);
@@ -85,7 +87,12 @@ extern char* NIP46NIP04EncryptC(const char* targetPubkey, const char* plaintext)
 extern char* NIP46NIP04DecryptC(const char* targetPubkey, const char* ciphertext);
 extern int NIP46PingC(void);
 extern char* NIP46GetPendingAuthURLC(void);
+extern char* NIP46ActivateC(const char* signerPubkey);
+extern void NIP46DropC(const char* signerPubkey);
+extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON);
+extern char* NIP46AwaitNostrConnectC(const char* clientSK, const char* relaysJSON, const char* secret, long long since, int waitSeconds);
 extern char* ComputePopularNotesC(void);
+extern char* GetFollowersC(const char* owner);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 
@@ -126,6 +133,11 @@ Java_com_nostrvault_relay_HavenBridge_stopRelay(JNIEnv *env, jobject thiz) {
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_requestRelaySync(JNIEnv *env, jobject thiz) {
     RequestRelaySyncC();
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_requestMacSyncCheck(JNIEnv *env, jobject thiz) {
+    RequestMacSyncCheckC();
 }
 
 // ---- Database operations ----
@@ -186,6 +198,14 @@ Java_com_nostrvault_relay_HavenBridge_signEvent(JNIEnv *env, jobject thiz, jstri
     REL_CSTR(env, eventJson, cJson);
     REL_CSTR(env, secretKeyHex, cSk);
     return goStringToJstring(env, result);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_verifyEventNative(JNIEnv *env, jobject thiz, jstring eventJson) {
+    const char *cJson = GET_CSTR(env, eventJson);
+    int ok = VerifyEventC((char*)cJson);
+    REL_CSTR(env, eventJson, cJson);
+    return ok == 1 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL
@@ -344,6 +364,33 @@ Java_com_nostrvault_relay_HavenBridge_nip46SignEvent(JNIEnv *env, jobject thiz, 
     return goStringToJstring(env, result);
 }
 
+/* One live bunker session per signer (#168). */
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46Activate(JNIEnv *env, jobject thiz, jstring signerPubkey) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    char *result = NIP46ActivateC((char*)cKey);
+    REL_CSTR(env, signerPubkey, cKey);
+    return goStringToJstring(env, result);
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46Drop(JNIEnv *env, jobject thiz, jstring signerPubkey) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    NIP46DropC((char*)cKey);
+    REL_CSTR(env, signerPubkey, cKey);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46SignEventWith(JNIEnv *env, jobject thiz,
+        jstring signerPubkey, jstring eventJson) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    const char *cJson = GET_CSTR(env, eventJson);
+    char *result = NIP46SignEventWithC((char*)cKey, (char*)cJson);
+    REL_CSTR(env, signerPubkey, cKey);
+    REL_CSTR(env, eventJson, cJson);
+    return goStringToJstring(env, result);
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_nip46GetPublicKey(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, NIP46GetPublicKeyC());
@@ -398,6 +445,22 @@ Java_com_nostrvault_relay_HavenBridge_nip46Ping(JNIEnv *env, jobject thiz) {
     return NIP46PingC();
 }
 
+/* nostrconnect:// pairing: waits up to waitSeconds for the signer's answer
+ * carrying our secret; returns the signer's hex pubkey or null. */
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46AwaitNostrConnect(JNIEnv *env, jobject thiz,
+        jstring clientSecretKey, jstring relaysJson, jstring secret, jlong since, jint waitSeconds) {
+    const char *cSk = GET_CSTR(env, clientSecretKey);
+    const char *cRelays = GET_CSTR(env, relaysJson);
+    const char *cSecret = GET_CSTR(env, secret);
+    char *result = NIP46AwaitNostrConnectC((char*)cSk, (char*)cRelays, (char*)cSecret,
+            (long long)since, (int)waitSeconds);
+    REL_CSTR(env, clientSecretKey, cSk);
+    REL_CSTR(env, relaysJson, cRelays);
+    REL_CSTR(env, secret, cSecret);
+    return goStringToJstring(env, result);
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_nip46GetPendingAuthUrl(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, NIP46GetPendingAuthURLC());
@@ -408,6 +471,17 @@ Java_com_nostrvault_relay_HavenBridge_nip46GetPendingAuthUrl(JNIEnv *env, jobjec
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, ComputePopularNotesC());
+}
+
+// ---- Follower ledger ----
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getFollowersNative(JNIEnv *env, jobject thiz, jstring owner) {
+    const char *cOwner = GET_CSTR(env, owner);
+    if (cOwner == NULL) return NULL;
+    char *result = GetFollowersC((char*)cOwner);
+    REL_CSTR(env, owner, cOwner);
+    return goStringToJstring(env, result);
 }
 
 // ---- Import log bridge ----

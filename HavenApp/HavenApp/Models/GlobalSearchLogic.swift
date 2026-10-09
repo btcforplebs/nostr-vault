@@ -108,23 +108,26 @@ struct SearchTermMatcher: Equatable {
 // MARK: - Ranking
 
 enum GlobalSearchRanking {
-    /// Lower sorts first: the user's own posts, then people they follow, then everyone.
-    static func tier(pubkey: String, own: Set<String>, follows: Set<String>) -> Int {
+    /// Lower sorts first: the user's own posts, then people they follow, then
+    /// the rest of their Web of Trust, then everyone.
+    static func tier(pubkey: String, own: Set<String>, follows: Set<String>, wot: Set<String> = []) -> Int {
         if own.contains(pubkey) { return 0 }
         if follows.contains(pubkey) { return 1 }
-        return 2
+        if wot.contains(pubkey) { return 2 }
+        return 3
     }
 
-    /// Own, then follows, then everyone; newest first within a tier. Ties on
+    /// Own, then follows, then Web of Trust, then everyone; newest first within a tier. Ties on
     /// time break on id so the order is stable while results stream in.
     static func rankNotes<T>(_ items: [T],
                              own: Set<String>,
                              follows: Set<String>,
+                             wot: Set<String> = [],
                              pubkey: (T) -> String,
                              createdAt: (T) -> Date,
                              id: (T) -> String) -> [T] {
         items
-            .map { (item: $0, tier: tier(pubkey: pubkey($0), own: own, follows: follows)) }
+            .map { (item: $0, tier: tier(pubkey: pubkey($0), own: own, follows: follows, wot: wot)) }
             .sorted { a, b in
                 if a.tier != b.tier { return a.tier < b.tier }
                 let ta = createdAt(a.item), tb = createdAt(b.item)
@@ -138,10 +141,11 @@ enum GlobalSearchRanking {
     /// the order the sources returned them in, which is the services' own ranking.
     static func rankProfiles(_ pubkeysInArrivalOrder: [String],
                              own: Set<String>,
-                             follows: Set<String>) -> [String] {
+                             follows: Set<String>,
+                             wot: Set<String> = []) -> [String] {
         pubkeysInArrivalOrder.enumerated()
             .map { (pubkey: $0.element, order: $0.offset,
-                    tier: tier(pubkey: $0.element, own: own, follows: follows)) }
+                    tier: tier(pubkey: $0.element, own: own, follows: follows, wot: wot)) }
             .sorted { a, b in
                 if a.tier != b.tier { return a.tier < b.tier }
                 return a.order < b.order
