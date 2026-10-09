@@ -4083,6 +4083,11 @@ struct HomeVaultSection: View {
                             .font(.appCaption)
                     }
                 }
+                if ConfigService.shared.config.activeSigningMode() != "local" {
+                    Text("Your key is in a remote signer, so media only goes when you tap Send now (up to \(HomeVaultLogic.maxPromptsPerTap) at a time).")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
                 if let result = sender.lastResult {
                     Text(result)
                         .font(.appCaption)

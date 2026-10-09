@@ -155,11 +155,17 @@ final class HomeVaultSender: ObservableObject {
         var meshWhy: String?
         var mediaWaiting = false
         var waiting = false
+        var prompts = 0
 
         for item in queue {
             if !userInitiated, let notBefore = item.notBefore, notBefore > now { waiting = true; continue }
             let needsSigner = item.kind != .event
-            if needsSigner && signerNeedsPerson && !active && !userInitiated { waiting = true; continue }
+            if needsSigner && signerNeedsPerson {
+                // Never from the background; at most a few prompts per tap.
+                guard userInitiated || active, prompts < HomeVaultLogic.maxPromptsPerTap else { waiting = true; continue }
+                if !userInitiated { waiting = true; continue }
+                prompts += 1
+            }
 
             let result: HomeVaultSendResult
             if item.kind == .mirror {

@@ -179,10 +179,15 @@ extension HomeVaultLogic {
         return min(60 * minutes, 6 * 3600)
     }
 
-    /// Too old or tried too often: give up on it (logged, not silent).
+    /// Too old or tried too often: give up on it (logged, not silent). Age
+    /// only counts once it has been tried: a clock that jumps forward must
+    /// not delete what was queued a minute ago and never sent (Tron, #472).
     static func isExpired(_ item: HomeVaultItem, now: Date) -> Bool {
-        item.attempts >= maxAttempts || now.timeIntervalSince(item.added) > maxAge
+        item.attempts >= maxAttempts || (item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge)
     }
+
+    /// Signer prompts one Send now tap may cause with a bunker signer.
+    static let maxPromptsPerTap = 10
 
     /// The link a note carries when only this phone and the kiosk hold the
     /// blob: where it will be once the public upload goes through (BUD-01

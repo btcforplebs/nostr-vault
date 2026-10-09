@@ -155,7 +155,8 @@ final class HomeVaultRetryTests: XCTestCase {
                           added: now.addingTimeInterval(-daysOld * 86400), attempts: attempts, notBefore: nil)
         }
         XCTAssertFalse(HomeVaultLogic.isExpired(item(daysOld: 13, attempts: 39), now: now))
-        XCTAssertTrue(HomeVaultLogic.isExpired(item(daysOld: 15, attempts: 0), now: now))
+        XCTAssertTrue(HomeVaultLogic.isExpired(item(daysOld: 15, attempts: 1), now: now))
+        XCTAssertFalse(HomeVaultLogic.isExpired(item(daysOld: 15, attempts: 0), now: now), "a clock jump must not delete what was never tried")
         XCTAssertTrue(HomeVaultLogic.isExpired(item(daysOld: 0, attempts: 40), now: now))
     }
 
