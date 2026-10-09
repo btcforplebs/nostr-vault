@@ -140,16 +140,23 @@ class FipsMeshManager @Inject constructor(
      * public address alone cannot connect the two; with configured-only, only
      * those friends ever see them.
      */
-    private fun startOptions() = FipsStartOptions(
-        peers = configStore.config.value.fipsPeers,
-        lan = true,
-        // What is left of this sharing session's allowance: a restart for a
-        // peer or limit change must not hand out a fresh one (Tron, #471).
-        maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, carriedServeBytes.get()),
-    )
+    private fun startOptions(): FipsStartOptions {
+        // What is left of this sharing session's allowance: neither a restart
+        // for a peer or limit change nor an app launch hands out a fresh one.
+        engineBase = configStore.config.value.fipsServedBytes
+        return FipsStartOptions(
+            peers = configStore.config.value.fipsPeers,
+            lan = true,
+            maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
+        )
+    }
 
-    /** Bytes served this sharing session by engines since restarted. Reset when sharing is switched. */
-    private val carriedServeBytes = java.util.concurrent.atomic.AtomicLong(0)
+    /**
+     * What this sharing session had sent before the running engine started,
+     * from the config file, so neither a restart nor an app launch hands out a
+     * fresh allowance (Tron, #471). The engine's own count adds to it.
+     */
+    @Volatile private var engineBase = 0L
 
     /** One reaction to a reached cap at a time; the Mesh screen polls too. */
     private val turningOffForCap = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -157,7 +164,8 @@ class FipsMeshManager @Inject constructor(
     /** Restart to apply start-time settings, keeping what was already served. */
     private suspend fun restartKeepingAllowance() {
         if (configStore.config.value.fipsShareRelay) {
-            carriedServeBytes.addAndGet(FipsBridge.status().counters.servedTx)
+            val served = engineBase + FipsBridge.status().counters.servedTx
+            configStore.updateAsync { it.copy(fipsServedBytes = served) }
         }
         FipsBridge.stop()
         start(persist = false)
@@ -213,7 +221,8 @@ class FipsMeshManager @Inject constructor(
     suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
         configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
         // Switching sharing starts a new session with a full allowance.
-        carriedServeBytes.set(0)
+        configStore.updateAsync { it.copy(fipsServedBytes = 0) }
+        engineBase = 0
         if (!_status.value.running) return@withContext
         if (enabled) {
             offerRelay()
@@ -238,6 +247,12 @@ class FipsMeshManager @Inject constructor(
     suspend fun refresh(): Unit = withContext(Dispatchers.IO) {
         val status = FipsBridge.status()
         _status.value = status
+        // Keep the session's count on disk as it grows, so an app restart
+        // (Android kills background processes often) resumes it.
+        if (status.running && configStore.config.value.fipsShareRelay) {
+            servedToPersist(engineBase, status.counters.servedTx, configStore.config.value.fipsServedBytes)
+                ?.let { served -> configStore.updateAsync { it.copy(fipsServedBytes = served) } }
+        }
         // The library already stopped sharing; turn the switch off to match, so
         // the next launch does not share again on its own.
         if (status.capReached && configStore.config.value.fipsShareRelay &&
@@ -269,3 +284,15 @@ class FipsMeshManager @Inject constructor(
  */
 internal fun remainingServeBytes(limit: Long, alreadyServed: Long): Long =
     (limit - alreadyServed).coerceAtLeast(1)
+
+/** Writes of the served count are batched to this much new traffic. */
+internal const val SERVED_PERSIST_STEP = 16L shl 20
+
+/**
+ * The session count to write, or null when it has not grown by a step yet.
+ * `engineBase` is what the session had sent before this engine started.
+ */
+internal fun servedToPersist(engineBase: Long, engineServed: Long, persisted: Long): Long? {
+    val served = engineBase + engineServed
+    return if (served - persisted >= SERVED_PERSIST_STEP) served else null
+}
