@@ -38,7 +38,7 @@ type relayCycle struct {
 	cancel context.CancelFunc
 	server *http.Server // nil in import mode
 	// meshServer is the loopback port the FIPS mesh tunnel forwards to:
-	// plain HTTP, blob GET/HEAD only (meshBlobHandler).
+	// plain HTTP, blob reads plus owner-signed uploads and events (meshHandler).
 	meshServer *http.Server
 	pool       *nostr.SimplePool
 	wg         sync.WaitGroup
@@ -64,8 +64,8 @@ func setMeshServing(on bool) {
 	}
 }
 
-// startMeshServer listens on HAVEN_MESH_PLAIN_PORT (loopback, blob reads
-// only), the port the FIPS mesh tunnel forwards to. Caller holds relayLC.mu
+// startMeshServer listens on HAVEN_MESH_PLAIN_PORT (loopback, meshHandler),
+// the port the FIPS mesh tunnel forwards to. Caller holds relayLC.mu
 // or is inside startCycle's setup.
 func (c *relayCycle) startMeshServer() {
 	if c.meshServer != nil || c.server == nil {
@@ -77,7 +77,7 @@ func (c *relayCycle) startMeshServer() {
 		return
 	}
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(meshBlobHandler)}
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(meshHandler)}
 	c.meshServer = srv
 	c.spawn("mesh-http-server", func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
