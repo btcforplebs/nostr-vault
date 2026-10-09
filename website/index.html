@@ -122,8 +122,9 @@
             <span>NOSTR VAULT</span>
         </a>
         <div class="nav-links">
+            <a href="#stories">Watch</a>
+            <a href="#trust">Trust</a>
             <a href="#features">Features</a>
-            <a href="#film">Watch</a>
             <a href="#platforms">Download</a>
             <a href="#relay">Relay</a>
             <a href="blog-what-is-nostr-vault.html">Blog</a>
@@ -160,6 +161,43 @@
         </div>
     </header>
 
+    <section class="stories" id="stories" aria-label="Three short Nostr Vault films">
+        <p class="eyebrow center fade-in-up">Watch &middot; 30 seconds each</p>
+        <h2 class="center fade-in-up">Three things only a vault does.</h2>
+        <div class="story-row">
+            <button class="story fade-in-up" type="button" data-film="assets/video/spot-general-30s.mp4" data-title="One app for all of Nostr">
+                <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-general-poster.jpg" width="540" height="960" aria-hidden="true">
+                    <source src="assets/video/spot-general-6s.mp4" type="video/mp4">
+                </video></span>
+                <span class="story-meta">
+                    <span class="story-kicker">Every feed</span>
+                    <span class="story-title">One app for all of Nostr.</span>
+                    <span class="story-play">Play with sound</span>
+                </span>
+            </button>
+            <button class="story fade-in-up delay-100" type="button" data-film="assets/video/spot-weboftrust-30s.mp4" data-title="Web of Trust">
+                <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-weboftrust-poster.jpg" width="540" height="960" aria-hidden="true">
+                    <source src="assets/video/spot-weboftrust-6s.mp4" type="video/mp4">
+                </video></span>
+                <span class="story-meta">
+                    <span class="story-kicker">Web of Trust</span>
+                    <span class="story-title">Spam stays out. Your people stay in.</span>
+                    <span class="story-play">Play with sound</span>
+                </span>
+            </button>
+            <button class="story fade-in-up delay-200" type="button" data-film="assets/video/spot-relaybackup-30s.mp4" data-title="Your relay, your data">
+                <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-relaybackup-poster.jpg" width="540" height="960" aria-hidden="true">
+                    <source src="assets/video/spot-relaybackup-6s.mp4" type="video/mp4">
+                </video></span>
+                <span class="story-meta">
+                    <span class="story-kicker">Your relay</span>
+                    <span class="story-title">Your relay. Your data. Your device.</span>
+                    <span class="story-play">Play with sound</span>
+                </span>
+            </button>
+        </div>
+    </section>
+
     <section class="platforms" id="platforms">
         <div class="platform-grid">
             <a class="platform fade-in-up" href="https://testflight.apple.com/join/kN3zE1H1">
@@ -189,10 +227,10 @@
         <p class="eyebrow center fade-in-up">Watch</p>
         <h2 class="center fade-in-up">Your posts. Their servers. Their rules.<br>Bring them home.</h2>
         <figure class="film-main fade-in-up delay-100">
-            <video autoplay muted loop playsinline preload="metadata" poster="assets/video/the-door-poster.jpg" width="1280" height="720" aria-label="Twenty second Nostr Vault film: notes drift off remote servers and come home through an orange vault door to a personal relay on iPhone, Mac and Android">
+            <video class="sound-toggle" autoplay muted loop playsinline preload="metadata" poster="assets/video/the-door-poster.jpg" width="1280" height="720" aria-label="Twenty second Nostr Vault film: notes drift off remote servers and come home through an orange vault door to a personal relay on iPhone, Mac and Android">
                 <source src="assets/video/the-door-720.mp4" type="video/mp4">
             </video>
-            <figcaption>The Door &middot; 20 seconds &middot; tap for sound</figcaption>
+            <figcaption data-label="The Door &middot; 20 seconds">The Door &middot; 20 seconds &middot; tap for sound</figcaption>
         </figure>
         <div class="film-row">
             <figure class="film-side fade-in-up">
@@ -230,6 +268,26 @@
                 <li><strong>Articles</strong> &mdash; long-form posts drawn as articles, with a proper reader.</li>
                 <li><strong>Recipes, Live &amp; Music</strong> &mdash; zapcooking recipes, NIP-53 live streams with chat, and trending tracks from Wavlake.</li>
                 <li><strong>Media</strong> &mdash; a grid of every photo, GIF and video from your follows, sorted by date.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="split trust" id="trust">
+        <figure class="spot-frame fade-in-up">
+            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-weboftrust-poster.jpg" width="720" height="1280" aria-label="Thirty second Web of Trust film: a globe of Nostr accounts with orange threads for every follow you trust, re-centering on a face when tapped">
+                <source src="assets/video/spot-weboftrust-30s.mp4" type="video/mp4">
+            </video>
+            <figcaption data-label="Web of Trust &middot; 30 seconds">Web of Trust &middot; 30 seconds &middot; tap for sound</figcaption>
+        </figure>
+        <div class="split-copy">
+            <p class="eyebrow fade-in-up">Web of Trust</p>
+            <h2 class="fade-in-up">See who vouches for anyone.</h2>
+            <p class="fade-in-up delay-100">Every account on Nostr sits somewhere in your follow graph. Nostr Vault draws
+                it as a globe: you at the centre, and an orange thread for every follow you already trust.</p>
+            <ul class="feed-list fade-in-up delay-200">
+                <li><strong>Tap a face</strong> &mdash; the web re-centres on them, so you see who they know that you know.</li>
+                <li><strong>Real counts</strong> &mdash; how many of your follows reach someone, and how many of theirs you follow too.</li>
+                <li><strong>Filtering that fails closed</strong> &mdash; Global and Discover only show people your graph can vouch for. Spam stays out, your people stay in.</li>
             </ul>
         </div>
     </section>
@@ -372,7 +430,13 @@
         <p class="eyebrow center fade-in-up">Two ways to run it</p>
         <h2 class="center fade-in-up">Pocket relay, or a home on the network.</h2>
         <p class="center lede-sm fade-in-up delay-100">Every build carries the full relay. What changes is who can reach it.</p>
-        <div class="grid two">
+        <figure class="film-main relay-film fade-in-up">
+            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-relaybackup-15s-poster.jpg" width="1280" height="720" aria-label="Fifteen second film: the relay running inside the phone, then exporting notes and Blossom media and importing them on an iPad">
+                <source src="assets/video/spot-relaybackup-15s.mp4" type="video/mp4">
+            </video>
+            <figcaption data-label="Relay and backup &middot; 15 seconds">Relay and backup &middot; 15 seconds &middot; tap for sound</figcaption>
+        </figure>
+        <div class="grid">
             <article class="card fade-in-up">
                 <h3>iPhone, iPad &amp; Android &mdash; pocket relay</h3>
                 <p>Your device keeps a complete copy of your notes, media and lists, and pushes everything out to the
@@ -385,6 +449,12 @@
                 <p>Run it 24/7 on a Mac with a real URL like <code>relay.yourdomain.com</code>, and anyone can connect
                     to read your notes: your own phone, your friends, other relays. Set the Mac as a relay in the mobile
                     app and it syncs your full history once, then keeps you current. Push <em>and</em> pull.</p>
+            </article>
+            <article class="card fade-in-up delay-200">
+                <h3>Back it up &mdash; take it anywhere</h3>
+                <p>Export your notes as JSONL and your Blossom media as files, straight from the relay dashboard.
+                    Import them on another phone or an iPad and your vault is back, nothing lost. No account to
+                    recover, no server to ask.</p>
             </article>
         </div>
     </section>
@@ -418,6 +488,11 @@
             and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
         <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
     </footer>
+
+    <dialog class="film-dialog" aria-label="Nostr Vault film">
+        <button class="film-close" type="button" aria-label="Close film">&times;</button>
+        <video controls playsinline preload="none" width="720" height="1280"></video>
+    </dialog>
 
     <script src="script.js"></script>
 </body>
