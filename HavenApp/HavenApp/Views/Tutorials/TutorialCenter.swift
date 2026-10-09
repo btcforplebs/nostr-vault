@@ -163,11 +163,30 @@ extension View {
     /// the Vault tab's two halves both stay alive, and only the one showing
     /// should be pointed at.
     func tutorialAnchor(_ name: String, isActive: Bool = true) -> some View {
-        onGeometryChange(for: CGRect?.self) { isActive ? $0.frame(in: .global) : nil } action: { frame in
-            if let frame { TutorialCenter.shared.setAnchor(name, frame: frame) }
-        }
-        .onDisappear {
-            if isActive { TutorialCenter.shared.setAnchor(name, frame: nil) }
-        }
+        modifier(TutorialAnchorModifier(name: name, isActive: isActive))
+    }
+}
+
+/// Reports the view's frame under `name`, and takes it back when the view
+/// goes. A tab that stays alive comes back with the same frame, so
+/// `onGeometryChange` has nothing new to say then; the frame kept here is
+/// put back on appear, or the card for that tab waits forever.
+private struct TutorialAnchorModifier: ViewModifier {
+    let name: String
+    let isActive: Bool
+    @State private var frame: CGRect?
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect?.self) { isActive ? $0.frame(in: .global) : nil } action: { new in
+                frame = new
+                if let new { TutorialCenter.shared.setAnchor(name, frame: new) }
+            }
+            .onAppear {
+                if let frame { TutorialCenter.shared.setAnchor(name, frame: frame) }
+            }
+            .onDisappear {
+                if isActive { TutorialCenter.shared.setAnchor(name, frame: nil) }
+            }
     }
 }

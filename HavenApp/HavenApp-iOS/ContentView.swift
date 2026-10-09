@@ -1425,10 +1425,13 @@ private struct OpensRelayTab: ViewModifier {
                     tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
                 }
             }
-            // A last card's Next goes to the next tutorial's page: Your
-            // Vault is the Relay tab, Wallet Connect the wallet on Profile,
-            // Pocket Relay the relay dashboard on the Relay tab.
+            // A last card's Next goes to the next tutorial's page: WoT is
+            // the WoT tab, Your Vault the Relay tab, Wallet Connect the
+            // wallet on Profile, Pocket Relay the relay dashboard on the
+            // Relay tab. Replay from Settings lands here too, after its
+            // jump to the feed.
             .onChange(of: tutorialCenter.active) { _, active in
+                if active == .wot { selectedTab = 3 }
                 // Your Vault's cards and Pocket Relay's dashboard are on
                 // either half, so stay on the one showing.
                 if active == .vault || active == .pocketRelay { selectedTab = 4 }

@@ -250,7 +250,7 @@ struct TrustWebView: View {
     /// height, which leaves the card no room above or below it.
     private var globeTutorialAnchor: some View {
         GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height) * 0.6
+            let side = min(geo.size.width, geo.size.height) * 0.5
             Color.clear
                 .frame(width: side, height: side)
                 .tutorialAnchor(TutorialContent.wotGlobe)
