@@ -22,11 +22,13 @@
 		070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 27A87225270090D65AC98D48 /* libhaven.a */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
+		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
 		0A25EF3C485CE440985C8FAA /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		0A7F84AA905A79326F9B2C30 /* FeedFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */; };
 		0BDACF2A52FF38A77AFC41F0 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */; };
 		0C8D6CA3BC04B268F580C95E /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */; };
 		0D75E0FE3D5A81E9E43DFB50 /* GroupInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCF37340A315B6541EC46EDD /* GroupInfoView.swift */; };
+		0DDFAD13BAF56EE2E364C3AE /* FipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2085F506DCBDFB8AA91C52C5 /* FipsMeshService.swift */; };
 		0EB42E4E52C93FD4809FB152 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4167692AA94E7EC99B29BD /* ComposeView.swift */; };
 		0F053596A138BC4A744FED73 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		101F21414B9D5836861A6FAB /* MediaGalleryUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834869D3781DF8E49BC46F38 /* MediaGalleryUpload.swift */; };
@@ -170,6 +172,7 @@
 		6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
 		639693F76606BDA634926A35 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3192A668A74BAFF6F4B60FC /* AppDelegate.swift */; };
 		6599E6B809A7C89D83B5765A /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
+		66A75D50226A1EAECEA1AAF5 /* FipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2085F506DCBDFB8AA91C52C5 /* FipsMeshService.swift */; };
 		66FB9EEC08A2208BCEAC19AD /* FeedProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */; };
 		67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D917784217297C478102785 /* DMInboxView.swift */; };
 		6814DBA708E44A94F8A812F1 /* VaultModeLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */; };
@@ -479,6 +482,7 @@
 		1EA2FCD67EDBE04915305C51 /* MediaGalleryTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryTypes.swift; sourceTree = "<group>"; };
 		1F4167692AA94E7EC99B29BD /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
 		206D33B8D9B41298F867EA55 /* DraftPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftPickerView.swift; sourceTree = "<group>"; };
+		2085F506DCBDFB8AA91C52C5 /* FipsMeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshService.swift; sourceTree = "<group>"; };
 		2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UGCReportingDialog.swift; sourceTree = "<group>"; };
 		22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProcessManager.swift; sourceTree = "<group>"; };
 		26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBroadcastSheet.swift; sourceTree = "<group>"; };
@@ -624,6 +628,7 @@
 		B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportedMediaFormats.swift; sourceTree = "<group>"; };
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
 		B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDashboardSheet.swift; sourceTree = "<group>"; };
+		B7AE5C3CB89D22373BCC0664 /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/ios/libnvfips.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FIPSDetectionService.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
@@ -691,6 +696,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */,
+				086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */,
 				54F97D972DBA6B8091D42A07 /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -794,6 +800,7 @@
 			children = (
 				DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */,
 				27A87225270090D65AC98D48 /* libhaven.a */,
+				B7AE5C3CB89D22373BCC0664 /* libnvfips.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -1041,6 +1048,7 @@
 				EC33568A91E5B5B737A03D1F /* FeedService.swift */,
 				A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */,
 				BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */,
+				2085F506DCBDFB8AA91C52C5 /* FipsMeshService.swift */,
 				C81B813614AC332D9C184C78 /* FollowingBackupService.swift */,
 				A4464865603517B64343AFC9 /* FollowingFeedState.swift */,
 				671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */,
@@ -1101,6 +1109,7 @@
 			buildConfigurationList = C4838A2894D505C5FCC87843 /* Build configuration list for PBXNativeTarget "HavenApp-iOS" */;
 			buildPhases = (
 				FA9359A486A7BC73C21528F2 /* Build Go Library (iOS) */,
+				F05EADC0061FD61FD31F9FFF /* Build FIPS Mesh Library (iOS) */,
 				3B51B5B01C78DBB1CD1991A6 /* Sources */,
 				B9758AAE3FF4271992323C9F /* Resources */,
 				C3DF0208F5FD816DEECCF153 /* Frameworks */,
@@ -1269,6 +1278,26 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PROJECT_DIR}/HavenApp/App/build_haven.sh\"\n";
 		};
+		F05EADC0061FD61FD31F9FFF /* Build FIPS Mesh Library (iOS) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build FIPS Mesh Library (iOS)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(PROJECT_DIR)/build/ios/libnvfips.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/HavenApp/App/build_fips_ios.sh\"\n";
+		};
 		FA9359A486A7BC73C21528F2 /* Build Go Library (iOS) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -1348,6 +1377,7 @@
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				BBADE21A4A5A36ACE752BE4A /* FeedView.swift in Sources */,
 				DA4D22419FAD927F58025331 /* FilterButton.swift in Sources */,
+				0DDFAD13BAF56EE2E364C3AE /* FipsMeshService.swift in Sources */,
 				20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */,
 				CCDD2DE2A5F8B1ECDA15E248 /* FollowingBackupService.swift in Sources */,
 				3AEB8B86A7A7F02EB9885F69 /* FollowingBackupView.swift in Sources */,
@@ -1568,6 +1598,7 @@
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */,
 				9D8C4B533215C3CB63C3E7E8 /* FilterButton.swift in Sources */,
+				66A75D50226A1EAECEA1AAF5 /* FipsMeshService.swift in Sources */,
 				CA413CD72E9FB270DDA60F7D /* FloatingArrowController.swift in Sources */,
 				B90CCC03D296B8EDD6E7AC90 /* FollowingBackupService.swift in Sources */,
 				9A218E4A2B203DE0C9D92A48 /* FollowingBackupView.swift in Sources */,

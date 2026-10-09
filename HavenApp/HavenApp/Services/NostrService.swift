@@ -974,7 +974,15 @@ class NostrService: ObservableObject {
     /// Pass fipsDetectedNpub when available to include the detected .fips address.
     @MainActor
     func publishServerList(fipsDetectedNpub: String? = nil) {
-        let mirrors = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        var mirrors = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        #if os(iOS)
+        // Kiosk mode: this vault is on the FIPS mesh. Last, so apps that try
+        // servers in order use the normal ones first; apps that do not know
+        // the scheme skip it.
+        if let mesh = FipsMeshService.shared.meshServerURL, !mirrors.contains(mesh) {
+            mirrors.append(mesh)
+        }
+        #endif
         guard !mirrors.isEmpty else {
             #if DEBUG
             print("NostrService: No Blossom mirrors configured, skipping Kind 10063 publish")

@@ -3304,6 +3304,7 @@ struct BlossomSettingsView: View {
     @StateObject private var fipsDetection = FIPSDetectionService()
     #else
     @State private var isVPNActive = false
+    @ObservedObject private var mesh = FipsMeshService.shared
     #endif
     
     var body: some View {
@@ -3577,6 +3578,52 @@ struct BlossomSettingsView: View {
                 Text("Expose your Blossom server over the FIPS overlay network. Clients with a FIPS transport can reach your media without a public IP or domain.")
             }
             #else
+            Section {
+                Toggle(isOn: Binding(
+                    get: { mesh.kioskActive },
+                    set: { on in on ? mesh.startKiosk() : mesh.stopKiosk() }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Kiosk mode")
+                            .font(.appBody)
+                            .foregroundColor(.white)
+                        Text("Share this vault on the FIPS mesh while the app stays open")
+                            .font(.appCaption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if mesh.kioskActive, let status = mesh.status {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(status.running ? Color.havenOnline : Color.gray)
+                            .frame(width: 8, height: 8)
+                        Text(status.running ? "Sharing on the mesh" : "Mesh stopped")
+                            .font(.appCaption)
+                            .foregroundColor(.secondary)
+                    }
+                    if let counters = status.counters {
+                        Text("Served \(counters.served_total) requests, \(ByteCountFormatter.string(fromByteCount: Int64(counters.served_tx), countStyle: .file))")
+                            .font(.appCaption)
+                            .foregroundColor(.secondary)
+                    }
+                    if let url = mesh.meshServerURL {
+                        Text(url)
+                            .font(.appCaption2)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                if let error = mesh.lastError {
+                    Text(error)
+                        .font(.appCaption)
+                        .foregroundColor(.red)
+                }
+            } header: {
+                Text("FIPS Mesh")
+            } footer: {
+                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Leaving the app turns kiosk mode off.")
+            }
+
             Section {
                 HStack(spacing: 8) {
                     Circle()
