@@ -178,3 +178,25 @@ final class HomeVaultRetryTests: XCTestCase {
         XCTAssertNil(HomeVaultLogic.publicBlobURL(server: "http://127.0.0.1:3355", sha256: sha, contentType: "image/png"), "never loopback")
     }
 }
+
+final class HomeVaultLinkTests: XCTestCase {
+    private let sha = String(repeating: "b", count: 64)
+
+    func testAPrivateServerNeverBecomesAPublicLink() {
+        for server in ["https://192.168.1.5:4443", "https://10.0.0.2", "https://mac.tail1234.ts.net",
+                       "https://100.100.1.1", "https://nas.local", "https://blossom.lan"] {
+            XCTAssertNil(HomeVaultLogic.publicBlobURL(server: server, sha256: sha, contentType: "image/png"), server)
+        }
+        XCTAssertEqual(HomeVaultLogic.linkServer(mirrors: ["https://192.168.1.5:4443", "https://blossom.band/"], sha256: sha, contentType: "image/png"),
+                       "https://blossom.band/", "the first public one, skipping the home server")
+        XCTAssertNil(HomeVaultLogic.linkServer(mirrors: ["https://10.0.0.2"], sha256: sha, contentType: "image/png"))
+    }
+
+    func testTheSameServerMeansTheSamePortToo() {
+        let url = URL(string: "https://blossom.band/\(sha).png")!
+        XCTAssertTrue(HomeVaultLogic.sameServer(url, "https://blossom.band/"))
+        XCTAssertTrue(HomeVaultLogic.sameServer(url, "https://BLOSSOM.band:443"))
+        XCTAssertFalse(HomeVaultLogic.sameServer(url, "https://blossom.band:8443"), "another port is another server")
+        XCTAssertFalse(HomeVaultLogic.sameServer(url, "https://nostr.media"))
+    }
+}

@@ -524,13 +524,19 @@ class BlossomService: @unchecked Sendable {
     private func kioskOnlyLink(toHomeVault: Bool, mirrors: [String], sha256: String, contentType: String) async -> URL? {
         #if os(iOS)
         guard toHomeVault,
-              let server = mirrors.first(where: { HomeVaultLogic.publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }),
+              let server = HomeVaultLogic.linkServer(mirrors: mirrors, sha256: sha256, contentType: contentType),
               let link = HomeVaultLogic.publicBlobURL(server: server, sha256: sha256, contentType: contentType) else { return nil }
-        let signer = await MainActor.run { nostrService.activeHexPubkey }
-        await MainActor.run {
-            HomeVaultSender.shared.enqueue(mirrorSha256: sha256, contentType: contentType, signer: signer)
+        // Only once the vault really holds it: queued is not enough (Tron, #473).
+        guard await HomeVaultSender.shared.ensureOnVault(sha256: sha256) else {
+            appLog("\(sha256.prefix(8)) not confirmed on the home vault — the post waits for a public server as before")
+            return nil
         }
-        appLog("\(sha256.prefix(8)) is on this phone and going to the home vault; the note links \(link.absoluteString) and the public upload keeps retrying")
+        let signer = await MainActor.run { nostrService.activeHexPubkey }
+        let queued = await MainActor.run {
+            HomeVaultSender.shared.enqueue(mirrorSha256: sha256, contentType: contentType, signer: signer, server: server)
+        }
+        guard queued else { return nil }
+        appLog("\(sha256.prefix(8)) is on the home vault; the note links \(link.absoluteString) and the public upload keeps retrying")
         return link
         #else
         return nil
@@ -539,17 +545,15 @@ class BlossomService: @unchecked Sendable {
 
     #if os(iOS)
     /// One more public upload of a blob this phone already holds (the
-    /// kiosk-only case). True once the server the note links (the first
-    /// public one) has it; another server alone leaves the link dead.
-    func mirrorFromLocal(sha256: String, contentType: String) async -> Bool {
-        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
-        guard let linked = mirrors.first(where: { HomeVaultLogic.publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }),
-              let linkedHost = URL(string: linked)?.host,
-              let data = await HomeVaultTransport.localBlob(sha256: sha256) else { return false }
+    /// kiosk-only case), to `server`, the one the note names. True once that
+    /// server has it; another server alone leaves the link dead.
+    func mirrorFromLocal(sha256: String, contentType: String, server: String?) async -> Bool {
+        guard let server, let file = await HomeVaultTransport.localBlobFile(sha256: sha256) else { return false }
+        defer { try? FileManager.default.removeItem(at: file) }
         let auth = await makeUploadAuth(sha256: sha256)
-        let urls = await mirrorUploadPass(source: .data(data), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
-        let done = urls.contains { $0.host == linkedHost }
-        if done { appLog("kiosk-only \(sha256.prefix(8)) is now on \(linkedHost), where the note links it") }
+        let urls = await mirrorUploadPass(source: .file(file), sha256: sha256, contentType: contentType, mirrors: [server], authBase64: auth, progress: nil)
+        let done = urls.contains { HomeVaultLogic.sameServer($0, server) }
+        if done { appLog("kiosk-only \(sha256.prefix(8)) is now on \(server), where the note links it") }
         return done
     }
     #endif

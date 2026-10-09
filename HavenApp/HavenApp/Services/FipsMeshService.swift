@@ -60,6 +60,14 @@ final class FipsMeshService: ObservableObject {
 
     func startKiosk() {
         guard !kioskActive, !starting else { return }
+        // A client engine was started with LAN candidates for the owner's own
+        // vault; kiosk mode is open to anyone, so it starts fresh without them.
+        if clientActive {
+            clientActive = false
+            if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+            clientBackgroundObserver = nil
+            stopEngine()
+        }
         starting = true
         startGen += 1
         let gen = startGen
@@ -169,6 +177,8 @@ final class FipsMeshService: ObservableObject {
         engineOp = Task { _ = await op.value }
         let url = await op.value
         if url != nil { refresh() }
+        // The dial failed but the engine may be up: nothing else needs it.
+        if url == nil, !kioskActive, !starting, !clientActive { stopEngine() }
         if url != nil, !kioskActive, !starting, !clientActive {
             clientActive = true
             // iOS suspends the engine in the background anyway; stop it cleanly
@@ -197,8 +207,10 @@ final class FipsMeshService: ObservableObject {
 
     nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool) -> URL? {
         guard let nsec = meshNsec() else { return nil }
-        // Idempotent: a running engine (kiosk or an earlier client start) is reused.
-        guard NvFipsStart(nsec, "{}") == 0 else { return nil }
+        // Idempotent: a running engine (kiosk or an earlier client start) is
+        // reused. A client offers LAN candidates, so two phones on one Wi-Fi
+        // connect (as Android does); kiosk mode restarts without them.
+        guard NvFipsStart(nsec, closeDoor ? #"{"lan":true}"# : "{}") == 0 else { return nil }
         if closeDoor { SetMeshServingC(0) }
         var out: UnsafeMutablePointer<CChar>?
         let rc = NvFipsIngress(meshNpub, &out)

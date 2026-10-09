@@ -27,8 +27,8 @@ final class HomeVaultSender: ObservableObject {
     private static let vaultKey = "homeVault.v1"
     /// A queue that never drains must not grow without bound.
     static let maxQueue = 500
-    /// The kiosk caps uploads; anything larger is not queued.
-    static let maxBlobBytes = 100 * 1024 * 1024
+    /// The kiosk's mesh door takes up to 256 MB (#475); larger is not queued.
+    static let maxBlobBytes = 256 * 1024 * 1024
 
     private var retryTimer: Timer?
     private var foregroundObserver: NSObjectProtocol?
@@ -73,7 +73,7 @@ final class HomeVaultSender: ObservableObject {
               let id = eventDict["id"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: eventDict),
               let json = String(data: data, encoding: .utf8) else { return }
-        add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil))
+        _ = add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil))
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
@@ -83,34 +83,72 @@ final class HomeVaultSender: ObservableObject {
         guard let vault = homeVault, signer == vault.ownerHex else { return false }
         guard byteCount <= Self.maxBlobBytes else {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
+            lastResult = "A file over 256 MB stays on this phone only: the home vault doesn't take files that big."
             return false
         }
-        add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil))
+        return add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil))
+    }
+
+    /// The public upload of a blob a note names on `server` (kiosk-only
+    /// case). Retried until that server has it. False when the queue is full:
+    /// the note must then wait instead of naming a link nothing will fill.
+    func enqueue(mirrorSha256 sha256: String, contentType: String, signer: String, server: String) -> Bool {
+        add(HomeVaultItem(kind: .mirror, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType,
+                          added: Date(), attempts: 0, notBefore: Date().addingTimeInterval(60), server: server))
+    }
+
+    /// Make sure the home vault holds `sha256` now, for a note about to link
+    /// it with no public copy yet (Tao: never publish a note that points
+    /// nowhere). Bounded: the composer waits at most `timeout`. True once the
+    /// vault confirms it, by HEAD or by taking the upload.
+    func ensureOnVault(sha256: String, timeout: TimeInterval = 45) async -> Bool {
+        guard let vault = homeVault, vault.ownerHex == NostrService.shared.activeHexPubkey else { return false }
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { await self.confirmOrSend(sha256: sha256, vault: vault) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private func confirmOrSend(sha256: String, vault: HomeVault) async -> Bool {
+        guard let base = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) else { return false }
+        if await HomeVaultTransport.vaultHas(sha256: sha256, base: base) { return true }
+        // A background pass may hold the item or the vault's one upload slot:
+        // then the vault itself is the answer.
+        guard let item = queue.first(where: { $0.kind == .blob && $0.id == sha256 }),
+              await sendBlob(item, base: base) == .sent else {
+            return await HomeVaultTransport.vaultHas(sha256: sha256, base: base)
+        }
+        appLog("sent blob \(sha256.prefix(8)) before publishing its note")
+        remove(item)
         return true
     }
 
-    /// The public upload of a blob a note already links (kiosk-only case).
-    /// Retried until the linked server has it, home vault or not.
-    func enqueue(mirrorSha256 sha256: String, contentType: String, signer: String) {
-        add(HomeVaultItem(kind: .mirror, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: Date().addingTimeInterval(60)))
-    }
-
-    private func add(_ item: HomeVaultItem) {
-        guard !queue.contains(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
+    /// False when the item could not be queued.
+    @discardableResult
+    private func add(_ item: HomeVaultItem) -> Bool {
+        guard !queue.contains(where: { $0.kind == item.kind && $0.id == item.id }) else { return true }
+        // Full: refuse the new item, as the kiosk's own queue does. Dropping
+        // the oldest would lose something that never got out (Tron, #473).
+        guard queue.count < Self.maxQueue else {
+            appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued", level: "WARN")
+            lastResult = "The queue is full: new notes and media aren't going to your home vault. Tap Send now when it's in reach."
+            return false
+        }
         // Media before the notes that point at it, so a note never lands first.
         if let index = HomeVaultLogic.insertionIndex(for: item.kind, in: queue) {
             queue.insert(item, at: index)
         } else {
             queue.append(item)
         }
-        // Over the cap the oldest mesh copy goes; a pending public upload is
-        // kept, because a published note already links to where it will be.
-        if queue.count > Self.maxQueue, let oldest = queue.firstIndex(where: { $0.kind != .mirror }) {
-            let dropped = queue.remove(at: oldest)
-            appLog("queue full — dropped the oldest (\(dropped.kind.rawValue) \(dropped.id.prefix(8)))", level: "WARN")
-        }
         saveQueue()
         drainSoon()
+        return true
     }
 
     // MARK: - Sending
@@ -129,7 +167,11 @@ final class HomeVaultSender: ObservableObject {
     /// while media queued before it has not reached the vault. `userInitiated`
     /// (Send now) ignores the backoff and may ask an external signer.
     func drain(userInitiated: Bool = false) async {
-        guard !sending, !queue.isEmpty else { return }
+        guard !queue.isEmpty else { return }
+        guard !sending else {
+            if userInitiated { lastResult = "Already sending…" }
+            return
+        }
         sending = true
         defer { sending = false }
 
@@ -178,7 +220,7 @@ final class HomeVaultSender: ObservableObject {
             let result: HomeVaultSendResult
             if item.kind == .mirror {
                 let blossom = BlossomService(configService: ConfigService.shared, nostrService: NostrService.shared)
-                let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream")
+                let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream", server: item.server)
                 result = ok ? .sent : .unreachable("no public server took it yet")
             } else {
                 guard let vault = homeVault, vault.ownerHex == item.ownerHex,
@@ -244,14 +286,17 @@ final class HomeVaultSender: ObservableObject {
     }
 
     private func sendBlob(_ item: HomeVaultItem, base: URL) async -> HomeVaultSendResult {
-        // The bytes come from this phone's own Blossom, where every post saves first.
-        guard let data = await HomeVaultTransport.localBlob(sha256: item.id) else {
+        // Streamed from a file: the bytes come from this phone's own Blossom,
+        // where every post saves first, and never sit in memory whole.
+        guard let file = await HomeVaultTransport.localBlobFile(sha256: item.id) else {
             return .rejected("not on this phone any more")
         }
-        guard let auth = await signUploadAuth(sha256: item.id, size: data.count) else {
+        defer { try? FileManager.default.removeItem(at: file) }
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
+        guard let auth = await signUploadAuth(sha256: item.id, size: size) else {
             return .unreachable("could not sign the upload")
         }
-        return await HomeVaultTransport.upload(data: data, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base)
+        return await HomeVaultTransport.upload(file: file, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base)
     }
 
     /// Signed at send time: a queued item can wait longer than an auth lives.
@@ -359,33 +404,49 @@ enum HomeVaultTransport {
         }
     }
 
-    /// BUD-02 `PUT /upload` to the vault, with the owner's 24242 authorisation.
-    static func upload(data: Data, sha256: String, contentType: String, authBase64: String, base: URL) async -> HomeVaultSendResult {
+    /// BUD-02 `PUT /upload` to the vault, streamed from `file`, with the owner's 24242 authorisation.
+    static func upload(file: URL, sha256: String, contentType: String, authBase64: String, base: URL) async -> SendResult {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
         request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue(sha256, forHTTPHeaderField: "X-SHA-256")
-        request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
         do {
-            let (_, response) = try await URLSession(configuration: .ephemeral).upload(for: request, from: data)
+            let (_, response) = try await session.upload(for: request, fromFile: file)
             return HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         } catch {
             return .unreachable("the home vault did not take the upload")
         }
     }
 
-    /// A blob from this phone's own Blossom.
-    static func localBlob(sha256: String) async -> Data? {
+    /// Whether the vault already serves `sha256` (its mesh door answers HEAD /<sha256>).
+    static func vaultHas(sha256: String, base: URL) async -> Bool {
+        var request = URLRequest(url: base.appendingPathComponent(sha256))
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 20
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (_, response) = try? await session.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// A blob from this phone's own Blossom, downloaded to a temporary file
+    /// the caller removes. Never loaded into memory whole.
+    static func localBlobFile(sha256: String) async -> URL? {
         // As BlossomService.localBlossomURL: the relay's own port serves blobs.
         let port = await MainActor.run { ConfigService.shared.config.relayPort }
         guard let url = URL(string: "https://localhost:\(port)/\(sha256)") else { return nil }
         let session = URLSession(configuration: .ephemeral, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        guard let (data, response) = try? await session.data(from: url),
+        guard let (temp, response) = try? await session.download(from: url),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return data
+        // The download's file is removed when this returns: move it somewhere ours.
+        let kept = FileManager.default.temporaryDirectory.appendingPathComponent("homevault-\(sha256)-\(UUID().uuidString.prefix(6))")
+        do { try FileManager.default.moveItem(at: temp, to: kept) } catch { return nil }
+        return kept
     }
 }
 #endif

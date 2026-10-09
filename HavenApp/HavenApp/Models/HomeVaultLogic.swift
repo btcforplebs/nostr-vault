@@ -26,6 +26,9 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     var attempts: Int
     /// Not before this (per-item backoff). Optional: older queues lack it.
     var notBefore: Date?
+    /// For a public copy: the server the published note names. Only that
+    /// server having the blob clears the item. Optional: older queues lack it.
+    var server: String? = nil
 }
 
 enum HomeVaultSendResult: Equatable {
@@ -195,7 +198,10 @@ extension HomeVaultLogic {
     /// blob: where it will be once the public upload goes through (BUD-01
     /// `/<sha256>.<ext>`). Never a fipsmesh or loopback address (Tao).
     static func publicBlobURL(server: String, sha256: String, contentType: String) -> URL? {
-        guard server.hasPrefix("https://"), !server.contains(".fips") else { return nil }
+        // Public means reachable by any reader: not a mesh name, not a home
+        // network or Tailscale host, which would also tell readers about it.
+        guard server.hasPrefix("https://"), !server.contains(".fips"),
+              let host = URL(string: server)?.host, !HavenConfig.isPrivateNetworkHost(host) else { return nil }
         var base = server
         while base.hasSuffix("/") { base.removeLast() }
         let ext: String
@@ -212,5 +218,21 @@ extension HomeVaultLogic {
         default: ext = ""
         }
         return URL(string: "\(base)/\(sha256)\(ext)")
+    }
+}
+
+extension HomeVaultLogic {
+    /// The same server: scheme, host and port (a default port counts as given).
+    static func sameServer(_ url: URL, _ server: String) -> Bool {
+        guard let other = URL(string: server) else { return false }
+        func port(_ u: URL) -> Int? { u.port ?? (u.scheme == "https" ? 443 : u.scheme == "http" ? 80 : nil) }
+        return url.scheme?.lowercased() == other.scheme?.lowercased()
+            && url.host?.lowercased() == other.host?.lowercased()
+            && port(url) == port(other)
+    }
+
+    /// The first configured server a public note may name, if any.
+    static func linkServer(mirrors: [String], sha256: String, contentType: String) -> String? {
+        mirrors.first { publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }
     }
 }
