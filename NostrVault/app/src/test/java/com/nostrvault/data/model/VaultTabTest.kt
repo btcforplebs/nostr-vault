@@ -149,4 +149,38 @@ class VaultTabTest {
         // Zaps Only hides Likes: a like falls back to Notes.
         assertEquals(VaultMode.NOTES, NotificationTarget.vaultModeFor("reaction", 7, zapsOnly = true))
     }
+
+    // ── New-activity dots (Notes, Likes, Zaps) ─────────────────────
+
+    private val now = 1_000_000L
+
+    @Test fun `newest sorts kinds into their list and skips articles, highlights and the future`() {
+        val events = listOf(1 to 100L, 6 to 300L, 30023 to 900L, 9802 to 900L, 7 to 50L, 9735 to 70L, 9735 to now + 3600)
+        val newest = VaultDots.newest(events, all, now)
+        assertEquals(300L, newest[VaultViewMode.NOTES])
+        assertEquals(50L, newest[VaultViewMode.LIKES])
+        assertEquals(70L, newest[VaultViewMode.ZAPS])
+        assertEquals(0L, VaultDots.newest(emptyList(), all, now)[VaultViewMode.NOTES])
+    }
+
+    private val seen = mapOf(VaultViewMode.NOTES to 100L, VaultViewMode.LIKES to 100L, VaultViewMode.ZAPS to 100L)
+
+    @Test fun `a list lights only when it holds something newer than when you looked`() {
+        val newest = mapOf(VaultViewMode.NOTES to 101L, VaultViewMode.LIKES to 100L, VaultViewMode.ZAPS to 99L)
+        assertEquals(setOf(VaultViewMode.NOTES), VaultDots.lit(newest, seen, watched = null, zapsOnly = false))
+    }
+
+    @Test fun `nothing lights before the first load settles`() {
+        val newest = mapOf(VaultViewMode.NOTES to 500L, VaultViewMode.LIKES to 500L, VaultViewMode.ZAPS to 500L)
+        assertTrue(VaultDots.lit(newest, emptyMap(), watched = null, zapsOnly = false).isEmpty())
+    }
+
+    @Test fun `the list in sight never lights, and Likes stays dark in Zaps Only`() {
+        val newest = mapOf(VaultViewMode.NOTES to 500L, VaultViewMode.LIKES to 500L, VaultViewMode.ZAPS to 500L)
+        assertEquals(
+            setOf(VaultViewMode.LIKES, VaultViewMode.ZAPS),
+            VaultDots.lit(newest, seen, watched = VaultViewMode.NOTES, zapsOnly = false),
+        )
+        assertEquals(setOf(VaultViewMode.NOTES), VaultDots.lit(newest, seen, watched = VaultViewMode.ZAPS, zapsOnly = true))
+    }
 }

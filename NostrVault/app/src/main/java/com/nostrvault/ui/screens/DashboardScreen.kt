@@ -154,6 +154,8 @@ class DashboardViewModel @Inject constructor(
         private const val LOAD_MORE_TIMEOUT_MS = 8_000L
         // High bound so the relay tab scrolls back through (effectively) full history.
         private const val MAX_ALL_EVENTS = 10_000
+        /** iOS establishNotificationBaseline's 3 s after the relay is up. */
+        private const val DOT_BASELINE_DELAY_MS = 3_000L
         private const val ALL_EVENTS_TRIM_SLACK = 200
         private const val MAX_SEEN_IDS = 10_000
         private const val MAX_ZAP_RECEIPT_CACHE = 500
@@ -272,13 +274,24 @@ class DashboardViewModel @Inject constructor(
     private val _hasNewFollowers = MutableStateFlow(false)
     val hasNewFollowers: StateFlow<Boolean> = _hasNewFollowers.asStateFlow()
 
+    /** Notes, Likes and Zaps lists with something new since you last looked (iOS hasNewNotes/Likes/Zaps). */
+    private val _newActivity = MutableStateFlow<Set<VaultViewMode>>(emptySet())
+
     /**
-     * Modes with something new since you last looked, for the Vault pill's
-     * dot on either half. Followers is the only list Android tracks.
+     * When each dotted list was last looked at, as the newest created_at it
+     * held then. Empty until the first load settles: before that everything
+     * would read as new.
      */
-    val newModes: StateFlow<Set<VaultMode>> = _hasNewFollowers
-        .map { if (it) setOf(VaultMode.FOLLOWERS) else emptySet() }
-        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
+    private val dotSeenAt = ConcurrentHashMap<VaultViewMode, Long>()
+    private var dotBaselineJob: Job? = null
+    /** The list in sight at the last check, so leaving it marks it seen too. */
+    private var lastWatched: VaultViewMode? = null
+
+    /** Modes with something new since you last looked, for the Vault pill's dot on either half. */
+    val newModes: StateFlow<Set<VaultMode>> = kotlinx.coroutines.flow.combine(_newActivity, _hasNewFollowers) { lists, followers ->
+        lists.mapTo(HashSet()) { VaultMode.of(false, it, VaultNoteScope.NOTES) }
+            .apply { if (followers) add(VaultMode.FOLLOWERS) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
 
     // ── Display data ─────────────────────────────────────────────
 
@@ -491,12 +504,21 @@ class DashboardViewModel @Inject constructor(
             configStore.accountSwitches.collect { resetForAccountSwitch() }
         }
 
-        // Coming back from the Media half to Followers is looking at it: the
-        // dot clears then, not while Media hid the list.
+        // A list is marked seen when you leave it as well as when you arrive,
+        // so what came in while you watched doesn't light its dot later.
+        // Coming back from the Media half is arriving: the dot clears then,
+        // not while Media hid the list.
         viewModelScope.launch {
-            com.nostrvault.ui.navigation.VaultSection.showsMedia.collect {
-                if (watchedMode() == VaultViewMode.FOLLOWERS) markFollowersSeen()
-            }
+            kotlinx.coroutines.flow.combine(
+                _viewMode, _noteScope, com.nostrvault.ui.navigation.VaultSection.showsMedia,
+            ) { _, _, _ -> watchedMode() }
+                .distinctUntilChanged()
+                .collect { watched ->
+                    val left = lastWatched
+                    lastWatched = watched
+                    left?.let { markListViewed(it) }
+                    watched?.let { markListViewed(it) }
+                }
         }
 
         // Blocking someone (this tab's Block User, the feed, Settings) drops
@@ -535,6 +557,10 @@ class DashboardViewModel @Inject constructor(
             _quoteMap.value = emptyMap()
             _followerSnapshot.value = null
             _hasNewFollowers.value = false
+            dotBaselineJob?.cancel()
+            dotBaselineJob = null
+            dotSeenAt.clear()
+            _newActivity.value = emptySet()
             olderGeneration++
             olderCursors.clear()
             _noOlderPages.value = emptySet()
@@ -1107,6 +1133,42 @@ class DashboardViewModel @Inject constructor(
             updateJob?.cancel()
             updateGeneration++
             updateDisplayData(updateGeneration)
+            // As iOS: the dots count from a few seconds after the first load,
+            // once the stored burst and the live catch-up are in.
+            if (dotSeenAt.isEmpty() && dotBaselineJob == null) {
+                dotBaselineJob = viewModelScope.launch {
+                    delay(DOT_BASELINE_DELAY_MS)
+                    val newest = dotNewest()
+                    VaultDots.eventLists.forEach { dotSeenAt[it] = newest.getValue(it) }
+                    _newActivity.value = emptySet()
+                }
+            }
+        }
+    }
+
+    /** The newest created_at in each dotted list, from what the tab holds now. */
+    private suspend fun dotNewest(): Map<VaultViewMode, Long> {
+        val events = allEventsMutex.withLock { allEvents.map { it.kind to it.createdAt } }
+        return VaultDots.newest(events, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
+    }
+
+    /** Lights the dot on each list that got something new while you were elsewhere. */
+    private fun refreshDots(newest: Map<VaultViewMode, Long>) {
+        val lit = VaultDots.lit(newest, dotSeenAt, watchedMode(), configStore.config.value.zapsOnlyMode)
+        if (!_newActivity.value.containsAll(lit)) _newActivity.value = _newActivity.value + lit
+    }
+
+    /** Clears [list]'s dot and moves its seen mark up to what it holds now. */
+    private fun markListViewed(list: VaultViewMode) {
+        if (list == VaultViewMode.FOLLOWERS) {
+            markFollowersSeen()
+            return
+        }
+        _newActivity.value = _newActivity.value - list
+        if (dotSeenAt.isEmpty()) return
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            val newest = dotNewest()
+            if (dotSeenAt.isNotEmpty()) dotSeenAt[list] = newest.getValue(list)
         }
     }
 
@@ -1300,10 +1362,7 @@ class DashboardViewModel @Inject constructor(
                 fetchMoreZapReceipts()
                 fetchMissingZappedNotes()
             }
-            VaultViewMode.FOLLOWERS -> {
-                if (watchedMode() == VaultViewMode.FOLLOWERS) markFollowersSeen()
-                viewModelScope.launch { refreshFollowers() }
-            }
+            VaultViewMode.FOLLOWERS -> viewModelScope.launch { refreshFollowers() }
             else -> {}
         }
     }
@@ -1645,6 +1704,10 @@ class DashboardViewModel @Inject constructor(
                 7 -> reactionEvents.add(event)
                 9735 -> zapEvents.add(event)
             }
+        }
+        if (dotSeenAt.isNotEmpty()) {
+            val newest = VaultDots.newest(events.map { it.kind to it.createdAt }, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
+            withContext(Dispatchers.Main) { refreshDots(newest) }
         }
 
         when (currentMode) {
