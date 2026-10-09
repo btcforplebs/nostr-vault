@@ -624,6 +624,39 @@ class BlossomService @Inject constructor(
     }
 
     /**
+     * Uploads a blob already on this phone to the servers not known to have
+     * it, then re-checks so badges show the new count. Null when every server
+     * already had it. Port of iOS `MediaBackupActions.mirrorMissing`.
+     */
+    suspend fun pushToMissing(sha256: String): MirrorPushResult? {
+        checkMirrorPresence(sha256, force = true)
+        val summary = backupSummary(sha256)
+        if (summary != null && !summary.needsMirror) return null
+        val result = pushLocalToMirrors(sha256, only = summary?.missing)
+        checkMirrorPresence(sha256, force = true)
+        return result
+    }
+
+    /** How a Save to Vault went, and the line to show for it. */
+    enum class VaultSave(val message: String) {
+        FAILED("Could not save to your vault"),
+        ON_PHONE("Saved to your vault on this phone"),
+        BACKED_UP("Saved to your vault and your Blossom"),
+    }
+
+    /**
+     * Stores a file that is only on outside servers (or a link) in the vault
+     * on this phone, then uploads it to any server that lacks it. Port of iOS
+     * `MediaBackupActions.saveToVault`.
+     */
+    suspend fun saveUrlToVault(url: String): VaultSave {
+        val saved = mirrorUrlToLocal(url) ?: return VaultSave.FAILED
+        val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
+            pushToMissing(saved).let { it == null || it is MirrorPushResult.AllAccepted }
+        return if (backedUp) VaultSave.BACKED_UP else VaultSave.ON_PHONE
+    }
+
+    /**
      * Push a blob that is already in this device's relay to the outside
      * servers. [only] limits the upload to those servers (the ones missing the
      * blob); null means every configured server. Port of iOS

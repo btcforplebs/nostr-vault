@@ -6,6 +6,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -14,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlossomService
+import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.deleteEverywhereLeftover
@@ -70,6 +73,7 @@ class MediaViewerViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val mediaCacheService: MediaCacheService,
 ) : ViewModel() {
 
     private val _mirrorStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
@@ -174,6 +178,65 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    /** Each Blossom server's answer per blob, for "Couldn't reach N servers". */
+    val mirrorPresence = blossomService.mirrorPresence
+
+    fun backupSummary(sha256: String, presence: Map<String, Map<String, com.nostrvault.service.BlobPresence>>) =
+        blossomService.backupSummary(sha256, presence)
+
+    /** Bumped after a save or cache, so the source badge reads the disk again. */
+    private val _sourceVersion = MutableStateFlow(0)
+    val sourceVersion = _sourceVersion.asStateFlow()
+
+    /** Where the viewer's copy of [item] lives. Port of iOS `MediaCacheService.getSource(for:)`. */
+    fun source(item: BlossomMediaItem): MediaCacheService.MediaSource = viewerMediaSource(
+        inVault = item.isLocal || (item.sha256.isNotEmpty() && mediaCacheService.isInLocalBlossom(item.sha256)),
+        cached = mediaCacheService.isCached(item.displayUrl),
+    )
+
+    private val _savingSha = MutableStateFlow<String?>(null)
+    /** The blob Save to Vault is working on, or null. */
+    val savingSha = _savingSha.asStateFlow()
+
+    private val _cachingSha = MutableStateFlow<String?>(null)
+    /** The blob Cache Locally is downloading, or null. */
+    val cachingSha = _cachingSha.asStateFlow()
+
+    /** Store a file that is not on the phone in the vault, then back it up. iOS `SourceIndicatorView.saveToVault`. */
+    fun saveToVault(item: BlossomMediaItem) {
+        if (_savingSha.value != null) return
+        viewModelScope.launch {
+            _savingSha.value = item.sha256
+            try {
+                val outcome = withContext(Dispatchers.IO) { blossomService.saveUrlToVault(item.displayUrl) }
+                if (outcome == BlossomService.VaultSave.FAILED) {
+                    notificationManager.showError(outcome.message)
+                } else {
+                    notificationManager.showToast(outcome.message)
+                    _sourceVersion.value++
+                    if (currentSha == item.sha256) checkMirrors(item.sha256)
+                }
+            } finally {
+                _savingSha.value = null
+            }
+        }
+    }
+
+    /** Keep a temporary copy on the phone. iOS `SourceIndicatorView.cacheMedia`. */
+    fun cacheLocally(item: BlossomMediaItem) {
+        if (_cachingSha.value != null) return
+        viewModelScope.launch {
+            _cachingSha.value = item.sha256
+            try {
+                val data = withContext(Dispatchers.IO) { mediaCacheService.fetchData(item.displayUrl) }
+                if (data == null) notificationManager.showError("Could not cache this file")
+                _sourceVersion.value++
+            } finally {
+                _cachingSha.value = null
+            }
+        }
+    }
+
     /** How many of your loaded posts link [sha256]; Delete everywhere offers to delete them too. */
     fun postsUsing(sha256: String): Int =
         if (sha256.isEmpty()) 0 else nostrService.ownEvents(referencingBlob = sha256).size
@@ -258,6 +321,10 @@ fun MediaViewerScreen(
     val density = LocalDensity.current
 
     val mirrorStatus by viewModel.mirrorStatus.collectAsState()
+    val mirrorPresence by viewModel.mirrorPresence.collectAsState()
+    val sourceVersion by viewModel.sourceVersion.collectAsState()
+    val savingSha by viewModel.savingSha.collectAsState()
+    val cachingSha by viewModel.cachingSha.collectAsState()
     val isCheckingMirrors by viewModel.isCheckingMirrors.collectAsState()
     val pushingSha by viewModel.pushingSha.collectAsState()
     val deleteLeftover by viewModel.deleteLeftover.collectAsState()
@@ -469,6 +536,9 @@ fun MediaViewerScreen(
             mirroredCount > 0 -> Color(0xFFFF9800)
             else -> Color.Gray
         }
+        val source = currentItem?.let { item ->
+            remember(item.sha256, item.displayUrl, sourceVersion) { viewModel.source(item) }
+        }
         if (!isInPiP) Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -477,6 +547,15 @@ fun MediaViewerScreen(
                 .padding(bottom = 4.dp)
                 .graphicsLayer { alpha = overlayAlpha },
         ) {
+            if (currentItem != null && source != null) {
+                MediaSourceRow(
+                    source = source,
+                    saving = savingSha == currentItem.sha256,
+                    caching = cachingSha == currentItem.sha256,
+                    onSaveToVault = { viewModel.saveToVault(currentItem) },
+                    onCacheLocally = { viewModel.cacheLocally(currentItem) },
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { showMirrorSheet = true }) {
                     if (isPushing) {
@@ -511,7 +590,8 @@ fun MediaViewerScreen(
                     }
                 }
                 // Like iOS: offer an upload only when some server lacks the file.
-                if (currentItem != null && currentItem.sha256.isNotEmpty() &&
+                // Only a file on the phone can be pushed (iOS: the .blossom source).
+                if (currentItem != null && currentItem.sha256.isNotEmpty() && source == MediaCacheService.MediaSource.BLOSSOM &&
                     !isCheckingMirrors && pushingSha == null && total > 0 && mirroredCount < total
                 ) {
                     TextButton(onClick = { viewModel.pushToMirrors(currentItem.sha256) }) {
@@ -525,6 +605,13 @@ fun MediaViewerScreen(
                         Text("Mirror", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+            // Like iOS: only for a file on the phone that some server lacks.
+            val unreachable = currentItem?.takeIf { source == MediaCacheService.MediaSource.BLOSSOM && it.sha256.isNotEmpty() }
+                ?.let { viewModel.backupSummary(it.sha256, mirrorPresence) }
+                ?.takeIf { it.needsMirror }?.unreachable ?: 0
+            if (unreachable > 0) {
+                Text(unreachableServersText(unreachable), color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
             }
             if (items.size > 1) {
                 Text(
@@ -588,6 +675,87 @@ fun MediaViewerScreen(
                 onConfirmWithPosts = { confirm(deletePosts = true) },
                 onDismiss = { pendingDelete = null },
             )
+        }
+    }
+}
+
+/** Where the viewer's copy lives: on the phone, a temporary copy, or only a link. */
+internal fun viewerMediaSource(inVault: Boolean, cached: Boolean): MediaCacheService.MediaSource = when {
+    inVault -> MediaCacheService.MediaSource.BLOSSOM
+    cached -> MediaCacheService.MediaSource.CACHED
+    else -> MediaCacheService.MediaSource.REMOTE
+}
+
+/** The badge text, as iOS `MediaCacheService.MediaSource.rawValue`. */
+internal fun mediaSourceLabel(source: MediaCacheService.MediaSource): String = when (source) {
+    MediaCacheService.MediaSource.BLOSSOM -> "On phone"
+    MediaCacheService.MediaSource.CACHED -> "Temporary copy"
+    MediaCacheService.MediaSource.REMOTE -> "Link only"
+}
+
+internal fun unreachableServersText(count: Int): String =
+    if (count == 1) "Couldn't reach 1 server" else "Couldn't reach $count servers"
+
+/**
+ * Source badge with Save to Vault (and Cache Locally for a bare link) when the
+ * file is not on the phone. Port of iOS `SourceIndicatorView`.
+ */
+@Composable
+private fun MediaSourceRow(
+    source: MediaCacheService.MediaSource,
+    saving: Boolean,
+    caching: Boolean,
+    onSaveToVault: () -> Unit,
+    onCacheLocally: () -> Unit,
+) {
+    val color = when (source) {
+        MediaCacheService.MediaSource.BLOSSOM -> Color(0xFF4CAF50)
+        MediaCacheService.MediaSource.CACHED -> Color(0xFF2196F3)
+        MediaCacheService.MediaSource.REMOTE -> Color(0xFFFF9800)
+    }
+    val icon = when (source) {
+        MediaCacheService.MediaSource.BLOSSOM -> NostrVaultIcons.TabVault
+        MediaCacheService.MediaSource.CACHED -> NostrVaultIcons.Import
+        MediaCacheService.MediaSource.REMOTE -> NostrVaultIcons.Globe
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(bottom = 4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(color.copy(alpha = 0.2f))
+                .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(mediaSourceLabel(source), color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        if (source != MediaCacheService.MediaSource.BLOSSOM) {
+            SourceActionButton("Save to Vault", busy = saving, onClick = onSaveToVault)
+        }
+        if (source == MediaCacheService.MediaSource.REMOTE) {
+            SourceActionButton("Cache Locally", busy = caching, onClick = onCacheLocally)
+        }
+    }
+}
+
+@Composable
+private fun SourceActionButton(label: String, busy: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = !busy,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+        modifier = Modifier.height(30.dp),
+    ) {
+        if (busy) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+        } else {
+            Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

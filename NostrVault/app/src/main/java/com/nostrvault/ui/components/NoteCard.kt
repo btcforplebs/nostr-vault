@@ -69,6 +69,9 @@ import com.nostrvault.data.model.poll
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
+import com.nostrvault.service.deleteEverywhereLeftover
+import com.nostrvault.ui.screens.DeleteBlobConfirmDialog
+import com.nostrvault.ui.screens.DeleteScope
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -76,6 +79,7 @@ import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -1136,6 +1140,11 @@ internal fun FullScreenMediaPager(
 ) {
     val mirrorState by viewModel.state.collectAsState()
     val saveState by viewModel.saveState.collectAsState()
+    val deleting by viewModel.deleting.collectAsState()
+    // Long-press opens the delete bar (iOS FeedMediaViewer isDeleting); a
+    // choice there asks first with the shared dialog.
+    var showDeleteBar by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<DeleteScope?>(null) }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
@@ -1150,7 +1159,10 @@ internal fun FullScreenMediaPager(
 
     // Re-evaluate mirror status whenever the visible page changes (the ViewModel is
     // shared across the feed, so only one viewer is ever active).
-    LaunchedEffect(currentUrl) { viewModel.onOpen(currentUrl) }
+    LaunchedEffect(currentUrl) {
+        viewModel.onOpen(currentUrl)
+        showDeleteBar = false
+    }
     LaunchedEffect(pagerState.currentPage) { FullScreenMediaRouter.setPage(pagerState.currentPage) }
 
     // Drag-to-dismiss state, using the same visual formulas as MediaViewerScreen / iOS.
@@ -1343,6 +1355,9 @@ internal fun FullScreenMediaPager(
                         onScaleChanged = { currentScale = it },
                         onVerticalDrag = onVerticalDrag,
                         onVerticalDragEnd = { onVerticalDragEnd() },
+                        onLongPress = {
+                            if (!closing && !deleting && viewModel.canDelete(url)) showDeleteBar = !showDeleteBar
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1413,6 +1428,48 @@ internal fun FullScreenMediaPager(
                 }
             }
 
+            if (showDeleteBar && !isInPiP) {
+                FeedMediaDeleteBar(
+                    deleting = deleting,
+                    onDeleteFromMirrors = { pendingDelete = DeleteScope.MIRRORS },
+                    onDeleteEverywhere = { pendingDelete = DeleteScope.EVERYWHERE },
+                    onCancel = { showDeleteBar = false },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                        .padding(bottom = if (urls.size > 1) 24.dp else 0.dp),
+                )
+            }
+
+            pendingDelete?.let { scope ->
+                val url = currentUrl
+                val postCount = remember(scope, url) {
+                    if (scope == DeleteScope.EVERYWHERE) viewModel.postsUsing(url) else 0
+                }
+                fun confirm(deletePosts: Boolean) {
+                    pendingDelete = null
+                    // The bar stays up showing "Deleting…" until the result is in.
+                    viewModel.delete(
+                        url = url,
+                        scope = scope,
+                        deletePosts = deletePosts,
+                        onMessage = {
+                            showDeleteBar = false
+                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                        },
+                        onAllGone = close,
+                    )
+                }
+                DeleteBlobConfirmDialog(
+                    scope = scope,
+                    postCount = postCount,
+                    onConfirm = { confirm(deletePosts = false) },
+                    onConfirmWithPosts = { confirm(deletePosts = true) },
+                    onDismiss = { pendingDelete = null },
+                )
+            }
+
             // Page-position bar, only when the note carries more than one item.
             if (urls.size > 1 && !isInPiP) {
                 PagePositionBar(
@@ -1427,6 +1484,46 @@ internal fun FullScreenMediaPager(
                         .graphicsLayer { alpha = overlayAlpha * shown },
                 )
             }
+    }
+}
+
+/** The bar a long-press opens: Delete from mirrors, Delete everywhere, Cancel. iOS FeedMediaViewer. */
+@Composable
+private fun FeedMediaDeleteBar(
+    deleting: Boolean,
+    onDeleteFromMirrors: () -> Unit,
+    onDeleteEverywhere: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val red = Color(0xFFE53935)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.8f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        if (deleting) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text("Deleting…", color = Color.White, fontSize = 14.sp)
+            Spacer(Modifier.weight(1f))
+        } else {
+            TextButton(onClick = onDeleteFromMirrors) {
+                Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = red, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Delete from mirrors", color = red, fontSize = 13.sp)
+            }
+            TextButton(onClick = onDeleteEverywhere) {
+                Icon(NostrVaultIcons.Delete, contentDescription = null, tint = red, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Delete everywhere", color = red, fontSize = 13.sp)
+            }
+            Spacer(Modifier.weight(1f))
+        }
+        TextButton(onClick = onCancel) { Text("Cancel", color = Color.White, fontSize = 13.sp) }
     }
 }
 
@@ -1549,6 +1646,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val mediaCacheService: MediaCacheService,
     private val mediaSaveService: MediaSaveService,
+    private val nostrService: com.nostrvault.service.NostrService,
 ) : ViewModel() {
 
     enum class SaveState { Idle, Saving, Saved }
@@ -1614,6 +1712,66 @@ class FeedMediaMirrorViewModel @Inject constructor(
             _state.value = MirrorState.Mirroring
             val sha = withContext(Dispatchers.IO) { blossomService.mirrorUrlToLocal(url) }
             _state.value = if (sha != null) MirrorState.Mirrored else MirrorState.Failed("Mirror failed")
+        }
+    }
+
+    private val _deleting = MutableStateFlow(false)
+    /** True while a delete from the long-press bar is running. */
+    val deleting = _deleting.asStateFlow()
+
+    /** How many of your loaded posts link the blob at [url]; Delete everywhere offers to delete them too. */
+    fun postsUsing(url: String): Int =
+        extractSha256(url)?.let { nostrService.ownEvents(referencingBlob = it).size } ?: 0
+
+    /** Whether [url] names a Blossom blob, so the long-press delete bar can act on it. */
+    fun canDelete(url: String): Boolean = extractSha256(url) != null
+
+    /**
+     * Delete from the long-press bar. Port of iOS FeedMediaViewer
+     * deleteFromMirrorsTapped / deleteEverywhereTapped, with Android's
+     * per-server report: [onMessage] names anything left behind, and
+     * [onAllGone] runs only when Delete everywhere left nothing, so the
+     * viewer closes then and stays open otherwise.
+     */
+    fun delete(
+        url: String,
+        scope: DeleteScope,
+        deletePosts: Boolean,
+        onMessage: (String) -> Unit,
+        onAllGone: () -> Unit,
+    ) {
+        val sha = extractSha256(url) ?: return onMessage("Could not extract hash from URL")
+        if (_deleting.value) return
+        viewModelScope.launch {
+            _deleting.value = true
+            try {
+                when (scope) {
+                    DeleteScope.MIRRORS -> {
+                        val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(sha) }
+                        onMessage(
+                            when {
+                                report.allDeleted -> "Deleted from mirrors"
+                                report.failed.isEmpty() -> "No mirrors to delete from"
+                                else -> deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!
+                            },
+                        )
+                    }
+                    DeleteScope.EVERYWHERE -> {
+                        if (deletePosts) nostrService.deleteOwnEvents(referencingBlob = sha)
+                        val (localOk, report) = withContext(Dispatchers.IO) {
+                            val local = async { blossomService.deleteFromLocal(sha) }
+                            val mirrors = async { blossomService.deleteFromMirrors(sha) }
+                            local.await() to mirrors.await()
+                        }
+                        val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
+                        onMessage(leftover ?: "Deleted everywhere")
+                        if (leftover == null) onAllGone()
+                    }
+                }
+                if (openUrl == url) onOpen(url)
+            } finally {
+                _deleting.value = false
+            }
         }
     }
 
