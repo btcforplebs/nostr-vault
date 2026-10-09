@@ -167,8 +167,10 @@ fun ProfileScreen(
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
     var zapSheetOpen by remember { mutableStateOf(false) }
-    // Edit Profile, over this page; swiping it away saves.
-    var editingProfile by rememberSaveable { mutableStateOf(false) }
+    // Edit Profile, over this page; swiping it away saves. Not saveable: the
+    // form lives in the view model, so after process death the sheet would
+    // come back empty.
+    var editingProfile by remember { mutableStateOf(false) }
     val openEditor = { editViewModel.open(); editingProfile = true }
     val copyNpub = {
         npub?.let { clipboard.setText(AnnotatedString(it)) }

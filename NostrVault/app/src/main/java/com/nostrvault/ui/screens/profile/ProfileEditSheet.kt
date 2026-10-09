@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.NostrService
@@ -31,7 +30,10 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.nostrvault.di.ApplicationScope
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 
@@ -40,14 +42,16 @@ import javax.inject.Inject
  * or the Edit Profile button). There is no Save button: swiping the sheet
  * away, Back or Done saves; Discard closes without saving (iOS #456).
  *
- * Scoped to the profile page, so a publish outlives the sheet and an edit
- * that failed to publish is still here when the sheet next opens.
+ * Scoped to the profile page, so an edit that failed to publish is still
+ * here when the sheet next opens. The publish itself runs app-wide.
  */
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val notificationManager: NotificationManager,
+    /** Runs the publish, so leaving the profile page right after a save does not cancel it. */
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     private val _displayName = MutableStateFlow("")
@@ -161,7 +165,7 @@ class ProfileEditViewModel @Inject constructor(
         val shownBefore = nostrService.profiles.value[pubkey]
         unsavedDraft = null
         nostrService.showLocalProfile(pubkey, ProfileMetadataMerge.preview(existing, initial, edited))
-        viewModelScope.launch {
+        appScope.launch(Dispatchers.Main) {
             val published = publish(existing, initial, edited)
             if (published != null) {
                 nostrService.showLocalProfile(pubkey, published)

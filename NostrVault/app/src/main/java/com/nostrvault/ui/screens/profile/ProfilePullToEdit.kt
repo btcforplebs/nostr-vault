@@ -31,6 +31,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -61,6 +64,13 @@ internal class PullToEditState(private val thresholdPx: Float) {
     }
 
     fun settle(to: Float) { distance = to }
+
+    /**
+     * A finger is on the screen. Only a touch drag pulls: a mouse wheel at
+     * the top scrolls as user input too but never flings, so the pull would
+     * never spring back.
+     */
+    var touching = false
 
     companion object {
         const val DRAG_RATE = 0.5f
@@ -102,7 +112,7 @@ internal fun PullToEditBox(
 
             // Only what the list could not scroll, at its top, becomes pull.
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-                if (source == NestedScrollSource.UserInput && available.y > 0) {
+                if (source == NestedScrollSource.UserInput && available.y > 0 && state.touching) {
                     Offset(0f, state.drag(available.y))
                 } else Offset.Zero
 
@@ -114,7 +124,19 @@ internal fun PullToEditBox(
             }
         }
     }
-    Box(Modifier.fillMaxSize().nestedScroll(connection)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(state) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        state.touching = event.changes.any { it.pressed && it.type == PointerType.Touch }
+                    }
+                }
+            }
+            .nestedScroll(connection),
+    ) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = state.distance }) { content() }
         PullToEditLabel(
             state,
