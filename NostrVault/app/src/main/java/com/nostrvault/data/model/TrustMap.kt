@@ -108,9 +108,50 @@ object TrustMap {
     }
 
     /** Ring people considered for faces when the core is the author (the WOT tab). */
-    const val FACE_CANDIDATES = 48
-    /** Ring faces drawn when the core is the author; the rest stay dots. */
-    const val RING_FACES = 16
+    const val FACE_CANDIDATES = 64
+    /**
+     * Ring faces drawn when the core is the author; the rest stay dots.
+     * Faces that would cover another are held back as dots ([seatFaces]).
+     */
+    const val RING_FACES = 40
+    /** Fewer on a slow phone: every face is a live picture view. */
+    const val RING_FACES_LITE = 24
+
+    /** A face on screen this frame: where it is and how big. */
+    data class FaceSpot(val key: String, val x: Double, val y: Double, val r: Double)
+
+    /** How much two faces may overlap, as a share of their radii, before the one behind is held back. */
+    const val FACE_OVERLAP = 0.15
+
+    /**
+     * Which faces get a picture this frame, so no face covers another: [spots]
+     * front-most first, [always] (the author) seated first, then faces seated
+     * last frame ([kept], so a face doesn't flicker as the globe turns), then
+     * the rest. [blocked] are areas no face may cover (the core).
+     */
+    fun seatFaces(
+        spots: List<FaceSpot>,
+        always: Set<String> = emptySet(),
+        kept: Set<String> = emptySet(),
+        blocked: List<FaceSpot> = emptyList(),
+    ): Set<String> {
+        val seated = ArrayList(blocked)
+        val keys = HashSet<String>()
+        fun fits(a: FaceSpot) = seated.all { b ->
+            val reach = (a.r + b.r) * (1 - FACE_OVERLAP)
+            (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) >= reach * reach
+        }
+        for (pass in 0..2) {
+            for (spot in spots) {
+                if (spot.key in keys) continue
+                val turn = if (spot.key in always) 0 else if (spot.key in kept) 1 else 2
+                if (turn != pass || (pass > 0 && !fits(spot))) continue
+                seated += spot
+                keys += spot.key
+            }
+        }
+        return keys
+    }
 
     /**
      * Who might get a face when the core is the author. There are no bridges

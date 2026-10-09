@@ -429,7 +429,7 @@ private fun TrustWebContent(
     val ringFaces = remember(ringCandidates, renderedPictures) {
         TrustMap.pickFaces(ringCandidates, { pubkey ->
             profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
-        })
+        }, if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
     }
 
     fun jump(index: Int) {
@@ -1800,6 +1800,8 @@ private class GlobeScene(
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
+    /** Faces drawn with a picture last frame, so they keep their seat. */
+    private var seated: Set<String> = emptySet()
     private var direct = false
 
     private var stars = ArrayList<Star>()
@@ -2190,13 +2192,31 @@ private class GlobeScene(
         if (authorP != null) drawn += Drawn(author, authorP, AuthorTint, 24.0)
         drawn.sortBy { it.p.depth }
 
+        // Seats: a face only where it covers no other face and not the core;
+        // the rest stay stars until the globe turns them some room.
+        val faceR = { d: Drawn -> d.size * k * d.p.scale * min(zoom, 1.8) * density }
+        val seats = TrustMap.seatFaces(
+            drawn.asReversed().filter { it.p.depth >= -0.1 || it.key == author }
+                .map { TrustMap.FaceSpot(it.key, it.p.x, it.p.y, faceR(it)) },
+            always = setOf(author),
+            kept = seated,
+            blocked = listOf(TrustMap.FaceSpot(center, core.x, core.y, coreR)),
+        )
+        seated = seats
+
         // Labels: front-most first, skipping any that would cover one placed.
         val placed = arrayListOf(Rect((core.x - 40 * density).toFloat(), (core.y - coreR).toFloat(),
             (core.x + 40 * density).toFloat(), (core.y + coreR + 22 * density).toFloat()))
+        // Pictures count as placed too, so a name never runs across a face.
+        for (face in drawn) {
+            if (face.key !in seats) continue
+            val r = faceR(face)
+            placed += Rect((face.p.x - r).toFloat(), (face.p.y - r).toFloat(), (face.p.x + r).toFloat(), (face.p.y + r).toFloat())
+        }
         val showLabel = HashSet<String>()
         val labelCap = if (zoom < 1.5) 9 else 40
         for (face in drawn.asReversed()) {
-            if (face.p.depth <= 0.15 || showLabel.size >= labelCap) continue
+            if (face.p.depth <= 0.15 || face.key !in seats || showLabel.size >= labelCap) continue
             val r = face.size * k * face.p.scale * min(zoom, 1.8) * density
             val box = Rect((face.p.x - 46 * density).toFloat(), (face.p.y + r + 2 * density).toFloat(),
                 (face.p.x + 46 * density).toFloat(), (face.p.y + r + 18 * density).toFloat())
@@ -2210,9 +2230,12 @@ private class GlobeScene(
             val a = (index[face.key] ?: coreStar).alpha
             val dim = (0.35 + 0.65 * face.p.front) * a
             val behind = face.p.depth < -0.1 && face.key != author
+            // No room for its picture here: a bright star in its colour.
+            val held = !behind && face.key !in seats
             val r = if (behind) 3.2 * face.p.scale * zoom * density
-            else face.size * k * face.p.scale * min(zoom, 1.8) * density
-            out += Spot(face.key, face.p.x, face.p.y, r, dim, face.p.depth, ember = behind, core = false,
+            else if (held) 3.6 * face.p.scale * zoom * density
+            else faceR(face)
+            out += Spot(face.key, face.p.x, face.p.y, r, dim, face.p.depth, ember = behind || held, core = false,
                 tint = face.tint, label = face.key in showLabel)
         }
         // The core last: it is always in front of its own shell.

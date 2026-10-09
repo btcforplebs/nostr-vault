@@ -1317,6 +1317,8 @@ final class GlobeScene: ObservableObject {
     private var faces: [String] = []
     /// Faces that are follows on someone's own globe: drawn in the ring's colour.
     private var ringFaceSet: Set<String> = []
+    /// Faces drawn with a picture last frame, so they keep their seat.
+    private var seated: Set<String> = []
     private var direct = false
 
     private var keys: [String] = []
@@ -1704,11 +1706,23 @@ final class GlobeScene: ObservableObject {
         if let authorP { drawn.append((author, authorP, .yellow, 24)) }
         drawn.sort { $0.p.depth < $1.p.depth }
 
+        // Seats: a face only where it covers no other face and not the core;
+        // the rest stay stars until the globe turns them some room.
+        let spots = drawn.reversed().filter { $0.p.depth >= -0.1 || $0.key == author }.map {
+            TrustMap.FaceSpot(key: $0.key, x: $0.p.point.x, y: $0.p.point.y,
+                              r: $0.size * k * $0.p.scale * min(zoom, 1.8))
+        }
+        let seats = TrustMap.seatFaces(spots, always: [author], kept: seated,
+                                       blocked: [TrustMap.FaceSpot(key: center, x: core.point.x, y: core.point.y, r: coreR)])
+        seated = seats
+
         // Labels: front-most first, skipping any that would cover one placed.
+        // Pictures count as placed too, so a name never runs across a face.
         var placed = [CGRect(x: core.point.x - 40, y: core.point.y - coreR, width: 80, height: coreR * 2 + 22)]
+            + spots.filter { seats.contains($0.key) }.map { CGRect(x: $0.x - $0.r, y: $0.y - $0.r, width: 2 * $0.r, height: 2 * $0.r) }
         var showLabel = Set<String>()
         let labelCap = zoom < 1.5 ? 9 : 40
-        for face in drawn.reversed() where face.p.depth > 0.15 && showLabel.count < labelCap {
+        for face in drawn.reversed() where face.p.depth > 0.15 && seats.contains(face.key) && showLabel.count < labelCap {
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             let box = CGRect(x: face.p.point.x - 46, y: face.p.point.y + r + 2, width: 92, height: 16)
             if face.key == author || !placed.contains(where: { $0.intersects(box) }) {
@@ -1723,6 +1737,13 @@ final class GlobeScene: ObservableObject {
             if face.p.depth < -0.1 && face.key != author {
                 // Behind the globe: a warm ember, not a face.
                 let e = 3.2 * face.p.scale * zoom
+                context.fill(Path(ellipseIn: CGRect(x: face.p.point.x - e, y: face.p.point.y - e, width: 2 * e, height: 2 * e)),
+                             with: .color(face.tint.opacity(dim)))
+                continue
+            }
+            if !seats.contains(face.key) {
+                // No room for its picture here: a bright star in its colour.
+                let e = 3.6 * face.p.scale * zoom
                 context.fill(Path(ellipseIn: CGRect(x: face.p.point.x - e, y: face.p.point.y - e, width: 2 * e, height: 2 * e)),
                              with: .color(face.tint.opacity(dim)))
                 continue

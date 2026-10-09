@@ -159,9 +159,10 @@ enum TrustMap {
 
     /// Follows worth fetching a profile for when a globe shows everyone
     /// someone follows: a spread around the sphere, the same people each time.
-    static let faceCandidateCount = 48
-    /// Follows drawn as faces on that globe; the rest stay stars.
-    static let ringFaceCount = 16
+    static let faceCandidateCount = 64
+    /// Follows drawn as faces on that globe; the rest stay stars. Faces
+    /// that would cover another are held back as stars (`seatFaces`).
+    static let ringFaceCount = 40
 
     /// The follows worth a profile fetch: the ones you interact with most
     /// (`engagement`), busiest first, then a spread of everyone else.
@@ -181,6 +182,43 @@ enum TrustMap {
     static func pickFaces(_ candidates: [String], renders: (String) -> Bool,
                           count: Int = ringFaceCount) -> [String] {
         Array(candidates.filter(renders).prefix(count))
+    }
+
+    /// A face on screen this frame: where it is and how big.
+    struct FaceSpot {
+        let key: String
+        let x: Double
+        let y: Double
+        let r: Double
+    }
+
+    /// How much two faces may overlap, as a share of their radii, before the
+    /// one behind is held back as a star.
+    static let faceOverlap = 0.15
+
+    /// Which faces get a picture this frame, so no face covers another:
+    /// `spots` front-most first, `always` (the author) seated first, then
+    /// faces seated last frame (`kept`, so a face doesn't flicker as the
+    /// globe turns), then the rest. `blocked` are areas no face may cover.
+    static func seatFaces(_ spots: [FaceSpot], always: Set<String> = [], kept: Set<String> = [],
+                          blocked: [FaceSpot] = []) -> Set<String> {
+        var seated: [FaceSpot] = blocked
+        var keys: Set<String> = []
+        func fits(_ a: FaceSpot) -> Bool {
+            seated.allSatisfy { b in
+                let reach = (a.r + b.r) * (1 - faceOverlap)
+                return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) >= reach * reach
+            }
+        }
+        for pass in 0..<3 {
+            for spot in spots where !keys.contains(spot.key) {
+                let turn = always.contains(spot.key) ? 0 : kept.contains(spot.key) ? 1 : 2
+                guard turn == pass, pass == 0 || fits(spot) else { continue }
+                seated.append(spot)
+                keys.insert(spot.key)
+            }
+        }
+        return keys
     }
 
     // MARK: Who you interact with
