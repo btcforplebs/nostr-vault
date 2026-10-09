@@ -258,7 +258,11 @@ final class HomeVaultSender: ObservableObject {
     private func signUploadAuth(sha256: String, size: Int) async -> String? {
         let expiration = Int(Date().timeIntervalSince1970) + 600
         let tags = [["t", "upload"], ["x", sha256], ["size", String(size)], ["expiration", String(expiration)]]
-        guard let event = await NostrService.shared.signEventAsync(kind: 24242, content: "Upload to home vault", tags: tags) else { return nil }
+        // A random word keeps two auths for the same blob in the same second
+        // distinct: the vault takes each auth id once (#475), and its 403 for
+        // a reuse would read here as a final no.
+        let nonce = UUID().uuidString.prefix(8)
+        guard let event = await NostrService.shared.signEventAsync(kind: 24242, content: "Upload to home vault \(nonce)", tags: tags) else { return nil }
         let dict: [String: Any] = ["id": event.id, "pubkey": event.pubkey, "created_at": event.created_at,
                                    "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]
         guard let json = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
