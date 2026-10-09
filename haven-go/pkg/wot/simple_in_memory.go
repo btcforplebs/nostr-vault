@@ -33,6 +33,13 @@ type wotCache struct {
 	// result, so graphs built by the broken code are rebuilt instead of being
 	// served for the rest of their TTL.
 	Version int `json:"version"`
+	// Follows are the owners' own follows: the web's first layer. Everyone
+	// else in Pubkeys (not an owner) is the second layer, the people the
+	// apps call "your web".
+	Follows []string `json:"follows,omitempty"`
+	// Vouches counts, for each second-layer person, how many of the owners'
+	// follows follow them. Depth 3 only: depth 2 has no second layer.
+	Vouches map[string]int `json:"vouches,omitempty"`
 }
 
 // wotCacheVersion 2: the depth-3 pass no longer drops every contact list a
@@ -41,8 +48,17 @@ type wotCache struct {
 // starter pack, so graphs built from those seeds are thrown away.
 const wotCacheVersion = 3
 
+// listBatchSize is how many follows' lists one request asks for. Seed relays
+// quietly answer oversized author filters with little or nothing: measured
+// against a real 1,018-follow account, 1,000 per request got 383 lists back
+// across the seed set and 250 got 495 (relay.btcforplebs.com went from 3 to
+// 190, nostr-pub.wellorder.net from 6 to 120). 100 got no more than 250.
+const listBatchSize = 250
+
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
+	// layers is the follows + vouches of the graph in pubkeys, saved with it.
+	layers atomic.Pointer[layers]
 
 	// Dependencies for Refresh
 	Pool               *nostr.SimplePool
@@ -54,6 +70,11 @@ type SimpleInMemory struct {
 	WotFetchTimeout int
 	CachePath       string
 	CacheTTLMinutes int
+}
+
+type layers struct {
+	follows []string
+	vouches map[string]int
 }
 
 func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]struct{}, seedRelays []string, wotDepth int, minFollowers int, wotFetchTimeout int, cachePath string, cacheTTLMinutes int) *SimpleInMemory {
@@ -152,6 +173,7 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 	}
 
 	wt.pubkeys.Store(&cache.Pubkeys)
+	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
 	return true, age
 }
@@ -172,6 +194,9 @@ func (wt *SimpleInMemory) SaveCache() {
 		Timestamp: time.Now().Unix(),
 		Depth:     wt.WotDepth,
 		Version:   wotCacheVersion,
+	}
+	if l := wt.layers.Load(); l != nil {
+		cache.Follows, cache.Vouches = l.follows, l.vouches
 	}
 
 	data, err := json.Marshal(cache)
@@ -237,6 +262,11 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	pubkeyFollowers := xsync.NewMap[string, *atomic.Int64]()
 	oneHopNetwork := make(map[string]bool)
 	newWot := make(map[string]bool)
+	// The graph being replaced: anyone found who isn't on it is a newcomer.
+	var previous map[string]bool
+	if m := wt.pubkeys.Load(); m != nil {
+		previous = *m
+	}
 
 	if wt.WotDepth >= 1 {
 		for pubkey := range wt.WhitelistedPubKeys {
@@ -249,6 +279,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	// so on Android (depth 2 by default) that file never existed and both
 	// feeds came up empty.
 	if wt.WotDepth == 1 {
+		wt.layers.Store(&layers{})
 		wt.pubkeys.Store(&newWot)
 		wt.SaveCache()
 		phase, size = "saved", len(newWot)
@@ -273,12 +304,17 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 				followers, _ := pubkeyFollowers.LoadOrStore(contact[1], &atomic.Int64{})
 				followers.Add(1)
 				oneHopNetwork[contact[1]] = true
-				newWot[contact[1]] = true
+				if !newWot[contact[1]] {
+					newWot[contact[1]] = true
+					found(contact[1], previous)
+				}
 			}
 		}
 	}
+	follows := slices.Sorted(maps.Keys(oneHopNetwork))
 
 	if wt.WotDepth == 2 {
+		wt.layers.Store(&layers{follows: follows})
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
@@ -289,17 +325,19 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
 
-	// Split analysis into batches of 1000 pubkeys and process them sequentially
+	// Split analysis into batches of listBatchSize pubkeys and process them sequentially
 	// Process sequentially with yielding to avoid blocking the host app's UI/Events
-	keys := slices.Collect(maps.Keys(oneHopNetwork))
+	keys := follows
+	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
+	bar := max(int64(wt.MinFollowers), 1)
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 	updateProgress(func(p *Progress) {
 		p.Phase = "lists"
-		p.Batches = (len(keys) + 999) / 1000
+		p.Batches = (len(keys) + listBatchSize - 1) / listBatchSize
 		p.Lists = eventsAnalysed.Load()
 	})
 
-	for batch := range slices.Chunk(keys, 1000) {
+	for batch := range slices.Chunk(keys, listBatchSize) {
 		select {
 		case <-ctx.Done():
 			return
@@ -316,7 +354,12 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 				for contact := range ev.Tags.FindAll("p") {
 					if len(contact) > 1 {
 						followers, _ := pubkeyFollowers.LoadOrStore(contact[1], &atomic.Int64{})
-						followers.Add(1)
+						// Report the moment someone clears the bar, so the
+						// apps can show the web filling in instead of waiting
+						// out the whole rebuild.
+						if followers.Add(1) == bar && !newWot[contact[1]] {
+							found(contact[1], previous)
+						}
 					}
 				}
 			}
@@ -384,8 +427,12 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	// Filter out pubkeys with less than minimum followers
 	minimumFollowers := int64(wt.MinFollowers)
+	vouches := make(map[string]int)
 	pubkeyFollowers.Range(func(pubkey string, followers *atomic.Int64) bool {
 		if followers.Load() >= minimumFollowers {
+			if !newWot[pubkey] {
+				vouches[pubkey] = int(followers.Load())
+			}
 			newWot[pubkey] = true
 		}
 		return true
@@ -393,6 +440,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🫥 pruned pubkeys without minimum common followers", "🚧minimum", minimumFollowers, "🫂kept", len(newWot), "🗑️eliminated", pubkeyFollowers.Size()-len(newWot))
 
+	wt.layers.Store(&layers{follows: follows, vouches: vouches})
 	wt.pubkeys.Store(&newWot)
 	wt.SaveCache()
 	phase, size = "saved", len(newWot)
