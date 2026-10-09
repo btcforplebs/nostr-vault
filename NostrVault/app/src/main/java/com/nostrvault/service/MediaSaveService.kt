@@ -74,7 +74,18 @@ class MediaSaveService @Inject constructor(
                 "video/quicktime" -> "mov"
                 "video/webm" -> "webm"
                 "video/x-matroska" -> "mkv"
-                else -> if (type.startsWith("video/")) "mp4" else "jpg"
+                "audio/mpeg", "audio/mp3" -> "mp3"
+                "audio/mp4", "audio/x-m4a" -> "m4a"
+                "audio/aac" -> "aac"
+                "audio/wav", "audio/x-wav" -> "wav"
+                "audio/ogg" -> "ogg"
+                "audio/opus" -> "opus"
+                "audio/flac" -> "flac"
+                else -> when {
+                    type.startsWith("video/") -> "mp4"
+                    type.startsWith("audio/") -> "mp3"
+                    else -> "jpg"
+                }
             }
         }
     }

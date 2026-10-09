@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +42,8 @@ import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NIP46Service
+import com.nostrvault.service.NIP49Service
+import com.nostrvault.setup.IdentityInput
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.NostrConnectPairing
@@ -47,6 +52,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 
 @HiltViewModel
@@ -98,6 +105,47 @@ class AccountSettingsViewModel @Inject constructor(
         configStore.setSigningMode(npub, "local")
         ensureProfiles(listOf(npub))
         return npub
+    }
+
+    /**
+     * Gives an account that has no key on this device its private key, as
+     * iOS "Import Private Key" does. [key] is an nsec (locked with a new
+     * [password], typed twice) or an ncryptsec ([password] unlocks it). The
+     * Vault's own account keeps it NIP-49 encrypted with the password in the
+     * keystore, the way setup stores it; other accounts go into the keystore
+     * the way Add Account stores them. Returns an error message, or null.
+     */
+    suspend fun importKeyFor(npub: String, key: String, password: String, confirm: String): String? {
+        val input = IdentityInput.parse(key)
+        val isOwner = npub == config.value.ownerNpub
+        importKeyProblem(input, password, confirm, newPassword = isOwner)?.let { return it }
+        val skHex = when (input) {
+            is IdentityInput.SecretKey -> HavenBridge.decodeNsec(input.key)
+                ?: return "That key doesn't look complete."
+            is IdentityInput.EncryptedSecretKey -> withContext(Dispatchers.IO) {
+                runCatching { NIP49Service.decrypt(input.key, password) }.getOrNull()
+            } ?: return "That password didn't unlock the key."
+            else -> return "Paste an nsec1… or ncryptsec1… key."
+        }
+        val pkHex = HavenBridge.getPublicKey(skHex) ?: return "Failed to derive public key"
+        if (pkHex != hexFor(npub)) return "That key belongs to a different account."
+        if (isOwner) {
+            val encrypted = (input as? IdentityInput.EncryptedSecretKey)?.key
+                ?: withContext(Dispatchers.IO) { runCatching { NIP49Service.encrypt(skHex, password) }.getOrNull() }
+                ?: return "Failed to import and encrypt key"
+            configStore.update { it.copy(ownerHexKey = skHex, ownerNcryptsec = encrypted) }
+            credentialStore.storeKeychainPassword(password = password, npub = npub)
+        } else {
+            credentialStore.storeCredentialHexKey(skHex, npub)
+        }
+        credentialStore.saveNsec(skHex, pkHex)
+        // A browse-only Vault (setup given just an npub) can post from now on.
+        if (config.value.signingMode(npub) == "browse") {
+            configStore.update { if (isOwner) it.copy(signingMode = "local", setupMode = "full") else it }
+            configStore.setSigningMode(npub, "local")
+        }
+        _keysChanged.value++
+        return null
     }
 
     /** Connect a NIP-46 remote signer. Returns the account npub or null. */
@@ -200,6 +248,28 @@ class AccountSettingsViewModel @Inject constructor(
         } ?: return null
         return HavenBridge.encodeNsec(hexKey)
     }
+}
+
+/**
+ * Import Private Key's password rules, same as setup's "I already use Nostr":
+ * an nsec gets a new password (8 characters, typed twice) when [newPassword]
+ * (the Vault's own account, which is kept NIP-49 encrypted); an ncryptsec's
+ * password already exists and only has to unlock it.
+ */
+internal fun importKeyProblem(
+    input: IdentityInput,
+    password: String,
+    confirm: String,
+    newPassword: Boolean,
+): String? = when (input) {
+    is IdentityInput.SecretKey -> when {
+        !newPassword -> null
+        password.length < 8 -> "Password must be at least 8 characters"
+        password != confirm -> "Passwords do not match"
+        else -> null
+    }
+    is IdentityInput.EncryptedSecretKey -> if (password.isEmpty()) "Enter the password for this key" else null
+    else -> "Paste an nsec1… or ncryptsec1… key."
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -355,6 +425,16 @@ private fun AccountDetail(
     var confirmRemoveKey by remember(npub) { mutableStateOf(false) }
     var confirmDisconnectSigner by remember(npub) { mutableStateOf(false) }
     var confirmRemoveAccount by remember(npub) { mutableStateOf(false) }
+    var importingKey by remember(npub) { mutableStateOf(false) }
+
+    if (importingKey) {
+        ImportKeyDialog(
+            npub = npub,
+            isOwner = isOwner,
+            viewModel = viewModel,
+            onDismiss = { importingKey = false },
+        )
+    }
 
     // Same titles, messages and buttons as iOS (SettingsView.swift).
     if (confirmDisconnectSigner) {
@@ -489,6 +569,10 @@ private fun AccountDetail(
             TextButton(onClick = { confirmRemoveKey = true }) {
                 Text("Remove Local Key", color = ErrorRed)
             }
+        } else {
+            TextButton(onClick = { importingKey = true }) {
+                Text("Import Private Key", color = colors.primary)
+            }
         }
 
         // Remote signer
@@ -514,6 +598,103 @@ private fun AccountDetail(
             }
         }
     }
+}
+
+/**
+ * Import Private Key, as iOS ImportKeySheetView: paste the key, and for the
+ * Vault's own account choose the password it is encrypted with.
+ */
+@Composable
+private fun ImportKeyDialog(
+    npub: String,
+    isOwner: Boolean,
+    viewModel: AccountSettingsViewModel,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val scope = rememberCoroutineScope()
+    var key by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var working by remember { mutableStateOf(false) }
+    val input = IdentityInput.parse(key)
+    val encrypted = input is IdentityInput.EncryptedSecretKey
+    // An nsec for the Vault's own account gets a new password; an ncryptsec
+    // needs the one it was made with. Other accounts' nsecs need none.
+    val asksNewPassword = isOwner && !encrypted
+    val asksPassword = asksNewPassword || encrypted
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = PrimaryText, unfocusedTextColor = PrimaryText,
+        cursorColor = colors.primary, focusedBorderColor = colors.primary,
+    )
+
+    AlertDialog(
+        onDismissRequest = { if (!working) onDismiss() },
+        title = { Text("Import Key") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it.trim(); error = null },
+                    label = { Text("Private Key") },
+                    placeholder = { Text("nsec1… or ncryptsec1…") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                )
+                if (asksPassword) {
+                    Text(
+                        if (encrypted) "Password for this key" else "Encrypt with Password",
+                        color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; error = null },
+                        placeholder = { Text("Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = fieldColors,
+                    )
+                }
+                if (asksNewPassword) {
+                    OutlinedTextField(
+                        value = confirm,
+                        onValueChange = { confirm = it; error = null },
+                        placeholder = { Text("Confirm Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = fieldColors,
+                    )
+                }
+                error?.let { Text(it, color = ErrorRed, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    working = true
+                    scope.launch {
+                        val problem = viewModel.importKeyFor(npub, key, password, confirm)
+                        working = false
+                        if (problem == null) onDismiss() else error = problem
+                    }
+                },
+                enabled = !working && key.isNotBlank() && (!asksPassword || password.isNotEmpty()) &&
+                    (!asksNewPassword || confirm.isNotEmpty()),
+            ) { Text("Import", color = colors.primary) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
