@@ -3847,6 +3847,8 @@ struct BlossomSettingsView: View {
                 Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Sharing stops once the mesh has downloaded the amount you pick, and one visitor gets at most 256 MB of it. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
             }
 
+            HomeVaultSection()
+
             Section {
                 HStack(spacing: 8) {
                     Circle()
@@ -4034,6 +4036,76 @@ private struct PostButtonsSection: View {
     private var previewIcons: [String] {
         let base = ["message", "arrow.2.squarepath", "quote.closing", "heart"]
         return PostButtons.showsZap(postButtons) ? base + ["bolt"] : base
+    }
+}
+#endif
+
+#if os(iOS)
+/// Pick a kiosk phone of your own as the home vault: your notes and media go
+/// to it over the FIPS mesh as well as to this phone's relay.
+struct HomeVaultSection: View {
+    @ObservedObject private var sender = HomeVaultSender.shared
+    @ObservedObject private var nostr = NostrService.shared
+
+    private var owner: String { nostr.activeHexPubkey }
+    private var choices: [String] {
+        HomeVaultSender.meshEntries(serverList: nostr.serverLists[owner] ?? [])
+    }
+    private var selection: Binding<String> {
+        Binding(
+            get: { sender.homeVault?.ownerHex == owner ? (sender.homeVault?.meshNpub ?? "") : "" },
+            set: { npub in
+                sender.setHomeVault(npub.isEmpty ? nil : .init(ownerHex: owner, meshNpub: npub))
+            }
+        )
+    }
+
+    var body: some View {
+        Section {
+            Picker("Home vault", selection: selection) {
+                Text("Off").tag("")
+                ForEach(choices, id: \.self) { npub in
+                    Text(npub.prefix(12) + "…" + npub.suffix(6)).tag(npub)
+                }
+                // Keep a chosen vault visible even if it left the server list.
+                if let chosen = sender.homeVault?.meshNpub, sender.homeVault?.ownerHex == owner, !choices.contains(chosen) {
+                    Text(chosen.prefix(12) + "… (not listed now)").tag(chosen)
+                }
+            }
+            if choices.isEmpty && sender.homeVault == nil {
+                Text("Turn on kiosk mode on your other phone first. Its mesh address then shows up here.")
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+            }
+            if sender.homeVault != nil {
+                HStack {
+                    Text(sender.queue.isEmpty ? "Nothing waiting" : "\(sender.queue.count) waiting to send")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if sender.sending {
+                        ProgressView()
+                    } else if !sender.queue.isEmpty {
+                        Button("Send now") { Task { await sender.drain(userInitiated: true) } }
+                            .font(.appCaption)
+                    }
+                }
+                if ConfigService.shared.config.activeSigningMode() != "local" {
+                    Text("Your key is in a remote signer, so media only goes when you tap Send now (up to \(HomeVaultLogic.maxPromptsPerTap) at a time).")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+                if let result = sender.lastResult {
+                    Text(result)
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        } header: {
+            Text("Home Vault")
+        } footer: {
+            Text("New notes and media also go to your kiosk phone over the mesh, and it sends your notes on to your relays. They stay on this phone too. What can't reach it waits here and goes when Nostr Vault is open and the kiosk is in reach.")
+        }
     }
 }
 #endif
