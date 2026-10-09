@@ -418,6 +418,9 @@ class NoteDetailViewModel @Inject constructor(
     // Moderation
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
 
+    /** The avatar quick menu: Follow/Unfollow and Block (iOS FeedView avatar toolbar). */
+    val avatarMenu = com.nostrvault.ui.components.avatarMenuActions(feedService, ::isOwnNote)
+
     fun followUser(pubkey: String) {
         viewModelScope.launch { feedService.followUser(pubkey) }
     }
@@ -926,6 +929,7 @@ fun NoteDetailScreen(
                         }
                         NoteCard(
                             note = parent,
+                            avatarMenu = viewModel.avatarMenu,
                             profile = viewModel.profileFor(parent.pubkey),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
@@ -1386,6 +1390,7 @@ private fun ThreadedReplyNode(
         // The reply itself
         NoteCard(
             note = reply,
+            avatarMenu = viewModel.avatarMenu,
             profile = viewModel.profileFor(reply.pubkey),
             profiles = profiles,
             quotedNotes = quotedNotesMap,
@@ -1663,6 +1668,17 @@ private fun HeroNoteCard(
                                     Toast.makeText(heroContext, "Link copied", Toast.LENGTH_SHORT).show()
                                 },
                             )
+                            // Same as every other note's menu (NoteCard).
+                            if (note.content.isNotBlank()) {
+                                add(
+                                    NoteAction(NostrVaultIcons.Copy, "Copy text") {
+                                        heroClipboard.setText(AnnotatedString(
+                                            com.nostrvault.ui.components.NostrMentions.toPlainText(note.content, profiles).trim()
+                                        ))
+                                        Toast.makeText(heroContext, "Text copied", Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                            }
                             add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = onBroadcast))
                             if (isOwnNote) {
                                 add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = onDelete))
