@@ -304,7 +304,14 @@ struct iPadSidebarView: View {
                         }
                     }
                     NavigationLink(value: SidebarItem.tab(3)) {
-                        Label("WOT", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label {
+                            Text("WoT")
+                        } icon: {
+                            // A template image doesn't follow the font like an SF Symbol does.
+                            Image("WoTTab")
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                        }
                     }
                     // Your relay and your Blossom files, one row; "My Media" is
                     // a mode inside it. Tag 4 is the old Relay row's, so
@@ -959,7 +966,7 @@ struct BottomTabBar: View {
 
         expandedProfileTabItem
 
-        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
+        tabItem(index: 3, title: "WoT", assetIcon: "WoTTab") {
             NotificationCenter.default.post(name: .wotTabReselected, object: nil)
         }
 
@@ -1050,7 +1057,9 @@ struct BottomTabBar: View {
 
     // MARK: - Tab Item
 
-    private func tabItem(index: Int, title: String, icon: String, hasRedBadge: Bool = false, onReselect: @escaping () -> Void, onSelect: @escaping () -> Void = {}) -> some View {
+    /// `icon` is an SF Symbol; `assetIcon`, when set, is a template image from
+    /// the asset catalog drawn on the same 24pt grid instead.
+    private func tabItem(index: Int, title: String, icon: String = "", assetIcon: String? = nil, hasRedBadge: Bool = false, onReselect: @escaping () -> Void, onSelect: @escaping () -> Void = {}) -> some View {
         let selected = selectedTab == index
         return Button {
             if selectedTab == index {
@@ -1061,18 +1070,26 @@ struct BottomTabBar: View {
             }
         } label: {
             VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : .white)
-                    .frame(height: 24)
-                    .overlay(alignment: .topTrailing) {
-                        if hasRedBadge {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 8, height: 8)
-                                .offset(x: 4, y: -2)
-                        }
+                Group {
+                    if let assetIcon {
+                        Image(assetIcon)
+                            .resizable()
+                            .frame(width: 24, height: 24)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
                     }
+                }
+                .foregroundStyle(selected ? Color.havenPurple : .white)
+                .frame(height: 24)
+                .overlay(alignment: .topTrailing) {
+                    if hasRedBadge {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -2)
+                    }
+                }
                 Text(title)
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Color.havenPurple : .white)

@@ -153,6 +153,7 @@ import com.nostrvault.data.model.GlobeCamera
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.data.model.Vec3
+import com.nostrvault.data.model.WotNewcomers
 import com.nostrvault.data.model.WotRefreshProgress
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
@@ -404,6 +405,16 @@ private fun TrustWebContent(
     var newPeople by remember { mutableIntStateOf(0) }
     var webSeen by remember { mutableStateOf<Int?>(null) }
     /**
+     * A relay rebuild seen running from the WOT tab: the people it has found
+     * so far who weren't on the old map, lit as stars while it runs, and how
+     * many of its newcomers the pill was tapped away at. [liveCounted] holds
+     * from its first report until its pill folds away.
+     */
+    var liveRebuild by remember { mutableStateOf(false) }
+    var arrivals by remember { mutableStateOf(emptySet<String>()) }
+    var arrivalsDismissed by remember { mutableIntStateOf(0) }
+    var liveCounted by remember { mutableStateOf(false) }
+    /**
      * The WOT tab's trust card: who was tapped or searched, and how they
      * reach you (null while it's being traced).
      */
@@ -428,8 +439,8 @@ private fun TrustWebContent(
 
     // Again when the trust graph lands: on a cold start it's still loading, and
     // a haze computed then stays empty all session.
-    LaunchedEffect(trustGraphUpdate, myFollows) {
-        val graph = trust.myTrustGraph()
+    LaunchedEffect(trustGraphUpdate, myFollows, arrivals) {
+        val graph = trust.myTrustGraph() + arrivals
         val inner = myFollows + me + author
         val counts = trust.myVouches()
         val shell = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
@@ -446,10 +457,63 @@ private fun TrustWebContent(
         if (!isWOTTab) return@LaunchedEffect
         val seen = webSeen
         webSeen = web.size
+        // A rebuild the relay reports on counts its own newcomers, live; the
+        // saved web landing afterwards is the same people again.
+        if (liveCounted) return@LaunchedEffect
         if (seen == null || web.size <= seen) return@LaunchedEffect
         newPeople += web.size - seen
         delay(NEW_PEOPLE_SHOWN_MS)
         newPeople = 0
+    }
+
+    // Follows the relay's rebuilds while the WOT tab is open, whoever started
+    // them (the daily timer, the boot check or the dropdown): newcomers fade in
+    // as stars and count up in the pill, and the saved web loads when the
+    // rebuild ends. Mirrors iOS.
+    LaunchedEffect(isWOTTab) {
+        if (!isWOTTab) return@LaunchedEffect
+        // A fold cut short by leaving the tab would leave the pill muted.
+        if (!liveRebuild) liveCounted = false
+        var cursor = 0
+        var fade: kotlinx.coroutines.Job? = null
+        while (true) {
+            val progress = withContext(Dispatchers.IO) {
+                WotRefreshProgress.parse(runCatching { HavenBridge.getWotRefreshProgress() }.getOrNull())
+            }
+            if (progress?.running == true) {
+                if (!liveRebuild) {
+                    liveRebuild = true
+                    liveCounted = true
+                    fade?.cancel()
+                    cursor = 0
+                    arrivals = emptySet()
+                    arrivalsDismissed = 0
+                }
+                val from = cursor
+                // Throws on a library from before the call existed.
+                val batch = withContext(Dispatchers.IO) {
+                    WotNewcomers.parse(runCatching { HavenBridge.getWotNewcomers(from) }.getOrNull())
+                }
+                if (batch != null) {
+                    cursor = batch.total
+                    if (batch.pubkeys.isNotEmpty()) arrivals = arrivals + batch.pubkeys
+                }
+                newPeople = max(0, (progress.new ?: arrivals.size) - arrivalsDismissed)
+            } else if (liveRebuild) {
+                liveRebuild = false
+                cursor = 0
+                // Saved: the new map has everyone that lit up. Stopped: the
+                // old one stays, and the stars that came in fade back out.
+                arrivals = emptySet()
+                trust.reloadTrustGraph()
+                fade = launch {
+                    delay(NEW_PEOPLE_SHOWN_MS)
+                    newPeople = 0
+                    liveCounted = false
+                }
+            }
+            delay(if (liveRebuild) LIVE_POLL_MS else IDLE_POLL_MS)
+        }
     }
 
     // With the author in the middle there are no bridges, so the ring gets
@@ -978,12 +1042,15 @@ private fun TrustWebContent(
                 if (crumbs.size > 1) crumbRow(Modifier.fillMaxWidth())
                 WotLivePill(
                     caption = when {
-                        refreshState != null -> "Rebuilding your web"
+                        refreshState != null || liveRebuild -> "Rebuilding your web"
                         mappingWeb -> "Mapping your web"
                         else -> null
                     },
                     newPeople = newPeople,
-                    onClick = { newPeople = 0 },
+                    onClick = {
+                        if (liveRebuild) arrivalsDismissed += newPeople
+                        newPeople = 0
+                    },
                 )
             }
         }
@@ -1112,6 +1179,10 @@ private const val RELAY_DOWN_HOLD_MS = 1_500L
 /** The relay's rebuild is polled this often, at most [MAX_WOT_POLLS] times (6 minutes). */
 private const val WOT_POLL_MS = 500L
 private const val MAX_WOT_POLLS = 720
+
+/** The WOT tab checks on the relay's rebuild this often while one runs, and this often while none does. */
+private const val LIVE_POLL_MS = 1_000L
+private const val IDLE_POLL_MS = 5_000L
 
 /** Where a refresh is: [fill] out of [REFRESH_STEPS], and what it's doing. */
 private data class RefreshState(val fill: Float, val caption: String)
@@ -1898,6 +1969,8 @@ private data class LoadKey(
     val mine: Int,
     /** Who is in the ring, not just how many: a follow and an unfollow together keep the count. */
     val ringHash: Int,
+    /** Who is in the haze: past its cap, a newcomer swaps in for someone at the margin and the count stays put. */
+    val hazeHash: Int,
     /** The ring's faces when the core is the author; they change as pictures stream in. */
     val faces: List<String>,
 )
@@ -1984,7 +2057,7 @@ private fun TrustGlobe(
 
     val loadKey = frame?.let {
         LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, closeHaze.size,
-            myFollows.size, it.ring.hashCode(), if (it.center == author) ringFaces else emptyList())
+            myFollows.size, it.ring.hashCode(), haze.hashCode(), if (it.center == author) ringFaces else emptyList())
     }
     LaunchedEffect(loadKey) {
         val first = currentFrame ?: return@LaunchedEffect

@@ -1,6 +1,7 @@
 package com.nostrvault.data.model
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -26,6 +27,10 @@ data class WotRefreshProgress(
     val lists: Long = 0,
     /** People in the web once saved. */
     val size: Int = 0,
+    /** People this rebuild has found so far. Null from a relay older than the live fill. */
+    val found: Int? = null,
+    /** Of [found], how many weren't on the old map: the "↑ N new people" pill. */
+    val new: Int? = null,
 ) {
     /**
      * How much of the rebuild step is done, 0 to 1, [phaseSeconds] since the
@@ -85,7 +90,29 @@ data class WotRefreshProgress(
                 batchesDone = (obj["batchesDone"] as? JsonPrimitive)?.intOrNull ?: 0,
                 lists = (obj["lists"] as? JsonPrimitive)?.longOrNull ?: 0,
                 size = (obj["size"] as? JsonPrimitive)?.intOrNull ?: 0,
+                found = (obj["found"] as? JsonPrimitive)?.intOrNull,
+                new = (obj["new"] as? JsonPrimitive)?.intOrNull,
             )
+        }
+    }
+}
+
+/**
+ * A rebuild's newcomers from some index on, and how many there are in all
+ * (Go `WotNewcomersC`). Mirrors iOS.
+ */
+data class WotNewcomers(val total: Int, val pubkeys: List<String>) {
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+
+        /** Null for anything that isn't the relay's newcomers object. */
+        fun parse(text: String?): WotNewcomers? {
+            if (text.isNullOrBlank()) return null
+            val obj = try { json.parseToJsonElement(text) as? JsonObject } catch (_: Exception) { null } ?: return null
+            val total = (obj["total"] as? JsonPrimitive)?.intOrNull ?: return null
+            val list = obj["pubkeys"] as? JsonArray ?: return null
+            val pubkeys = list.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+            return WotNewcomers(total, pubkeys)
         }
     }
 }

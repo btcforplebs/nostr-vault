@@ -104,7 +104,7 @@ val bottomNavItems = listOf(
     BottomNavItem(Screen.Profile, "Profile", NostrVaultIcons.Profile), // center
     // WOT before Vault, as on iOS (#446). Nothing reads these by position:
     // routes pick the screen, so the order is only what the bar shows.
-    BottomNavItem(Screen.WOT, "WOT", NostrVaultIcons.WebOfTrust),
+    BottomNavItem(Screen.WOT, "WoT", NostrVaultIcons.WebOfTrust),
     // Media and Relay in one (iOS #443); the route keeps the Relay tab's name,
     // so notification routing still lands here.
     BottomNavItem(Screen.Dashboard, "Vault", NostrVaultIcons.TabVault),
