@@ -55,6 +55,8 @@ class NostrService @Inject constructor(
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
         private val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+        /** Lists cached on disk; their created_at is cached alongside (kind 0 keeps its own). */
+        private val PERSISTED_LIST_KINDS = setOf(10002, 10050, 10063)
 
         /**
          * A loopback address means "this machine". Advertising one, or
@@ -276,6 +278,14 @@ class NostrService @Inject constructor(
     // Initialization
     // ══════════════════════════════════════════════════════════════════
 
+    /** Newest accepted event per "kind:pubkey" for [REPLACEABLE_STATE_KINDS],
+     *  seeded lazily from disk. Declared above init. */
+    private val replaceableNewest = ReplaceableLedger { profileRepository.loadListStampsIfReady() }
+
+    /** Set once loadProfilesFromDisk merged the caches; saves wait for it. */
+    private val profilesLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val saveSkipped = java.util.concurrent.atomic.AtomicBoolean(false)
+
     init {
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
@@ -298,6 +308,8 @@ class NostrService @Inject constructor(
     }
 
     private fun loadProfilesFromDisk() {
+        // The lists below come back from disk with their created_at; the
+        // ledger seeds that itself on first use (see ReplaceableLedger).
         scope.launch(Dispatchers.IO) {
             val loaded = profileRepository.loadProfiles()
             val relays = profileRepository.loadRelayLists()
@@ -305,11 +317,16 @@ class NostrService @Inject constructor(
             val dmRelays = profileRepository.loadDMRelayLists()
             val servers = profileRepository.loadServerLists()
             withContext(Dispatchers.Main.immediate) {
-                _profiles.value = loaded
-                _relayLists.value = relays
-                _outboxRelays.value = outbox
-                _dmRelayLists.value = dmRelays
-                _serverLists.value = servers
+                // Merge with anything a relay delivered during the load. The
+                // lists have disk stamps in the ledger, so what is in memory
+                // won on created_at; kind 0 has none, so compare here.
+                _profiles.value = mergeNewer(loaded, _profiles.value) { it.createdAt }
+                _relayLists.value = relays + _relayLists.value
+                _outboxRelays.value = outbox + _outboxRelays.value
+                _dmRelayLists.value = dmRelays + _dmRelayLists.value
+                _serverLists.value = servers + _serverLists.value
+                profilesLoaded.set(true)
+                if (saveSkipped.getAndSet(false)) saveProfilesThrottled()
             }
         }
     }
@@ -569,22 +586,19 @@ class NostrService @Inject constructor(
         scheduleBufferFlush()
     }
 
-    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
-    private val replaceableNewest = ConcurrentHashMap<String, Long>()
-
     /**
      * True when [eventObj] is validly signed and not older than the newest event of
      * the same kind and author already accepted. Records it as the newest.
      */
     private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
         val key = "$kind:$pubkey"
+        val id = (eventObj["id"] as? JsonPrimitive)?.contentOrNull ?: return false
         // A profile saved on disk counts as seen, so after a restart an older
         // signed kind-0 cannot replace a newer one.
-        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
-        if (seen != null && createdAt < seen) return false
+        val diskProfile = if (kind == 0) _profiles.value[pubkey]?.createdAt else null
+        if (!replaceableNewest.mayReplace(key, createdAt, id, diskProfile)) return false
         if (!HavenBridge.verifyEvent(eventObj.toString())) return false
-        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
-        return createdAt >= (replaceableNewest[key] ?: createdAt)
+        return replaceableNewest.record(key, createdAt, id, diskProfile)
     }
 
     private fun handleEOSE(subId: String, relayUrl: String) {
@@ -1009,6 +1023,12 @@ class NostrService @Inject constructor(
     }
 
     fun saveProfilesThrottled() {
+        // Until the disk caches are merged in, the in-memory maps hold only
+        // what arrived since launch; saving them would overwrite the caches.
+        if (!profilesLoaded.get()) {
+            saveSkipped.set(true)
+            return
+        }
         val now = System.currentTimeMillis()
         if (now - lastProfileSaveTime < PROFILE_SAVE_THROTTLE_MS) return
         lastProfileSaveTime = now
@@ -1020,6 +1040,8 @@ class NostrService @Inject constructor(
             profileRepository.saveOutboxRelays(_outboxRelays.value)
             profileRepository.saveDMRelayLists(_dmRelayLists.value)
             profileRepository.saveServerLists(_serverLists.value)
+            replaceableNewest.snapshot { it.substringBefore(':').toIntOrNull() in PERSISTED_LIST_KINDS }
+                ?.let { profileRepository.saveListStamps(it) }
         }
     }
 

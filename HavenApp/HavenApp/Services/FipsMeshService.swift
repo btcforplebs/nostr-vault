@@ -158,13 +158,14 @@ final class FipsMeshService: ObservableObject {
         guard let nsec = meshNsec() else {
             return .failure(MeshError(message: "Could not create the mesh key"))
         }
+        // Checked before start, so a bad port never leaves the engine running.
+        guard let port = UInt16(exactly: port) else {
+            return .failure(MeshError(message: "Relay port \(port) is out of range"))
+        }
         // No start-time peers: anyone can reach this vault, and reading
         // another vault adds its npub on demand.
         let rc = NvFipsStart(nsec, "{}")
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
-        guard let port = UInt16(exactly: port) else {
-            return .failure(MeshError(message: "Relay port \(port) is out of range"))
-        }
         // The relay's mesh port listens only while sharing.
         SetMeshServingC(1)
         let shared = NvFipsExport(port)
