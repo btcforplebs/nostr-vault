@@ -75,6 +75,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -279,6 +282,8 @@ private fun TrustWebContent(
     val profiles by nostrService.profiles.collectAsState()
     val accent = LocalNostrVaultColors.current.primary
     val scope = rememberCoroutineScope()
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val lite = remember { isLiteGlobe(appContext) }
 
     val me = remember { trust.me }
     var myFollows by remember { mutableStateOf(trust.myFollows().toSet()) }
@@ -313,7 +318,7 @@ private fun TrustWebContent(
     LaunchedEffect(trustGraphUpdate, myFollows) {
         val graph = trust.myTrustGraph()
         val inner = myFollows + me + author
-        haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner) }
+        haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
     }
 
     fun jump(index: Int) {
@@ -501,6 +506,7 @@ private fun TrustWebContent(
         Box(modifier.clipToBounds()) {
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
+                lite = lite,
                 running = !showingList,
                 summary = summary(frame, me, author, centerKey, ::name),
                 profiles = profiles, name = ::name,
@@ -639,6 +645,14 @@ private val WIDE_WIDTH = 760.dp
  * "47", or "at least 5" while relays may hold more: the count is only the
  * signed lists actually checked, never a number a relay states.
  */
+/** Read once per globe: [TrustMap.isLite] from this phone's memory. */
+private fun isLiteGlobe(context: android.content.Context): Boolean {
+    val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        ?: return false
+    val info = android.app.ActivityManager.MemoryInfo().also(am::getMemoryInfo)
+    return TrustMap.isLite(info.totalMem, am.isLowRamDevice)
+}
+
 private fun countText(frame: TrustFrame): String =
     if (frame.exhausted) "${frame.bridges.size}" else "at least ${frame.bridges.size}"
 
@@ -986,6 +1000,8 @@ private fun TrustGlobe(
     author: String,
     myFollows: Set<String>,
     haze: List<String>,
+    /** A phone with little memory: stars are drawn as points. */
+    lite: Boolean,
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
     summary: String,
@@ -995,7 +1011,7 @@ private fun TrustGlobe(
     /** A tap that lands on no one, e.g. to close the peek card. */
     onEmptyTap: () -> Unit,
 ) {
-    val scene = remember { GlobeScene() }
+    val scene = remember { GlobeScene(lite) }
     val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val haptic = LocalHapticFeedback.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -1177,7 +1193,10 @@ private fun TrustGlobe(
  * few allocations. Mutated by the frame clock; only [awake], [faceKeys] and two
  * counters are Compose state.
  */
-private class GlobeScene {
+private class GlobeScene(
+    /** Draw stars as batched points: the oval paths cost a slow phone a whole frame. */
+    private val lite: Boolean = false,
+) {
     enum class Kind { RING, MUTUAL, HAZE, BRIDGE, VIA }
 
     private class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
@@ -1462,6 +1481,38 @@ private class GlobeScene {
 
     private enum class Slot { HAZE, RING, MUTUAL, HOT }
 
+    /** Lite: one slot, brightness and whole-pixel diameter, drawn in a single drawPoints call. */
+    private class PointBucket(val slot: Slot, val level: Int, val diameter: Float) {
+        var xy = FloatArray(64)
+        var count = 0
+        fun add(x: Float, y: Float) {
+            if (count * 2 + 2 > xy.size) xy = xy.copyOf(xy.size * 2)
+            xy[count * 2] = x
+            xy[count * 2 + 1] = y
+            count++
+        }
+    }
+    /** Kept between frames and emptied, so a frame allocates nothing once warm. */
+    private val pointBuckets = HashMap<Int, PointBucket>()
+    private val pointOrder = ArrayList<PointBucket>()
+    private val pointPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        style = android.graphics.Paint.Style.STROKE
+    }
+
+    private fun pointBucket(slot: Slot, level: Int, radius: Double): PointBucket {
+        val diameter = max(1, (radius * 2).roundToInt()).coerceAtMost(255)
+        val key = (slot.ordinal shl 16) or (level shl 8) or diameter
+        return pointBuckets.getOrPut(key) {
+            PointBucket(slot, level, diameter.toFloat()).also {
+                pointOrder.add(it)
+                // Dim to bright, as the oval fills go, so a bright star sits on top.
+                pointOrder.sortWith(compareBy({ b -> b.level }, { b -> b.diameter }))
+            }
+        }
+    }
+
     fun spot(key: String): Spot? = spotByKey[key]
 
     /**
@@ -1477,6 +1528,7 @@ private class GlobeScene {
         preparedFor = key
         dpPx = density
         for (slot in buckets) for (p in slot) p.reset()
+        for (bucket in pointBuckets.values) bucket.count = 0
         for (band in 0 until 4) { glow[band].reset(); strong[band].reset(); faint[band].reset() }
         dashed.reset()
         spotByKey.clear()
@@ -1515,9 +1567,13 @@ private class GlobeScene {
             val level = (base * a * LEVELS).roundToInt()
             if (level <= 0) continue
             val r = size * p.scale * zoom * density
-            buckets[slot.ordinal][min(LEVELS, level)].addOval(
-                Rect((p.x - r).toFloat(), (p.y - r).toFloat(), (p.x + r).toFloat(), (p.y + r).toFloat()),
-            )
+            if (lite) {
+                pointBucket(slot, min(LEVELS, level), r).add(p.x.toFloat(), p.y.toFloat())
+            } else {
+                buckets[slot.ordinal][min(LEVELS, level)].addOval(
+                    Rect((p.x - r).toFloat(), (p.y - r).toFloat(), (p.x + r).toFloat(), (p.y + r).toFloat()),
+                )
+            }
             if (namesOut && slot != Slot.HAZE && p.depth > 0.6 && labelled.size < 200) {
                 labelled += Spot(star.key, p.x, p.y, r, a, p.depth, ember = false, core = false, tint = Color.White, label = true)
             }
@@ -1634,6 +1690,17 @@ private class GlobeScene {
         }
 
         fun fill(slot: Slot, color: Color) {
+            if (lite) {
+                drawIntoCanvas { canvas ->
+                    for (bucket in pointOrder) {
+                        if (bucket.slot != slot || bucket.count == 0) continue
+                        pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
+                        pointPaint.strokeWidth = bucket.diameter
+                        canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
+                    }
+                }
+                return
+            }
             for (level in 1..LEVELS) {
                 val path = buckets[slot.ordinal][level]
                 if (!path.isEmpty) drawPath(path, color.copy(alpha = level.toFloat() / LEVELS))

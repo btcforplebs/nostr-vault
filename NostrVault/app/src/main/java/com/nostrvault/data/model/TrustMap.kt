@@ -46,6 +46,17 @@ object TrustMap {
      * thousands; past this the shell reads the same and only costs frames.
      */
     const val HAZE_CAP = 2_500
+    /** The outer shell on a lite phone: still a full shell, a quarter of the dots. */
+    const val HAZE_CAP_LITE = 600
+    /**
+     * Phones at or under this much RAM get the lite globe. A "4 GB" phone
+     * reports about 3.7 GB, a "6 GB" one about 5.5 GB.
+     */
+    const val LITE_MEMORY_BYTES = 4L * 1024 * 1024 * 1024
+
+    /** Lite globe: fewer haze dots, and stars drawn as points instead of shapes. */
+    fun isLite(totalMemBytes: Long, lowRamDevice: Boolean): Boolean =
+        lowRamDevice || totalMemBytes in 1..LITE_MEMORY_BYTES
 
     /**
      * A person's fixed spot on the globe, from their key alone. Longitude and
