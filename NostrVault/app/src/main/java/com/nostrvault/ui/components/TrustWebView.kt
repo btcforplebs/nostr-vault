@@ -32,6 +32,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.NostrService
+import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.tutorialAnchor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,6 +54,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -323,6 +328,12 @@ fun TrustWebTab(
 ) {
     val trust = rememberTrustPathServices().trustPathService()
     val me by trust.meUpdates.collectAsState()
+    // The WoT tutorial points into the globe, and starts here the first
+    // time the tab shows (after Fill your vault; see TutorialProgress).
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    LaunchedEffect(me, tutorialRevision) {
+        TutorialCenter.startIfEligible(TutorialID.WOT, me)
+    }
     Box(Modifier.fillMaxSize().background(Color.Black).background(SpaceBrush)) {
         // A new account draws a new globe; the globe keeps up with your follows itself.
         if (me.isNotEmpty()) androidx.compose.runtime.key(me) {
@@ -916,6 +927,15 @@ private fun TrustWebContent(
                 focus = if (isWOTTab) card else null,
                 onEmptyTap = { peek = null; closeCard(); if (searchFocused) focusManager.clearFocus() },
             )
+            // The WoT tutorial's first card points at the middle of the
+            // globe, you and the faces nearest you. The whole globe is nearly
+            // the screen's height, which leaves the card no room beside it.
+            if (isWOTTab) {
+                Box(
+                    Modifier.align(Alignment.Center).fillMaxSize(0.6f).aspectRatio(1f)
+                        .tutorialAnchor(TutorialContent.WOT_GLOBE),
+                )
+            }
             Box(Modifier.matchParentSize().padding(overlayPadding)) {
             when {
                 // Someone tapped, their follow list still on its way.
@@ -1369,7 +1389,7 @@ private fun WotTopBar(
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .heightIn(min = 48.dp),
     ) {
-        Box {
+        Box(Modifier.tutorialAnchor(TutorialContent.WOT_LAYERS)) {
             GlassPill(
                 horizontalArrangement = Arrangement.Start,
                 modifier = Modifier
@@ -1419,7 +1439,7 @@ private fun WotTopBar(
         }
         Spacer(Modifier.weight(1f))
         GlassPill(horizontalArrangement = Arrangement.Start) {
-            IconButton(onClick = onSearch, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onSearch, modifier = Modifier.size(40.dp).tutorialAnchor(TutorialContent.WOT_SEARCH)) {
                 Icon(NostrVaultIcons.Search, contentDescription = "Find someone",
                     tint = if (searchOpen) accent else SecondaryText, modifier = Modifier.size(22.dp))
             }

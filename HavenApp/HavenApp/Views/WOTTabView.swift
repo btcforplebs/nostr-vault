@@ -7,6 +7,7 @@ import SwiftUI
 struct WOTTabView: View {
     @EnvironmentObject var configService: ConfigService
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     private var me: String { configService.activeAccountHexPubkey }
 
@@ -22,6 +23,11 @@ struct WOTTabView: View {
         // This tab stays alive: a new account draws a new globe. The globe
         // itself keeps up with your follow list.
         .id(me)
+        // The WOT tutorial points into the globe, and starts here the first
+        // time the tab shows (after Fill your vault; see TutorialProgress).
+        .task(id: "\(me).\(tutorialCenter.revision)") {
+            tutorialCenter.startIfEligible(.wot, account: me)
+        }
     }
 
     /// The path from you to you: no bridges, nothing to look up.

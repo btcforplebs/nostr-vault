@@ -10,6 +10,7 @@ val TutorialID.title: String
     get() = when (this) {
         TutorialID.FILL_YOUR_VAULT -> "Fill Your Feed"
         TutorialID.FEEDS -> "Your Feeds"
+        TutorialID.WOT -> "Your Web of Trust"
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
         TutorialID.POCKET_RELAY -> "Vault in Your Pocket"
@@ -20,6 +21,7 @@ val TutorialID.summary: String
     get() = when (this) {
         TutorialID.FILL_YOUR_VAULT -> "Follow your first people and build your web of trust."
         TutorialID.FEEDS -> "What each feed shows and how to pick yours."
+        TutorialID.WOT -> "The people you follow, how anyone reaches you, and keeping it fresh."
         TutorialID.VAULT -> "Everything you've posted, kept on this device."
         TutorialID.WALLET_CONNECT -> "Link a wallet so you can send zaps."
         TutorialID.POCKET_RELAY -> "A personal relay and media server, and how it differs from public relays."
@@ -30,6 +32,7 @@ val TutorialID.summary: String
 val TutorialID.steps: List<TutorialStep>
     get() = when (this) {
         TutorialID.FEEDS -> TutorialContent.feeds
+        TutorialID.WOT -> TutorialContent.wot
         TutorialID.VAULT -> TutorialContent.vault
         TutorialID.WALLET_CONNECT -> TutorialContent.walletConnect
         TutorialID.POCKET_RELAY -> TutorialContent.pocketRelay
@@ -64,6 +67,7 @@ object TutorialContent {
     val ORDER = listOf(
         TutorialID.FILL_YOUR_VAULT,
         TutorialID.FEEDS,
+        TutorialID.WOT,
         TutorialID.VAULT,
         TutorialID.POCKET_RELAY,
         TutorialID.WALLET_CONNECT,
@@ -87,7 +91,31 @@ object TutorialContent {
         ),
         TutorialStep(
             FEED_TOOLBAR, "Global and your web of trust",
-            "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone.",
+            "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone. Tap WoT to see your web.",
+        ),
+    )
+
+    /** The WoT tab's globe, its magnifier and its layer menu. Tal's
+     *  three stops (#451) in Tod's copy (nostr-vault Tutorial thread
+     *  2026-10-09): "people you follow", never "graph" or "hops". The list
+     *  button is left out on purpose. Search sits behind the magnifier and
+     *  Rebuild lives in the layer menu, so the cards point there. */
+    const val WOT_GLOBE = "wot.globe"
+    const val WOT_SEARCH = "wot.search"
+    const val WOT_LAYERS = "wot.layers"
+
+    val wot = listOf(
+        TutorialStep(
+            WOT_GLOBE, "Your web of trust",
+            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then follow, message or open their profile from the card.",
+        ),
+        TutorialStep(
+            WOT_SEARCH, "Find someone",
+            "Tap here and type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account.",
+        ),
+        TutorialStep(
+            WOT_LAYERS, "Layers and rebuild",
+            "Tap here to light up Everyone, Following, Close or Further out. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes.",
         ),
     )
 

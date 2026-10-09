@@ -141,7 +141,7 @@ struct TrustWebView: View {
                 // Full bleed, like the feed: space runs under the status bar
                 // and the floating tab bar, and the bar's glass sits over it.
                 // On every width: the explainer side panel went with the footer.
-                globeArea.overlay(alignment: .top) {
+                globeArea.overlay { globeTutorialAnchor }.overlay(alignment: .top) {
                     wotTopRows(height: geo.size.height).frame(maxWidth: 560)
                 }
             } else {
@@ -243,6 +243,21 @@ struct TrustWebView: View {
 
     /// Clipped to its box everywhere but the WOT tab, where it runs to the
     /// screen's edges.
+    /// The WoT tutorial's first card points at the middle of the globe, you
+    /// and the faces nearest you. The whole globe is nearly the screen's
+    /// height, which leaves the card no room above or below it.
+    private var globeTutorialAnchor: some View {
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height) * 0.6
+            Color.clear
+                .frame(width: side, height: side)
+                .tutorialAnchor(TutorialContent.wotGlobe)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
     @ViewBuilder private var globeArea: some View {
         if isWOTTab { globeLayers } else { globeLayers.clipped() }
     }
@@ -321,7 +336,9 @@ struct TrustWebView: View {
         #if os(iOS)
         if isWOTTab {
             ToolbarItem(placement: .navigationBarLeading) {
-                ChromeMorphCapsule(alignment: .leading, isEnabled: false) { layerMenu }
+                ChromeMorphCapsule(alignment: .leading, isEnabled: false) {
+                    layerMenu.tutorialAnchor(TutorialContent.wotLayers)
+                }
             }
             .hidingSharedToolbarBackground()
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -329,6 +346,7 @@ struct TrustWebView: View {
                     HStack(spacing: 4) {
                         IconFilterButton(icon: "magnifyingglass", tooltip: "Find someone",
                                          isSelected: searchOpen, color: .havenPurple) { toggleSearch() }
+                            .tutorialAnchor(TutorialContent.wotSearch)
                         Divider().frame(height: 20).padding(.horizontal, 4)
                         IconFilterButton(icon: "globe", tooltip: "Globe",
                                          isSelected: !showingList, color: .havenPurple) { showingList = false }

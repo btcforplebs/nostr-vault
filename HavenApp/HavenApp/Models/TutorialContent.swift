@@ -16,6 +16,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "Fill Your Feed"
         case .feeds: return "Your Feeds"
+        case .wot: return "Your Web of Trust"
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
         case .pocketRelay: return "Vault in Your Pocket"
@@ -27,6 +28,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "Follow your first people and build your web of trust."
         case .feeds: return "What each feed shows and how to pick yours."
+        case .wot: return "The people you follow, how anyone reaches you, and keeping it fresh."
         case .vault: return "Everything you've posted, kept on this device."
         case .walletConnect: return "Link a wallet so you can send zaps."
         case .pocketRelay: return "A personal relay and media server, and how it differs from public relays."
@@ -38,6 +40,7 @@ extension TutorialID {
         switch self {
         case .fillYourVault: return "person.2.badge.plus"
         case .feeds: return "rectangle.stack"
+        case .wot: return "globe"
         case .vault: return "lock.shield"
         case .walletConnect: return "bolt.fill"
         case .pocketRelay: return "antenna.radiowaves.left.and.right"
@@ -53,6 +56,13 @@ extension TutorialID {
             // Its anchor is the iPhone/iPad feed picker; the Mac has none yet.
             #if os(iOS)
             return TutorialContent.feeds
+            #else
+            return []
+            #endif
+        case .wot:
+            // Its anchors are the WoT tab's globe, magnifier and layer menu.
+            #if os(iOS)
+            return TutorialContent.wot
             #else
             return []
             #endif
@@ -96,7 +106,7 @@ extension TutorialID {
     /// over to Feeds, and Your Vault's to Vault in Your Pocket: its last
     /// card points at the Vault button that opens the dashboard.
     var next: TutorialID? {
-        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .pocketRelay, .walletConnect]
+        let order: [TutorialID] = [.fillYourVault, .feeds, .wot, .vault, .pocketRelay, .walletConnect]
         guard let index = order.firstIndex(of: self) else { return nil }
         return order[(index + 1)...].first { $0.isAvailable }
     }
@@ -128,7 +138,34 @@ enum TutorialContent {
         TutorialStep(
             anchor: feedToolbar,
             title: "Global and your web of trust",
-            body: "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone."
+            body: "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone. Tap WoT to see your web."
+        ),
+    ]
+
+    /// The WoT tab's globe, its magnifier and its layer menu.
+    static let wotGlobe = "wot.globe"
+    static let wotSearch = "wot.search"
+    static let wotLayers = "wot.layers"
+
+    /// Tal's three stops (#451) in Tod's copy (nostr-vault Tutorial thread
+    /// 2026-10-09): "people you follow", never "graph" or "hops". The list
+    /// button is left out on purpose. On b21 the search sits behind the
+    /// magnifier and Rebuild lives in the layer menu, so the cards point there.
+    static let wot: [TutorialStep] = [
+        TutorialStep(
+            anchor: wotGlobe,
+            title: "Your web of trust",
+            body: "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then follow, message or open their profile from the card."
+        ),
+        TutorialStep(
+            anchor: wotSearch,
+            title: "Find someone",
+            body: "Tap here and type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account."
+        ),
+        TutorialStep(
+            anchor: wotLayers,
+            title: "Layers and rebuild",
+            body: "Tap here to light up Everyone, Following, Close or Further out. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes."
         ),
     ]
 

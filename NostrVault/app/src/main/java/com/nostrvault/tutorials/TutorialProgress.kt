@@ -8,6 +8,7 @@ package com.nostrvault.tutorials
 enum class TutorialID(val key: String) {
     FILL_YOUR_VAULT("fill-your-vault"),
     FEEDS("feeds"),
+    WOT("wot"),
     VAULT("vault"),
     WALLET_CONNECT("wallet-connect"),
     POCKET_RELAY("pocket-relay"),

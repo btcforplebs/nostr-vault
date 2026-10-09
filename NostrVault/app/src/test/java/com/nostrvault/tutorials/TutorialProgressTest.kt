@@ -165,7 +165,8 @@ class TutorialProgressTest {
     /** The "Next: …" chain, in the iOS order. */
     @Test fun nextFollowsTheIosOrder() {
         assertEquals(TutorialID.FEEDS, TutorialID.FILL_YOUR_VAULT.next)
-        assertEquals(TutorialID.VAULT, TutorialID.FEEDS.next)
+        assertEquals(TutorialID.WOT, TutorialID.FEEDS.next)
+        assertEquals(TutorialID.VAULT, TutorialID.WOT.next)
         assertEquals(TutorialID.POCKET_RELAY, TutorialID.VAULT.next)
         assertEquals(TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY.next)
         assertNull(TutorialID.WALLET_CONNECT.next)
