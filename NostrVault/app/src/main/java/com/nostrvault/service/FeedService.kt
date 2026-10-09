@@ -209,10 +209,6 @@ class FeedService @Inject constructor(
         scope.launch {
             _notes.drop(1).collect { snapshotDirty = true }
         }
-        // The mesh only dials people the owner follows (NIP-F1 reader rules).
-        scope.launch {
-            _followedPubkeys.collect { com.nostrvault.fips.FipsMediaRouter.follows = it.toSet() }
-        }
         // Which emoji went with each like, and which reactions were removed,
         // live only in the account's interaction-state file.
         scope.launch {
@@ -347,6 +343,16 @@ class FeedService @Inject constructor(
 
     private val _followedPubkeys = MutableStateFlow<List<String>>(emptyList())
     val followedPubkeys: StateFlow<List<String>> = _followedPubkeys.asStateFlow()
+
+    // The mesh only dials people the owner follows (NIP-F1 reader rules).
+    // This init sits below _followedPubkeys on purpose: scope runs on
+    // Main.immediate, so collect() starts inside the constructor, and in the
+    // init block above the field it was still null (crash on every launch).
+    init {
+        scope.launch {
+            _followedPubkeys.collect { com.nostrvault.fips.FipsMediaRouter.follows = it.toSet() }
+        }
+    }
 
     private val _extendedNetworkPubkeys = MutableStateFlow<List<String>>(emptyList())
     val extendedNetworkPubkeys: StateFlow<List<String>> = _extendedNetworkPubkeys.asStateFlow()
