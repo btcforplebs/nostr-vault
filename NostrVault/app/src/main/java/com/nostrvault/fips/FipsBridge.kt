@@ -134,6 +134,8 @@ data class FipsStartOptions(
     @SerialName("udp_port") val udpPort: Int = 0,
     /** Offer private LAN addresses to peers. Needed when both are on one network. */
     val lan: Boolean = false,
+    /** Sharing stops once the mesh has been sent this much. 0 keeps the library default. */
+    @SerialName("max_serve_bytes") val maxServeBytes: Long = 0,
 )
 
 /**
@@ -160,6 +162,9 @@ data class FipsStatus(
     /** Friends' vaults opened with [FipsBridge.ingress], and their loopback ports (no tokens). */
     val reading: List<FipsReading> = emptyList(),
     val counters: FipsCounters = FipsCounters(),
+    /** The mesh pulled [maxServeBytes] and the library stopped sharing. */
+    @SerialName("cap_reached") val capReached: Boolean = false,
+    @SerialName("max_serve_bytes") val maxServeBytes: Long = 0,
 ) {
     companion object {
         val stopped = FipsStatus()
@@ -184,4 +189,6 @@ data class FipsCounters(
     @SerialName("read_total") val readTotal: Long = 0,
     @SerialName("read_rx") val readRx: Long = 0,
     @SerialName("read_tx") val readTx: Long = 0,
+    /** Mesh connections turned away or cut by a per-visitor cap. */
+    @SerialName("served_refused") val servedRefused: Long = 0,
 )

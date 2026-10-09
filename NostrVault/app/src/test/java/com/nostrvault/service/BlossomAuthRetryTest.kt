@@ -43,7 +43,7 @@ class BlossomAuthRetryTest {
         every { configStore.config } returns MutableStateFlow(
             HavenConfig(ownerNpub = "npub1owner", blossomMirrors = mirrors)
         )
-        return BlossomService(configStore, signer, mockk(relaxed = true))
+        return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true))
     }
 
     private fun signedEvent() = NostrEvent(

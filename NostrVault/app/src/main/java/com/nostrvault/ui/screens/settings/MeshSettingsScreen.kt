@@ -19,17 +19,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.fips.FipsStatus
+import com.nostrvault.fips.HomeVaultRules
+import com.nostrvault.fips.HomeVaultSender
+import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class MeshSettingsViewModel @Inject constructor(
     private val mesh: FipsMeshManager,
+    private val nostrService: NostrService,
+    private val homeVault: HomeVaultSender,
 ) : ViewModel() {
 
     val status = mesh.status
@@ -41,10 +49,33 @@ class MeshSettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { mesh.refresh() }
+        // The owner's 10063 names their mesh vaults; make sure it is fresh.
+        nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }?.let { nostrService.fetchServerList(it) }
     }
+
+    /** The owner's own vaults on the mesh, other than this phone. */
+    val homeVaultCandidates = combine(nostrService.serverLists, mesh.status) { lists, status ->
+        HomeVaultRules.candidates(lists[nostrService.ownerHexPubkey].orEmpty(), status.npub)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _homeVaultNpub = MutableStateFlow(homeVault.homeVaultNpub)
+    val homeVaultNpub = _homeVaultNpub.asStateFlow()
+    val homeVaultState = homeVault.state
+
+    fun setHomeVault(npub: String?) {
+        _homeVaultNpub.value = npub
+        viewModelScope.launch { homeVault.setHomeVault(npub) }
+    }
+
+    fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
 
     val shareRelay = mesh.shareRelay
     val peers = mesh.peers
+    val serveLimit = mesh.serveLimitBytes
+
+    fun setServeLimit(bytes: Long) {
+        viewModelScope.launch { mesh.setServeLimit(bytes) }
+    }
 
     fun addPeer(npub: String) = updatePeers { it + npub }
 
@@ -91,6 +122,10 @@ fun MeshSettingsScreen(
     val busy by viewModel.busy.collectAsState()
     val shareRelay by viewModel.shareRelay.collectAsState()
     val peers by viewModel.peers.collectAsState()
+    val homeVaultCandidates by viewModel.homeVaultCandidates.collectAsState()
+    val homeVaultNpub by viewModel.homeVaultNpub.collectAsState()
+    val homeVaultState by viewModel.homeVaultState.collectAsState()
+    val serveLimit by viewModel.serveLimit.collectAsState()
     val colors = LocalNostrVaultColors.current
     val clipboard = LocalClipboardManager.current
 
@@ -234,6 +269,36 @@ fun MeshSettingsScreen(
                     colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Stop sharing after", color = SecondaryText, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((bytes, label) in SERVE_LIMITS) {
+                    FilterChip(
+                        selected = serveLimit == bytes,
+                        onClick = { viewModel.setServeLimit(bytes) },
+                        // Applies at the next start, so it is fixed while sharing.
+                        enabled = !shareRelay && !busy,
+                        label = { Text(label) },
+                    )
+                }
+            }
+            Text(
+                "Sharing stops once the mesh has downloaded this much. One visitor gets at most 256 MB of it.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+
+            Spacer(Modifier.height(20.dp))
+            HomeVaultCard(
+                candidates = homeVaultCandidates,
+                selected = homeVaultNpub,
+                state = homeVaultState,
+                enabled = viewModel.isAvailable,
+                onSelect = viewModel::setHomeVault,
+                onSendNow = viewModel::sendHomeVaultNow,
+            )
 
             lastError?.let { error ->
                 Spacer(Modifier.height(16.dp))
@@ -385,6 +450,103 @@ private fun PeopleCard(
     }
 }
 
+/**
+ * Pick which of the owner's own mesh vaults (a kiosk phone) also gets their
+ * posts and media. Only vaults in the owner's 10063 are offered: it is the
+ * list a vault puts itself on when it shares, and only the owner can sign it.
+ */
+@Composable
+private fun HomeVaultCard(
+    candidates: List<String>,
+    selected: String?,
+    state: HomeVaultSender.State,
+    enabled: Boolean,
+    onSelect: (String?) -> Unit,
+    onSendNow: () -> Unit,
+) {
+    Surface(
+        color = CardBackground,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("HOME VAULT", color = SecondaryText, fontSize = 11.sp, letterSpacing = 1.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Also send your posts and media to another of your devices on the " +
+                    "mesh, like a phone in kiosk mode. It keeps them and passes your " +
+                    "posts on to the regular relays. This phone keeps its copy too. " +
+                    "Direct-message attachments are never sent there.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // A chosen vault stays listed even if it has left the 10063 for now
+            // (kiosk mode off): what waits for it still goes when it is back.
+            val options = (listOfNotNull(selected) + candidates).distinct()
+            if (options.isEmpty()) {
+                Text(
+                    "None of your devices is on the mesh right now. Turn on kiosk " +
+                        "mode on the other device, then come back here.",
+                    color = SecondaryText,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+            HomeVaultOption("Off", selected == null, enabled) { onSelect(null) }
+            options.forEach { npub ->
+                HomeVaultOption(
+                    label = npub.take(12) + "…" + npub.takeLast(6) +
+                        if (npub in candidates) "" else " (not on the mesh now)",
+                    checked = npub == selected,
+                    enabled = enabled,
+                ) { onSelect(npub) }
+            }
+
+            if (selected != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    when {
+                        state.waiting > 0 -> "${state.waiting} waiting to send" +
+                            (state.lastProblem?.let { " — $it" } ?: "")
+                        state.lastSentAt != null -> "Everything sent"
+                        else -> "Nothing to send yet"
+                    },
+                    color = if (state.waiting > 0) SecondaryText else SuccessGreen,
+                    fontSize = 13.sp,
+                )
+                if (state.publicPending > 0) {
+                    Text(
+                        "${state.publicPending} on the home vault only. Other apps see " +
+                            "${if (state.publicPending == 1) "it" else "them"} once a public server takes a copy.",
+                        color = SecondaryText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
+                if (state.waiting > 0 || state.publicPending > 0) {
+                    TextButton(onClick = onSendNow, enabled = enabled) { Text("Send now", fontSize = 13.sp) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeVaultOption(label: String, checked: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        RadioButton(selected = checked, onClick = onClick, enabled = enabled)
+        Text(
+            label,
+            color = PrimaryText,
+            fontSize = 13.sp,
+            fontFamily = if (label == "Off") FontFamily.Default else FontFamily.Monospace,
+        )
+    }
+}
+
 @Composable
 private fun Notice(text: String, tint: androidx.compose.ui.graphics.Color) {
     Surface(
@@ -407,3 +569,6 @@ internal fun formatUptime(seconds: Long): String = when {
     seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
     else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
 }
+
+/** The limits offered for one sharing session, as in the iOS kiosk picker. */
+private val SERVE_LIMITS = listOf(250L shl 20 to "250 MB", 1L shl 30 to "1 GB", 5L shl 30 to "5 GB")

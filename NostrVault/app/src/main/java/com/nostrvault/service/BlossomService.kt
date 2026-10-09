@@ -36,6 +36,7 @@ class BlossomService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val mediaCacheService: MediaCacheService,
+    private val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         private const val TAG = "BlossomService"
@@ -105,6 +106,32 @@ class BlossomService @Inject constructor(
         return true
     }
 
+    init {
+        homeVault.hostPublicly = { sha256, contentType, server, auth ->
+            hostLocalBlob(sha256, contentType, servers = listOf(server), authHeader = auth) == "$server/$sha256"
+        }
+    }
+
+    /**
+     * No public server took [sha256], but the owner's home vault has it:
+     * publish under the first public server's https URL now, and keep
+     * pushing the copy there. NIP-F1 readers find it on the vault by hash
+     * through the owner's 10063; other apps once the public copy lands. A
+     * mesh address never goes in a note. Null when there is no home vault,
+     * no public server, or the vault doesn't have it: the post waits.
+     */
+    private suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
+        if (homeVault.homeVaultNpub == null) return null
+        val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
+            com.nostrvault.relay.isPrivateNetworkURL(it)
+        } ?: return null
+        if (!homeVault.ensureOnVault(sha256)) return null
+        // No queued copy (queue full), no URL: the post waits instead.
+        if (!homeVault.needsPublicCopy(sha256, contentType, server)) return null
+        Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
+        return PostUploadOutcome.Hosted("$server/$sha256")
+    }
+
     private val remoteClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(600, TimeUnit.SECONDS) // 10min for large files
@@ -131,7 +158,8 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback, toHomeVault)
 
     suspend fun uploadAndMirror(
         fileURL: File,
@@ -139,15 +167,18 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback, toHomeVault)
 
     private suspend fun uploadAndMirror(
         source: UploadSource,
         sha256: String,
         contentType: String,
         allowLocalFallback: Boolean,
+        toHomeVault: Boolean,
     ): String? {
-        val attempt = upload(source, sha256, contentType, skipOutsideServers = false)
+        val attempt = upload(source, sha256, contentType, skipOutsideServers = false, toHomeVault = toHomeVault)
+        if (toHomeVault) homeVault.drainSoon()
         return when (val outcome = attempt.outcome) {
             is PostUploadOutcome.Hosted -> outcome.url
             // Local-relay URL, only ever returned for save-to-vault flows.
@@ -192,6 +223,7 @@ class BlossomService @Inject constructor(
         onProgress: ((Float) -> Unit)? = null,
     ): PostUploadOutcome =
         upload(UploadSource.FileSource(fileURL), sha256, contentType, skipOutsideServers).outcome
+            .also { homeVault.drainSoon() }
 
     /** What one upload did, plus the local URL when the local save succeeded. */
     private data class UploadAttempt(val outcome: PostUploadOutcome, val localUrl: String?)
@@ -201,6 +233,8 @@ class BlossomService @Inject constructor(
         sha256: String,
         contentType: String,
         skipOutsideServers: Boolean,
+        /** False for DM attachments: the vault's mesh door serves any blob to anyone with its hash. */
+        toHomeVault: Boolean = true,
     ): UploadAttempt = withContext(Dispatchers.IO) {
         // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
         // every mirror. The event is server-agnostic (no "u" tag), so one
@@ -220,6 +254,11 @@ class BlossomService @Inject constructor(
             else -> saveToLocalRelay((source as UploadSource.FileSource).file, sha256, contentType, authHeader)
         }
         if (!localOk) Log.w(TAG, "Local relay upload failed for ${sha256.take(8)} — continuing with mirrors")
+        // The owner's home vault on the mesh gets a copy too; it queues while unreachable.
+        if (toHomeVault) when (source) {
+            is UploadSource.Data -> homeVault.offerBlob(sha256, contentType, source.data)
+            is UploadSource.FileSource -> homeVault.offerBlob(sha256, contentType, source.file)
+        }
         val savedLocalUrl = if (localOk && localUrl != null) "$localUrl/$sha256" else null
 
         // What to report when no outside server hosted it: a post may only wait
@@ -252,6 +291,7 @@ class BlossomService @Inject constructor(
         // Only skip when the blob is safe here; if the local save failed, an
         // outside server is the only place it can go, so try them anyway.
         if (skipOutsideServers && localOk) {
+            if (toHomeVault) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
             Log.i(TAG, "Saved ${sha256.take(8)} on this device only — an earlier attachment found every outside server down")
             return@withContext UploadAttempt(PostUploadOutcome.SavedOnDevice(mirrors), savedLocalUrl)
         }
@@ -270,6 +310,10 @@ class BlossomService @Inject constructor(
 
         if (external == null) {
             Log.e(TAG, "All Blossom mirror uploads failed for ${sha256.take(8)} (saved on this device: $localOk)")
+            // The public copy is pushed from this phone's relay, so only when it is here.
+            if (localOk && toHomeVault) {
+                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
+            }
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
@@ -281,8 +325,15 @@ class BlossomService @Inject constructor(
      * `MediaPostQueue` calls when it retries a waiting post. One pass only —
      * the queue itself is the retry.
      */
-    suspend fun hostLocalBlob(sha256: String, contentType: String): String? = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
+    suspend fun hostLocalBlob(
+        sha256: String,
+        contentType: String,
+        /** Only these servers (the home vault's public copy names one); default all mirrors. */
+        servers: List<String>? = null,
+        /** A caller-signed auth (the owner's, for the home vault); default signed here. */
+        authHeader: String? = null,
+    ): String? = withContext(Dispatchers.IO) {
+        val mirrors = servers ?: configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) {
             Log.w(TAG, "waiting post: no outside Blossom server configured — holding ${sha256.take(8)}")
             return@withContext null
@@ -308,12 +359,12 @@ class BlossomService @Inject constructor(
                 return@withContext null
             }
 
-            val authHeader = createAuthHeader("upload", sha256)
-            if (authHeader.isEmpty()) {
+            val auth = authHeader ?: createAuthHeader("upload", sha256)
+            if (auth.isEmpty()) {
                 Log.e(TAG, "waiting post: could not sign Blossom auth for ${sha256.take(8)} — will retry")
                 return@withContext null
             }
-            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, authHeader)
+            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, auth)
             if (hosted != null) {
                 Log.i(TAG, "waiting post: ${sha256.take(8)} now hosted at $hosted")
             } else {

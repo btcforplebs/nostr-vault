@@ -179,7 +179,7 @@ class NewMessageViewModel @Inject constructor(
                 return@withContext null
             }
             val sha256 = blossomService.computeSHA256(tempFile)
-            val url = blossomService.uploadAndMirror(tempFile, sha256, contentType)
+            val url = blossomService.uploadAndMirror(tempFile, sha256, contentType, toHomeVault = false)
             tempFile.delete()
             url
         } catch (_: Exception) {

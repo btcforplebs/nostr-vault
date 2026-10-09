@@ -468,7 +468,11 @@ func initRelays(ctx context.Context) error {
 		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoComplexFilters)
 	}
 
+	outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, meshNoQueries)
+	outboxRelay.RejectCountFilter = append(outboxRelay.RejectCountFilter, meshNoQueries)
+
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
+		meshOwnerEventsOnly,
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			outboxRelayLimits.EventIPLimiterTokensPerInterval,
@@ -479,16 +483,21 @@ func initRelays(ctx context.Context) error {
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
-		bypassLocalhostConnectionLimiter(policies.ConnectionRateLimiter(
+		meshAwareConnectionLimiter(policies.ConnectionRateLimiter(
 			outboxRelayLimits.ConnectionRateLimiterTokensPerInterval,
 			time.Minute*time.Duration(outboxRelayLimits.ConnectionRateLimiterInterval),
 			outboxRelayLimits.ConnectionRateLimiterMaxTokens,
 		)),
 	)
 
+	relayCtx := ctx
+	blastQ := openBlastQueue(blastPendingFile)
+	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
 	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
 		slog.Info("event stored")
-		runsafe.Go("blast", func() { blast(ctx, event) })
+		// The relay's context, not the connection's: a sender that hangs up
+		// right after OK (the other phone over the mesh) must not cut the blast.
+		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
 		return nil
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.

@@ -133,6 +133,9 @@ func startHaven(t *testing.T) *havenUnderTest {
 		srv.Close()
 		cancel()
 		CloseDBs()
+		// CloseDBs leaves the globals pointing at closed stores, and a query
+		// on a closed store blocks forever (computePopularNotes in a later test).
+		privateDB, chatDB, outboxDB, inboxDB, blossomDB, feedDB = nil, nil, nil, nil, nil, nil
 		config, fs = prevConfig, prevFs
 	})
 	return &havenUnderTest{base: fmt.Sprintf("ws://127.0.0.1:%d", port), ownerSK: ownerSK, owner: owner}

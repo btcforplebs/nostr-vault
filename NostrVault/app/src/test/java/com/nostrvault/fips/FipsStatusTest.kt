@@ -62,6 +62,36 @@ class FipsStatusTest {
         assertEquals(FipsCounters(1, 3, 10, 20, 2, 4, 30, 40), status.counters)
     }
 
+    @Test fun `a restart mid-session keeps what was already served`() {
+        assertEquals(700L shl 20, remainingServeBytes(1L shl 30, 324L shl 20))
+        // Spent in full: 1 byte, not 0 — 0 would make the library use its full default.
+        assertEquals(1L, remainingServeBytes(1L shl 30, 1L shl 30))
+        assertEquals(1L, remainingServeBytes(1L shl 30, 2L shl 30))
+    }
+
+    @Test fun `the session count is written as it grows, in steps`() {
+        // Nothing new worth a write yet.
+        assertEquals(null, servedToPersist(engineBase = 0, engineServed = SERVED_PERSIST_STEP - 1, persisted = 0))
+        assertEquals(SERVED_PERSIST_STEP, servedToPersist(0, SERVED_PERSIST_STEP, 0))
+        // A restarted engine counts from zero; the session base carries the rest.
+        val base = 300L shl 20
+        assertEquals(base + (20L shl 20), servedToPersist(base, 20L shl 20, base))
+        assertEquals(null, servedToPersist(base, 1L shl 20, base))
+        // What a launch resumes with: the limit minus the persisted count.
+        assertEquals((1L shl 30) - base, remainingServeBytes(1L shl 30, base))
+    }
+
+    @Test fun `a reached serve cap decodes, so sharing can be switched off`() {
+        val status = FipsBridge.parseStatus(
+            """{"running":true,"exported":[],"cap_reached":true,"max_serve_bytes":1073741824,""" +
+                """"counters":{"served_refused":2}}"""
+        )
+
+        assertTrue(status.capReached)
+        assertEquals(1L shl 30, status.maxServeBytes)
+        assertEquals(2, status.counters.servedRefused)
+    }
+
     @Test fun `an unknown field does not throw away the whole snapshot`() {
         // The Rust side will add counters; a strict parser would turn that into
         // "stopped" on a node that is running.
@@ -81,11 +111,15 @@ class FipsStatusTest {
         // StartOptions in lib.rs is serde(default) with snake_case names; a
         // misspelt key is silently ignored there, so pin every one here.
         val encoded = FipsBridge.encodeOptions(
-            FipsStartOptions(peers = listOf("npub1a"), relays = listOf("wss://r"), udpPort = 2121, lan = true)
+            FipsStartOptions(
+                peers = listOf("npub1a"), relays = listOf("wss://r"), udpPort = 2121, lan = true,
+                maxServeBytes = 5L shl 30,
+            )
         )
         val obj = Json.parseToJsonElement(encoded).jsonObject
 
-        assertEquals(setOf("peers", "relays", "udp_port", "lan"), obj.keys)
+        assertEquals(setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes"), obj.keys)
+        assertEquals("5368709120", obj["max_serve_bytes"]!!.jsonPrimitive.content)
         assertEquals("npub1a", obj["peers"]!!.jsonArray[0].jsonPrimitive.content)
         assertEquals("2121", obj["udp_port"]!!.jsonPrimitive.content)
         assertEquals("true", obj["lan"]!!.jsonPrimitive.content)
