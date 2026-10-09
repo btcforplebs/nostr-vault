@@ -92,6 +92,11 @@ struct TrustWebView: View {
     @State private var newPeople = 0
     @State private var webSeen: Int?
     @State private var newPeopleFade: Task<Void, Never>?
+    /// The WOT tab's trust card: who was tapped or searched, and how they
+    /// reach you (nil while it's being traced).
+    @State private var card: String?
+    @State private var cardPath: TrustPath?
+    @State private var messagePubkey: String?
     /// The refresh button's run: which step, 0 to 3, and nil when idle.
     @State private var refreshStep: Int?
     /// The bar's fill, 0 to 3 (one per step), and what it is doing now.
@@ -196,9 +201,20 @@ struct TrustWebView: View {
             peek = nil
             clearSearch()
             searchOpen = false
+            closeCard()
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { messagePubkey.map { IdentifiableString(id: $0) } },
+            set: { messagePubkey = $0?.id }
+        )) { p in
+            #if os(iOS)
+            MessageComposerView(recipientPubkey: p.id)
+            #else
+            DMThreadView(counterpartyPubkey: p.id)
+            #endif
+        }
         .sheet(item: Binding<IdentifiableString?>(
             get: { profilePubkey.map { IdentifiableString(id: $0) } },
             set: { profilePubkey = $0?.id }
@@ -223,7 +239,8 @@ struct TrustWebView: View {
                              layer: isWOTTab ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
-                             onEmptyTap: { peek = nil; searchFocused = false })
+                             focus: isWOTTab ? card : nil,
+                             onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {
                 statusPill("Loading \(name(centerKey))'s follows…", face: centerKey)
@@ -237,6 +254,7 @@ struct TrustWebView: View {
                     .padding(.bottom, 14)
             }
             if let peek { peekCard(peek) }
+            if isWOTTab, let card { trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity)) }
             if !isWOTTab, !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 GeometryReader { geo in
                     // With the keyboard up the floating tab bar rides on it,
@@ -390,6 +408,7 @@ struct TrustWebView: View {
             withAnimation(Motion.fade) { searchOpen = false }
         } else {
             peek = nil
+            closeCard()
             withAnimation(Motion.fade) { searchOpen = true }
             searchFocused = true
         }
@@ -681,6 +700,10 @@ struct TrustWebView: View {
 
     private func pick(_ pubkey: String) {
         clearSearch()
+        if isWOTTab {
+            withAnimation(Motion.fade) { searchOpen = false }
+            return pubkey == me ? closeCard() : openCard(pubkey)
+        }
         peek = nil
         if crumbs.count > 1 { crumbs = [me] }
         if pubkey != me { tapped(pubkey) }
@@ -1078,6 +1101,136 @@ struct TrustWebView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Trust card (WOT tab)
+
+    private func openCard(_ pubkey: String) {
+        peek = nil
+        withAnimation(Motion.fade) {
+            card = pubkey
+            cardPath = nil
+        }
+        nostrService.fetchMissingProfiles(for: [pubkey])
+        Task {
+            // From you, whoever is in the middle: which of your follows follow them.
+            let found = await TrustPathService.shared.path(for: pubkey)
+            guard card == pubkey else { return }
+            nostrService.fetchMissingProfiles(for: found.bridges)
+            withAnimation(Motion.fade) { cardPath = found }
+        }
+    }
+
+    private func closeCard() {
+        guard card != nil else { return }
+        withAnimation(Motion.fade) {
+            card = nil
+            cardPath = nil
+        }
+    }
+
+    /// "Can I trust them?": who they are, the people you follow who follow
+    /// them (the post card's answer and words), and what you can do about it.
+    /// Block sits behind "…" so it can't be hit by accident.
+    private func trustCard(_ pubkey: String) -> some View {
+        let following = myFollows.contains(pubkey)
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey)
+        let bridges = cardPath?.bridges ?? []
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name(pubkey)).font(.appSystem(size: 17, weight: .semibold)).lineLimit(1)
+                    if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
+                        Text(nip05).font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                Button { closeCard() } label: {
+                    Image(systemName: "xmark")
+                        .font(.appSystem(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Close"))
+            }
+            HStack(spacing: 10) {
+                if !bridges.isEmpty {
+                    HStack(spacing: -10) {
+                        ForEach(bridges, id: \.self) { bridge in
+                            AvatarView(url: nostrService.profiles[bridge]?.pictureURL, pubkey: bridge, size: 26)
+                                .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 2))
+                        }
+                    }
+                    .accessibilityHidden(true)
+                }
+                Text(TrustPathText.label(cardPath, name: name))
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(cardPath?.reach == .outside ? .secondary : .primary.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                // The profile page's words: Unfollow says what the tap does.
+                cardButton(following ? "Unfollow" : "Follow", icon: following ? "person.badge.minus" : "person.badge.plus",
+                           filled: !following) {
+                    FollowActions.toggle(pubkey, name: name(pubkey), isFollowing: following)
+                }
+                cardButton("Message", icon: "message.fill", filled: false) { messagePubkey = pubkey }
+                cardButton("Profile", icon: "person.crop.circle", filled: false) { profilePubkey = pubkey }
+                Menu {
+                    Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
+                        Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, height: 38)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                        .contentShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("More"))
+            }
+            .padding(.leading, 4)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+        .padding(12)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func cardButton(_ title: String, icon: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.appSystem(size: 12, weight: .semibold))
+                Text(title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
+            }
+            .foregroundColor(filled ? .white : .havenPurple)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(Capsule().fill(filled ? Color.havenPurple : Color.white.opacity(0.08)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleBlock(_ pubkey: String, blocked: Bool) {
+        guard let data = Data(hex: pubkey), let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if blocked {
+            ConfigService.shared.unblockProfile(npub)
+        } else {
+            ConfigService.shared.blockProfile(npub)
+            closeCard()
+        }
+    }
+
     // MARK: - People list (VoiceOver, and anyone who'd rather read)
 
     private var peopleList: some View {
@@ -1125,6 +1278,8 @@ struct TrustWebView: View {
     // MARK: - Actions
 
     private func tapped(_ pubkey: String) {
+        // The WOT tab answers "can I trust them?" in a card and stays on you.
+        if isWOTTab { return pubkey == me || pubkey == card ? closeCard() : openCard(pubkey) }
         if peek != nil { peek = nil; return }
         // The one in the middle: say who they are rather than go nowhere.
         if pubkey == centerKey {
@@ -1342,6 +1497,8 @@ struct TrustGlobeCanvas: View {
     let avatar: (String, CGFloat) -> AnyView
     let name: (String) -> String
     let onTap: (String) -> Void
+    /// The person the trust card is about: the globe turns to face them.
+    var focus: String? = nil
     /// A tap that lands on no one, e.g. to close the peek card.
     var onEmptyTap: () -> Void = {}
 
@@ -1420,6 +1577,7 @@ struct TrustGlobeCanvas: View {
             scene.focus(layer)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .onChange(of: focus) { _, key in if let key { scene.turn(to: key) } }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }

@@ -13,11 +13,12 @@ import com.nostrvault.ui.navigation.TabReselect
  * WOTTabView (#443).
  */
 @Composable
-fun WOTTabScreen(onProfileClick: (String) -> Unit) {
+fun WOTTabScreen(onProfileClick: (String) -> Unit, onMessage: (String) -> Unit) {
     // One flow for the screen's life: a new one each pass would restart its collector.
     val reselects = remember { TabReselect.of(Screen.WOT) }
     TrustWebTab(
         onProfileClick = onProfileClick,
+        onMessage = onMessage,
         reselects = reselects,
         bottomInset = FloatingNavBarInset.height.value,
     )

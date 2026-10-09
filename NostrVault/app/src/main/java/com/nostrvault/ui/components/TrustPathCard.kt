@@ -65,6 +65,8 @@ import dagger.hilt.components.SingletonComponent
 interface TrustPathEntryPoint {
     fun trustPathService(): TrustPathService
     fun nostrService(): NostrService
+    /** The WOT tab's trust card follows and blocks with it. */
+    fun feedService(): com.nostrvault.service.FeedService
 }
 
 @Composable
