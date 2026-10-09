@@ -37,6 +37,8 @@ interface NostrEntityDecoder {
     fun neventToHex(nevent1: String): String?
     fun npubToHex(npub: String): String?
     fun nprofileToHex(nprofile: String): String?
+    /** An naddr's kind, author and `d` tag; null for anything malformed. */
+    fun naddrToCoordinate(naddr1: String): com.nostrvault.data.model.QuoteRef.Coordinate?
 }
 
 /**
@@ -98,11 +100,7 @@ object DeepLinkRouter {
         return when {
             e.startsWith("note1") || e.startsWith("nevent1") -> noteRoute(e, decoder)
             e.startsWith("npub1") || e.startsWith("nprofile1") -> profileRoute(e, decoder)
-            // naddr names an addressable event by kind/author/"d" tag, not by
-            // id, and every route here takes an id. Resolving one means asking
-            // a relay for it first, which a pure router cannot do — so it
-            // returns null rather than dumping the user on the feed. Quoted
-            // naddr references inside a note DO resolve; see QuoteRef.
+            e.startsWith("naddr1", ignoreCase = true) -> addressRoute(e, decoder)
             else -> null
         }
     }
@@ -116,6 +114,25 @@ object DeepLinkRouter {
         } ?: return null
         return DeepLinkTarget(Screen.NoteDetail.createRoute(hex))
     }
+
+    /**
+     * naddr names an addressable event by kind, author and `d` tag, not by id,
+     * so it opens a screen that asks the user's own relays for it first (iOS
+     * NVWidgetBridge `.address` → the note sheet). Every byte of the link is
+     * the sender's: it must decode in full, name an addressable kind, and
+     * only the bech32 string itself goes in the route — its alphabet has no
+     * `/`, `?`, `#` or `%`, so the free-text `d` tag never touches the route.
+     */
+    private fun addressRoute(naddr: String, decoder: NostrEntityDecoder): DeepLinkTarget? {
+        val lower = naddr.lowercase()
+        if (!BECH32_NADDR.matches(lower)) return null
+        val coordinate = decoder.naddrToCoordinate(lower) ?: return null
+        if (!com.nostrvault.data.model.QuoteRef.isLinkableKind(coordinate.kind)) return null
+        return DeepLinkTarget(Screen.AddressLink.createRoute(lower))
+    }
+
+    /** naddr1 followed only by the bech32 data alphabet. */
+    private val BECH32_NADDR = Regex("^naddr1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$")
 
     private fun profileRoute(id: String, decoder: NostrEntityDecoder): DeepLinkTarget? {
         val hex = when {

@@ -3294,6 +3294,9 @@ class FeedService @Inject constructor(
             // arrive here too.
             val raw = QuoteRef.format(QuoteRef.Coordinate(kind, pubkey, dTag))
             if (coordinates.none { it.first == raw }) return
+            // A relay can send anything: only an event signed by the author
+            // the address names counts. A `nostr:naddr1…` link opens this.
+            if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
             val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
             withContext(Dispatchers.Main.immediate) {
@@ -3305,6 +3308,20 @@ class FeedService @Inject constructor(
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    /**
+     * Fetch one addressable event (a `nostr:naddr1…` link) from the user's own
+     * relays, the same way a quoted naddr is fetched, and wait up to
+     * [timeoutMs] for it. Relays may answer with older revisions first, so it
+     * waits [settleMs] after the first answer and returns the newest.
+     */
+    suspend fun resolveAddress(coordinate: QuoteRef.Coordinate, timeoutMs: Long = 8_000, settleMs: Long = 600): FeedNote? {
+        val key = QuoteRef.format(coordinate)
+        fetchMissingQuotedNotes(listOf(key))
+        withTimeoutOrNull(timeoutMs) { _quotedAddressCache.first { it.containsKey(key) } } ?: return null
+        delay(settleMs)
+        return _quotedAddressCache.value[key]
     }
 
     /** Fetch profiles for the authors of resolved quoted notes that lack one. */

@@ -447,6 +447,23 @@ fun NostrVaultNavHost(
 
                 // ── Detail screens ────────────────────────────────────
                 composable(
+                    route = Screen.AddressLink.route,
+                    arguments = listOf(navArgument("naddr") { type = NavType.StringType }),
+                ) { entry ->
+                    val naddr = entry.arguments?.getString("naddr") ?: return@composable
+                    com.nostrvault.ui.screens.AddressLinkScreen(
+                        naddr = naddr,
+                        feedService = feedService,
+                        onResolved = { route ->
+                            navController.navigate(route) {
+                                popUpTo(Screen.AddressLink.route) { inclusive = true }
+                            }
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(
                     route = Screen.ArticleReader.route,
                     arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
                 ) {

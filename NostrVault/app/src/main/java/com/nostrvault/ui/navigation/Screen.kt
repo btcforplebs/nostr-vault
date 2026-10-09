@@ -25,6 +25,10 @@ sealed class Screen(val route: String) {
     data object ArticleReader : Screen("article/{noteId}") {
         fun createRoute(noteId: String) = "article/$noteId"
     }
+    /** A `nostr:naddr1…` link: resolves the address, then opens the article or post. */
+    data object AddressLink : Screen("naddr/{naddr}") {
+        fun createRoute(naddr: String) = "naddr/$naddr"
+    }
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
