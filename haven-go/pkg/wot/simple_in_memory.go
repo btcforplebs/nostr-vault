@@ -205,13 +205,33 @@ func (wt *SimpleInMemory) Init(ctx context.Context) {
 		slog.Info("Web of Trust Level 3 -> Connection of Connections (owner, follows, and their follows) with", "minFollowers", wt.MinFollowers)
 
 	}
-	wt.Refresh(ctx)
-}
-
-func (wt *SimpleInMemory) Refresh(ctx context.Context) {
+	// The first build must happen: wait out a rebuild still finishing
+	// rather than skip it like Refresh would.
+	for wt.WotDepth != 0 && !claimRefresh() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 	if wt.WotDepth == 0 {
 		return
 	}
+	wt.build(ctx)
+}
+
+// Refresh rebuilds the graph unless a rebuild is already running.
+func (wt *SimpleInMemory) Refresh(ctx context.Context) {
+	if wt.WotDepth == 0 || !claimRefresh() {
+		return
+	}
+	wt.build(ctx)
+}
+
+// build is Refresh's work; the caller holds claimRefresh and build releases it.
+func (wt *SimpleInMemory) build(ctx context.Context) {
+	phase, size := "stopped", 0
+	defer func() { releaseRefresh(phase, size) }()
 
 	var eventsAnalysed atomic.Int64
 	pubkeyFollowers := xsync.NewMap[string, *atomic.Int64]()
@@ -231,6 +251,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	if wt.WotDepth == 1 {
 		wt.pubkeys.Store(&newWot)
 		wt.SaveCache()
+		phase, size = "saved", len(newWot)
 		return
 	}
 
@@ -262,6 +283,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
 		wt.SaveCache()
+		phase, size = "saved", len(newWot)
 		return
 	}
 
@@ -271,6 +293,11 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	// Process sequentially with yielding to avoid blocking the host app's UI/Events
 	keys := slices.Collect(maps.Keys(oneHopNetwork))
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
+	updateProgress(func(p *Progress) {
+		p.Phase = "lists"
+		p.Batches = (len(keys) + 999) / 1000
+		p.Lists = eventsAnalysed.Load()
+	})
 
 	for batch := range slices.Chunk(keys, 1000) {
 		select {
@@ -294,6 +321,10 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 				}
 			}
 			cancel()
+			updateProgress(func(p *Progress) {
+				p.BatchesDone++
+				p.Lists = eventsAnalysed.Load()
+			})
 
 			// Only log every batch to avoid flooding the UI thread
 			slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
@@ -304,6 +335,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	}
 
 	slog.Info("📈 community size", "total_keys", pubkeyFollowers.Size())
+	updateProgress(func(p *Progress) { p.Phase = "counting" })
 
 	// Log Top N pubkeys by follower count for debugging purposes
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
@@ -363,6 +395,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 
 	wt.pubkeys.Store(&newWot)
 	wt.SaveCache()
+	phase, size = "saved", len(newWot)
 	debug.FreeOSMemory()
 }
 
