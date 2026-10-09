@@ -48,7 +48,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,7 +86,9 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -108,6 +112,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -204,7 +209,33 @@ fun TrustWebDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
+        // A full-width Compose dialog measures its content against the whole
+        // display, but its window stops at the status and navigation bars, so
+        // the bottom of the globe (the footer buttons) ran off the screen.
+        // Size the content to the part of the screen the window can show.
+        val view = LocalView.current
+        // Black out what shows behind the bars, as the status bar already is.
+        SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(1f) }
+        var visibleHeight by remember { mutableIntStateOf(0) }
+        DisposableEffect(view) {
+            val frame = android.graphics.Rect()
+            val origin = IntArray(2)
+            val measure = {
+                view.getWindowVisibleDisplayFrame(frame)
+                view.getLocationOnScreen(origin)
+                visibleHeight = (frame.bottom - origin[1]).coerceAtLeast(0)
+            }
+            val listener = android.view.View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> measure() }
+            view.addOnLayoutChangeListener(listener)
+            measure()
+            onDispose { view.removeOnLayoutChangeListener(listener) }
+        }
+        val size = if (visibleHeight > 0) {
+            Modifier.fillMaxWidth().height(with(LocalDensity.current) { visibleHeight.toDp() })
+        } else {
+            Modifier.fillMaxSize()
+        }
+        Surface(color = Color.Black, modifier = size) {
             Box(Modifier.fillMaxSize().background(SpaceBrush)) {
                 val trust = rememberTrustPathServices().trustPathService()
                 var path by remember(author) { mutableStateOf(initialPath) }
