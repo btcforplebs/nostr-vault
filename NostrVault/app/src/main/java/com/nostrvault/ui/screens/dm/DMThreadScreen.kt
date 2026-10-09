@@ -1,5 +1,8 @@
 package com.nostrvault.ui.screens.dm
 
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -459,20 +462,32 @@ private fun MessageBubble(
                     )
                 }
                 if (showText) {
-                    Text(
-                        text = remember(parts.text, profiles) {
-                            NostrMentions.toPlainText(parts.text, profiles)
-                        },
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.padding(
-                            start = 14.dp,
-                            end = 14.dp,
-                            top = 10.dp,
-                            bottom = if (message.isNIP04) 4.dp else 10.dp,
-                        ),
-                    )
+                    // Long-press selects, as iOS .textSelection(.enabled). The
+                    // accent-colored selection would vanish on our own accent
+                    // bubble, so it is white there.
+                    val selectionColors = if (isFromMe) {
+                        TextSelectionColors(handleColor = Color.White, backgroundColor = Color.White.copy(alpha = 0.35f))
+                    } else {
+                        TextSelectionColors(handleColor = colors.primary, backgroundColor = colors.primary.copy(alpha = 0.4f))
+                    }
+                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                        SelectionContainer {
+                            Text(
+                                text = remember(parts.text, profiles) {
+                                    NostrMentions.toPlainText(parts.text, profiles)
+                                },
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.padding(
+                                    start = 14.dp,
+                                    end = 14.dp,
+                                    top = 10.dp,
+                                    bottom = if (message.isNIP04) 4.dp else 10.dp,
+                                ),
+                            )
+                        }
+                    }
                 }
                 if (message.isNIP04) {
                     Row(

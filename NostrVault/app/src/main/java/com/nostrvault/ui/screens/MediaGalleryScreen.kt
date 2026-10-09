@@ -1096,7 +1096,7 @@ private fun gridHeaderKey(title: String) = GRID_HEADER_PREFIX + title
 
 /** iOS's audio tile: no picture, so a waveform on Color(red: 0.1, green: 0.1, blue: 0.14). */
 @Composable
-private fun AudioThumbnail(iconSize: androidx.compose.ui.unit.Dp) {
+internal fun AudioThumbnail(iconSize: androidx.compose.ui.unit.Dp) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier

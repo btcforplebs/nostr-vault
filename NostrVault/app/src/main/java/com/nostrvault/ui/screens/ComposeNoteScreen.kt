@@ -140,6 +140,13 @@ internal fun blobMimeType(serverType: String?, name: String?): String? {
         "mp4", "m4v" -> "video/mp4"
         "mov" -> "video/quicktime"
         "webm" -> "video/webm"
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "aac" -> "audio/aac"
+        "wav" -> "audio/wav"
+        "ogg" -> "audio/ogg"
+        "opus" -> "audio/opus"
+        "flac" -> "audio/flac"
         else -> null
     }
 }
@@ -643,7 +650,11 @@ class ComposeNoteViewModel @Inject constructor(
         val mime = blobMimeType(item.mimeType, item.localFile?.name ?: item.displayUrl)
         _attachments.value = _attachments.value + Attachment(
             uri = item.localFile?.let { Uri.fromFile(it) } ?: Uri.parse(item.displayUrl),
-            mimeType = mime ?: if (item.isVideo) "video/*" else "image/*",
+            mimeType = mime ?: when {
+                item.isVideo -> "video/*"
+                item.isAudio -> "audio/*"
+                else -> "image/*"
+            },
             isVideo = item.isVideo,
             hostedUrl = item.displayUrl,
             sha256 = item.sha256,
@@ -1783,13 +1794,17 @@ private fun AttachmentGrid(
                     .size(100.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                // Image/video preview
-                AsyncImage(
-                    model = attachment.uri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                // Image/video preview; audio has no picture, so iOS's waveform tile.
+                if (attachment.mimeType.startsWith("audio/")) {
+                    AudioThumbnail(iconSize = 28.dp)
+                } else {
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
 
                 // Video indicator
                 if (attachment.isVideo) {
@@ -1923,16 +1938,16 @@ internal fun BlossomMediaPickerSheet(
     val (typeSelection, onTypeTap) = rememberMediaTypeSelection()
     // The Media tab's sort, so the headings match what that tab shows (iOS
     // reads the same MediaSortOption setting).
-    val sortOption = remember {
-        MediaSortOption.fromKey(
-            context.getSharedPreferences(MEDIA_GALLERY_PREFS, Context.MODE_PRIVATE)
-                .getString(MediaSortOption.STORAGE_KEY, null),
-        )
+    // Changing it here changes the tab too, both ways, as iOS's shared @AppStorage.
+    val sortPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, Context.MODE_PRIVATE) }
+    var sortOption by remember {
+        mutableStateOf(MediaSortOption.fromKey(sortPrefs.getString(MediaSortOption.STORAGE_KEY, null)))
     }
-    val shownMedia = remember(blossomMedia, typeSelection) {
+    var showSortMenu by remember { mutableStateOf(false) }
+    val shownMedia = remember(blossomMedia, typeSelection, sortOption) {
         sortOption.sorted(blossomMedia.filter { MediaTypeSelection.matches(typeSelection, it) })
     }
-    val sections = remember(shownMedia) { MediaDateGrouping.sections(shownMedia, sortOption) }
+    val sections = remember(shownMedia, sortOption) { MediaDateGrouping.sections(shownMedia, sortOption) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -1969,18 +1984,58 @@ internal fun BlossomMediaPickerSheet(
                 color = PrimaryText,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
             )
-            // The Media tab's filter; the composer attaches photos and videos only.
-            Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                MediaTypeFilterPill(
-                    selection = typeSelection,
-                    onSelect = onTypeTap,
-                    filters = listOf(
-                        MediaTypeFilter.ALL,
-                        MediaTypeFilter.PHOTO,
-                        MediaTypeFilter.VIDEO,
-                        MediaTypeFilter.GIF,
-                    ),
-                )
+            // The Media tab's filter and sort (iOS: type row + sort menu).
+            // Audio has no chip of its own, as on iOS; it shows under All.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp),
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    MediaTypeFilterPill(
+                        selection = typeSelection,
+                        onSelect = onTypeTap,
+                        filters = listOf(
+                            MediaTypeFilter.ALL,
+                            MediaTypeFilter.PHOTO,
+                            MediaTypeFilter.VIDEO,
+                            MediaTypeFilter.GIF,
+                        ),
+                    )
+                }
+                Box {
+                    IconButton(onClick = { showSortMenu = true }, modifier = Modifier.size(44.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.SwapVert,
+                            contentDescription = "Sort by: ${sortOption.label}",
+                            tint = colors.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        for (option in MediaSortOption.entries) {
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                leadingIcon = {
+                                    if (option == sortOption) {
+                                        Icon(
+                                            Icons.Filled.Check,
+                                            contentDescription = "Selected",
+                                            tint = colors.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    } else {
+                                        Spacer(Modifier.size(20.dp))
+                                    }
+                                },
+                                onClick = {
+                                    showSortMenu = false
+                                    sortOption = option
+                                    sortPrefs.edit().putString(MediaSortOption.STORAGE_KEY, option.key).apply()
+                                },
+                            )
+                        }
+                    }
+                }
             }
 
             if (isLoading) {
@@ -2036,12 +2091,16 @@ internal fun BlossomMediaPickerSheet(
                                                 }
                                             )
                                     ) {
-                                        AsyncImage(
-                                            model = item.localFile ?: item.displayUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
+                                        if (item.isAudio) {
+                                            AudioThumbnail(iconSize = 28.dp)
+                                        } else {
+                                            AsyncImage(
+                                                model = item.localFile ?: item.displayUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
 
                                         if (item.isVideo) {
                                             Icon(
