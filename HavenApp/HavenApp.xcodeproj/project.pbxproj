@@ -272,6 +272,7 @@
 		761DA014324390987C7661CF /* VaultNoteScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */; };
 		7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		76F860ACCAD985F83AD535DB /* TrustPathCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFB53AF0B545D2F574F9F8D /* TrustPathCard.swift */; };
+		772FB4A1BF5A9331EC697F3B /* HomeVaultLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */; };
 		77B0B3690B14A5102B5A66CA /* LocalTLSPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40FE00243820A6D15633BB8 /* LocalTLSPolicy.swift */; };
 		783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
 		78ADF8C19CAAAA4A58E158A0 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
@@ -368,6 +369,7 @@
 		9E3289AFD61B61080FB5B2FD /* RetryableAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8495489F7284415840FE673 /* RetryableAsyncImage.swift */; };
 		9EBACE9543A3F1BC4C3C054D /* SwiftNIP46Handshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */; };
 		9ED8EA8F31FCBAA3A5AECBEB /* VaultNoteScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */; };
+		A24366F094575B0776593231 /* HomeVaultLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */; };
 		A2466D5E5282712286740FE2 /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
 		A36D3F7A908A749F7B34206D /* LiveChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */; };
 		A3D6E0A7DE89A876AB480F5D /* ReactionTapback.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7634DBEF7C0811783DC804 /* ReactionTapback.swift */; };
@@ -921,6 +923,7 @@
 		F10FAB057E10D3468126BB35 /* VaultEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngagement.swift; sourceTree = "<group>"; };
 		F297619E65F151AFE005D3C9 /* UseNostrSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UseNostrSteps.swift; sourceTree = "<group>"; };
 		F45EAC47FAD37FE1E1C42AC0 /* RelayCheckProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayCheckProbe.swift; sourceTree = "<group>"; };
+		F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeVaultLogic.swift; sourceTree = "<group>"; };
 		F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryGrid.swift; sourceTree = "<group>"; };
 		F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncStatusView.swift; sourceTree = "<group>"; };
 		F8222A5F6E491EA57892ADC3 /* TrustMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustMap.swift; sourceTree = "<group>"; };
@@ -1282,6 +1285,7 @@
 				91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */,
 				B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */,
 				E3056CC16711F7E38B7FE86D /* HavenConfig.swift */,
+				F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */,
 				412B53053D0F6CC69B7152AC /* HTMLEntities.swift */,
 				54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */,
 				B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */,
@@ -1806,6 +1810,7 @@
 				3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */,
 				317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */,
 				51ED58D5C396F531FC08B75B /* HavenConfig.swift in Sources */,
+				772FB4A1BF5A9331EC697F3B /* HomeVaultLogic.swift in Sources */,
 				61421A1B93DDAD96F59FC85B /* HomeVaultSender.swift in Sources */,
 				B812DD60EB0D5F8D72E69A0C /* IconFilterButton.swift in Sources */,
 				AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */,
@@ -2107,6 +2112,7 @@
 				783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */,
 				AF4BFB028BF32397C9E696EF /* HavenApp.swift in Sources */,
 				83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */,
+				A24366F094575B0776593231 /* HomeVaultLogic.swift in Sources */,
 				1DF532BE91E594D23B6D4E6C /* HomeVaultSender.swift in Sources */,
 				F809F887E228DC7489ED5613 /* IconFilterButton.swift in Sources */,
 				1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */,

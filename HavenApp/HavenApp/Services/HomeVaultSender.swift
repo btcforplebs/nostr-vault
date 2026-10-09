@@ -19,28 +19,8 @@ import UIKit
 final class HomeVaultSender: ObservableObject {
     static let shared = HomeVaultSender()
 
-    struct HomeVault: Codable, Equatable {
-        /// The account whose notes and media go there (hex).
-        var ownerHex: String
-        /// The kiosk's mesh npub, from `fipsmesh://<npub>/`.
-        var meshNpub: String
-    }
-
-    struct Item: Codable, Equatable, Identifiable {
-        enum Kind: String, Codable { case event, blob }
-        var kind: Kind
-        /// Event id, or the blob's sha256.
-        var id: String
-        var ownerHex: String
-        /// The signed event as JSON (events only).
-        var eventJSON: String?
-        var contentType: String?
-        var added: Date
-        var attempts: Int
-    }
-
     @Published private(set) var homeVault: HomeVault?
-    @Published private(set) var queue: [Item] = []
+    @Published private(set) var queue: [HomeVaultItem] = []
     @Published private(set) var sending = false
     @Published private(set) var lastResult: String?
 
@@ -70,19 +50,7 @@ final class HomeVaultSender: ObservableObject {
 
     /// The owner's own mesh vaults from their 10063, minus this phone's.
     static func meshEntries(serverList: [String]) -> [String] {
-        let own = FipsMeshService.shared.status?.npub
-        return serverList.compactMap(meshNpub(fromEntry:)).filter { $0 != own }
-    }
-
-    /// `fipsmesh://<npub>/` exactly, or nil — the same strict form readers use.
-    nonisolated static func meshNpub(fromEntry entry: String) -> String? {
-        let prefix = "fipsmesh://", suffix = "/"
-        guard entry.hasPrefix(prefix), entry.hasSuffix(suffix) else { return nil }
-        let npub = String(entry.dropFirst(prefix.count).dropLast(suffix.count))
-        let charset = Set("qpzry9x8gf2tvdw0s3jn54khce6mua7l")
-        guard npub.count == 63, npub.hasPrefix("npub1"),
-              npub.dropFirst(5).allSatisfy({ charset.contains($0) }) else { return nil }
-        return npub
+        HomeVaultLogic.meshEntries(serverList: serverList, excluding: FipsMeshService.shared.status?.npub)
     }
 
     func setHomeVault(_ vault: HomeVault?) {
@@ -105,7 +73,7 @@ final class HomeVaultSender: ObservableObject {
               let id = eventDict["id"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: eventDict),
               let json = String(data: data, encoding: .utf8) else { return }
-        add(Item(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0))
+        add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0))
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
@@ -115,14 +83,14 @@ final class HomeVaultSender: ObservableObject {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
             return
         }
-        add(Item(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0))
+        add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0))
     }
 
-    private func add(_ item: Item) {
+    private func add(_ item: HomeVaultItem) {
         guard !queue.contains(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
         // Media before the notes that point at it, so a note never lands first.
-        if item.kind == .blob, let firstEvent = queue.firstIndex(where: { $0.kind == .event }) {
-            queue.insert(item, at: firstEvent)
+        if let index = HomeVaultLogic.insertionIndex(for: item.kind, in: queue) {
+            queue.insert(item, at: index)
         } else {
             queue.append(item)
         }
@@ -165,7 +133,7 @@ final class HomeVaultSender: ObservableObject {
             return
         }
         while let item = queue.first(where: { $0.ownerHex == vault.ownerHex }) {
-            let result: SendResult
+            let result: HomeVaultSendResult
             switch item.kind {
             case .event: result = await HomeVaultTransport.sendEvent(json: item.eventJSON ?? "", id: item.id, base: base)
             case .blob: result = await sendBlob(item, base: base)
@@ -189,13 +157,7 @@ final class HomeVaultSender: ObservableObject {
         retryTimer = nil
     }
 
-    enum SendResult: Equatable {
-        case sent
-        case rejected(String)
-        case unreachable(String)
-    }
-
-    private func sendBlob(_ item: Item, base: URL) async -> SendResult {
+    private func sendBlob(_ item: HomeVaultItem, base: URL) async -> HomeVaultSendResult {
         // The bytes come from this phone's own Blossom, where every post saves first.
         guard let data = await HomeVaultTransport.localBlob(sha256: item.id) else {
             return .rejected("not on this phone any more")
@@ -237,12 +199,12 @@ final class HomeVaultSender: ObservableObject {
         }
     }
 
-    private func remove(_ item: Item) {
+    private func remove(_ item: HomeVaultItem) {
         queue.removeAll { $0.kind == item.kind && $0.id == item.id }
         saveQueue()
     }
 
-    private func bumpAttempts(_ item: Item) {
+    private func bumpAttempts(_ item: HomeVaultItem) {
         guard let i = queue.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
         queue[i].attempts += 1
         saveQueue()
@@ -257,32 +219,24 @@ final class HomeVaultSender: ObservableObject {
         return dir.appendingPathComponent("home_vault_queue.json")
     }
 
-    private static func loadQueue() -> [Item] {
+    private static func loadQueue() -> [HomeVaultItem] {
         guard let data = try? Data(contentsOf: queueURL) else { return [] }
-        return (try? JSONDecoder().decode([Item].self, from: data)) ?? []
+        return (try? JSONDecoder().decode([HomeVaultItem].self, from: data)) ?? []
     }
 
     private func saveQueue() {
         guard let data = try? JSONEncoder().encode(queue) else { return }
-        try? data.write(to: Self.queueURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? data.write(to: Self.queueURL, options: [.atomic, Data.WritingOptions.completeFileProtectionUntilFirstUserAuthentication])
     }
 }
 
 /// The wire side, kept free of app state so it can be tested against a stub.
 enum HomeVaultTransport {
-    typealias SendResult = HomeVaultSender.SendResult
-
-    /// The mesh's loopback base is `http://127.0.0.1:<port>/<token>`; the outbox
-    /// relay is the websocket at the vault's `/`, so it keeps the token path.
-    static func websocketURL(base: URL) -> URL? {
-        guard var c = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
-        c.scheme = c.scheme == "https" ? "wss" : "ws"
-        return c.url
-    }
+    typealias SendResult = HomeVaultSendResult
 
     /// Publish one signed event over the vault's outbox websocket and wait for its OK.
-    static func sendEvent(json: String, id: String, base: URL, timeout: TimeInterval = 20) async -> SendResult {
-        guard let url = websocketURL(base: base) else { return .rejected("bad mesh URL") }
+    static func sendEvent(json: String, id: String, base: URL, timeout: TimeInterval = 20) async -> HomeVaultSendResult {
+        guard let url = HomeVaultLogic.websocketURL(base: base) else { return .rejected("bad mesh URL") }
         let session = URLSession(configuration: .ephemeral)
         let socket = session.webSocketTask(with: url)
         socket.resume()
@@ -301,7 +255,7 @@ enum HomeVaultTransport {
                     guard let message = try? await socket.receive() else {
                         return .unreachable("the home vault closed the connection")
                     }
-                    guard case .string(let text) = message, let result = okResult(text, id: id) else { continue }
+                    guard case .string(let text) = message, let result = HomeVaultLogic.okResult(text, id: id) else { continue }
                     return result
                 }
             }
@@ -315,20 +269,8 @@ enum HomeVaultTransport {
         }
     }
 
-    /// `["OK", id, accepted, message]` for `id`, as a result; nil for anything else.
-    static func okResult(_ text: String, id: String) -> SendResult? {
-        guard let data = text.data(using: .utf8),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              arr.count >= 3, arr[0] as? String == "OK", arr[1] as? String == id else { return nil }
-        let accepted = arr[2] as? Bool ?? false
-        let message = arr.count >= 4 ? (arr[3] as? String ?? "") : ""
-        // A copy the vault already has is as good as sent.
-        if accepted || message.hasPrefix("duplicate:") { return .sent }
-        return .rejected(message.isEmpty ? "refused" : message)
-    }
-
     /// BUD-02 `PUT /upload` to the vault, with the owner's 24242 authorisation.
-    static func upload(data: Data, sha256: String, contentType: String, authBase64: String, base: URL) async -> SendResult {
+    static func upload(data: Data, sha256: String, contentType: String, authBase64: String, base: URL) async -> HomeVaultSendResult {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
@@ -338,18 +280,9 @@ enum HomeVaultTransport {
         request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
         do {
             let (_, response) = try await URLSession(configuration: .ephemeral).upload(for: request, from: data)
-            return uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            return HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         } catch {
             return .unreachable("the home vault did not take the upload")
-        }
-    }
-
-    static func uploadResult(status: Int) -> SendResult {
-        switch status {
-        case 200...299: return .sent
-        // The vault answered and said no (auth, size, type): retrying will not change that.
-        case 400...499: return .rejected("HTTP \(status)")
-        default: return .unreachable("HTTP \(status)")
         }
     }
 
