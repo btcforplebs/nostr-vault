@@ -285,6 +285,84 @@ enum TrustMap {
             .prefix(limit)
             .map(\.key)
     }
+
+    /// The WOT tab's layer picker. Picking one only changes what is lit:
+    /// the globe keeps every star, so switching never reloads the web.
+    enum Layer: String, CaseIterable {
+        case everyone, following, close, furtherOut
+
+        var title: String {
+            switch self {
+            case .everyone: "Everyone"
+            case .following: "Following"
+            case .close: "Close"
+            case .furtherOut: "Further out"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .everyone: "circle.hexagongrid"
+            case .following: "person.2.fill"
+            case .close: "person.3.sequence.fill"
+            case .furtherOut: "sparkles"
+            }
+        }
+    }
+
+    /// Close: at least this many of your follows follow them. From a real
+    /// rebuild of a 1,018-follow web: 10+ is ~5K of 13K, a split where both
+    /// sides are worth picking and "10 people you follow" reads plainly.
+    static let closeVouches = 10
+
+    /// The layers to offer: Close only once the relay saves vouches.
+    static func layers(hasVouches: Bool) -> [Layer] {
+        hasVouches ? Layer.allCases : Layer.allCases.filter { $0 != .close }
+    }
+
+    /// The relay's `vouches` from `wot_cache.json`: for everyone in your web
+    /// past your follows, how many of your follows follow them. nil when the
+    /// cache predates the field (it fills on the next rebuild).
+    static func vouches(fromCache data: Data) -> [String: Int]? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = json["vouches"] as? [String: Any] else { return nil }
+        var out: [String: Int] = [:]
+        out.reserveCapacity(raw.count)
+        for (key, value) in raw {
+            if let n = value as? Int { out[key] = n } else if let n = value as? Double { out[key] = Int(n) }
+        }
+        return out
+    }
+
+    /// How brightly `layer` draws your follows (x), the Close part of the
+    /// outer shell (y) and the rest of it (z). The others stay faintly there,
+    /// so the globe keeps its shape.
+    static func layerWeights(_ layer: Layer) -> SIMD3<Double> {
+        switch layer {
+        case .everyone: SIMD3(1, 1, 1)
+        case .following: SIMD3(1, 0.18, 0.18)
+        case .close: SIMD3(0.22, 1.6, 0.18)
+        case .furtherOut: SIMD3(0.22, 0.18, 1.6)
+        }
+    }
+
+    /// People in each layer, never counting you. `web` is the relay's whole
+    /// graph, which also holds your follows. Without `vouches` there is no
+    /// Close, and Further out is everyone past your follows.
+    static func layerCounts(me: String, follows: Set<String>, web: Set<String>,
+                            vouches: [String: Int]? = nil) -> [Layer: Int] {
+        let following = follows.subtracting([me]).count
+        let past = web.subtracting(follows).subtracting([me])
+        var counts: [Layer: Int] = [.everyone: following + past.count, .following: following]
+        if let vouches {
+            let close = past.filter { (vouches[$0] ?? 0) >= closeVouches }.count
+            counts[.close] = close
+            counts[.furtherOut] = past.count - close
+        } else {
+            counts[.furtherOut] = past.count
+        }
+        return counts
+    }
 }
 
 /// The globe's camera and how it moves. Every step is scaled by the real time

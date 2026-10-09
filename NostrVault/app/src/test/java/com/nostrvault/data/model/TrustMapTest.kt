@@ -362,4 +362,57 @@ class TrustMapTest {
         assertEquals(setOf("a", "b"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 18.0))))
         assertEquals(setOf("a"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 16.0))))
     }
+
+    @Test
+    fun layerCountsSplitFollowsFromTheRestAndSkipYou() {
+        val follows = setOf(me, key(1), key(2))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
+        val counts = TrustMap.layerCounts(me, follows, web)
+        assertEquals(2, counts[TrustMap.Layer.FOLLOWING])
+        assertEquals(3, counts[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(5, counts[TrustMap.Layer.EVERYONE])
+        // A follow the relay hasn't mapped yet still counts as a follow.
+        assertEquals(1, TrustMap.layerCounts(me, setOf(key(9)), emptySet())[TrustMap.Layer.EVERYONE])
+    }
+
+    @Test
+    fun pickingALayerDimsTheOtherOneWithoutHidingIt() {
+        assertEquals(TrustMap.Weights(1.0, 1.0, 1.0), TrustMap.layerWeights(TrustMap.Layer.EVERYONE))
+        for (layer in listOf(TrustMap.Layer.FOLLOWING, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT)) {
+            val w = TrustMap.layerWeights(layer)
+            // Every part stays faintly there; only the picked one is bright.
+            assertTrue("$layer", w.follows > 0 && w.close > 0 && w.further > 0)
+        }
+        assertEquals(1.0, TrustMap.layerWeights(TrustMap.Layer.FOLLOWING).follows, 0.0)
+        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FOLLOWING).close < 0.5)
+        assertTrue(TrustMap.layerWeights(TrustMap.Layer.CLOSE).close > 1)
+        assertTrue(TrustMap.layerWeights(TrustMap.Layer.CLOSE).further < 0.5)
+        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT).further > 1)
+        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT).close < 0.5)
+    }
+
+    @Test
+    fun closeSplitsTheWebAtTenVouches() {
+        val follows = setOf(key(1))
+        val web = setOf(me, key(1), key(2), key(3), key(4))
+        val vouches = mapOf(key(2) to 10, key(3) to 9, key(4) to 3)
+        val counts = TrustMap.layerCounts(me, follows, web, vouches)
+        assertEquals(1, counts[TrustMap.Layer.CLOSE])
+        assertEquals(2, counts[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(4, counts[TrustMap.Layer.EVERYONE])
+        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        val old = TrustMap.layerCounts(me, follows, web)
+        assertNull(old[TrustMap.Layer.CLOSE])
+        assertEquals(3, old[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.FOLLOWING, TrustMap.Layer.FURTHER_OUT), TrustMap.layers(false))
+        assertEquals(TrustMap.Layer.entries, TrustMap.layers(true))
+    }
+
+    @Test
+    fun vouchesComeFromTheCacheAndAreNullOnAnOldOne() {
+        assertEquals(mapOf("a" to 12, "c" to 3),
+            TrustMap.vouches("""{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"""))
+        assertNull(TrustMap.vouches("""{"pubkeys":{"a":true},"timestamp":1}"""))
+        assertNull(TrustMap.vouches("not json"))
+    }
 }

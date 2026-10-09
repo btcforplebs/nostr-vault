@@ -14,7 +14,8 @@ struct WOTTabView: View {
     var body: some View {
         NavigationStack {
             TrustWebView(author: me, path: Self.startingPath(me), isWOTTab: true)
-                // The footer's words sit above the floating tab bar.
+                // Cards and pills sit above the floating tab bar; the globe
+                // itself runs under it.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: tabBarHeight)
                 }

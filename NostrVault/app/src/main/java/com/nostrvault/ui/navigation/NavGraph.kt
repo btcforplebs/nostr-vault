@@ -367,6 +367,9 @@ fun NostrVaultNavHost(
                         onProfileClick = { pubkey ->
                             navController.navigate(Screen.Profile.createRoute(pubkey))
                         },
+                        onMessage = { pubkey ->
+                            navController.navigate(Screen.DMThread.createRoute(pubkey))
+                        },
                     )
                 }
 

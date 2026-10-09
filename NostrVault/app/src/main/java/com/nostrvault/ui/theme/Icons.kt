@@ -223,6 +223,7 @@ object NostrVaultIcons {
     // Navigation (additional)
     val Relay: ImageVector = Icons.Filled.CellTower          // antenna.radiowaves.left.and.right
     val WebOfTrust: ImageVector = Icons.Filled.Hub           // point.3.connected.trianglepath.dotted
+    val Sparkles: ImageVector = Icons.Filled.AutoAwesome     // sparkles
     val PeopleList: ImageVector = Icons.AutoMirrored.Filled.FormatListBulleted // list.bullet
 
     // Tab bar (iOS BottomTabBar)

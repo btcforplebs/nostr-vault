@@ -95,7 +95,7 @@ object TutorialContent {
         ),
     )
 
-    /** The WOT tab's globe, its search field and its refresh button. Tal's
+    /** The WOT tab's globe, its search button and its layer menu (where Rebuild lives). Tal's
      *  three stops (#451) in Tod's copy (nostr-vault Tutorial thread
      *  2026-10-09): "people you follow", never "graph" or "hops". The list
      *  button is left out on purpose. */
@@ -110,11 +110,11 @@ object TutorialContent {
         ),
         TutorialStep(
             WOT_SEARCH, "Find someone",
-            "Type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account.",
+            "Tap here and type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account.",
         ),
         TutorialStep(
             WOT_REFRESH, "Keep it fresh",
-            "Tap here to re-read who you follow, rebuild your web and load pictures. A full rebuild can take a few minutes, so let the bar finish.",
+            "Rebuild your web from this menu. It re-reads who you follow and loads pictures. A full rebuild can take a few minutes, so let it finish.",
         ),
     )
 

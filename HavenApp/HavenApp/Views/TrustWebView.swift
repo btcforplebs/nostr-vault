@@ -79,10 +79,28 @@ struct TrustWebView: View {
     @State private var pictureLoader: Task<Void, Never>?
     /// Your wider web, for the search's "In your web" tag.
     @State private var web: Set<String> = []
+    /// How many of your follows follow each person past them (the relay's
+    /// vouches), and who of the drawn shell is Close. nil on an old cache.
+    @State private var vouches: [String: Int]?
+    @State private var closeHaze: Set<String> = []
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     @State private var searchingRelays = false
     @State private var relaySearch: Task<Void, Never>?
+    /// The WOT tab's layer picker: which part of your web is lit.
+    @State private var layer: TrustMap.Layer = .everyone
+    /// The WOT tab's search field is open under the bar.
+    @State private var searchOpen = false
+    /// People who joined your web since you last looked, for the
+    /// "↑ N new people" pill; `webSeen` is the count they're measured from.
+    @State private var newPeople = 0
+    @State private var webSeen: Int?
+    @State private var newPeopleFade: Task<Void, Never>?
+    /// The WOT tab's trust card: who was tapped or searched, and how they
+    /// reach you (nil while it's being traced).
+    @State private var card: String?
+    @State private var cardPath: TrustPath?
+    @State private var messagePubkey: String?
     /// The refresh button's run: which step, 0 to 3, and nil when idle.
     @State private var refreshStep: Int?
     /// The bar's fill, 0 to 3 (one per step), and what it is doing now.
@@ -104,18 +122,24 @@ struct TrustWebView: View {
 
     var body: some View {
         GeometryReader { geo in
-            if geo.size.width >= Self.wideWidth {
+            if geo.size.width >= Self.wideWidth, !isWOTTab {
                 HStack(spacing: 0) {
-                    globeArea.overlay { globeTutorialAnchor }
-                        .overlay(alignment: .topLeading) {
-                            topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
-                        }
+                    globeArea.overlay(alignment: .topLeading) {
+                        topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
+                    }
                     sidePanel.frame(width: 360)
+                }
+            } else if isWOTTab {
+                // Full bleed, like the feed: space runs under the status bar
+                // and the floating tab bar, and the bar's glass sits over it.
+                // On every width: the explainer side panel went with the footer.
+                globeArea.overlay { globeTutorialAnchor }.overlay(alignment: .top) {
+                    wotTopRows(height: geo.size.height).frame(maxWidth: 560)
                 }
             } else {
                 VStack(spacing: 0) {
                     topRows.padding(.top, 8)
-                    globeArea.overlay { globeTutorialAnchor }
+                    globeArea
                     footer
                 }
             }
@@ -124,27 +148,18 @@ struct TrustWebView: View {
         // Space is dark whatever the app's appearance; sheets opened from here
         // keep the app's own.
         .environment(\.colorScheme, .dark)
-        .navigationTitle(centerKey == me ? "Web of Trust" : name(centerKey))
         #if os(iOS)
+        // The WOT tab's bar is the feed's: two glass pills, no title.
+        .navigationTitle(isWOTTab ? "" : centerKey == me ? "Web of Trust" : name(centerKey))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(GlobeSpace.edge, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(isWOTTab ? .hidden : .visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        #else
+        .navigationTitle(centerKey == me ? "Web of Trust" : name(centerKey))
         #endif
-        .toolbar {
-            if isWOTTab {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
-                        .disabled(refreshStep != nil)
-                        .accessibilityLabel(Text("Update your Web of Trust"))
-                        .tutorialAnchor(TutorialContent.wotRefresh)
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button { showingList = true } label: { Image(systemName: "list.bullet") }
-                    .accessibilityLabel(Text("People on this globe"))
-            }
-        }
+        .toolbar { toolbarItems }
+        .onChange(of: web.count) { _, count in countNewPeople(count) }
         .onAppear {
             guard frames[me] == nil else { return }
             crumbs = [me]
@@ -189,9 +204,21 @@ struct TrustWebView: View {
             guard isWOTTab else { return }
             peek = nil
             clearSearch()
+            searchOpen = false
+            closeCard()
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { messagePubkey.map { IdentifiableString(id: $0) } },
+            set: { messagePubkey = $0?.id }
+        )) { p in
+            #if os(iOS)
+            MessageComposerView(recipientPubkey: p.id)
+            #else
+            DMThreadView(counterpartyPubkey: p.id)
+            #endif
+        }
         .sheet(item: Binding<IdentifiableString?>(
             get: { profilePubkey.map { IdentifiableString(id: $0) } },
             set: { profilePubkey = $0?.id }
@@ -210,34 +237,44 @@ struct TrustWebView: View {
             let side = min(geo.size.width, geo.size.height) * 0.6
             Color.clear
                 .frame(width: side, height: side)
-                .tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
+                .tutorialAnchor(TutorialContent.wotGlobe)
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private var globeArea: some View {
+    /// Clipped to its box everywhere but the WOT tab, where it runs to the
+    /// screen's edges.
+    @ViewBuilder private var globeArea: some View {
+        if isWOTTab { globeLayers } else { globeLayers.clipped() }
+    }
+
+    private var globeLayers: some View {
         ZStack(alignment: .bottomLeading) {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
-                             myFollows: myFollows, haze: haze, ringFaces: ringFaces,
+                             myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
                              running: profilePubkey == nil && !showingList,
+                             layer: isWOTTab ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
-                             onEmptyTap: { peek = nil; searchFocused = false })
+                             focus: isWOTTab ? card : nil,
+                             onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
+                .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {
                 statusPill("Loading \(name(centerKey))'s follows…", face: centerKey)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if loadingMyFollows {
                 statusPill("Loading your follows…", face: me)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if mappingWeb, peek == nil {
+            } else if mappingWeb, peek == nil, !isWOTTab {
                 statusPill("Mapping your wider web…")
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
             if let peek { peekCard(peek) }
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            if isWOTTab, let card { trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if !isWOTTab, !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 GeometryReader { geo in
                     // With the keyboard up the floating tab bar rides on it,
                     // over the bottom of the globe.
@@ -245,8 +282,7 @@ struct TrustWebView: View {
                 }
             }
         }
-        .overlay(alignment: .top) { refreshBar }
-        .clipped()
+        .overlay(alignment: .top) { if !isWOTTab { refreshBar } }
     }
 
     /// Your own globe, before your follow list has come in.
@@ -280,6 +316,194 @@ struct TrustWebView: View {
         .shadow(color: .black.opacity(0.45), radius: 14, y: 4)
         .accessibilityElement(children: .combine)
         .allowsHitTesting(false)
+    }
+
+    // MARK: - WOT tab bar
+
+    @ToolbarContentBuilder private var toolbarItems: some ToolbarContent {
+        #if os(iOS)
+        if isWOTTab {
+            ToolbarItem(placement: .navigationBarLeading) {
+                ChromeMorphCapsule(alignment: .leading, isEnabled: false) { layerMenu }
+                    .tutorialAnchor(TutorialContent.wotRefresh)
+            }
+            .hidingSharedToolbarBackground()
+            ToolbarItem(placement: .navigationBarTrailing) {
+                ChromeMorphCapsule(alignment: .trailing, isEnabled: false) {
+                    HStack(spacing: 4) {
+                        IconFilterButton(icon: "magnifyingglass", tooltip: "Find someone",
+                                         isSelected: searchOpen, color: .havenPurple) { toggleSearch() }
+                            .tutorialAnchor(TutorialContent.wotSearch)
+                        Divider().frame(height: 20).padding(.horizontal, 4)
+                        IconFilterButton(icon: "globe", tooltip: "Globe",
+                                         isSelected: !showingList, color: .havenPurple) { showingList = false }
+                        IconFilterButton(icon: "list.bullet", tooltip: "List",
+                                         isSelected: showingList, color: .havenPurple) { showingList = true }
+                    }
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 4)
+                }
+            }
+            .hidingSharedToolbarBackground()
+        } else {
+            listToolbarItem
+        }
+        #else
+        if isWOTTab {
+            ToolbarItem(placement: .primaryAction) {
+                Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    .disabled(refreshStep != nil)
+                    .accessibilityLabel(Text("Update your Web of Trust"))
+            }
+        }
+        listToolbarItem
+        #endif
+    }
+
+    private var listToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button { showingList = true } label: { Image(systemName: "list.bullet") }
+                .accessibilityLabel(Text("People on this globe"))
+        }
+    }
+
+    private var layerCounts: [TrustMap.Layer: Int] {
+        TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches)
+    }
+
+    /// The feed picker's shape: the layer's icon, its name and a chevron, with
+    /// the rare Rebuild at the bottom after a divider.
+    private var layerMenu: some View {
+        let counts = layerCounts
+        return Menu {
+            Picker(selection: $layer) {
+                ForEach(TrustMap.layers(hasVouches: vouches != nil), id: \.self) { item in
+                    // Compact counts (15K) keep each row on one line; a menu
+                    // row drops a second Text, so there's no subtitle.
+                    let count = (counts[item] ?? 0).formatted(.number.notation(.compactName))
+                    Label("\(item.title) · \(count)", systemImage: item.symbolName)
+                        .tag(item)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Button { refresh() } label: {
+                Label(refreshStep == nil ? "Rebuild your web" : "Rebuilding…", systemImage: "arrow.clockwise")
+            }
+            .disabled(refreshStep != nil)
+        } label: {
+            HStack(spacing: 0) {
+                Image(systemName: layer.symbolName)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 30, height: 30)
+                HStack(spacing: 3) {
+                    Text(layer.title)
+                        .font(.appSystem(size: 17, weight: .bold))
+                    Image(systemName: "chevron.down")
+                        .font(.appSystem(size: 9, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.leading, 8)
+                .padding(.trailing, 12)
+            }
+            .padding(.leading, 7)
+            .padding(.vertical, 7)
+            .fixedSize()
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Showing: \(layer.title)")
+        .accessibilityValue("\((counts[layer] ?? 0).formatted()) people")
+        .accessibilityHint("Pick which part of your web to light up, or rebuild it")
+    }
+
+    private func toggleSearch() {
+        if searchOpen {
+            clearSearch()
+            withAnimation(Motion.fade) { searchOpen = false }
+        } else {
+            peek = nil
+            closeCard()
+            withAnimation(Motion.fade) { searchOpen = true }
+            searchFocused = true
+        }
+    }
+
+    /// Under the bar: the search when it's open, the way back once you've
+    /// moved off yourself, and the live pill.
+    private func wotTopRows(height: CGFloat) -> some View {
+        VStack(alignment: .center, spacing: 8) {
+            if searchOpen {
+                searchField.padding(.horizontal)
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    searchResults(maxHeight: max(120, min(380, height - 90 - (searchFocused ? tabBarHeight : 0))))
+                        .padding(.top, -6)
+                }
+            }
+            if crumbs.count > 1 { crumbRow }
+            livePill
+        }
+        .padding(.top, 8)
+        .transition(.opacity)
+    }
+
+    /// The feed's purple "New Posts" button, for people: a rebuild running,
+    /// or how many joined your web since you looked. Nothing when neither.
+    @ViewBuilder private var livePill: some View {
+        let rebuilding = refreshStep != nil || mappingWeb
+        if rebuilding || newPeople > 0 {
+            Button {
+                withAnimation(Motion.fade) { newPeople = 0 }
+            } label: {
+                HStack(spacing: 8) {
+                    if newPeople > 0 {
+                        Image(systemName: "arrow.up").font(.appSystem(size: 12, weight: .bold))
+                        Text("\(newPeople.formatted()) new people")
+                            .monospacedDigit()
+                            .contentTransition(.numericText(value: Double(newPeople)))
+                    } else {
+                        ProgressView().controlSize(.mini).tint(.white)
+                        Text(refreshStep == nil ? "Mapping your web" : "Rebuilding your web")
+                    }
+                }
+                .font(.appSystem(size: 13, weight: .bold))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 20)
+                .background(
+                    Capsule()
+                        .fill(Color.havenPurple)
+                        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+                )
+                .foregroundColor(.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(newPeople == 0)
+            .accessibilityLabel(newPeople > 0 ? "\(newPeople) new people in your web" : "Your web is updating")
+            .animation(Motion.fade, value: newPeople)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// The web grew: count the newcomers into the pill, which folds away a
+    /// few seconds after the last one arrives. The first count is the start.
+    private func countNewPeople(_ count: Int) {
+        guard isWOTTab else { return }
+        guard let seen = webSeen else { webSeen = count; return }
+        guard count > seen else { webSeen = count; return }
+        withAnimation(Motion.fade) { newPeople += count - seen }
+        webSeen = count
+        newPeopleFade?.cancel()
+        newPeopleFade = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.fade) { newPeople = 0 }
+        }
     }
 
     // MARK: - Refresh
@@ -363,7 +587,7 @@ struct TrustWebView: View {
 
     @ViewBuilder private var topRows: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if isWOTTab { searchField.tutorialAnchor(TutorialContent.wotSearch).padding(.horizontal) }
+            if isWOTTab { searchField.padding(.horizontal) }
             // On the WOT tab a lone "You" chip says nothing the globe doesn't.
             if !isWOTTab || crumbs.count > 1 { crumbRow }
         }
@@ -497,6 +721,10 @@ struct TrustWebView: View {
 
     private func pick(_ pubkey: String) {
         clearSearch()
+        if isWOTTab {
+            withAnimation(Motion.fade) { searchOpen = false }
+            return pubkey == me ? closeCard() : openCard(pubkey)
+        }
         peek = nil
         if crumbs.count > 1 { crumbs = [me] }
         if pubkey != me { tapped(pubkey) }
@@ -591,12 +819,17 @@ struct TrustWebView: View {
 
     private func recomputeHaze() {
         let graph = FeedService.shared.relayTabTrustedPubkeys()
+        let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         Task.detached(priority: .userInitiated) {
             let shell = TrustMap.haze(graph.subtracting(inner))
+            let close = counts.map { v in Set(shell.filter { (v[$0] ?? 0) >= TrustMap.closeVouches }) } ?? []
             await MainActor.run {
                 haze = shell
+                closeHaze = close
                 web = graph
+                vouches = counts
+                if !TrustMap.layers(hasVouches: counts != nil).contains(layer) { layer = .everyone }
             }
         }
     }
@@ -894,6 +1127,136 @@ struct TrustWebView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: - Trust card (WOT tab)
+
+    private func openCard(_ pubkey: String) {
+        peek = nil
+        withAnimation(Motion.fade) {
+            card = pubkey
+            cardPath = nil
+        }
+        nostrService.fetchMissingProfiles(for: [pubkey])
+        Task {
+            // From you, whoever is in the middle: which of your follows follow them.
+            let found = await TrustPathService.shared.path(for: pubkey)
+            guard card == pubkey else { return }
+            nostrService.fetchMissingProfiles(for: found.bridges)
+            withAnimation(Motion.fade) { cardPath = found }
+        }
+    }
+
+    private func closeCard() {
+        guard card != nil else { return }
+        withAnimation(Motion.fade) {
+            card = nil
+            cardPath = nil
+        }
+    }
+
+    /// "Can I trust them?": who they are, the people you follow who follow
+    /// them (the post card's answer and words), and what you can do about it.
+    /// Block sits behind "…" so it can't be hit by accident.
+    private func trustCard(_ pubkey: String) -> some View {
+        let following = myFollows.contains(pubkey)
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey)
+        let bridges = cardPath?.bridges ?? []
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name(pubkey)).font(.appSystem(size: 17, weight: .semibold)).lineLimit(1)
+                    if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
+                        Text(nip05).font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                Button { closeCard() } label: {
+                    Image(systemName: "xmark")
+                        .font(.appSystem(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Close"))
+            }
+            HStack(spacing: 10) {
+                if !bridges.isEmpty {
+                    HStack(spacing: -10) {
+                        ForEach(bridges, id: \.self) { bridge in
+                            AvatarView(url: nostrService.profiles[bridge]?.pictureURL, pubkey: bridge, size: 26)
+                                .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 2))
+                        }
+                    }
+                    .accessibilityHidden(true)
+                }
+                Text(TrustPathText.label(cardPath, name: name))
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(cardPath?.reach == .outside ? .secondary : .primary.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                // The profile page's words: Unfollow says what the tap does.
+                cardButton(following ? "Unfollow" : "Follow", icon: following ? "person.badge.minus" : "person.badge.plus",
+                           filled: !following) {
+                    FollowActions.toggle(pubkey, name: name(pubkey), isFollowing: following)
+                }
+                cardButton("Message", icon: "message.fill", filled: false) { messagePubkey = pubkey }
+                cardButton("Profile", icon: "person.crop.circle", filled: false) { profilePubkey = pubkey }
+                Menu {
+                    Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
+                        Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, height: 38)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                        .contentShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("More"))
+            }
+            .padding(.leading, 4)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+        .padding(12)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func cardButton(_ title: String, icon: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.appSystem(size: 12, weight: .semibold))
+                Text(title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
+            }
+            .foregroundColor(filled ? .white : .havenPurple)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(Capsule().fill(filled ? Color.havenPurple : Color.white.opacity(0.08)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleBlock(_ pubkey: String, blocked: Bool) {
+        guard let data = Data(hex: pubkey), let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if blocked {
+            ConfigService.shared.unblockProfile(npub)
+        } else {
+            ConfigService.shared.blockProfile(npub)
+            closeCard()
+        }
+    }
+
     // MARK: - People list (VoiceOver, and anyone who'd rather read)
 
     private var peopleList: some View {
@@ -941,6 +1304,8 @@ struct TrustWebView: View {
     // MARK: - Actions
 
     private func tapped(_ pubkey: String) {
+        // The WOT tab answers "can I trust them?" in a card and stays on you.
+        if isWOTTab { return pubkey == me || pubkey == card ? closeCard() : openCard(pubkey) }
         if peek != nil { peek = nil; return }
         // The one in the middle: say who they are rather than go nowhere.
         if pubkey == centerKey {
@@ -1147,15 +1512,21 @@ struct TrustGlobeCanvas: View {
     let author: String
     let myFollows: Set<String>
     let haze: [String]
+    /// The part of the haze at least `TrustMap.closeVouches` of your follows follow.
+    var closeHaze: Set<String> = []
     /// Follows drawn as faces when the core is the person everyone is
     /// measured against (your own globe on the WOT tab).
     let ringFaces: [String]
     /// False while a sheet covers the globe: the clock stops.
     let running: Bool
+    /// Which part of the web is lit (the WOT tab's layer picker).
+    var layer: TrustMap.Layer = .everyone
     let summary: String
     let avatar: (String, CGFloat) -> AnyView
     let name: (String) -> String
     let onTap: (String) -> Void
+    /// The person the trust card is about: the globe turns to face them.
+    var focus: String? = nil
     /// A tap that lands on no one, e.g. to close the peek card.
     var onEmptyTap: () -> Void = {}
 
@@ -1181,6 +1552,7 @@ struct TrustGlobeCanvas: View {
         let bridges: Int
         let chains: Int
         let haze: Int
+        let close: Int
         let mine: Int
         /// Who is in the ring, not just how many: a follow and an unfollow
         /// together keep the count.
@@ -1191,7 +1563,7 @@ struct TrustGlobeCanvas: View {
     private var loadKey: LoadKey? {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
-                    chains: $0.chains?.count ?? -1, haze: haze.count, mine: myFollows.count,
+                    chains: $0.chains?.count ?? -1, haze: haze.count, close: closeHaze.count, mine: myFollows.count,
                     ringHash: $0.ring.hashValue, faces: ringFaces)
         }
     }
@@ -1229,7 +1601,12 @@ struct TrustGlobeCanvas: View {
                 Button("Reset view") { scene.reset() }
             }
         }
-        .onAppear { scene.reduceMotion = reduceMotion }
+        .onAppear {
+            scene.reduceMotion = reduceMotion
+            scene.focus(layer)
+        }
+        .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .onChange(of: focus) { _, key in if let key { scene.turn(to: key) } }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -1254,7 +1631,8 @@ struct TrustGlobeCanvas: View {
                 try? await Task.sleep(for: Self.turnDelay)
                 guard !Task.isCancelled else { return }
             }
-            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, ringFaces: ringFaces)
+            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, closeHaze: closeHaze,
+                       ringFaces: ringFaces)
         }
     }
 
@@ -1311,7 +1689,7 @@ struct TrustGlobeCanvas: View {
 /// lookups. Mutated by the frame clock; only `awake` and `faceKeys` publish.
 @MainActor
 final class GlobeScene: ObservableObject {
-    enum Kind { case ring, mutual, haze, bridge, via }
+    enum Kind { case ring, mutual, haze, closeHaze, bridge, via }
 
     /// False once nothing moves: the frame clock stops until a touch or new data.
     @Published private(set) var awake = true
@@ -1337,6 +1715,11 @@ final class GlobeScene: ObservableObject {
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
+    /// How brightly your follows (x), the Close shell (y) and the rest of the
+    /// shell (z) are drawn, easing toward the picked layer's
+    /// (`TrustMap.layerWeights`).
+    private var weights = SIMD3<Double>(1, 1, 1)
+    private var weightTarget = SIMD3<Double>(1, 1, 1)
 
     private var keys: [String] = []
     private var dirs: [SIMD3<Double>] = []
@@ -1358,7 +1741,7 @@ final class GlobeScene: ObservableObject {
     // MARK: Data
 
     func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String],
-              ringFaces: [String] = []) {
+              closeHaze: Set<String> = [], ringFaces: [String] = []) {
         let now = Date.timeIntervalSinceReferenceDate
         let newCenter = !hasLoaded || frame.center != center
         self.me = me
@@ -1369,7 +1752,7 @@ final class GlobeScene: ObservableObject {
         let bridgeSet = Set(frame.bridges)
         var want: [String: (Kind, Double)] = [:]
         if frame.center == me {
-            for key in haze { want[key] = (.haze, TrustMap.outerRadius) }
+            for key in haze { want[key] = (closeHaze.contains(key) ? .closeHaze : .haze, TrustMap.outerRadius) }
         }
         for key in frame.ring {
             let kind: Kind = bridgeSet.contains(key) ? .bridge
@@ -1464,6 +1847,13 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
+    /// Lights one layer and dims the rest. Nothing is reloaded.
+    func focus(_ layer: TrustMap.Layer) {
+        weightTarget = TrustMap.layerWeights(layer)
+        if reduceMotion { weights = weightTarget }
+        wake()
+    }
+
     func wake() {
         sleepQueued = false
         if !awake {
@@ -1478,6 +1868,11 @@ final class GlobeScene: ObservableObject {
         let dt = lastTick.map { min(GlobeCamera.maxStep, max(0, now - $0)) } ?? 0
         lastTick = now
         camera.step(dt: dt, now: now, reduceMotion: reduceMotion)
+        let fading = weights != weightTarget
+        if fading {
+            weights += (weightTarget - weights) * (1 - exp(-dt * 8))
+            if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
+        }
         if settling {
             let age = now - born
             let glide = 1 - exp(-dt * 7), fade = 1 - exp(-dt * 6)
@@ -1489,7 +1884,7 @@ final class GlobeScene: ObservableObject {
             threadProgress = min(1, max(0, (now - threadsBorn - 0.35) / 0.55))
             if age > Self.settleTime { settle() }
         }
-        if !settling, !camera.wantsFrames(now: now, reduceMotion: reduceMotion), awake, !sleepQueued {
+        if !settling, !fading, !camera.wantsFrames(now: now, reduceMotion: reduceMotion), awake, !sleepQueued {
             // Not from inside the draw: publishing mid-update is undefined.
             sleepQueued = true
             DispatchQueue.main.async { [weak self] in
@@ -1572,7 +1967,7 @@ final class GlobeScene: ObservableObject {
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
         if best == nil, camera.zoom >= 1.6 {
-            for i in keys.indices where !isFace[i] && kinds[i] != .haze { consider(i, reach: 16) }
+            for i in keys.indices where !isFace[i] && kinds[i] != .haze && kinds[i] != .closeHaze { consider(i, reach: 16) }
         }
         return best?.key
     }
@@ -1610,17 +2005,19 @@ final class GlobeScene: ObservableObject {
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
         let namesOut = zoom > 2.2
         for i in keys.indices where !isFace[i] {
-            let a = alpha[i]
+            let a = alpha[i] * (kinds[i] == .haze ? weights.z : kinds[i] == .closeHaze ? weights.y : weights.x)
             guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
             let front = p.front
             let slot: Slot, base: Double, size: Double
             switch kinds[i] {
             case .haze: (slot, base, size) = (.haze, 0.06 + 0.16 * front, 1.2)
+            // A touch brighter and bigger: close enough to tell apart in the shell.
+            case .closeHaze: (slot, base, size) = (.haze, 0.10 + 0.22 * front, 1.4)
             case .ring: (slot, base, size) = (.ring, 0.25 + 0.65 * front, 2.1)
             case .mutual: (slot, base, size) = (.mutual, 0.45 + 0.55 * front, 2.4)
             case .bridge, .via: (slot, base, size) = (.hot, 0.35 + 0.65 * front, 2.8)
             }
-            let level = Int((base * a * Double(Self.levels)).rounded())
+            let level = Int((min(1, base * a) * Double(Self.levels)).rounded())
             guard level > 0 else { continue }
             let r = size * p.scale * zoom
             buckets[slot.rawValue][min(Self.levels, level)]
@@ -1748,7 +2145,7 @@ final class GlobeScene: ObservableObject {
             }
         }
         for face in drawn {
-            let a = alpha[index[face.key] ?? centerIndex]
+            let a = alpha[index[face.key] ?? centerIndex] * (face.key == author ? 1 : weights.x)
             let dim = (0.35 + 0.65 * face.p.front) * a
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             if face.p.depth < -0.1 && face.key != author {

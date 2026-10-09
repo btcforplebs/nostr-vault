@@ -142,7 +142,7 @@ enum TutorialContent {
         ),
     ]
 
-    /// The WOT tab's globe, its search field and its refresh button.
+    /// The WOT tab's globe, its search button and its layer menu (where Rebuild lives).
     static let wotGlobe = "wot.globe"
     static let wotSearch = "wot.search"
     static let wotRefresh = "wot.refresh"
@@ -159,12 +159,12 @@ enum TutorialContent {
         TutorialStep(
             anchor: wotSearch,
             title: "Find someone",
-            body: "Type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account."
+            body: "Tap here and type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account."
         ),
         TutorialStep(
             anchor: wotRefresh,
             title: "Keep it fresh",
-            body: "Tap here to re-read who you follow, rebuild your web and load pictures. A full rebuild can take a few minutes, so let the bar finish."
+            body: "Rebuild your web from this menu. It re-reads who you follow and loads pictures. A full rebuild can take a few minutes, so let it finish."
         ),
     ]
 

@@ -327,6 +327,10 @@ class FeedService: ObservableObject {
     /// cached WOT graph (`wot_cache.json`). Used to filter the GLOBAL feed and
     /// Media tab so only notes/media from WOT members are shown.
     @Published private(set) var wotPubkeys: Set<String> = []
+    /// For everyone in the graph past your follows, how many of your follows
+    /// follow them (the WOT tab's Close layer). nil until the relay's cache
+    /// carries them.
+    @Published private(set) var wotVouches: [String: Int]?
     /// True once the relay's graph file has been read for this account, even
     /// if it named nobody. Separates "the relay has not built a graph yet"
     /// from "the graph is built and empty because you follow nobody".
@@ -539,6 +543,9 @@ class FeedService: ObservableObject {
             #endif
             return
         }
+        // Vouches first: $wotPubkeys fires in willSet, and its subscribers
+        // read the vouches straight away.
+        wotVouches = (try? Data(contentsOf: cacheURL)).flatMap(TrustMap.vouches(fromCache:))
         wotPubkeys = loaded
         wotCacheRead = true
         #if DEBUG
