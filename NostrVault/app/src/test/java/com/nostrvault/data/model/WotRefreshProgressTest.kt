@@ -94,4 +94,25 @@ class WotRefreshProgressTest {
         assertNull(WotRefreshProgress.parse("""{"running":true,"phase":{"a":1}}"""))
         assertNull(WotRefreshProgress.parse("""{"running":true,"phase":"lists""""))
     }
+
+    @Test fun `reads the live fill counts, and leaves them null from an older relay`() {
+        val live = WotRefreshProgress.parse("""{"running":true,"phase":"lists","found":1200,"new":37}""")!!
+        assertEquals(1200, live.found)
+        assertEquals(37, live.new)
+        val old = WotRefreshProgress.parse("""{"running":true,"phase":"lists"}""")!!
+        assertNull(old.found)
+        assertNull(old.new)
+    }
+
+    @Test fun `parses the relay's newcomers`() {
+        val n = WotNewcomers.parse("""{"total":3,"pubkeys":["aa","bb"]}""")!!
+        assertEquals(3, n.total)
+        assertEquals(listOf("aa", "bb"), n.pubkeys)
+        assertEquals(WotNewcomers(5, emptyList()), WotNewcomers.parse("""{"total":5,"pubkeys":[]}"""))
+        assertNull(WotNewcomers.parse(null))
+        assertNull(WotNewcomers.parse("not json"))
+        assertNull(WotNewcomers.parse("""{"pubkeys":["aa"]}"""))
+        assertNull(WotNewcomers.parse("""{"total":1}"""))
+        assertNull(WotNewcomers.parse("""{"total":1,"pubkeys":"aa"}"""))
+    }
 }

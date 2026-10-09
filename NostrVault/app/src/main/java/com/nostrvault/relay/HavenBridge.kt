@@ -280,10 +280,18 @@ object HavenBridge {
 
     /**
      * How far the latest rebuild has got, as JSON (wot.Progress): running,
-     * phase, batches, batchesDone, lists, size. See [com.nostrvault.data.model.WotRefreshProgress].
+     * phase, batches, batchesDone, lists, found, new, size. See [com.nostrvault.data.model.WotRefreshProgress].
      * Maps to Go: WotRefreshProgressC()
      */
     external fun getWotRefreshProgress(): String?
+
+    /**
+     * The running (or last) rebuild's newcomers from index [from] on, as JSON
+     * {"total": n, "pubkeys": [...]}. Pass the last total back in to get only
+     * the people found since. See [com.nostrvault.data.model.WotNewcomers].
+     * Maps to Go: WotNewcomersC(from)
+     */
+    external fun getWotNewcomers(from: Int): String?
 
     // -----------------------------------------------------------------------
     // Follower ledger

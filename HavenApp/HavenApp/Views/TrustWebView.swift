@@ -96,6 +96,14 @@ struct TrustWebView: View {
     @State private var newPeople = 0
     @State private var webSeen: Int?
     @State private var newPeopleFade: Task<Void, Never>?
+    /// A relay rebuild seen running from the WOT tab: the people it has found
+    /// so far who weren't on the old map, lit as stars while it runs, and how
+    /// many of its newcomers the pill was tapped away at.
+    @State private var liveRebuild = false
+    @State private var arrivals: Set<String> = []
+    @State private var arrivalsDismissed = 0
+    /// Set from a rebuild's first report until its pill folds away.
+    @State private var liveCounted = false
     /// The WOT tab's trust card: who was tapped or searched, and how they
     /// reach you (nil while it's being traced).
     @State private var card: String?
@@ -174,6 +182,10 @@ struct TrustWebView: View {
         .task {
             try? await Task.sleep(for: .seconds(15))
             webWaitedOut = true
+        }
+        .task(id: isWOTTab) {
+            guard isWOTTab else { return }
+            await followRebuilds()
         }
         .onReceive(FeedService.shared.$wotPubkeys.dropFirst()) { _ in
             // On a cold start the graph lands after the globe opened.
@@ -439,9 +451,10 @@ struct TrustWebView: View {
     /// The feed's purple "New Posts" button, for people: a rebuild running,
     /// or how many joined your web since you looked. Nothing when neither.
     @ViewBuilder private var livePill: some View {
-        let rebuilding = refreshStep != nil || mappingWeb
+        let rebuilding = refreshStep != nil || mappingWeb || liveRebuild
         if rebuilding || newPeople > 0 {
             Button {
+                if liveRebuild { arrivalsDismissed += newPeople }
                 withAnimation(Motion.fade) { newPeople = 0 }
             } label: {
                 HStack(spacing: 8) {
@@ -477,6 +490,9 @@ struct TrustWebView: View {
     /// few seconds after the last one arrives. The first count is the start.
     private func countNewPeople(_ count: Int) {
         guard isWOTTab else { return }
+        // A rebuild the relay reports on counts its own newcomers, live; the
+        // saved web landing afterwards is the same people again.
+        guard !liveCounted else { webSeen = count; return }
         guard let seen = webSeen else { webSeen = count; return }
         guard count > seen else { webSeen = count; return }
         withAnimation(Motion.fade) { newPeople += count - seen }
@@ -486,6 +502,52 @@ struct TrustWebView: View {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
             withAnimation(Motion.fade) { newPeople = 0 }
+        }
+    }
+
+    /// Follows the relay's rebuilds while the WOT tab is open, whoever started
+    /// them (the daily timer, the boot check or the dropdown): newcomers fade
+    /// in as stars and count up in the pill, and the saved web loads when the
+    /// rebuild ends.
+    private func followRebuilds() async {
+        var cursor = 0
+        while !Task.isCancelled {
+            let progress = await Task.detached { WotRefresh.progress() }.value
+            if let progress, progress.running {
+                if !liveRebuild {
+                    liveRebuild = true
+                    liveCounted = true
+                    newPeopleFade?.cancel()
+                    cursor = 0
+                    arrivals = []
+                    arrivalsDismissed = 0
+                }
+                let from = cursor
+                if let batch = await Task.detached(operation: { WotRefresh.newcomers(from: from) }).value {
+                    cursor = batch.total
+                    if !batch.pubkeys.isEmpty {
+                        arrivals.formUnion(batch.pubkeys)
+                        recomputeHaze()
+                    }
+                }
+                let count = max(0, (progress.new ?? arrivals.count) - arrivalsDismissed)
+                if count != newPeople { withAnimation(Motion.fade) { newPeople = count } }
+            } else if liveRebuild {
+                liveRebuild = false
+                cursor = 0
+                // Saved: the new map has everyone that lit up. Stopped: the
+                // old one stays, and the stars that came in fade back out.
+                arrivals = []
+                FeedService.shared.loadWotPubkeys()
+                recomputeHaze()
+                newPeopleFade = Task {
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(Motion.fade) { newPeople = 0 }
+                    liveCounted = false
+                }
+            }
+            try? await Task.sleep(for: .seconds(liveRebuild ? 1 : 5))
         }
     }
 
@@ -801,7 +863,7 @@ struct TrustWebView: View {
     }
 
     private func recomputeHaze() {
-        let graph = FeedService.shared.relayTabTrustedPubkeys()
+        let graph = FeedService.shared.relayTabTrustedPubkeys().union(arrivals)
         let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         Task.detached(priority: .userInitiated) {
@@ -1540,6 +1602,9 @@ struct TrustGlobeCanvas: View {
         /// Who is in the ring, not just how many: a follow and an unfollow
         /// together keep the count.
         let ringHash: Int
+        /// Who is in the haze: past its cap, a newcomer swaps in for someone
+        /// at the margin and the count stays put.
+        let hazeHash: Int
         let faces: [String]
     }
 
@@ -1547,7 +1612,7 @@ struct TrustGlobeCanvas: View {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
                     chains: $0.chains?.count ?? -1, haze: haze.count, close: closeHaze.count, mine: myFollows.count,
-                    ringHash: $0.ring.hashValue, faces: ringFaces)
+                    ringHash: $0.ring.hashValue, hazeHash: haze.hashValue, faces: ringFaces)
         }
     }
 
@@ -2237,11 +2302,29 @@ struct WotRefresh: Decodable {
     let batchesDone: Int
     let lists: Int
     let size: Int
+    /// People this rebuild has found so far, and how many of them weren't on
+    /// the old map. Missing from a relay older than the live fill.
+    let found: Int?
+    let new: Int?
 
     static func progress() -> WotRefresh? {
         guard let pointer = WotRefreshProgressC() else { return nil }
         defer { free(pointer) }
         return try? JSONDecoder().decode(WotRefresh.self, from: Data(String(cString: pointer).utf8))
+    }
+
+    /// The running (or last) rebuild's newcomers from index `from` on, and
+    /// how many there are in all (`WotNewcomersC`). Pass the last total back
+    /// in to get only the people found since.
+    static func newcomers(from: Int) -> Newcomers? {
+        guard let pointer = WotNewcomersC(Int32(clamping: from)) else { return nil }
+        defer { free(pointer) }
+        return try? JSONDecoder().decode(Newcomers.self, from: Data(String(cString: pointer).utf8))
+    }
+
+    struct Newcomers: Decodable {
+        let total: Int
+        let pubkeys: [String]
     }
 
     /// How far through the rebuild, 0 to 1. A relay can take a minute to

@@ -95,6 +95,7 @@ extern char* ComputePopularNotesC(void);
 extern char* GetFollowersC(const char* owner);
 extern int RefreshWotC(void);
 extern char* WotRefreshProgressC(void);
+extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 
@@ -485,6 +486,11 @@ Java_com_nostrvault_relay_HavenBridge_refreshWot(JNIEnv *env, jobject thiz) {
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getWotRefreshProgress(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, WotRefreshProgressC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getWotNewcomers(JNIEnv *env, jobject thiz, jint from) {
+    return goStringToJstring(env, WotNewcomersC((int)from));
 }
 
 // ---- Follower ledger ----
