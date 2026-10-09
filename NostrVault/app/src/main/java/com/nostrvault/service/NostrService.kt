@@ -277,9 +277,9 @@ class NostrService @Inject constructor(
     // Initialization
     // ══════════════════════════════════════════════════════════════════
 
-    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS].
-     *  Declared above init: initialize() seeds it from disk. */
-    private val replaceableNewest = ConcurrentHashMap<String, Long>()
+    /** Newest accepted event per "kind:pubkey" for [REPLACEABLE_STATE_KINDS],
+     *  seeded lazily from disk. Declared above init. */
+    private val replaceableNewest = ReplaceableLedger { profileRepository.loadListStampsIfReady() }
 
     init {
         initialize()
@@ -294,12 +294,8 @@ class NostrService @Inject constructor(
     }
 
     private fun loadProfilesFromDisk() {
-        // The lists below come back from disk, so their created_at must too:
-        // otherwise the first fetch after launch accepts any older signed copy.
-        // Read before any relay traffic, not on the IO launch below.
-        for ((key, createdAt) in profileRepository.loadListStamps()) {
-            replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
-        }
+        // The lists below come back from disk with their created_at; the
+        // ledger seeds that itself on first use (see ReplaceableLedger).
         scope.launch(Dispatchers.IO) {
             val loaded = profileRepository.loadProfiles()
             val relays = profileRepository.loadRelayLists()
@@ -307,11 +303,12 @@ class NostrService @Inject constructor(
             val dmRelays = profileRepository.loadDMRelayLists()
             val servers = profileRepository.loadServerLists()
             withContext(Dispatchers.Main.immediate) {
-                _profiles.value = loaded
-                _relayLists.value = relays
-                _outboxRelays.value = outbox
-                _dmRelayLists.value = dmRelays
-                _serverLists.value = servers
+                // Merge: anything a relay delivered during the load is newer.
+                _profiles.value = loaded + _profiles.value
+                _relayLists.value = relays + _relayLists.value
+                _outboxRelays.value = outbox + _outboxRelays.value
+                _dmRelayLists.value = dmRelays + _dmRelayLists.value
+                _serverLists.value = servers + _serverLists.value
             }
         }
     }
@@ -577,13 +574,13 @@ class NostrService @Inject constructor(
      */
     private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
         val key = "$kind:$pubkey"
+        val id = (eventObj["id"] as? JsonPrimitive)?.contentOrNull ?: return false
         // A profile saved on disk counts as seen, so after a restart an older
         // signed kind-0 cannot replace a newer one.
-        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
-        if (seen != null && createdAt < seen) return false
+        val diskProfile = if (kind == 0) _profiles.value[pubkey]?.createdAt else null
+        if (!replaceableNewest.mayReplace(key, createdAt, id, diskProfile)) return false
         if (!HavenBridge.verifyEvent(eventObj.toString())) return false
-        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
-        return createdAt >= (replaceableNewest[key] ?: createdAt)
+        return replaceableNewest.record(key, createdAt, id, diskProfile)
     }
 
     private fun handleEOSE(subId: String, relayUrl: String) {
@@ -1019,9 +1016,8 @@ class NostrService @Inject constructor(
             profileRepository.saveOutboxRelays(_outboxRelays.value)
             profileRepository.saveDMRelayLists(_dmRelayLists.value)
             profileRepository.saveServerLists(_serverLists.value)
-            profileRepository.saveListStamps(
-                replaceableNewest.filterKeys { it.substringBefore(':').toIntOrNull() in PERSISTED_LIST_KINDS }
-            )
+            replaceableNewest.snapshot { it.substringBefore(':').toIntOrNull() in PERSISTED_LIST_KINDS }
+                ?.let { profileRepository.saveListStamps(it) }
         }
     }
 

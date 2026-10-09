@@ -45,8 +45,9 @@ object ProfileRepository {
 
     fun loadServerLists(): Map<String, List<String>> = serverListsFile?.let { loadStringListMap(it) } ?: emptyMap()
 
-    /** created_at of the newest accepted list event, keyed "kind:pubkey". */
-    fun loadListStamps(): Map<String, Long> = listStampsFile?.let { loadMap(it) } ?: emptyMap()
+    /** created_at of the newest accepted list event, keyed "kind:pubkey";
+     *  null until [init] has set up storage. */
+    fun loadListStampsIfReady(): Map<String, Long>? = listStampsFile?.let { loadMap(it) }
 
     // ---- Save to disk (background) ----
 
