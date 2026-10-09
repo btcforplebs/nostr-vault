@@ -1723,6 +1723,37 @@ class NostrService @Inject constructor(
         signAndPost(kind = 5, content = "", tags = tags)
     }
 
+    /** Your own loaded posts that link the blob [referencingBlob]; see [BlobPostDeletion.referencing]. */
+    fun ownEvents(referencingBlob: String): List<NostrEvent> =
+        BlobPostDeletion.referencing(events, activeHexPubkey, referencingBlob)
+
+    /**
+     * Asks relays to delete your posts that link the blob [referencingBlob]
+     * (one NIP-09 request naming them all), and drops them and their media
+     * here so the feed and Media tab stop showing a file that is gone.
+     * @return how many posts the request named, 0 if signing failed.
+     */
+    suspend fun deleteOwnEvents(referencingBlob: String): Int {
+        val targets = ownEvents(referencingBlob)
+        if (targets.isEmpty()) return 0
+        val signed = try {
+            signEventAsync(kind = 5, content = "", tags = BlobPostDeletion.deletionTags(targets))
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteOwnEvents: not signed: ${e.message}")
+            null
+        } ?: return 0
+        postEvent(signed)
+        val ids = targets.mapTo(HashSet()) { it.id }
+        val hash = referencingBlob.lowercase()
+        val owner = activeHexPubkey
+        withContext(Dispatchers.Main) {
+            events = events.filterNot { it.id in ids }
+            noteMedia = noteMedia.filterNot { it.pubkey == owner && it.url.lowercase().contains(hash) }
+            _eventUpdates.tryEmit(Unit)
+        }
+        return targets.size
+    }
+
     fun reportEvent(eventId: String, pubkey: String, reason: String, description: String? = null) {
         val tags = mutableListOf(
             listOf("e", eventId),

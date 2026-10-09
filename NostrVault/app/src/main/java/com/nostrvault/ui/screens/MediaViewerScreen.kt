@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaSaveService
+import com.nostrvault.service.NostrService
 import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
@@ -68,6 +69,7 @@ class MediaViewerViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     private val blossomService: BlossomService,
     private val configStore: ConfigStore,
+    private val nostrService: NostrService,
 ) : ViewModel() {
 
     private val _mirrorStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
@@ -172,18 +174,29 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    /** How many of your loaded posts link [sha256]; Delete everywhere offers to delete them too. */
+    fun postsUsing(sha256: String): Int =
+        if (sha256.isEmpty()) 0 else nostrService.ownEvents(referencingBlob = sha256).size
+
     /**
      * Delete everywhere (local + mirrors) and report each place. [onDone] gets
      * true only when nothing is left anywhere, so the viewer can close; on a
-     * partial delete it stays open with the places named.
+     * partial delete it stays open with the places named. With [deletePosts],
+     * first ask relays to delete your posts that link it (iOS "Delete file and post").
      */
-    fun deleteEverywhere(item: BlossomMediaItem, sticky: Boolean = false, onDone: (allGone: Boolean) -> Unit) {
+    fun deleteEverywhere(
+        item: BlossomMediaItem,
+        sticky: Boolean = false,
+        deletePosts: Boolean = false,
+        onDone: (allGone: Boolean) -> Unit,
+    ) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
             return
         }
         _deleteLeftover.value = null
         viewModelScope.launch {
+            if (deletePosts) nostrService.deleteOwnEvents(referencingBlob = item.sha256)
             val (localOk, report) = withContext(Dispatchers.IO) {
                 val local = async { blossomService.deleteFromLocal(item.sha256) }
                 val mirrors = async { blossomService.deleteFromMirrors(item.sha256) }
@@ -556,17 +569,23 @@ fun MediaViewerScreen(
                 pendingDelete = null
                 return@let
             }
+            val postCount = remember(scope, currentItem.sha256) {
+                if (scope == DeleteScope.EVERYWHERE) viewModel.postsUsing(currentItem.sha256) else 0
+            }
+            fun confirm(deletePosts: Boolean) {
+                when (scope) {
+                    DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem, sticky = true)
+                    DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem, sticky = true, deletePosts = deletePosts) { allGone ->
+                        if (allGone) onBack()
+                    }
+                }
+                pendingDelete = null
+            }
             DeleteBlobConfirmDialog(
                 scope = scope,
-                onConfirm = {
-                    when (scope) {
-                        DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem, sticky = true)
-                        DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem, sticky = true) { allGone ->
-                            if (allGone) onBack()
-                        }
-                    }
-                    pendingDelete = null
-                },
+                postCount = postCount,
+                onConfirm = { confirm(deletePosts = false) },
+                onConfirmWithPosts = { confirm(deletePosts = true) },
                 onDismiss = { pendingDelete = null },
             )
         }
@@ -602,12 +621,19 @@ private fun DeleteLeftoverBanner(message: String, onDismiss: () -> Unit, modifie
     }
 }
 
-/** Confirmation for a destructive blob delete; shared by the viewer and the Media tab's long-press menu. */
+/**
+ * Confirmation for a destructive blob delete; shared by the viewer and the Media tab's long-press menu.
+ * When [postCount] of your posts use the blob, Delete everywhere also offers [onConfirmWithPosts]
+ * ("Delete file and post"), so no post is left showing a dead image. Wording matches iOS
+ * `confirmMediaDelete` (DestructiveConfirmation.swift).
+ */
 @Composable
 internal fun DeleteBlobConfirmDialog(
     scope: DeleteScope,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    postCount: Int = 0,
+    onConfirmWithPosts: (() -> Unit)? = null,
 ) {
     val title: String
     val body: String
@@ -624,13 +650,26 @@ internal fun DeleteBlobConfirmDialog(
             confirmLabel = "Delete everywhere"
         }
     }
+    val offerPosts = scope == DeleteScope.EVERYWHERE && postCount > 0 && onConfirmWithPosts != null
+    val message = if (offerPosts) body + deleteBlobPostsNote(postCount) else body
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(body) },
+        text = { Text(message) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(confirmLabel, color = Color(0xFFE53935))
+            if (offerPosts && onConfirmWithPosts != null) {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = onConfirmWithPosts) {
+                        Text(deleteBlobWithPostsLabel(postCount), color = Color(0xFFE53935))
+                    }
+                    TextButton(onClick = onConfirm) {
+                        Text("Delete file only", color = Color(0xFFE53935))
+                    }
+                }
+            } else {
+                TextButton(onClick = onConfirm) {
+                    Text(confirmLabel, color = Color(0xFFE53935))
+                }
             }
         },
         dismissButton = {
@@ -638,6 +677,18 @@ internal fun DeleteBlobConfirmDialog(
         },
     )
 }
+
+/** iOS: "Delete file and post" / "Delete file and N posts". */
+internal fun deleteBlobWithPostsLabel(postCount: Int): String =
+    if (postCount == 1) "Delete file and post" else "Delete file and $postCount posts"
+
+/** Appended to the Delete everywhere message when your posts use the blob (iOS wording). */
+internal fun deleteBlobPostsNote(postCount: Int): String =
+    if (postCount == 1) {
+        " One of your posts uses it and will show a broken image unless you delete that post too."
+    } else {
+        " $postCount of your posts use it and will show a broken image unless you delete them too."
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

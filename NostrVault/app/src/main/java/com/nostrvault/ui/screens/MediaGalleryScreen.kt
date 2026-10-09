@@ -999,15 +999,21 @@ fun MediaGalleryScreen(
     }
 
     pendingDelete?.let { (item, scope) ->
+        val postCount = remember(item.sha256, scope) {
+            if (scope == DeleteScope.EVERYWHERE) mediaActions.postsUsing(item.sha256) else 0
+        }
+        fun confirm(deletePosts: Boolean) {
+            pendingDelete = null
+            when (scope) {
+                DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item) { viewModel.refresh() }
+                DeleteScope.EVERYWHERE -> mediaActions.deleteEverywhere(item, deletePosts = deletePosts) { viewModel.refresh() }
+            }
+        }
         DeleteBlobConfirmDialog(
             scope = scope,
-            onConfirm = {
-                pendingDelete = null
-                when (scope) {
-                    DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item) { viewModel.refresh() }
-                    DeleteScope.EVERYWHERE -> mediaActions.deleteEverywhere(item) { viewModel.refresh() }
-                }
-            },
+            postCount = postCount,
+            onConfirm = { confirm(deletePosts = false) },
+            onConfirmWithPosts = { confirm(deletePosts = true) },
             onDismiss = { pendingDelete = null },
         )
     }
