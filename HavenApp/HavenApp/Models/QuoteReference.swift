@@ -149,7 +149,19 @@ enum QuoteReference {
         func matches(id: String, kind: Int, pubkey: String, tags: [[String]]) -> Bool {
             guard let wanted = wanted else { return id == identifier }
             return kind == wanted.kind && pubkey == wanted.pubkey
-                && tags.contains { $0.count >= 2 && $0[0] == "d" && $0[1] == wanted.dTag }
+                && tags.contains { $0.count >= 2 && $0[0] == "d" && sameDTag($0[1], wanted.dTag) }
+        }
+
+        /// `d` tags match byte for byte, not by Unicode equivalence.
+        ///
+        /// Swift's `==` on String is canonical equivalence, so "\u{00E9}sa" and
+        /// "e\u{0301}sa" compare equal while their UTF-8 differs. Relays match
+        /// tags byte-exactly, so a reference that `==` accepts here is one the
+        /// relay would never have answered — and the two are different events.
+        /// Only the `d` tag needs this; ids, pubkeys and the literal "d" are hex
+        /// or ASCII, where equivalence and bytes agree.
+        private func sameDTag(_ a: String, _ b: String) -> Bool {
+            a.utf8.elementsEqual(b.utf8)
         }
     }
 
