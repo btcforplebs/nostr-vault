@@ -107,7 +107,9 @@ class BlossomService @Inject constructor(
     }
 
     init {
-        homeVault.hostPublicly = { sha256, contentType -> hostLocalBlob(sha256, contentType) != null }
+        homeVault.hostPublicly = { sha256, contentType, server, auth ->
+            hostLocalBlob(sha256, contentType, servers = listOf(server), authHeader = auth) == "$server/$sha256"
+        }
     }
 
     /**
@@ -124,7 +126,8 @@ class BlossomService @Inject constructor(
             com.nostrvault.relay.isPrivateNetworkURL(it)
         } ?: return null
         if (!homeVault.ensureOnVault(sha256)) return null
-        homeVault.needsPublicCopy(sha256, contentType)
+        // No queued copy (queue full), no URL: the post waits instead.
+        if (!homeVault.needsPublicCopy(sha256, contentType, server)) return null
         Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
         return PostUploadOutcome.Hosted("$server/$sha256")
     }
@@ -320,8 +323,15 @@ class BlossomService @Inject constructor(
      * `MediaPostQueue` calls when it retries a waiting post. One pass only —
      * the queue itself is the retry.
      */
-    suspend fun hostLocalBlob(sha256: String, contentType: String): String? = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
+    suspend fun hostLocalBlob(
+        sha256: String,
+        contentType: String,
+        /** Only these servers (the home vault's public copy names one); default all mirrors. */
+        servers: List<String>? = null,
+        /** A caller-signed auth (the owner's, for the home vault); default signed here. */
+        authHeader: String? = null,
+    ): String? = withContext(Dispatchers.IO) {
+        val mirrors = servers ?: configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) {
             Log.w(TAG, "waiting post: no outside Blossom server configured — holding ${sha256.take(8)}")
             return@withContext null
@@ -347,12 +357,12 @@ class BlossomService @Inject constructor(
                 return@withContext null
             }
 
-            val authHeader = createAuthHeader("upload", sha256)
-            if (authHeader.isEmpty()) {
+            val auth = authHeader ?: createAuthHeader("upload", sha256)
+            if (auth.isEmpty()) {
                 Log.e(TAG, "waiting post: could not sign Blossom auth for ${sha256.take(8)} — will retry")
                 return@withContext null
             }
-            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, authHeader)
+            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, auth)
             if (hosted != null) {
                 Log.i(TAG, "waiting post: ${sha256.take(8)} now hosted at $hosted")
             } else {

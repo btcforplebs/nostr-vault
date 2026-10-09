@@ -122,10 +122,12 @@ class HomeVaultQueueTest {
     @Test
     fun `a pending public copy survives a restart and carries no bytes`() {
         val dir = tmp.newFolder()
-        assertTrue(HomeVaultQueue(dir).addPublicCopy(sha, "video/mp4"))
+        assertTrue(HomeVaultQueue(dir).addPublicCopy(sha, "video/mp4", "https://blossom.example"))
         val item = HomeVaultQueue(dir).items().single()
         assertEquals(HomeVaultQueue.TYPE_PUBLIC_COPY, item.type)
         assertEquals("video/mp4", item.contentType)
+        // The server the note names travels with it: only that one counts.
+        assertEquals("https://blossom.example", item.server)
         assertFalse(HomeVaultQueue(dir).blobFile(sha).exists())
     }
 
@@ -210,5 +212,35 @@ class HomeVaultQueueTest {
         assertFalse(q.addBlob(sha, "video/mp4", 11) { copied = true; it.writeText("x") })
         assertFalse(copied)
         assertEquals(0, q.size)
+    }
+
+    private fun item(key: String, type: String = HomeVaultQueue.TYPE_BLOB, nextAt: Long = 0) =
+        HomeVaultQueue.Item(key = key, type = type, nextAt = nextAt)
+
+    @Test
+    fun `send now prompts an external signer at most the cap per tap`() {
+        val items = (1..25).map { item("b$it") } + item("e1", HomeVaultQueue.TYPE_EVENT)
+        val sel = HomeVaultRules.select(
+            items, now = 0, userInitiated = true, localSigner = false,
+            needsSignature = { it.type == HomeVaultQueue.TYPE_BLOB },
+        )
+        assertEquals(HomeVaultRules.PROMPTS_PER_TAP, sel.toTry.count { it.type == HomeVaultQueue.TYPE_BLOB })
+        assertEquals(listOf("b1", "b2"), sel.toTry.take(2).map { it.key })
+        // Already-signed events need no prompt and are never held back.
+        assertTrue(sel.toTry.any { it.key == "e1" })
+        assertTrue(sel.heldForSigner)
+    }
+
+    @Test
+    fun `a background pass never prompts and respects backoff`() {
+        val items = listOf(item("b1"), item("e1", HomeVaultQueue.TYPE_EVENT), item("e2", HomeVaultQueue.TYPE_EVENT, nextAt = 100))
+        val external = HomeVaultRules.select(items, 50, false, false, { it.type == HomeVaultQueue.TYPE_BLOB })
+        assertEquals(listOf("e1"), external.toTry.map { it.key })
+        assertTrue(external.heldForSigner)
+        val local = HomeVaultRules.select(items, 50, false, true, { it.type == HomeVaultQueue.TYPE_BLOB })
+        assertEquals(listOf("b1", "e1"), local.toTry.map { it.key })
+        assertFalse(local.heldForSigner)
+        // Send now ignores backoff.
+        assertEquals(3, HomeVaultRules.select(items, 50, true, true, { false }).toTry.size)
     }
 }

@@ -34,6 +34,8 @@ class HomeVaultQueue(
         val attempts: Int = 0,
         /** Not tried again before this time (backoff). */
         val nextAt: Long = 0,
+        /** For [TYPE_PUBLIC_COPY]: the server the published note names. Only it counts. */
+        val server: String? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -93,8 +95,8 @@ class HomeVaultQueue(
      * Remember that [sha256] still has to reach a public server. No bytes:
      * it is pushed from this phone's own relay.
      */
-    fun addPublicCopy(sha256: String, contentType: String, now: Long = System.currentTimeMillis()): Boolean =
-        add(Item(key = sha256, type = TYPE_PUBLIC_COPY, contentType = contentType, queuedAt = now))
+    fun addPublicCopy(sha256: String, contentType: String, server: String, now: Long = System.currentTimeMillis()): Boolean =
+        add(Item(key = sha256, type = TYPE_PUBLIC_COPY, contentType = contentType, server = server, queuedAt = now))
 
     fun blobFile(sha256: String): File = File(blobDir, sha256)
 
@@ -231,6 +233,40 @@ object HomeVaultRules {
 
     /** External-signer prompts one Send now may cause. */
     const val PROMPTS_PER_TAP = 10
+
+    /** What one pass tries, and whether anything was held back for the signer. */
+    data class Selection(val toTry: List<HomeVaultQueue.Item>, val heldForSigner: Boolean)
+
+    /**
+     * The items a pass tries, oldest first. A background pass takes only
+     * what is due and nothing that needs a signature from a signer that is
+     * not a local key (each would be a prompt). Send now ([userInitiated])
+     * ignores backoff and may prompt, at most [promptCap] times.
+     */
+    fun select(
+        items: List<HomeVaultQueue.Item>,
+        now: Long,
+        userInitiated: Boolean,
+        localSigner: Boolean,
+        needsSignature: (HomeVaultQueue.Item) -> Boolean,
+        promptCap: Int = PROMPTS_PER_TAP,
+    ): Selection {
+        val toTry = mutableListOf<HomeVaultQueue.Item>()
+        var prompts = 0
+        var held = false
+        for (item in items) {
+            if (!userInitiated && item.nextAt > now) continue
+            if (!localSigner && needsSignature(item)) {
+                if (!userInitiated || prompts >= promptCap) {
+                    held = true
+                    continue
+                }
+                prompts++
+            }
+            toTry += item
+        }
+        return Selection(toTry, held)
+    }
 
     const val MAX_AGE_MS = 14L * 24 * 60 * 60_000L
     const val MAX_ATTEMPTS = 40
