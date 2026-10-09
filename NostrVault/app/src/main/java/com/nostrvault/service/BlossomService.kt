@@ -36,6 +36,7 @@ class BlossomService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val mediaCacheService: MediaCacheService,
+    private val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         private const val TAG = "BlossomService"
@@ -220,6 +221,11 @@ class BlossomService @Inject constructor(
             else -> saveToLocalRelay((source as UploadSource.FileSource).file, sha256, contentType, authHeader)
         }
         if (!localOk) Log.w(TAG, "Local relay upload failed for ${sha256.take(8)} — continuing with mirrors")
+        // The owner's home vault on the mesh gets a copy too; it queues while unreachable.
+        when (source) {
+            is UploadSource.Data -> homeVault.offerBlob(sha256, contentType, source.data)
+            is UploadSource.FileSource -> homeVault.offerBlob(sha256, contentType, source.file)
+        }
         val savedLocalUrl = if (localOk && localUrl != null) "$localUrl/$sha256" else null
 
         // What to report when no outside server hosted it: a post may only wait

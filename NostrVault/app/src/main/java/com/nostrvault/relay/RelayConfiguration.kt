@@ -423,6 +423,10 @@ data class HavenConfig(
     // Npubs allowed to reach this device over the mesh. Nobody else can.
     val fipsPeers: List<String> = emptyList(),
 
+    // The owner's other device (a kiosk phone) that also gets their posts and
+    // media over the mesh: its mesh npub, from their 10063. Null for none.
+    val homeVaultNpub: String? = null,
+
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
     /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */

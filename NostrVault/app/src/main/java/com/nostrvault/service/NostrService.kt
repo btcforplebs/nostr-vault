@@ -50,6 +50,7 @@ class NostrService @Inject constructor(
     private val amberSignerService: AmberSignerService,
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
     private val lookupPool: LookupSocketPool,
+    private val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
@@ -279,6 +280,10 @@ class NostrService @Inject constructor(
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
         FipsMediaRouter.requestServerList = { fetchServerList(it) }
+        homeVault.ownerHex = { ownerHexPubkey }
+        homeVault.signer = { kind, content, tags ->
+            signEventAsync(kind = kind, content = content, tags = tags, forceOwner = true)?.let { serializeEvent(it) }
+        }
     }
 
     fun initialize() {
@@ -1370,6 +1375,10 @@ class NostrService @Inject constructor(
      */
     fun postEvent(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
+
+        // 0. The owner's home vault on the mesh, which passes it on to the
+        //    regular relays too. Queued while it is out of reach.
+        homeVault.offerEvent(event.id, event.pubkey, eventJson)
 
         // 1. Post to local relay
         scope.launch(Dispatchers.IO) {
