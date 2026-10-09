@@ -1994,6 +1994,45 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// Posts a blob delete may offer to take down too: notes, picture and
+    /// video posts, file metadata and comments. Never a profile (kind 0,
+    /// whose picture may be this file), a list, a DM or an article.
+    private static let blobPostKinds: Set<Int> = [1, 20, 21, 22, 1063, 1111]
+
+    /// Your own loaded posts that link the blob `sha256`, in their text or
+    /// tags (imeta). These are the posts whose media the Media tab shows.
+    func ownEvents(referencingBlob sha256: String) -> [NostrEvent] {
+        let owner = activeHexPubkey
+        let hash = sha256.lowercased()
+        guard !owner.isEmpty, hash.count == 64 else { return [] }
+        return events.filter { event in
+            event.pubkey == owner && Self.blobPostKinds.contains(event.kind) && (
+                event.content.lowercased().contains(hash)
+                || event.tags.contains { $0.contains { $0.lowercased().contains(hash) } }
+            )
+        }
+    }
+
+    /// Asks relays to delete your posts that link `sha256` (one NIP-09
+    /// request naming them all), and drops them and their media here so the
+    /// Media tab stops showing a tile for a file that is gone.
+    /// - Returns: how many posts the request named, 0 if signing failed.
+    @discardableResult
+    func deleteOwnEvents(referencingBlob sha256: String) async -> Int {
+        let targets = ownEvents(referencingBlob: sha256)
+        guard !targets.isEmpty else { return 0 }
+        var tags = targets.map { ["e", $0.id] }
+        for kind in Set(targets.map(\.kind)).sorted() { tags.append(["k", String(kind)]) }
+        guard let signed = await signEventAsync(kind: 5, content: "", tags: tags) else { return 0 }
+        postEvent(signed)
+        let ids = Set(targets.map(\.id))
+        let hash = sha256.lowercased()
+        events.removeAll { ids.contains($0.id) }
+        noteMedia.removeAll { $0.pubkey == activeHexPubkey && $0.url.absoluteString.lowercased().contains(hash) }
+        eventUpdateSubject.send()
+        return targets.count
+    }
+
     // Per-relay reconnection state to implement exponential backoff
     private var relayReconnectAttempts: [String: Int] = [:]
     private var relayLastReconnectTime: [String: Date] = [:]

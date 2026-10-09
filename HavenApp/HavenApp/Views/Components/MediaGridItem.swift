@@ -170,7 +170,7 @@ struct MediaGridItem: View {
                 }
             }
         }
-        .confirmMediaDelete($pendingDelete) { scope in
+        .confirmMediaDelete($pendingDelete, hash: hash) { scope in
             switch scope {
             case .mirrors: onDeleteFromMirrors?(item)
             case .everywhere: onDeleteEverywhere?(item)

@@ -278,7 +278,7 @@ extension MediaGalleryView {
                     .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
             }
         }
-        .confirmMediaDelete($pendingViewerDelete) { scope in
+        .confirmMediaDelete($pendingViewerDelete, hash: extractViewerSHA256(from: item.url)) { scope in
             switch scope {
             case .mirrors: deleteMediaFromMirrors(item: item)
             case .everywhere: deleteMediaEverywhere(item: item)

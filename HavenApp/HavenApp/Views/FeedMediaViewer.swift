@@ -350,7 +350,7 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
-        .confirmMediaDelete($pendingDelete) { scope in
+        .confirmMediaDelete($pendingDelete, hash: extractSHA256FromURL()) { scope in
             switch scope {
             case .mirrors: deleteFromMirrorsTapped()
             case .everywhere: deleteEverywhereTapped()
