@@ -507,8 +507,8 @@ func TestMeshUploadAuthBinding(t *testing.T) {
 	if code := put(once, a); code != http.StatusOK {
 		t.Fatalf("first use (control): %d, want 200", code)
 	}
-	if code := put(once, a); code != http.StatusForbidden {
-		t.Errorf("same auth again: %d, want 403", code)
+	if code := put(once, a); code != http.StatusConflict {
+		t.Errorf("same auth again: %d, want 409 (retry with a new auth)", code)
 	}
 }
 
@@ -609,8 +609,8 @@ func TestMeshSlowUploadDropped(t *testing.T) {
 	if !strings.Contains(line, " 400 ") {
 		t.Fatalf("trickled upload: %q, want 400", line)
 	}
-	if code := meshPut(t, door, auth, body); code != http.StatusForbidden {
-		t.Fatalf("same token after a stalled try: %d, want 403", code)
+	if code := meshPut(t, door, auth, body); code != http.StatusConflict {
+		t.Fatalf("same token after a stalled try: %d, want 409", code)
 	}
 	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
 		t.Fatalf("fresh token (control): %d, want 200", code)

@@ -121,7 +121,9 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 			// Spend the auth on admission: an attempt that stalls or fails
 			// cannot be repeated with the same token (senders sign per try).
 			if !meshAuthUse(auth) {
-				http.Error(w, "authorization already used", http.StatusForbidden)
+				// 409, not 403: senders treat 403 as final, and a spent
+				// token only means "sign a new one and try again".
+				http.Error(w, "authorization already used", http.StatusConflict)
 				return
 			}
 			// Read the body here, so memory grows with bytes that actually
