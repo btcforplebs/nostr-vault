@@ -14,7 +14,8 @@ import java.util.concurrent.TimeUnit
  * Reads a blob over the FIPS mesh when the note's author has a vault on it,
  * else through the URL as usual (NIP-F1).
  *
- * Only requests tagged with [MeshAuthor] go to the mesh. The whole body is
+ * Only requests tagged with [MeshAuthor], for an author the owner follows,
+ * go to the mesh. The whole body is
  * read, capped at [MAX_BYTES], and hashed before any of it is used: the mesh
  * vault is trusted no more than any other server. The request keeps its
  * original URL, so caches key on that and a blob read once over the mesh is
@@ -26,6 +27,7 @@ class FipsMeshInterceptor : Interceptor {
         val request = chain.request()
         if (request.method != "GET") return chain.proceed(request)
         val author = request.tag(MeshAuthor::class.java)?.pubkey ?: return chain.proceed(request)
+        if (!FipsMediaRouter.mayDial(author)) return chain.proceed(request)
         val sha = FipsMediaRouter.sha256In(request.url.toString()) ?: return chain.proceed(request)
         val npub = FipsMediaRouter.meshNpubFor(author) ?: return chain.proceed(request)
         val base = FipsMediaRouter.ingressBase(npub) ?: return chain.proceed(request)

@@ -48,4 +48,17 @@ class FipsMeshReadTest {
             "https://$npub/",
         )) assertNull(bad, FipsMediaRouter.meshNpubIn(bad))
     }
+
+    @Test
+    fun onlyFollowedAuthorsAreDialled() {
+        val friend = "a".repeat(64)
+        val stranger = "b".repeat(64)
+        FipsMediaRouter.follows = setOf(friend)
+        try {
+            assertEquals(true, FipsMediaRouter.mayDial(friend))
+            assertEquals(false, FipsMediaRouter.mayDial(stranger))
+        } finally {
+            FipsMediaRouter.follows = emptySet()
+        }
+    }
 }
