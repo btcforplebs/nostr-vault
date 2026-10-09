@@ -110,7 +110,7 @@ object TutorialContent {
         ),
         TutorialStep(
             WOT_SEARCH, "Find someone",
-            "Type any name to see how that person reaches you, either through someone you follow or “Not in your web”. It's a quick way to know whether to trust an account.",
+            "Type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account.",
         ),
         TutorialStep(
             WOT_REFRESH, "Keep it fresh",

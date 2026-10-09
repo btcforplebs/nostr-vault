@@ -106,7 +106,7 @@ struct TrustWebView: View {
         GeometryReader { geo in
             if geo.size.width >= Self.wideWidth {
                 HStack(spacing: 0) {
-                    globeArea.tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
+                    globeArea.overlay { globeTutorialAnchor }
                         .overlay(alignment: .topLeading) {
                             topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
                         }
@@ -115,7 +115,7 @@ struct TrustWebView: View {
             } else {
                 VStack(spacing: 0) {
                     topRows.padding(.top, 8)
-                    globeArea.tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
+                    globeArea.overlay { globeTutorialAnchor }
                     footer
                 }
             }
@@ -201,6 +201,21 @@ struct TrustWebView: View {
     }
 
     // MARK: - Globe
+
+    /// The WOT tutorial's first card points at the middle of the globe, you
+    /// and the faces nearest you. The whole globe is nearly the screen's
+    /// height, which leaves the card no room above or below it.
+    private var globeTutorialAnchor: some View {
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height) * 0.6
+            Color.clear
+                .frame(width: side, height: side)
+                .tutorialAnchor(TutorialContent.wotGlobe, isActive: isWOTTab)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 
     private var globeArea: some View {
         ZStack(alignment: .bottomLeading) {

@@ -16,7 +16,8 @@ class TutorialWordingParityTest {
     @Test fun cardsMatchIos() {
         assertTrue("iOS file not found at ${swift.absolutePath}", swift.isFile)
         val step = Regex("""title:\s*"((?:[^"\\]|\\.)*)",\s*body:\s*"((?:[^"\\]|\\.)*)"""")
-        val ios = step.findAll(swift.readText()).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        val ios = step.findAll(swift.readText())
+            .map { it.groupValues[1] to it.groupValues[2].replace("\\\"", "\"") }.toList()
         // Same order as the Swift file.
         val android = (TutorialContent.feeds + TutorialContent.wot + TutorialContent.vault +
             TutorialContent.walletConnect + TutorialContent.pocketRelay + TutorialContent.importTour)

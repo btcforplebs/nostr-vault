@@ -159,7 +159,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: wotSearch,
             title: "Find someone",
-            body: "Type any name to see how that person reaches you, either through someone you follow or “Not in your web”. It's a quick way to know whether to trust an account."
+            body: "Type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account."
         ),
         TutorialStep(
             anchor: wotRefresh,

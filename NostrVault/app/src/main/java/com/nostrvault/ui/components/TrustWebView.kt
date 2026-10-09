@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -749,8 +750,7 @@ private fun TrustWebContent(
 
     @Composable
     fun globeArea(modifier: Modifier) {
-        val anchor = if (isWOTTab) Modifier.tutorialAnchor(TutorialContent.WOT_GLOBE) else Modifier
-        Box(modifier.clipToBounds().then(anchor)) {
+        Box(modifier.clipToBounds()) {
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
                 lite = lite,
@@ -795,6 +795,15 @@ private fun TrustWebContent(
                     ).joinToString(" · "),
                     onProfile = onProfileClick?.let { { openProfile(pubkey) } },
                     modifier = Modifier.align(Alignment.BottomStart),
+                )
+            }
+            // The WOT tutorial's first card points at the middle of the
+            // globe, you and the faces nearest you. The whole globe is nearly
+            // the screen's height, which leaves the card no room beside it.
+            if (isWOTTab) {
+                Box(
+                    Modifier.align(Alignment.Center).fillMaxSize(0.6f).aspectRatio(1f)
+                        .tutorialAnchor(TutorialContent.WOT_GLOBE),
                 )
             }
         }
