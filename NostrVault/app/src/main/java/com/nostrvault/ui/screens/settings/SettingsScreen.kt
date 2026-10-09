@@ -117,8 +117,8 @@ fun SettingsScreen(
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Media,
-                    title = "Blossom",
-                    subtitle = "Media upload and mirror configuration",
+                    title = "Media Servers",
+                    subtitle = "Blossom servers for uploads and mirrors",
                     onClick = { onNavigate(Screen.BlossomSettings) },
                 )
             }

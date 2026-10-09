@@ -1,6 +1,9 @@
 package com.nostrvault.ui.screens
 
+import android.Manifest
 import android.content.Context
+import android.os.Build
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -140,7 +143,7 @@ internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
     WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, RELAY_CHECK, IMPORT_TOUR,
-    ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
+    ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
@@ -352,7 +355,7 @@ class SetupWizardViewModel @Inject constructor(
     private val fullSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.RELAYS, WizardStep.IMPORT_NOTES, WizardStep.MIRROR_MEDIA,
-        WizardStep.WALLET, WizardStep.COMPLETE,
+        WizardStep.WALLET, WizardStep.NOTIFICATIONS, WizardStep.COMPLETE,
     )
 
     /** Steps for browse mode. */
@@ -1425,10 +1428,30 @@ class SetupWizardViewModel @Inject constructor(
     fun advanceFromWallet() {
         val nwc = _nwcInput.value.trim().ifEmpty { null }
         configStore.update { it.copy(nwcURI = nwc) }
-        _step.value = WizardStep.COMPLETE
+        _step.value = stepAfter(WizardStep.WALLET)
     }
 
-    fun skipWallet() { _step.value = WizardStep.COMPLETE }
+    fun skipWallet() { _step.value = stepAfter(WizardStep.WALLET) }
+
+    // ── Notifications ("Stay in the Loop", iOS PushNotificationStep) ──
+
+    /** [enable] is "Enable Notifications" (the caller has asked Android for
+     *  the permission); false is "Not now". Either way setup won't ask again. */
+    fun finishNotifications(enable: Boolean, dms: Boolean, zaps: Boolean, mentions: Boolean) {
+        configStore.update {
+            if (enable) {
+                it.copy(
+                    notificationPermissionAsked = true,
+                    pushNotifyDMs = dms,
+                    pushNotifyZaps = zaps,
+                    pushNotifyMentions = mentions,
+                )
+            } else {
+                it.copy(notificationPermissionAsked = true)
+            }
+        }
+        _step.value = stepAfter(WizardStep.NOTIFICATIONS)
+    }
 
     // ── Complete ─────────────────────────────────────────────────
 
@@ -1617,6 +1640,7 @@ fun SetupWizardScreen(
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)
                     WizardStep.MIRROR_MEDIA -> MirrorMediaStep(viewModel)
                     WizardStep.WALLET -> WalletSetupStep(viewModel)
+                    WizardStep.NOTIFICATIONS -> NotificationsStep(viewModel)
                     WizardStep.COMPLETE -> CompleteStep(
                         setupPath = setupPath,
                         readOnly = viewModel.setupModeNow() == "browse",
@@ -3240,6 +3264,91 @@ private fun WalletSetupStep(viewModel: SetupWizardViewModel) {
         } else {
             WizardSecondaryButton(text = "Skip", onClick = viewModel::skipWallet)
         }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Step 7b: Stay in the Loop (iOS PushNotificationStep)
+// ══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun NotificationsStep(viewModel: SetupWizardViewModel) {
+    var dms by rememberSaveable { mutableStateOf(true) }
+    var zaps by rememberSaveable { mutableStateOf(true) }
+    var mentions by rememberSaveable { mutableStateOf(true) }
+    // Android 13+ asks for POST_NOTIFICATIONS here, instead of at launch.
+    // Whatever the answer, setup moves on; Settings → Notifications can
+    // change it later.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { viewModel.finishNotifications(enable = true, dms = dms, zaps = zaps, mentions = mentions) }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = NostrVaultIcons.Notifications,
+            contentDescription = null,
+            tint = WizardAccent,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = "Stay in the Loop",
+            color = PrimaryText,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Get notified about DMs, zaps, and mentions.",
+            color = SecondaryText,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        WizardCard {
+            NotificationToggleRow(NostrVaultIcons.DMs, "Direct Messages", dms) { dms = it }
+            HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f))
+            NotificationToggleRow(NostrVaultIcons.Zap, "Zaps", zaps) { zaps = it }
+            HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f))
+            NotificationToggleRow(NostrVaultIcons.At, "Mentions", mentions) { mentions = it }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        WizardPrimaryButton(text = "Enable Notifications", onClick = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                viewModel.finishNotifications(enable = true, dms = dms, zaps = zaps, mentions = mentions)
+            }
+        })
+        Spacer(Modifier.height(8.dp))
+        WizardSecondaryButton(text = "Not now", onClick = {
+            viewModel.finishNotifications(enable = false, dms = dms, zaps = zaps, mentions = mentions)
+        })
+    }
+}
+
+@Composable
+private fun NotificationToggleRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

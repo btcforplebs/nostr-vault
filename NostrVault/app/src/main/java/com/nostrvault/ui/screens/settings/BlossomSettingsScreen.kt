@@ -140,7 +140,7 @@ fun BlossomSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Blossom Servers") },
+                title = { Text("Media Servers") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")

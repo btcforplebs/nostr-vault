@@ -23,7 +23,10 @@ import com.nostrvault.ui.theme.*
  * It used to be a screen of its own, opened from the Media tab.
  */
 @Composable
-internal fun BlossomDashboardSections(viewModel: BlossomDashboardViewModel = hiltViewModel()) {
+internal fun BlossomDashboardSections(
+    onOpenSettings: () -> Unit,
+    viewModel: BlossomDashboardViewModel = hiltViewModel(),
+) {
     LaunchedEffect(viewModel) { viewModel.reloadIfStale() }
     val colors = LocalNostrVaultColors.current
     Column {
@@ -32,6 +35,10 @@ internal fun BlossomDashboardSections(viewModel: BlossomDashboardViewModel = hil
             Spacer(Modifier.width(8.dp))
             Text("Blossom", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
+            // iOS embeddedBody's gearshape: opens the Media Servers settings.
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+                Icon(NostrVaultIcons.Settings, "Blossom settings", tint = SecondaryText, modifier = Modifier.size(18.dp))
+            }
             IconButton(onClick = viewModel::loadDashboard, modifier = Modifier.size(32.dp)) {
                 Icon(NostrVaultIcons.Refresh, "Refresh Blossom", tint = SecondaryText, modifier = Modifier.size(18.dp))
             }
@@ -202,6 +209,33 @@ private fun ColumnScope.BlossomDashboardBody(viewModel: BlossomDashboardViewMode
 
             Spacer(Modifier.height(24.dp))
 
+            // ── Storage overview (iOS StorageBreakdownSection) ───
+
+            Text(
+                text = "Storage Overview",
+                color = PrimaryText,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            Surface(
+                color = SecondaryGroupedBg,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    BlossomStorageRow("Total Files", "$totalFiles", NostrVaultIcons.Document, InfoBlue)
+                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f))
+                    BlossomStorageRow("Total Size", formatSize(totalSize), NostrVaultIcons.Storage, colors.primary)
+                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f))
+                    BlossomStorageRow("Backed Up", "$backedUpCount ($backupPercentage%)", NostrVaultIcons.Verified, SuccessGreen)
+                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f))
+                    BlossomStorageRow("Needs Backup", "$needsBackupCount", NostrVaultIcons.Alert, ZapOrange)
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
             // ── Activity log ─────────────────────────────────────
 
             Text(
@@ -215,6 +249,24 @@ private fun ColumnScope.BlossomDashboardBody(viewModel: BlossomDashboardViewMode
             BlossomActivityLogView(logs = activityLogs)
 }
 
+
+@Composable
+private fun BlossomStorageRow(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(value, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
 
 @Composable
 private fun BlossomStatCard(

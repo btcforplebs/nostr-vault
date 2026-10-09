@@ -91,12 +91,12 @@ class MainActivity : FragmentActivity() {
 
         enableEdgeToEdge()
 
+        // Load persisted config so hasCompletedSetup reflects saved state
+        configStore.reload()
+
         // Ask for notification permission (Android 13+) so local notifications for
         // inbound mentions/DMs/zaps can be shown. No-op on older versions.
         requestNotificationPermissionIfNeeded()
-
-        // Load persisted config so hasCompletedSetup reflects saved state
-        configStore.reload()
 
         // Posts waiting for an outside media server: watch the network and
         // retry every minute while any wait. Started right after the config
@@ -269,14 +269,22 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** Request POST_NOTIFICATIONS on Android 13+ if not already granted. */
+    /**
+     * Request POST_NOTIFICATIONS on Android 13+ if not already granted. A new
+     * install is asked by setup's "Stay in the Loop" step, not over the first
+     * screen (iOS asks the same way). Setup paths without that step, and
+     * installs from before it, are asked once at the next launch.
+     */
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val config = configStore.config.value
+        if (!config.hasCompletedSetup || config.notificationPermissionAsked) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
+        configStore.update { it.copy(notificationPermissionAsked = true) }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
