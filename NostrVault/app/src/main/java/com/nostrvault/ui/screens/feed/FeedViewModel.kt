@@ -22,7 +22,6 @@ import com.nostrvault.service.LiveFeedService
 import com.nostrvault.service.MarketplaceFeedService
 import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.service.FeedService
-import com.nostrvault.service.FeedRelayHealth
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.service.ZapSendService
@@ -154,21 +153,6 @@ class FeedViewModel @Inject constructor(
     val zappedEventIds: StateFlow<Map<String, Int>> = feedService.zappedEventIds
     val repostedEventIds: StateFlow<Set<String>> = feedService.repostedEventIds
     val connectionStatus: StateFlow<String> = feedService.connectionStatus
-    /**
-     * The feed button's dot: once notes show, each configured feed relay's own
-     * state (green all up, yellow some down, red none), not just "notes
-     * arrived" (iOS #281). See [FeedRelayHealth.dotColor].
-     */
-    val connectionColor: StateFlow<String> = combine(
-        feedService.connectionColor,
-        feedService.filteredNotes.map { it.isNotEmpty() }.distinctUntilChanged(),
-        feedService.relayStates,
-        configStore.config.map { it.activeFeedRelays }.distinctUntilChanged(),
-    ) { base, hasNotes, states, relays ->
-        val (connected, total) = FeedRelayHealth.health(relays, states)
-        FeedRelayHealth.dotColor(base, hasNotes, connected, total)
-    }.distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.connectionColor.value)
 
     /// Discovery's empty state needs both of these to say *why* it is empty:
     /// still building, nobody followed, or relays that returned nothing.
