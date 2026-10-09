@@ -195,6 +195,7 @@ struct TrustWebView: View {
             guard isWOTTab else { return }
             peek = nil
             clearSearch()
+            searchOpen = false
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }

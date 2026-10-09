@@ -624,6 +624,7 @@ private fun TrustWebContent(
                 peek = null
                 showingList = false
                 clearSearch()
+                searchOpen = false
                 jump(0)
             }
         }
