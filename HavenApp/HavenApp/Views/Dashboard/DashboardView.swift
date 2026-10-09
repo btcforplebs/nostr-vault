@@ -667,17 +667,15 @@ struct DashboardView: View {
     }
 
     /// Drives the halo and the expanding ring. `Motion.ambientPulse` is `nil`
-    /// under Reduce Motion, and `withAnimation(nil)` still *applies* the value —
-    /// so the guard has to sit on the assignment, not just the animation, or the
-    /// halo is stranded mid-pulse forever.
+    /// under Reduce Motion, so the guard sits on the assignment too, or the
+    /// halo is stranded mid-pulse. The loop is attached to the indicator with
+    /// `.animation(_:value:)`, not `withAnimation`: this runs from `onAppear`
+    /// while the dashboard sheet is presenting, and a repeat-forever
+    /// transaction there also caught the sheet's Done button, which then
+    /// pulsed for as long as the sheet was open.
     private func syncStatusPulse() {
-        guard relayManager.isRunning || relayManager.isBooting,
-              let pulse = Motion.ambientPulse else {
-            statusAnimate = false
-            return
-        }
-        guard !statusAnimate else { return }
-        withAnimation(pulse) { statusAnimate = true }
+        statusAnimate = (relayManager.isRunning || relayManager.isBooting)
+            && Motion.ambientPulse != nil
     }
 
     private var statusIndicator: some View {
@@ -698,6 +696,7 @@ struct DashboardView: View {
                 .frame(width: 10, height: 10)
                 .shadow(color: statusColor.opacity(0.8), radius: 4)
         }
+        .animation(statusAnimate ? Motion.ambientPulse : Motion.fade, value: statusAnimate)
         .accessibilityHidden(true)
     }
 
