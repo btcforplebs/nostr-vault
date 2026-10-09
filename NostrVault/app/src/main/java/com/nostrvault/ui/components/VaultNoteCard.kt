@@ -514,7 +514,7 @@ private fun ExpandedLayout(
 
         // Media previews (iOS lines 314-330)
         if (note.mediaURLs.isNotEmpty()) {
-            MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
+            MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
         }
 
         // One card per link: the URLs are out of the text above (#170).

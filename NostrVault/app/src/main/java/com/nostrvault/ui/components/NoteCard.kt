@@ -59,6 +59,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.nostrvault.fips.meshAuthor
 import android.widget.Toast
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
@@ -600,6 +601,7 @@ fun NoteCard(
                     urls = note.mediaURLs,
                     tags = note.tags,
                     autoplayVideos = autoplayVideos,
+                    author = note.pubkey,
                 )
             }
 
@@ -1060,17 +1062,19 @@ fun MediaPreviewRow(
     tags: List<List<String>> = emptyList(),
     /** Play videos inline (muted, looping, one at a time) instead of a poster. */
     autoplayVideos: Boolean = false,
+    /** The note's author, whose vault may serve this media over the FIPS mesh. */
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Audio plays from its own card on the app-wide player; the rest open
     // the viewer. iOS: FeedAudioCard.
     val (audio, visual) = remember(urls) { urls.partition(::isAudioUrl) }
     if (audio.isEmpty()) {
-        VisualMediaPreview(visual, tags, autoplayVideos, modifier)
+        VisualMediaPreview(visual, tags, autoplayVideos, author, modifier)
         return
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos)
+        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos, author)
         audio.forEach { com.nostrvault.ui.screens.music.AudioFileCard(it) }
     }
 }
@@ -1080,6 +1084,7 @@ private fun VisualMediaPreview(
     urls: List<String>,
     tags: List<List<String>>,
     autoplay: Boolean,
+    author: String?,
     modifier: Modifier = Modifier,
 ) {
     // One id per row, so the viewer can find the photo it opened from.
@@ -1091,6 +1096,7 @@ private fun VisualMediaPreview(
             sourceKey = MediaSourceKey(origin, 0),
             onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
             autoplay = autoplay,
+            author = author,
             modifier = modifier,
         )
     } else {
@@ -1100,6 +1106,7 @@ private fun VisualMediaPreview(
             origin = origin,
             onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
             autoplay = autoplay,
+            author = author,
             modifier = modifier,
         )
     }
@@ -1635,6 +1642,7 @@ private fun SingleMediaPreview(
     sourceKey: MediaSourceKey,
     onMediaClick: (String) -> Unit,
     autoplay: Boolean = false,
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1645,6 +1653,7 @@ private fun SingleMediaPreview(
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
             .data(remember(url, tags) { feedImageModel(tags, url) })
+            .meshAuthor(author)
             .size(800)
             .crossfade(100)
             .build(),
@@ -1768,6 +1777,7 @@ private fun MediaCarousel(
     origin: Long,
     onMediaClick: (Int) -> Unit,
     autoplay: Boolean = false,
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1822,6 +1832,7 @@ private fun MediaCarousel(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(remember(url, tags) { feedImageModel(tags, url) })
+                        .meshAuthor(author)
                         .size(800)
                         .crossfade(100)
                         .build(),

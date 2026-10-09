@@ -31,6 +31,7 @@ object ProfileRepository {
     private val outboxRelaysFile: File? get() = dataDir?.let { File(it, "outbox_relays.json") }
     private val dmRelayListsFile: File? get() = dataDir?.let { File(it, "dm_relay_lists.json") }
     private val serverListsFile: File? get() = dataDir?.let { File(it, "server_lists.json") }
+    private val listStampsFile: File? get() = dataDir?.let { File(it, "list_created_at.json") }
 
     // ---- Load from disk ----
 
@@ -43,6 +44,9 @@ object ProfileRepository {
     fun loadDMRelayLists(): Map<String, List<String>> = dmRelayListsFile?.let { loadStringListMap(it) } ?: emptyMap()
 
     fun loadServerLists(): Map<String, List<String>> = serverListsFile?.let { loadStringListMap(it) } ?: emptyMap()
+
+    /** created_at of the newest accepted list event, keyed "kind:pubkey". */
+    fun loadListStamps(): Map<String, Long> = listStampsFile?.let { loadMap(it) } ?: emptyMap()
 
     // ---- Save to disk (background) ----
 
@@ -64,6 +68,10 @@ object ProfileRepository {
 
     suspend fun saveServerLists(lists: Map<String, List<String>>) = withContext(Dispatchers.IO) {
         saveToFile(serverListsFile ?: return@withContext, json.encodeToString(lists))
+    }
+
+    suspend fun saveListStamps(stamps: Map<String, Long>) = withContext(Dispatchers.IO) {
+        saveToFile(listStampsFile ?: return@withContext, json.encodeToString(stamps))
     }
 
     // ---- Event parsing (pure functions) ----

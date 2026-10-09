@@ -209,6 +209,10 @@ class FeedService @Inject constructor(
         scope.launch {
             _notes.drop(1).collect { snapshotDirty = true }
         }
+        // The mesh only dials people the owner follows (NIP-F1 reader rules).
+        scope.launch {
+            _followedPubkeys.collect { com.nostrvault.fips.FipsMediaRouter.follows = it.toSet() }
+        }
         // Which emoji went with each like, and which reactions were removed,
         // live only in the account's interaction-state file.
         scope.launch {

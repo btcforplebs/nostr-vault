@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,11 +37,64 @@ type relayCycle struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	server *http.Server // nil in import mode
-	// meshServer serves the same handler as plain HTTP on loopback while
-	// server speaks TLS (iOS). The FIPS mesh tunnel carries plain HTTP.
+	// meshServer is the loopback port the FIPS mesh tunnel forwards to:
+	// plain HTTP, blob GET/HEAD only (meshBlobHandler).
 	meshServer *http.Server
 	pool       *nostr.SimplePool
 	wg         sync.WaitGroup
+}
+
+// meshWanted is the host's last SetMeshServingC, kept across relay restarts.
+var meshWanted atomic.Bool
+
+// setMeshServing opens or closes the live cycle's mesh port. With no relay
+// running it only records the wish; the next start honours it.
+func setMeshServing(on bool) {
+	meshWanted.Store(on)
+	relayLC.mu.Lock()
+	defer relayLC.mu.Unlock()
+	c := relayLC.current.Load()
+	if c == nil {
+		return
+	}
+	if on {
+		c.startMeshServer()
+	} else {
+		c.stopMeshServer()
+	}
+}
+
+// startMeshServer listens on HAVEN_MESH_PLAIN_PORT (loopback, blob reads
+// only), the port the FIPS mesh tunnel forwards to. Caller holds relayLC.mu
+// or is inside startCycle's setup.
+func (c *relayCycle) startMeshServer() {
+	if c.meshServer != nil || c.server == nil {
+		return
+	}
+	port, err := strconv.Atoi(os.Getenv("HAVEN_MESH_PLAIN_PORT"))
+	if err != nil || port <= 0 {
+		log.Println("⚠️ mesh sharing asked for, but HAVEN_MESH_PLAIN_PORT is not set")
+		return
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(meshBlobHandler)}
+	c.meshServer = srv
+	c.spawn("mesh-http-server", func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("🚫 mesh HTTP server exited: %v", err)
+		}
+	})
+	log.Printf("🔗 mesh listening at http://%s", addr)
+}
+
+// stopMeshServer closes the mesh port, cutting reads in progress.
+func (c *relayCycle) stopMeshServer() {
+	if c.meshServer == nil {
+		return
+	}
+	c.meshServer.Close()
+	c.meshServer = nil
+	log.Println("🔗 mesh port closed")
 }
 
 // spawn runs fn on a goroutine registered with the cycle's WaitGroup and

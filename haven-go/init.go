@@ -799,6 +799,24 @@ func blossomContentType(hash string, ext string) string {
 	return ""
 }
 
+// meshBlobHandler is all a FIPS mesh peer gets: GET or HEAD of one blob.
+// Mesh connections arrive from 127.0.0.1, so the full mux would treat every
+// peer as the owner's own app (no auth on /feed, no connection limit, the
+// owner's rate bucket). NIP-F1: a mesh peer is an unknown remote client.
+func meshBlobHandler(w http.ResponseWriter, r *http.Request) {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead) ||
+		!blossomBlobPathRe.MatchString(r.URL.Path) {
+		http.NotFound(w, r)
+		return
+	}
+	// khatru picks websocket, NIP-11 and NIP-86 by header before looking at
+	// the path, so a blob path alone does not keep a peer off the relay.
+	r.Header.Del("Upgrade")
+	r.Header.Del("Accept")
+	r.Header.Del("Content-Type")
+	dynamicRelayHandler(w, r)
+}
+
 func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 	var relay *khatru.Relay
 	relayType := r.URL.Path
