@@ -2518,6 +2518,25 @@ class FeedService: ObservableObject {
         }
     }
 
+    /// The WOT tab's refresh: fetch your follow list again now. Returns once it
+    /// lands or times out; a fetch already running counts as this one.
+    func refreshContactList() async {
+        if isLoadingContacts {
+            for _ in 0..<64 where isLoadingContacts {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            return
+        }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            loadContactList {
+                guard !resumed else { return }
+                resumed = true
+                done.resume()
+            }
+        }
+    }
+
     private func startContactLoadingTimeout(completion: @escaping () -> Void) {
         // Safety timeout: if contact loading hasn't finished in 15 seconds, force completion
         contactLoadingTimeout?.invalidate()
