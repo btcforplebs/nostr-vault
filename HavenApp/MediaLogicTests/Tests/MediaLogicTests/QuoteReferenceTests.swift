@@ -147,6 +147,53 @@ final class QuoteReferenceTests: XCTestCase {
         }
     }
 
+    /// A `d` tag that begins with a byte-order mark keeps it.
+    ///
+    /// This is the bad-UTF-8 bug in valid-UTF-8 clothing, and it is why the check
+    /// is a byte round trip rather than a decode: `String(data:encoding: .utf8)`
+    /// silently drops a leading U+FEFF, so `EF BB BF 78` arrived as `"x"` and a
+    /// crafted naddr named the author's real `d = "x"` event. Found by Tim
+    /// reviewing #479.
+    func testLeadingByteOrderMarkIsKeptInTheDTag() {
+        let bytes = Data([0xEF, 0xBB, 0xBF]) + Data("x".utf8)
+        var payload = Data([0, UInt8(bytes.count)]) + bytes
+        payload += Data([2, 32]) + Data(repeating: 0x66, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: payload)?.dTag, "\u{FEFF}x")
+    }
+
+    /// Stated as the attack: the BOM payload must not come out as the coordinate
+    /// of the plain `d = "x"` event it was being mistaken for.
+    func testBOMDTagDoesNotBecomeThePlainDTagCoordinate() {
+        let pubkey = Data(repeating: 0x66, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        func payload(_ dTag: Data) -> Data {
+            Data([0, UInt8(dTag.count)]) + dTag + Data([2, 32]) + pubkey + kind
+        }
+        let crafted = payload(Data([0xEF, 0xBB, 0xBF]) + Data("x".utf8))
+        let plain = payload(Data("x".utf8))
+        XCTAssertNotNil(QuoteReference.coordinate(fromNaddrTLV: plain))
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: crafted),
+            QuoteReference.coordinate(fromNaddrTLV: plain)
+        )
+    }
+
+    /// A BOM on its own is a one-scalar `d` tag, not the empty one. Both of the
+    /// ways a `d` tag can collapse to "" are covered, so neither can come back.
+    func testBOMOnlyDTagIsNotTheEmptyDTag() {
+        let pubkey = Data(repeating: 0x66, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let bom = Data([0, 3]) + Data([0xEF, 0xBB, 0xBF]) + Data([2, 32]) + pubkey + kind
+        let empty = Data([0, 0]) + Data([2, 32]) + pubkey + kind
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: bom)?.dTag, "\u{FEFF}")
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: empty)?.dTag, "")
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: bom),
+            QuoteReference.coordinate(fromNaddrTLV: empty)
+        )
+    }
+
     /// Valid multi-byte UTF-8 is not collateral damage of the check above.
     func testMultiByteDTagSurvives() {
         let dTag = "träume-🐝"

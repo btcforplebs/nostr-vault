@@ -72,8 +72,18 @@ enum QuoteReference {
     /// to decode to nil and fall back to `""`, which is a *different, legal*
     /// coordinate — the author's empty-`d` event of the same kind — so a crafted
     /// naddr opened one event under the name of another. A zero-length type-0
-    /// value is a real empty `d` tag and still resolves; Foundation decodes empty
-    /// data to `""`, not nil, so the two cases stay apart.
+    /// value is a real empty `d` tag and still resolves.
+    ///
+    /// The `d` tag has to come out byte for byte, so the check is a round trip
+    /// rather than a decode that returns nil. `String(data:encoding: .utf8)`
+    /// looked like the obvious validity test and is not one: it silently drops a
+    /// leading U+FEFF, so `EF BB BF 78` arrives as `"x"` and a crafted naddr once
+    /// again names somebody else's event — the same bug in valid-UTF-8 clothing.
+    /// `String(decoding:as:)` keeps the U+FEFF but is lossy the other way, turning
+    /// bad bytes into U+FFFD. Decoding with it and re-encoding is exact in both
+    /// directions: valid UTF-8 round trips to the same bytes, and anything that
+    /// was replaced comes back different and is refused. One API, nothing
+    /// undocumented relied on.
     static func naddrParts(fromTLV payload: Data) -> (kind: Int, pubkey: String, dTag: String)? {
         var dTag = ""
         var pubkey: String?
@@ -82,7 +92,8 @@ enum QuoteReference {
         for entry in tlvEntries(payload) {
             switch entry.type {
             case 0:
-                guard let decoded = String(data: Data(entry.value), encoding: .utf8) else { return nil }
+                let decoded = String(decoding: entry.value, as: UTF8.self)
+                guard Data(decoded.utf8) == entry.value else { return nil }
                 dTag = decoded
             case 2 where entry.value.count == 32: pubkey = hex(entry.value)
             case 3 where entry.value.count == 4:
