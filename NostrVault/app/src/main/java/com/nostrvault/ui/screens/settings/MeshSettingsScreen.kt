@@ -71,6 +71,11 @@ class MeshSettingsViewModel @Inject constructor(
 
     val shareRelay = mesh.shareRelay
     val peers = mesh.peers
+    val serveLimit = mesh.serveLimitBytes
+
+    fun setServeLimit(bytes: Long) {
+        viewModelScope.launch { mesh.setServeLimit(bytes) }
+    }
 
     fun addPeer(npub: String) = updatePeers { it + npub }
 
@@ -120,6 +125,7 @@ fun MeshSettingsScreen(
     val homeVaultCandidates by viewModel.homeVaultCandidates.collectAsState()
     val homeVaultNpub by viewModel.homeVaultNpub.collectAsState()
     val homeVaultState by viewModel.homeVaultState.collectAsState()
+    val serveLimit by viewModel.serveLimit.collectAsState()
     val colors = LocalNostrVaultColors.current
     val clipboard = LocalClipboardManager.current
 
@@ -263,6 +269,26 @@ fun MeshSettingsScreen(
                     colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Stop sharing after", color = SecondaryText, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((bytes, label) in SERVE_LIMITS) {
+                    FilterChip(
+                        selected = serveLimit == bytes,
+                        onClick = { viewModel.setServeLimit(bytes) },
+                        // Applies at the next start, so it is fixed while sharing.
+                        enabled = !shareRelay && !busy,
+                        label = { Text(label) },
+                    )
+                }
+            }
+            Text(
+                "Sharing stops once the mesh has downloaded this much. One visitor gets at most 256 MB of it.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
 
             Spacer(Modifier.height(20.dp))
             HomeVaultCard(
@@ -543,3 +569,6 @@ internal fun formatUptime(seconds: Long): String = when {
     seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
     else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
 }
+
+/** The limits offered for one sharing session, as in the iOS kiosk picker. */
+private val SERVE_LIMITS = listOf(250L shl 20 to "250 MB", 1L shl 30 to "1 GB", 5L shl 30 to "5 GB")
