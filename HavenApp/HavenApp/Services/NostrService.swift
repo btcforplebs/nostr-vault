@@ -1084,7 +1084,7 @@ class NostrService: ObservableObject {
     private static let serverListStampsKey = "serverListStamps.v1"
 
     func publishServerList(fipsDetectedNpub: String? = nil) {
-        let current = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        var current = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
         // phone): another phone's servers and mesh entries stay; only the
@@ -1096,10 +1096,15 @@ class NostrService: ObservableObject {
         // Kiosk mode: this vault is on the FIPS mesh, listed last. Never the
         // only usable entry (NIP-F1): the merge refuses a mesh-only list.
         shareOwnMesh = FipsMeshService.shared.meshServerURL != nil && ConfigService.shared.config.hasPublicBlossomMirror
+        // The home vault this phone sends to: listed by the sender, so the
+        // kiosk itself never needs the owner's key.
+        if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner {
+            current.append("fipsmesh://\(vault.meshNpub)/")
+        }
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
-        let ownMeshNpub = ownMesh, share = shareOwnMesh
+        let ownMeshNpub = ownMesh, share = shareOwnMesh, current = current
 
         Task {
             // Start from the newest list on the relays, not this phone's cache
@@ -1135,7 +1140,7 @@ class NostrService: ObservableObject {
                 if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id) {
                     serverLists[event.pubkey] = merged
                 }
-                UserDefaults.standard.set(current.filter { HomeVaultLogic.meshNpub(fromEntry: $0) == nil }, forKey: managedKey)
+                UserDefaults.standard.set(current, forKey: managedKey)
                 postEvent(event)
                 #if DEBUG
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")

@@ -6,10 +6,11 @@ import UIKit
 /// owner's phones in kiosk mode, reached over the FIPS mesh. The kiosk keeps
 /// them and passes notes on to the regular relays.
 ///
-/// The home vault is one of the owner's own `fipsmesh://<npub>/` entries in
-/// their kind 10063. The kiosk's mesh door takes `PUT /upload` and an outbox
-/// websocket at `/`, and only for the owner's signature, so nothing is sent
-/// for any other account.
+/// The home vault is a kiosk's mesh address, picked from the owner's 10063 or
+/// pasted/scanned from the kiosk. This phone lists it in the owner's 10063, so
+/// the kiosk needs no key. The kiosk's mesh door takes `PUT /upload` and an
+/// outbox websocket at `/`, only for keys its relay lets write, so nothing is
+/// sent for any other account.
 ///
 /// Everything still goes to this phone's own relay first; the kiosk gets a
 /// copy. What cannot reach it waits in a queue on disk and is sent when the
@@ -61,6 +62,8 @@ final class HomeVaultSender: ObservableObject {
             UserDefaults.standard.removeObject(forKey: Self.vaultKey)
         }
         lastResult = nil
+        // List it (or stop listing it) in this account's 10063.
+        NostrService.shared.publishServerList()
         drainSoon()
     }
 
@@ -241,11 +244,7 @@ final class HomeVaultSender: ObservableObject {
                 if item.kind == .event && mediaWaiting { waiting = true; continue }
                 if !meshTried {
                     meshTried = true
-                    // The vault must still be in the owner's list: a kiosk that withdrew it is off.
-                    let listed = HomeVaultLogic.meshEntries(serverList: NostrService.shared.serverLists[vault.ownerHex] ?? [], excluding: nil)
-                    if !listed.contains(vault.meshNpub) {
-                        meshWhy = "your home vault is not in your server list right now"
-                    } else if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
+                    if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
                         base = url
                     } else {
                         meshWhy = "the mesh did not reach your home vault"

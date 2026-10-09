@@ -51,6 +51,16 @@ enum HomeVaultLogic {
         return npub
     }
 
+    /// A kiosk's mesh address as pasted or scanned: `npub1…`, `nostr:npub1…`
+    /// or `fipsmesh://npub1…/`. Nil for anything else.
+    static func meshNpub(fromInput input: String) -> String? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.lowercased().hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
+        if !text.hasPrefix("fipsmesh://") { text = "fipsmesh://\(text)/" }
+        if !text.hasSuffix("/") { text += "/" }
+        return meshNpub(fromEntry: text)
+    }
+
     /// The owner's mesh vaults in their server list, minus this phone's own.
     static func meshEntries(serverList: [String], excluding own: String?) -> [String] {
         var seen = Set<String>()
@@ -117,7 +127,8 @@ extension HomeVaultLogic {
     /// senders pick the home vault from the setting, not from list order).
     ///
     /// - existing: the newest signed 10063 seen for the owner.
-    /// - current: this phone's own servers now (config order, https).
+    /// - current: this phone's own servers now (config order, https), plus
+    ///   its home vault's `fipsmesh://` entry, listed after the others.
     /// - previouslyManaged: what this phone published last time, so a server
     ///   removed here is removed, while another phone's server is kept.
     /// - ownMeshNpub/shareOwnMesh: this phone's mesh entry, listed last while
@@ -148,8 +159,12 @@ extension HomeVaultLogic {
         for url in existing where !url.hasPrefix("fipsmesh://") && !dropped.contains(key(url)) {
             add(url)  // another phone's server
         }
-        for url in existing {
+        for url in existing where !dropped.contains(key(url)) {
             // Malformed mesh entries are dropped: readers ignore them too.
+            if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
+        }
+        for url in current {
+            // This phone's home vault: the sender lists it, the kiosk needs no key.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
         if shareOwnMesh, let own = ownMeshNpub { add("fipsmesh://\(own)/") }

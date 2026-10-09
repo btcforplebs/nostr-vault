@@ -295,7 +295,6 @@ class NostrService @Inject constructor(
         homeVault.signerIsLocal = {
             SignerRouting.route(configStore.config.value, true, ownerHexPubkey, activeHexPubkey) is SignerRoute.Local
         }
-        homeVault.ownerServerList = { _serverLists.value[ownerHexPubkey] }
         homeVault.signer = { kind, content, tags ->
             signEventAsync(kind = kind, content = content, tags = tags, forceOwner = true)?.let { serializeEvent(it) }
         }
@@ -1811,7 +1810,8 @@ class NostrService @Inject constructor(
         signAndPost(kind = 10006, content = "", tags = tags, forceOwner = true)
     }
 
-    fun publishServerList() {
+    /** [dropMesh]: the home vault this phone listed before, when it changed. */
+    fun publishServerList(dropMesh: String? = null) {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
         scope.launch(Dispatchers.IO) {
@@ -1827,7 +1827,8 @@ class NostrService @Inject constructor(
                 lookup?.confirmedNone == true -> emptyList()
                 else -> _serverLists.value[owner].orEmpty()
             }
-            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(newest, mirrors)
+            val home = configStore.config.value.homeVaultNpub
+            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(newest, mirrors, home, dropMesh)
             signAndPost(kind = 10063, content = "", tags = servers.map { listOf("server", it) }, forceOwner = true)
         }
     }

@@ -191,9 +191,29 @@ object HomeVaultRules {
      * after the public servers (NIP-F1): BUD-03 clients try servers in order.
      * The home vault is the setting, not a list position.
      */
-    fun mergeServerList(newest: List<String>, managed: List<String>): List<String> {
-        val mesh = newest.filter { FipsMediaRouter.meshNpubIn(it) != null }
+    fun mergeServerList(
+        newest: List<String>,
+        managed: List<String>,
+        homeVault: String? = null,
+        dropMesh: String? = null,
+    ): List<String> {
+        // This phone lists its own home vault, so the kiosk needs no key, and
+        // drops the one it listed before when the setting changes.
+        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n != dropMesh } +
+            listOfNotNull(homeVault?.let { "fipsmesh://$it/" })
         return (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
+    }
+
+    /**
+     * A kiosk's mesh address as pasted or scanned: `npub1…`, `nostr:npub1…`
+     * or `fipsmesh://npub1…/`. Null for anything else.
+     */
+    fun meshNpubFromInput(input: String): String? {
+        var text = input.trim()
+        if (text.startsWith("nostr:", ignoreCase = true)) text = text.drop(6)
+        if (!text.startsWith("fipsmesh://")) text = "fipsmesh://$text/"
+        if (!text.endsWith("/")) text += "/"
+        return FipsMediaRouter.meshNpubIn(text)
     }
 
     /**

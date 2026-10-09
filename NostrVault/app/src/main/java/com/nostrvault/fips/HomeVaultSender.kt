@@ -81,10 +81,6 @@ class HomeVaultSender @Inject constructor(
     @Volatile
     var signerIsLocal: () -> Boolean = { false }
 
-    /** The owner's current 10063, or null when it isn't known. Wired by NostrService. */
-    @Volatile
-    var ownerServerList: () -> List<String>? = { null }
-
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
 
     /**
@@ -388,14 +384,6 @@ class HomeVaultSender @Inject constructor(
         }
         val items = queue.items()
         if (items.isEmpty()) return@withLock publish()
-        // Re-checked each pass: a stale or withdrawn list must not keep
-        // sending to a vault the owner no longer lists. It waits instead.
-        val listed = ownerServerList()
-        if (listed != null && HomeVaultRules.candidates(listed, null).none { it == npub }) {
-            problem("Home vault is not on the mesh now")
-            scheduleRetry()
-            return@withLock publish()
-        }
         if (!FipsBridge.status().running) {
             problem("The mesh is off")
             scheduleRetry()
