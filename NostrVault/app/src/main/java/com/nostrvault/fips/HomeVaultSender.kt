@@ -316,7 +316,9 @@ class HomeVaultSender @Inject constructor(
             Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
             false
         }
-        if (!queued) full()
+        // The timer, not a drain: the caller drains once its upload is done,
+        // and this covers an upload that throws before it gets there.
+        if (queued) scheduleRetry() else full()
         publish()
     }
 
@@ -496,7 +498,10 @@ class HomeVaultSender @Inject constructor(
             listOf("expiration", expiration.toString()),
         )
         val signed = try {
-            signer(AUTH_KIND, content, tags)
+            // A random suffix keeps two auths for the same blob signed in the
+            // same second apart: the vault takes each auth id once, and a
+            // repeat id is a 403, which drops the item.
+            signer(AUTH_KIND, "$content ${java.util.UUID.randomUUID().toString().take(8)}", tags)
         } catch (e: Exception) {
             Log.w(TAG, "home vault: upload auth not signed: ${e.message}")
             null
