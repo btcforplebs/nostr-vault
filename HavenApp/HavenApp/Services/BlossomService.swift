@@ -1326,17 +1326,25 @@ class BlossomService: @unchecked Sendable {
         }
 
         let blobURL = mirrorURL.appendingPathComponent(sha256)
+        // Not HEAD: after a delete, blossom.band and blossom.nostr.build keep
+        // answering HEAD with the old size, while a GET redirects to a
+        // "404" placeholder image served as 200. A GET shows where the blob
+        // really ends up; only its headers are read, never the body.
         var request = URLRequest(url: blobURL)
-        request.httpMethod = "HEAD"
+        request.httpMethod = "GET"
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         request.timeoutInterval = 10
 
         do {
             let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
-            let (_, response) = try await session.data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
+            bytes.task.cancel()
             guard let http = response as? HTTPURLResponse else { return .unreachable }
             return Self.presence(statusCode: http.statusCode,
                                  contentType: http.value(forHTTPHeaderField: "Content-Type"),
-                                 contentLength: http.value(forHTTPHeaderField: "Content-Length"))
+                                 contentLength: http.value(forHTTPHeaderField: "Content-Length"),
+                                 sha256: sha256,
+                                 finalURL: http.url)
         } catch {
             logger.debug("checkBlobExists: \(mirror)/\(sha256.prefix(8)) error: \(error.localizedDescription)")
             return .unreachable
@@ -1345,10 +1353,15 @@ class BlossomService: @unchecked Sendable {
 
     /// The decision behind `checkBlobExists`, split out so it can be tested
     /// without a server.
-    static func presence(statusCode: Int, contentType: String?, contentLength: String?) -> BlobPresence {
+    /// `finalURL` is where redirects ended. A blob's own location names its
+    /// hash; a redirect that lands anywhere else is a placeholder.
+    static func presence(statusCode: Int, contentType: String?, contentLength: String?,
+                         sha256: String? = nil, finalURL: URL? = nil) -> BlobPresence {
         switch statusCode {
         case 200...299:
             if let type = contentType?.lowercased(), type.hasPrefix("text/html") { return .absent }
+            if let sha256, let finalURL,
+               !finalURL.absoluteString.lowercased().contains(sha256.lowercased()) { return .absent }
             if let length = contentLength.flatMap({ Int64($0) }), length == 0 { return .absent }
             return .present
         case 400...499:
