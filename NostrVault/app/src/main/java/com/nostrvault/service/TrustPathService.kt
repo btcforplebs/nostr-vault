@@ -47,6 +47,9 @@ class TrustPathService @Inject constructor(
     /** Your trust graph plus your follows; empty until the graph has loaded. */
     fun myTrustGraph(): Set<String> = feedService.relayTabTrustedPubkeys()
 
+    /** The relay's vouches for people past your follows; null on an old cache. */
+    fun myVouches(): Map<String, Int>? = feedService.wotVouches.value
+
     /**
      * The relay's trust graph as it loads. Android reads it from disk off the
      * main thread, so [myTrustGraph] can be empty on a cold start; key on this

@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.data.model.TrustMap
 import android.content.Context
 import android.os.FileObserver
 import android.util.Log
@@ -458,6 +459,13 @@ class FeedService @Inject constructor(
 
     private val _wotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
+    /**
+     * For everyone in the graph past your follows, how many of your follows
+     * follow them (the WOT tab's Close layer). Null until the relay's cache
+     * carries them.
+     */
+    private val _wotVouches = MutableStateFlow<Map<String, Int>?>(null)
+    val wotVouches: StateFlow<Map<String, Int>?> = _wotVouches.asStateFlow()
 
     /**
      * True once the relay's graph file has been read for this account, even
@@ -2385,7 +2393,9 @@ class FeedService @Inject constructor(
                 if (wotCachePath != null) {
                     val file = File(wotCachePath)
                     if (file.exists()) {
-                        val loaded = FeedFilterEngine.parseWotCache(file.readText(), nostrService.activeHexPubkey)
+                        val text = file.readText()
+                        val loaded = FeedFilterEngine.parseWotCache(text, nostrService.activeHexPubkey)
+                        val vouches = TrustMap.vouches(text)
                         if (loaded == null) {
                             Log.w(TAG, "WoT cache unreadable: $wotCachePath")
                             return@launch
@@ -2393,6 +2403,8 @@ class FeedService @Inject constructor(
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
                             _wotCacheRead.value = true
+                            // Before the graph: its collectors read the vouches straight away.
+                            _wotVouches.value = vouches
                             if (loaded != _wotPubkeys.value) {
                                 _wotPubkeys.value = loaded
                                 // Global is filtered against this set; notes

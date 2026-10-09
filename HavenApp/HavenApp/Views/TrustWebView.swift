@@ -79,6 +79,10 @@ struct TrustWebView: View {
     @State private var pictureLoader: Task<Void, Never>?
     /// Your wider web, for the search's "In your web" tag.
     @State private var web: Set<String> = []
+    /// How many of your follows follow each person past them (the relay's
+    /// vouches), and who of the drawn shell is Close. nil on an old cache.
+    @State private var vouches: [String: Int]?
+    @State private var closeHaze: Set<String> = []
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     @State private var searchingRelays = false
@@ -234,7 +238,7 @@ struct TrustWebView: View {
     private var globeLayers: some View {
         ZStack(alignment: .bottomLeading) {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
-                             myFollows: myFollows, haze: haze, ringFaces: ringFaces,
+                             myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
                              running: profilePubkey == nil && !showingList,
                              layer: isWOTTab ? layer : .everyone,
                              summary: summary,
@@ -347,7 +351,7 @@ struct TrustWebView: View {
     }
 
     private var layerCounts: [TrustMap.Layer: Int] {
-        TrustMap.layerCounts(me: me, follows: myFollows, web: web)
+        TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches)
     }
 
     /// The feed picker's shape: the layer's icon, its name and a chevron, with
@@ -356,7 +360,7 @@ struct TrustWebView: View {
         let counts = layerCounts
         return Menu {
             Picker(selection: $layer) {
-                ForEach(TrustMap.Layer.allCases, id: \.self) { item in
+                ForEach(TrustMap.layers(hasVouches: vouches != nil), id: \.self) { item in
                     // Compact counts (15K) keep each row on one line; a menu
                     // row drops a second Text, so there's no subtitle.
                     let count = (counts[item] ?? 0).formatted(.number.notation(.compactName))
@@ -798,12 +802,17 @@ struct TrustWebView: View {
 
     private func recomputeHaze() {
         let graph = FeedService.shared.relayTabTrustedPubkeys()
+        let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         Task.detached(priority: .userInitiated) {
             let shell = TrustMap.haze(graph.subtracting(inner))
+            let close = counts.map { v in Set(shell.filter { (v[$0] ?? 0) >= TrustMap.closeVouches }) } ?? []
             await MainActor.run {
                 haze = shell
+                closeHaze = close
                 web = graph
+                vouches = counts
+                if !TrustMap.layers(hasVouches: counts != nil).contains(layer) { layer = .everyone }
             }
         }
     }
@@ -1486,6 +1495,8 @@ struct TrustGlobeCanvas: View {
     let author: String
     let myFollows: Set<String>
     let haze: [String]
+    /// The part of the haze at least `TrustMap.closeVouches` of your follows follow.
+    var closeHaze: Set<String> = []
     /// Follows drawn as faces when the core is the person everyone is
     /// measured against (your own globe on the WOT tab).
     let ringFaces: [String]
@@ -1524,6 +1535,7 @@ struct TrustGlobeCanvas: View {
         let bridges: Int
         let chains: Int
         let haze: Int
+        let close: Int
         let mine: Int
         /// Who is in the ring, not just how many: a follow and an unfollow
         /// together keep the count.
@@ -1534,7 +1546,7 @@ struct TrustGlobeCanvas: View {
     private var loadKey: LoadKey? {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
-                    chains: $0.chains?.count ?? -1, haze: haze.count, mine: myFollows.count,
+                    chains: $0.chains?.count ?? -1, haze: haze.count, close: closeHaze.count, mine: myFollows.count,
                     ringHash: $0.ring.hashValue, faces: ringFaces)
         }
     }
@@ -1602,7 +1614,8 @@ struct TrustGlobeCanvas: View {
                 try? await Task.sleep(for: Self.turnDelay)
                 guard !Task.isCancelled else { return }
             }
-            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, ringFaces: ringFaces)
+            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, closeHaze: closeHaze,
+                       ringFaces: ringFaces)
         }
     }
 
@@ -1659,7 +1672,7 @@ struct TrustGlobeCanvas: View {
 /// lookups. Mutated by the frame clock; only `awake` and `faceKeys` publish.
 @MainActor
 final class GlobeScene: ObservableObject {
-    enum Kind { case ring, mutual, haze, bridge, via }
+    enum Kind { case ring, mutual, haze, closeHaze, bridge, via }
 
     /// False once nothing moves: the frame clock stops until a touch or new data.
     @Published private(set) var awake = true
@@ -1685,10 +1698,11 @@ final class GlobeScene: ObservableObject {
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
-    /// How brightly your follows (x) and the outer shell (y) are drawn, easing
-    /// toward the picked layer's (`TrustMap.layerWeights`).
-    private var weights = SIMD2<Double>(1, 1)
-    private var weightTarget = SIMD2<Double>(1, 1)
+    /// How brightly your follows (x), the Close shell (y) and the rest of the
+    /// shell (z) are drawn, easing toward the picked layer's
+    /// (`TrustMap.layerWeights`).
+    private var weights = SIMD3<Double>(1, 1, 1)
+    private var weightTarget = SIMD3<Double>(1, 1, 1)
 
     private var keys: [String] = []
     private var dirs: [SIMD3<Double>] = []
@@ -1710,7 +1724,7 @@ final class GlobeScene: ObservableObject {
     // MARK: Data
 
     func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String],
-              ringFaces: [String] = []) {
+              closeHaze: Set<String> = [], ringFaces: [String] = []) {
         let now = Date.timeIntervalSinceReferenceDate
         let newCenter = !hasLoaded || frame.center != center
         self.me = me
@@ -1721,7 +1735,7 @@ final class GlobeScene: ObservableObject {
         let bridgeSet = Set(frame.bridges)
         var want: [String: (Kind, Double)] = [:]
         if frame.center == me {
-            for key in haze { want[key] = (.haze, TrustMap.outerRadius) }
+            for key in haze { want[key] = (closeHaze.contains(key) ? .closeHaze : .haze, TrustMap.outerRadius) }
         }
         for key in frame.ring {
             let kind: Kind = bridgeSet.contains(key) ? .bridge
@@ -1936,7 +1950,7 @@ final class GlobeScene: ObservableObject {
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
         if best == nil, camera.zoom >= 1.6 {
-            for i in keys.indices where !isFace[i] && kinds[i] != .haze { consider(i, reach: 16) }
+            for i in keys.indices where !isFace[i] && kinds[i] != .haze && kinds[i] != .closeHaze { consider(i, reach: 16) }
         }
         return best?.key
     }
@@ -1974,12 +1988,14 @@ final class GlobeScene: ObservableObject {
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
         let namesOut = zoom > 2.2
         for i in keys.indices where !isFace[i] {
-            let a = alpha[i] * (kinds[i] == .haze ? weights.y : weights.x)
+            let a = alpha[i] * (kinds[i] == .haze ? weights.z : kinds[i] == .closeHaze ? weights.y : weights.x)
             guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
             let front = p.front
             let slot: Slot, base: Double, size: Double
             switch kinds[i] {
             case .haze: (slot, base, size) = (.haze, 0.06 + 0.16 * front, 1.2)
+            // A touch brighter and bigger: close enough to tell apart in the shell.
+            case .closeHaze: (slot, base, size) = (.haze, 0.10 + 0.22 * front, 1.4)
             case .ring: (slot, base, size) = (.ring, 0.25 + 0.65 * front, 2.1)
             case .mutual: (slot, base, size) = (.mutual, 0.45 + 0.55 * front, 2.4)
             case .bridge, .via: (slot, base, size) = (.hot, 0.35 + 0.65 * front, 2.8)

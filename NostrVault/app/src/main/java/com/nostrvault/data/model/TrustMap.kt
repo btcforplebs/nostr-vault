@@ -352,21 +352,64 @@ object TrustMap {
      * `TrustMap.Layer`.
      */
     enum class Layer(val title: String) {
-        EVERYONE("Everyone"), FOLLOWING("Following"), FURTHER_OUT("Further out"),
+        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Close"), FURTHER_OUT("Further out"),
     }
 
-    /** How brightly [layer] draws your follows (first) and the outer shell (second). */
-    fun layerWeights(layer: Layer): Pair<Double, Double> = when (layer) {
-        Layer.EVERYONE -> 1.0 to 1.0
-        Layer.FOLLOWING -> 1.0 to 0.18
-        Layer.FURTHER_OUT -> 0.22 to 1.6
+    /**
+     * Close: at least this many of your follows follow them. From a real
+     * rebuild of a 1,018-follow web: 10+ is ~5K of 13K, a split where both
+     * sides are worth picking and "10 people you follow" reads plainly.
+     */
+    const val CLOSE_VOUCHES = 10
+
+    /** The layers to offer: Close only once the relay saves vouches. */
+    fun layers(hasVouches: Boolean): List<Layer> =
+        if (hasVouches) Layer.entries else Layer.entries.filter { it != Layer.CLOSE }
+
+    /**
+     * The relay's `vouches` from `wot_cache.json`: for everyone in your web
+     * past your follows, how many of your follows follow them. Null when the
+     * cache predates the field (it fills on the next rebuild).
+     */
+    fun vouches(cache: String): Map<String, Int>? {
+        val root = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(cache) }.getOrNull()
+            as? kotlinx.serialization.json.JsonObject ?: return null
+        val raw = root["vouches"] as? kotlinx.serialization.json.JsonObject ?: return null
+        val out = HashMap<String, Int>(raw.size)
+        for ((key, value) in raw) {
+            val n = (value as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
+            out[key] = n.toInt()
+        }
+        return out
     }
 
-    /** People in each layer, never counting you. [web] is the relay's whole graph, follows included. */
-    fun layerCounts(me: String, follows: Set<String>, web: Set<String>): Map<Layer, Int> {
+    /** How brightly [layer] draws your follows, the Close part of the outer shell, and the rest of it. */
+    data class Weights(val follows: Double, val close: Double, val further: Double)
+
+    fun layerWeights(layer: Layer): Weights = when (layer) {
+        Layer.EVERYONE -> Weights(1.0, 1.0, 1.0)
+        Layer.FOLLOWING -> Weights(1.0, 0.18, 0.18)
+        Layer.CLOSE -> Weights(0.22, 1.6, 0.18)
+        Layer.FURTHER_OUT -> Weights(0.22, 0.18, 1.6)
+    }
+
+    /**
+     * People in each layer, never counting you. [web] is the relay's whole
+     * graph, follows included. Without [vouches] there is no Close, and
+     * Further out is everyone past your follows.
+     */
+    fun layerCounts(me: String, follows: Set<String>, web: Set<String>, vouches: Map<String, Int>? = null): Map<Layer, Int> {
         val following = (follows - me).size
-        val further = (web - follows - me).size
-        return mapOf(Layer.EVERYONE to following + further, Layer.FOLLOWING to following, Layer.FURTHER_OUT to further)
+        val past = web - follows - me
+        val counts = mutableMapOf(Layer.EVERYONE to following + past.size, Layer.FOLLOWING to following)
+        if (vouches != null) {
+            val close = past.count { (vouches[it] ?: 0) >= CLOSE_VOUCHES }
+            counts[Layer.CLOSE] = close
+            counts[Layer.FURTHER_OUT] = past.size - close
+        } else {
+            counts[Layer.FURTHER_OUT] = past.size
+        }
+        return counts
     }
 }
 
