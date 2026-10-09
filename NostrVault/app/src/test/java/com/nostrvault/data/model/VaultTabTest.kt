@@ -175,6 +175,12 @@ class VaultTabTest {
         assertTrue(VaultDots.lit(newest, emptyMap(), watched = null, zapsOnly = false).isEmpty())
     }
 
+    @Test fun `the pill never shows Likes in Zaps Only, even lit before`() {
+        val lit = setOf(VaultViewMode.LIKES, VaultViewMode.ZAPS)
+        assertEquals(setOf(VaultMode.ZAPS, VaultMode.FOLLOWERS), VaultDots.shown(lit, newFollowers = true, zapsOnly = true))
+        assertEquals(setOf(VaultMode.LIKES, VaultMode.ZAPS), VaultDots.shown(lit, newFollowers = false, zapsOnly = false))
+    }
+
     @Test fun `the list in sight never lights, and Likes stays dark in Zaps Only`() {
         val newest = mapOf(VaultViewMode.NOTES to 500L, VaultViewMode.LIKES to 500L, VaultViewMode.ZAPS to 500L)
         assertEquals(

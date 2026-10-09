@@ -288,10 +288,9 @@ class DashboardViewModel @Inject constructor(
     private var lastWatched: VaultViewMode? = null
 
     /** Modes with something new since you last looked, for the Vault pill's dot on either half. */
-    val newModes: StateFlow<Set<VaultMode>> = kotlinx.coroutines.flow.combine(_newActivity, _hasNewFollowers) { lists, followers ->
-        lists.mapTo(HashSet()) { VaultMode.of(false, it, VaultNoteScope.NOTES) }
-            .apply { if (followers) add(VaultMode.FOLLOWERS) }
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
+    val newModes: StateFlow<Set<VaultMode>> = kotlinx.coroutines.flow.combine(
+        _newActivity, _hasNewFollowers, configStore.config.map { it.zapsOnlyMode }.distinctUntilChanged(),
+    ) { lists, followers, zapsOnly -> VaultDots.shown(lists, followers, zapsOnly) }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptySet())
 
     // ── Display data ─────────────────────────────────────────────
 
@@ -519,6 +518,14 @@ class DashboardViewModel @Inject constructor(
                     left?.let { markListViewed(it) }
                     watched?.let { markListViewed(it) }
                 }
+        }
+
+        // Zaps Only drops a Likes dot lit before it came on, so turning the
+        // mode off again doesn't bring back a stale one.
+        viewModelScope.launch {
+            configStore.config.map { it.zapsOnlyMode }.distinctUntilChanged().collect { zapsOnly ->
+                if (zapsOnly) _newActivity.value = _newActivity.value - VaultViewMode.LIKES
+            }
         }
 
         // Blocking someone (this tab's Block User, the feed, Settings) drops
