@@ -144,7 +144,6 @@ class TutorialProgressTest {
         assertEquals("feeds.picker", TutorialContent.FEED_PICKER)
         assertEquals("feeds.toolbar", TutorialContent.FEED_TOOLBAR)
         assertEquals("vault.modes", TutorialContent.VAULT_MODES)
-        assertEquals("vault.filters", TutorialContent.VAULT_FILTERS)
         assertEquals("vault.relay", TutorialContent.VAULT_RELAY)
         assertEquals("wallet.empty", TutorialContent.WALLET_EMPTY)
         assertEquals("wallet.connect", TutorialContent.WALLET_CONNECT_BUTTON)
@@ -156,9 +155,10 @@ class TutorialProgressTest {
     /** Every tutorial has cards on Android now (iOS: the iPhone/iPad build). */
     @Test fun everyTutorialIsAvailable() {
         TutorialID.entries.forEach { assertTrue(it.name, it.isAvailable) }
-        listOf(TutorialID.FEEDS, TutorialID.VAULT, TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY).forEach {
+        listOf(TutorialID.FEEDS, TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY).forEach {
             assertEquals(it.name, 3, it.steps.size)
         }
+        assertEquals(2, TutorialID.VAULT.steps.size) // the pill and the Vault button
         assertTrue(TutorialID.FILL_YOUR_VAULT.steps.isEmpty()) // its guide is FillYourFeedOverlay
     }
 

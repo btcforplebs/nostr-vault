@@ -2607,14 +2607,6 @@ fun DashboardScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
-    // Your Vault starts the first time the relay half of the Vault tab shows
-    // (after Fill your vault; see TutorialProgress), and again when a status
-    // changes quietly. Its cards point here, so on the Media half it waits.
-    val tutorialRevision by TutorialCenter.revision.collectAsState()
-    LaunchedEffect(tutorialRevision) {
-        TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
-    }
-
     // Tapping the Vault tab again goes to the top of the list (iOS #275).
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
@@ -2648,7 +2640,7 @@ fun DashboardScreen(
                 // into a menu: when the bar is tight the word goes, not the icons.
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                     FirstThatFits(
-                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_FILTERS),
+                        Modifier,
                         { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = true) },
                         { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = false) },
                     )

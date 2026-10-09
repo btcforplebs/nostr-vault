@@ -1386,17 +1386,15 @@ struct NoteSplitPane<Content: View>: View {
 private struct OpensRelayTab: ViewModifier {
     @Binding var selectedTab: Int
     @ObservedObject private var tutorialCenter = TutorialCenter.shared
-    @ObservedObject private var vaultSection = VaultSection.shared
 
     func body(content: Content) -> some View {
         content
-            // Your Vault starts the first time the Relay tab is picked. Not
-            // from VaultView: the tab view builds it while another tab
-            // shows, and it would take the slot Feeds needs. Re-checked when
-            // a status is saved, like Feeds.
-            .task(id: "\(selectedTab).\(tutorialCenter.revision).\(vaultSection.showsMedia)") {
-                // Its cards point at the relay half; on Media it waits.
-                if selectedTab == 4 && !vaultSection.showsMedia {
+            // Your Vault starts the first time the Vault tab is picked, on
+            // either half. Not from VaultView: the tab view builds it while
+            // another tab shows, and it would take the slot Feeds needs.
+            // Re-checked when a status is saved, like Feeds.
+            .task(id: "\(selectedTab).\(tutorialCenter.revision)") {
+                if selectedTab == 4 {
                     tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
                 }
             }
@@ -1404,10 +1402,9 @@ private struct OpensRelayTab: ViewModifier {
             // Vault is the Relay tab, Wallet Connect the wallet on Profile,
             // Pocket Relay the relay dashboard on the Relay tab.
             .onChange(of: tutorialCenter.active) { _, active in
-                // Your Vault's cards are on the relay half. Pocket Relay is the
-                // dashboard, which either half opens, so stay where you are.
-                if active == .vault { showVault(media: false) }
-                if active == .pocketRelay { selectedTab = 4 }
+                // Your Vault's cards and Pocket Relay's dashboard are on
+                // either half, so stay on the one showing.
+                if active == .vault || active == .pocketRelay { selectedTab = 4 }
                 // Opened once the wallet sheet it came from has closed and
                 // the Relay tab is showing. Already open when the dashboard
                 // started it, and opening it again does nothing.
