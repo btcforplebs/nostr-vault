@@ -117,6 +117,56 @@ object VaultDots {
 
     /** Something new in a mode other than [current]: the pill's dot, on either half. */
     fun hasNewElsewhere(newModes: Set<VaultMode>, current: VaultMode): Boolean = (newModes - current).isNotEmpty()
+
+    /** The lists whose dot comes from their events. Followers' comes from the relay's ledger. */
+    val eventLists = listOf(VaultViewMode.NOTES, VaultViewMode.LIKES, VaultViewMode.ZAPS)
+
+    /**
+     * The kinds each dotted list holds: Notes' kinds less articles and
+     * highlights (they get no dot), likes, zap receipts.
+     */
+    fun kinds(list: VaultViewMode, noteKinds: Set<Int>): Set<Int> = when (list) {
+        VaultViewMode.NOTES -> VaultNoteScope.NOTES.kinds(noteKinds)
+        VaultViewMode.LIKES -> setOf(7)
+        VaultViewMode.ZAPS -> setOf(9735)
+        VaultViewMode.FOLLOWERS -> emptySet()
+    }
+
+    /**
+     * The newest created_at in each dotted list, out of (kind, created_at)
+     * pairs; 0 for an empty list. Future-dated events are left out, or one
+     * would hold a list's dot dark until its date.
+     *
+     * iOS compares event counts. Android keeps a watermark instead: the store
+     * here is trimmed at a cap, so a new event can leave the count unchanged,
+     * and an older page loading would read as news.
+     */
+    fun newest(events: Iterable<Pair<Int, Long>>, noteKinds: Set<Int>, nowSecs: Long): Map<VaultViewMode, Long> {
+        val listByKind = HashMap<Int, VaultViewMode>()
+        for (list in eventLists) for (kind in kinds(list, noteKinds)) listByKind[kind] = list
+        val newest = eventLists.associateWithTo(HashMap()) { 0L }
+        for ((kind, createdAt) in events) {
+            val list = listByKind[kind] ?: continue
+            if (createdAt > nowSecs + 60) continue
+            if (createdAt > newest.getValue(list)) newest[list] = createdAt
+        }
+        return newest
+    }
+
+    /**
+     * The lists holding something newer than when you last looked. Nothing
+     * lights before the first load has settled ([seenAt] empty), the list in
+     * sight never does, and Likes stays dark in Zaps Only mode, which hides it.
+     */
+    fun lit(
+        newest: Map<VaultViewMode, Long>,
+        seenAt: Map<VaultViewMode, Long>,
+        watched: VaultViewMode?,
+        zapsOnly: Boolean,
+    ): Set<VaultViewMode> = eventLists.filterTo(HashSet()) { list ->
+        val seen = seenAt[list] ?: return@filterTo false
+        list != watched && !(zapsOnly && list == VaultViewMode.LIKES) && (newest[list] ?: 0L) > seen
+    }
 }
 
 /**

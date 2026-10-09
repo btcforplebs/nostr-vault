@@ -140,7 +140,7 @@ import kotlin.math.roundToInt
 /**
  * One globe: who is at the core and what we know about their follows.
  */
-private data class TrustFrame(
+internal data class TrustFrame(
     val center: String,
     /** Everyone [center] follows: the stars on the inner sphere. */
     val ring: List<String>,
@@ -162,7 +162,15 @@ private data class TrustFrame(
     /** 3-hop routes once "look deeper" ran; null before. */
     val chains: List<TrustMap.Chain>? = null,
     val ringSet: Set<String> = ring.toSet(),
-)
+) {
+    /**
+     * The same frame around a new follow list: the bridges, the lists already
+     * read and the deeper chains it had found stay (iOS TrustWebView keeps
+     * them too), so a follow or unfollow doesn't throw the search away.
+     */
+    fun withRing(ring: List<String>, listFound: Boolean = true): TrustFrame =
+        copy(ring = ring, listFound = listFound, ringSet = ring.toSet())
+}
 
 /** Deep space behind the globe: dark whatever the app's appearance. */
 private val SpaceTop = Color(red = 0.07f, green = 0.08f, blue = 0.13f)
@@ -413,7 +421,8 @@ private fun TrustWebContent(
                 val set = follows.toSet()
                 if (set == myFollows) return@collect
                 myFollows = set
-                frames = frames + (me to TrustFrame(me, follows, true, path))
+                // Keep what the globe had already found around you.
+                frames = frames + (me to (frames[me]?.withRing(follows) ?: TrustFrame(me, follows, true, path)))
             }
         }
         // Tapping the tab again brings the globe back to you.
@@ -979,6 +988,8 @@ private data class LoadKey(
     val chains: Int,
     val haze: Int,
     val mine: Int,
+    /** Who is in the ring, not just how many: a follow and an unfollow together keep the count. */
+    val ringHash: Int,
 )
 
 /** Spinning and turning to a person both take about this long; a new person's globe settles in after it. */
@@ -1045,7 +1056,7 @@ private fun TrustGlobe(
     }
 
     val loadKey = frame?.let {
-        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size)
+        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size, it.ring.hashCode())
     }
     LaunchedEffect(loadKey) {
         val first = currentFrame ?: return@LaunchedEffect
