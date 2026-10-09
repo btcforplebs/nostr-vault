@@ -105,7 +105,30 @@ class FipsMeshManager @Inject constructor(
         _lastError.value = null
         if (persist) configStore.updateAsync { it.copy(fipsMeshEnabled = true) }
         refresh()
+        watch()
         true
+    }
+
+    private var watchJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Poll while the node runs, wherever the user is. The serve cap is
+     * enforced in the library, but only [refresh] turns the share switch off
+     * to match; left to the Mesh screen's own poll, the switch would stay on
+     * and the next launch would share another full allowance (Tron, #471).
+     */
+    private fun watch() {
+        // One poll at a time. Never cancel a running one: a restart from inside
+        // its own refresh (the cap turning sharing off) would cancel the poll
+        // mid-way and lose the message saying why.
+        if (watchJob?.isActive == true) return
+        watchJob = appScope.launch(Dispatchers.IO) {
+            while (true) {
+                kotlinx.coroutines.delay(WATCH_INTERVAL_MS)
+                refresh()
+                if (!_status.value.running) break
+            }
+        }
     }
 
     /**
@@ -216,5 +239,6 @@ class FipsMeshManager @Inject constructor(
 
     private companion object {
         const val TAG = "FipsMeshManager"
+        const val WATCH_INTERVAL_MS = 5_000L
     }
 }

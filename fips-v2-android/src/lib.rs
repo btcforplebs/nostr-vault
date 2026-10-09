@@ -45,10 +45,6 @@ pub struct StartOptions {
     pub max_serve_bytes: u64,
 }
 
-/// Mesh peers at once, the owner's own reads included. Upstream's 128 lets a
-/// crowd of strangers hold a phone's radio; a leaf needs its parent and a few.
-const MAX_PEERS: usize = 8;
-
 /// What sharing gives the mesh before it stops, unless the app sets its own.
 const DEFAULT_SERVE_TOTAL: u64 = 1 << 30;
 /// One visitor's share of that, so one reader cannot use it all.
@@ -181,8 +177,6 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
   identity:
     nsec: "{nsec}"
   leaf_only: true
-  limits:
-    max_peers: {MAX_PEERS}
   control:
     enabled: false
   rendezvous:
@@ -719,7 +713,10 @@ mod tests {
             assert!(!cfg.node.control.enabled);
             assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
             assert!(cfg.node.leaf_only, "a phone must never carry other nodes' traffic");
-            assert_eq!(cfg.node.limits.max_peers, MAX_PEERS, "upstream's 128 is a crowd");
+            // Upstream's 128 on purpose: npubs are free, so a low cap lets a
+            // handful of strangers hold every slot and lock the owner's own
+            // phones out (Tron, #471). The serve caps bound what they can pull.
+            assert_eq!(cfg.node.limits.max_peers, 128);
             assert_eq!(cfg.peers.len(), opts.peers.len());
         }
     }

@@ -596,7 +596,12 @@ pub fn run_with(
                     listeners.swap_remove(i);
                     let remote = s.remote_endpoint();
                     let addr = remote.map(|e| e.addr);
-                    if let Some(why) = addr.and_then(|a| refuse(&limits, &peer_tx, &splices, a)) {
+                    // No address means no per-visitor accounting: turn it away.
+                    let why = match addr {
+                        Some(a) => refuse(&limits, &peer_tx, &splices, a),
+                        None => Some("no remote address"),
+                    };
+                    if let Some(why) = why {
                         println!("mesh refused {remote:?}: {why}");
                         c.served_refused.fetch_add(1, Ordering::Relaxed);
                         s.abort();
