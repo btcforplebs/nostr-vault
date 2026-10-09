@@ -10,6 +10,7 @@ import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.ProfileUpdateSignal
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.fips.FipsMediaRouter
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -231,6 +232,8 @@ class NostrService @Inject constructor(
 
     init {
         initialize()
+        FipsMediaRouter.serverLists = { _serverLists.value }
+        FipsMediaRouter.requestServerList = { fetchServerList(it) }
     }
 
     fun initialize() {
@@ -536,7 +539,7 @@ class NostrService @Inject constructor(
                 return
             }
             10063 -> {
-                parseServerListEvent(pubkey, tags)
+                parseServerListEvent(pubkey, tags, createdAt)
                 return
             }
             10000 -> {
@@ -550,6 +553,7 @@ class NostrService @Inject constructor(
 
         // Extract media URLs from content
         val mediaItems = extractMediaURLs(content, pubkey, tags, createdAt)
+        FipsMediaRouter.noteMedia(pubkey, content, tags)
 
         val event = NostrEvent(
             id = id,
@@ -911,10 +915,17 @@ class NostrService @Inject constructor(
         }
     }
 
-    private fun parseServerListEvent(pubkey: String, tags: List<List<String>>) {
+    // Newest 10063 wins: a kiosk vault republishes without its mesh entry
+    // when it leaves the mesh, and an older copy must not bring it back.
+    private val serverListCreatedAt = mutableMapOf<String, Long>()
+
+    private fun parseServerListEvent(pubkey: String, tags: List<List<String>>, createdAt: Long) {
         val servers = profileRepository.parseServerListTags(tags)
         if (servers.isNotEmpty()) {
             scope.launch(Dispatchers.Main.immediate) {
+                val known = serverListCreatedAt[pubkey]
+                if (known != null && createdAt < known) return@launch
+                serverListCreatedAt[pubkey] = createdAt
                 _serverLists.value = _serverLists.value + (pubkey to servers)
             }
         }
@@ -1006,6 +1017,46 @@ class NostrService @Inject constructor(
 
         val blastrRelays = configStore.config.value.activeBlastrRelays
         for (relayUrl in blastrRelays.take(3)) {
+            if (!isValidRelayUrl(relayUrl)) continue
+            scope.launch(Dispatchers.IO) {
+                tempClientSemaphore.withPermit {
+                    val client = WebSocketClient(url = relayUrl, scope = scope)
+                    tempClientsLock.withLock { temporaryClients.add(client) }
+
+                    scope.launch {
+                        client.messages.collect { msg ->
+                            launch(Dispatchers.Default) {
+                                processRelayMessage(msg, relayUrl)
+                            }
+                        }
+                    }
+
+                    client.connect()
+                    client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
+
+                    delay(TEMP_CLIENT_DISCONNECT_MS)
+                    client.disconnect()
+                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch [pubkey]'s Blossom server list (kind 10063), which says whether
+     * their vault is on the FIPS mesh.
+     */
+    fun fetchServerList(pubkey: String) {
+        val subId = "servers-${UUID.randomUUID().toString().take(8)}"
+        val filter = buildMap<String, Any> {
+            put("kinds", listOf(10063))
+            put("authors", listOf(pubkey))
+            put("limit", 1)
+        }
+
+        val relays = (configStore.config.value.activeBlastrRelays.take(3) +
+            (_outboxRelays.value[pubkey] ?: emptyList()).take(2)).distinct()
+        for (relayUrl in relays) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
                 tempClientSemaphore.withPermit {

@@ -93,6 +93,8 @@ object AppModule {
                     .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                    // A friend's vault on the FIPS mesh serves its blobs directly.
+                    .addInterceptor(com.nostrvault.fips.FipsMeshInterceptor())
                     .build()
             }
             .components {

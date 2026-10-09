@@ -315,15 +315,19 @@ data class FeedNote(
             createdAt: Long,
             kind: Int,
             repostedBy: String? = null,
-        ): FeedNote = FeedNote(
-            id = id,
-            pubkey = pubkey,
-            content = content,
-            createdAt = Date(createdAt * 1000),
-            tags = tags,
-            kind = kind,
-            repostedBy = repostedBy,
-        )
+        ): FeedNote {
+            // So a blob in this note can be read from the author's vault on the mesh.
+            com.nostrvault.fips.FipsMediaRouter.noteMedia(pubkey, content, tags)
+            return FeedNote(
+                id = id,
+                pubkey = pubkey,
+                content = content,
+                createdAt = Date(createdAt * 1000),
+                tags = tags,
+                kind = kind,
+                repostedBy = repostedBy,
+            )
+        }
 
         /**
          * Technical heuristic to filter out spam, bots, empty, duplicate, or telemetry noise.
