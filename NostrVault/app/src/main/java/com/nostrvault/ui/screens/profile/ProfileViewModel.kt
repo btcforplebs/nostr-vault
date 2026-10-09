@@ -260,6 +260,14 @@ class ProfileViewModel @Inject constructor(
             combine(_pubkey, feedService.followedPubkeys) { pk, followed -> pk.isNotEmpty() && pk in followed }
                 .collect { _isFollowing.value = it }
         }
+        // Block reads the active account's block list too, so a block from
+        // anywhere (the avatar menu on one of their posts, a Media tile)
+        // shows in the header at once.
+        viewModelScope.launch {
+            combine(_pubkey, configStore.config) { pk, _ -> pk.isNotEmpty() && feedService.isBlocked(pk) }
+                .distinctUntilChanged()
+                .collect { _isBlocked.value = it }
+        }
     }
 
     fun setPubkey(pubkey: String) {
@@ -306,7 +314,6 @@ class ProfileViewModel @Inject constructor(
             val own = pk == configStore.activeAccountHexPubkey.value
             _isOwnProfile.value = own
             _isFollowing.value = feedService.isFollowing(pk)
-            _isBlocked.value = feedService.isBlocked(pk)
 
             // Own following count is known instantly from our contact list.
             if (own) {
@@ -505,7 +512,6 @@ class ProfileViewModel @Inject constructor(
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         if (_isBlocked.value) feedService.unblockUser(pk) else feedService.blockUser(pk)
-        _isBlocked.value = !_isBlocked.value
     }
 
     /**
@@ -608,10 +614,9 @@ class ProfileViewModel @Inject constructor(
         nostrService.reportUser(pubkey, reason, description.ifBlank { null })
     }
 
-    /** Blocks [pubkey]; the header's Blocked state follows when it is this profile. */
+    /** Blocks [pubkey]; the header's Blocked state follows the block list. */
     fun blockAuthor(pubkey: String) {
         feedService.blockUser(pubkey)
-        if (pubkey == _pubkey.value) _isBlocked.value = true
     }
 
     /** True when a NWC wallet is configured and the profile has a lightning address. */
