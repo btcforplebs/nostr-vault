@@ -176,7 +176,7 @@ class FipsMeshManager @Inject constructor(
      * Being findable on the mesh and being reachable on it are separate
      * decisions, so this is a separate switch and it is off by default.
      */
-    suspend fun setShareRelay(enabled: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
         configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
         if (!_status.value.running) return@withContext
         if (enabled) {
@@ -199,7 +199,7 @@ class FipsMeshManager @Inject constructor(
     }
 
     /** Re-read the bridge. Polled: nothing ever calls back into the JVM. */
-    suspend fun refresh() = withContext(Dispatchers.IO) {
+    suspend fun refresh(): Unit = withContext(Dispatchers.IO) {
         val status = FipsBridge.status()
         _status.value = status
         // The library already stopped sharing; turn the switch off to match, so
