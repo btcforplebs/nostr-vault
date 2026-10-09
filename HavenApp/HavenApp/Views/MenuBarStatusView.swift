@@ -257,7 +257,7 @@ struct MenuBarStatusView: View {
 
             Spacer()
 
-            Button(action: { openSettings() }) {
+            Button(action: showSettings) {
                 Image(systemName: "gearshape")
                     .font(.appSystem(size: 14))
                     .foregroundColor(.secondary)
@@ -393,6 +393,19 @@ struct MenuBarStatusView: View {
         openMainWindow()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             NotificationCenter.default.post(name: .composeFromTabBar, object: 1)
+        }
+    }
+
+    /// Opens Settings in front, as `openMainWindow` does for the main window.
+    /// The app has no Dock icon (LSUIElement), so a Settings window opened
+    /// without activating the app can land behind whatever app is in front.
+    private func showSettings() {
+        openSettings()
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first { $0.identifier?.rawValue.contains("Settings") == true }?
+                .makeKeyAndOrderFront(nil)
+            dismissPanel()
         }
     }
 

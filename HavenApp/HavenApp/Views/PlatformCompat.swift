@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
@@ -163,6 +164,49 @@ struct PlatformClipboard {
         if let data = UIPasteboard.general.data(forPasteboardType: "public.png") { return data }
         // Fallback: convert UIImage (loses GIF animation)
         return UIPasteboard.general.image?.jpegData(compressionQuality: 0.85)
+        #endif
+    }
+
+    /// A video on the clipboard, copied out to a temporary file so it can go
+    /// through the same upload as a file picked with + -> Files. Nil when the
+    /// clipboard holds no video.
+    ///
+    /// Videos are read as files, never as `Data`: a copied clip can be
+    /// hundreds of megabytes, and the image path's `data(forPasteboardType:)`
+    /// would pull all of it into memory.
+    static func copyVideoToTemporaryFile() async -> URL? {
+        #if canImport(AppKit)
+        // Finder puts file URLs on the pasteboard. The file is already on disk.
+        let urls = NSPasteboard.general.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
+        return urls.first { url in
+            UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        }
+        #elseif canImport(UIKit)
+        for provider in UIPasteboard.general.itemProviders {
+            guard let typeID = provider.registeredTypeIdentifiers.first(where: {
+                UTType($0)?.conforms(to: .movie) == true
+            }) else { continue }
+            let ext = UTType(typeID)?.preferredFilenameExtension ?? "mov"
+            return await withCheckedContinuation { continuation in
+                provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, _ in
+                    // The provided file is deleted when this handler returns.
+                    guard let url else { continuation.resume(returning: nil); return }
+                    let dest = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("pasted-video-\(UUID().uuidString.prefix(8))")
+                        .appendingPathExtension(ext)
+                    do {
+                        try FileManager.default.copyItem(at: url, to: dest)
+                        continuation.resume(returning: dest)
+                    } catch {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+        return nil
         #endif
     }
 
@@ -365,5 +409,23 @@ extension EnvironmentValues {
     var floatingTabBarHeight: CGFloat {
         get { self[FloatingTabBarHeightKey.self] }
         set { self[FloatingTabBarHeightKey.self] = newValue }
+    }
+}
+
+/// Lifts a floating action button (Post, Relay, Blossom) clear of the iPhone's
+/// floating tab bar. Where there is no bar -- the iPad split -- the fixed 90pt
+/// lift left the button hovering over the list's cards, so it drops to the
+/// ordinary margin there.
+private struct FloatingActionBottomPadding: ViewModifier {
+    @Environment(\.floatingTabBarHeight) private var tabBarHeight
+
+    func body(content: Content) -> some View {
+        content.padding(.bottom, tabBarHeight > 0 ? 90 : 20)
+    }
+}
+
+extension View {
+    func floatingActionBottomPadding() -> some View {
+        modifier(FloatingActionBottomPadding())
     }
 }

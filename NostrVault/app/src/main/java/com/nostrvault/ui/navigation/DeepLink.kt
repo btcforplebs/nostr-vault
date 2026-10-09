@@ -11,6 +11,20 @@ package com.nostrvault.ui.navigation
 data class DeepLinkTarget(
     val route: String,
     val accountNpub: String? = null,
+    /** Set when the route is the Relay tab and it should scroll to one event. */
+    val relayFocus: RelayFocusRequest? = null,
+    /**
+     * The post a notification carried. The nav host puts it in the note cache
+     * before opening [route], so the note screen shows it without a fetch.
+     */
+    val seedNote: CarriedEvent? = null,
+    /** Paste the clipboard into Blossom once the Vault tab's Media half shows (`nostrvault://mediapaste`). */
+    val mediaPaste: Boolean = false,
+    /**
+     * On the Vault tab's route: open its Media half (the gallery). False
+     * opens the relay half, where a notification's list is.
+     */
+    val vaultMedia: Boolean = false,
 )
 
 /**
@@ -64,13 +78,15 @@ object DeepLinkRouter {
             // A notification about a specific mention does better than this — it
             // carries the event id and opens the note.
             "mentions" -> DeepLinkTarget(Screen.Feed.route)
-            "compose", "mediapaste" -> DeepLinkTarget(Screen.ComposeNote.createRoute())
+            "compose" -> DeepLinkTarget(Screen.ComposeNote.createRoute())
+            // iOS opens the Vault tab's Media half and pastes the clipboard into Blossom.
+            "mediapaste" -> DeepLinkTarget(Screen.Dashboard.route, mediaPaste = true, vaultMedia = true)
             "dms" -> DeepLinkTarget(Screen.DMInbox.route)
             "search" -> DeepLinkTarget(Screen.Search.route)
+            // Media and Relay are one Vault tab now; each link opens its half.
             "relay" -> DeepLinkTarget(Screen.Dashboard.route)
-            "media" -> DeepLinkTarget(Screen.MediaGallery.route)
+            "media" -> DeepLinkTarget(Screen.Dashboard.route, vaultMedia = true)
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
-            "groups" -> DeepLinkTarget(Screen.GroupList.route)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             else -> null
@@ -113,28 +129,74 @@ object DeepLinkRouter {
 
     /**
      * The extras [com.nostrvault.service.LocalNotificationService] puts on its
-     * tap intent. `type` is the notification kind, `eventId` the note it was
-     * about, `author` the sender's hex pubkey, `npub` the account it arrived
-     * for.
+     * tap intent. `type` is the notification kind, `eventId` the event the
+     * notification was raised for (not necessarily a note), `author` the
+     * sender's hex pubkey, `npub` the account it arrived for. `event` and
+     * `target` are the posts the notification carried ([NotificationNote]).
      */
     fun fromNotification(
         type: String?,
         eventId: String?,
         author: String?,
         npub: String?,
+        event: String? = null,
+        target: String? = null,
     ): DeepLinkTarget? {
         val account = npub?.takeIf { it.isNotBlank() }
+        if (type == null) return null
         return when (type) {
-            // A DM opens the conversation, not the gift wrap's event id — the
-            // wrap id is not addressable as a note.
-            "dm", "giftwrap" -> author?.takeIf { isHex64(it) }
+            // A NIP-04 DM opens the conversation, not its event id.
+            "dm" -> author?.takeIf { isHex64(it) }
                 ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
-            "mention", "reply", "repost", "zap" -> eventId?.takeIf { isHex64(it) }
-                ?.let { DeepLinkTarget(Screen.NoteDetail.createRoute(it), account) }
+            // A gift wrap's author is the one-time wrapping key, not the sender
+            // (that is only known after decrypting), so it opens the inbox —
+            // as iOS does. Opening a thread with the wrap key showed a stranger.
+            "giftwrap" -> DeepLinkTarget(Screen.DMInbox.route, account)
+            // A post-related notification opens the post at once, from the
+            // copy it carried, as on iOS. Without a copy a mention or reply
+            // still opens by id. The Relay tab route is left for what has no
+            // post to open: a zap on a profile, or a like whose event the
+            // notification lacks — its own id names the like, not the post.
+            in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
+                ?.let { postTarget(type, it, account, event, target) }
+            // A new follower opens their profile; the author is the follower.
+            "follow" -> author?.takeIf { isHex64(it) }
+                ?.let { DeepLinkTarget(Screen.Profile.createRoute(it), account) }
+            // The folded strangers' alert names nobody: their Followers list.
+            NotificationTarget.FOLLOWERS -> DeepLinkTarget(
+                route = Screen.Dashboard.route,
+                accountNpub = account,
+                relayFocus = RelayFocusRequest(type = NotificationTarget.FOLLOWERS, eventId = ""),
+            )
             // The catch-up marker deliberately has no event id.
             "summary" -> DeepLinkTarget(Screen.Feed.route, account)
             else -> null
         }
+    }
+
+    private fun postTarget(
+        type: String,
+        eventId: String,
+        account: String?,
+        event: String?,
+        target: String?,
+    ): DeepLinkTarget {
+        val carried = NotificationNote.decode(event)
+        val about = type == "reaction" || type == "repost" || type == "zap"
+        if (!about) {
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(carried?.id ?: eventId), account, seedNote = carried)
+        }
+        NotificationNote.decode(target)?.let {
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it.id), account, seedNote = it)
+        }
+        carried?.let { NotificationTarget.targetNoteId(type, it.id, it.tags) }?.let {
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it), account)
+        }
+        return DeepLinkTarget(
+            route = Screen.Dashboard.route,
+            accountNpub = account,
+            relayFocus = RelayFocusRequest(type = type, eventId = eventId),
+        )
     }
 
     private fun isHex64(s: String): Boolean =

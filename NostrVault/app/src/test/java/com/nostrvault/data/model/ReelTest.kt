@@ -138,7 +138,7 @@ class ReelTest {
     @Test
     fun `older NIP-71 events with a bare url tag still play`() {
         val reel = Reel.from(
-            note(kind = 34235, tags = listOf(listOf("url", "https://x.example/v"), listOf("m", "video/webm"))),
+            note(kind = 34236, tags = listOf(listOf("url", "https://x.example/v"), listOf("m", "video/webm"))),
             1,
         )
         assertEquals("https://x.example/v", reel?.videoUrl)
@@ -193,9 +193,19 @@ class ReelTest {
     }
 
     @Test
-    fun `stream by kind`() {
-        assertEquals(ReelStream.NOTE, ReelStream.forKind(1))
-        Reel.VIDEO_KINDS.forEach { assertEquals(ReelStream.VIDEO, ReelStream.forKind(it)) }
-        assertNull(ReelStream.forKind(6))
+    fun `only diVine short videos are reels`() {
+        assertEquals(ReelStream.VIDEO, ReelStream.forKind(34236))
+        listOf(1, 6, 21, 22, 34235).forEach { assertNull(ReelStream.forKind(it)) }
+    }
+
+    @Test
+    fun `versions of one addressable video share an address`() {
+        fun version(id: String, d: String) = Reel.from(
+            note(id = id, kind = 34236, tags = listOf(listOf("d", d), listOf("url", "https://x.example/$id"))),
+            1,
+        )!!
+        assertEquals(version("a", "clip").address, version("b", "clip").address)
+        assertEquals("34236:alice:clip", version("a", "clip").address)
+        assertFalse(version("a", "clip").address == version("c", "other").address)
     }
 }

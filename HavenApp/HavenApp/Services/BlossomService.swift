@@ -83,6 +83,33 @@ class BlossomService: @unchecked Sendable {
         print("Blossom: \(message)")
     }
 
+    /// Sign a blob's upload authorisation now, ahead of the upload.
+    ///
+    /// Called when an attachment is picked. The hash is known at that moment
+    /// and the person is still typing, so the signer round trip — a full one,
+    /// with a remote signer — is spent where they cannot feel it instead of
+    /// after they tap Post. Fire-and-forget: if it has not landed by then, the
+    /// upload path signs it as it always did.
+    func prepareUploadAuth(sha256: String) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            _ = await self?.makeUploadAuth(sha256: sha256)
+        }
+    }
+
+    /// The authorisation for a blob: the pre-signed one when there is one, and
+    /// otherwise one signed now.
+    private func makeUploadAuth(sha256: String) async -> String? {
+        // Which key will sign, asked now: an authorisation carries its signer,
+        // so one cached under the account the person has since left would put
+        // the blob up as that account and tie the two together at the Blossom
+        // server.
+        let signer = await MainActor.run { self.nostrService.activeHexPubkey }
+        return await UploadAuthCache.shared.authorisation(signer: signer, sha256: sha256) { [weak self] in
+            guard let self else { return nil }
+            return await self.signUploadAuth(sha256: sha256)
+        }
+    }
+
     /// Sign one BUD-02 upload authorisation for a blob, to be reused for every
     /// request that blob needs.
     ///
@@ -101,7 +128,7 @@ class BlossomService: @unchecked Sendable {
     /// Retries, because a momentary signer problem — a keychain read before the
     /// device has finished unlocking, a NIP-46 bunker mid-reconnect — should
     /// cost a second, not the whole upload.
-    private func makeUploadAuth(sha256: String) async -> String? {
+    private func signUploadAuth(sha256: String) async -> (base64: String, expiresAt: Int64)? {
         let expirationTimestamp = Int64(Date().timeIntervalSince1970) + 3600
         let authTags = [
             ["t", "upload"],
@@ -125,24 +152,82 @@ class BlossomService: @unchecked Sendable {
                 appLog("could not encode the upload authorisation", level: "ERROR")
                 return nil
             }
-            return authJSON.base64EncodedString()
+            return (base64: authJSON.base64EncodedString(), expiresAt: expirationTimestamp)
         }
         return nil
     }
 
-    /// Upload media to local Blossom and mirror to external servers
-    /// - Parameters:
-    ///   - data: The media file data
-    ///   - sha256: The SHA256 hash of the data (hex string)
-    /// - Returns: External mirror URL if at least one mirror succeeds, nil if all fail
-    func uploadAndMirror(data: Data, sha256: String, contentType: String = "application/octet-stream", progress: ((Double) -> Void)? = nil) async -> URL? {
-        return await uploadAndMirror(source: .data(data), sha256: sha256, contentType: contentType, progress: progress)
+    /// Where a post's attachment ended up. Three different situations with
+    /// three different remedies — they used to share one nil and one message
+    /// ("check your connection"), which sent us looking at the network when
+    /// the blob was sitting safely in the phone's own relay.
+    enum PostUploadOutcome {
+        /// An outside server accepted it; this URL goes in the note.
+        case hosted(URL)
+        /// In this device's relay, but no outside server took it. The post can
+        /// wait for one (`MediaPostQueue`). `unreachable` is what was tried.
+        case savedOnDevice(unreachable: [String])
+        /// In this device's relay, and there is no outside server to try.
+        case noOutsideServer
+        /// Never reached this device's relay.
+        case notSavedOnDevice
+    }
+
+    /// Upload a post attachment: this device's relay first, then the outside
+    /// Blossom servers. `skipOutsideServers` saves locally only — used once an
+    /// earlier attachment of the same post found every outside server down,
+    /// so the rest don't each wait out the same retry.
+    func uploadForPost(data: Data, sha256: String, contentType: String = "application/octet-stream", skipOutsideServers: Bool = false, progress: ((Double) -> Void)? = nil) async -> PostUploadOutcome {
+        return await uploadAndMirror(source: .data(data), sha256: sha256, contentType: contentType, skipOutsideServers: skipOutsideServers, progress: progress)
     }
 
     /// File-based variant that streams the upload from disk — use for large
     /// videos so the file doesn't sit fully in memory during upload.
-    func uploadAndMirror(fileURL: URL, sha256: String, contentType: String = "application/octet-stream", progress: ((Double) -> Void)? = nil) async -> URL? {
-        return await uploadAndMirror(source: .file(fileURL), sha256: sha256, contentType: contentType, progress: progress)
+    func uploadForPost(fileURL: URL, sha256: String, contentType: String = "application/octet-stream", skipOutsideServers: Bool = false, progress: ((Double) -> Void)? = nil) async -> PostUploadOutcome {
+        return await uploadAndMirror(source: .file(fileURL), sha256: sha256, contentType: contentType, skipOutsideServers: skipOutsideServers, progress: progress)
+    }
+
+    /// Send a blob that is already in this device's relay to the outside
+    /// servers, returning the URL of the first that accepts it. What
+    /// `MediaPostQueue` calls when it retries a waiting post. One pass only —
+    /// the queue itself is the retry.
+    func hostLocalBlob(sha256: String, contentType: String) async -> URL? {
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+        guard !mirrors.isEmpty else { return nil }
+        guard await RelayProcessManager.shared.ensureRelayReady() else {
+            appLog("waiting post: this device's relay is not ready yet — will retry", level: "WARN")
+            return nil
+        }
+        let localBase = await localBlossomURL()
+        guard let localURL = URL(string: "\(localBase)/\(sha256)") else { return nil }
+
+        // Stream through a temp file: a queued video can be hundreds of MB.
+        let tempURL: URL
+        do {
+            let (downloaded, response) = try await localhostSession.download(from: localURL)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                appLog("waiting post: blob \(sha256.prefix(8)) not readable from this device's relay (HTTP \(code))", level: "ERROR")
+                try? FileManager.default.removeItem(at: downloaded)
+                return nil
+            }
+            tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("queued-\(sha256)")
+            try? FileManager.default.removeItem(at: tempURL)
+            try FileManager.default.moveItem(at: downloaded, to: tempURL)
+        } catch {
+            appLog("waiting post: could not read blob \(sha256.prefix(8)) from this device's relay: \(error.localizedDescription)", level: "ERROR")
+            return nil
+        }
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let auth = await makeUploadAuth(sha256: sha256)
+        let hosted = await mirrorUploadPass(source: .file(tempURL), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
+        if let url = hosted.first {
+            appLog("waiting post: \(sha256.prefix(8)) now hosted at \(url.absoluteString)")
+            return url
+        }
+        appLog("waiting post: no outside server accepted \(sha256.prefix(8)) yet (\(mirrors))", level: "WARN")
+        return nil
     }
 
     /// Save media to the local relay and attempt to push to configured external mirrors.
@@ -163,7 +248,9 @@ class BlossomService: @unchecked Sendable {
 
     /// Push a locally-stored blob to configured external mirrors.
     /// Downloads the blob from the local relay, then re-uploads to each external mirror.
-    func pushLocalToMirrors(sha256: String) async -> Bool {
+    /// `only` limits the upload to those servers (the ones missing the blob);
+    /// nil means every configured server.
+    func pushLocalToMirrors(sha256: String, only: [String]? = nil) async -> Bool {
         let port = await MainActor.run { configService.config.relayPort }
         #if os(macOS)
         let localURLStr = "http://127.0.0.1:\(port)/\(sha256)"
@@ -184,7 +271,27 @@ class BlossomService: @unchecked Sendable {
             }
 
             let contentType = httpResponse.mimeType ?? "application/octet-stream"
-            return await saveToLocalRelay(data: data, sha256: sha256, contentType: contentType, mirrorToExternal: true)
+            // The blob is already on this device, so upload only to the outside
+            // servers. Success means at least one of them accepted it — going
+            // through saveToLocalRelay returned true even when every mirror
+            // failed, because its result is the local save's.
+            let configured = await MainActor.run { configService.config.activeBlossomMirrors }
+            let mirrors = only.map { wanted in configured.filter { wanted.contains($0) } } ?? configured
+            guard !mirrors.isEmpty else {
+                logger.error("pushLocalToMirrors: no outside Blossom server configured")
+                return false
+            }
+            let auth = await makeUploadAuth(sha256: sha256)
+            let accepted = await mirrorUploadPass(source: .data(data), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
+            if !accepted.isEmpty && accepted.count < mirrors.count {
+                // Count, not hosts: a server may answer with a CDN URL whose
+                // host differs from the one configured.
+                let message = "Mirrored to \(accepted.count) of \(mirrors.count) Blossom servers"
+                await MainActor.run {
+                    ErrorNotificationManager.shared.show(message, icon: "exclamationmark.icloud.fill", style: .warning)
+                }
+            }
+            return !accepted.isEmpty
         } catch {
             logger.error("pushLocalToMirrors: error reading local blob: \(error.localizedDescription)")
             return false
@@ -220,7 +327,9 @@ class BlossomService: @unchecked Sendable {
     /// system woke from sleep (gracefulRestart enforces coalescing, a
     /// cooldown, and the post-wake grace window).
     private func uploadToLocalWithRecovery(source: UploadSource, sha256: String, contentType: String, authBase64: String? = nil) async -> URL? {
-        var relayReady = await RelayProcessManager.shared.ensureRelayReady()
+        // Flags and a real HTTP answer: a relay that reads as running but
+        // lost its socket in the background goes straight to the restart.
+        var relayReady = await RelayProcessManager.shared.ensureRelayServing()
         if !relayReady {
             logger.warning("uploadToLocalWithRecovery: relay not ready, attempting graceful restart")
             relayReady = await RelayProcessManager.shared.gracefulRestart()
@@ -334,7 +443,7 @@ class BlossomService: @unchecked Sendable {
         return true
     }
 
-    private func uploadAndMirror(source: UploadSource, sha256: String, contentType: String, progress: ((Double) -> Void)?) async -> URL? {
+    private func uploadAndMirror(source: UploadSource, sha256: String, contentType: String, skipOutsideServers: Bool, progress: ((Double) -> Void)?) async -> PostUploadOutcome {
         // One signature for this blob, reused by the local save, the preflight,
         // every retry and every mirror. nil means the key is genuinely
         // unavailable after three tries — each call below then signs its own,
@@ -344,11 +453,8 @@ class BlossomService: @unchecked Sendable {
         // Step 1: Upload to local Blossom first (with restart recovery)
         guard await uploadToLocalWithRecovery(source: source, sha256: sha256, contentType: contentType, authBase64: auth) != nil else {
             logger.error("uploadAndMirror: failed to upload to local relay after recovery attempt")
-            // Stage matters: the composer shows the same "mirrors failed" text
-            // whichever half broke, which sent us looking at the Mac when the
-            // blob had never left the phone.
             appLog("post upload FAILED at stage 1 of 2 — the blob never reached this device's own relay", level: "ERROR")
-            return nil
+            return .notSavedOnDevice
         }
 
         // Step 2: Get mirrors on main actor
@@ -359,8 +465,13 @@ class BlossomService: @unchecked Sendable {
         logger.info("Found \(mirrors.count) configured Blossom mirrors: \(mirrors)")
 
         guard !mirrors.isEmpty else {
-            logger.error("No Blossom mirrors configured — cannot post without accessible mirror URL")
-            return nil
+            appLog("post upload stopped at stage 2 of 2 — saved on this device, but no outside Blossom server is configured", level: "ERROR")
+            return .noOutsideServer
+        }
+
+        if skipOutsideServers {
+            appLog("saved \(sha256.prefix(8)) on this device only — an earlier attachment found every outside server down")
+            return .savedOnDevice(unreachable: mirrors)
         }
 
         // Step 3: Upload to external mirrors concurrently using standard BUD-02 protocol
@@ -369,7 +480,7 @@ class BlossomService: @unchecked Sendable {
         // A sleeping mirror host (e.g. the Mac relay over LAN/Tailscale) is often
         // woken *by* the first pass's connection attempts (wake-on-network) but
         // isn't up fast enough to serve it. Wait and retry the whole pass once
-        // before failing the post.
+        // before handing the post to the queue.
         if mirrorURLs.isEmpty {
             logger.warning("All Blossom mirrors failed — retrying once in 10s in case a sleeping host is still waking")
             appLog("first mirror pass failed for all of \(mirrors) — retrying once in 10s", level: "WARN")
@@ -381,20 +492,18 @@ class BlossomService: @unchecked Sendable {
         if let externalURL = mirrorURLs.first {
             logger.info("Using external Blossom mirror: \(externalURL.absoluteString)")
             appLog("post upload ok — mirrored to \(externalURL.absoluteString)")
-            return externalURL
+            return .hosted(externalURL)
         }
 
-        // FAIL if no mirrors succeeded
-        logger.error("All Blossom mirror uploads failed — cannot post without accessible mirror URL")
-        appLog("post upload FAILED at stage 2 of 2 — saved on this device, but no mirror accepted it after two passes", level: "ERROR")
-        return nil
+        appLog("post upload paused at stage 2 of 2 — saved on this device, no outside server accepted it after two passes; the post will wait for one", level: "WARN")
+        return .savedOnDevice(unreachable: mirrors)
     }
 
     /// One concurrent BUD-02 upload pass over all configured mirrors.
     /// Returns the URLs of every mirror that accepted the blob.
     private func mirrorUploadPass(source: UploadSource, sha256: String, contentType: String, mirrors: [String], authBase64: String?, progress: ((Double) -> Void)?) async -> [URL] {
         logger.debug("Attempting to mirror to: \(mirrors.description)")
-        return await withTaskGroup(of: (String, URL?).self) { group in
+        return await withTaskGroup(of: (Int, String, URL?).self) { group in
             for (index, mirrorURL) in mirrors.enumerated() {
                 group.addTask {
                     // Only report progress for the first remote mirror to avoid progress jitter
@@ -410,24 +519,28 @@ class BlossomService: @unchecked Sendable {
                     )
                     guard accepted else {
                         self.logger.info("BUD-06: Skipping mirror \(mirrorURL) — preflight rejected")
-                        return (mirrorURL, nil)
+                        return (index, mirrorURL, nil)
                     }
 
                     let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, authBase64: authBase64, progress: progressHandler)
-                    return (mirrorURL, result)
+                    return (index, mirrorURL, result)
                 }
             }
 
-            var successfulMirrors: [URL] = []
-            for await (mirrorURL, result) in group {
+            var successfulMirrors: [(index: Int, url: URL)] = []
+            for await (index, mirrorURL, result) in group {
                 if let url = result {
                     self.logger.info("Mirror upload succeeded for \(mirrorURL): \(url.absoluteString)")
-                    successfulMirrors.append(url)
+                    successfulMirrors.append((index, url))
                 } else {
                     self.logger.warning("Mirror upload failed for \(mirrorURL)")
                 }
             }
-            return successfulMirrors
+            // In the order the servers are configured, not the order they
+            // answered: callers post the first URL, and the list order is the
+            // user's preference. Fastest-first made it whichever server won
+            // the race that time.
+            return successfulMirrors.sorted { $0.index < $1.index }.map(\.url)
         }
     }
 
@@ -1135,30 +1248,36 @@ class BlossomService: @unchecked Sendable {
     /// - Parameter sha256: The SHA256 hash of the blob to check
     /// - Returns: Dictionary mapping mirror URL to availability status
     func checkMirrorStatus(sha256: String) async -> [String: Bool] {
-        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
-        guard !mirrors.isEmpty else {
-            return [:]
-        }
+        let presence = await checkMirrorPresence(sha256: sha256)
+        return presence.mapValues { $0 == .present }
+    }
 
-        return await withTaskGroup(of: (String, Bool).self) { group in
+    /// Asks every configured Blossom server whether it holds `sha256`.
+    /// Unlike `checkMirrorStatus`, a server that could not be reached is
+    /// reported as `.unreachable`, not as "does not have it".
+    func checkMirrorPresence(sha256: String) async -> [String: BlobPresence] {
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+        guard !mirrors.isEmpty else { return [:] }
+
+        return await withTaskGroup(of: (String, BlobPresence).self) { group in
             for mirror in mirrors {
                 group.addTask {
-                    let exists = await self.checkBlobExists(mirror: mirror, sha256: sha256)
-                    return (mirror, exists)
+                    (mirror, await self.checkBlobExists(mirror: mirror, sha256: sha256))
                 }
             }
-
-            var results: [String: Bool] = [:]
-            for await (mirror, exists) in group {
-                results[mirror] = exists
+            var results: [String: BlobPresence] = [:]
+            for await (mirror, presence) in group {
+                results[mirror] = presence
             }
             return results
         }
     }
 
-    /// Check if a specific blob exists on a mirror server
-    private func checkBlobExists(mirror: String, sha256: String) async -> Bool {
-        guard var mirrorURL = URL(string: mirror) else { return false }
+    /// Check if a specific blob exists on a mirror server.
+    /// A 2xx alone is not enough: some servers answer 200 with an HTML page
+    /// for any path, which used to read as "Available" for every file.
+    private func checkBlobExists(mirror: String, sha256: String) async -> BlobPresence {
+        guard var mirrorURL = URL(string: mirror) else { return .unreachable }
 
         // Ensure HTTPS for remote servers
         if mirrorURL.scheme == "http" && !isLocalhost(mirrorURL) {
@@ -1177,15 +1296,38 @@ class BlossomService: @unchecked Sendable {
         do {
             let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
             let (_, response) = try await session.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                return (200...299).contains(httpResponse.statusCode)
-            }
-            return false
+            guard let http = response as? HTTPURLResponse else { return .unreachable }
+            return Self.presence(statusCode: http.statusCode,
+                                 contentType: http.value(forHTTPHeaderField: "Content-Type"),
+                                 contentLength: http.value(forHTTPHeaderField: "Content-Length"))
         } catch {
             logger.debug("checkBlobExists: \(mirror)/\(sha256.prefix(8)) error: \(error.localizedDescription)")
-            return false
+            return .unreachable
         }
     }
+
+    /// The decision behind `checkBlobExists`, split out so it can be tested
+    /// without a server.
+    static func presence(statusCode: Int, contentType: String?, contentLength: String?) -> BlobPresence {
+        switch statusCode {
+        case 200...299:
+            if let type = contentType?.lowercased(), type.hasPrefix("text/html") { return .absent }
+            if let length = contentLength.flatMap({ Int64($0) }), length == 0 { return .absent }
+            return .present
+        case 400...499:
+            return .absent
+        default:
+            return .unreachable
+        }
+    }
+}
+
+/// Whether one Blossom server holds a blob.
+enum BlobPresence: Sendable, Equatable {
+    case present
+    case absent
+    /// The server did not answer (offline, timeout, 5xx), so we do not know.
+    case unreachable
 }
 
 /// Helper class conforming to NSObject and URLSessionTaskDelegate to report body upload progress.
@@ -1203,3 +1345,72 @@ class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
     }
 }
 
+/// Pre-signed BUD-02 upload authorisations, by signing account and blob hash.
+///
+/// Shared rather than held per `BlossomService` on purpose: the views build a
+/// fresh service on every access (`ComposeView.blossomService` is a computed
+/// property), so an instance-held cache would be thrown away between
+/// pre-signing an attachment's authorisation and uploading the blob.
+///
+/// An authorisation is scoped to `t: upload` and `x: <sha256>` and nothing
+/// else — not to a request, not to a server — so one signature is good for
+/// every request that blob needs until it expires, including a retry of a
+/// failed post.
+actor UploadAuthCache {
+    static let shared = UploadAuthCache()
+
+    private struct Prepared {
+        let base64: String
+        let expiresAt: Int64
+    }
+    private var prepared: [String: Prepared] = [:]
+    private var inFlight: [String: Task<String?, Never>] = [:]
+
+    /// The authorisation for `signer` and `sha256`, signing one through `sign`
+    /// if there is none to reuse. Callers that arrive while a signature is
+    /// out — the upload catching up with its own pre-sign — wait for that one
+    /// answer instead of putting a second request to the signer.
+    func authorisation(signer: String, sha256: String,
+                       sign: @escaping @Sendable () async -> (base64: String, expiresAt: Int64)?) async -> String? {
+        let key = signer + ":" + sha256
+        let now = Int64(Date().timeIntervalSince1970)
+        if let entry = prepared[key] {
+            // Keep a wide margin: an authorisation that expires mid-upload is
+            // worse than one more signature here, and a large video can take
+            // minutes to reach every mirror.
+            if entry.expiresAt - now > 600 { return entry.base64 }
+            prepared[key] = nil
+        }
+        if let outstanding = inFlight[key] { return await outstanding.value }
+
+        let task = Task<String?, Never> { [weak self] in
+            guard let signed = await sign() else { return nil }
+            await self?.store(key: key, base64: signed.base64, expiresAt: signed.expiresAt)
+            return signed.base64
+        }
+        inFlight[key] = task
+        let result = await task.value
+        inFlight[key] = nil
+        return result
+    }
+
+    private func store(key: String, base64: String, expiresAt: Int64) {
+        prepared[key] = Prepared(base64: base64, expiresAt: expiresAt)
+        prune()
+    }
+
+    /// Nothing clears this cache on an account switch and nothing needs to —
+    /// the signing pubkey is part of the key, so an entry can only ever be
+    /// handed back to the account that signed it. This just keeps the map from
+    /// growing for the life of the process.
+    private func prune() {
+        let now = Int64(Date().timeIntervalSince1970)
+        prepared = prepared.filter { $0.value.expiresAt > now }
+        guard prepared.count > Self.maxPrepared else { return }
+        let keep = prepared.sorted { $0.value.expiresAt > $1.value.expiresAt }
+            .prefix(Self.maxPrepared)
+        prepared = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+    }
+
+    private static let maxPrepared = 32
+}

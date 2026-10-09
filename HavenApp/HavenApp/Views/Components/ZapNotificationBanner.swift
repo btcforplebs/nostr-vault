@@ -72,10 +72,15 @@ class UnlikeNotificationManager: ObservableObject {
     @Published var timeRemaining: Double = 3.0
     private var task: Task<Void, Never>?
     private var onUnlike: (() -> Void)?
+    private var onUndo: (() -> Void)?
 
-    func startCountdown(onUnlike: @escaping () -> Void) {
-        cancel()
+    /// Shows the pill for a reaction that was just removed. `onUnlike` makes
+    /// the removal final when the pill runs out; Undo calls `onUndo` instead.
+    func startCountdown(onUnlike: @escaping () -> Void, onUndo: @escaping () -> Void = {}) {
+        // One pill at a time: a removal still counting down becomes final.
+        commit()
         self.onUnlike = onUnlike
+        self.onUndo = onUndo
         timeRemaining = 3.0
         withAnimation(Motion.bannerIn) { isShowing = true }
         task = Task {
@@ -85,19 +90,32 @@ class UnlikeNotificationManager: ObservableObject {
                 await MainActor.run { self.timeRemaining -= 0.1 }
             }
             if Task.isCancelled { return }
-            await MainActor.run {
-                self.onUnlike?()
-                self.onUnlike = nil
-                withAnimation(Motion.bannerOut) { self.isShowing = false }
-            }
+            await MainActor.run { self.commit() }
         }
     }
 
+    /// Makes a pending removal final now.
+    func commit() {
+        let action = onUnlike
+        dismiss()
+        action?()
+    }
+
+    /// Undo: puts the removed reaction back.
     func cancel() {
+        let action = onUndo
+        dismiss()
+        action?()
+    }
+
+    private func dismiss() {
         task?.cancel()
         task = nil
         onUnlike = nil
-        withAnimation(Motion.bannerOut) { isShowing = false }
+        onUndo = nil
+        if isShowing {
+            withAnimation(Motion.bannerOut) { isShowing = false }
+        }
     }
 }
 
@@ -137,7 +155,7 @@ struct UnlikePill: View {
             Image(systemName: "heart.slash.fill")
                 .font(.appSystem(size: 12, weight: .bold))
 
-            Text("Unliking in \(max(1, Int(ceil(timeRemaining))))s")
+            Text("Reaction removed")
                 .font(.appSystem(size: 13, weight: .bold))
 
             Button("Undo") { onUndo() }
@@ -156,7 +174,7 @@ struct UnlikePill: View {
         )
         .foregroundColor(.white)
         .buttonStyle(.plain)
-        .accessibilityLabel("Unliking in \(max(1, Int(ceil(timeRemaining)))) seconds")
+        .accessibilityLabel("Reaction removed")
     }
 }
 
@@ -235,11 +253,18 @@ struct ZapPill: View {
 struct FollowNotification: Identifiable {
     let id = UUID()
     let recipientName: String
-    let kind: Kind
+    var kind: Kind
+    /// Set on a pending pill, so the follow that finally lands can find it.
+    var pubkey: String? = nil
+    /// Reverses the follow or unfollow this pill confirms.
+    var undo: (() -> Void)? = nil
 
     enum Kind: Equatable {
         case followed
         case unfollowed
+        /// Tapped before the follow list had loaded: the tap is queued and
+        /// applied once the list is confirmed. Not an error, so not red.
+        case pending(follow: Bool)
         case failed(String)
     }
 }
@@ -252,17 +277,65 @@ class FollowNotificationManager: ObservableObject {
 
     @Published var notifications: [FollowNotification] = []
 
-    func add(recipientName: String, kind: FollowNotification.Kind) {
-        let notification = FollowNotification(recipientName: recipientName, kind: kind)
+    func add(recipientName: String, kind: FollowNotification.Kind, undo: (() -> Void)? = nil) {
+        let notification = FollowNotification(recipientName: recipientName, kind: kind, undo: undo)
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
-        let dismissDelay: TimeInterval = {
-            if case .failed = kind { return 5.0 }
-            return 3.0
-        }()
-        let id = notification.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) { [weak self] in
+        // Long enough to reach Undo.
+        scheduleDismiss(notification.id, after: undo == nil ? dismissDelay(kind) : 5.0)
+    }
+
+    /// Runs a pill's Undo and takes the pill down.
+    func undo(_ id: UUID) {
+        guard let notification = notifications.first(where: { $0.id == id }) else { return }
+        withAnimation(Motion.bannerOut) { notifications.removeAll { $0.id == id } }
+        notification.undo?()
+    }
+
+    /// A follow or unfollow queued until the follow list loads. The pill
+    /// stays, with a spinner, until `resolvePending` replaces it.
+    func addPending(pubkey: String, recipientName: String, follow: Bool) {
+        if let idx = notifications.firstIndex(where: { $0.pubkey == pubkey }) {
+            notifications[idx].kind = .pending(follow: follow)
+            return
+        }
+        let notification = FollowNotification(recipientName: recipientName, kind: .pending(follow: follow), pubkey: pubkey)
+        withAnimation(Motion.bannerIn) {
+            notifications.insert(notification, at: 0)
+        }
+    }
+
+    /// The queued action was applied: the pending pill becomes the
+    /// confirmation. `nil` drops it without one.
+    func resolvePending(pubkey: String, kind: FollowNotification.Kind?) {
+        guard let idx = notifications.firstIndex(where: { $0.pubkey == pubkey }) else { return }
+        let id = notifications[idx].id
+        guard let kind else {
+            withAnimation(Motion.bannerOut) { notifications.removeAll { $0.id == id } }
+            return
+        }
+        withAnimation(Motion.fade) {
+            notifications[idx].kind = kind
+            notifications[idx].pubkey = nil
+        }
+        scheduleDismiss(id, after: dismissDelay(kind))
+    }
+
+    /// The queue was discarded (account switch): nothing will land.
+    func clearPending() {
+        withAnimation(Motion.bannerOut) {
+            notifications.removeAll { $0.pubkey != nil }
+        }
+    }
+
+    private func dismissDelay(_ kind: FollowNotification.Kind) -> TimeInterval {
+        if case .failed = kind { return 5.0 }
+        return 3.0
+    }
+
+    private func scheduleDismiss(_ id: UUID, after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             withAnimation(Motion.bannerOut) {
                 self?.notifications.removeAll { $0.id == id }
             }
@@ -294,14 +367,30 @@ struct FollowPill: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: iconName)
-                .font(.appSystem(size: 12, weight: .bold))
+            if case .pending = notification.kind {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+            } else {
+                Image(systemName: iconName)
+                    .font(.appSystem(size: 12, weight: .bold))
+            }
 
             Text(label)
                 .font(.appSystem(size: 13, weight: .bold))
                 .lineLimit(1)
+
+            if notification.undo != nil {
+                Button("Undo") { FollowNotificationManager.shared.undo(notification.id) }
+                    .font(.appSystem(size: 13, weight: .heavy))
+                    .underline()
+                    .buttonStyle(.plain)
+                    .padding(.leading, 6)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, notification.undo == nil ? 10 : 0)
         .padding(.horizontal, 20)
         .background(
             Capsule()
@@ -311,12 +400,18 @@ struct FollowPill: View {
         .foregroundColor(.white)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .accessibilityActions {
+            if notification.undo != nil {
+                Button("Undo") { FollowNotificationManager.shared.undo(notification.id) }
+            }
+        }
     }
 
     private var iconName: String {
         switch notification.kind {
         case .followed:   return "person.badge.plus"
         case .unfollowed: return "person.badge.minus"
+        case .pending:    return "clock"
         case .failed:     return "xmark"
         }
     }
@@ -325,6 +420,7 @@ struct FollowPill: View {
         switch notification.kind {
         case .followed:           return "Followed \(notification.recipientName)"
         case .unfollowed:         return "Unfollowed \(notification.recipientName)"
+        case .pending(let follow): return follow ? "Following \(notification.recipientName)…" : "Unfollowing \(notification.recipientName)…"
         case .failed(let reason): return reason
         }
     }
@@ -333,6 +429,7 @@ struct FollowPill: View {
         switch notification.kind {
         case .followed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
         case .unfollowed: return Color(white: 0.35)
+        case .pending:    return Color(white: 0.35)
         case .failed:     return .red.opacity(0.85)
         }
     }
@@ -435,15 +532,72 @@ struct PostActionNotificationBanner: View {
                 PostActionPill(
                     actionType: actionType,
                     timeRemaining: manager.timeRemaining,
+                    totalTime: manager.totalTime,
                     onUndo: { manager.cancel() },
                     onEdit: actionType.canEdit ? { manager.requestEdit() } : nil,
                     onDismiss: { manager.dismissBanner() }
                 )
                 .transition(Motion.pillTransition)
+            } else if let confirmation = manager.confirmation {
+                PostConfirmationPill(confirmation: confirmation)
+                    .transition(Motion.pillTransition)
             }
         }
-        .padding(.top, manager.isShowing ? 12 : 0)
+        .padding(.top, manager.isShowing || manager.confirmation != nil ? 12 : 0)
         .animation(Motion.bannerIn, value: manager.isShowing)
+        .animation(Motion.bannerIn, value: manager.confirmation?.id)
+    }
+}
+
+// MARK: - Post Confirmation Pill
+
+/// After the countdown: "Reposting…" until a relay takes it, then a green
+/// "Reposted". If no relay confirms after the retries, a grey note instead of
+/// a red error.
+struct PostConfirmationPill: View {
+    let confirmation: PendingPostManager.Confirmation
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if confirmation.state == .sending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+            } else {
+                Image(systemName: confirmation.state == .confirmed ? "checkmark" : "clock")
+                    .font(.appSystem(size: 12, weight: .bold))
+            }
+            Text(label)
+                .font(.appSystem(size: 13, weight: .bold))
+                .lineLimit(1)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .background(
+            Capsule()
+                .fill(color)
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        )
+        .foregroundColor(.white)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        switch confirmation.state {
+        case .sending:     return "\(confirmation.actionType.label)…"
+        case .confirmed:   return confirmation.actionType.doneLabel
+        case .unconfirmed: return "Sent. No relay has confirmed it yet"
+        }
+    }
+
+    private var color: Color {
+        switch confirmation.state {
+        case .sending:     return confirmation.actionType.themedColor
+        // Same green as "Followed".
+        case .confirmed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
+        case .unconfirmed: return Color(white: 0.35)
+        }
     }
 }
 
@@ -452,13 +606,12 @@ struct PostActionNotificationBanner: View {
 struct PostActionPill: View {
     let actionType: PendingPostManager.ActionType
     let timeRemaining: Double
+    let totalTime: Double
     let onUndo: () -> Void
     let onEdit: (() -> Void)?
     /// Swipe up to get the pill out of the way. The action is NOT cancelled —
     /// it finishes on schedule in the background.
     var onDismiss: (() -> Void)? = nil
-
-    private let totalTime = PendingPostManager.ActionType.countdownDuration
 
     /// Follows the finger on the way up so the gesture feels attached.
     @State private var dragOffset: CGFloat = 0
@@ -479,29 +632,20 @@ struct PostActionPill: View {
                     Capsule().fill(Color.white.opacity(0.3))
                     Capsule()
                         .fill(Color.white)
-                        .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
+                        .frame(width: max(0, geo.size.width * (timeRemaining / max(totalTime, 0.1))))
                         .animation(.linear(duration: 0.1), value: timeRemaining)
                 }
             }
             .frame(width: 60, height: 4)
 
             if let onEdit {
-                Button("Edit") { onEdit() }
-                    .font(.appSystem(size: 13, weight: .bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.25))
-                    .clipShape(Capsule())
+                pillButton("Edit", horizontalPadding: 10, action: onEdit)
             }
 
-            Button("Undo") { onUndo() }
-                .font(.appSystem(size: 13, weight: .bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.25))
-                .clipShape(Capsule())
+            pillButton("Undo", horizontalPadding: 12, action: onUndo)
         }
-        .padding(.vertical, 12)
+        // The buttons carry the other 10 pt of the pill's vertical padding.
+        .padding(.vertical, 2)
         .padding(.horizontal, 24)
         .background(
             Capsule()
@@ -534,6 +678,21 @@ struct PostActionPill: View {
         .accessibilityLabel("\(actionType.label) in \(max(1, Int(ceil(timeRemaining)))) seconds")
         .accessibilityHint(onDismiss == nil ? "" : "Swipe up to hide. The \(actionType.label.lowercased()) still completes.")
         .accessibilityAction(named: "Hide") { onDismiss?() }
+    }
+
+    /// The capsule and the pill's height above and below it are all inside the
+    /// label, so a tap anywhere on the capsule (or just off it) lands. Padding
+    /// outside a plain Button draws but takes no taps.
+    private func pillButton(_ title: String, horizontalPadding: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.appSystem(size: 13, weight: .bold))
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.25), in: Capsule())
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
     }
 }
 
@@ -640,6 +799,24 @@ class ActionToastManager: ObservableObject {
                 notifications.removeAll { $0.id == toast.id }
             }
         }
+    }
+}
+
+/// The short "Liked" pill after a like is signed and sent. A like signed by a
+/// remote signer takes a round trip, and with nothing on screen there was no
+/// telling a like that went out from one the signer never answered.
+@MainActor
+enum LikeFeedback {
+    static func liked(_ emoji: String? = nil) {
+        let shown = emoji.map(reactionDisplayEmoji) ?? ""
+        let message = shown.isEmpty || shown == "❤️" ? "Liked" : "Reacted \(shown)"
+        ActionToastManager.shared.show(icon: "heart.fill", message: message, color: .pink)
+    }
+
+    static func failed() {
+        ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                       message: "Like failed: your signer didn't answer",
+                                       color: Color.red.opacity(0.85))
     }
 }
 

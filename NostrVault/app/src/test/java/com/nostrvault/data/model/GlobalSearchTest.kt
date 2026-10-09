@@ -282,4 +282,12 @@ class GlobalSearchTest {
         val legacy = json.decodeFromString<HavenConfig>("""{"ownerNpub":"npub1x"}""")
         assertEquals(DEFAULT_SEARCH_RELAYS, legacy.activeSearchRelays)
     }
+
+    /** Web of Trust people rank after follows and ahead of everyone else. */
+    @Test
+    fun webOfTrustRanksAfterFollowsBeforeEveryone() {
+        val ranked = listOf("x", "trusted", "friend", "y", "me").map { pk -> note(pk, pk, 100) }
+            .let { SearchRanking.rankNotes(it, own = setOf("me"), follows = setOf("friend"), wot = setOf("trusted", "friend")) }
+        assertEquals(listOf("me", "friend", "trusted", "x", "y"), ranked.map { it.pubkey })
+    }
 }

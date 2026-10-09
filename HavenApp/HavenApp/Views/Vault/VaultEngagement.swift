@@ -84,9 +84,12 @@ struct ReactorsListView: View {
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.secondary.opacity(0.5))
                     }
+                    // Inside the label: a plain button on macOS only takes clicks on
+                    // drawn pixels, so the gap at the Spacer and the padding were dead.
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.vertical, 4)
             }
             .listStyle(.plain)
             .navigationTitle("Reactions")
@@ -155,9 +158,10 @@ struct RepostersListView: View {
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.secondary.opacity(0.5))
                     }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.vertical, 4)
             }
             .listStyle(.plain)
             .navigationTitle("Reposted By")
@@ -226,9 +230,10 @@ struct QuotersListView: View {
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.secondary.opacity(0.5))
                     }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.vertical, 4)
             }
             .listStyle(.plain)
             .navigationTitle("Quoted By")

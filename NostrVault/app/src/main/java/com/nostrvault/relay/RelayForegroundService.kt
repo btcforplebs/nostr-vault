@@ -24,9 +24,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -70,6 +74,11 @@ class RelayForegroundService : Service() {
         private const val WATCHDOG_INTERVAL_MS = 30_000L   // check every 30s
         private const val WATCHDOG_PROBE_TIMEOUT_MS = 2_000 // TCP probe timeout
         private const val WATCHDOG_MAX_FAILURES = 3         // consecutive failures before restart
+
+        /** How long a settings restart waits for an in-progress boot to settle. */
+        private const val RESTART_BOOT_SETTLE_TIMEOUT_MS = 60_000L
+        /** How long [restartForSavedConfig] waits for the service to finish. */
+        private const val RESTART_AWAIT_TIMEOUT_MS = 120_000L
 
         private val _relayStatus = MutableStateFlow(RelayStatus.OFFLINE)
         val relayStatus: StateFlow<RelayStatus> = _relayStatus.asStateFlow()
@@ -192,6 +201,39 @@ class RelayForegroundService : Service() {
             _readyForConnections.value = true
         }
 
+        /**
+         * What the embedded relay was last started with, set when a boot loads
+         * its config and cleared when the service is destroyed. Null means no
+         * embedded relay is up, so a settings save has nothing to restart.
+         */
+        @Volatile
+        var launchedInputs: RelayConfiguration.LaunchInputs? = null
+            private set
+
+        // Collected only while a service instance exists, so a request made
+        // with no service alive cannot create one.
+        private val restartRequests = MutableSharedFlow<Unit>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+        private val restartsHandled = MutableStateFlow(0L)
+
+        /**
+         * Restart the embedded relay in place onto the saved config, if the
+         * saved config would start it differently. Suspends until the service
+         * has handled the request. Used by [RelayConfigApplier] only; the
+         * service re-checks the saved config itself before restarting.
+         */
+        suspend fun restartForSavedConfig() {
+            if (externalMode || !serviceAlive) return
+            if (restartRequests.subscriptionCount.value == 0) return
+            val before = restartsHandled.value
+            restartRequests.tryEmit(Unit)
+            withTimeoutOrNull(RESTART_AWAIT_TIMEOUT_MS) {
+                restartsHandled.first { it > before }
+            } ?: Log.w(TAG, "Settings restart did not finish within ${RESTART_AWAIT_TIMEOUT_MS}ms")
+        }
+
         fun start(context: Context) {
             if (externalMode) return
             val intent = Intent(context, RelayForegroundService::class.java)
@@ -249,6 +291,19 @@ class RelayForegroundService : Service() {
         localNotifier.ensureChannel()
         logStore.notifySink = { line -> localNotifier.onLogLine(line) }
         logStore.startPolling(serviceScope)
+        serviceScope.launch {
+            restartRequests.collect {
+                try {
+                    restartRelayInPlace()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Settings restart failed: ${e.message}")
+                } finally {
+                    restartsHandled.update { it + 1 }
+                }
+            }
+        }
     }
 
     /**
@@ -373,6 +428,7 @@ class RelayForegroundService : Service() {
 
         lifecycleState = LifecycleState.IDLE
         isShuttingDown = false
+        launchedInputs = null
 
         // Release resources only after the Go side has stopped (or timed out)
         releaseWakeLock()
@@ -521,40 +577,25 @@ class RelayForegroundService : Service() {
 
             currentRelayPort = config.relayPort
 
+            // Everything below is written from these inputs, the same struct
+            // RelayConfigApplier compares, so a setting the relay reads here
+            // can never be missed by the settings auto-restart.
+            val inputs = RelayConfiguration.launchInputs(config, relayDataDir)
+            launchedInputs = inputs
+
             // Set environment variables
-            val envDict = RelayConfiguration.generateEnvDictionary(
-                config = config,
-                relayDataDir = relayDataDir,
-            )
-            for ((key, value) in envDict) {
+            for ((key, value) in inputs.env) {
                 HavenBridge.setEnv(key, value)
             }
 
             // Fix file-based env vars: Go uses os.ReadFile with the
             // bare filename, but Android's CWD is NOT the relay data dir.
-            // Override with absolute paths so the Go relay can find them.
-            fun ensureRelayFile(
-                envKey: String,
-                fileName: String,
-                defaultContent: List<String>,
-                overwrite: Boolean = false,
-            ) {
-                if (fileName.isNotEmpty()) {
-                    val file = File(relayDataDir, fileName)
-                    if (overwrite || !file.exists()) {
-                        val json = "[" + defaultContent.joinToString(",") { "\"$it\"" } + "]"
-                        file.writeText(json)
-                    }
-                    HavenBridge.setEnv(envKey, file.absolutePath)
-                }
-            }
-            ensureRelayFile("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, config.importSeedRelays)
-            ensureRelayFile("BLASTR_RELAYS_FILE", config.blastrRelaysFile, config.blastrRelays)
-            // Overwrite: existing installs have a stale empty relays_dm.json from
-            // when DM relays were hardcoded empty. Config is the source of truth
-            // (no file-editing UI), so rewrite it each boot to surface tagged
-            // notes from DM relays (e.g. nos.lol) in the inbox.
-            ensureRelayFile("DM_RELAYS_FILE", "relays_dm.json", config.dmRelays, overwrite = true)
+            // The lists are rewritten every boot: config is the source of truth
+            // (there is no file-editing UI), and a list edited in Settings has
+            // to reach the relay when the save restarts it. These used to be
+            // written only when missing, so Blastr and import-seed edits never
+            // reached the relay after the first boot.
+            RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)
             if (config.whitelistedNpubsFile.isNotEmpty()) {
                 HavenBridge.setEnv("WHITELISTED_NPUBS_FILE", File(relayDataDir, config.whitelistedNpubsFile).absolutePath)
             }
@@ -598,6 +639,53 @@ class RelayForegroundService : Service() {
             lifecycleState = LifecycleState.IDLE
             attemptRetry(File(filesDir, "relay_data"))
         }
+    }
+
+    // ── Settings restart ───────────────────────────────────────────
+
+    /**
+     * Restart the Go relay in place (the service, its foreground notification
+     * and wake lock stay up) when the saved config would start it differently
+     * from what it is running. Waits out a boot in progress first; a relay
+     * that is stopped or retrying needs nothing, as its next start reads the
+     * saved config from disk.
+     */
+    private suspend fun restartRelayInPlace() {
+        withTimeoutOrNull(RESTART_BOOT_SETTLE_TIMEOUT_MS) {
+            while (lifecycleState == LifecycleState.BOOTING && !isShuttingDown) delay(250)
+        }
+        if (lifecycleState != LifecycleState.RUNNING || isShuttingDown) {
+            Log.i(TAG, "Settings restart skipped: state=$lifecycleState, shuttingDown=$isShuttingDown")
+            return
+        }
+        val relayDataDir = File(filesDir, "relay_data")
+        val saved = RelayConfiguration.launchInputs(loadSavedConfig(), relayDataDir)
+        if (saved == launchedInputs) {
+            Log.i(TAG, "Settings restart skipped: relay already runs the saved config")
+            return
+        }
+
+        Log.i(TAG, "Relay settings changed; restarting relay to apply them")
+        lifecycleState = LifecycleState.STOPPING
+        healthWatchdogJob?.cancel()
+        _readyForConnections.value = false
+        _relayStatus.value = RelayStatus.BOOTING
+        updateNotification(RelayStatus.BOOTING)
+        try {
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
+                    if (HavenBridge.isLoaded) HavenBridge.stopRelay()
+                }
+            } ?: Log.w(TAG, "stopRelay() timed out during settings restart")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error stopping relay for settings restart: ${e.message}")
+        }
+        if (isShuttingDown) return
+
+        lifecycleState = LifecycleState.IDLE
+        retryCount = 0
+        clearDatabaseLocks(relayDataDir)
+        startGoRelay()
     }
 
     // ── Health watchdog ────────────────────────────────────────────

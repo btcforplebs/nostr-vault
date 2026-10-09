@@ -94,6 +94,14 @@ object HavenBridge {
             .onFailure { android.util.Log.w("HavenBridge", "setMeshServing($on): $it") }
     }
 
+    /**
+     * Re-run the copy from the Mac relay and its missing-events check; the
+     * result lands in mac_sync_status.json. Non-blocking, coalesced, and a
+     * no-op without a Mac relay or when the relay is not running.
+     * Maps to Go: RequestMacSyncCheckC()
+     */
+    external fun requestMacSyncCheck()
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------
@@ -128,6 +136,15 @@ object HavenBridge {
 
     /** Sign a Nostr event JSON with the given secret key hex. Returns signed event JSON. */
     external fun signEvent(eventJson: String, secretKeyHex: String): String?
+
+    private external fun verifyEventNative(eventJson: String): Boolean
+
+    /**
+     * True when [eventJson]'s id is the NIP-01 hash of its contents and its sig is a
+     * valid signature by its pubkey. False (fail closed) if the native library is absent.
+     */
+    fun verifyEvent(eventJson: String): Boolean =
+        isLoaded && runCatching { verifyEventNative(eventJson) }.getOrDefault(false)
 
     /**
      * Mine a PoW nonce and sign the event.
@@ -203,6 +220,22 @@ object HavenBridge {
     /** Sign an event via the remote signer. Returns signed event JSON. */
     external fun nip46SignEvent(eventJson: String): String?
 
+    /**
+     * Makes the live session for [signerPubkey] the active one and returns its
+     * user pubkey, or null when there is no live session for it (log in with
+     * [nip46Connect]). One session per signer is kept by the Go core (#168).
+     */
+    external fun nip46Activate(signerPubkey: String): String?
+
+    /** Closes the session for one signer (wrong account, or dead). */
+    external fun nip46Drop(signerPubkey: String)
+
+    /**
+     * Signs through [signerPubkey]'s live session without making it active
+     * and without logging in. Null when there is no live session for it.
+     */
+    external fun nip46SignEventWith(signerPubkey: String, eventJson: String): String?
+
     /** Get the signer's public key. */
     external fun nip46GetPublicKey(): String?
 
@@ -221,6 +254,20 @@ object HavenBridge {
     /** Ping the remote signer. Returns 0 on success, 1 on failure. */
     external fun nip46Ping(): Int
 
+    /**
+     * Waits up to [waitSeconds] for a signer's answer to our nostrconnect://
+     * request on [relaysJson] (a JSON array), reading from [since] (unix
+     * seconds). The answer must carry [secret]; returns the signer's hex
+     * pubkey, or null when none came.
+     */
+    external fun nip46AwaitNostrConnect(
+        clientSecretKey: String,
+        relaysJson: String,
+        secret: String,
+        since: Long,
+        waitSeconds: Int,
+    ): String?
+
     /** Get pending auth URL from the NIP-46 session (consumed on read). */
     external fun nip46GetPendingAuthUrl(): String?
 
@@ -230,6 +277,26 @@ object HavenBridge {
 
     /** Compute popular notes from the local relay. Returns JSON array. */
     external fun computePopularNotes(): String?
+
+    // -----------------------------------------------------------------------
+    // Follower ledger
+    // -----------------------------------------------------------------------
+
+    private external fun getFollowersNative(ownerHex: String): String?
+
+    /**
+     * The relay's follower ledger for [ownerHex] as JSON (a followers.Snapshot),
+     * or `{"error": ...}` while the relay is stopped. Null when the native
+     * library is absent or predates GetFollowersC.
+     */
+    fun getFollowers(ownerHex: String): String? =
+        if (!isLoaded || ownerHex.isEmpty()) null
+        else try {
+            getFollowersNative(ownerHex)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "getFollowers unavailable: ${e.message}")
+            null
+        }
 
     /**
      * Poll the latest Go log message from the import process.
@@ -384,6 +451,20 @@ object HavenBridge {
 
     /** Decode an nprofile bech32 string. Returns JSON: {"pubkey":"...","relays":[...]} */
     fun decodeNprofile(nprofile: String): String? {
+        val (pubkey, relays) = nprofileParts(nprofile) ?: return null
+        val relaysJson = relays.joinToString(",") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
+        return """{"pubkey":"$pubkey","relays":[$relaysJson]}"""
+    }
+
+    /** The hex pubkey an nprofile names, by the same rule as [decodeNprofile]. */
+    fun decodeNprofilePubkey(nprofile: String): String? = nprofileParts(nprofile)?.first
+
+    /**
+     * The pubkey is the first type-0 entry that is exactly 32 bytes (iOS #186).
+     * Taking any length, last one wins, let a crafted nprofile open a profile
+     * for a key that isn't one.
+     */
+    private fun nprofileParts(nprofile: String): Pair<String, List<String>>? {
         val (hrp, payload) = bech32Decode(nprofile) ?: return null
         if (hrp != "nprofile") return null
         var pubkey: String? = null
@@ -396,14 +477,12 @@ object HavenBridge {
             if (i + length > payload.size) break
             val value = payload.copyOfRange(i, i + length)
             when (type) {
-                0 -> pubkey = value.toHex()
+                0 -> if (pubkey == null && length == 32) pubkey = value.toHex()
                 1 -> relays.add(String(value, Charsets.UTF_8))
             }
             i += length
         }
-        if (pubkey == null) return null
-        val relaysJson = relays.joinToString(",") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-        return """{"pubkey":"$pubkey","relays":[$relaysJson]}"""
+        return pubkey?.let { it to relays }
     }
 
     /** Decode a note1 bech32 string to a hex event ID. */
@@ -445,6 +524,33 @@ object HavenBridge {
             (kind and 0xFF).toByte(),
         ))
         return bech32Encode("nevent", tlv.toByteArray())
+    }
+
+    /**
+     * Encode an addressable event to an naddr1 bech32 string (NIP-19 TLV):
+     * type 0 (d tag, UTF-8), type 2 (author pubkey), type 3 (kind). Mirrors
+     * MarketListing.naddr on iOS. Null for a d tag too long for one TLV.
+     */
+    fun encodeNaddr(dTag: String, hexPubkey: String, kind: Int): String? {
+        val dBytes = dTag.toByteArray(Charsets.UTF_8)
+        if (dBytes.size > 255) return null
+        val pubBytes = hexToByteArray(hexPubkey) ?: return null
+        if (pubBytes.size != 32) return null
+        val tlv = mutableListOf<Byte>()
+        fun appendTLV(type: Int, value: ByteArray) {
+            tlv.add(type.toByte())
+            tlv.add(value.size.toByte())
+            value.forEach { tlv.add(it) }
+        }
+        appendTLV(0, dBytes)
+        appendTLV(2, pubBytes)
+        appendTLV(3, byteArrayOf(
+            ((kind ushr 24) and 0xFF).toByte(),
+            ((kind ushr 16) and 0xFF).toByte(),
+            ((kind ushr 8) and 0xFF).toByte(),
+            (kind and 0xFF).toByte(),
+        ))
+        return bech32Encode("naddr", tlv.toByteArray())
     }
 
     /** Decode an nevent1 bech32 string. Returns the hex event ID (type 0 TLV). */

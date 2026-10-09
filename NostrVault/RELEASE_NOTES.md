@@ -1,48 +1,60 @@
-# NostrVault v2.7.0 (Build 15) Release Notes
+# Nostr Vault v2.7.2 (Build 20) Release Notes
 
-A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, Reels, long-form Articles, a Recipes feed, Live streams with chat and zapping, and a search that asks everywhere at once. Your chosen signer is now used for everything you sign, and the Global feed no longer shows the raw firehose to brand-new accounts.
-
-## Security
-
-*   **Some Actions Bypassed Your Signer**: Likes, reposts, follows, mute and relay lists, deletes, reports, drafts and group sign-ins went through a separate signing path that did not use the remote signer or Amber you had chosen. Everything you sign now goes through your chosen signer, and what comes back is checked: a signature for a different account, or for anything other than what was asked, is refused.
-*   **The Global Feed Showed Everything to New Accounts**: The spam filter is built from your follow graph, and an empty graph — exactly what a new account has — let everybody through. Global now shows only accounts in your graph, and the graph is seeded from the app's own starter packs so a new account has one within seconds of first launch.
+The Android app now matches the iPhone: same tabs, same wording, same feed, thread and Relay tab. New in this release: Wavlake music with background play, a Marketplace where you can buy and sell, translation of posts in other languages done on your phone, a hashtag feed, an article reader with highlights, and more reliable direct messages.
 
 ## New
 
-*   **A New App Icon**: The lit arch in Sunset Orange, as an adaptive icon, with a themed monochrome layer so notifications show the brand instead of a generic dot.
-*   **A Consistent Look**: One elevation ramp and one set of named colours behind every screen — card and page contrast used to be inverted — plus one animation vocabulary with Reduce Motion support.
-*   **Home-Screen Widgets**.
-*   **Reels**: A full-screen video feed in the feed menu — one video per page, swipe up for the next, with its neighbours already loading. Following by default; Global asks first. Posts marked with a content warning are left out.
-*   **Search Everywhere at Once**: Global search asks your device, your Mac relay and several Nostr search services in parallel, shows results as they arrive, and shows how each source is doing — so a service that is down no longer looks like "no results".
-*   **Use a Relay From Another App**: Advanced › External Relay turns off the built-in relay and Blossom server and points the app at ones running in another app on your phone, such as Citrine — for keeping your client and your storage in separate sandboxes.
-*   **A Threaded Feed**: The feed's view button now cycles expanded, condensed and threaded. Threaded gathers a conversation into one card with its replies on a rail; tap a reply to open it in place with its action bar, tap again to go to the thread. Each feed remembers its own layout.
-*   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader.
-*   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
-*   **Live Streams**: Only the streams actually on air that can actually play, with chat, zapping, report and block.
-*   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string, including during setup.
-*   **Taps From Outside the App** open the right screen, and Groups is reachable.
+*   **Music**: Wavlake music plays in the background, with shuffle, repeat, a queue and artist pages. MP3s shared in posts play from a card.
+*   **Marketplace**: A Marketplace feed, a Shop tab on profiles, Sell a listing, and Message seller.
+*   **Translate**: Posts in another language get a Translate button. Translation runs on your phone (ML Kit); the text is not sent anywhere.
+*   **Hashtags**: Tap a hashtag to open a live feed for it.
+*   **Hashtags Feed**: Follow hashtags and get a feed of them, with a chip for each tag and suggestions to follow.
+*   **Polls**: See and vote on polls in the feed and in a note.
+*   **Profile Banners**: Profiles show their banner, and Edit Profile has a Banner URL field.
+*   **Reactions and Thread Stats**: Tap to react, hold to pick a reaction, and a Thread Stats panel.
+*   **Profile Media**: Media on a profile opens the full viewer, with video, audio and drag to close. The Media grid has Report and Block.
+*   **Noise Filtering**: The feed dashboard has Noise Filtering and Actions.
+*   **Notification Sound**: Pick the sound for notifications.
+*   **Select Text**: Select and copy text in a note.
+*   **Articles**: The reader shows highlights and lets you add your own, comment on them, and react, zap or comment on the article. Profiles have Articles, diVines and Music tabs.
+*   **Post From Any Feed**: Post diVines, articles and recipes from their own feeds.
+*   **GIFs**: A nostr.build GIF picker in the composer.
+*   **Search**: Filters, tappable links, and people in your Web of Trust listed right after the people you follow, in Search and in @mentions.
+*   **Event Info**: Every post has an Event Info panel with the relays it came from, its details and actions.
+*   **Relay Tab**: Likes Given and Zaps Given, count sheets, search, a compact layout, Whitelisted, load more, and tap the tab to jump to the top.
+*   **Media Tab**: Upload several files at once, paste, sort, dates, and a grid menu.
+*   **Widgets and Icons**: A Mosaic media widget, widgets you can configure, avatars in the feed widget, and a choice of app icon.
+*   **Live Streams**: Streams play inside posts, pop out to a moving mini player, rejoin after a drop, and live chat takes pictures from your Blossom servers.
+*   **Nostr Vault Badge**: Posts sent from Nostr Vault carry a small glowing badge.
+*   **Text Lines**: Settings chooses how many lines of text Compact and Threaded views show.
+*   **Signers**: Pair a signer with a nostrconnect:// link, and switch signer accounts without logging in again.
 
-## Removed
+## Direct Messages
 
-*   **The Ecash Wallet**: Ecash is cash held at a mint you have to trust, and the mint this app shipped against was drained and shut down. Rather than keep a feature carrying that risk, it is gone — along with its mint setting, its step in setup, and the Sats widget that showed its balance. Lightning and Nostr Wallet Connect are untouched. **If you are holding ecash in an older version, move it out before you update**; the wallet screen is the only place it can be spent from.
+*   **Safer**: Message signatures are checked, and a forged sender is rejected.
+*   **New Accounts Get Messages**: A new account can be messaged straight away, and messages arrive live.
+*   **One Inbox**: One message list across all your devices, and messages you sent from another app are caught up once.
+*   **Alerts**: Notifications show the message and open the chat; your own sends do not notify you. With notifications off, a banner shows inside the app. Photos show in the conversation.
+
+## Changed
+
+*   **Location Removed**: The location is taken out of photos and videos before they upload.
+*   **Threaded Global and Popular**: The Threaded view loads the replies under each post, and bare reposts show in thread lines.
+*   **No Signer Banner**: The "Approve in your signer" banner is gone.
+*   **One Feed Rule**: Following, Global and the shield work the same way in every feed. Everyone is a crossed-out shield.
+*   **Notifications Come From Your Web of Trust**, and zap notifications name the person who zapped you.
+*   **Replies From Anyone**: Replies to your own posts are kept even when they come from outside your network.
+*   **Confirmations** before you delete or remove something.
+*   **Group chats (NIP-29) are removed.**
 
 ## Bug Fixes
 
-*   **Threads Stuck on "Loading the Start of This Thread"**: The start of a thread usually arrived — the feed just never looked again. It does now, and it stops throwing away the notes it fetched.
-*   **Discovery Now Comes From the People You Follow**: It used to rank whoever the app happened to have seen, all tied, in arbitrary order. It now counts who your follows follow, the same way the Apple apps do.
-*   **Search Read the Feed, Not Your Relay**: In relay mode, search looked through whatever the feed happened to have loaded instead of asking your own relay, so anything not currently in memory was invisible to it. It now queries the relay.
-*   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
-*   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
-*   **Live Streams**: The live feed no longer crashes on its first real run, and the chat composer no longer sits behind the tab bar.
-*   **Posts With Unusual Characters**: Backslashes, tabs and other control characters were encoded wrongly in signed events, which relays could reject.
-*   **Signing Failures**: Saving your profile no longer crashes when the signer fails — it says what went wrong — and a like or repost that could not be signed is undone instead of showing as done.
-*   **Tap Targets**: The note action row is a full 48dp tall with no dead gaps between buttons.
-*   **Search Results Can Be Acted On**: Reply, repost, like and zap from a result instead of buttons that draw nothing.
-*   **Report and Block From the Feed**.
-*   **Engagement Counts Are Shown**: The card was already being handed them.
-*   **Drafts**: A swipe asks before it deletes, and the Drafts screen is the drafts screen.
-*   **Text Size**: The setting does something now.
-*   **Names and Avatars** no longer stay as fallbacks in feed rows, and a media link stops printing above its own thumbnail.
-*   **Media Uploads**: A failed signature is retried instead of failing the post.
-*   **Paying an Invoice**: Confirms first, and shows the amount before you approve it.
-*   **A Fresh Clone Could Not Build the App At All**.
+*   **Reposts**: A repost opens, zaps, reports and replies as the note it reposts.
+*   **Global and Discovery Empty**: The Web of Trust list was read and saved wrongly, which emptied Global and Discovery.
+*   **Blocked People** stay out of every feed.
+*   **Following** reads the people you follow from their own relays and keeps bare reposts.
+*   **Photo Posts** no longer wait behind a signer request nobody answered.
+*   **Big Follow Lists** can be signed through a remote signer.
+*   **Saving Your Profile** keeps your other fields, such as your banner.
+*   **Follow** taps made while your list is still loading are applied once it loads.
+*   **Reposts** show the original post time, nprofile links open the right profile, link URLs are hidden behind one card per link, and a post is sent from the account that was active when you tapped Post.

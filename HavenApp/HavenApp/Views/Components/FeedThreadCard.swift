@@ -11,6 +11,8 @@ import SwiftUI
 ///
 /// Replies past `collapsedReplyLimit` stay folded so a long argument can't take
 /// over the timeline; the fold opens in place instead of pushing a new screen.
+/// The fold keeps the newest replies showing — a new reply is what brought the
+/// thread back to the top — and hides the earlier ones above them.
 struct FeedThreadCard: View {
     let thread: FeedThread<FeedNote>
     /// Which note is open in place. Feed-wide, and owned by the feed, for two
@@ -38,6 +40,14 @@ struct FeedThreadCard: View {
     /// No relay returned the root after every fetch pass; say so instead of
     /// loading forever.
     var rootUnavailable: Bool = false
+    /// Where each line's top sits in the feed's scroll view, read when a line
+    /// is tapped. nil outside the feed.
+    var lineTops: ThreadLineTops? = nil
+    /// A line was just opened in place; its top was at `y` in the scroll view
+    /// before the tap. Opening it closes the note that was open, and when that
+    /// note sat above this one — a photo, say — everything below moves up, so
+    /// the feed scrolls to hold the tapped line where it was.
+    var onOpenedInPlace: ((_ noteId: String, _ y: CGFloat) -> Void)? = nil
 
     @Environment(\.feedActions) private var actions
     @EnvironmentObject private var configService: ConfigService
@@ -50,7 +60,7 @@ struct FeedThreadCard: View {
 
     private var visibleReplies: [FeedThreadEntry<FeedNote>] {
         guard !isExpanded, replies.count > Self.collapsedReplyLimit else { return replies }
-        return Array(replies.prefix(Self.collapsedReplyLimit))
+        return thread.latestReplies(limit: Self.collapsedReplyLimit)
     }
 
     private var hiddenReplyCount: Int { replies.count - visibleReplies.count }
@@ -63,17 +73,22 @@ struct FeedThreadCard: View {
         VStack(alignment: .leading, spacing: 2) {
             if let root = thread.root {
                 line(for: FeedThreadEntry(note: root, depth: 0), replyCount: directReplyCount(of: root.id))
-            } else {
+            } else if !rootUnavailable {
+                // A root no relay has, after every pass, gets no line at all:
+                // the replies read as posts, rather than every such card
+                // announcing what it can't show.
                 missingRootHeader
+            }
+
+            if hiddenReplyCount > 0 {
+                expandButton
             }
 
             ForEach(visibleReplies) { entry in
                 line(for: entry, replyCount: directReplyCount(of: entry.note.id))
             }
 
-            if hiddenReplyCount > 0 {
-                expandButton
-            } else if isExpanded && replies.count > Self.collapsedReplyLimit {
+            if isExpanded && replies.count > Self.collapsedReplyLimit {
                 collapseButton
             }
 
@@ -104,29 +119,60 @@ struct FeedThreadCard: View {
 
     // MARK: - Rows
 
-    @ViewBuilder
     private func line(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
-        if openNoteId == entry.note.id, let rowDataFor {
-            openRow(for: entry, rowData: rowDataFor(entry.note))
-        } else {
-            condensedLine(for: entry, replyCount: replyCount)
+        let id = entry.note.id
+        return VStack(alignment: .leading, spacing: 0) {
+            // A zero-height marker at the line's top, the target the feed
+            // scrolls to. Zero height makes `scrollTo`'s anchor a plain
+            // fraction of the viewport, whatever height the line opens to.
+            Color.clear
+                .frame(height: 0)
+                .id(ThreadLineTops.anchorId(for: id))
+            if openNoteId == id, let rowDataFor {
+                openRow(for: entry, rowData: rowDataFor(entry.note))
+            } else {
+                condensedLine(for: entry, replyCount: replyCount)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named(ThreadLineTops.coordinateSpace)).minY
+        } action: { y in
+            lineTops?.tops[id] = y
+            lineTops?.lineMoved(id, to: y)
         }
     }
 
     private func condensedLine(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
         let note = entry.note
+        // A bare kind-6 repost carries no text: show the note it reposted,
+        // credited to its author, as the condensed feed row does.
+        let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+        let original = isBareRepost ? rowDataFor?(note).resolvedOriginal : nil
+        let shown = original ?? note
         return CondensedNoteLine(
             note: note,
-            profile: profileFor(note.pubkey),
+            profile: profileFor(shown.pubkey),
+            displayPubkey: original?.pubkey,
             depth: entry.depth,
             style: .plain,
             isFocused: note.id == focusedNoteId,
             replyCount: replyCount,
-            contentOverride: note.kind == 30023 ? note.longFormDisplayTitle : nil,
-            mediaURLs: note.mediaURLs,
+            contentOverride: contentOverride(for: note, original: original),
+            postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
+            mediaURLs: shown.mediaURLs,
             onProfile: onProfile,
             onTap: tapAction(for: note)
         )
+    }
+
+    private func contentOverride(for note: FeedNote, original: FeedNote?) -> String? {
+        if let original { return original.condensedTitle ?? original.content }
+        if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
+            return FeedService.shared.unavailableNoteIds.contains(refId)
+                ? String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
+                : String(localized: "feed.note.loadingRepost")
+        }
+        return note.condensedTitle
     }
 
     /// The first tap opens a line in place; with no row data to expand into,
@@ -134,7 +180,21 @@ struct FeedThreadCard: View {
     private func tapAction(for note: FeedNote) -> (() -> Void)? {
         guard let onOpen else { return nil }
         guard canOpenInPlace else { return { onOpen(note) } }
-        return { openNoteId = note.id }
+        return {
+            let y = lineTops?.tops[note.id]
+            // No animation: the close above and the scroll that makes up for
+            // it land in the same frame, so the tapped line never moves.
+            // Animated, the close slid the line up and the scroll slid it
+            // back down, two motions for one tap.
+            var t = Transaction()
+            t.disablesAnimations = true
+            if let y { onOpenedInPlace?(note.id, y) }
+            lineTops?.justOpened = note.id
+            withTransaction(t) { openNoteId = note.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [lineTops] in
+                if lineTops?.justOpened == note.id { lineTops?.justOpened = nil }
+            }
+        }
     }
 
     /// A line opened in place: the full note, its action bar, and the same
@@ -172,7 +232,9 @@ struct FeedThreadCard: View {
             .onTapGesture { onOpen?(note) }
         }
         .padding(.leading, CondensedNoteLine.indentWidth(forDepth: entry.depth))
-        .transition(.opacity)
+        // The tap swaps the lines with no motion; the opened note fades in
+        // so the swap doesn't read as a cut. Not when it scrolls back in.
+        .modifier(OpenRowFade(fades: lineTops?.justOpened == note.id))
     }
 
     /// Stands in for a root the relay hasn't returned yet, so replies aren't
@@ -182,7 +244,7 @@ struct FeedThreadCard: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.appSystem(size: 12, weight: .semibold))
                 .foregroundColor(Color.havenPurple.opacity(0.7))
-            Text(rootUnavailable ? "Start of this thread isn't available" : "Loading the start of this thread…")
+            Text("Loading the start of this thread…")
                 .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
             Spacer(minLength: 0)
@@ -194,7 +256,7 @@ struct FeedThreadCard: View {
     private var expandButton: some View {
         threadButton(
             icon: "arrow.turn.down.right",
-            title: "Show \(hiddenReplyCount) more \(hiddenReplyCount == 1 ? "reply" : "replies")"
+            title: "Show \(hiddenReplyCount) earlier \(hiddenReplyCount == 1 ? "reply" : "replies")"
         ) {
             isExpanded = true
         }
@@ -244,6 +306,8 @@ struct FeedThreadCard: View {
             .foregroundColor(.secondary)
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
+            // The gap between "Open thread" and the chevron is part of it.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.leading, 22)
@@ -253,5 +317,44 @@ struct FeedThreadCard: View {
     /// How many notes in this thread answer `id` directly.
     private func directReplyCount(of id: String) -> Int {
         thread.entries.filter { $0.note.parentEventId == id }.count
+    }
+}
+
+/// The feed's record of where each thread line's top is, in the scroll view's
+/// own coordinates. A plain class so the per-frame writes while scrolling
+/// don't invalidate the feed.
+final class ThreadLineTops {
+    static let coordinateSpace = "feedThreadScroll"
+    static func anchorId(for noteId: String) -> String { "thread-line-\(noteId)" }
+
+    var tops: [String: CGFloat] = [:]
+    var viewportHeight: CGFloat = 0
+    /// The line opened by the last tap, which fades in as it appears.
+    var justOpened: String?
+
+    /// A line to keep where it was tapped, and the scroll that puts it back.
+    /// Run from the line's own geometry change, the first layout pass that
+    /// sees it moved, so the correction lands before that frame is shown.
+    var hold: (noteId: String, y: CGFloat, restore: () -> Void)?
+
+    func lineMoved(_ noteId: String, to y: CGFloat) {
+        guard let hold, hold.noteId == noteId, abs(y - hold.y) > 0.5 else { return }
+        self.hold = nil
+        hold.restore()
+    }
+}
+
+/// Fades an opened line in once, as it appears.
+private struct OpenRowFade: ViewModifier {
+    let fades: Bool
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(!fades || shown ? 1 : 0)
+            .onAppear {
+                guard fades else { return }
+                withAnimation(Motion.media) { shown = true }
+            }
     }
 }

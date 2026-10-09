@@ -1,9 +1,9 @@
-name: NostrVault
+name: Nostr Vault
 summary: A Nostr client with a built-in Haven relay and Blossom server
 description: |
-  NostrVault is a self-custodial Android Nostr client with your own relay and media server running directly on your device.
+  Nostr Vault is a self-custodial Android Nostr client with your own relay and media server running directly on your device.
 
-  Most Nostr clients are a window onto someone else's relay. NostrVault is the relay. A full Haven relay runs on your phone, so every note you write and every note you receive is written to storage you own before it goes anywhere else. If every relay you use disappeared tomorrow, your copy would still be on your device.
+  Most Nostr clients are a window onto someone else's relay. Nostr Vault is the relay. A full Haven relay runs on your phone, so every note you write and every note you receive is written to storage you own before it goes anywhere else. If every relay you use disappeared tomorrow, your copy would still be on your device.
 
   HOW IT WORKS
 
@@ -38,7 +38,7 @@ description: |
 
 website: https://nostrvault.app
 repository: https://github.com/btcforplebs/nostr-vault
-source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.7.0-b15
+source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.7.2-b20
 tags: [nostr, bitcoin, relay, blossom, lightning]
 release_notes: ./RELEASE_NOTES.md
 images:
@@ -49,4 +49,4 @@ images:
   - screenshots/05_settings.png
 
 release_source:
-  asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.0-b15/NostrVault-b15-v2.7.0.apk
+  asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.2-b20/NostrVault-b20-v2.7.2.apk

@@ -27,5 +27,5 @@ object BridgeEntityDecoder : NostrEntityDecoder {
     override fun noteToHex(note1: String): String? = HavenBridge.decodeNote(note1)
     override fun neventToHex(nevent1: String): String? = HavenBridge.decodeNevent(nevent1)
     override fun npubToHex(npub: String): String? = HavenBridge.decodeNpub(npub)
-    override fun nprofileToHex(nprofile: String): String? = HavenBridge.decodeNprofile(nprofile)
+    override fun nprofileToHex(nprofile: String): String? = HavenBridge.decodeNprofilePubkey(nprofile)
 }

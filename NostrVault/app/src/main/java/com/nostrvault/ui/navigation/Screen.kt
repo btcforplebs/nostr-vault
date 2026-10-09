@@ -8,10 +8,16 @@ sealed class Screen(val route: String) {
     // Bottom nav tabs
     data object Feed : Screen("feed")
     data object Search : Screen("search")
-    data object MediaGallery : Screen("media")
+    /** The Web of Trust globe centred on you (iOS WOTTabView). */
+    data object WOT : Screen("wot")
     data object DMInbox : Screen("dm_inbox")
     data object Profile : Screen("profile/{pubkey}") {
         fun createRoute(pubkey: String) = "profile/$pubkey"
+    }
+    /** A profile's Following / Followers lists, open on [tab]; [total] is the profile's follower count. */
+    data object FollowList : Screen("follows/{pubkey}?tab={tab}&total={total}") {
+        fun createRoute(pubkey: String, tab: String, total: Int?) =
+            "follows/$pubkey?tab=$tab&total=${total ?: -1}"
     }
 
     // Detail screens
@@ -22,39 +28,41 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
-    data object DMThread : Screen("dm_thread/{pubkey}") {
-        fun createRoute(pubkey: String) = "dm_thread/$pubkey"
+    /** Posts tagged with one hashtag (`#t`), live. [tag] is lowercased, no #. */
+    data object HashtagFeed : Screen("hashtag/{tag}") {
+        fun createRoute(tag: String) = "hashtag/${android.net.Uri.encode(tag)}"
+    }
+    data object DMThread : Screen("dm_thread/{pubkey}?draft={draft}") {
+        /** [draft] is typed into the message box on open (Message seller). */
+        fun createRoute(pubkey: String, draft: String? = null) =
+            if (draft != null) "dm_thread/$pubkey?draft=${android.net.Uri.encode(draft)}" else "dm_thread/$pubkey"
     }
     data object NewMessage : Screen("new_message?pubkey={pubkey}") {
         fun createRoute(pubkey: String? = null) =
             if (pubkey != null) "new_message?pubkey=$pubkey" else "new_message"
     }
-    data object ComposeNote : Screen("compose?replyTo={replyTo}&quoteTo={quoteTo}&draftId={draftId}") {
+    data object ComposeNote : Screen("compose?replyTo={replyTo}&quoteTo={quoteTo}&draftId={draftId}&text={text}") {
         fun createRoute(
             replyToNoteId: String? = null,
             quoteToNoteId: String? = null,
             draftId: String? = null,
+            /** Prefilled text (Share a song to Nostr). */
+            text: String? = null,
         ): String {
             val params = mutableListOf<String>()
             replyToNoteId?.let { params.add("replyTo=$it") }
             quoteToNoteId?.let { params.add("quoteTo=$it") }
             draftId?.let { params.add("draftId=$it") }
+            text?.let { params.add("text=${android.net.Uri.encode(it)}") }
             return if (params.isNotEmpty()) "compose?${params.joinToString("&")}" else "compose"
         }
     }
+    /** diVine, article or recipe composer; [kind] is a ModeComposerKind route. */
+    data object ModeCompose : Screen("compose_mode/{kind}") {
+        fun createRoute(kind: String) = "compose_mode/$kind"
+    }
     data object ProfileEdit : Screen("profile_edit")
     data object Drafts : Screen("drafts")
-
-    // Groups
-    data object GroupList : Screen("groups")
-    data object GroupChat : Screen("group_chat/{groupId}/{relayUrl}") {
-        fun createRoute(groupId: String, relayUrl: String) = "group_chat/$groupId/$relayUrl"
-    }
-    data object GroupInfo : Screen("group_info/{groupId}/{relayUrl}") {
-        fun createRoute(groupId: String, relayUrl: String) = "group_info/$groupId/$relayUrl"
-    }
-    data object GroupBrowser : Screen("group_browser")
-    data object GroupCreate : Screen("group_create")
 
     // Wallet
     data object Wallet : Screen("wallet")
@@ -63,15 +71,15 @@ sealed class Screen(val route: String) {
     // Settings
     data object Settings : Screen("settings")
     data object AppearanceSettings : Screen("settings/appearance")
+    data object FeedSettings : Screen("settings/feed")
+    data object TutorialsSettings : Screen("settings/tutorials")
     data object AccountSettings : Screen("settings/accounts")
     data object BlockedSettings : Screen("settings/blocked")
-    data object RelayListEditor : Screen("settings/relays")
-    data object BlastrSettings : Screen("settings/blastr")
+    data object Relays : Screen("settings/relays")
     data object BlossomSettings : Screen("settings/blossom")
     data object PowSettings : Screen("settings/pow")
     data object AdvancedSettings : Screen("settings/advanced")
     data object ImportSettings : Screen("settings/import")
-    data object SearchRelaySettings : Screen("settings/search_relays")
     data object BackupSettings : Screen("settings/backup")
     data object FollowingBackup : Screen("settings/following_backup")
     data object NotificationSettings : Screen("settings/notifications")
@@ -79,9 +87,15 @@ sealed class Screen(val route: String) {
     data object MeshSettings : Screen("settings/mesh")
 
     // Dashboard
+    /**
+     * The Vault tab: the relay's lists and the Blossom gallery in one, the
+     * half picked by [VaultSection]. The route keeps the old Relay tab's name.
+     */
     data object Dashboard : Screen("dashboard")
-    data object BlossomDashboard : Screen("blossom_dashboard")
+    /** The feed dashboard: your follows' last 24 hours (feed menu > Dashboard). */
+    data object FeedDashboard : Screen("feed_dashboard")
     data object LogViewer : Screen("log_viewer")
+    data object RelayActivity : Screen("relay_activity")
 
     // Setup
     data object SetupWizard : Screen("setup")

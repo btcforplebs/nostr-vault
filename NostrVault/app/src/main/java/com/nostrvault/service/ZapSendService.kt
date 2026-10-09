@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.util.RelayGiven
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -93,14 +94,20 @@ class ZapSendService @Inject constructor(
         // NIP-57; otherwise pay a plain invoice with no receipt).
         val zapRequestJson = if (lnurlResponse.allowsNostr == true) {
             val lnurlTag = (lud16 ?: lud06 ?: "").removePrefix("lnurl:").removePrefix("LNURL:")
-            // Include external relays so the provider publishes the kind-9735
-            // receipt where this app and others can find it (iOS parity).
+            // The provider publishes the receipt to these relays, so they must
+            // be ones it can reach and that get read: the relays Given and the
+            // feed query, your published inbox, and the recipient's inbox
+            // (iOS #296). A phone-local relay is left out; no provider reaches it.
+            val relayLists = nostrService.relayLists.value
             val relayList = buildList {
-                config.nostrURL?.let { add(it) }
-                val external = config.activeFeedRelays.ifEmpty {
-                    listOf("wss://relay.primal.net", "wss://nos.lol")
-                }
-                addAll(external)
+                addAll(
+                    RelayGiven.zapReceiptRelays(
+                        ownRelay = config.nostrURL,
+                        feedRelays = config.activeFeedRelays,
+                        myInbox = relayLists[nostrService.activeHexPubkey].orEmpty(),
+                        recipientInbox = relayLists[notePubkey].orEmpty(),
+                    ),
+                )
                 // A stream zap has to be published where the room is watching,
                 // or the receipt never shows up in its chat.
                 if (addressTag != null) addAll(LiveChatService.STREAMING_RELAYS)

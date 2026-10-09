@@ -1,6 +1,5 @@
 package com.nostrvault.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -37,6 +37,12 @@ fun GlassScaffold(
     floatingActionButton: @Composable () -> Unit = {},
     floatingActionButtonPosition: FabPosition = FabPosition.End,
     containerColor: Color = WindowBackground,
+    /**
+     * Opacity of the fade behind the toolbar, read at draw time. A screen
+     * with a header image under the toolbar (a profile banner) fades it in
+     * only once content scrolls up behind the buttons.
+     */
+    toolbarScrimAlpha: () -> Float = { 1f },
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -63,15 +69,21 @@ fun GlassScaffold(
                 modifier = Modifier
                     .fillMaxWidth()
                     .onGloballyPositioned { toolbarHeightPx = it.size.height }
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.0f to containerColor,
-                                0.7f to containerColor.copy(alpha = 0.7f),
-                                1.0f to Color.Transparent,
-                            ),
-                        ),
-                    )
+                    .drawBehind {
+                        val alpha = toolbarScrimAlpha()
+                        if (alpha > 0f) {
+                            drawRect(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.0f to containerColor,
+                                        0.7f to containerColor.copy(alpha = 0.7f),
+                                        1.0f to Color.Transparent,
+                                    ),
+                                ),
+                                alpha = alpha.coerceIn(0f, 1f),
+                            )
+                        }
+                    }
                     .align(Alignment.TopCenter),
             ) {
                 toolbar()

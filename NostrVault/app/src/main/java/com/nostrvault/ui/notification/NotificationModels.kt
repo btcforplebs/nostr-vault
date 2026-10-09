@@ -40,11 +40,17 @@ data class FollowNotification(
     override val id: String = UUID.randomUUID().toString(),
     val recipientName: String,
     val kind: FollowKind,
+    /** Reverses the follow; the pill shows Undo and stays up longer. */
+    val undo: (() -> Unit)? = null,
+    /** Whose follow this is, so a pending pill can turn into its outcome. */
+    val pubkey: String? = null,
 ) : AppNotification() {
     override val autoDismissMs: Long
         get() = when (kind) {
-            FollowKind.FOLLOWED, FollowKind.UNFOLLOWED -> 3_000L
+            FollowKind.FOLLOWED, FollowKind.UNFOLLOWED -> if (undo != null) 5_000L else 3_000L
             is FollowKind.FAILED -> 5_000L
+            // Stays up until the queued tap is applied or dropped.
+            is FollowKind.PENDING -> 0L
         }
 }
 
@@ -52,6 +58,8 @@ sealed class FollowKind {
     data object FOLLOWED : FollowKind()
     data object UNFOLLOWED : FollowKind()
     data class FAILED(val reason: String) : FollowKind()
+    /** Tapped before the follow list loaded; applied once it has (iOS `.pending`). Not an error. */
+    data class PENDING(val follow: Boolean) : FollowKind()
 }
 
 // ── Error ────────────────────────────────────────────────────────

@@ -31,29 +31,47 @@ const layout = "2006-01-02"
 // so it never reintroduces an expanding-window pull. Plus a minute of overlap.
 const giftWrapBackdateSlack = 2*24*time.Hour + time.Minute
 
-// ensureImportRelays checks connectivity to all import seed relays.
+// reachableImportRelays holds the import seed relays that passed the last
+// ensureImportRelays check. The import fetches only from these: a relay that
+// failed the check would otherwise be re-dialed for every 10-day window and
+// stall each one for the full connect timeout (~15s × ~140 windows).
+var reachableImportRelays atomic.Pointer[[]string]
+
+// importRelays returns the seed relays to fetch the import from: the ones
+// that passed ensureImportRelays, or all of them if it hasn't run.
+func importRelays() []string {
+	if r := reachableImportRelays.Load(); r != nil {
+		return *r
+	}
+	return config.ImportSeedRelays
+}
+
+// ensureImportRelays checks connectivity to all import seed relays and
+// records the reachable ones for importRelays.
 // Returns false if ALL relays are unreachable (caller should abort).
 // NOTE: never calls os.Exit — in C-shared / iOS embedded mode that would
 // terminate the entire host app process.
 func ensureImportRelays() bool {
-	nErrors := 0
+	reachable := make([]string, 0, len(config.ImportSeedRelays))
 	log.Println("🧪 Testing import relays")
 	for _, relay := range config.ImportSeedRelays {
 		if _, err := pool.EnsureRelay(relay); err != nil {
-			nErrors++
 			slog.Error("🚫 Error connecting to relay", "relay", relay, "error", err)
 		} else {
+			reachable = append(reachable, relay)
 			slog.Debug("✅ Connected to relay", "relay", relay)
 		}
 	}
+	reachableImportRelays.Store(&reachable)
+	nErrors := len(config.ImportSeedRelays) - len(reachable)
 	if nErrors == 0 {
 		slog.Info("✅ All relays connected successfully")
 		return true
-	} else if nErrors == len(config.ImportSeedRelays) {
+	} else if len(reachable) == 0 {
 		slog.Error("🚫 Unable to connect to any import relays, check your connectivity and relays_import.json file")
 		return false
 	} else {
-		slog.Warn("⚠️ Some relays failed to connect, proceeding, but this may cause issues")
+		slog.Warn("⚠️ Some relays failed to connect, importing from the reachable ones only", "reachable", len(reachable), "failed", nErrors)
 		slog.Info("ℹ️ If you always see this message during startup, consider removing the relays that are not working from your relays_import.json file")
 		return true
 	}
@@ -70,13 +88,13 @@ func runImport(ctx context.Context) {
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
-		config.ImportSeedRelays,
+		importRelays(),
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
 		config.WotCachePath,
 		config.WotCacheTTLMinutes,
-	).WithFallbackSeeds(loadStarterPack())
+	)
 
 	// Try to load from cache first. MarkReady on the cache-hit path also
 	// stores the instance, so GetInstance() below never returns nil.
@@ -126,7 +144,7 @@ func importOwnerNotes(ctx context.Context) {
 			// done must be signalled even if the fetch loop panics,
 			// otherwise the select below waits out the full timeout.
 			runsafe.Run("importOwnerNotes.fetch", func() {
-				events := pool.FetchMany(ctx, config.ImportSeedRelays, filter)
+				events := pool.FetchMany(ctx, importRelays(), filter)
 				for ev := range events {
 					if ctx.Err() != nil {
 						break // Stop the loop on timeout
@@ -168,8 +186,6 @@ func importOwnerNotes(ctx context.Context) {
 		if nFailedImportNotes > 0 {
 			log.Printf("⚠️ Failed to import %d notes", nFailedImportNotes)
 		}
-
-		time.Sleep(1 * time.Second) // Avoid bombarding relays with too many requests
 	}
 	debug.FreeOSMemory()
 }
@@ -183,10 +199,9 @@ func importTaggedNotes(ctx context.Context) {
 
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
+	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 	filter := nostr.Filter{
-		Tags: nostr.TagMap{
-			"p": slices.Collect(maps.Keys(config.WhitelistedPubKeys)),
-		},
+		Tags: nostr.TagMap{"p": pTags},
 	}
 
 	log.Println("📦 importing inbox notes, please wait up to", timeout)
@@ -196,34 +211,25 @@ func importTaggedNotes(ctx context.Context) {
 		// select below waits out the full timeout.
 		defer close(done)
 		runsafe.Run("importTaggedNotes.fetch", func() {
-			events := pool.FetchMany(ctx, config.ImportSeedRelays, filter)
-			for ev := range events {
-				if ctx.Err() != nil {
-					break // Stop the loop on timeout
-				}
-
-				if isBlacklisted(ev.PubKey) {
-					slog.Debug("🚫 skipping tagged event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
-					continue
-				}
-
-				if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
-					continue
-				}
-				for tag := range ev.Tags.FindAll("p") {
-					if len(tag) < 2 {
+			// Same rules as the live inbox (classifyInboxEvent), so a zap
+			// is judged by its zapper here too, plus the zaps you sent.
+			for _, f := range []nostr.Filter{filter, givenZapsFilter(pTags, nil)} {
+				for ev := range pool.FetchMany(ctx, importRelays(), f) {
+					if ctx.Err() != nil {
+						break // Stop the loop on timeout
+					}
+					c := classifyInboxEvent(ctx, ev.Event)
+					if !c.accept {
 						continue
 					}
-					if _, ok := config.WhitelistedPubKeys[tag[1]]; ok {
-						dbToWrite := wdbInbox
-						if ev.Kind == nostr.KindGiftWrap {
-							dbToWrite = wdbChat
-						}
-						if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
-							log.Println("🚫 error importing tagged note", ev.ID, ":", err)
-						}
-						taggedImportedNotes++
+					dbToWrite := wdbInbox
+					if c.chat {
+						dbToWrite = wdbChat
 					}
+					if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
+						log.Println("🚫 error importing tagged note", ev.ID, ":", err)
+					}
+					taggedImportedNotes++
 				}
 			}
 		})
@@ -350,7 +356,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects)
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
 		}
 	}
@@ -483,6 +489,14 @@ func subscribeInboxAndChat(ctx context.Context) {
 			inboxCatchup(fallback)
 			ownerCatchup(fallback)
 		}
+		// Receipts for zaps you sent tag you with `P`, which neither the
+		// negentropy filter nor the catch-up above asks for.
+		if ctx.Err() == nil {
+			givenSince := syncSince()
+			for ev := range pool.FetchMany(ctx, relays, givenZapsFilter(pTags, &givenSince)) {
+				processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
+			}
+		}
 		// Advance both watermarks to the start of this round regardless of
 		// whether anything was written. The fallback catch-up queries start from
 		// lastSeen-60; if the watermark only moved when an event was actually
@@ -606,10 +620,31 @@ func subscribeInboxAndChat(ctx context.Context) {
 		}
 	})
 
+	// Gift wraps get their own live subscription: relays apply `since` to live
+	// events too, and a wrap's created_at is randomized up to 2 days into the
+	// past, so a DM sent right now is usually older than lastSeen and the
+	// filter below drops it until the next catch-up round.
+	runsafe.Go("inbox.liveGiftWraps", func() { subscribeLiveGiftWraps(ctx, relays, pTags, wdbInbox, wdbChat, rejects) })
+
 	// Live subscription with reconnect. SubscribeMany's channel closes when the
 	// context is cancelled or all relays send CLOSED; the previous code treated
 	// that as terminal and never resubscribed. Now we reconnect (resuming from
 	// lastSeen) with capped exponential backoff until the context is cancelled.
+	// Receipts for zaps you send, live (see givenZapSender).
+	runsafe.Go("subscribeInboxAndChat.givenZaps", func() {
+		for ctx.Err() == nil {
+			since := nostr.Timestamp(time.Now().Add(-time.Hour).Unix())
+			for ev := range pool.SubscribeMany(ctx, relays, givenZapsFilter(pTags, &since)) {
+				processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+			}
+		}
+	})
+
 	log.Println("📢 subscribing to inbox on", len(relays), "relays (import + DM)")
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -621,7 +656,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 		sawEvent := false
 		for ev := range pool.SubscribeMany(ctx, relays, filter) {
 			sawEvent = true
-			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects)
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
 		}
 		if ctx.Err() != nil {
@@ -631,6 +666,62 @@ func subscribeInboxAndChat(ctx context.Context) {
 			backoff = time.Second // healthy connection delivered events; reset
 		}
 		log.Println("📢 inbox subscription closed, reconnecting in", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 60*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// liveWrapSettle is how long a gift-wrap subscription waits for every relay's
+// EOSE before treating what arrives as live. A dead relay in the set never
+// sends EOSE, and without a cap no new DM would ever count as live.
+const liveWrapSettle = 30 * time.Second
+
+// subscribeLiveGiftWraps keeps a live kind-1059 subscription floored at the
+// gift-wrap backdate window, re-opened on every disconnect. Wraps that arrive
+// before EOSE (or before liveWrapSettle) are stored backlog and go through the
+// normal age gate, so startup and reconnects stay quiet; wraps that arrive
+// after it were just published and notify even with a backdated created_at.
+// Duplicates are skipped in processInboxEvent, so the overlap with the main
+// subscription and with each reconnect's re-sent window costs nothing.
+func subscribeLiveGiftWraps(ctx context.Context, relays, pTags []string, wdbInbox, wdbChat eventstore.RelayWrapper, rejects *tempRejects) {
+	backoff := time.Second
+	for ctx.Err() == nil {
+		since := nostr.Timestamp(time.Now().Add(-giftWrapBackdateSlack).Unix())
+		filter := nostr.Filter{
+			Kinds: []int{nostr.KindGiftWrap},
+			Tags:  nostr.TagMap{"p": pTags},
+			Since: &since,
+		}
+		eose := make(chan struct{})
+		settled := time.After(liveWrapSettle)
+		live := false
+		sawEvent := false
+		for ev := range pool.SubscribeManyNotifyEOSE(ctx, slices.Clone(relays), filter, eose) {
+			sawEvent = true
+			if !live {
+				select {
+				case <-eose:
+					live = true
+				case <-settled:
+					live = true
+				default:
+				}
+			}
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, live)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if sawEvent {
+			backoff = time.Second
+		}
+		log.Println("📢 gift-wrap subscription closed, reconnecting in", backoff)
 		select {
 		case <-ctx.Done():
 			return
@@ -674,12 +765,22 @@ type inboxClassification struct {
 // subscription, the watermark catch-up pull, and the negentropy sync path so
 // their accept/reject behavior cannot drift.
 func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassification {
-	if isBlacklisted(ev.PubKey) {
-		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+	// A zap you sent: kept so the Relay tab can list it, never notified.
+	if sender := givenZapSender(ev); sender != "" {
+		return inboxClassification{accept: true, recipient: sender}
+	}
+	trustKey := inboxTrustKey(ev)
+	if isBlacklisted(ev.PubKey) || isBlacklisted(trustKey) {
+		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", trustKey, "id", ev.ID)
 		return inboxClassification{reason: rejectBlacklist}
 	}
-	if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
-		return inboxClassification{reason: rejectNotInWot}
+	if !wot.GetInstance().Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
+		// Anyone may reply to or quote the owner's own posts: a stranger
+		// answering you is news, where a stranger merely tagging you is the
+		// spam the WoT keeps out.
+		if !engagesOwnerPost(ctx, ev) {
+			return inboxClassification{reason: rejectNotInWot}
+		}
 	}
 	for tag := range ev.Tags.FindAll("p") {
 		if len(tag) < 2 {
@@ -693,7 +794,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 			chat:   ev.Kind == nostr.KindGiftWrap,
 			// Skip notifying when the author is tagging themselves (e.g.
 			// replying to their own note) — still imported, just not notified.
-			notify:    ev.PubKey != tag[1],
+			notify:    trustKey != tag[1],
 			recipient: tag[1],
 		}
 	}
@@ -704,7 +805,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 // event. These exact phrases also drive the clients' relay-activity red dot.
 func logInboxImport(ev *nostr.Event) {
 	switch ev.Kind {
-	case nostr.KindTextNote:
+	case nostr.KindTextNote, nostr.KindComment:
 		log.Println("📰 new note in your inbox")
 	case nostr.KindReaction:
 		log.Println(ev.Content, "new reaction in your inbox")
@@ -714,7 +815,7 @@ func logInboxImport(ev *nostr.Event) {
 		log.Println("🔒✉️ new encrypted message in your inbox")
 	case nostr.KindGiftWrap:
 		log.Println("🎁🔒️✉️ new gift-wrapped message in your chat relay")
-	case nostr.KindRepost:
+	case nostr.KindRepost, nostr.KindGenericRepost:
 		log.Println("🔁 new repost in your inbox")
 	case nostr.KindFollowList:
 		// do nothing
@@ -728,11 +829,12 @@ func logInboxImport(ev *nostr.Event) {
 // the live subscription and the periodic catch-up pull. When notifier is nil
 // (live subscription) accepted events notify immediately; otherwise the
 // notifier applies catch-up batch suppression.
-func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbChat eventstore.RelayWrapper, notifier *batchNotifier, rejects *tempRejects) {
+func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbChat eventstore.RelayWrapper, notifier *batchNotifier, rejects *tempRejects, liveWrap bool) {
 	relayURL := ""
 	if ev.Relay != nil {
 		relayURL = ev.Relay.URL
 	}
+	observeFollowList(ev.Event)
 	c := classifyInboxEvent(ctx, ev.Event)
 	if !c.accept {
 		return
@@ -779,7 +881,11 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 	// only just succeeded after being stuck) doesn't light up the dot either —
 	// notifier.maybeNotify already skipped its own emitInboxNotify call for
 	// this, but previously still let logInboxImport through unconditionally.
-	if c.notify && isNotifyableAge(ev.Event) {
+	notifyableAge := isNotifyableAge(ev.Event)
+	if liveWrap && ev.Kind == nostr.KindGiftWrap {
+		notifyableAge = isNotifyableLiveGiftWrap(ev.Event)
+	}
+	if c.notify && notifyableAge {
 		logInboxImport(ev.Event)
 		if notifier != nil {
 			notifier.maybeNotify(ev.Event, c.recipient)
@@ -824,6 +930,17 @@ func isNotifyableAge(ev *nostr.Event) bool {
 	return maxAge <= 0 || time.Since(ev.CreatedAt.Time()) <= maxAge
 }
 
+// isNotifyableLiveGiftWrap is isNotifyableAge for a gift wrap that arrived on
+// the live subscription AFTER the relays finished sending stored events — i.e.
+// one that was just published, not backlog. Its created_at is randomized up to
+// 2 days into the past, so the plain age gate would silence most new DMs; here
+// the backdate window is added on top. Backlog (startup, reconnect, catch-up)
+// never takes this path, so the startup-storm protection is unchanged.
+func isNotifyableLiveGiftWrap(ev *nostr.Event) bool {
+	maxAge := time.Duration(config.NotifyMaxAgeHours) * time.Hour
+	return maxAge <= 0 || time.Since(ev.CreatedAt.Time()) <= maxAge+giftWrapBackdateSlack
+}
+
 // preferences and to switch to the right account on tap, instead of guessing
 // from whichever account happens to be active in the UI.
 // `preview` is always the LAST field (it may contain spaces) and is empty for
@@ -839,18 +956,22 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	var typ, preview string
 	switch ev.Kind {
 	case nostr.KindTextNote:
-		typ = "mention"
-		for _, tag := range ev.Tags {
-			if len(tag) >= 1 && tag[0] == "e" {
-				typ = "reply" // an "e" tag means this note replies to another
-				break
-			}
+		switch {
+		case isReplyNote(ev):
+			typ = "reply"
+		case quotesPostBy(context.Background(), ev, recipient):
+			typ = "quote"
+		default:
+			typ = "mention"
 		}
+		preview = sanitizeNotifyPreview(ev.Content)
+	case nostr.KindComment:
+		typ = "reply" // NIP-22: a comment always answers something
 		preview = sanitizeNotifyPreview(ev.Content)
 	case nostr.KindReaction:
 		typ = "reaction"
 		preview = sanitizeNotifyPreview(ev.Content)
-	case nostr.KindRepost:
+	case nostr.KindRepost, nostr.KindGenericRepost:
 		typ = "repost"
 	case nostr.KindZap:
 		typ = "zap"
@@ -861,7 +982,9 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	default:
 		return // follow lists and anything else: no notification
 	}
-	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|preview=%s", typ, ev.Kind, ev.PubKey, ev.ID, recipient, preview)
+	// A zap receipt is signed by the lightning service; name the zapper, who
+	// signed the embedded zap request, so the alert reads "<zapper> zapped you".
+	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|preview=%s", typ, ev.Kind, inboxTrustKey(ev), ev.ID, recipient, preview)
 }
 
 // sanitizeNotifyPreview collapses newlines and trims a content string to a short

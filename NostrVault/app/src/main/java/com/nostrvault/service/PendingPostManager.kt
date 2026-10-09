@@ -1,6 +1,8 @@
 package com.nostrvault.service
 
+import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.nostrvault.data.model.FeedNote
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -13,25 +15,62 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages a 5-second countdown before publishing events.
+ * Manages the send-delay countdown (Off, 5s or 10s; 5s by default) before
+ * publishing events.
  * Allows the user to cancel or edit before the post goes live.
  * Port of PendingPostManager.swift.
  */
 @Singleton
-class PendingPostManager @Inject constructor() {
+class PendingPostManager @Inject constructor(
+    @ApplicationContext context: Context,
+) {
 
     companion object {
         private const val TAG = "PendingPostManager"
-        const val COUNTDOWN_DURATION_MS = 5000L
         private const val TICK_INTERVAL_MS = 100L
+
+        /** The choices offered in Settings. 0 = Off: no banner, no undo. */
+        val SEND_DELAY_CHOICES = listOf(0, 5, 10)
+        const val SEND_DELAY_DEFAULT = 5
+        private const val PREFS_NAME = "post_preferences"
+        private const val KEY_SEND_DELAY = "send_delay_seconds"
     }
 
-    enum class ActionType(val label: String, val canEdit: Boolean) {
-        NEW_POST("Posting", true),
-        REPLY("Replying", true),
-        QUOTE("Quoting", true),
-        REPOST("Reposting", false),
-        DELETE("Deleting", false),
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val _sendDelaySeconds = MutableStateFlow(
+        prefs.getInt(KEY_SEND_DELAY, SEND_DELAY_DEFAULT).takeIf { it in SEND_DELAY_CHOICES }
+            ?: SEND_DELAY_DEFAULT,
+    )
+    /** Read fresh by each action, so a change applies to the next post. */
+    val sendDelaySeconds: StateFlow<Int> = _sendDelaySeconds.asStateFlow()
+
+    fun setSendDelaySeconds(seconds: Int) {
+        if (seconds !in SEND_DELAY_CHOICES) return
+        _sendDelaySeconds.value = seconds
+        prefs.edit().putInt(KEY_SEND_DELAY, seconds).apply()
+    }
+
+    /** The length of the countdown in flight, so the banner's ring is scaled
+     *  to the delay this action started with. */
+    private val _totalSeconds = MutableStateFlow(SEND_DELAY_DEFAULT.toFloat())
+    val totalSeconds: StateFlow<Float> = _totalSeconds.asStateFlow()
+
+    enum class ActionType(val label: String, val canEdit: Boolean, val doneLabel: String) {
+        NEW_POST("Posting", true, "Posted"),
+        REPLY("Replying", true, "Replied"),
+        QUOTE("Quoting", true, "Quoted"),
+        REPOST("Reposting", false, "Reposted"),
+        DELETE("Deleting", false, "Deleted"),
+    }
+
+    /**
+     * What happened after the countdown: sending, then either a relay took it
+     * (green) or none confirmed it after the retries (grey, not red: it was
+     * sent, and a slow relay is not a failed post).
+     */
+    data class Confirmation(val id: Long, val actionType: ActionType, val state: State) {
+        enum class State { SENDING, CONFIRMED, UNCONFIRMED }
     }
 
     data class EditRequest(
@@ -51,6 +90,10 @@ class PendingPostManager @Inject constructor() {
     private val _timeRemaining = MutableStateFlow(0f)
     val timeRemaining: StateFlow<Float> = _timeRemaining.asStateFlow()
 
+    private val _confirmation = MutableStateFlow<Confirmation?>(null)
+    val confirmation: StateFlow<Confirmation?> = _confirmation.asStateFlow()
+    private var nextConfirmationId = 0L
+
     private val _editRequest = MutableSharedFlow<EditRequest>(extraBufferCapacity = 1)
     val editRequest: SharedFlow<EditRequest> = _editRequest.asSharedFlow()
 
@@ -65,7 +108,7 @@ class PendingPostManager @Inject constructor() {
         content: String,
         replyTo: FeedNote?,
         quoteTo: FeedNote?,
-        onPublish: (NostrEvent) -> Unit,
+        onPublish: (NostrEvent, onOutcome: (BroadcastTally.Outcome?) -> Unit) -> Unit,
     ) {
         val type = when {
             quoteTo != null -> ActionType.QUOTE
@@ -75,7 +118,36 @@ class PendingPostManager @Inject constructor() {
         pendingContent = content
         pendingReplyTo = replyTo
         pendingQuoteTo = quoteTo
-        startCountdown(type) { onPublish(event) }
+        startCountdown(type) {
+            // Shown once the countdown ends; the outcome swaps it for
+            // "Posted" or the grey not-confirmed note.
+            val id = beginConfirmation(type)
+            onPublish(event) { outcome -> finishConfirmation(id, outcome) }
+        }
+    }
+
+    private fun beginConfirmation(type: ActionType): Long {
+        val id = ++nextConfirmationId
+        _confirmation.value = Confirmation(id, type, Confirmation.State.SENDING)
+        return id
+    }
+
+    /** null outcome: nothing was sent, so just clear it. Main thread. */
+    private fun finishConfirmation(id: Long, outcome: BroadcastTally.Outcome?) {
+        val current = _confirmation.value
+        if (current?.id != id) return
+        if (outcome == null) {
+            _confirmation.value = null
+            return
+        }
+        val accepted = outcome == BroadcastTally.Outcome.ACCEPTED
+        _confirmation.value = current.copy(
+            state = if (accepted) Confirmation.State.CONFIRMED else Confirmation.State.UNCONFIRMED,
+        )
+        scope.launch {
+            delay(if (accepted) 2_500L else 4_000L)
+            if (_confirmation.value?.id == id) _confirmation.value = null
+        }
     }
 
     fun startRepost(onPublish: () -> Unit) {
@@ -132,13 +204,18 @@ class PendingPostManager @Inject constructor() {
 
     private fun startCountdown(type: ActionType, onComplete: () -> Unit) {
         cancel() // cancel any existing countdown
+        _confirmation.value = null
         pendingPublishAction = onComplete
+        val durationMs = _sendDelaySeconds.value * 1000L
         _actionType.value = type
-        _timeRemaining.value = COUNTDOWN_DURATION_MS / 1000f
-        _isShowing.value = true
+        _totalSeconds.value = durationMs / 1000f
+        _timeRemaining.value = durationMs / 1000f
+        // With the delay Off the banner never appears; the job below runs the
+        // action on its first pass.
+        _isShowing.value = durationMs > 0
 
         countdownJob = scope.launch {
-            val steps = (COUNTDOWN_DURATION_MS / TICK_INTERVAL_MS).toInt()
+            val steps = (durationMs / TICK_INTERVAL_MS).toInt()
             for (i in steps downTo 0) {
                 _timeRemaining.value = (i * TICK_INTERVAL_MS) / 1000f
                 if (i > 0) delay(TICK_INTERVAL_MS)
@@ -149,6 +226,8 @@ class PendingPostManager @Inject constructor() {
                 pendingPublishAction?.invoke()
             } catch (e: Exception) {
                 Log.e(TAG, "Publish failed", e)
+                // Nothing went out, so no outcome will ever arrive.
+                _confirmation.value = null
             }
 
             _isShowing.value = false

@@ -46,13 +46,13 @@ class FipsMeshInterceptor : Interceptor {
                     when {
                         mesh.code != 200 || body == null ->
                             Log.w(TAG, "mesh read ${sha.take(8)}: HTTP ${mesh.code}, using the URL")
-                        body.contentLength() > MAX_BYTES -> {
-                            Log.w(TAG, "mesh read ${sha.take(8)}: ${body.contentLength()} bytes is over the cap, dropping ${npub.take(12)}")
-                            FipsMediaRouter.distrust(npub)
-                        }
+                        // Honestly too big (a video, say): nothing read, the vault keeps its standing.
+                        body.contentLength() > MAX_BYTES ->
+                            Log.w(TAG, "mesh read ${sha.take(8)}: ${body.contentLength()} bytes is over the cap, using the URL")
                         else -> {
                             val bytes = readVerified(body.source(), sha)
                             if (bytes == null) {
+                                // Wrong hash, or more bytes than it announced: not a passing fault.
                                 Log.w(TAG, "mesh read ${sha.take(8)}: wrong bytes or too big, dropping ${npub.take(12)}")
                                 FipsMediaRouter.distrust(npub)
                             } else {

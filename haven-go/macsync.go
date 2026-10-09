@@ -503,7 +503,7 @@ func (b *macBackfiller) page(ctx context.Context, r *nostr.Relay, t macTarget, f
 			if t.name == "posts" {
 				processOwnerEvent(ctx, nostr.RelayEvent{Event: ev, Relay: r}, b.wdbOutbox)
 			} else {
-				processInboxEvent(ctx, nostr.RelayEvent{Event: ev, Relay: r}, b.wdbInbox, b.wdbChat, b.notifier, b.rejects)
+				processInboxEvent(ctx, nostr.RelayEvent{Event: ev, Relay: r}, b.wdbInbox, b.wdbChat, b.notifier, b.rejects, false)
 			}
 			if !before && t.isStored(ctx, ev) {
 				stored++

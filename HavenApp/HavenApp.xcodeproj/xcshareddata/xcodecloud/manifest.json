@@ -1,0 +1,9 @@
+{
+  "id" : "36a07cae-28d4-47ad-a3ab-1727749b2a2a",
+  "targets" : [
+    {
+      "id" : "dec7859f-be92-4ea3-8941-f9067eacc753",
+      "name" : "HavenApp-iOS"
+    }
+  ]
+}

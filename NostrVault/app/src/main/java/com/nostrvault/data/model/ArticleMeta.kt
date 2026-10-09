@@ -27,6 +27,29 @@ data class ArticleMeta(
     companion object {
         const val KIND = 30023
 
+        /** Minutes to read [body] at 200 words a minute, at least 1; null when empty. iOS LongFormMetadata. */
+        fun readingTimeMinutes(body: String): Int? {
+            val words = body.split(Regex("\\s+")).count { it.isNotEmpty() }
+            if (words == 0) return null
+            return maxOf(1, (words + 199) / 200)
+        }
+
+        /**
+         * What an article row says under its title: the author's summary, or
+         * else the top of the body with the Markdown stripped — never raw
+         * Markdown. iOS ArticleInlineBody.previewText.
+         */
+        fun previewText(summary: String?, body: String, limit: Int = 200): String? {
+            if (!summary.isNullOrBlank()) return summary
+            val plain = ArticleEngagement.plainText(body)
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.matches(Regex("[-*_=]{3,}")) }
+                .joinToString(" ")
+            if (plain.isEmpty()) return null
+            return if (plain.length > limit) plain.take(limit).trimEnd() + "…" else plain
+        }
+
         fun from(note: FeedNote): ArticleMeta {
             fun tag(name: String): String? = note.tags
                 .firstOrNull { it.size >= 2 && it[0] == name }
@@ -53,3 +76,10 @@ data class ArticleMeta(
         }
     }
 }
+
+/**
+ * What a condensed row shows instead of the note body: an article's title, or
+ * a poll's question. Null for any other note. iOS: `FeedNote.condensedTitle`.
+ */
+val FeedNote.condensedTitle: String?
+    get() = if (kind == ArticleMeta.KIND) ArticleMeta.from(this).title else pollSummary

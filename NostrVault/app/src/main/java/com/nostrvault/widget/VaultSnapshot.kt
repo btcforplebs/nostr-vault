@@ -27,6 +27,8 @@ data class VaultSnapshot(
     val feed: List<SnapshotNote> = emptyList(),
     val mentions: List<SnapshotNote> = emptyList(),
     val unreadDMs: Int = 0,
+    /** Mosaic's tiles, newest first. See WidgetPublisher.mediaTiles. */
+    val media: List<MediaTile> = emptyList(),
 ) {
     @Serializable
     data class RelayStats(
@@ -47,6 +49,22 @@ data class VaultSnapshot(
         val displayName: String,
         val text: String,
         val createdAt: Long,
+        /** The author's profile picture, fetched and shrunk by the feed widget's provider. */
+        val authorPicture: String? = null,
+    )
+
+    /**
+     * One Mosaic tile. [localPath] is set when the bytes are on this device
+     * (the relay's Blossom store or the media cache) — the widget draws those
+     * straight off disk. Anything else is fetched by the widget's provider.
+     */
+    @Serializable
+    data class MediaTile(
+        val id: String,
+        val url: String,
+        val localPath: String? = null,
+        /** Null when nothing sniffed it: shown under All, hidden by the narrower chips. */
+        val kind: MediaKind? = null,
     )
 }
 

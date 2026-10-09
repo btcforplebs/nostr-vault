@@ -5,6 +5,19 @@ struct QuotedNoteView: View {
     @EnvironmentObject var nostrService: NostrService
     
     var body: some View {
+        // A quoted live stream is something to watch, not text to read.
+        if let stream = LiveStream(note: note) {
+            LiveStreamEmbedView(stream: stream)
+        } else if let listing = MarketListing(note: note) {
+            // A shared listing's content is usually NIP-15 JSON, so the
+            // plain note card would print the JSON.
+            MarketplaceListingEmbedView(listing: listing)
+        } else {
+            noteCard
+        }
+    }
+
+    private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 let profile = nostrService.profiles[note.pubkey]
@@ -84,7 +97,8 @@ struct QuotedNoteView: View {
 
     private var articleSummary: String? {
         if let summary = note.longFormMetadata.summary { return summary }
-        let plain = MarkdownParser.plainText(note.content, limit: 200)
+        let body = note.gatedArticle == nil ? note.content : GatedArticleTeaser.strip(note.content)
+        let plain = MarkdownParser.plainText(body, limit: 200)
         return plain.isEmpty ? nil : plain
     }
 

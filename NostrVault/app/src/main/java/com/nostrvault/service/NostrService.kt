@@ -1,16 +1,22 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.NIP10Thread
+import com.nostrvault.data.model.NIP88Poll
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.ProfileUpdateSignal
+import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.fips.FipsMediaRouter
+import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -19,7 +25,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
-import kotlin.coroutines.resume
 import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +33,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.concurrent.withLock
 import kotlin.math.min
-import kotlin.math.pow
 
 /**
  * Core Nostr relay management service.
@@ -45,8 +49,12 @@ class NostrService @Inject constructor(
     private val eventPublisher: EventPublisher,
     private val amberSignerService: AmberSignerService,
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
+    private val lookupPool: LookupSocketPool,
 ) {
     companion object {
+        /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
+        private val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+
         /**
          * A loopback address means "this machine". Advertising one, or
          * publishing someone else's DM to one, sends the event to the *sender's*
@@ -84,9 +92,44 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
-        private const val METADATA_POOL_SIZE = 3
+
+        /**
+         * The number in a NIP-45 `["COUNT", subId, {"count": n}]` reply; relays
+         * send it as an integer, a float or a string. Null for anything else.
+         */
+        internal fun countFrom(msg: String): Int? = try {
+            val arr = Json.parseToJsonElement(msg).jsonArray
+            if (arr.size < 3 || arr[0].jsonPrimitive.contentOrNull != "COUNT") null
+            else arr[2].jsonObject["count"]?.jsonPrimitive?.contentOrNull
+                ?.toDoubleOrNull()?.takeIf { it >= 0 }?.toInt()
+        } catch (_: Exception) {
+            null
+        }
+        // Profile relays plus Blastr, up to this many. Kind 0 coverage varies
+        // wildly: relay.primal.net returns few profiles for an authors filter,
+        // and a relay that is down or blocked returns none, so a short list
+        // could leave the whole feed nameless.
+        private const val METADATA_POOL_SIZE = 10
+        // Asked for names/avatars ahead of the Blastr relays. On 2026-10-01,
+        // for 300 recent posters, the default Blastr set (nos.lol and
+        // nostr.mom unreachable, primal ~11%) had 115 profiles; adding these
+        // reached 193. Re-measure with `.scratch/profprobe/probe.py` in the
+        // Buzz nest before changing it.
+        private val PROFILE_RELAYS = listOf(
+            "wss://offchain.pub",
+            "wss://relay.damus.io",
+            "wss://user.kindpag.es",
+            "wss://purplepag.es",
+        )
         private const val METADATA_IDLE_TIMEOUT_MS = 60_000L
         private const val METADATA_SUB_ID = "meta-pool"
+        // How long a dispatched pubkey stays in the pool's filter waiting for
+        // its kind 0, and the most authors one REQ carries.
+        private const val METADATA_PENDING_WINDOW_MS = 60_000L
+        private const val METADATA_MAX_AUTHORS = 500
+        // Authors per kind-10002 REQ in fetchRelayLists, and how long each waits.
+        private const val RELAY_LIST_CHUNK = 200
+        private const val RELAY_LIST_TIMEOUT_MS = 8_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -144,12 +187,14 @@ class NostrService @Inject constructor(
                 else -> npubToHex(npub) ?: ""
             }
         }
+    /**
+     * The one active-account value, kept by [ConfigStore]. Empty when the
+     * active account can't be decoded, so nothing signs as someone else; the
+     * owner only when no other account is active.
+     */
     val activeHexPubkey: String
-        get() {
-            val npub = configStore.config.value.activeAccountNpub ?: return ownerHexPubkey
-            // Handle both npub and raw hex formats
-            if (npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' }) return npub
-            return npubToHex(npub) ?: ownerHexPubkey
+        get() = configStore.activeAccountHexPubkey.value.ifEmpty {
+            if (configStore.config.value.activeAccountNpub.isNullOrBlank()) ownerHexPubkey else ""
         }
 
     // ── Relay pool ────────────────────────────────────────────────────
@@ -237,7 +282,7 @@ class NostrService @Inject constructor(
     }
 
     fun initialize() {
-        Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
         loadProfilesFromDisk()
         observeAccountSwitch()
     }
@@ -261,11 +306,7 @@ class NostrService @Inject constructor(
 
     private fun observeAccountSwitch() {
         scope.launch {
-            configStore.config
-                .map { it.activeAccountNpub }
-                .distinctUntilChanged()
-                .drop(1) // Skip initial emission
-                .collect { handleAccountSwitch() }
+            configStore.accountSwitches.collect { handleAccountSwitch() }
         }
     }
 
@@ -366,7 +407,8 @@ class NostrService @Inject constructor(
 
         clients[normalizedUrl] = client
 
-        scope.launch {
+        // Collected on Default so a message does not hop through Main on its way there.
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { message ->
                 launch(Dispatchers.Default) { onMessage(message) }
             }
@@ -382,12 +424,6 @@ class NostrService @Inject constructor(
         return client
     }
 
-    fun disconnectRelay(url: String) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        clients.remove(normalizedUrl)?.disconnect()
-        activeSubscriptions.remove(normalizedUrl)
-    }
-
     fun disconnectAll() {
         clients.values.forEach { it.disconnect() }
         clients.clear()
@@ -396,67 +432,13 @@ class NostrService @Inject constructor(
             temporaryClients.forEach { it.disconnect() }
             temporaryClients.clear()
         }
+        lookupPool.closeAll()
         closeMetadataPool()
-    }
-
-    /**
-     * Reconnect to a relay with exponential backoff.
-     */
-    fun scheduleReconnect(url: String, onMessage: (String) -> Unit) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        if (relaysReconnecting.contains(normalizedUrl)) return
-
-        val attempts = reconnectAttempts.getOrDefault(normalizedUrl, 0)
-        if (attempts >= MAX_RECONNECT_ATTEMPTS) {
-            Log.w(TAG, "Max reconnect attempts reached for $normalizedUrl")
-            return
-        }
-
-        relaysReconnecting.add(normalizedUrl)
-        val delay = calculateBackoffDelay(attempts)
-        reconnectAttempts[normalizedUrl] = attempts + 1
-
-        scope.launch {
-            delay(delay)
-            relaysReconnecting.remove(normalizedUrl)
-            connectToRelay(normalizedUrl, onMessage)
-        }
-    }
-
-    private fun calculateBackoffDelay(attempts: Int): Long {
-        val base = BASE_RECONNECT_DELAY_MS * 2.0.pow(attempts).toLong()
-        val capped = min(base, MAX_RECONNECT_DELAY_MS)
-        val jitter = (Math.random() * 2000).toLong()
-        return capped + jitter
-    }
-
-    fun resetReconnectBackoff(url: String) {
-        val normalizedUrl = normalizeRelayUrl(url)
-        reconnectAttempts.remove(normalizedUrl)
-        lastReconnectTime.remove(normalizedUrl)
     }
 
     // ══════════════════════════════════════════════════════════════════
     // Subscriptions (REQ / CLOSE)
     // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Send a REQ subscription on a connected relay.
-     */
-    fun sendSubscription(
-        relayUrl: String,
-        subscriptionId: String,
-        filters: List<Map<String, Any>>,
-    ) {
-        val normalizedUrl = normalizeRelayUrl(relayUrl)
-        val client = clients[normalizedUrl] ?: return
-
-        activeSubscriptions[normalizedUrl] = subscriptionId
-
-        val filtersJson = filters.joinToString(",") { buildFilterJson(it) }
-        val req = "[\"REQ\",\"$subscriptionId\",$filtersJson]"
-        client.send(req)
-    }
 
     fun closeSubscription(relayUrl: String, subscriptionId: String) {
         val normalizedUrl = normalizeRelayUrl(relayUrl)
@@ -496,7 +478,7 @@ class NostrService @Inject constructor(
                 "NOTICE" -> {
                     if (parsed.size >= 2) {
                         val notice = parsed[1].jsonPrimitive.contentOrNull
-                        Log.d(TAG, "NOTICE from $relayUrl: $notice")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "NOTICE from $relayUrl: $notice")
                     }
                 }
                 "AUTH" -> {
@@ -524,10 +506,16 @@ class NostrService @Inject constructor(
         val nowSecs = System.currentTimeMillis() / 1000
         if (createdAt > nowSecs + 60) return
 
-        // Process metadata and relay list events immediately (before dedup)
+        // Process metadata and relay list events immediately (before dedup).
+        // These overwrite cached state (profiles, relay lists, the owner's blocked
+        // list), so only a validly signed, newest-seen event may do that.
+        if (kind in REPLACEABLE_STATE_KINDS) {
+            if (kind == 10000 && pubkey != ownerHexPubkey) return
+            if (!acceptReplaceable(eventObj, kind, pubkey, createdAt)) return
+        }
         when (kind) {
             0 -> {
-                parseAndCacheProfile(pubkey, content)
+                parseAndCacheProfile(pubkey, content, createdAt)
                 return
             }
             10002 -> {
@@ -569,6 +557,24 @@ class NostrService @Inject constructor(
             eventBuffer.add(event to mediaItems)
         }
         scheduleBufferFlush()
+    }
+
+    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
+    private val replaceableNewest = ConcurrentHashMap<String, Long>()
+
+    /**
+     * True when [eventObj] is validly signed and not older than the newest event of
+     * the same kind and author already accepted. Records it as the newest.
+     */
+    private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
+        val key = "$kind:$pubkey"
+        // A profile saved on disk counts as seen, so after a restart an older
+        // signed kind-0 cannot replace a newer one.
+        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
+        if (seen != null && createdAt < seen) return false
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return false
+        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        return createdAt >= (replaceableNewest[key] ?: createdAt)
     }
 
     private fun handleEOSE(subId: String, relayUrl: String) {
@@ -644,10 +650,6 @@ class NostrService @Inject constructor(
         true
     }
 
-    fun hasSeen(id: String): Boolean = seenLock.withLock {
-        seenEventIds.contains(id)
-    }
-
     private fun clearSeen() = seenLock.withLock {
         seenEventIds.clear()
     }
@@ -655,18 +657,6 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Fetch watchdog
     // ══════════════════════════════════════════════════════════════════
-
-    fun armFetchWatchdog() {
-        fetchWatchdogJob?.cancel()
-        fetchWatchdogJob = scope.launch {
-            delay(FETCH_WATCHDOG_TIMEOUT_MS)
-            if (_isFetching.value) {
-                _isFetching.value = false
-                activeSubscriptionCount = 0
-                Log.w(TAG, "Fetch watchdog triggered — forcing isFetching=false")
-            }
-        }
-    }
 
     // ══════════════════════════════════════════════════════════════════
     // Profile management
@@ -732,8 +722,7 @@ class NostrService @Inject constructor(
         }
         if (pubkeys.isEmpty()) return
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
-        if (blastrRelays.isEmpty()) return
+        val readRelays = configStore.config.value.readRelays
 
         // Record the dispatch time so these pubkeys are negatively-cached for
         // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
@@ -747,17 +736,25 @@ class NostrService @Inject constructor(
             }
         }
 
-        val filter = buildMap<String, Any> {
-            put("kinds", listOf(0))
-            put("authors", pubkeys)
-        }
-        val filterJson = buildFilterJson(filter)
+        // The pool shares one sub id, so each REQ *replaces* the last on every
+        // relay, and a REQ sent before a socket connects is dropped (send()
+        // returns false; only the latest filter is re-sent on connect). A filter
+        // of just this flush's pubkeys therefore cancelled every earlier batch
+        // still in flight, and those pubkeys were then negatively cached for
+        // PROFILE_RETRY_TTL_MS: on a cold start almost every feed author stayed
+        // an npub with a letter avatar. Ask for everything still unanswered.
+        val filterJson = pendingMetadataFilterJson(now) ?: return
         lastMetadataFilterJson = filterJson
 
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
         // widely replicated) instead of opening fresh sockets per flush. A stable
         // sub id means each flush just replaces the filter on the open sockets.
-        val relays = blastrRelays.filter { isValidRelayUrl(it) }.take(METADATA_POOL_SIZE)
+        // The user's own relay (first in readRelays when configured) leads,
+        // then the profile relays, then the rest of Blastr.
+        val relays = (readRelays.take(1) + PROFILE_RELAYS + readRelays)
+            .distinct()
+            .filter { isValidRelayUrl(it) }
+            .take(METADATA_POOL_SIZE)
         if (relays.isEmpty()) return
         metadataPoolLock.withLock {
             // Drop pooled relays no longer in the configured set.
@@ -767,16 +764,45 @@ class NostrService @Inject constructor(
             }
             for (relayUrl in relays) {
                 val client = metadataClients.getOrPut(relayUrl) { createMetadataClient(relayUrl) }
+                // CLOSE first: a relay may refuse a REQ that reuses the id of a
+                // subscription it still holds open, rather than replace it.
+                client.send("[\"CLOSE\",\"$METADATA_SUB_ID\"]")
                 client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
             }
         }
         armMetadataIdleTimeout()
     }
 
+    /**
+     * kind-0 filter for every pubkey dispatched in the last
+     * [METADATA_PENDING_WINDOW_MS] whose metadata has not arrived since, newest
+     * first, capped at [METADATA_MAX_AUTHORS]. Null when nothing is pending.
+     */
+    private fun pendingMetadataFilterJson(now: Long): String? {
+        val profiles = _profiles.value
+        val staged = profileEmitLock.withLock { pendingProfiles.keys.toSet() }
+        val authors = profileQueueLock.withLock {
+            profileFetchAttempts.entries
+                .filter { (pubkey, attemptedAt) ->
+                    now - attemptedAt < METADATA_PENDING_WINDOW_MS &&
+                        pubkey !in staged &&
+                        (profiles[pubkey]?.fetchedAt ?: 0L) < attemptedAt
+                }
+                .sortedByDescending { it.value }
+                .take(METADATA_MAX_AUTHORS)
+                .map { it.key }
+        }
+        if (authors.isEmpty()) return null
+        return buildFilterJson(buildMap<String, Any> {
+            put("kinds", listOf(0))
+            put("authors", authors)
+        })
+    }
+
     /** Open a long-lived metadata-pool connection that survives across flushes. */
     private fun createMetadataClient(relayUrl: String): WebSocketClient {
         val client = WebSocketClient(url = relayUrl, scope = scope)
-        scope.launch {
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { msg ->
                 launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
             }
@@ -785,10 +811,12 @@ class NostrService @Inject constructor(
         // recovers without waiting for the next flush.
         scope.launch {
             client.connectionState.collect { state ->
-                if (state == WebSocketClient.ConnectionState.CONNECTED &&
-                    lastMetadataFilterJson.isNotEmpty()
-                ) {
-                    client.send("[\"REQ\",\"$METADATA_SUB_ID\",$lastMetadataFilterJson]")
+                if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                    val filterJson = pendingMetadataFilterJson(System.currentTimeMillis())
+                        ?: lastMetadataFilterJson.takeIf { it.isNotEmpty() }
+                    if (filterJson != null) {
+                        client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
+                    }
                 }
             }
         }
@@ -813,7 +841,7 @@ class NostrService @Inject constructor(
         }
     }
 
-    private fun parseAndCacheProfile(pubkey: String, content: String) {
+    private fun parseAndCacheProfile(pubkey: String, content: String, createdAt: Long) {
         val existingProfile = _profiles.value[pubkey]
         val result = profileRepository.parseMetadataContent(content, pubkey, existingProfile) ?: return
         val (parsed, changed) = result
@@ -826,11 +854,11 @@ class NostrService @Inject constructor(
             val lastStamp = existingProfile.fetchedAt
             if (lastStamp != null && now - lastStamp < PROFILE_RETRY_TTL_MS) return
             // Freshness-only refresh: stage it, but no UI-change signal needed.
-            stageProfile(pubkey, existingProfile.copy(fetchedAt = now), notify = false)
+            stageProfile(pubkey, existingProfile.copy(fetchedAt = now, createdAt = createdAt), notify = false)
             return
         }
 
-        stageProfile(pubkey, parsed.copy(fetchedAt = now), notify = true)
+        stageProfile(pubkey, parsed.copy(fetchedAt = now, createdAt = createdAt), notify = true)
     }
 
     /** Stage a parsed profile for the next batched emission window (see [pendingProfiles]). */
@@ -1014,28 +1042,41 @@ class NostrService @Inject constructor(
             put("limit", 2)
         }
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
-        for (relayUrl in blastrRelays.take(3)) {
+        val readRelays = configStore.config.value.readRelays
+        for (relayUrl in readRelays.take(3)) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
-                tempClientSemaphore.withPermit {
-                    val client = WebSocketClient(url = relayUrl, scope = scope)
-                    tempClientsLock.withLock { temporaryClients.add(client) }
+                lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                    launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
+                }
+            }
+        }
+    }
 
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            launch(Dispatchers.Default) {
-                                processRelayMessage(msg, relayUrl)
-                            }
-                        }
+    /**
+     * Fetch NIP-65 relay lists (kind 10002) for many pubkeys at once, on the
+     * pooled lookup sockets. The metadata pool asks for kind 0 only, so a
+     * forced [fetchMissingProfiles] never brings these in. Asks the user's own
+     * relay and the profile relays (purplepag.es and user.kindpag.es index
+     * relay lists).
+     */
+    fun fetchRelayLists(pubkeys: List<String>) {
+        if (pubkeys.isEmpty()) return
+        val relays = (configStore.config.value.readRelays.take(1) + PROFILE_RELAYS)
+            .distinct()
+            .filter { isValidRelayUrl(it) }
+        for (chunk in pubkeys.distinct().chunked(RELAY_LIST_CHUNK)) {
+            val filter = buildFilterJson(buildMap<String, Any> {
+                put("kinds", listOf(10002))
+                put("authors", chunk)
+                put("limit", chunk.size)
+            })
+            for (relayUrl in relays) {
+                val subId = "relays-${UUID.randomUUID().toString().take(8)}"
+                scope.launch(Dispatchers.IO) {
+                    lookupPool.query(relayUrl, subId, listOf(filter), RELAY_LIST_TIMEOUT_MS) { msg ->
+                        launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
                     }
-
-                    client.connect()
-                    client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
                 }
             }
         }
@@ -1132,9 +1173,79 @@ class NostrService @Inject constructor(
         tags: List<List<String>> = emptyList(),
         password: String? = null,
         forceOwner: Boolean = false,
+        lockedTo: PostingAccount.Lock? = null,
+    ): NostrEvent? {
+        // With [lockedTo], refuse to sign unless that account is still the
+        // active one, and refuse the result unless it carries its key.
+        if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
+        val event = signEventRouted(kind, content, tags, forceOwner)
+        if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
+        return event
+    }
+
+    /**
+     * The account active right now, for `signEventAsync(lockedTo:)`. Take it
+     * when Post is tapped, before any upload.
+     */
+    fun lockPostingAccount(): PostingAccount.Lock {
+        val cfg = configStore.config.value
+        return PostingAccount.Lock(npub = PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub), hex = activeHexPubkey)
+    }
+
+    /**
+     * Throws [PostingAccount.AccountChangedException] unless [lock] is still
+     * the active account and, once signed, [eventPubkey] is its key.
+     */
+    fun requireStillPostingAs(lock: PostingAccount.Lock, eventPubkey: String?) {
+        val cfg = configStore.config.value
+        val ok = if (eventPubkey == null) {
+            PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub) == lock.npub
+        } else {
+            PostingAccount.signedAsLocked(lock, cfg.activeAccountNpub, cfg.ownerNpub, eventPubkey)
+        }
+        if (!ok) {
+            Log.w(TAG, "account changed while posting – locked=${lock.npub.take(20)} signed=${eventPubkey?.take(8)}; not publishing")
+            throw PostingAccount.AccountChangedException()
+        }
+    }
+
+    private suspend fun signEventRouted(
+        kind: Int,
+        content: String,
+        tags: List<List<String>>,
+        forceOwner: Boolean,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
-        Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
+
+        // Owner-forced events while another account is active go to the
+        // OWNER's own signer (#168 parity), never the active account's.
+        val route = SignerRouting.route(configStore.config.value, forceOwner, ownerHexPubkey, activeHexPubkey)
+        when (route) {
+            is SignerRoute.Unavailable -> throw IllegalStateException(route.reason)
+            is SignerRoute.BunkerSession -> {
+                val eventJson = EventPublisher.buildUnsignedEvent(
+                    kind = kind, content = content,
+                    tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                )
+                val signed = gatedIfBackground(kind) { NIP46Service.signEventWith(route.signerPubkey, eventJson) }
+                    ?: throw IllegalStateException("The owner's signer is not connected")
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer (owner)")
+            }
+            is SignerRoute.Amber -> if (route.asOwner) {
+                val eventJson = EventPublisher.buildUnsignedEvent(
+                    kind = kind, content = content,
+                    tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                )
+                val signed = amberSignerService.signEvent(eventJson, asOwner = true)
+                    ?: throw IllegalStateException("Amber signer failed")
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber (owner)")
+            }
+            is SignerRoute.Local -> if (route.asOwner && signingMode != "local") {
+                return@withContext signLocally(kind, content, tags, forceOwner = true)
+            }
+            SignerRoute.ActiveBunker -> Unit
+        }
 
         when (signingMode) {
             "nip46" -> {
@@ -1146,7 +1257,9 @@ class NostrService @Inject constructor(
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
                 ensureBunkerConnected()
-                val signed = NIP46Service.signEvent(eventJson)
+                val signed = gatedIfBackground(kind) {
+                    NIP46Service.signEvent(eventJson, userInitiated = kind in NIP46Service.userActionKinds)
+                }
                     ?: throw IllegalStateException("NIP-46 remote signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer")
             }
@@ -1164,30 +1277,35 @@ class NostrService @Inject constructor(
             }
             else -> {
                 // Local signing
-                if (!com.nostrvault.relay.HavenBridge.isLoaded) {
-                    throw IllegalStateException("Native library not loaded")
-                }
-                val secretKey = resolveSecretKey(forceOwner)
-                    ?: throw IllegalStateException("No signing key available (ownerHexKey=${configStore.config.value.ownerHexKey != null}, ownerNpub=${configStore.config.value.ownerNpub.take(8)})")
-                val finalTags = EventPublisher.appendClientTag(tags, kind)
-                val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
-                val eventJson = EventPublisher.buildUnsignedEvent(
-                    kind = kind, content = content, tags = finalTags, pubkey = pubkey,
-                )
-
-                // Apply NIP-13 proof of work if enabled for this event kind
-                val powDifficulty = powPreferences.difficultyForKind(kind)
-                val signed = if (powDifficulty > 0) {
-                    EventPublisher.mineAndSignWithGoBackend(eventJson, secretKey, powDifficulty)
-                        ?: EventPublisher.signWithGoBackend(eventJson, secretKey) // fallback
-                } else {
-                    EventPublisher.signWithGoBackend(eventJson, secretKey)
-                }
-                    ?: throw IllegalStateException("Go signEvent failed (pubkey=${pubkey.take(8)}, keyLen=${secretKey.length})")
-                parseSignedEvent(signed)
-                    ?: throw IllegalStateException("Failed to parse signed event")
+                signLocally(kind, content, tags, forceOwner)
             }
         }
+    }
+
+    /** Signs with the local key of the owner ([forceOwner]) or the active account. */
+    private fun signLocally(kind: Int, content: String, tags: List<List<String>>, forceOwner: Boolean): NostrEvent {
+        if (!com.nostrvault.relay.HavenBridge.isLoaded) {
+            throw IllegalStateException("Native library not loaded")
+        }
+        val secretKey = resolveSecretKey(forceOwner)
+            ?: throw IllegalStateException("No signing key available (ownerHexKey=${configStore.config.value.ownerHexKey != null}, ownerNpub=${configStore.config.value.ownerNpub.take(8)})")
+        val finalTags = EventPublisher.appendClientTag(tags, kind)
+        val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
+        val eventJson = EventPublisher.buildUnsignedEvent(
+            kind = kind, content = content, tags = finalTags, pubkey = pubkey,
+        )
+
+        // Apply NIP-13 proof of work if enabled for this event kind
+        val powDifficulty = powPreferences.difficultyForKind(kind)
+        val signed = if (powDifficulty > 0) {
+            EventPublisher.mineAndSignWithGoBackend(eventJson, secretKey, powDifficulty)
+                ?: EventPublisher.signWithGoBackend(eventJson, secretKey) // fallback
+        } else {
+            EventPublisher.signWithGoBackend(eventJson, secretKey)
+        }
+            ?: throw IllegalStateException("Go signEvent failed (pubkey=${pubkey.take(8)}, keyLen=${secretKey.length})")
+        return parseSignedEvent(signed)
+            ?: throw IllegalStateException("Failed to parse signed event")
     }
 
     /**
@@ -1246,8 +1364,11 @@ class NostrService @Inject constructor(
 
     /**
      * Publish an event to local relay + smart broadcast to target relays.
+     * With [onBroadcastOutcome], the Blastr broadcast waits for relay `OK`s and
+     * reports once: accepted when one relay takes it, refused when none does
+     * after the retries (see [broadcastConfirmed]). Called on the main thread.
      */
-    fun postEvent(event: NostrEvent) {
+    fun postEvent(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
 
         // 1. Post to local relay
@@ -1261,9 +1382,19 @@ class NostrService @Inject constructor(
         }
 
         // 2. Smart broadcast based on event kind and target
+        val toBlastr: () -> Unit = if (onBroadcastOutcome == null) {
+            { broadcastRawEvent(eventJson) }
+        } else {
+            {
+                scope.launch {
+                    val outcome = broadcastConfirmed(event, configStore.config.value.activeBlastrRelays)
+                    withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
+                }
+            }
+        }
         scope.launch(Dispatchers.IO) {
             when (event.kind) {
-                0 -> broadcastRawEvent(eventJson) // Profile → Blastr
+                0 -> toBlastr() // Profile → Blastr
                 else -> {
                     // Extract target pubkey from p-tag and send to their inbox relays
                     val targetPubkey = event.tags
@@ -1280,10 +1411,54 @@ class NostrService @Inject constructor(
                     }
 
                     // Also broadcast to Blastr for visibility
-                    broadcastRawEvent(eventJson)
+                    toBlastr()
+                    // A DM relay list (10050) also goes to the DM relays it
+                    // names, where senders look for it (iOS #224).
+                    DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
+                        .filter { !isLoopbackRelay(it) }
+                        .forEach { fireAndForgetPublish(eventJson, it) }
                 }
             }
         }
+    }
+
+    /**
+     * Sends [event] to [relays] and reports a single outcome. When every relay
+     * refuses or times out it tries again, a little later each time, before
+     * giving up: a slow relay shouldn't read as a failed post.
+     */
+    private suspend fun broadcastConfirmed(event: NostrEvent, relays: List<String>): BroadcastTally.Outcome {
+        val targets = relays.filter { isValidRelayUrl(it) }
+        for (attempt in 0 until 3) {
+            if (attempt > 0) delay(if (attempt == 1) 3_000L else 8_000L)
+            if (broadcastOnceConfirmed(event, targets) == BroadcastTally.Outcome.ACCEPTED) {
+                return BroadcastTally.Outcome.ACCEPTED
+            }
+        }
+        return BroadcastTally.Outcome.REFUSED
+    }
+
+    /**
+     * One pass over [relays]. Returns as soon as the outcome is decided; the
+     * sends to slower relays keep going in [scope] so they still get the post.
+     */
+    private suspend fun broadcastOnceConfirmed(event: NostrEvent, relays: List<String>): BroadcastTally.Outcome {
+        val tally = BroadcastTally(relays.size)
+        tally.outcome?.let { return it }
+        val decided = CompletableDeferred<BroadcastTally.Outcome>()
+        for (relayUrl in relays) {
+            scope.launch(Dispatchers.IO) {
+                val (ok, message) = try {
+                    publishAwaitingOk(event, relayUrl, timeoutMs = 10_000)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    false to "connection failed"
+                }
+                tally.record(relayUrl, ok, message)?.let { decided.complete(it) }
+            }
+        }
+        return decided.await()
     }
 
     /**
@@ -1316,6 +1491,66 @@ class NostrService @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Also send [event] to [relayUrl], e.g. diVine's relay for a diVine, and
+     * wait for its OK. Returns whether it accepted and its message; a relay
+     * that never answers within [timeoutMs] counts as not accepted.
+     */
+    suspend fun publishAwaitingOk(event: NostrEvent, relayUrl: String, timeoutMs: Long = 15_000): Pair<Boolean, String> {
+        if (!isValidRelayUrl(relayUrl)) return false to "bad relay address"
+        val eventJson = serializeEvent(event)
+        return withContext(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            try {
+                withTimeoutOrNull(timeoutMs) {
+                    coroutineScope {
+                        // Listen before connecting; the flow does not replay.
+                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
+                            client.messages.mapNotNull { okReply(it, event.id) }.first()
+                        }
+                        client.connect()
+                        client.send("[\"EVENT\",$eventJson]")
+                        answer.await()
+                    }
+                } ?: (false to "it didn't answer")
+            } finally {
+                client.disconnect()
+            }
+        }
+    }
+
+    /** `["OK", <eventId>, <accepted>, <message>]` for [eventId], else null. */
+    private fun okReply(message: String, eventId: String): Pair<Boolean, String>? = runCatching {
+        val parsed = Json.parseToJsonElement(message).jsonArray
+        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "OK") return@runCatching null
+        if (parsed[1].jsonPrimitive.contentOrNull != eventId) return@runCatching null
+        val accepted = parsed[2].jsonPrimitive.booleanOrNull ?: false
+        accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
+    }.getOrNull()
+
+    /**
+     * Sends [pubkey]'s newest profile (kind 0), exactly as already signed, to
+     * [relayUrl] in the background. diVine's search and author pages only know
+     * profiles that reach its own relay, which otherwise happens only for
+     * people who have used the diVine app. Nothing is signed, so no signer prompt.
+     */
+    fun sendProfileTo(pubkey: String, relayUrl: String) {
+        scope.launch {
+            val profile = fetchNewestReplaceable(kind = 0, pubkey = pubkey, alsoAsk = emptyList()) ?: return@launch
+            publishFireAndForget(profile, listOf(relayUrl))
+        }
+    }
+
+    /**
+     * Also send [event] to [relays] without waiting for their answers, e.g. the
+     * relays a poll names for its votes (iOS broadcastRawEvent extraRelays).
+     */
+    fun publishFireAndForget(event: NostrEvent, relays: List<String>) {
+        val eventJson = serializeEvent(event)
+        relays.filter { isValidRelayUrl(it) && !isLoopbackRelay(it) }
+            .forEach { fireAndForgetPublish(eventJson, it) }
     }
 
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
@@ -1372,9 +1607,8 @@ class NostrService @Inject constructor(
             Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
             return
         }
-        val config = configStore.config.value
-        val relays = config.inboxRelays ?: return
-        val tags = relays.map { listOf("r", it) }
+        val tags = configStore.config.value.publicRelayListTags
+        if (tags.isEmpty()) return
         signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
     }
 
@@ -1388,7 +1622,126 @@ class NostrService @Inject constructor(
      * ones still running the old build.
      */
     fun republishDMRelayList() {
-        publishDMRelayList(configStore.config.value.dmRelays)
+        scope.launch(Dispatchers.IO) {
+            runCatching { syncOwnerDMInboxList() }
+                .onFailure { Log.w(TAG, "DM inbox sync failed: ${it.message}") }
+        }
+    }
+
+    /**
+     * Brings the owner's DM inbox list (kind 10050) into step across devices:
+     * the newest published list is adopted unless this device published a
+     * newer one, in which case ours is published. Every device used to
+     * republish its own settings at launch, so whichever device opened last
+     * silently replaced the list the others had set. See [DMInbox].
+     */
+    private suspend fun syncOwnerDMInboxList() {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return
+        val config = configStore.config.value
+        val newest = fetchNewestDMRelayList(owner, config.dmInboxRelays)
+        val published = newest?.first?.filter { !isLoopbackRelay(it) }
+
+        var action = DMInbox.syncAction(config.dmInboxRelays, config.dmRelaysUpdatedAt, published, newest?.second)
+        if (action == DMInbox.SyncAction.ADOPT && newest != null && published != null) {
+            configStore.updateAsync {
+                it.copy(dmRelays = published.ifEmpty { it.dmRelays }, dmRelaysUpdatedAt = newest.second)
+            }
+            if (BuildConfig.DEBUG) Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
+            // This device may still hold more than was published (its own
+            // Haven inbox, or loopback entries dropped).
+            action = DMInbox.syncAction(configStore.config.value.dmInboxRelays, newest.second, newest.first, newest.second)
+        }
+        if (action == DMInbox.SyncAction.PUBLISH) publishOwnerDMInboxList()
+    }
+
+    /**
+     * Publishes this device's DM inbox list for the owner and stamps it as the
+     * newest change. Call when the Haven relay address changes.
+     */
+    fun publishOwnerDMInboxList() {
+        configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
+        publishDMRelayList(configStore.config.value.dmInboxRelays)
+    }
+
+    /**
+     * The newest signed kind 10050 for [pubkey] across the blastr relays and
+     * [alsoAsk], as (relays, created_at), or null if none answered in time.
+     * Asks fresh rather than trusting the cached [dmRelayLists], which would
+     * let a device adopt its own stale copy.
+     */
+    private suspend fun fetchNewestDMRelayList(pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): Pair<List<String>, Long>? {
+        val winner = fetchNewestReplaceable(10050, pubkey, alsoAsk, timeoutMs) ?: return null
+        return profileRepository.parseDMRelayListTags(winner.tags) to winner.createdAt
+    }
+
+    /**
+     * The newest signed replaceable event of [kind] by [pubkey] across the
+     * blastr relays and [alsoAsk], or null if none answered in time. Asks
+     * fresh: the profile caches can hold a list replaced long ago.
+     */
+    suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? =
+        lookupNewestReplaceable(kind, pubkey, alsoAsk, timeoutMs).event
+
+    /**
+     * One [lookupNewestReplaceable] answer: the newest event, and how many
+     * relays were asked and answered (EOSE). No event with every relay
+     * answered means there genuinely is none, not that the lookup timed out.
+     */
+    data class ReplaceableLookup(val event: NostrEvent?, val asked: Int, val answered: Int) {
+        val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
+    }
+
+    /** [fetchNewestReplaceable], also saying whether "none" was confirmed. */
+    suspend fun lookupNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): ReplaceableLookup {
+        val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
+            .distinct()
+        if (targets.isEmpty()) return ReplaceableLookup(null, 0, 0)
+        val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
+        val answered = java.util.concurrent.atomic.AtomicInteger(0)
+        coroutineScope {
+            targets.map { url ->
+                launch(Dispatchers.IO) {
+                    val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                    try {
+                        withTimeoutOrNull(timeoutMs) {
+                            val subId = "dmlist-${UUID.randomUUID().toString().take(6)}"
+                            val done = CompletableDeferred<Unit>()
+                            val collector = launch {
+                                client.messages.collect { msg ->
+                                    val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                    when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                        "EVENT" -> {
+                                            val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                            val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                            if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
+                                            best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
+                                        }
+                                        "EOSE" -> {
+                                            val ours = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == subId
+                                            if (done.complete(Unit) && ours) answered.incrementAndGet()
+                                        }
+                                        "CLOSED" -> done.complete(Unit)
+                                    }
+                                }
+                            }
+                            launch {
+                                client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"],"limit":1}]""")
+                            }
+                            client.connect()
+                            done.await()
+                            collector.cancel()
+                        }
+                    } finally {
+                        client.disconnect()
+                    }
+                }
+            }.joinAll()
+        }
+        return ReplaceableLookup(best.get(), targets.size, answered.get())
     }
 
     fun publishDMRelayList(dmRelays: List<String>) {
@@ -1405,8 +1758,21 @@ class NostrService @Inject constructor(
                 "wss://relay.btcforplebs.com",
             )
         }
-        val tags = relays.map { listOf("r", it) }
+        // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
+        // which no other client reads — they saw an empty list and had nowhere
+        // to deliver our DMs.
+        val tags = relays.map { listOf("relay", it) }
         signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
+    }
+
+    /**
+     * NIP-51: publishes the owner's blocked relay list (kind 10006), the relays
+     * set to Never connect. An empty list is published too, so unblocking the
+     * last relay clears it.
+     */
+    fun publishBlockedRelayList() {
+        val tags = configStore.config.value.blockedRelays.map { listOf("relay", DMInbox.normalizedRelayURL(it)) }
+        signAndPost(kind = 10006, content = "", tags = tags, forceOwner = true)
     }
 
     fun publishServerList() {
@@ -1451,7 +1817,7 @@ class NostrService @Inject constructor(
      * Global adds the Mac relay (if configured) and the configured NIP-50
      * search relays, all at once.
      */
-    fun startSearch(query: String, includeGlobal: Boolean, follows: Set<String>): GlobalSearchSession? {
+    fun startSearch(query: String, includeGlobal: Boolean, follows: Set<String>, wot: Set<String> = emptySet()): GlobalSearchSession? {
         val matcher = SearchTermMatcher.create(query) ?: return null
         val config = configStore.config.value
         val plan = GlobalSearchSession.Plan(
@@ -1465,6 +1831,7 @@ class NostrService @Inject constructor(
             plan = plan,
             own = ownSearchPubkeys(),
             follows = follows,
+            wot = wot,
             cachedProfiles = _profiles.value.values.toList(),
             onFinished = { results -> scope.launch { mergeSearchProfiles(results.profiles) } },
         )
@@ -1590,56 +1957,38 @@ class NostrService @Inject constructor(
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-
-                    // Guarantee the collector is registered as a SharedFlow
-                    // subscriber BEFORE we connect/REQ. messages has replay=0, so any
-                    // EVENT/EOSE emitted before subscription is silently dropped — the
-                    // race that left the temp-client query receiving nothing.
-                    val subscribed = CompletableDeferred<Unit>()
-                    scope.launch {
-                        client.messages
-                            .onSubscription { subscribed.complete(Unit) }
-                            .collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                // EOSE frames are ["EOSE", subId] (size 2). A < 3
-                                // guard dropped them before the EOSE handler, so the
-                                // collected notes were never delivered via onResult.
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (type == "EVENT" && sid == subId) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-
-                                    if (kind == 1) {
-                                        collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                    }
-                                }
-                                if (type == "EOSE" && sid == subId) {
-                                    onResult(collected.values.sortedByDescending { it.createdAt })
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    subscribed.await()
-                    client.connect()
+                    // The pool subscribes to a socket's messages before it
+                    // connects, so an early EVENT/EOSE is not dropped.
                     val filter = """{"kinds":[1],"authors":["$pubkey"],"limit":50}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    lookupPool.query(relayUrl, subId, listOf(filter), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            // EOSE frames are ["EOSE", subId] (size 2). A < 3
+                            // guard dropped them before the EOSE handler, so the
+                            // collected notes were never delivered via onResult.
+                            if (parsed.size < 2) return@query
+                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
+                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
+                            if (type == "EVENT" && sid == subId) {
+                                val ev = parsed[2].jsonObject
+                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                val tags: List<List<String>> = try {
+                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                } catch (_: Exception) { emptyList() }
 
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                                if (kind == 1) {
+                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                }
+                            }
+                            if (type == "EOSE" && sid == subId) {
+                                onResult(collected.values.sortedByDescending { it.createdAt })
+                            }
+                        } catch (_: Exception) {}
+                    }
                 } catch (_: Exception) {}
             }
         }
@@ -1654,20 +2003,19 @@ class NostrService @Inject constructor(
      * relays + the user's NIP-65 relays. The caller assigns callbacks then calls
      * [ProfileStream.start], and must call [ProfileStream.close] when done.
      */
-    fun profileStream(pubkey: String): ProfileStream {
+    fun profileStream(pubkey: String): ProfileStream = ProfileStream(pubkey, profileRelayUrls(pubkey))
+
+    /** The relays a profile page asks: local, up to 3 feed relays, up to 3 of the profile's outbox. */
+    fun profileRelayUrls(pubkey: String): List<String> {
         val config = configStore.config.value
-        val relays = buildList {
+        return buildList {
             config.nostrURL?.let { add(it) }
-            val feed = config.activeFeedRelays.ifEmpty {
-                listOf("wss://relay.primal.net", "wss://nos.lol")
-            }
-            addAll(feed.take(3))
+            addAll(config.readRelays.take(3))
             // NIP-65 outbox model: we're fetching events FROM this user, so query
             // their write/outbox relays (where they actually publish), not their
             // read/inbox relays (where others send things TO them).
             _outboxRelays.value[pubkey]?.let { addAll(it.take(3)) }
         }.distinct().take(6)
-        return ProfileStream(pubkey, relays)
     }
 
     /**
@@ -1687,7 +2035,7 @@ class NostrService @Inject constructor(
             setOfNotNull(configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() })
         private val initialSubId = "profile-${UUID.randomUUID().toString().take(6)}"
 
-        /** Note authored by [pubkey] (kinds 1/6/30023). */
+        /** Note authored by [pubkey] (kinds 1/6/30023, and 1068 polls). */
         var onNote: ((FeedNote) -> Unit)? = null
         /** Note by someone else that p-tags [pubkey] (Tagged tab). */
         var onTagged: ((FeedNote) -> Unit)? = null
@@ -1727,23 +2075,23 @@ class NostrService @Inject constructor(
         }
 
         private fun buildInitialReq(): String {
-            val notes = """{"kinds":[1,6,30023],"authors":["$pubkey"],"limit":50}"""
+            val notes = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"limit":50}"""
             val meta = """{"kinds":[0],"authors":["$pubkey"],"limit":1}"""
             val contacts = """{"kinds":[3],"authors":["$pubkey"],"limit":1}"""
             val followers = """{"kinds":[3],"#p":["$pubkey"],"limit":100}"""
-            val tagged = """{"kinds":[1,6,30023],"#p":["$pubkey"],"limit":50}"""
+            val tagged = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"limit":50}"""
             return "[\"REQ\",\"$initialSubId\",$notes,$meta,$contacts,$followers,$tagged]"
         }
 
         fun loadOlder(until: Long) {
             val subId = "older-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023],"authors":["$pubkey"],"until":$until,"limit":50}"""
+            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"until":$until,"limit":50}"""
             clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
         }
 
         fun loadOlderTagged(until: Long) {
             val subId = "older-tagged-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023],"#p":["$pubkey"],"until":$until,"limit":50}"""
+            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"until":$until,"limit":50}"""
             clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
         }
 
@@ -1776,7 +2124,9 @@ class NostrService @Inject constructor(
                 } catch (_: Exception) { emptyList() }
 
                 when {
-                    kind == 0 && evPubkey == pubkey -> parseAndCacheProfile(pubkey, content)
+                    kind == 0 && evPubkey == pubkey -> {
+                        if (acceptReplaceable(ev, kind, evPubkey, createdAt)) parseAndCacheProfile(pubkey, content, createdAt)
+                    }
                     kind == 3 && evPubkey == pubkey -> {
                         val pTags = tags.filter { it.size >= 2 && it[0] == "p" }
                         val following = pTags.map { it[1] }.filter { it != pubkey }.distinct().size
@@ -1784,7 +2134,7 @@ class NostrService @Inject constructor(
                         onContacts?.invoke(following, followsMe)
                     }
                     kind == 3 && evPubkey != pubkey -> onFollower?.invoke(evPubkey)
-                    kind == 1 || kind == 6 || kind == 30023 -> {
+                    kind == 1 || kind == 6 || kind == 30023 || kind == NIP88Poll.KIND -> {
                         // fromEvent() resolves NIP-18 reposts (kind 6 → original
                         // author as pubkey, repostedBy = the reposter), which powers
                         // the profile Reposts tab + repost attribution.
@@ -1800,81 +2150,6 @@ class NostrService @Inject constructor(
     }
 
     /**
-     * Fetch the owner's media-bearing notes from the local relay (and inbox relays).
-     *
-     * Queries kinds 1 (text notes), 1063 (NIP-94 file metadata) and 30023
-     * (long-form) authored by [pubkey]. Returns [FeedNote]s with their
-     * media URLs already extracted (regex + imeta) by [FeedNote.fromEvent].
-     *
-     * Used by the media gallery to surface media referenced in the user's own
-     * notes that may not exist as a local Blossom blob — iOS parity.
-     */
-    suspend fun fetchOwnerMediaNotes(pubkey: String): List<FeedNote> = suspendCancellableCoroutine { cont ->
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-        }.distinct().take(5)
-        if (relayUrls.isEmpty()) { cont.resume(emptyList()); return@suspendCancellableCoroutine }
-
-        val subId = "ownermedia-${UUID.randomUUID().toString().take(8)}"
-        val collected = java.util.concurrent.ConcurrentHashMap<String, FeedNote>()
-        val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
-
-        fun finish() {
-            if (resumed.compareAndSet(false, true)) {
-                cont.resume(collected.values.sortedByDescending { it.createdAt })
-            }
-        }
-
-        for (relayUrl in relayUrls) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (sid != subId) return@collect
-                                if (type == "EVENT" && parsed.size >= 3) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                } else if (type == "EOSE") {
-                                    finish()
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    client.connect()
-                    val filter = """{"kinds":[1,1063,30023],"authors":["$pubkey"],"limit":500}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
-                    finish()
-                } catch (_: Exception) {
-                    finish()
-                }
-            }
-        }
-    }
-
-    /**
      * Fetch a whole thread for the note-detail view. Queries the entire subtree
      * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
      * mid-thread reply is opened, not just direct replies to the opened note),
@@ -1882,10 +2157,13 @@ class NostrService @Inject constructor(
      * [ancestorIds] by id so missing parents are filled in from the network.
      * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
      */
+    private val COMMENT = NIP10Thread.COMMENT_KIND
+
     fun fetchThread(
         rootId: String,
         focusedId: String,
         ancestorIds: List<String>,
+        rootCoordinate: String? = null,
         onRawEvent: ((String, String) -> Unit)? = null,
         onResult: (List<FeedNote>) -> Unit,
     ) {
@@ -1894,11 +2172,47 @@ class NostrService @Inject constructor(
         // #e by root + focused note + all ancestors so legacy replies that only
         // tag their direct parent (not the thread root) are still fetched.
         val eIds = (listOf(rootId, focusedId) + ancestorIds).distinct()
-        val eFilter = """{"kinds":[1],"#e":[${jsonArr(eIds)}],"limit":200}"""
-        // Root note itself + ancestors are not replies, so fetch by id.
+        // NIP-22 comments (1111) tag their direct parent in lowercase e too.
+        val eFilter = """{"kinds":[1,$COMMENT],"#e":[${jsonArr(eIds)}],"limit":200}"""
+        // NIP-22 comments name the thread root in uppercase E, so one filter
+        // reaches them at any depth (iOS NoteDetailView commentsFilter).
+        val commentsFilter = """{"kinds":[$COMMENT],"#E":[${jsonArr(listOf(rootId))}],"limit":150}"""
+        // Root note itself + ancestors are not replies, so fetch by id. An
+        // ancestor of a comment is usually itself a comment.
         val idValues = (listOf(rootId) + ancestorIds).distinct()
-        val idFilter = """{"kinds":[1],"ids":[${jsonArr(idValues)}]}"""
-        queryDetailRelays(listOf(eFilter, idFilter), onRawEvent, onResult)
+        val idFilter = """{"kinds":[1,$COMMENT],"ids":[${jsonArr(idValues)}]}"""
+        // Comments on an addressable or replaceable root name it by A; an
+        // edited article has a new event id, so #E alone misses them.
+        val filters = mutableListOf(eFilter, commentsFilter, idFilter)
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[$COMMENT],"#A":[${jsonArr(listOf(rootCoordinate))}],"limit":150}""")
+        }
+        queryDetailRelays(filters, onRawEvent, onEose = onResult)
+    }
+
+    /**
+     * Responses to [rootId] that aren't thread rows (spec "below the fold"):
+     * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
+     * The caller decides which of these are quotes rather than replies.
+     *
+     * [rootCoordinate] is the root's address when it is addressable: an
+     * article's highlights name it by its `a` coordinate, not by this
+     * version's id, so `#e` alone never finds them (iOS #189).
+     */
+    fun fetchOtherResponses(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) {
+        val filters = mutableListOf(
+            """{"#q":["$rootId"],"limit":50}""",
+            """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
+        )
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[9802,1244],"#a":[${JsonPrimitive(rootCoordinate)}],"limit":50}""")
+        }
+        queryDetailRelays(
+            filters,
+            onRawEvent = null,
+            onEose = onResult,
+            acceptKinds = null,
+        )
     }
 
     /**
@@ -1914,7 +2228,7 @@ class NostrService @Inject constructor(
         onResult: (FeedNote?) -> Unit,
     ) {
         val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
-        queryDetailRelays(listOf("""{"kinds":[1],"ids":["$id"]}"""), onRawEvent) { notes ->
+        queryDetailRelays(listOf("""{"kinds":[1,$COMMENT,${NIP88Poll.KIND}],"ids":["$id"]}"""), onRawEvent) { notes ->
             val match = notes.firstOrNull { it.id == id }
             if (match != null && delivered.compareAndSet(false, true)) onResult(match)
         }
@@ -1941,9 +2255,9 @@ class NostrService @Inject constructor(
         if (noteIds.isEmpty()) { onResult(emptyList()); return }
         val idArr = noteIds.distinct().joinToString(",") { "\"$it\"" }
         queryDetailRelays(
-            listOf("""{"kinds":[1],"#e":[$idArr],"limit":150}"""),
+            listOf("""{"kinds":[1,$COMMENT],"#e":[$idArr],"limit":150}"""),
             onRawEvent,
-            onResult,
+            onEose = onResult,
         )
     }
 
@@ -1958,6 +2272,8 @@ class NostrService @Inject constructor(
     private fun queryDetailRelays(
         filters: List<String>,
         onRawEvent: ((String, String) -> Unit)? = null,
+        /** Kinds to keep; null keeps every kind. */
+        acceptKinds: Set<Int>? = setOf(1, NIP10Thread.COMMENT_KIND),
         onEose: (List<FeedNote>) -> Unit,
     ) {
         val config = configStore.config.value
@@ -1967,15 +2283,8 @@ class NostrService @Inject constructor(
             // Replies from other users propagate to feed/blastr relays, not just
             // the local + inbox relays. Mirror iOS (NoteDetailView) which queries
             // external feed relays so strangers' replies are actually found.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-            // Public fallback when no external relays are configured.
-            if (config.activeFeedRelays.isEmpty() &&
-                config.activeBlastrRelays.isEmpty() &&
-                config.inboxRelays.isNullOrEmpty()) {
-                add("wss://relay.primal.net")
-                add("wss://nos.lol")
-            }
+            addAll(config.readRelays)
+            addAll(config.writeRelays)
         }.distinct().take(8)
         if (relayUrls.isEmpty()) { onEose(emptyList()); return }
 
@@ -1985,50 +2294,169 @@ class NostrService @Inject constructor(
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
+                    lookupPool.query(relayUrl, subId, filters, TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            // EOSE is ["EOSE", subId] (size 2); a < 3 guard dropped
+                            // it so onEose never fired and replies/thread results
+                            // were never delivered. Same bug as fetchProfileNotes.
+                            if (parsed.size < 2) return@query
+                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
+                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
+                            if (type == "EVENT" && sid == subId) {
+                                val ev = parsed[2].jsonObject
+                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                val tags: List<List<String>> = try {
+                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                } catch (_: Exception) { emptyList() }
 
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                // EOSE is ["EOSE", subId] (size 2); a < 3 guard dropped
-                                // it so onEose never fired and replies/thread results
-                                // were never delivered. Same bug as fetchProfileNotes.
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (type == "EVENT" && sid == subId) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-
-                                    if (kind == 1) {
-                                        collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                        onRawEvent?.invoke(id, ev.toString())
-                                    }
+                                if (acceptKinds == null || kind in acceptKinds) {
+                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                    onRawEvent?.invoke(id, ev.toString())
                                 }
-                                if (type == "EOSE" && sid == subId) {
-                                    onEose(collected.values.sortedBy { it.createdAt })
-                                }
-                            } catch (_: Exception) {}
-                        }
+                            }
+                            if (type == "EOSE" && sid == subId) {
+                                onEose(collected.values.sortedBy { it.createdAt })
+                            }
+                        } catch (_: Exception) {}
                     }
-
-                    client.connect()
-                    client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
                 } catch (_: Exception) {}
             }
+        }
+    }
+
+    /**
+     * One-shot REQ that hands back the raw events: sends [filters] (JSON
+     * objects) to every relay in [relayUrls] on temporary clients and
+     * collects events, deduplicated by id, until each relay has sent EOSE or
+     * CLOSED (or dropped the connection) or [timeoutMs] passes. Any kind; the
+     * caller decides what the events are. [onProgress], when given, gets the
+     * events so far each time a relay finishes, on an IO thread. [onAnswered]
+     * runs when a relay sends EOSE, so a caller can tell "relays had nothing"
+     * from "no relay answered".
+     */
+    suspend fun queryRawEvents(
+        filters: List<String>,
+        relayUrls: List<String>,
+        timeoutMs: Long = 5_000L,
+        onAnswered: (() -> Unit)? = null,
+        onProgress: ((List<JsonObject>) -> Unit)? = null,
+    ): List<JsonObject> {
+        if (filters.isEmpty() || relayUrls.isEmpty()) return emptyList()
+        val subId = "q-${UUID.randomUUID().toString().take(8)}"
+        val collected = ConcurrentHashMap<String, JsonObject>()
+
+        // Each relay's lookup ends at its EOSE/CLOSED, or at once when the
+        // relay refuses the socket (or refused one in the last two minutes).
+        withTimeoutOrNull(timeoutMs) {
+            coroutineScope {
+                for (relayUrl in relayUrls) launch(Dispatchers.IO) {
+                    val outcome = lookupPool.query(relayUrl, subId, filters, timeoutMs) { msg ->
+                        handleRawQueryMessage(msg, subId, collected)
+                    }
+                    if (outcome == LookupSocketPool.Outcome.EOSE) onAnswered?.invoke()
+                    // What has arrived so far, as each relay finishes, so a
+                    // caller need not wait for the slowest one.
+                    if (onProgress != null && collected.isNotEmpty()) onProgress(collected.values.toList())
+                }
+            }
+        }
+        return collected.values.toList()
+    }
+
+    /**
+     * NIP-45 COUNT for [filter] on one relay, on the pooled lookup socket.
+     * Null when the relay refuses COUNT (most do), doesn't answer in
+     * [timeoutMs], or sends no number.
+     */
+    suspend fun countEvents(relayUrl: String, filter: Map<String, Any>, timeoutMs: Long = 8_000L): Int? {
+        if (!isValidRelayUrl(relayUrl)) return null
+        val subId = "count-${UUID.randomUUID().toString().take(8)}"
+        var count: Int? = null
+        lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), timeoutMs, verb = "COUNT") { msg ->
+            count = countFrom(msg) ?: count
+        }
+        return count
+    }
+
+    private val vertexCache = com.nostrvault.data.model.VertexReputation.Cache()
+
+    /**
+     * [target]'s follower count from Vertex, the source npub.world uses. Null
+     * when Vertex can't answer: no local key (a bunker or Amber would be asked
+     * to sign for every profile opened), no credits, or no answer in time.
+     * The request is signed by the active account and names [target].
+     * Mirrors iOS NostrService.fetchVertexFollowerCount.
+     */
+    suspend fun fetchVertexFollowerCount(target: String, timeoutMs: Long = 6_000): Int? {
+        val vertex = com.nostrvault.data.model.VertexReputation
+        val now = System.currentTimeMillis()
+        vertexCache.followers(target, now)?.let { return it }
+        if (!vertexCache.shouldAsk(now) || configStore.config.value.activeSigningMode() != "local") return null
+        val request = withContext(Dispatchers.IO) {
+            runCatching { signLocally(vertex.REQUEST_KIND, "", vertex.requestTags(target), forceOwner = false) }.getOrNull()
+        } ?: return null
+
+        val reply = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val client = WebSocketClient(url = vertex.RELAY_URL, scope = this, autoReconnect = false)
+                try {
+                    withTimeoutOrNull(timeoutMs) {
+                        val subId = "vertex-${UUID.randomUUID().toString().take(6)}"
+                        val answer = CompletableDeferred<com.nostrvault.data.model.VertexReputation.Reply>()
+                        val collector = launch {
+                            client.messages.collect { msg ->
+                                val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                if (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull != "EVENT") return@collect
+                                val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                val r = vertex.reply(ev.kind, ev.pubkey, ev.tags, ev.content, request.id, target) ?: return@collect
+                                if (HavenBridge.verifyEvent(obj.toString())) answer.complete(r)
+                            }
+                        }
+                        launch {
+                            client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                            // Listen first, so a fast answer isn't missed.
+                            client.send("""["REQ","$subId",{"kinds":[${vertex.RESULT_KIND},${vertex.FEEDBACK_KIND}],"#e":["${request.id}"]}]""")
+                            client.send("[\"EVENT\",${serializeEvent(request)}]")
+                        }
+                        client.connect()
+                        answer.await().also { collector.cancel() }
+                    }
+                } finally {
+                    client.disconnect()
+                    coroutineContext.cancelChildren()
+                }
+            }
+        } ?: return null // No answer in time says nothing about credits.
+
+        vertexCache.record(reply, target, System.currentTimeMillis())
+        return (reply as? com.nostrvault.data.model.VertexReputation.Reply.Followers)?.count
+    }
+
+    /** Stores an EVENT for [subId]; true once the relay is done (EOSE/CLOSED). */
+    private fun handleRawQueryMessage(
+        msg: String,
+        subId: String,
+        collected: MutableMap<String, JsonObject>,
+    ): Boolean {
+        val parsed = try { json.parseToJsonElement(msg).jsonArray } catch (_: Exception) { return false }
+        if (parsed.size < 2) return false
+        val type = (parsed[0] as? JsonPrimitive)?.contentOrNull ?: return false
+        if ((parsed[1] as? JsonPrimitive)?.contentOrNull != subId) return false
+        return when (type) {
+            "EVENT" -> {
+                val ev = parsed.getOrNull(2) as? JsonObject
+                val id = (ev?.get("id") as? JsonPrimitive)?.contentOrNull
+                if (ev != null && id != null) collected[id] = ev
+                false
+            }
+            "EOSE", "CLOSED" -> true
+            else -> false
         }
     }
 
@@ -2044,23 +2472,9 @@ class NostrService @Inject constructor(
 
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
-                val client = WebSocketClient(url = relayUrl, scope = scope)
-                tempClientsLock.withLock { temporaryClients.add(client) }
-
-                scope.launch {
-                    client.messages.collect { msg ->
-                        launch(Dispatchers.Default) {
-                            processRelayMessage(msg, relayUrl)
-                        }
-                    }
+                lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                    launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
                 }
-
-                client.connect()
-                client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
-
-                delay(TEMP_CLIENT_DISCONNECT_MS)
-                client.disconnect()
-                tempClientsLock.withLock { temporaryClients.remove(client) }
             }
         }
     }
@@ -2069,11 +2483,13 @@ class NostrService @Inject constructor(
     // Fetch zap receipts
     // ══════════════════════════════════════════════════════════════════
 
-    fun fetchZapReceipts(relayUrls: List<String>, limit: Int = 1000) {
+    /** [tagFilter] narrows the request, e.g. `"#P" to listOf(me)` for zaps you sent. */
+    fun fetchZapReceipts(relayUrls: List<String>, limit: Int = 1000, tagFilter: Map<String, List<String>> = emptyMap()) {
         val subId = "zaps-${UUID.randomUUID().toString().take(8)}"
         val filter = buildFilterJson(buildMap<String, Any> {
             put("kinds", listOf(9735))
             put("limit", limit)
+            putAll(tagFilter)
         })
 
         for (relayUrl in relayUrls) {
@@ -2081,7 +2497,7 @@ class NostrService @Inject constructor(
                 val client = WebSocketClient(url = relayUrl, scope = scope)
                 tempClientsLock.withLock { temporaryClients.add(client) }
 
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     client.messages.collect { msg ->
                         launch(Dispatchers.Default) {
                             processRelayMessage(msg, relayUrl)
@@ -2132,26 +2548,6 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
     // Lifecycle
     // ══════════════════════════════════════════════════════════════════
-
-    fun enterBackground() {
-        profileSaveJob?.cancel()
-        saveProfilesThrottled()
-    }
-
-    fun enterForeground() {
-        // Resume profile timer if needed
-    }
-
-    fun resetConnections() {
-        disconnectAll()
-        fetchWatchdogJob?.cancel()
-        bufferFlushJob?.cancel()
-        profileFlushJob?.cancel()
-        profileSaveJob?.cancel()
-        profileUpdateJob?.cancel()
-        _connectionStatus.value = "Disconnected"
-        _connectionColor.value = "gray"
-    }
 
     fun injectEvent(event: NostrEvent) {
         if (!markSeen(event.id)) return
@@ -2247,17 +2643,28 @@ class NostrService @Inject constructor(
      * signer that answers for a different account.
      */
     private suspend fun ensureBunkerConnected() {
-        if (NIP46Service.isConnected.value) return
         val cfg = configStore.config.value
         val bunker = cfg.bunkerConfig(cfg.activeOrOwnerNpub())
             ?: throw IllegalStateException("No bunker configured for this account")
-        val pubkey = NIP46Service.connectForAccount(bunker)
-            ?: throw IllegalStateException("Could not reach the bunker")
-        if (pubkey != activeHexPubkey) {
-            NIP46Service.disconnect()
-            throw IllegalStateException("This bunker signs as ${pubkey.take(8)}…, not this account")
-        }
+        // The connect/ensure decision runs under NIP46Service's lock and checks
+        // the signer's key; a wrong-key signer is dropped, not kept.
+        NIP46Service.connectForAccount(bunker, activeHexPubkey)
+            ?: throw IllegalStateException(NIP46Service.lastError.value ?: "Could not reach the bunker")
     }
+
+    /**
+     * Background signer work (relay AUTH, the 10050 / 10063 lists) goes to a
+     * remote signer one request at a time; what the person does (posts,
+     * reactions, zaps) is never queued behind it. Upload auth (24242 Blossom,
+     * 27235 HTTP) is not queued either: it is almost always a photo the person
+     * just attached, and queued it waited silently behind an unanswered relay
+     * AUTH for the signer's full timeout.
+     */
+    private val backgroundSignerGate = kotlinx.coroutines.sync.Semaphore(1)
+    private val backgroundSignerKinds = setOf(22242, 10002, 10050, 10063, 10000)
+
+    private suspend fun <T> gatedIfBackground(kind: Int, block: suspend () -> T): T =
+        if (kind in backgroundSignerKinds) backgroundSignerGate.withPermit { block() } else block()
 
     /**
      * An external signer's answer is only accepted if it is the event we asked

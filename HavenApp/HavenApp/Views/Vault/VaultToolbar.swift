@@ -6,7 +6,78 @@ extension VaultView {
 
     @ViewBuilder
     var leadingToolbarInline: some View {
-        HStack(spacing: 12) {
+        if vaultTabHostsMedia {
+            VaultModePill(mode: vaultMode, zapsOnly: configService.config.zapsOnlyMode)
+        } else {
+            leadingIconRow
+        }
+    }
+
+    /// The Vault tab's menu entry for what this view is showing.
+    var vaultMode: VaultMode {
+        switch viewMode {
+        case .likes: return .likes
+        case .zaps: return .zaps
+        case .followers: return .followers
+        default:
+            switch noteScope {
+            case .notes: return .notes
+            case .articles: return .articles
+            case .highlights: return .highlights
+            }
+        }
+    }
+
+    /// Articles and Highlights are a few rows among many notes. The list's
+    /// end is always on screen, so loading older pages on sight would walk
+    /// the whole relay; they page by button instead.
+    var sparseNotesScope: Bool {
+        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && searchScope != .profiles
+    }
+
+    /// Gone once a page comes back empty: there is nothing older to load.
+    @ViewBuilder
+    var loadOlderButton: some View {
+        if !noOlderPages.contains(noteScope) {
+            loadOlderButtonBody
+        }
+    }
+
+    private var loadOlderButtonBody: some View {
+        Button { loadOlderInScope() } label: {
+            HStack(spacing: 6) {
+                if isLoadingOlder {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                Text("Load older")
+            }
+            .font(.appSystem(size: 14, weight: .semibold))
+            .foregroundColor(.havenPurple)
+            .padding(.horizontal, 16)
+            .frame(height: 36)
+            .background(Capsule().fill(Color.havenPurple.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoadingOlder)
+        .padding(.top, 8)
+        .padding(.bottom, 24)
+    }
+
+    /// Modes with something new, for the dots the icon row used to carry.
+    var vaultModesWithNews: Set<VaultMode> {
+        var modes = Set<VaultMode>()
+        if hasNewNotes { modes.insert(.notes) }
+        if hasNewLikes { modes.insert(.likes) }
+        if hasNewZaps { modes.insert(.zaps) }
+        if hasNewFollowers { modes.insert(.followers) }
+        return modes
+    }
+
+    @ViewBuilder
+    var leadingIconRow: some View {
+        HStack(spacing: 4) {
             IconFilterButton(icon: "doc.text", tooltip: "Notes", isSelected: viewMode == .notes, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .notes }
             }
@@ -19,108 +90,67 @@ extension VaultView {
             IconFilterButton(icon: "bolt.fill", tooltip: "Zaps", isSelected: viewMode == .zaps, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .zaps }
             }
+            IconFilterButton(icon: "person.2.fill", tooltip: "Followers", isSelected: viewMode == .followers, color: .havenPurple) {
+                withAnimation(Motion.toggle) { viewMode = .followers }
+            }
+            .overlay(alignment: .topTrailing) {
+                if hasNewFollowers {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: -5, y: 6)
+                        .allowsHitTesting(false)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .accessibilityValue(hasNewFollowers ? "New followers" : "")
         }
     }
 
     // MARK: - Trailing Toolbar (inline)
 
-    @ViewBuilder
+    // Each icon means one thing in every mode: the tray arrow in is what
+    // others gave you, the arrow out is what you gave. The person icon used
+    // to mean "my notes only" under Notes but "on my notes" under Likes and
+    // Zaps. Whitelisted notes already show in All, and the phone has no
+    // layout switch (`rowLayoutMode`).
+    /// Words first; when the bar can't fit them, the selected filter drops
+    /// its word, never the icons. (This used to fall back to a filter menu,
+    /// which hid every option behind one button.)
     var trailingToolbarInline: some View {
-        HStack(spacing: 4) {
-            IconFilterButton(
-                icon: "rectangle.compress.vertical",
-                tooltip: "Condensed View",
-                isSelected: noteLayoutMode == .compact,
-                color: .havenPurple
-            ) {
-                withAnimation(Motion.toggle) {
-                    noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
-                }
-            }
-
-            if viewMode == .notes {
-                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple) { contentFilter = .all }
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: contentFilter == .mine, color: .havenPurple) { contentFilter = .mine }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: contentFilter == .tagged, color: .havenPurple) { contentFilter = .tagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: contentFilter == .whitelist, color: .havenPurple) { contentFilter = .whitelist }
-            } else if viewMode == .likes {
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: likesFilter == .onMyNotes, color: .havenPurple) { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: likesFilter == .onTagged, color: .havenPurple) { likesFilter = .onTagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: likesFilter == .onWhitelisted, color: .havenPurple) { likesFilter = .onWhitelisted }
-                IconFilterButton(icon: "heart", tooltip: "My Likes", isSelected: likesFilter == .myLikes, color: .havenPurple) { likesFilter = .myLikes }
-            } else if viewMode == .zaps {
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: zapsFilter == .onMyNotes, color: .havenPurple) { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: zapsFilter == .onTagged, color: .havenPurple) { zapsFilter = .onTagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: zapsFilter == .onWhitelisted, color: .havenPurple) { zapsFilter = .onWhitelisted }
-                IconFilterButton(icon: "bolt", tooltip: "My Zaps", isSelected: zapsFilter == .myZaps, color: .havenPurple) { zapsFilter = .myZaps }
-            }
+        ViewThatFits(in: .horizontal) {
+            trailingFilters(labelled: true)
+            trailingFilters(labelled: false)
         }
     }
 
-    // MARK: - Trailing Toolbar (compact menu)
-
     @ViewBuilder
-    var trailingToolbarMenu: some View {
-        Menu {
-            Button {
-                withAnimation(Motion.toggle) {
-                    noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
-                }
-            } label: {
-                Label(
-                    noteLayoutMode == .compact ? "Expanded View" : "Condensed View",
-                    systemImage: noteLayoutMode == .compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
-                )
-            }
-            Divider()
-
+    func trailingFilters(labelled: Bool) -> some View {
+        HStack(spacing: 4) {
             if viewMode == .notes {
-                Button { contentFilter = .all } label: {
-                    Label("All Notes", systemImage: "square.stack")
-                }
-                Button { contentFilter = .mine } label: {
-                    Label("My Notes", systemImage: "person.fill")
-                }
-                Button { contentFilter = .tagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { contentFilter = .whitelist } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
+                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { contentFilter = .all }
+                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
+                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
+                IconFilterButton(icon: "person.crop.circle.badge.questionmark", tooltip: "Replies from outside your network", isSelected: contentFilter == .outside, color: .havenPurple, label: labelled ? "Outside" : nil) { contentFilter = .outside }
+                if vaultTabHostsMedia && noteScope == .articles {
+                    IconFilterButton(icon: "fork.knife", tooltip: "Recipes only", isSelected: recipesOnly, color: .havenPurple, label: labelled ? "Recipes" : nil) { recipesOnly.toggle() }
                 }
             } else if viewMode == .likes {
-                Button { likesFilter = .onMyNotes } label: {
-                    Label("My Notes", systemImage: "person.fill")
-                }
-                Button { likesFilter = .onTagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { likesFilter = .onWhitelisted } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
-                }
-                Button { likesFilter = .myLikes } label: {
-                    Label("My Likes", systemImage: "heart")
-                }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
             } else if viewMode == .zaps {
-                Button { zapsFilter = .onMyNotes } label: {
-                    Label("My Notes", systemImage: "person.fill")
-                }
-                Button { zapsFilter = .onTagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { zapsFilter = .onWhitelisted } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
-                }
-                Button { zapsFilter = .myZaps } label: {
-                    Label("My Zaps", systemImage: "bolt")
-                }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { zapsFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: labelled ? "Given" : nil) { zapsFilter = .myZaps }
+            } else if viewMode == .followers {
+                IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: labelled ? "New" : nil) { followersFilter = .new }
+                IconFilterButton(icon: "person.3.fill", tooltip: "All", isSelected: followersFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { followersFilter = .all }
             }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
         }
+        .animation(Motion.toggle, value: contentFilter)
+        .animation(Motion.toggle, value: recipesOnly)
+        .animation(Motion.toggle, value: followersFilter)
+        .animation(Motion.toggle, value: likesFilter)
+        .animation(Motion.toggle, value: zapsFilter)
     }
 
     // MARK: - Mode / Filter Helper Views
@@ -144,6 +174,12 @@ extension VaultView {
         }
     }
 
+    var followersButton: some View {
+        ModeButton(title: "Followers", icon: "person.2.fill", isSelected: viewMode == .followers, hasNotification: hasNewFollowers) {
+            withAnimation(Motion.toggle) { viewMode = .followers }
+        }
+    }
+
     var modeView: some View {
         HStack(spacing: 4) {
             notesButton
@@ -151,6 +187,7 @@ extension VaultView {
                 likesButton
             }
             zapsButton
+            followersButton
             #if os(iOS)
             // Add compact toggle on mobile
             if UIDevice.current.userInterfaceIdiom == .phone {
@@ -226,9 +263,14 @@ extension VaultView {
                     }
                     .font(.appSystem(size: 13, weight: .semibold))
                     .foregroundColor(.havenPurple)
+                    .contentShape(Rectangle())
                 }
                 #if os(macOS)
-                .menuStyle(.borderlessButton)
+                // .borderlessButton flattens the label's modifiers on macOS and adds a
+                // second chevron beside the drawn one.
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
                 #endif
                 .fixedSize()
                 .accessibilityLabel("Search scope: \(searchScope.label)")
@@ -275,6 +317,9 @@ extension VaultView {
             FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
                 contentFilter = .whitelist
             }
+            FilterButton(title: "Outside Network", color: .orange, isSelected: contentFilter == .outside) {
+                contentFilter = .outside
+            }
         }
         .padding(4)
         .background(Color.platformTertiaryGroupedBackground)
@@ -287,14 +332,23 @@ extension VaultView {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: likesFilter == .onMyNotes) {
                 likesFilter = .onMyNotes
             }
-            FilterButton(title: "Tagged", icon: "at", color: .havenPurple, isSelected: likesFilter == .onTagged) {
-                likesFilter = .onTagged
-            }
-            FilterButton(title: "Whitelisted", icon: "checkmark.seal.fill", color: .havenPurple, isSelected: likesFilter == .onWhitelisted) {
-                likesFilter = .onWhitelisted
-            }
             FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
                 likesFilter = .myLikes
+            }
+        }
+        .padding(4)
+        .background(Color.platformTertiaryGroupedBackground)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
+    }
+
+    var followersFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
+                followersFilter = .new
+            }
+            FilterButton(title: "All", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .all) {
+                followersFilter = .all
             }
         }
         .padding(4)
@@ -307,12 +361,6 @@ extension VaultView {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: zapsFilter == .onMyNotes) {
                 zapsFilter = .onMyNotes
-            }
-            FilterButton(title: "Tagged", icon: "at", color: .havenPurple, isSelected: zapsFilter == .onTagged) {
-                zapsFilter = .onTagged
-            }
-            FilterButton(title: "Whitelisted", icon: "checkmark.seal.fill", color: .havenPurple, isSelected: zapsFilter == .onWhitelisted) {
-                zapsFilter = .onWhitelisted
             }
             FilterButton(title: "My Zaps", icon: "bolt", color: .yellow, isSelected: zapsFilter == .myZaps) {
                 zapsFilter = .myZaps

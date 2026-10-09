@@ -103,8 +103,12 @@ enum ProfileRepository {
     static func parseMetadataContent(
         _ content: String,
         pubkey: String,
-        existingProfile: FeedProfile?
+        existingProfile: FeedProfile?,
+        createdAt: Int64? = nil
     ) -> (profile: FeedProfile, changed: Bool)? {
+        if let createdAt, let existing = existingProfile?.metadataCreatedAt, existing > createdAt {
+            return nil
+        }
         guard let metadata = try? JSONSerialization.jsonObject(
             with: content.data(using: .utf8) ?? Data()
         ) as? [String: Any] else { return nil }
@@ -112,6 +116,7 @@ enum ProfileRepository {
         let name = metadata["name"] as? String
         let displayName = metadata["display_name"] as? String
         let picture = (metadata["picture"] as? String).flatMap { URL(string: $0) }
+        let banner = (metadata["banner"] as? String).flatMap { URL(string: $0) }
         let nip05 = metadata["nip05"] as? String
         let about = metadata["about"] as? String
         let lud16 = metadata["lud16"] as? String
@@ -124,11 +129,13 @@ enum ProfileRepository {
         if profile.name != name { profile.name = name; changed = true }
         if profile.displayName != displayName { profile.displayName = displayName; changed = true }
         if profile.pictureURL != picture { profile.pictureURL = picture; changed = true }
+        if profile.bannerURL != banner { profile.bannerURL = banner; changed = true }
         if profile.nip05 != nip05 { profile.nip05 = nip05; changed = true }
         if profile.about != about { profile.about = about; changed = true }
         if profile.lud16 != lud16 { profile.lud16 = lud16; changed = true }
         if profile.lud06 != lud06 { profile.lud06 = lud06; changed = true }
         if profile.website != website { profile.website = website; changed = true }
+        if let createdAt { profile.metadataCreatedAt = createdAt }
 
         return (profile, changed)
     }
@@ -148,10 +155,13 @@ enum ProfileRepository {
     }
 
     /// Parses Kind 10050 (NIP-17 DM Relay List) tags into relay URLs.
-    /// Tags: ["r", relay_url].
+    /// NIP-17 tags are ["relay", relay_url]. ["r", relay_url] is also read
+    /// because older Nostr Vault builds published that shape.
     static func parseDMRelayListTags(_ tags: [[String]]) -> [String] {
-        tags.compactMap { tag in
-            tag.count >= 2 && tag[0] == "r" ? tag[1] : nil
+        var seen = Set<String>()
+        return tags.compactMap { tag in
+            guard tag.count >= 2, tag[0] == "relay" || tag[0] == "r" else { return nil }
+            return seen.insert(tag[1]).inserted ? tag[1] : nil
         }
     }
 

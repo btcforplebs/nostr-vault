@@ -16,6 +16,7 @@ import com.nostrvault.service.ProfilePicturePrefetcher
 import com.nostrvault.ui.theme.Motion
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Provider
 
@@ -35,12 +36,30 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @ApplicationScope
     lateinit var applicationScope: CoroutineScope
 
+    @Inject
+    lateinit var configStore: com.nostrvault.data.local.ConfigStore
+
     override fun onCreate() {
         super.onCreate()
         ProfileRepository.init(this)
+        com.nostrvault.service.music.MusicPlayer.init(this)
+        com.nostrvault.ui.screens.music.MusicFeedState.init(this)
+        com.nostrvault.data.model.FeedMenuSettings.init(this)
+        com.nostrvault.tutorials.TutorialCenter.init(this)
+        com.nostrvault.tutorials.TutorialCenter.walletLinked = { !configStore.config.value.nwcURI.isNullOrBlank() }
+        com.nostrvault.vaultguide.FillYourVaultCoordinator.init(this)
         Motion.install(this)
         createNotificationChannels()
+        // GIFs downloaded for "Save to my Blossom" that a crash left behind.
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.nostrvault.data.gif.GifCache.sweep(cacheDir)
+        }
         profilePicturePrefetcher.start(applicationScope)
+        applicationScope.launch {
+            configStore.config.collect {
+                com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache
+            }
+        }
     }
 
     override fun newImageLoader(): ImageLoader = imageLoaderProvider.get()

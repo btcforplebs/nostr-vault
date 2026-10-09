@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,8 +22,10 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.MarketListing
 import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.ui.theme.*
+import kotlinx.coroutines.delay
 
 /**
  * Embedded quoted note card, rendered below note content when a note
@@ -52,6 +55,26 @@ fun QuotedNoteCard(
     onArticleClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // A shared listing's content is usually NIP-15 JSON, which the note body
+    // below would print. Same as the iPhone (#237): a listing card instead.
+    val listing = if (note.kind in MarketListing.KINDS) {
+        remember(note.id) {
+            MarketListing.parse(note.id, note.pubkey, note.kind, note.content, note.createdAt.time / 1000, note.tags)
+        }
+    } else null
+    if (listing != null) {
+        com.nostrvault.ui.screens.feed.QuotedListingCard(listing, profile, modifier)
+        return
+    }
+    // A quoted live stream is something to watch, not text to read: the
+    // Live-tab tile, and a tap plays it rather than opening a thread (a stream
+    // event has none). iOS #172.
+    val stream = remember(note.id) { com.nostrvault.data.model.LiveStream.from(note) }
+    if (stream != null) {
+        LiveStreamEmbed(stream, modifier)
+        return
+    }
+
     val colors = LocalNostrVaultColors.current
     val meta = if (note.kind == ArticleMeta.KIND) {
         remember(note.id, note.tags) { ArticleMeta.from(note) }
@@ -210,8 +233,28 @@ private fun QuotedArticleBody(meta: ArticleMeta) {
     }
 }
 
+/** How long a parent or quote skeleton waits before saying it could not load (iOS: 12 s). */
+internal const val PLACEHOLDER_TIMEOUT_MS = 12_000L
+
 /**
- * Placeholder for a quoted note that hasn't been fetched yet.
+ * True once [PLACEHOLDER_TIMEOUT_MS] has passed for [key] without the caller
+ * replacing the placeholder. A new [attempt] (Retry) starts the clock again.
+ */
+@Composable
+internal fun rememberPlaceholderTimedOut(key: Any, attempt: Int = 0): Boolean {
+    var timedOut by remember(key, attempt) { mutableStateOf(false) }
+    LaunchedEffect(key, attempt) {
+        delay(PLACEHOLDER_TIMEOUT_MS)
+        timedOut = true
+    }
+    return timedOut
+}
+
+/**
+ * Placeholder for a quoted note that hasn't been fetched yet. After
+ * [PLACEHOLDER_TIMEOUT_MS] it says "Quoted note unavailable" instead of
+ * skeleton-loading forever (iOS FeedView quoteFetchFailed). The real card
+ * still replaces it if the note turns up later.
  */
 @Composable
 fun QuotedNotePlaceholder(
@@ -219,6 +262,15 @@ fun QuotedNotePlaceholder(
     onClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (rememberPlaceholderTimedOut(identifier)) {
+        Text(
+            text = "Quoted note unavailable",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            modifier = modifier.fillMaxWidth(),
+        )
+        return
+    }
     val colors = LocalNostrVaultColors.current
     // An unresolved naddr is a coordinate, not an event id, so handing it to
     // the note screen opens a route that can never load. Once it resolves the
@@ -238,22 +290,31 @@ fun QuotedNotePlaceholder(
             .fillMaxWidth()
             .then(if (isCoordinate) Modifier else Modifier.clickable { onClick(identifier) }),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(10.dp),
-        ) {
-            Icon(
-                imageVector = NostrVaultIcons.Feed,
-                contentDescription = null,
-                tint = TertiaryText,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = if (isCoordinate) "Loading article..." else "Loading quoted note...",
-                color = TertiaryText,
-                fontSize = 12.sp,
-            )
+        // Laid out like [QuotedNoteCard]: header row, then two lines of
+        // body in its text style, so the card does not grow when the note
+        // arrives (iOS `QuotedNoteSkeleton`).
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(SecondaryGroupedBg),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (isCoordinate) "Loading article..." else "Loading quoted note...",
+                    color = TertiaryText,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            SkeletonTextLine(fontSize = 13.sp, lineHeight = 17.sp, widthFraction = 0.9f, color = SecondaryGroupedBg)
+            SkeletonTextLine(fontSize = 13.sp, lineHeight = 17.sp, widthFraction = 0.55f, color = SecondaryGroupedBg)
         }
     }
 }

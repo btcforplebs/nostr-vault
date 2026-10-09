@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -18,16 +19,25 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.request.ImageRequest
+import com.nostrvault.BuildConfig
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.components.NostrMentions
+import com.nostrvault.ui.navigation.NotificationNote
+import com.nostrvault.ui.navigation.NotificationTarget
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.LinkedHashSet
 import javax.inject.Inject
@@ -53,17 +63,111 @@ class LocalNotificationService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: Lazy<NostrService>,
     private val imageLoader: Lazy<ImageLoader>,
+    private val dmService: Lazy<DMService>,
+    private val feedService: Lazy<FeedService>,
 ) {
+    /** Who the folded strangers' alert counts, and how many. */
+    data class FoldedFollowers(val members: List<String> = emptyList(), val count: Int = 0) {
+        /** Already on screen: an update to it changes the number, silently. */
+        val isShowing: Boolean get() = count > 0
+    }
+
     companion object {
         private const val TAG = "LocalNotif"
-        // Bump this id whenever the channel's sound/importance must change — a
-        // channel's settings are frozen by Android after first creation, so a new
-        // id is the only way an updated custom sound actually takes effect.
-        private const val CHANNEL_ID = "nostrvault_events_v2"
-        private const val OLD_CHANNEL_ID = "nostrvault_events"
         private const val MARKER = "🔔NOTIFY|"
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
+        /** How long a DM marker waits for the inbox to decrypt its message. */
+        private const val DM_OPEN_TIMEOUT_MS = 3_000L
+        private const val CARRIED_LOOKUP_TIMEOUT_MS = 1_500L
+        private const val FOLLOW_PROFILE_TIMEOUT_MS = 3_000L
+        /**
+         * The wait while a DM thread is open: a slow decrypt there (Amber) must
+         * end with the message appearing in the thread, not a generic alert first.
+         */
+        private const val DM_OPEN_TIMEOUT_IN_THREAD_MS = 15_000L
+
+        private fun isDm(type: String) = type == "dm" || type == "giftwrap"
+
+        /**
+         * Only people in your Web of Trust (or follows) notify. [trusted] empty
+         * means the graph has not loaded, and then nobody is held back. Gift
+         * wraps carry a throwaway author and the catch-up summary carries none,
+         * so they are not judged here. A zap marker's author is the lightning
+         * service that signed the receipt, not the zapper; the relay already
+         * admitted the receipt by the zapper's own standing (haven-go
+         * zapimport.go inboxTrustKey), so it is not judged again. iOS:
+         * NotificationPolicy.authorMayNotify. Follows pass as well: they are
+         * never dropped for trust, only told differently ([followIsNamed]).
+         */
+        fun authorMayNotify(author: String, type: String, trusted: Set<String>, own: Set<String>): Boolean {
+            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow") return true
+            if (trusted.isEmpty() || author in own) return true
+            return author in trusted
+        }
+
+        /**
+         * Whether a new follower is announced by name. Only someone in your Web
+         * of Trust is; anyone else, and everyone while the graph is empty (a
+         * brand-new account), is folded into one nameless "N new followers"
+         * alert: a stranger's follow is the cheapest event to forge, so it must
+         * not put a chosen name or picture on the lock screen, but you still
+         * hear that you gained followers. iOS NotificationPolicy.followIsNamed.
+         */
+        fun followIsNamed(follower: String, trusted: Set<String>): Boolean = follower in trusted
+
+        /**
+         * The folded alert once [follower] joins it. [showing] is the alert
+         * still on screen (empty once tapped or cleared, so the count starts
+         * over). Only the latest [cap] strangers ride along, so the alert stays
+         * small however many follow; they exist to count a repeat once, and the
+         * count itself is stored apart from them. iOS NotificationPolicy.foldedFollowers.
+         */
+        fun foldedFollowers(showing: FoldedFollowers, follower: String, cap: Int = 32): FoldedFollowers {
+            val count = maxOf(showing.count, showing.members.size)
+            val members = (showing.members.filter { it != follower } + follower).takeLast(cap)
+            return FoldedFollowers(members, if (follower in showing.members) count else count + 1)
+        }
+
+        /** Title and text of the folded strangers' alert. */
+        fun foldedFollowersText(count: Int): Pair<String, String> =
+            if (count <= 1) "New follower" to "Someone new followed you. Tap to see your followers."
+            else "$count new followers" to "Tap to see your followers"
+
+        private const val FOLDED_FOLLOWERS_KEY = "nv_folded_followers"
+        private const val FOLDED_FOLLOWER_COUNT_KEY = "nv_folded_follower_count"
+        private const val FOLD_FILED_TIMEOUT_MS = 1_000L
+
+        /** A follower key as the relay marker should carry it: 64 hex characters. */
+        fun isPubkeyHex(s: String): Boolean = s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+
+        /**
+         * Whether a marker may be shown while phone notifications are switched
+         * off. Only a DM, and only as the in-app banner while the app is open:
+         * that banner is part of the app, not a phone notification, so the
+         * switch shouldn't hide it. Everything else stays silent.
+         */
+        fun allowsWithPushOff(type: String, appInForeground: Boolean): Boolean =
+            appInForeground && isDm(type)
+
+        /**
+         * The relay hands over the note's raw text, so a mention would read
+         * `nostr:npub1…`. Show `@name` instead, the way the feed does. A
+         * reaction's preview is its emoji, not note text.
+         */
+        fun notePreview(type: String, preview: String, profiles: Map<String, FeedProfile>): String =
+            if (type == "reaction") preview else NostrMentions.toPlainText(preview, profiles)
+
+        /**
+         * A decrypted DM as notification text: one line, cut to fit. Null when
+         * there is nothing to read, so the caller keeps the generic line.
+         */
+        fun dmPreview(content: String, limit: Int = 160): String? {
+            val oneLine = content.trim().split(Regex("\\s+")).joinToString(" ")
+            if (oneLine.isEmpty()) return null
+            if (oneLine.length <= limit) return oneLine
+            return oneLine.take(limit - 1).trimEnd() + "…"
+        }
     }
 
     /** True while the app is on screen. Set by MainActivity's onStart/onStop. */
@@ -78,34 +182,53 @@ class LocalNotificationService @Inject constructor(
     // poller is never blocked on network I/O.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Create the notification channel (idempotent). Safe to call repeatedly. */
-    fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return
-        // Retire the pre-custom-sound channel so users don't see a stale duplicate.
-        mgr.deleteNotificationChannel(OLD_CHANNEL_ID)
-        if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Mentions & messages",
-            SystemNotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = "Mentions, replies, DMs, zaps, reactions, and reposts"
-            enableVibration(true)
-            // Use a bundled custom sound if one exists at res/raw/notification.*
-            // (mp3/wav/ogg). Resolved by name so the code compiles whether or not
-            // the file is present; falls back to the system default otherwise.
-            val soundId = context.resources.getIdentifier("notification", "raw", context.packageName)
-            if (soundId != 0) {
-                val soundUri = Uri.parse("android.resource://${context.packageName}/$soundId")
+    /** A bundled sound as a URI a channel or ringtone can play. */
+    fun soundUri(sound: NotificationSound): Uri =
+        Uri.parse("android.resource://${context.packageName}/${sound.resId}")
+
+    /**
+     * Create the picked sound's channel and retire every other events channel
+     * (idempotent, safe to call repeatedly; called again when the sound
+     * changes). A channel's sound is frozen at creation, so a new sound is a
+     * new channel: it copies the settings the user gave the channel it replaces
+     * (importance, vibration, lock screen), then that one is deleted.
+     * Returns the channel to post through.
+     */
+    @Synchronized
+    fun ensureChannel(): String {
+        val sound = NotificationSound.fromName(configStore.config.value.notificationSoundName)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return sound.channelId
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return sound.channelId
+        val existing = mgr.notificationChannels.map { it.id }.toSet()
+        if (sound.channelId !in existing) {
+            val previous = NotificationSound.settingsSource(sound, existing)
+                ?.let { mgr.getNotificationChannel(it) }
+            val channel = NotificationChannel(
+                sound.channelId,
+                "Mentions & messages",
+                previous?.importance ?: SystemNotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Mentions, replies, DMs, zaps, reactions, reposts, and new followers"
+                enableVibration(previous?.shouldVibrate() ?: true)
+                previous?.vibrationPattern?.let { vibrationPattern = it }
+                previous?.let {
+                    lockscreenVisibility = it.lockscreenVisibility
+                    setShowBadge(it.canShowBadge())
+                    enableLights(it.shouldShowLights())
+                }
                 val attrs = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
-                setSound(soundUri, attrs)
+                setSound(soundUri(sound), attrs)
             }
+            mgr.createNotificationChannel(channel)
         }
-        mgr.createNotificationChannel(channel)
+        // Retire the rest so Settings shows one events channel, not a stale duplicate.
+        for (id in NotificationSound.retiredChannelIds(sound)) {
+            if (id in existing) mgr.deleteNotificationChannel(id)
+        }
+        return sound.channelId
     }
 
     /**
@@ -139,16 +262,16 @@ class LocalNotificationService @Inject constructor(
         val rawId = fields["id"].orEmpty()
         if (type != "summary" && rawId.isEmpty()) return
         val id = rawId.ifEmpty { "summary-${System.currentTimeMillis()}" }
-        Log.i(TAG, "marker received: type=$type id=${id.take(8)}")
+        if (BuildConfig.DEBUG) Log.i(TAG, "marker received: type=$type id=${id.take(8)}")
 
         if (!markSeen(id)) {
-            Log.d(TAG, "skip: duplicate ${id.take(8)}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "skip: duplicate ${id.take(8)}")
             return
         }
 
         val config = configStore.config.value
-        if (!config.enablePushNotifications) {
-            Log.i(TAG, "skip: enablePushNotifications is OFF (turn it on in Settings → Notifications)")
+        if (!config.enablePushNotifications && !allowsWithPushOff(type, appInForeground)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: enablePushNotifications is OFF (turn it on in Settings → Notifications)")
             return
         }
 
@@ -166,10 +289,13 @@ class LocalNotificationService @Inject constructor(
         val allowed = when (type) {
             "mention" -> prefs.mentions
             "reply" -> prefs.replies
+            // A quote of your note is a mention of you, so the Mentions switch governs it.
+            "quote" -> prefs.mentions
             "dm", "giftwrap" -> prefs.dms
             "zap" -> prefs.zaps
             "reaction" -> prefs.reactions
             "repost" -> prefs.reposts
+            "follow" -> prefs.follows
             // The catch-up backlog count spans every type, so no per-type
             // preference governs it — but turning all of them off must still
             // silence it. It is also meaningless while the app is open: it
@@ -178,13 +304,197 @@ class LocalNotificationService @Inject constructor(
             else -> false
         }
         if (!allowed) {
-            Log.i(TAG, "skip: '$type' disabled in per-account prefs")
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' disabled in per-account prefs")
             return
         }
 
-        val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
-        val (title, text) = buildContent(type, profile?.bestName, preview)
-        post(id, title, text, type, author, npub, profile?.pictureURL)
+        // Nothing from outside your Web of Trust: those were the spam alerts.
+        val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
+        val trusted = trustedAuthors()
+        if (!authorMayNotify(author, type, trusted, own)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
+            return
+        }
+
+        if (isDm(type)) {
+            announceDm(id, type, author, recipientHex, npub)
+            return
+        }
+
+        if (type == "follow") {
+            if (followIsNamed(author, trusted)) announceFollow(author, npub) else announceFoldedFollow(author, npub)
+            return
+        }
+
+        val profiles = nostrService.get().profiles.value
+        val profile = if (author.length == 64) profiles[author] else null
+        val shown = notePreview(type, preview, profiles)
+        val (title, text) = buildContent(type, profile?.bestName, shown)
+        scope.launch {
+            val carried = carriedNotes(type, id)
+            post(id, title, text, type, author, npub, profile?.pictureURL, carried)
+        }
+    }
+
+    /**
+     * The event this notification is about, and for a like, zap or repost the
+     * post it was on, as intent extras ([NotificationNote]). Read from this
+     * device's relay — the inbox, where the event was stored before the marker
+     * was raised, and the outbox, which holds your own posts. The relay is
+     * in-process and answers in milliseconds; the timeout only bounds a socket
+     * that never does. Empty when it does not answer: the tap then loads by id.
+     */
+    private suspend fun carriedNotes(type: String, id: String): Map<String, String> {
+        val base = configStore.config.value.nostrURL?.trimEnd('/') ?: return emptyMap()
+        val routes = listOf(base, "$base/inbox")
+        suspend fun lookup(eventId: String) = try {
+            nostrService.get()
+                .queryRawEvents(listOf("""{"ids":["$eventId"],"limit":1}"""), routes, CARRIED_LOOKUP_TIMEOUT_MS)
+                .firstOrNull()
+                ?.let(NotificationNote::encode)
+        } catch (_: Exception) { null }
+
+        val event = lookup(id) ?: return emptyMap()
+        val carried = mutableMapOf(NotificationNote.EVENT_EXTRA to event)
+        val parsed = NotificationNote.decode(event) ?: return carried
+        if (type == "reaction" || type == "repost" || type == "zap") {
+            NotificationTarget.targetNoteId(type, parsed.id, parsed.tags)
+                ?.let { lookup(it) }
+                ?.let { carried[NotificationNote.TARGET_EXTRA] = it }
+        }
+        return carried
+    }
+
+    /**
+     * A new follower is usually a stranger whose profile isn't loaded yet, and
+     * "Someone followed you" says nothing — fetch the name first, briefly.
+     * Keyed by the follower, not the list event, so a repeat replaces the
+     * earlier notification instead of stacking (iOS announceFollow).
+     */
+    private fun announceFollow(follower: String, npub: String) {
+        if (follower.length != 64) return
+        scope.launch {
+            val nostr = nostrService.get()
+            if (nostr.profiles.value[follower] == null) {
+                nostr.fetchMissingProfiles(listOf(follower))
+                withTimeoutOrNull(FOLLOW_PROFILE_TIMEOUT_MS) {
+                    while (nostr.profiles.value[follower] == null) delay(250)
+                }
+            }
+            val profile = nostr.profiles.value[follower]
+            val (title, text) = buildContent("follow", profile?.bestName, "")
+            post(follower, title, text, "follow", follower, npub, profile?.pictureURL)
+        }
+    }
+
+    /** Serialises the folded alert's read-then-replace, so two strangers arriving together both count. */
+    private val foldedFollowLock = Mutex()
+
+    /**
+     * A stranger's follow joins one nameless "N new followers" alert per
+     * account ([followIsNamed]). The count and the latest strangers ride in its
+     * extras, so the count survives the process, and once the alert is tapped
+     * or swiped away the next stranger starts it over. Only the first stranger
+     * makes a sound (setOnlyAlertOnce): each later one just changes the number,
+     * so a burst of follows buzzes the phone once. iOS announceFoldedFollow.
+     */
+    private fun announceFoldedFollow(follower: String, npub: String) {
+        if (!isPubkeyHex(follower)) return
+        scope.launch {
+            foldedFollowLock.withLock {
+                val id = "followers-$npub"
+                val folded = foldedFollowers(foldedFollowersShowing(id), follower)
+                val (title, text) = foldedFollowersText(folded.count)
+                postNow(id, title, text, "followers", "", npub, null,
+                    Bundle().apply {
+                        putStringArray(FOLDED_FOLLOWERS_KEY, folded.members.toTypedArray())
+                        putInt(FOLDED_FOLLOWER_COUNT_KEY, folded.count)
+                    },
+                    alertOnce = true)
+                awaitFiled(id)
+            }
+        }
+    }
+
+    /**
+     * notify() only queues the post; wait (briefly) until the system lists it,
+     * so the next stranger's read-back counts this one.
+     */
+    private suspend fun awaitFiled(id: String) {
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return
+        withTimeoutOrNull(FOLD_FILED_TIMEOUT_MS) {
+            while (mgr.activeNotifications.none { it.id == id.hashCode() }) delay(25)
+        }
+    }
+
+    /** What the folded alert still on screen already counts. */
+    private fun foldedFollowersShowing(id: String): FoldedFollowers {
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return FoldedFollowers()
+        val extras = mgr.activeNotifications.firstOrNull { it.id == id.hashCode() }
+            ?.notification?.extras ?: return FoldedFollowers()
+        val members = extras.getStringArray(FOLDED_FOLLOWERS_KEY)?.toList() ?: emptyList()
+        return FoldedFollowers(members, extras.getInt(FOLDED_FOLLOWER_COUNT_KEY, members.size))
+    }
+
+    /**
+     * A gift wrap is signed by a throwaway key, so its marker cannot say who
+     * wrote it — not even when it was you: every DM you send also wraps a copy
+     * to yourself, and that copy lands in your own inbox. Skip the copies this
+     * device sent, wait for the inbox to decrypt the rest, then show the real
+     * sender and text. If it never opens, the generic line still goes out.
+     */
+    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String) {
+        // A NIP-04 DM names its author in the clear.
+        if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
+        val dms = dmService.get()
+        if (dms.isOwnSentWrap(id)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: own sent DM ${id.take(8)}")
+            return
+        }
+        scope.launch {
+            val inThread = appInForeground && dms.visibleConversation != null
+            val opened = dms.awaitOpenedMessage(
+                id,
+                if (inThread) DM_OPEN_TIMEOUT_IN_THREAD_MS else DM_OPEN_TIMEOUT_MS,
+            )
+            if (opened != null) {
+                if (opened.second.isFromMe) return@launch
+                // The conversation is already on screen.
+                if (appInForeground && dms.visibleConversation == opened.first) return@launch
+            }
+            val sender = opened?.second?.senderPubkey ?: author
+            val profiles = nostrService.get().profiles.value
+            val profile = if (sender.length == 64) profiles[sender] else null
+            val text = opened?.second?.content
+                ?.let { dmPreview(NostrMentions.toPlainText(it, profiles)) }.orEmpty()
+            val (title, body) = buildContent(type, profile?.bestName, text)
+            // Once opened, route as a DM with its counterparty so a tap lands in
+            // the thread; an unopened gift wrap still opens the inbox.
+            val routeType = if (opened != null) "dm" else type
+            val routeAuthor = opened?.first ?: author
+            // A DM while the app is open shows the in-app banner instead of a
+            // system notification, as on iOS.
+            if (appInForeground) {
+                InAppBannerBus.show(InAppBanner(id, title, body, routeType, routeAuthor, npub))
+            } else {
+                post(id, title, body, routeType, routeAuthor, npub, profile?.pictureURL)
+            }
+        }
+    }
+
+    /**
+     * The Relay tab's trusted set: the Web of Trust graph the feeds use plus
+     * your follows. Empty until the graph has loaded (a load is started then).
+     * iOS: FeedService.relayTabTrustedPubkeys.
+     */
+    private fun trustedAuthors(): Set<String> {
+        val feed = feedService.get()
+        val wot = feed.wotPubkeys.value
+        if (wot.isEmpty()) {
+            feed.loadWotPubkeys()
+            return emptySet()
+        }
+        return wot + feed.followedPubkeys.value
     }
 
     /** Returns true if this id is newly seen (and records it); false if a duplicate. */
@@ -206,20 +516,56 @@ class LocalNotificationService @Inject constructor(
         return when (type) {
             "mention" -> "$who mentioned you" to preview.ifBlank { "You were mentioned in a note" }
             "reply" -> "$who replied to your note" to preview.ifBlank { "Tap to view the reply" }
+            "quote" -> "$who quoted your note" to preview.ifBlank { "Tap to view the quote" }
             "dm", "giftwrap" -> {
                 val title = if (name != null) "Message from $who" else "New message"
-                title to "You have a new encrypted message"
+                title to preview.ifBlank { "You have a new encrypted message" }
             }
             "zap" -> "⚡ New zap" to if (name != null) "$who zapped you" else "You received a zap"
             "reaction" -> "$who reacted ${preview.ifBlank { "❤️" }}" to "Tap to view your note"
             "repost" -> "$who reposted your note" to "Tap to view"
+            "follow" -> "$who followed you" to "Tap to see their profile"
             "summary" -> "Catching up" to preview.ifBlank { "New activity while you were away" }
             else -> "New activity" to "Tap to view"
         }
     }
 
+    /**
+     * "N new notes in your feed" from [FeedActivityNotifier]. Tapping it opens
+     * the feed (the "summary" type has no event). iOS showFeedNotification.
+     */
+    fun postFeedSummary(newCount: Int) {
+        val title = if (newCount == 1) "New note in your feed" else "$newCount new notes in your feed"
+        post(
+            id = "feed-summary-${System.currentTimeMillis() / 1000}",
+            title = title,
+            text = "People you follow posted while you were away.",
+            type = "summary",
+            author = "",
+            npub = "",
+            pictureUrl = null,
+        )
+    }
+
     @SuppressLint("MissingPermission") // guarded by the runtime check below
-    private fun post(id: String, title: String, text: String, type: String, author: String, npub: String, pictureUrl: String?) {
+    private fun post(
+        id: String,
+        title: String,
+        text: String,
+        type: String,
+        author: String,
+        npub: String,
+        pictureUrl: String?,
+        carried: Map<String, String> = emptyMap(),
+    ) {
+        scope.launch { postNow(id, title, text, type, author, npub, pictureUrl, carried = carried) }
+    }
+
+    private suspend fun postNow(
+        id: String, title: String, text: String, type: String, author: String, npub: String,
+        pictureUrl: String?, extras: Bundle? = null, alertOnce: Boolean = false,
+        carried: Map<String, String> = emptyMap(),
+    ) {
         ensureChannel()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -233,12 +579,16 @@ class LocalNotificationService @Inject constructor(
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("notif_type", type)
+            // The notifying event's own id. For a reaction, repost or zap that is
+            // the kind 7/6/9735 event, not the post it is about — the marker
+            // carries no tags, so the Relay tab resolves the post from the
+            // stored event on tap (DeepLinkRouter.fromNotification).
             putExtra("notif_event_id", id)
             putExtra("notif_author", author)
-            // Not yet consumed on tap (Android has no equivalent of iOS's account-switch-
-            // on-navigate yet) — included now so that's a follow-up wiring change, not
-            // another missing-data problem to debug later.
+            // The account it arrived for; the nav host switches to it on tap.
             putExtra("notif_npub", npub)
+            // The post itself, so the tap opens it with nothing to fetch.
+            carried.forEach { (key, value) -> putExtra(key, value) }
         }
         val pending = PendingIntent.getActivity(
             context,
@@ -247,31 +597,35 @@ class LocalNotificationService @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        // Fetch the sender's avatar off the poll loop, then post. Android tints the
-        // small icon to a flat silhouette everywhere it appears, reading only alpha,
-        // so it has to be ic_notification rather than the full-colour launcher art;
-        // the large icon is the sender's profile picture when we have one.
-        scope.launch {
-            val largeIcon = loadAvatar(pictureUrl)
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                // Status-bar icons are drawn from alpha only, so use the
-                // purpose-built 24dp silhouette rather than the full-colour
-                // foreground, which flattens to a solid blob.
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-                .setContentIntent(pending)
-                .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
-                .build()
+        // Fetch the sender's avatar (off the poll loop: callers launch this), then
+        // post. Android tints the small icon to a flat silhouette everywhere it
+        // appears, reading only alpha, so it has to be ic_notification rather than
+        // the full-colour launcher art; the large icon is the sender's profile
+        // picture when we have one.
+        val largeIcon = loadAvatar(pictureUrl)
+        // Resolved after the avatar fetch: a sound picked meanwhile has
+        // retired the channel that was current when this started.
+        val channelId = ensureChannel()
+        val notification = NotificationCompat.Builder(context, channelId)
+            // Status-bar icons are drawn from alpha only, so use the
+            // purpose-built 24dp silhouette rather than the full-colour
+            // foreground, which flattens to a solid blob.
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setContentIntent(pending)
+            .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
+            .apply { if (extras != null) addExtras(extras) }
+            .setOnlyAlertOnce(alertOnce)
+            .build()
 
-            // Stable per-event notification id so the same event never double-posts.
-            NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
-            Log.i(TAG, "posted notification: \"$title\"")
-        }
+        // Stable per-event notification id so the same event never double-posts.
+        NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+        if (BuildConfig.DEBUG) Log.i(TAG, "posted notification: \"$title\"")
     }
 
     /** Load the sender's avatar into a software bitmap via Coil; null on any failure. */

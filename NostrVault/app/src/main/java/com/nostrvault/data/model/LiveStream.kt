@@ -8,11 +8,17 @@ package com.nostrvault.data.model
  * URLs can actually be played.
  */
 data class LiveStream(
+    /**
+     * Who is streaming: the first `p` tag marked Host, else the signer. A
+     * service such as zap.stream signs every event with its own key and names
+     * the streamer only in that tag, so the signer alone shows the service.
+     */
     val hostPubkey: String,
     val identifier: String,
     val createdAt: Long,
     val title: String?,
     val summary: String?,
+    /** NIP-53 `image`: the host's cover art. */
     val imageUrl: String?,
     val streamingUrl: String?,
     val status: String?,
@@ -28,9 +34,24 @@ data class LiveStream(
      * trustworthy source, and a hardcoded list is a fallback, not the answer.
      */
     val chatRelays: List<String> = emptyList(),
+    /**
+     * Who the stream belongs to: the signer, plus any `p` tag marked Host. A
+     * service such as zap.stream signs on the host's behalf, so Following and
+     * the Web of Trust judge the stream by these, not by the signer alone.
+     */
+    val hosts: Set<String> = setOf(hostPubkey),
+    /**
+     * What the tile tries to draw, best first: `thumb`, a frame of the
+     * broadcast itself (zap.stream and its forks, refreshed every republish),
+     * then `image`, the cover art. iOS measured 2026-10-04: 3 of 9 live
+     * streams carried `thumb`, and every one also had an `image`.
+     */
+    val previewImageUrls: List<String> = listOfNotNull(imageUrl),
+    /** Who signed the event. Coordinates (chat, naddr) are built from this. */
+    val authorPubkey: String = hostPubkey,
 ) {
     /** The addressable form: what an naddr for this stream points at. */
-    val address: String get() = "$KIND:$hostPubkey:$identifier"
+    val address: String get() = "$KIND:$authorPubkey:$identifier"
 
     /**
      * Shown only when the stream is running AND something can play it.
@@ -74,15 +95,34 @@ data class LiveStream(
             // Only an HTTP(S) HLS playlist is a live stream the player can
             // open. Real events also carry rtmp, ftp, `zapcast:` URLs and plain
             // web pages (a youtube.com/live link) — a tile for one of those is
-            // a tile that can only disappoint.
-            val streaming = value("streaming")?.takeIf { raw ->
-                val scheme = raw.substringBefore(':').lowercase()
-                val path = raw.substringBefore('?').substringBefore('#').lowercase()
-                (scheme == "http" || scheme == "https") && path.endsWith(".m3u8")
-            }
+            // a tile that can only disappoint. zap.stream publishes two
+            // `streaming` tags, HLS and `moq://`, in no fixed order, so the
+            // first playable one wins, not simply the first.
+            val streaming = tags
+                .filter { it.size >= 2 && it[0] == "streaming" }
+                .map { it[1].trim() }
+                .firstOrNull { raw ->
+                    val scheme = raw.substringBefore(':').lowercase()
+                    val path = raw.substringBefore('?').substringBefore('#').lowercase()
+                    (scheme == "http" || scheme == "https") && path.endsWith(".m3u8")
+                }
+
+            val previews = listOf("thumb", "image")
+                .mapNotNull { value(it) }
+                .filter { raw ->
+                    val scheme = raw.substringBefore(':').lowercase()
+                    scheme == "http" || scheme == "https"
+                }
+                .distinct()
+
+            val taggedHosts = tags
+                .filter { it.size >= 4 && it[0] == "p" && it[3].equals("host", ignoreCase = true) }
+                .map { it[1].trim() }
+                .filter { it.isNotEmpty() }
 
             return LiveStream(
-                hostPubkey = pubkey,
+                hostPubkey = taggedHosts.firstOrNull() ?: pubkey,
+                authorPubkey = pubkey,
                 identifier = identifier,
                 createdAt = createdAt,
                 title = value("title"),
@@ -97,6 +137,8 @@ data class LiveStream(
                     ?.map { it.trim() }
                     ?.filter { it.startsWith("wss://") || it.startsWith("ws://") }
                     ?: emptyList(),
+                hosts = setOf(pubkey) + taggedHosts,
+                previewImageUrls = previews,
             )
         }
     }

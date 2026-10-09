@@ -8,6 +8,14 @@ enum ViewMode {
     case media
     case likes
     case zaps
+    case followers
+}
+
+/// Followers from the relay's follower ledger, spam left out: the latest
+/// ones, or everyone.
+enum FollowersFilter {
+    case new
+    case all
 }
 
 enum ContentFilter {
@@ -15,19 +23,29 @@ enum ContentFilter {
     case mine
     case tagged
     case whitelist
+    /// Replies to your posts from people outside your Web of Trust. The relay
+    /// lets these in (anyone may reply to you); they're kept out of All and
+    /// Mentions and listed here instead.
+    case outside
+
+    /// Whether a note tagging you comes from outside your network. The one
+    /// definition shared by the Notes filter and a notification tap's routing.
+    /// An empty graph (not built yet) counts nobody as outside.
+    static func isOutside(author: String, owner: String, whitelist: Set<String>, trusted: Set<String>) -> Bool {
+        author != owner && !whitelist.contains(author) && !trusted.isEmpty && !trusted.contains(author)
+    }
 }
 
+/// Likes and Zaps each have two views: what came in on your notes, and what you
+/// gave. "On tagged" and "on whitelisted" notes used to be views too; they were
+/// the Notes filters again with a heart on, so they're gone.
 enum LikesFilter {
     case onMyNotes
-    case onTagged
-    case onWhitelisted
     case myLikes
 }
 
 enum ZapsFilter {
     case onMyNotes
-    case onTagged
-    case onWhitelisted
     case myZaps
 }
 
@@ -57,4 +75,8 @@ struct ParsedZapReceipt {
     let senderPubkey: String
     let targetNoteId: String?
     let amountSats: Int64
+    /// The zap request inside the receipt carries a valid signature. Anyone
+    /// can publish a receipt naming you as the sender; only a signed request
+    /// proves you made the zap.
+    let requestIsSigned: Bool
 }

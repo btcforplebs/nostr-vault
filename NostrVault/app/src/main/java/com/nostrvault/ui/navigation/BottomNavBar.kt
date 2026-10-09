@@ -1,13 +1,6 @@
 package com.nostrvault.ui.navigation
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +21,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import com.nostrvault.ui.components.blockedWhen
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,8 +51,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.stateDescription
+import com.nostrvault.data.model.FeedMenuSettings
+import com.nostrvault.data.model.FeedMode
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
+import com.nostrvault.ui.components.zapFlightOrigin
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
@@ -55,7 +72,7 @@ import com.nostrvault.ui.theme.ZapOrange
 
 /**
  * Floating pill-shaped bottom navigation bar matching the iOS tab structure.
- * Tab order: Feed | Search | Profile (center, avatar) | Media | Relay
+ * Tab order: Feed | Search | Profile (center, avatar) | Vault | WOT
  *
  * Profile tab shows user avatar with a colored ring and supports
  * long-press to trigger account switching.
@@ -82,11 +99,13 @@ data class BottomNavItem(
 )
 
 val bottomNavItems = listOf(
-    BottomNavItem(Screen.Feed, "Feed", NostrVaultIcons.Feed),
+    BottomNavItem(Screen.Feed, "Feed", NostrVaultIcons.TabFeed),
     BottomNavItem(Screen.Search, "Search", NostrVaultIcons.Search),
     BottomNavItem(Screen.Profile, "Profile", NostrVaultIcons.Profile), // center
-    BottomNavItem(Screen.MediaGallery, "Media", NostrVaultIcons.Media),
-    BottomNavItem(Screen.Dashboard, "Relay", NostrVaultIcons.Relay),
+    // Media and Relay in one (iOS #443); the route keeps the Relay tab's name,
+    // so notification routing still lands here.
+    BottomNavItem(Screen.Dashboard, "Vault", NostrVaultIcons.TabVault),
+    BottomNavItem(Screen.WOT, "WOT", NostrVaultIcons.WebOfTrust),
 )
 
 @Composable
@@ -96,16 +115,21 @@ fun BottomNavBar(
     activeAvatarUrl: String? = null,
     activeDisplayName: String? = null,
     isOwner: Boolean,
-    condensed: Boolean = false,
+    /** 0 shown in full, 1 folded to the avatar + action cluster. Read in layout/draw only. */
+    foldProgress: () -> Float = { 0f },
     hasUnreadDMs: Boolean = false,
     hasNewRelayActivity: Boolean = false,
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit = {},
     onAccountSwitcher: () -> Unit,
-    condensedActionIcon: ImageVector = NostrVaultIcons.Create,
+    condensedActionIcon: ImageVector = NostrVaultIcons.Compose,
     condensedActionTint: Color? = null,
     onCondensedAction: () -> Unit = {},
     onExpand: () -> Unit = {},
+    /** Left of the avatar in the folded bar: music's now-playing disc (iOS CollapsedNowPlayingButton). */
+    nowPlaying: @Composable () -> Unit = {},
+    /** Hold the Feed tab and slide to a feed (iOS #239). Null keeps it a plain tab. */
+    onPickFeedMode: ((FeedMode) -> Unit)? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val isOled = LocalOledMode.current
@@ -117,42 +141,20 @@ fun BottomNavBar(
             .padding(horizontal = 24.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // Morph between the full 5-tab row and a condensed avatar + compose
-        // cluster. SizeTransform shrinks the glass pill inward from both sides;
-        // the cross-fade + scale mirrors the iOS distillation. This is
-        // scroll-driven chrome, so it takes the `chrome` token — damping 0.86
-        // rather than the 0.82 it had, because a bar that overshoots after your
-        // thumb has already stopped reads as a bug.
-        AnimatedContent(
-            targetState = condensed,
-            transitionSpec = {
-                val barSpring = Motion.chrome<Float>()
-                (fadeIn(barSpring) + scaleIn(barSpring, initialScale = 0.9f)) togetherWith
-                    (fadeOut(barSpring) + scaleOut(barSpring, targetScale = 0.9f)) using
-                    SizeTransform(clip = false) { _, _ -> Motion.chrome() }
-            },
-            label = "navBarCondense",
-        ) { isCondensed ->
-            if (isCondensed) {
-                CondensedNavCluster(
-                    isOwner = isOwner,
-                    activeAccountPubkey = activeAccountPubkey,
-                    activeAvatarUrl = activeAvatarUrl,
-                    activeDisplayName = activeDisplayName,
-                    showBadge = hasUnreadDMs || hasNewRelayActivity,
-                    primaryColor = colors.primary,
-                    isOled = isOled,
-                    actionIcon = condensedActionIcon,
-                    actionTint = condensedActionTint ?: colors.primary,
-                    onAction = onCondensedAction,
-                    onExpand = onExpand,
-                    onAccountSwitcher = onAccountSwitcher,
-                )
-            } else {
+        // Morph between the full 5-tab row and a condensed avatar + action
+        // cluster, following the finger: one glass pill narrows from the full
+        // width to the cluster's, the tabs fade out of it in the first part of
+        // the fold and the cluster fades in over the last. Progress is read in
+        // layout and draw only, so a drag re-lays-out the pill each frame and
+        // never recomposes it. The side that is mostly hidden takes no taps.
+        val progress by rememberUpdatedState(foldProgress)
+        val folded by remember { derivedStateOf { progress() > 0.5f } }
+        Layout(
+            content = {
+                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = colors.primary))
                 ExpandedNavRow(
                     currentRoute = currentRoute,
                     primaryColor = colors.primary,
-                    isOled = isOled,
                     isOwner = isOwner,
                     activeAccountPubkey = activeAccountPubkey,
                     activeAvatarUrl = activeAvatarUrl,
@@ -162,9 +164,69 @@ fun BottomNavBar(
                     onNavigate = onNavigate,
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
+                    onPickFeedMode = onPickFeedMode,
+                    modifier = Modifier.blockedWhen(folded),
                 )
+                CondensedNavCluster(
+                    isOwner = isOwner,
+                    activeAccountPubkey = activeAccountPubkey,
+                    activeAvatarUrl = activeAvatarUrl,
+                    activeDisplayName = activeDisplayName,
+                    showBadge = hasUnreadDMs || hasNewRelayActivity,
+                    primaryColor = colors.primary,
+                    actionIcon = condensedActionIcon,
+                    actionTint = condensedActionTint ?: colors.primary,
+                    onAction = onCondensedAction,
+                    onExpand = onExpand,
+                    onAccountSwitcher = onAccountSwitcher,
+                    nowPlaying = nowPlaying,
+                    modifier = Modifier.blockedWhen(!folded),
+                )
+            },
+        ) { measurables, constraints ->
+            val loose = constraints.copy(minWidth = 0, minHeight = 0)
+            val expanded = measurables[1].measure(loose)
+            val cluster = measurables[2].measure(loose)
+            val p = progress().coerceIn(0f, 1f)
+            val pillWidth = lerp(expanded.width, cluster.width, p)
+            val pillHeight = lerp(expanded.height, cluster.height, p)
+            val pill = measurables[0].measure(Constraints.fixed(pillWidth, pillHeight))
+            // Fixed size whatever the fold: the floating-bar inset is measured
+            // from this, and changing it per frame would re-pad every list.
+            val width = maxOf(expanded.width, cluster.width)
+            val height = maxOf(expanded.height, cluster.height)
+            layout(width, height) {
+                val pillX = (width - pillWidth) / 2
+                val pillY = height - pillHeight
+                pill.place(pillX, pillY)
+                // A form faded out entirely is not placed, so it can't take a
+                // tap meant for the other one or for the feed beside the pill.
+                val expandedX = (width - expanded.width) / 2
+                val expandedAlpha = (1f - p / 0.6f).coerceIn(0f, 1f)
+                if (expandedAlpha > 0f) expanded.placeWithLayer(expandedX, height - expanded.height) {
+                    alpha = expandedAlpha
+                    // Clip the tabs to the narrowing pill, so none hang outside it.
+                    clip = true
+                    shape = PillWindow(insetX = (pillX - expandedX).toFloat(), top = (pillY - (height - expanded.height)).toFloat())
+                }
+                val q = ((p - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                if (q > 0f) cluster.placeWithLayer((width - cluster.width) / 2, height - cluster.height) {
+                    alpha = q
+                    scaleX = 0.85f + 0.15f * q
+                    scaleY = 0.85f + 0.15f * q
+                }
             }
         }
+    }
+}
+
+private fun lerp(a: Int, b: Int, t: Float): Int = (a + (b - a) * t).roundToInt()
+
+/** The narrowing pill, in the expanded row's own coordinates. */
+private class PillWindow(private val insetX: Float, private val top: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val rect = Rect(insetX, top.coerceAtLeast(0f), size.width - insetX, size.height)
+        return Outline.Rounded(RoundRect(rect, CornerRadius(rect.height / 2f)))
     }
 }
 
@@ -172,7 +234,6 @@ fun BottomNavBar(
 private fun ExpandedNavRow(
     currentRoute: String?,
     primaryColor: Color,
-    isOled: Boolean,
     isOwner: Boolean,
     activeAccountPubkey: String,
     activeAvatarUrl: String?,
@@ -182,11 +243,13 @@ private fun ExpandedNavRow(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
+    onPickFeedMode: ((FeedMode) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
+    // The glass pill is drawn by BottomNavBar, behind both forms.
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .glassPillBackground(isOled = isOled, accentColor = primaryColor)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -219,19 +282,21 @@ private fun ExpandedNavRow(
                     modifier = Modifier.weight(1f),
                 )
             } else {
+                val onTabClick = {
+                    if (selected) {
+                        onReselect(item.screen)
+                    } else {
+                        onNavigate(item.screen)
+                    }
+                }
                 NavTab(
                     icon = item.icon,
                     label = item.label,
                     selected = selected,
                     selectedColor = primaryColor,
                     showBadge = item.screen == Screen.Dashboard && hasNewRelayActivity,
-                    onClick = {
-                        if (selected) {
-                            onReselect(item.screen)
-                        } else {
-                            onNavigate(item.screen)
-                        }
-                    },
+                    onClick = onTabClick,
+                    holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -254,23 +319,26 @@ private fun CondensedNavCluster(
     activeDisplayName: String?,
     showBadge: Boolean,
     primaryColor: Color,
-    isOled: Boolean,
     actionIcon: ImageVector,
     actionTint: Color,
     onAction: () -> Unit,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
+    nowPlaying: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
     val ringColor = if (isOwner) primaryColor else ZapOrange
 
     Row(
-        modifier = Modifier
-            .glassPillBackground(isOled = isOled, accentColor = primaryColor)
+        modifier = modifier
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Music or a minimized live stream: play/pause, left of the avatar.
+        nowPlaying()
+
         // Avatar — tap to expand the bar, long-press to switch accounts.
         Box(
             modifier = Modifier
@@ -285,6 +353,7 @@ private fun CondensedNavCluster(
         ) {
             Box(
                 modifier = Modifier
+                    .zapFlightOrigin()
                     .size(36.dp)
                     .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
                     .padding(2.dp)
@@ -310,8 +379,8 @@ private fun CondensedNavCluster(
             }
         }
 
-        // Contextual action — compose / Blossom upload / relay dashboard,
-        // depending on the active tab (icon + tint supplied by the caller).
+        // Contextual action — compose, or the Vault Dashboard on the Vault
+        // tab (icon + tint supplied by the caller).
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -338,19 +407,48 @@ private fun NavTab(
     selectedColor: Color,
     showBadge: Boolean = false,
     onClick: () -> Unit,
+    /** The Feed tab: hold to open the feed list, slide, let go to pick. */
+    holdToPick: ((FeedMode) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val pickerOpen = holdToPick != null && FeedTabPicker.isOpen
     val scale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1.0f,
+        targetValue = if (pickerOpen) 1.18f else if (selected) 1.1f else 1.0f,
         animationSpec = Motion.control(),
         label = "tabScale",
     )
+    val haptic = LocalHapticFeedback.current
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentPick by rememberUpdatedState(holdToPick)
+    val gesture = if (holdToPick != null) {
+        Modifier
+            .onGloballyPositioned { coords[0] = it }
+            .feedTabHold(
+                coordinates = { coords[0] },
+                haptic = haptic,
+                onTap = { currentOnClick() },
+                onPick = { mode -> currentPick?.invoke(mode) },
+            )
+            .semantics {
+                role = Role.Tab
+                onClick(label = null) { currentOnClick(); true }
+                stateDescription = FeedTabPicker.shownMode?.displayName ?: ""
+                // One action per feed, as iOS's accessibilityActions.
+                customActions = FeedMenuSettings.menuModes().map { mode ->
+                    CustomAccessibilityAction(mode.displayName) { currentPick?.invoke(mode); true }
+                }
+            }
+    } else {
+        Modifier
+            .semantics { role = Role.Tab }
+            .combinedClickableCompat(onClick = onClick)
+    }
 
     Column(
         modifier = modifier
             .clip(CircleShape)
-            .semantics { role = Role.Tab }
-            .combinedClickableCompat(onClick = onClick)
+            .then(gesture)
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -360,8 +458,10 @@ private fun NavTab(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (selected) selectedColor else Color.White,
+                // iOS: a 20pt symbol in a 24pt frame. A Material icon keeps
+                // a 2dp margin inside its box, so 24dp draws the same glyph.
                 modifier = Modifier
-                    .size(31.dp)
+                    .size(24.dp)
                     .scale(scale),
             )
             if (showBadge) {
@@ -424,7 +524,8 @@ private fun ProfileTab(
         Box {
             Box(
                 modifier = Modifier
-                    .size(31.dp)
+                    .zapFlightOrigin()
+                    .size(24.dp)
                     .scale(scale)
                     .border(
                         width = if (selected) 1.5.dp else 0.dp,
@@ -439,7 +540,7 @@ private fun ProfileTab(
                 AvatarImage(
                     url = activeAvatarUrl,
                     pubkey = activeAccountPubkey,
-                    size = 25.dp,
+                    size = 22.dp,
                     displayName = activeDisplayName,
                 )
             }

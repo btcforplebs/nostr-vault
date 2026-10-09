@@ -35,11 +35,18 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
+import com.nostrvault.ui.components.FullScreenMediaRouter
+import com.nostrvault.ui.components.MediaSourceKey
+import com.nostrvault.ui.components.MediaZoomSources
 import com.nostrvault.ui.components.NostrMentions
+import com.nostrvault.ui.components.RetryableAsyncImage
+import com.nostrvault.ui.components.mediaZoomSource
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -95,6 +102,20 @@ class DMThreadViewModel @Inject constructor(
     private val _attachedImage = MutableStateFlow<Uri?>(null)
     val attachedImage = _attachedImage.asStateFlow()
 
+    /** Set when a send fails; the screen shows it in the "Failed to Send" alert. */
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError = _sendError.asStateFlow()
+    fun clearSendError() { _sendError.value = null }
+
+    /** Called while the thread is on screen, so its notifications stay quiet. */
+    fun setVisible(visible: Boolean) {
+        if (visible) {
+            dmService.visibleConversation = counterpartyPubkey
+        } else if (dmService.visibleConversation == counterpartyPubkey) {
+            dmService.visibleConversation = null
+        }
+    }
+
     init {
         viewModelScope.launch {
             nostrService.fetchMissingProfiles(listOf(counterpartyPubkey))
@@ -124,18 +145,30 @@ class DMThreadViewModel @Inject constructor(
             _isSending.value = true
             _messageText.value = ""
             _attachedImage.value = null
-            val imageUrl = image?.let { uploadImage(it) }
-            val content = buildString {
-                append(text)
-                if (imageUrl != null) {
-                    if (text.isNotEmpty()) append("\n")
-                    append(imageUrl)
+            try {
+                // The photo goes up first: a message naming a URL no server
+                // holds would reach them as a dead link (as iOS).
+                val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
+                val content = buildString {
+                    append(text)
+                    if (imageUrl != null) {
+                        if (text.isNotEmpty()) append("\n")
+                        append(imageUrl)
+                    }
                 }
+                if (content.isNotEmpty()) {
+                    dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Hand the message back unless something new was typed meanwhile.
+                if (_messageText.value.isEmpty()) _messageText.value = text
+                if (_attachedImage.value == null) _attachedImage.value = image
+                _sendError.value = DMSendFailure.message(e)
+            } finally {
+                _isSending.value = false
             }
-            if (content.isNotEmpty()) {
-                dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
-            }
-            _isSending.value = false
         }
     }
 
@@ -144,8 +177,12 @@ class DMThreadViewModel @Inject constructor(
             val input = context.contentResolver.openInputStream(uri) ?: return@withContext null
             val tempFile = File.createTempFile("dm_upload_", ".tmp", context.cacheDir)
             tempFile.outputStream().use { out -> input.use { it.copyTo(out) } }
-            val sha256 = blossomService.computeSHA256(tempFile)
             val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
+                tempFile.delete()
+                return@withContext null
+            }
+            val sha256 = blossomService.computeSHA256(tempFile)
             val url = blossomService.uploadAndMirror(tempFile, sha256, contentType)
             tempFile.delete()
             url
@@ -161,8 +198,15 @@ fun DMThreadScreen(
     counterpartyPubkey: String,
     onProfileClick: (String) -> Unit,
     onBack: () -> Unit,
+    /** Typed into the message box on open, for the owner to edit or send. */
+    initialMessage: String? = null,
     viewModel: DMThreadViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(initialMessage) {
+        if (initialMessage != null && viewModel.messageText.value.isEmpty()) {
+            viewModel.setMessageText(initialMessage)
+        }
+    }
     val messages by viewModel.messages.collectAsState()
     val counterpartyProfile by viewModel.counterpartyProfile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
@@ -171,12 +215,20 @@ fun DMThreadScreen(
     val useNIP04 by viewModel.useNIP04.collectAsState()
     val hasNIP04Messages by viewModel.hasNIP04Messages.collectAsState()
     val attachedImage by viewModel.attachedImage.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
     val listState = rememberLazyListState()
     val colors = LocalNostrVaultColors.current
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.setAttachedImage(it) } }
+
+    sendError?.let { DMSendFailedDialog(it, onDismiss = viewModel::clearSendError) }
+
+    DisposableEffect(viewModel) {
+        viewModel.setVisible(true)
+        onDispose { viewModel.setVisible(false) }
+    }
 
     // Scroll to bottom on new messages
     LaunchedEffect(messages.size) {
@@ -371,8 +423,14 @@ private fun MessageBubble(
     )
     val otherBubbleColor = if (oled) Color(0xFF14141A) else Color(0xFF292933)
 
+    // A photo sent as its Blossom link shows as the photo; tap opens the viewer (iOS #288).
+    val parts = remember(message.content) { DMAttachment.split(message.content) }
+    val zoomOrigin = remember { MediaZoomSources.newOrigin() }
+    val showText = parts.text.isNotEmpty() || parts.images.isEmpty()
+
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * 0.75f
+        val photoSize = minOf(240.dp, maxWidth * 0.6f)
         Column(
             horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start,
             modifier = Modifier.fillMaxWidth(),
@@ -380,29 +438,52 @@ private fun MessageBubble(
             Column(
                 modifier = Modifier
                     .widthIn(max = maxBubbleWidth)
+                    .clip(bubbleShape)
                     .background(
                         brush = if (isFromMe) {
                             Brush.linearGradient(listOf(colors.primary, colors.primaryDark))
                         } else {
                             Brush.linearGradient(listOf(otherBubbleColor, otherBubbleColor))
                         },
-                        shape = bubbleShape,
-                    )
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ),
             ) {
-                Text(
-                    text = remember(message.content, profiles) {
-                        NostrMentions.toPlainText(message.content, profiles)
-                    },
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp,
-                )
+                parts.images.forEachIndexed { index, url ->
+                    RetryableAsyncImage(
+                        model = url,
+                        contentDescription = "Photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(photoSize)
+                            .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
+                            .clickable { FullScreenMediaRouter.open(parts.images, index, zoomOrigin) },
+                    )
+                }
+                if (showText) {
+                    Text(
+                        text = remember(parts.text, profiles) {
+                            NostrMentions.toPlainText(parts.text, profiles)
+                        },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(
+                            start = 14.dp,
+                            end = 14.dp,
+                            top = 10.dp,
+                            bottom = if (message.isNIP04) 4.dp else 10.dp,
+                        ),
+                    )
+                }
                 if (message.isNIP04) {
-                    Spacer(Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.padding(
+                            start = 14.dp,
+                            end = 14.dp,
+                            top = if (showText) 0.dp else 8.dp,
+                            bottom = 10.dp,
+                        ),
                     ) {
                         Icon(
                             imageVector = NostrVaultIcons.LockOpen,

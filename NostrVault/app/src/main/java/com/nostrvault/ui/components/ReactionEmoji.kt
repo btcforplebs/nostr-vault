@@ -46,3 +46,12 @@ private fun isEmojiGrapheme(grapheme: String): Boolean {
     return cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF ||
         cp in 0x1F1E6..0x1F1FF || cp in 0x2B00..0x2BFF
 }
+
+/**
+ * The toast after a like is signed and sent: "Liked" for a plain like (no
+ * emoji chosen, or a heart), else "Reacted" with the emoji.
+ */
+fun likedToastMessage(emoji: String?): String {
+    val shown = emoji?.let(::reactionDisplayEmoji) ?: return "Liked"
+    return if (shown == HEART) "Liked" else "Reacted $shown"
+}

@@ -3,21 +3,27 @@ package com.nostrvault.ui.screens.profile
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -32,6 +38,7 @@ import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NostrContentText
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.theme.*
 
 /**
@@ -39,7 +46,7 @@ import com.nostrvault.ui.theme.*
  * row, stats, identity rows, 4 section tabs (Notes/Media/Replies/Tagged) with
  * counts, infinite scroll, a media grid, and a full-screen media viewer.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(
     pubkey: String,
@@ -53,7 +60,17 @@ fun ProfileScreen(
     onQuote: (String) -> Unit = {},
     onNavigateToDMs: () -> Unit = {},
     onNavigateToDMThread: (String) -> Unit = {},
+    /** Opens a DM with a pubkey, its box prefilled (Message seller). */
+    onMessageUser: (pubkey: String, draft: String) -> Unit = { pk, _ -> onNavigateToDMThread(pk) },
     onNavigateToSettings: () -> Unit = {},
+    /** Opens the Lightning wallet (own profile's bolt button, as on iOS). */
+    onOpenLightning: () -> Unit = {},
+    /** Opens the Sell composer (own profile, Shop tab). */
+    onSell: () -> Unit = {},
+    /** Opens the composer with text in it (sharing a song from the Music tab). */
+    onComposeText: (String) -> Unit = {},
+    /** Opens the Following / Followers lists on a tab, with the follower count shown here. */
+    onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -72,6 +89,7 @@ fun ProfileScreen(
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val hasMoreNotes by viewModel.hasMoreNotes.collectAsState()
     val hasMoreTagged by viewModel.hasMoreTagged.collectAsState()
@@ -80,7 +98,40 @@ fun ProfileScreen(
     val allProfiles by viewModel.profiles.collectAsState()
     val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
+    // Read per row through derivedStateOf, so a relay's answer recomposes
+    // only the rows whose numbers changed.
+    val engagementState = viewModel.engagementLedgers.collectAsState()
+    // Numbers on each post's buttons, fetched as the posts appear (iOS ProfileView).
+    val noteIds = remember(filteredNotes) { filteredNotes.map { it.id } }
+    LaunchedEffect(selectedSection, noteIds) {
+        viewModel.loadEngagement()
+    }
     val toast by viewModel.toast.collectAsState()
+    val shopListings by viewModel.shopListings.collectAsState()
+    val shopLoading by viewModel.shopLoading.collectAsState()
+    val articles by viewModel.articles.collectAsState()
+    val reels by viewModel.reels.collectAsState()
+    val tracks by viewModel.tracks.collectAsState()
+    var reelIndex by remember { mutableStateOf<Int?>(null) }
+    // This screen already shows [pubkey]; tapping its own name must not open it again.
+    val openOtherProfile: (String) -> Unit = remember(pubkey, onProfileClick) {
+        { tapped -> if (tapped != pubkey) onProfileClick(tapped) }
+    }
+    val musicActions = remember(onComposeText, openOtherProfile) {
+        com.nostrvault.ui.screens.music.MusicActions(
+            onShare = onComposeText,
+            onOpenProfile = openOtherProfile,
+            npubToHex = viewModel::npubToHex,
+        )
+    }
+    val currentTrack by com.nostrvault.service.music.MusicPlayer.current.collectAsState()
+    val musicPlaying by com.nostrvault.service.music.MusicPlayer.isPlaying.collectAsState()
+    var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    // Coming back from the Sell composer: show the listing just posted.
+    var sellLaunched by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -104,15 +155,28 @@ fun ProfileScreen(
         }
     }
 
-    // Full-screen media viewer state: media urls for the current (Media) tab.
+    // The Media tab's urls, in grid order; a tap opens the app's full-screen
+    // viewer on them (video, audio, drag to close; iOS MediaItemRenderer).
     val mediaItems = remember(filteredNotes, selectedSection) {
         if (selectedSection == ProfileSection.MEDIA) {
             filteredNotes.flatMap { note -> note.mediaURLs.map { it to note } }
         } else emptyList()
     }
-    var viewerIndex by remember { mutableStateOf<Int?>(null) }
+    val listState = rememberLazyListState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Report Media / Block User from a Media grid tile's long-press menu.
+    var gridReportTarget by remember { mutableStateOf<String?>(null) }
+    var gridBlockTarget by remember { mutableStateOf<String?>(null) }
+    // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
+    var zapSheetOpen by remember { mutableStateOf(false) }
 
     GlassScaffold(
+        // The banner runs up under the toolbar; the toolbar's fade comes in
+        // as the page scrolls up behind it.
+        toolbarScrimAlpha = {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else listState.firstVisibleItemScrollOffset / with(density) { 110.dp.toPx() }
+        },
         toolbar = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -123,7 +187,7 @@ fun ProfileScreen(
             ) {
                 GlassPill {
                     if (isOwnProfile) {
-                        IconButton(onClick = { /* lightning wallet */ }, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = onOpenLightning, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
                     } else {
@@ -152,7 +216,27 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
+        // Items before the section tabs: header, actions, bio (when there is
+        // one), stats and identity rows.
+        val tabsIndex = if (profile?.about?.isNotBlank() == true) 5 else 4
+        // A section is at least as tall as the screen, so picking one with a
+        // single item keeps the tabs where they were instead of the page
+        // snapping back down (iOS #283). This blank space after the section
+        // makes up the difference.
+        var fillerPx by remember { mutableIntStateOf(0) }
+        LaunchedEffect(listState, tabsIndex) {
+            snapshotFlow { ProfileTabFiller.needed(listState.layoutInfo, tabsIndex) }
+                .collect { needed -> if (needed != null) fillerPx = needed }
+        }
+        val selectSection: (ProfileSection) -> Unit = { section ->
+            // Until the new section is measured, assume it is short; the
+            // measurement then trims this to what it needs.
+            fillerPx = ProfileTabFiller.visibleHeight(listState.layoutInfo)
+            viewModel.setSection(section)
+        }
+        val list: @Composable () -> Unit = {
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 88.dp,
@@ -160,6 +244,14 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
+                ProfileBanner(
+                    bannerUrl = profile?.bannerURL?.takeIf { it.isNotBlank() },
+                    avatarUrl = profile?.pictureURL?.takeIf { it.isNotBlank() },
+                    pubkey = pubkey,
+                    topInset = padding.calculateTopPadding(),
+                    accent = colors.primary,
+                    onTap = { com.nostrvault.ui.components.FullScreenMediaRouter.open(listOf(it), 0, copyLink = true) },
+                )
                 ProfileHeader(
                     profile = profile,
                     pubkey = pubkey,
@@ -188,7 +280,15 @@ fun ProfileScreen(
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
-                    onZap = viewModel::zap,
+                    onZap = { viewModel.zap() },
+                    onZapLongPress = { zapSheetOpen = true },
+                    onTrustWeb = { trustWebAuthor = pubkey },
+                    onCopyNpub = {
+                        npub?.let {
+                            clipboard.setText(AnnotatedString(it))
+                            Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                 )
             }
 
@@ -197,7 +297,7 @@ fun ProfileScreen(
                     NostrContentText(
                         content = bio,
                         profiles = allProfiles,
-                        onProfileClick = onProfileClick,
+                        onProfileClick = openOtherProfile,
                         textColor = SecondaryText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -214,6 +314,7 @@ fun ProfileScreen(
                     media = counts.media,
                     following = followingCount,
                     followers = followersCount,
+                    onOpenFollowList = { tab -> onOpenFollowList(tab, followersCount) },
                     isOwnProfile = isOwnProfile,
                 )
             }
@@ -222,6 +323,10 @@ fun ProfileScreen(
                 ProfileIdentityRows(
                     lightning = lightningAddress,
                     website = website,
+                    // The inline zap chip, beside the copy row (iOS zapInlineButton).
+                    zapSats = viewModel.defaultZapSats.takeIf { canZap && !isOwnProfile },
+                    onZap = { viewModel.zap() },
+                    onZapLongPress = { zapSheetOpen = true },
                     onCopyLightning = {
                         lightningAddress?.let {
                             clipboard.setText(AnnotatedString(it))
@@ -231,16 +336,117 @@ fun ProfileScreen(
                 )
             }
 
-            item {
+            item(key = "section-tabs") {
                 ProfileSectionTabs(
                     selected = selectedSection,
                     counts = counts,
-                    onSelect = viewModel::setSection,
+                    extraCounts = mapOf(
+                        ProfileSection.SHOP to shopListings.size,
+                        ProfileSection.ARTICLES to articles.size,
+                        ProfileSection.DIVINES to reels.size,
+                        ProfileSection.MUSIC to tracks.size,
+                    ),
+                    // Shop only shows when this person sells something, or on
+                    // your own profile where it holds the Sell button; the
+                    // others only when this person has some.
+                    shown = { section ->
+                        when (section) {
+                            ProfileSection.SHOP -> isOwnProfile || shopListings.isNotEmpty()
+                            ProfileSection.ARTICLES -> articles.isNotEmpty()
+                            ProfileSection.DIVINES -> reels.isNotEmpty()
+                            ProfileSection.MUSIC -> tracks.isNotEmpty()
+                            else -> true
+                        }
+                    },
+                    onSelect = selectSection,
                 )
             }
 
             // ── Section content ──────────────────────────────────────
-            if (isLoading && filteredNotes.isEmpty()) {
+            if (selectedSection == ProfileSection.ARTICLES) {
+                items(articles, key = { "article-" + it.id }) { article ->
+                    ProfileArticleRow(article, onClick = { onArticleClick(viewModel.prepareOpen(article)) })
+                    HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
+                }
+            } else if (selectedSection == ProfileSection.DIVINES) {
+                // 9:16 posters, three to a row; a tap plays them in a viewer.
+                items(reels.withIndex().chunked(3), key = { row -> "divine-" + row.first().value.id }) { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        row.forEach { (index, reel) ->
+                            DiVineTile(reel, onClick = { reelIndex = index }, modifier = Modifier.weight(1f))
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            } else if (selectedSection == ProfileSection.MUSIC) {
+                itemsIndexed(tracks, key = { _, t -> "track-" + t.id }) { index, track ->
+                    Box(Modifier.padding(horizontal = 16.dp)) {
+                        com.nostrvault.ui.screens.music.MusicTrackRow(
+                            track = track,
+                            isCurrent = currentTrack?.id == track.id,
+                            isPlaying = musicPlaying,
+                            actions = musicActions,
+                            onTap = {
+                                if (currentTrack?.id == track.id) com.nostrvault.service.music.MusicPlayer.togglePlayPause()
+                                else com.nostrvault.service.music.MusicPlayer.play(tracks, index)
+                            },
+                        )
+                    }
+                }
+            } else if (selectedSection == ProfileSection.SHOP) {
+                if (isOwnProfile) {
+                    item {
+                        Button(
+                            onClick = { sellLaunched = true; onSell() },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Sell something", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                if (shopListings.isEmpty()) {
+                    item {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(40.dp)) {
+                            Text(
+                                text = when {
+                                    shopLoading -> "Loading…"
+                                    isOwnProfile -> "You haven't listed anything yet"
+                                    else -> "Nothing for sale"
+                                },
+                                color = SecondaryText,
+                                fontSize = 15.sp,
+                            )
+                        }
+                    }
+                } else {
+                    items(shopListings.chunked(2), key = { row -> "shop-" + row.first().id }) { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            row.forEach { listing ->
+                                Box(Modifier.weight(1f)) {
+                                    com.nostrvault.ui.screens.feed.ListingCard(listing, profile, onClick = { openListing = listing })
+                                }
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            } else if (isLoading && filteredNotes.isEmpty()) {
                 item { CenteredSpinner(colors.primary) }
             } else if (filteredNotes.isEmpty()) {
                 item {
@@ -266,43 +472,55 @@ fun ProfileScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                     ) {
-                        row.forEach { (url, _) ->
+                        row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
-                            AsyncImage(
-                                model = url,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(SecondaryGroupedBg)
-                                    .clickable { viewerIndex = idx },
-                            )
+                            Box(Modifier.weight(1f).aspectRatio(1f)) {
+                                ProfileMediaTile(
+                                    url = url,
+                                    author = note.pubkey,
+                                    viewModel = viewModel,
+                                    onOpen = {
+                                        com.nostrvault.ui.components.FullScreenMediaRouter.open(
+                                            mediaItems.map { it.first }, idx, copyLink = true,
+                                        )
+                                    },
+                                    onReport = { gridReportTarget = it },
+                                    onBlock = { gridBlockTarget = it },
+                                )
+                            }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             } else {
                 items(items = filteredNotes, key = { it.id }) { note ->
+                    val engagement by remember(note.effectiveEventId, selectedSection) {
+                        derivedStateOf {
+                            if (selectedSection == ProfileSection.TAGGED) null
+                            else viewModel.engagementFor(engagementState.value, note.effectiveEventId)
+                        }
+                    }
                     NoteCard(
                         note = note,
-                        profile = if (selectedSection == ProfileSection.TAGGED)
+                        // A repost on this profile is someone else's note:
+                        // credit its author, not the profile's owner.
+                        profile = if (selectedSection == ProfileSection.TAGGED || note.kind == 6)
                             allProfiles[note.pubkey] else profile,
-                        stats = viewModel.statsFor(note.id),
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
-                        isLiked = viewModel.isLiked(note.id),
+                        isLiked = viewModel.isLiked(note.effectiveEventId),
                         isReposted = note.effectiveEventId in repostedIds,
                         repostedByProfile = note.repostedBy?.let { allProfiles[it] },
                         onNoteClick = onNoteClick,
                         onArticleClick = onArticleClick,
-                        onProfileClick = onProfileClick,
+                        onProfileClick = openOtherProfile,
                         onLike = viewModel::likeNote,
                         onRepost = viewModel::repostNote,
                         onReply = onReply,
                         onQuote = onQuote,
-                        onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                        onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+                        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
+                        engagement = engagement,
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }
@@ -310,7 +528,7 @@ fun ProfileScreen(
 
             // ── Infinite-scroll sentinel ─────────────────────────────
             val hasMore = if (selectedSection == ProfileSection.TAGGED) hasMoreTagged else hasMoreNotes
-            if (!isLoading && filteredNotes.isNotEmpty() && hasMore) {
+            if (selectedSection.isNoteList && !isLoading && filteredNotes.isNotEmpty() && hasMore) {
                 item(key = "load-more-${selectedSection.name}-${filteredNotes.size}") {
                     LaunchedEffect(Unit) { viewModel.loadOlder() }
                     if (isLoadingOlder) {
@@ -320,20 +538,198 @@ fun ProfileScreen(
                     }
                 }
             }
+
+            // Keeps a short section from pulling the tabs down (see fillerPx).
+            item(key = ProfileTabFiller.KEY) {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                Spacer(Modifier.height(with(density) { fillerPx.toDp() }))
+            }
+        }
+        }
+        // Pull to refresh on your own profile, as on iOS.
+        if (isOwnProfile) {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) { list() }
+        } else {
+            list()
         }
     }
 
-    // Full-screen media viewer overlay.
-    viewerIndex?.let { startIndex ->
-        if (mediaItems.isNotEmpty()) {
-            MediaViewerOverlay(
-                urls = mediaItems.map { it.first },
-                startIndex = startIndex.coerceIn(0, mediaItems.size - 1),
-                onDismiss = { viewerIndex = null },
-            )
+    openListing?.let { listing ->
+        com.nostrvault.ui.screens.feed.MarketListingSheet(
+            listing = listing,
+            seller = profile,
+            onOpenSeller = null,
+            // Not to yourself: your own Shop tab lists what you sell.
+            onMessageSeller = if (isOwnProfile) null else { l -> openListing = null; onMessageUser(l.pubkey, l.messageToSeller) },
+            onEventInfo = null,
+            onDismiss = { openListing = null },
+        )
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = openOtherProfile,
+            onDismiss = { trustWebAuthor = null },
+        )
+    }
+
+    // Reporting also blocks the author, as on iOS and everywhere else in the app.
+    gridReportTarget?.let { pubkey ->
+        com.nostrvault.ui.components.UGCReportDialog(
+            onReport = { reason, description ->
+                gridReportTarget = null
+                viewModel.reportAuthor(pubkey, reason, description)
+                viewModel.blockAuthor(pubkey)
+            },
+            onDismiss = { gridReportTarget = null },
+        )
+    }
+    gridBlockTarget?.let { pubkey ->
+        AlertDialog(
+            onDismissRequest = { gridBlockTarget = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    gridBlockTarget = null
+                    viewModel.blockAuthor(pubkey)
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { gridBlockTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (zapSheetOpen) {
+        com.nostrvault.ui.components.CustomZapSheet(
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            defaultAmount = viewModel.defaultZapSats,
+            onDismiss = { zapSheetOpen = false },
+            onZap = { amount ->
+                zapSheetOpen = false
+                viewModel.zap(amount)
+            },
+        )
+    }
+
+    reelIndex?.let { start ->
+        if (reels.isNotEmpty()) {
+            DiVineViewer(reels, start.coerceIn(0, reels.lastIndex), onDismiss = { reelIndex = null })
         }
     }
 }
+
+/**
+ * One Media grid tile. Audio has no picture, so it gets iOS's dark tile with
+ * a waveform. Long-press opens iOS `MediaGridItem`'s menu: the same on your
+ * own profile, plus Report Media / Block User on someone else's.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ProfileMediaTile(
+    url: String,
+    author: String,
+    viewModel: ProfileViewModel,
+    onOpen: () -> Unit,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val clipboard = LocalClipboardManager.current
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val isAudio = remember(url) { com.nostrvault.ui.components.isAudioUrl(url) }
+    // Keyed by url: rows are by position, so new posts can shift a tile under an open menu.
+    var menuOpen by remember(url) { mutableStateOf(false) }
+    val busyUrl by viewModel.mediaBusyUrl.collectAsState()
+    val presence by viewModel.mirrorPresence.collectAsState()
+    // Ask the servers when the menu opens, so Mirror to Blossom can appear.
+    LaunchedEffect(menuOpen) { if (menuOpen) viewModel.checkMediaBackup(url) }
+
+    val tileModifier = Modifier
+        .fillMaxSize()
+        .clip(RoundedCornerShape(6.dp))
+        .background(if (isAudio) AudioTileBg else SecondaryGroupedBg)
+        .combinedClickable(
+            onClick = onOpen,
+            onLongClick = {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                menuOpen = true
+            },
+            onLongClickLabel = "Media options",
+        )
+    if (isAudio) {
+        Box(contentAlignment = Alignment.Center, modifier = tileModifier.semantics { contentDescription = "Audio" }) {
+            Icon(NostrVaultIcons.Waveform, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
+        }
+    } else {
+        AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = tileModifier)
+    }
+
+    if (menuOpen) {
+        val busy = busyUrl == url
+        val actions = viewModel.mediaMenu(url, author, presence)
+        DropdownMenu(expanded = true, onDismissRequest = { menuOpen = false }) {
+            fun close() { menuOpen = false }
+            actions.forEach { action ->
+                when (action) {
+                    ProfileMediaAction.COPY_LINK -> DropdownMenuItem(
+                        text = { Text("Copy Link") },
+                        leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { clipboard.setText(AnnotatedString(url)); close() },
+                    )
+                    ProfileMediaAction.SAVE_TO_PHOTOS -> DropdownMenuItem(
+                        text = { Text("Save to Photos") },
+                        leadingIcon = { Icon(NostrVaultIcons.Import, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.saveMediaToPhotos(url) },
+                    )
+                    ProfileMediaAction.SAVE_TO_VAULT -> DropdownMenuItem(
+                        text = { Text(if (busy) "Saving…" else "Save to Vault") },
+                        enabled = !busy,
+                        leadingIcon = { Icon(NostrVaultIcons.Storage, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.saveMediaToVault(url) },
+                    )
+                    ProfileMediaAction.MIRROR_TO_BLOSSOM -> DropdownMenuItem(
+                        text = { Text(if (busy) "Mirroring…" else "Mirror to Blossom") },
+                        enabled = !busy,
+                        leadingIcon = { Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.mirrorMediaToBlossom(url) },
+                    )
+                    ProfileMediaAction.MARK_404, ProfileMediaAction.UNMARK_404 -> {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(if (action == ProfileMediaAction.UNMARK_404) "Remove from 404" else "Mark as 404") },
+                            leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { viewModel.toggleMedia404(url); close() },
+                        )
+                    }
+                    ProfileMediaAction.REPORT -> DropdownMenuItem(
+                        text = { Text("Report Media", color = ErrorRed) },
+                        leadingIcon = { Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); viewModel.mediaModerationTarget(author)?.let(onReport) },
+                    )
+                    ProfileMediaAction.BLOCK -> {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Block User", color = ErrorRed) },
+                            leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                            onClick = { close(); viewModel.mediaModerationTarget(author)?.let(onBlock) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** iOS MediaGridItem's audio tile: Color(red: 0.1, green: 0.1, blue: 0.14). */
+private val AudioTileBg = Color(0xFF1A1A24)
 
 @Composable
 private fun CenteredSpinner(tint: Color) {
@@ -362,14 +758,24 @@ private fun ProfileHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         AvatarImage(
             url = profile?.pictureURL,
             pubkey = profile?.pubkey ?: pubkey,
-            size = 64.dp,
+            size = 72.dp,
             displayName = profile?.bestName,
+            modifier = Modifier
+                // Half over the banner; the name column stays below it.
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    val overlap = ProfileBannerStyle.avatarOverlap.roundToPx()
+                    layout(placeable.width, placeable.height - overlap) { placeable.place(0, -overlap) }
+                }
+                // A ring in the page color lifts the avatar off the banner.
+                .background(WindowBackground, CircleShape)
+                .padding(3.dp),
         )
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -440,6 +846,11 @@ private fun Badge(text: String, color: Color) {
     )
 }
 
+/**
+ * One line, never scrolled: the labelled actions share the width and the
+ * icon-only ones keep a fixed square. On narrow screens or with large text
+ * Message drops its word first, then Zap. Block lives in ⋯, away from Message.
+ */
 @Composable
 private fun ProfileActionRow(
     isOwnProfile: Boolean,
@@ -453,41 +864,77 @@ private fun ProfileActionRow(
     onMessage: () -> Unit,
     onBlock: () -> Unit,
     onZap: () -> Unit,
+    onZapLongPress: () -> Unit,
+    onTrustWeb: () -> Unit,
+    onCopyNpub: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-    ) {
-        if (isOwnProfile) {
-            ActionChip("Post", NostrVaultIcons.Create, Color.White, colors.primary, onClick = onCompose)
-            ActionChip("Edit", NostrVaultIcons.Edit, colors.primary, colors.primary.copy(alpha = 0.12f), onClick = onEditProfile)
-        } else {
-            ActionChip(
-                if (isFollowing) "Unfollow" else "Follow",
-                NostrVaultIcons.PersonAdd,
-                if (isFollowing) Color.White else colors.primary,
-                if (isFollowing) colors.primary else colors.primary.copy(alpha = 0.12f),
-                onClick = onFollow,
-            )
-            ActionChip("Message", NostrVaultIcons.Chat, colors.primary, colors.primary.copy(alpha = 0.12f), onClick = onMessage)
-            ActionChip(
-                if (isBlocked) "Unblock" else "Block",
-                NostrVaultIcons.Blocked,
-                if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935),
-                (if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935)).copy(alpha = 0.12f),
-                onClick = onBlock,
-            )
-            if (canZap) {
-                ActionChip("Zap $zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap)
+    val tint = colors.primary.copy(alpha = 0.12f)
+    // Like SwiftUI's ViewThatFits: the first of the rows, each terser than the
+    // last, whose natural width fits.
+    @Composable
+    fun buttons(compact: Int) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (isOwnProfile) {
+                ActionChip("Post", NostrVaultIcons.Compose, Color.White, colors.primary, onClick = onCompose, modifier = Modifier.weight(1f))
+                ActionChip("Edit Profile", NostrVaultIcons.Edit, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+            } else {
+                ActionChip(
+                    if (isFollowing) "Unfollow" else "Follow",
+                    NostrVaultIcons.PersonAdd,
+                    if (isFollowing) Color.White else colors.primary,
+                    if (isFollowing) colors.primary else tint,
+                    onClick = onFollow,
+                    modifier = Modifier.weight(1f),
+                )
+                if (compact > 0) {
+                    ActionIcon(NostrVaultIcons.Chat, "Message", colors.primary, tint, onClick = onMessage)
+                } else {
+                    ActionChip("Message", NostrVaultIcons.Chat, colors.primary, tint, onClick = onMessage, modifier = Modifier.weight(1f))
+                }
+                if (canZap) {
+                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
+                }
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    ActionIcon(NostrVaultIcons.More, "More", colors.primary, tint, onClick = { menuOpen = true })
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Copy npub") },
+                            leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onCopyNpub() },
+                        )
+                        HorizontalDivider()
+                        val blockColor = if (isBlocked) Color(0xFFFF9800) else ErrorRed
+                        DropdownMenuItem(
+                            text = { Text(if (isBlocked) "Unblock" else "Block", color = blockColor) },
+                            leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = blockColor, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onBlock() },
+                        )
+                    }
+                }
             }
         }
     }
+    androidx.compose.ui.layout.SubcomposeLayout(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) { constraints ->
+        val rows = (0..2).map { level -> subcompose(level) { buttons(compact = level) }.first() }
+        val chosen = rows.firstOrNull { it.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth } ?: rows.last()
+        val placeable = chosen.measure(constraints)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ActionChip(
     label: String,
@@ -495,18 +942,54 @@ private fun ActionChip(
     contentColor: Color,
     background: Color,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    description: String = label,
+    /** A long-press action, with a haptic tick (the zap chip's custom amount). */
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
 ) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        modifier = modifier
+            .height(32.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick?.let { action ->
+                    {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        action()
+                    }
+                },
+                onLongClickLabel = longClickLabel,
+            )
+            .padding(horizontal = 10.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(14.dp))
-        Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(14.dp))
+        Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    contentColor: Color,
+    background: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(width = 36.dp, height = 32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(background)
+            .clickable(onClick = onClick),
+    ) {
+        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -517,6 +1000,7 @@ private fun ProfileStatsRow(
     following: Int?,
     followers: Int?,
     isOwnProfile: Boolean,
+    onOpenFollowList: (FollowListTab) -> Unit = {},
 ) {
     Row(
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -524,18 +1008,29 @@ private fun ProfileStatsRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        ProfileStat(shortInt(notes), "Notes")
-        ProfileStat(shortInt(media), "Media")
-        ProfileStat(following?.let { shortInt(it) } ?: "—", "Following")
-        if (!isOwnProfile) {
-            ProfileStat(followers?.let { shortInt(it) } ?: "∞", "Followers")
+        ProfileStat(shortInt(notes), "NOTES")
+        ProfileStat(shortInt(media), "MEDIA")
+        ProfileStat(following?.let { shortInt(it) } ?: "—", "FOLLOWING") {
+            onOpenFollowList(FollowListTab.FOLLOWING)
+        }
+        // Your own comes from the relay's follower ledger, so it is exact.
+        ProfileStat(followers?.let { shortInt(it) } ?: "—", "FOLLOWERS") {
+            onOpenFollowList(FollowListTab.FOLLOWERS)
         }
     }
 }
 
 @Composable
-private fun ProfileStat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun ProfileStat(value: String, label: String, onClick: (() -> Unit)? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = if (onClick != null) {
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        } else Modifier,
+    ) {
         Text(value, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(label, color = SecondaryText, fontSize = 12.sp)
     }
@@ -551,6 +1046,10 @@ private fun shortInt(n: Int): String = when {
 private fun ProfileIdentityRows(
     lightning: String?,
     website: String?,
+    /** The inline zap chip's amount; null hides it (your own profile, or no wallet). */
+    zapSats: Int?,
+    onZap: () -> Unit,
+    onZapLongPress: () -> Unit,
     onCopyLightning: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -558,7 +1057,9 @@ private fun ProfileIdentityRows(
     if (lightning == null && website == null) return
     Column(modifier = Modifier.fillMaxWidth()) {
         lightning?.let {
-            IdentityRow(NostrVaultIcons.Zap, "LIGHTNING", it, Color(0xFFFF9800), onClick = onCopyLightning)
+            IdentityRow(NostrVaultIcons.Zap, "LIGHTNING", it, Color(0xFFFF9800), onClick = onCopyLightning) {
+                if (zapSats != null) InlineZapChip(zapSats, onZap, onZapLongPress)
+            }
         }
         website?.let {
             val display = it.removePrefix("https://").removePrefix("http://")
@@ -577,20 +1078,60 @@ private fun IdentityRow(
     value: String,
     tint: Color,
     onClick: () -> Unit,
+    /** Sits beside the row's copy target, not in it, so each tap does one thing. */
+    trailing: @Composable () -> Unit = {},
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Black)
-            Text(value, color = PrimaryText, fontSize = 13.sp, maxLines = 1)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick)
+                .padding(start = 16.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(label, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                Text(value, color = PrimaryText, fontSize = 13.sp, maxLines = 1)
+            }
         }
+        trailing()
+    }
+}
+
+/**
+ * The small bolt + amount chip on the LIGHTNING row: tap zaps the default,
+ * long-press picks an amount. iOS `zapInlineButton`.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun InlineZapChip(sats: Int, onZap: () -> Unit, onLongPress: () -> Unit) {
+    val orange = Color(0xFFFF9800)
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier
+            .padding(start = 8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(orange.copy(alpha = 0.15f))
+            .combinedClickable(
+                onClick = onZap,
+                onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+                onLongClickLabel = "Choose an amount",
+            )
+            .semantics(mergeDescendants = true) { contentDescription = "Zap $sats sats" }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Icon(NostrVaultIcons.Zap, contentDescription = null, tint = orange, modifier = Modifier.size(10.dp))
+        Text("$sats", color = orange, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }
 
@@ -600,6 +1141,9 @@ private fun IdentityRow(
 private fun ProfileSectionTabs(
     selected: ProfileSection,
     counts: ProfileCounts,
+    /** Counts for the tabs that are not notes: Shop, Articles, diVines, Music. */
+    extraCounts: Map<ProfileSection, Int>,
+    shown: (ProfileSection) -> Boolean,
     onSelect: (ProfileSection) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -607,40 +1151,51 @@ private fun ProfileSectionTabs(
         ProfileSection.NOTES -> counts.notes
         ProfileSection.MEDIA -> counts.media
         ProfileSection.REPLIES -> counts.replies
+        ProfileSection.REPOSTS -> counts.reposts
         ProfileSection.TAGGED -> counts.tagged
+        else -> extraCounts[s] ?: 0
     }
+    val sections = ProfileSection.entries.filter(shown)
     Row(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 16.dp)) {
-        ProfileSection.entries.forEach { section ->
+        sections.forEach { section ->
             val isSelected = section == selected
             val c = countFor(section)
+            val label = if (c > 0) shortInt(c) else null
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onSelect(section) }
+                    .clickable(onClickLabel = section.displayName) { onSelect(section) }
+                    .semantics { contentDescription = section.displayName + (label?.let { ", $it" } ?: "") }
                     .padding(top = 4.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Text(
-                        text = section.displayName.uppercase(),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.6.sp,
-                        color = if (isSelected) colors.primary else SecondaryText,
-                    )
-                    if (c > 0) {
-                        Text(
-                            text = shortInt(c),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            color = SecondaryText,
+                // Icons, as the feed types show them: icon and count, or the
+                // icon alone on a tab too narrow for the count (iOS #280).
+                BoxWithConstraints(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().height(20.dp)) {
+                    val fitsCount = label != null && maxWidth >= ProfileTabFiller.tabWidthWithCount(label.length)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            section.icon,
+                            contentDescription = null,
+                            tint = if (isSelected) colors.primary else SecondaryText,
+                            modifier = Modifier.size(17.dp),
                         )
+                        if (fitsCount && label != null) {
+                            Text(
+                                text = label,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                softWrap = false,
+                                color = SecondaryText,
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -655,27 +1210,122 @@ private fun ProfileSectionTabs(
     }
 }
 
+/** The feed types' own icons, so a tab reads the same as the feed it matches. */
+private val ProfileSection.icon: androidx.compose.ui.graphics.vector.ImageVector
+    get() = when (this) {
+        ProfileSection.NOTES -> NostrVaultIcons.Chat
+        ProfileSection.MEDIA -> NostrVaultIcons.Media
+        ProfileSection.REPLIES -> NostrVaultIcons.Reply
+        ProfileSection.REPOSTS -> NostrVaultIcons.Repost
+        ProfileSection.ARTICLES -> NostrVaultIcons.Articles
+        ProfileSection.DIVINES -> NostrVaultIcons.Reels
+        ProfileSection.MUSIC -> NostrVaultIcons.Music
+        ProfileSection.TAGGED -> NostrVaultIcons.At
+        ProfileSection.SHOP -> NostrVaultIcons.Marketplace
+    }
+
+/** One of this person's articles: cover, title, summary and date. Opens the reader. */
 @Composable
-private fun MediaViewerOverlay(
-    urls: List<String>,
-    startIndex: Int,
-    onDismiss: () -> Unit,
-) {
-    val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { urls.size })
+private fun ProfileArticleRow(note: com.nostrvault.data.model.FeedNote, onClick: () -> Unit) {
+    val meta = remember(note.id, note.tags) { com.nostrvault.data.model.ArticleMeta.from(note) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        meta.imageUrl?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+        Text(
+            text = meta.title,
+            color = PrimaryText,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 22.sp,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+        meta.summary?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = it,
+                color = SecondaryText,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                maxLines = 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = buildString {
+                append(java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(meta.publishedAt))
+                com.nostrvault.data.model.ArticleMeta.readingTimeMinutes(note.content)?.let { append(" · $it min read") }
+            },
+            color = TertiaryText,
+            fontSize = 12.sp,
+        )
+    }
+}
+
+/** A diVine's poster, 9:16, with a play mark. */
+@Composable
+private fun DiVineTile(reel: com.nostrvault.data.model.Reel, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        contentAlignment = Alignment.BottomStart,
+        modifier = modifier
+            .aspectRatio(9f / 16f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black)
+            .clickable(onClickLabel = reel.title ?: "diVine", onClick = onClick),
+    ) {
+        reel.posterUrl?.let { poster ->
+            AsyncImage(
+                model = poster,
+                contentDescription = reel.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        Icon(
+            NostrVaultIcons.PlayArrow,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.padding(6.dp).size(16.dp),
+        )
+    }
+}
+
+/** This person's diVines full screen, one page each, the visible one playing. */
+@Composable
+private fun DiVineViewer(reels: List<com.nostrvault.data.model.Reel>, startIndex: Int, onDismiss: () -> Unit) {
+    val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { reels.size })
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
-            .clickable(onClick = onDismiss),
+            .background(Color.Black),
     ) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        androidx.compose.foundation.pager.VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                AsyncImage(
-                    model = urls[page],
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                // Only the visible page gets a player, to keep memory at one instance.
+                if (page == pagerState.currentPage) {
+                    com.nostrvault.ui.components.VideoPlayer(uri = reels[page].videoUrl, modifier = Modifier.fillMaxSize())
+                } else {
+                    reels[page].posterUrl?.let {
+                        AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    }
+                }
             }
         }
         IconButton(

@@ -35,6 +35,14 @@
 				<string>nostrvault</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>to.nostrvault.nostr</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nostr</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -48,11 +56,15 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Nostr Vault uses the camera to scan QR codes containing Nostr public keys.</string>
+	<string>Nostr Vault uses the camera to scan QR codes containing Nostr public keys and to record diVines.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nostr Vault records sound with the diVines you film.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Nostr Vault connects to a local Nostr relay running on your device to store and serve your notes and media.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Nostr Vault needs access to save media from your relay to your photo library.</string>
+	<key>CADisableMinimumFrameDuration</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -97,5 +109,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NostrBuildGIFAPIKey</key>
+	<string>$(NOSTR_BUILD_GIF_KEY)</string>
 </dict>
 </plist>

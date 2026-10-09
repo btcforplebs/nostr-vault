@@ -43,26 +43,111 @@ object Bolt11 {
      */
     private val PREFIX = Regex("""^ln(?:bc|tb|bcrt)(\d*)([munp]?)1""")
 
-    fun amount(invoice: String): Bolt11Amount {
-        val match = PREFIX.find(invoice.trim().lowercase()) ?: return Bolt11Amount.Unreadable
-        val digits = match.groupValues[1]
-        if (digits.isEmpty()) return Bolt11Amount.Unspecified
+    fun amount(invoice: String): Bolt11Amount = when (val p = parse(invoice)) {
+        is Parsed.Msat -> Bolt11Amount.Sats(p.msat / 1000L)
+        Parsed.Unspecified -> Bolt11Amount.Unspecified
+        Parsed.Unreadable -> Bolt11Amount.Unreadable
+    }
 
-        val value = digits.toLongOrNull() ?: return Bolt11Amount.Unreadable
+    /**
+     * The exact amount in millisatoshis, or null for an amountless or
+     * unreadable invoice. For checking an invoice against the amount that was
+     * asked for — [amount] rounds down to whole sats, which would let a
+     * service add up to 999 msat unnoticed.
+     */
+    fun msat(invoice: String): Long? {
+        val p = parse(invoice) as? Parsed.Msat ?: return null
+        return p.msat.takeIf { p.exact && it > 0 && it < MAX_MSAT }
+    }
+
+    /** 21 million BTC, in msat. */
+    private const val MAX_MSAT = 21_000_000L * 100_000_000_000L
+
+    /** `exact` is false for a pico amount that is not a whole msat. */
+    private sealed interface Parsed {
+        data class Msat(val msat: Long, val exact: Boolean) : Parsed
+        data object Unspecified : Parsed
+        data object Unreadable : Parsed
+    }
+
+    private fun parse(invoice: String): Parsed {
+        val match = PREFIX.find(invoice.trim().lowercase()) ?: return Parsed.Unreadable
+        val digits = match.groupValues[1]
+        if (digits.isEmpty()) return Parsed.Unspecified
+
+        val value = digits.toLongOrNull() ?: return Parsed.Unreadable
         // 1 BTC = 100_000_000_000 msat.
-        val msat = when (match.groupValues[2]) {
-            "m" -> value * 100_000_000L
-            "u" -> value * 100_000L
-            "n" -> value * 100L
+        val perUnit = when (match.groupValues[2]) {
+            "m" -> 100_000_000L
+            "u" -> 100_000L
+            "n" -> 100L
             // pico-BTC is a tenth of a msat; a valid pico amount is a multiple of 10.
-            "p" -> value / 10L
-            "" -> value * 100_000_000_000L
-            else -> return Bolt11Amount.Unreadable
+            "p" -> return Parsed.Msat(value / 10L, exact = value % 10L == 0L)
+            "" -> 100_000_000_000L
+            else -> return Parsed.Unreadable
         }
-        return Bolt11Amount.Sats(msat / 1000L)
+        // The amount comes off the wire and nothing upstream bounds its
+        // length; Long multiplication would wrap silently.
+        val msat = try { Math.multiplyExact(value, perUnit) } catch (_: ArithmeticException) {
+            return Parsed.Unreadable
+        }
+        return Parsed.Msat(msat, exact = true)
     }
 
     /** Sats, or null when the invoice names no readable positive amount. */
     fun satsOrNull(invoice: String): Long? =
         (amount(invoice) as? Bolt11Amount.Sats)?.sats?.takeIf { it > 0 }
+
+    // ── Payment hash ────────────────────────────────────────────────
+
+    private const val CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+    /**
+     * The invoice's payment hash (tagged field `p`), as lowercase hex.
+     *
+     * The one identifier a wallet's history and a zap receipt both carry —
+     * what lets a payment be matched to the receipt that says who sent it.
+     * Checksum is not verified: this only reads, and a receipt whose bolt11
+     * is corrupt simply matches nothing.
+     */
+    fun paymentHash(invoice: String): String? {
+        val lower = invoice.trim().lowercase()
+        val separator = lower.lastIndexOf('1')
+        if (separator < 0) return null
+        val words = ArrayList<Int>(lower.length - separator)
+        for (ch in lower.substring(separator + 1)) {
+            val v = CHARSET.indexOf(ch)
+            if (v < 0) return null
+            words.add(v)
+        }
+        // timestamp (7) … tagged fields … signature (104) + checksum (6)
+        if (words.size <= 7 + 104 + 6) return null
+        val end = words.size - 104 - 6
+        var i = 7
+        while (i + 3 <= end) {
+            val type = words[i]
+            val length = (words[i + 1] shl 5) or words[i + 2]
+            i += 3
+            if (i + length > end) return null
+            if (type == 1 && length == 52) {
+                // 52 five-bit words = 260 bits; the hash is the first 256.
+                val bytes = ArrayList<Int>(33)
+                var acc = 0
+                var bits = 0
+                for (w in words.subList(i, i + length)) {
+                    acc = (acc shl 5) or w
+                    bits += 5
+                    if (bits >= 8) {
+                        bits -= 8
+                        bytes.add((acc shr bits) and 0xff)
+                        acc = acc and ((1 shl bits) - 1)
+                    }
+                }
+                if (bytes.size < 32) return null
+                return bytes.take(32).joinToString("") { "%02x".format(it) }
+            }
+            i += length
+        }
+        return null
+    }
 }

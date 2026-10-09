@@ -3,13 +3,20 @@ package com.nostrvault.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +32,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.ReactionDetail
+import com.nostrvault.data.model.RepostDetail
 import com.nostrvault.ui.theme.*
 import java.util.Date
 
@@ -33,6 +42,7 @@ import java.util.Date
  * Two modes: compact (no engagement) and expanded (inline engagement bar).
  * No parent notes, no quick-action buttons.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VaultNoteCard(
     note: FeedNote,
@@ -51,12 +61,36 @@ fun VaultNoteCard(
     /** Where a quoted long-form post opens; the note screen shows Markdown source. */
     onArticleClick: ((String) -> Unit)? = null,
     onProfileClick: (String) -> Unit,
+    /** Null opens the card's own Reactions / Reposts / Quoted By sheet (iOS NoteRow owns these). */
     onReactorsClick: (() -> Unit)? = null,
     onRepostersClick: (() -> Unit)? = null,
     onQuotersClick: (() -> Unit)? = null,
+    /**
+     * Long-press menu on someone else's note (iOS NoteRow's context menu).
+     * Report sends a NIP-56 report with the picked reason; the caller also
+     * blocks the author, as everywhere else in the app.
+     */
+    onReport: ((reason: String, description: String) -> Unit)? = null,
+    onBlock: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isCompact = layoutMode == VaultNoteLayoutMode.COMPACT
+    var showReactors by remember { mutableStateOf(false) }
+    var showReposters by remember { mutableStateOf(false) }
+    var showQuoters by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showReport by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    val menuActions = buildList {
+        if (noteType != VaultNoteType.MINE) {
+            if (onReport != null) {
+                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true) { showReport = true })
+            }
+            if (onBlock != null) {
+                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true) { showBlockConfirm = true })
+            }
+        }
+    }
     val colors = LocalNostrVaultColors.current
     // Zaps Only mode strips reactions from the inline engagement bar entirely.
     val effectiveReactors = if (LocalZapsOnlyMode.current) emptyList() else reactors
@@ -79,8 +113,16 @@ fun VaultNoteCard(
                 ),
                 cardShape,
             )
-            .clickable { onNoteClick(note.id) },
+            .combinedClickable(
+                onClick = { onNoteClick(note.id) },
+                onLongClick = if (menuActions.isNotEmpty()) ({ showMenu = true }) else null,
+            ),
     ) {
+        NoteActionsMenu(
+            expanded = showMenu,
+            actions = menuActions,
+            onDismiss = { showMenu = false },
+        )
         if (isCompact) {
             CompactLayout(
                 note = note,
@@ -104,11 +146,68 @@ fun VaultNoteCard(
                 zappers = zappers,
                 noteType = noteType,
                 onProfileClick = onProfileClick,
-                onReactorsClick = onReactorsClick,
-                onRepostersClick = onRepostersClick,
-                onQuotersClick = onQuotersClick,
+                onReactorsClick = onReactorsClick ?: { showReactors = true },
+                onRepostersClick = onRepostersClick ?: { showReposters = true },
+                onQuotersClick = onQuotersClick ?: { showQuoters = true },
             )
         }
+    }
+
+    // The engagement bar's counts open who reacted / reposted / quoted, as on
+    // iOS (VaultNoteRow's ReactorsListView, RepostersListView, QuotersListView).
+    // Tapping a person closes the sheet and opens their profile.
+    if (showReactors) {
+        ReactorsSheet(
+            reactions = effectiveReactors.distinctBy { it.first }
+                .map { (pubkey, emoji) -> ReactionDetail(id = pubkey, pubkey = pubkey, emoji = emoji) },
+            profiles = profiles,
+            onProfileClick = { showReactors = false; onProfileClick(it) },
+            onDismiss = { showReactors = false },
+        )
+    }
+    if (showReposters) {
+        RepostersSheet(
+            reposts = reposterPubkeys.distinct().map { RepostDetail(id = it, pubkey = it) },
+            profiles = profiles,
+            onProfileClick = { showReposters = false; onProfileClick(it) },
+            onDismiss = { showReposters = false },
+        )
+    }
+    if (showQuoters) {
+        RepostersSheet(
+            reposts = quoterPubkeys.distinct().map { RepostDetail(id = it, pubkey = it) },
+            profiles = profiles,
+            onProfileClick = { showQuoters = false; onProfileClick(it) },
+            onDismiss = { showQuoters = false },
+            title = "Quoted By",
+            emptyText = "No quotes yet",
+        )
+    }
+
+    if (showReport && onReport != null) {
+        UGCReportDialog(
+            onReport = { reason, description ->
+                showReport = false
+                onReport(reason, description)
+            },
+            onDismiss = { showReport = false },
+        )
+    }
+    if (showBlockConfirm && onBlock != null) {
+        AlertDialog(
+            onDismissRequest = { showBlockConfirm = false },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBlockConfirm = false
+                    onBlock()
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -124,7 +223,7 @@ private fun CompactLayout(
     onProfileClick: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val firstMedia = note.mediaURLs.firstOrNull()
+    val firstMedia = note.mediaURLs.firstOrNull { !isAudioUrl(it) }
     val displayName = profile?.bestName ?: "${note.pubkey.take(8)}...${note.pubkey.takeLast(4)}"
 
     Row(
@@ -156,6 +255,11 @@ private fun CompactLayout(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+
+                if (note.isFromNostrVault) {
+                    Spacer(Modifier.width(4.dp))
+                    NostrVaultBadge(size = 10.dp)
+                }
 
                 Spacer(Modifier.width(4.dp))
 
@@ -322,6 +426,11 @@ private fun ExpandedLayout(
                         modifier = Modifier.weight(1f, fill = false),
                     )
 
+                    if (note.isFromNostrVault) {
+                        Spacer(Modifier.width(6.dp))
+                        NostrVaultBadge(size = 12.dp)
+                    }
+
                     Spacer(Modifier.width(6.dp))
 
                     // Reposted badge (iOS lines 253-261)
@@ -396,6 +505,7 @@ private fun ExpandedLayout(
                 content = note.content,
                 profiles = profiles,
                 mediaURLs = note.mediaURLs.toSet(),
+                linkURLs = note.cardLinkURLs.toSet(),
                 onProfileClick = onProfileClick,
                 onPlainTextClick = { onNoteClick(note.id) },
                 lineHeight = 20.sp,
@@ -407,8 +517,14 @@ private fun ExpandedLayout(
             MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
         }
 
+        // One card per link: the URLs are out of the text above (#170).
+        // Links above quotes, as on iOS VaultNoteRow.
+        for (link in note.cardLinkURLs) {
+            LinkPreviewCard(url = link)
+        }
+
         // Quoted events. This card already knew a quote existed — it suppressed
-        // the link preview below on exactly that condition — and then drew
+        // a link preview on exactly that condition — and then drew
         // nothing for it, so on the relay tab a quote was silently dropped.
         for (qid in note.quotedEventIds) {
             val quoted = quotedNotes[qid]
@@ -423,11 +539,6 @@ private fun ExpandedLayout(
             } else {
                 QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
             }
-        }
-
-        // Link preview (iOS lines 332-335)
-        if (note.quotedEventIds.isEmpty() && note.linkURLs.isNotEmpty()) {
-            LinkPreviewCard(url = note.linkURLs.first())
         }
 
         // Engagement bar (iOS lines 338-345)

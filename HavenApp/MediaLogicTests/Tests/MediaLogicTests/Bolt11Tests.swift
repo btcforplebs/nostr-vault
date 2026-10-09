@@ -58,3 +58,20 @@ final class Bolt11Tests: XCTestCase {
         XCTAssertNil(Bolt11.sats("not-an-invoice"))
     }
 }
+
+final class Bolt11MsatTests: XCTestCase {
+    /// The exact amount, so a payer can refuse an invoice that is off by
+    /// less than a sat — `amount` rounds that away.
+    func testExactMsat() {
+        XCTAssertEqual(Bolt11.msat("lnbc210n1pvjluez"), 21_000)
+        XCTAssertEqual(Bolt11.msat("lnbc210010p1pvjluez"), 21_001)
+        XCTAssertEqual(Bolt11.amount("lnbc210010p1pvjluez"), .sats(21))
+        XCTAssertNotEqual(Bolt11.msat("lnbc210010p1pvjluez"), 21_000)
+    }
+
+    func testNoExactMsat() {
+        XCTAssertNil(Bolt11.msat("lnbc1qqqqsyqcyq5rqwzqfqypqdq5"))   // amountless
+        XCTAssertNil(Bolt11.msat("lnbc1p1pvjluez"))                  // a tenth of a msat
+        XCTAssertNil(Bolt11.msat("not-an-invoice"))
+    }
+}

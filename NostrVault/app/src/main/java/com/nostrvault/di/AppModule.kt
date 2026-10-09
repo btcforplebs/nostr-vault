@@ -9,6 +9,7 @@ import com.nostrvault.service.ContactManager
 import com.nostrvault.service.EventPublisher
 import com.nostrvault.service.FeedFilterEngine
 import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.decode.VideoFrameDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
@@ -93,12 +94,25 @@ object AppModule {
                     .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                    // Blossom media through Morganite when it runs on this phone.
+                    .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
                     // A friend's vault on the FIPS mesh serves its blobs directly.
                     .addInterceptor(com.nostrvault.fips.FipsMeshInterceptor())
                     .build()
             }
             .components {
-                add(GifDecoder.Factory())
+                // Before the built-in HTTP fetcher, which would download a whole
+                // video to read one frame of it.
+                add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
+                // ImageDecoder (API 28+) decodes animated GIF/WebP natively and
+                // draws through AnimatedImageDrawable on the render thread;
+                // GifDecoder is the old software Movie path, which decodes every
+                // frame on the CPU and dropped frames on a scrolling feed.
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    add(ImageDecoderDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
                 add(VideoFrameDecoder.Factory())
             }
             .crossfade(false) // Disable crossfade for instant rendering and better scroll performance

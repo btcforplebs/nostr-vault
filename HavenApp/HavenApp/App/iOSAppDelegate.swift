@@ -18,6 +18,9 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
         // Auto-start relay on launch
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
+            // Posts waiting for an outside media server. Started before the
+            // relay guards so a queued post is never stranded by a setting.
+            MediaPostQueue.shared.start()
             guard ConfigService.shared.config.autoStartRelay else { return }
             guard ConfigService.shared.config.hasCompletedSetup else { return }
             guard RelayProcessManager.shared.state == .idle else { return }

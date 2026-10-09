@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import kotlinx.serialization.json.longOrNull
 import java.net.URL
 import java.util.Date
 
@@ -117,23 +119,77 @@ data class FeedNote(
     val linkURLs: List<String>,
     val quotedEventIds: List<String>,
     val repostedEventId: String?,
+    /**
+     * When the reposted note was written (unix seconds), from a kind 6
+     * repost's embedded event. [createdAt] stays the repost's own time, which
+     * orders the feed (iOS e4ae7da3).
+     */
+    val originalCreatedAtSecs: Long? = null,
+    /**
+     * The reposted note's own kind (an article is 30023, a poll 1068), from a
+     * kind 6 repost's embedded event or the original a bare one resolved to.
+     * [kind] stays 6 so engagement still targets the original.
+     */
+    val originalKind: Int? = null,
 ) {
+    /** The kind this row is drawn as: a repost shows its original's kind. */
+    val displayKind: Int
+        get() = originalKind ?: kind
+
+    /** When the note this row shows was written: a repost's original time. */
+    val postedAt: Date
+        get() = originalCreatedAtSecs?.let { Date(it * 1000) } ?: createdAt
+
     /** Instance-level noise check delegating to companion. */
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
     /**
-     * NIP-10 thread root id: an explicit "root"-marked e-tag, else the first
-     * e-tag, else this note's own id (a top-level note is its own root). This
-     * is the symmetric reader for the root tag ComposeNoteScreen writes, and
-     * mirrors iOS NoteDetailView.threadRootId. Used to fetch the whole thread
-     * subtree when a mid-thread reply is opened.
+     * [isNoiseOrSpam], computed once per note. The feed filter re-checks every
+     * note (up to MAX_FEED_NOTES) twice per relay batch, and each check copies
+     * and lowercases the whole content — garbage the GC then collected while
+     * the user scrolled. A delegated property has no backing field, so it is
+     * not serialized into the snapshot.
+     *
+     * A bare repost is never noise: the empty-content rule threw it away, but
+     * it is valid NIP-18 and its row fetches the note it points at. 2 of the 9
+     * notes missing from two hours of a Following feed on 2026-10-04 were
+     * these (iOS #227).
+     */
+    val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        !isBareRepost && Companion.isNoiseOrSpam(content, tags)
+    }
+
+    /** A kind 6 repost that only points at the original: empty content plus an `e` tag. */
+    val isBareRepost: Boolean
+        get() = kind == 6 && content.isEmpty() && repostedEventId != null
+
+    /**
+     * This bare repost drawn the way an embedded one is: [original]'s author,
+     * text, tags and media, credited to the reposter, keeping this repost's id
+     * and time so it stays put in the feed.
+     */
+    fun withRepostedOriginal(original: FeedNote): FeedNote = copy(
+        pubkey = original.pubkey,
+        content = original.content,
+        tags = original.tags,
+        repostedBy = pubkey,
+        mediaURLs = original.mediaURLs,
+        linkURLs = original.linkURLs,
+        quotedEventIds = original.quotedEventIds,
+        originalCreatedAtSecs = original.createdAt.time / 1000,
+        originalKind = original.displayKind,
+    )
+
+    /**
+     * Thread root id, read by [NIP10Thread.rootEventId]: a NIP-22 comment's
+     * uppercase `E`; for NIP-10 an explicit "root"-marked e-tag, else the
+     * first non-mention e-tag; else this note's own id (a top-level note is
+     * its own root). This is the symmetric reader for the root tag
+     * ComposeNoteScreen writes, and mirrors iOS NoteDetailView.threadRootId.
+     * Used to fetch the whole thread subtree when a mid-thread reply is opened.
      */
     val threadRootId: String
-        get() {
-            val eTags = tags.filter { it.size >= 2 && it[0] == "e" }
-            eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let { return it[1] }
-            return eTags.firstOrNull()?.get(1) ?: effectiveEventId
-        }
+        get() = NIP10Thread.rootEventId(kind, tags) ?: effectiveEventId
 
     /**
      * The event id engagement and replies actually target: for a kind-6
@@ -144,10 +200,45 @@ data class FeedNote(
     val effectiveEventId: String
         get() = if (kind == 6) repostedEventId ?: id else id
 
+    /**
+     * Who wrote the note engagement targets. Zaps, reports and blocks go
+     * here, never to the reposter. A repost that still holds its own
+     * `["e", repostedEventId]` tag was not unpacked and carries the
+     * reposter's pubkey, so the author comes from its `p` tag (the same test
+     * as [quoteTarget]). An embedded or resolved repost already holds the
+     * original's author.
+     */
+    val effectiveAuthor: String
+        get() {
+            val refId = repostedEventId
+            if (kind != 6 || refId == null) return pubkey
+            val stillWrapped = tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) return pubkey
+            return tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: pubkey
+        }
+
+    /** The kind of the note engagement targets: a kind-6 repost's original, a kind 1 when unknown. */
+    val effectiveKind: Int
+        get() = if (kind == 6 && repostedEventId != null) originalKind ?: 1 else kind
+
+    /** Who published this event: the reposter for a repost, else the author. */
+    val publisher: String
+        get() = if (kind == 6) repostedBy ?: pubkey else pubkey
+
+    /**
+     * The links that get a card, and so leave the text. Capped: each card
+     * fetches its page, and a note can carry thousands of URLs to a host the
+     * poster controls (Tron, #183). Links past the cap stay in the text.
+     */
+    val cardLinkURLs: List<String>
+        get() = linkURLs.take(MAX_LINK_CARDS)
+
     override fun equals(other: Any?): Boolean = other is FeedNote && id == other.id
     override fun hashCode(): Int = id.hashCode()
 
     companion object {
+        const val MAX_LINK_CARDS = 3
+
         /**
          * Every event id these notes can ask the referenced-note cache for:
          * thread parents, thread roots, kind-6 originals and quoted notes.
@@ -165,6 +256,48 @@ data class FeedNote(
                 add(note.threadRootId)
                 addAll(note.quotedEventIds)
             }
+        }
+
+        /**
+         * The note a quote of [note] should cite. Quoting a kind-6 repost has
+         * to cite the note it carries, by id *and* author: the composer gets
+         * the original's id ([effectiveEventId]) but used to read the author
+         * off the repost, so a bare repost's `q`/`p` tags and preview named
+         * the reposter.
+         *
+         * Uses the loaded original when [loadedOriginal] has it. Otherwise
+         * rebuilds it from the repost, trusting the author/body/tags only if
+         * the constructor really unpacked the NIP-18 embedded event. That is
+         * read from the tags, not the content: a repost's own tags always hold
+         * `["e", repostedEventId]` and no event can tag its own id, so a note
+         * still holding that tag was not unpacked and carries the reposter's
+         * identity — the author then comes from the repost's `p` tag.
+         * Mirrors iOS `FeedService.quoteTarget(for:)` (#66, #67).
+         */
+        fun quoteTarget(note: FeedNote, loadedOriginal: (String) -> FeedNote?): FeedNote {
+            if (note.kind != 6) return note
+            val refId = note.repostedEventId ?: return note
+            loadedOriginal(refId)?.takeIf { it.id == refId && it.kind != 6 }?.let { return it }
+            val stillWrapped = note.tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) {
+                return FeedNote(
+                    id = refId,
+                    pubkey = note.pubkey,
+                    content = note.content,
+                    createdAt = note.createdAt,
+                    tags = note.tags,
+                    kind = 1,
+                )
+            }
+            val author = note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: note.pubkey
+            return FeedNote(
+                id = refId,
+                pubkey = author,
+                content = "",
+                createdAt = note.createdAt,
+                tags = emptyList(),
+                kind = 1,
+            )
         }
 
         // Regex patterns (compiled once)
@@ -201,6 +334,8 @@ data class FeedNote(
             var resolvedContent = content
             var resolvedTags = tags
             var resolvedRepostedBy = repostedBy
+            var originalCreatedAtSecs: Long? = null
+            var originalKind: Int? = null
 
             // Kind 6: swap to inner event if content is stringified JSON
             if (kind == 6) {
@@ -211,12 +346,18 @@ data class FeedNote(
                     if (innerContent != null && innerPubkey != null) {
                         resolvedPubkey = innerPubkey
                         resolvedContent = innerContent
-                        // Parse inner tags if present
+                        // The inner event's tags, never the repost's: keeping the
+                        // outer `e`/`p` here would make an unpacked repost look
+                        // bare to [quoteTarget], which tells them apart by tags.
                         val innerTags = inner["tags"]
-                        if (innerTags != null) {
-                            resolvedTags = Json.decodeFromString(innerTags.toString())
+                        resolvedTags = if (innerTags != null) {
+                            Json.decodeFromString(innerTags.toString())
+                        } else {
+                            emptyList()
                         }
                         if (resolvedRepostedBy == null) resolvedRepostedBy = pubkey
+                        originalCreatedAtSecs = inner["created_at"]?.jsonPrimitive?.longOrNull
+                        originalKind = inner["kind"]?.jsonPrimitive?.intOrNull
                     }
                 } catch (_: Exception) {
                     // Content is not JSON, keep outer values
@@ -233,7 +374,7 @@ data class FeedNote(
                 resolvedTags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
             } else null
             val parentEventId = if (kind != 6) {
-                resolvedTags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                NIP10Thread.parentEventId(kind, resolvedTags)
             } else null
 
             // Parse media URLs from content + imeta tags
@@ -264,17 +405,20 @@ data class FeedNote(
                 linkURLs = linkURLs,
                 quotedEventIds = quotedEventIds,
                 repostedEventId = outerRepostedEventId,
+                originalCreatedAtSecs = originalCreatedAtSecs,
+                originalKind = originalKind,
             )
         }
 
-        private fun parseMediaURLs(content: String): List<String> {
+        internal fun parseMediaURLs(content: String): List<String> {
             val urls = mutableListOf<String>()
             urls += MEDIA_REGEX.findAll(content).map { it.value }
             urls += BLOSSOM_REGEX.findAll(content).map { it.value }
             return urls
         }
 
-        private fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
+        /** Every non-media http(s) URL in [content], in order, each once. */
+        internal fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
             val seen = mutableSetOf<String>()
             return HTTP_URL_REGEX.findAll(content)
                 .map { it.value }
@@ -393,6 +537,8 @@ data class FeedProfile(
     var name: String? = null,
     var displayName: String? = null,
     var pictureURL: String? = null,
+    /** The wide header image (kind-0 `banner`). */
+    var bannerURL: String? = null,
     var nip05: String? = null,
     var about: String? = null,
     var lud16: String? = null,
@@ -400,6 +546,8 @@ data class FeedProfile(
     var website: String? = null,
     /** Epoch millis of the last successful metadata fetch; null for legacy/unstamped entries. */
     var fetchedAt: Long? = null,
+    /** created_at (epoch seconds) of the kind-0 this came from; null for older cache entries. */
+    var createdAt: Long? = null,
 ) {
     /** Best display name: display_name > name > truncated pubkey. Computed once at
      *  construction (profiles are replaced via copy(), never mutated in place), so
@@ -416,18 +564,26 @@ data class FeedProfile(
 
 enum class FeedMode(val displayName: String) {
     FOLLOWING("Following"),
-    DISCOVERY("Discovery"),
+    DISCOVERY("Discover"),
     GLOBAL("Global"),
+
+    /**
+     * Posts in the hashtags you follow (NIP-51 interest list, kind 10015).
+     * Like [MUSIC], not a view of the note list: HashtagsFeedViewModel runs
+     * its own `#t` REQ and the note subscription is left alone. Declared after
+     * Global so a saved picker order gains it right after Global.
+     */
+    HASHTAGS("Hashtags"),
     POPULAR("Popular"),
     MEDIA("Media"),
 
     /**
-     * Full-screen vertical video, one per page. Like [LIVE], not a view of the
-     * note list: ReelsFeedService runs its own queries (NIP-71 video events and
-     * kind-1 notes carrying a video), and the note subscription idles while
-     * this mode is showing.
+     * diVines: full-screen looping short videos, one per page. Like [LIVE],
+     * not a view of the note list: ReelsFeedService runs its own queries
+     * (diVine's kind-34236 videos), and the note subscription idles while this
+     * mode is showing.
      */
-    REELS("Reels"),
+    REELS("diVines"),
 
     /**
      * Long-form articles (kind 30023). The events were already arriving — the
@@ -452,6 +608,26 @@ enum class FeedMode(val displayName: String) {
      * says "live" in anything cached.
      */
     LIVE("Live"),
+
+    /**
+     * Marketplace: NIP-15 products/auctions and NIP-99 classifieds, as in the
+     * MyNostrSpace marketplace. Like Live, not a view of the note list —
+     * MarketplaceFeedService fetches listings from the marketplace relays.
+     */
+    MARKETPLACE("Marketplace"),
+
+    /**
+     * NIP-88 polls (kind 1068). A view of the note list like [ARTICLES]: the
+     * primary REQ asks for polls only, scoped Following / Global.
+     */
+    POLLS("Polls"),
+
+    /**
+     * Wavlake music: trending and search, played in the background by
+     * MusicPlaybackService. Not a view of the note list either; the note
+     * subscription idles while this mode is showing.
+     */
+    MUSIC("Music"),
 }
 
 /** `t` topics zap.cooking publishes recipes under; category tags are `zapcooking-<category>`. */
@@ -465,6 +641,58 @@ object RecipeTopics {
             topic in BASE || topic.startsWith(CATEGORY_PREFIX)
         }
     }
+
+    /** How many category chips the bar shows. */
+    const val MAX_CATEGORIES = 12
+
+    /** The `zapcooking-<category>` names on one recipe, once each. */
+    fun categoriesOf(tags: List<List<String>>): Set<String> = tags.asSequence()
+        .filter { it.size >= 2 && it[0] == "t" }
+        .map { it[1].lowercase() }
+        .filter { it.startsWith(CATEGORY_PREFIX) }
+        .map { it.removePrefix(CATEGORY_PREFIX) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+
+    /**
+     * The most common categories in [recipes], for the chip bar. Capped: a
+     * 200-recipe page carries close to 300 distinct tags, most used once.
+     * Ranked by how many recipes carry it, then alphabetically.
+     * iOS: RecipeFeedService.categories.
+     */
+    fun topCategories(recipes: List<FeedNote>): List<String> {
+        val counts = HashMap<String, Int>()
+        for (recipe in recipes) for (name in categoriesOf(recipe.tags)) counts[name] = (counts[name] ?: 0) + 1
+        return counts.entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .take(MAX_CATEGORIES)
+            .map { it.key }
+    }
+
+    private val TIMESTAMP_IN_TITLE = Regex("\\b1[6-9][0-9]{8}\\b")
+    private val WHITESPACE = Regex("\\s+")
+
+    /**
+     * Client test publishes, not recipes. iOS: RecipeFeedService.looksLikeTestPost.
+     *
+     * Measured against 500 live zapcooking/nostrcooking events on 2026-09-05:
+     * these two rules drop 20 events, and every one of them is a test post
+     * ("iOS 2.3 Live Publish 1788113645", "E2E Curry", "Ppp"). Deliberately
+     * narrow: an Ingredients-heading rule also dropped real recipes.
+     */
+    fun looksLikeTestPost(tags: List<List<String>>, content: String): Boolean {
+        val title = tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) ?: ""
+        // A unix timestamp in the title means a machine generated it. Real
+        // recipe names do not carry a 10-digit number starting with 16-19.
+        if (TIMESTAMP_IN_TITLE.containsMatchIn(title)) return true
+        // A recipe needs ingredients and directions. Under 30 words is not
+        // one; the shortest real recipe in the sample was 39.
+        return content.split(WHITESPACE).count { it.isNotEmpty() } < 30
+    }
+
+    /** Recipes in [category], or all of them for null. */
+    fun filter(recipes: List<FeedNote>, category: String?): List<FeedNote> =
+        if (category == null) recipes else recipes.filter { category in categoriesOf(it.tags) }
 }
 
 enum class MediaFeedMode(val displayName: String) {
@@ -508,7 +736,7 @@ class BackgroundAccumulator {
 
     val notes = mutableListOf<FeedNote>()
     val profiles = mutableListOf<String>()
-    val reactionEvents = mutableListOf<Pair<String, String>>() // (targetId, pubkey)
+    val reactionEvents = mutableListOf<EngagementTracker.ReactionEvent>()
     val zapEvents = mutableListOf<Pair<String, Long>>() // (targetId, amountSats)
     val repostTargets = mutableListOf<String>()
     val rawEventEntries = mutableListOf<Pair<String, String>>() // (id, json)
@@ -530,7 +758,7 @@ class BackgroundAccumulator {
     fun addNote(note: FeedNote) { synchronized(lock) { notes.add(note) } }
 
     /** Add a reaction engagement event. */
-    fun addReaction(targetId: String, pubkey: String) { synchronized(lock) { reactionEvents.add(targetId to pubkey) } }
+    fun addReaction(reaction: EngagementTracker.ReactionEvent) { synchronized(lock) { reactionEvents.add(reaction) } }
 
     /** Add a zap engagement event. */
     fun addZap(targetId: String, amountSats: Long) { synchronized(lock) { zapEvents.add(targetId to amountSats) } }
@@ -538,7 +766,7 @@ class BackgroundAccumulator {
     data class Snapshot(
         val notes: List<FeedNote>,
         val profiles: List<String>,
-        val reactions: List<Pair<String, String>>,
+        val reactions: List<EngagementTracker.ReactionEvent>,
         val zaps: List<Pair<String, Long>>,
         val repostTargets: List<String>,
         val rawEventEntries: List<Pair<String, String>>,

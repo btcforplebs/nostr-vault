@@ -44,6 +44,12 @@ class AppDelegate: NSObject, ObservableObject {
             // Go runtime are ready before we call into StartRelayC.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
+                // Posts waiting for an outside media server. Started before the
+                // relay guards so a queued post is never stranded by a setting.
+                MediaPostQueue.shared.start()
+                // Starts, or quietly finishes, the Fill your vault guide once the
+                // follow list is known.
+                FillYourVaultCoordinator.shared.start()
                 guard ConfigService.shared.config.autoStartRelay else { return }
                 guard RelayProcessManager.shared.state == .idle else { return }
                 RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
@@ -216,7 +222,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        // A quiet replacement only updates the count already in Notification
+        // Center (LocalNotificationService.announceFoldedFollow).
+        let quiet = notification.request.content.userInfo[LocalNotificationService.quietKey] as? Bool ?? false
+        completionHandler(quiet ? [.list] : [.banner, .sound])
     }
 
     nonisolated func userNotificationCenter(

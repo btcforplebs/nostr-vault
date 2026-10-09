@@ -1,5 +1,9 @@
 package com.nostrvault.ui.screens.settings
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,17 +22,22 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.PushPrefs
+import com.nostrvault.service.LocalNotificationService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NotificationSound
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 @HiltViewModel
 class NotificationSettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val localNotifier: LocalNotificationService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
@@ -46,6 +55,30 @@ class NotificationSettingsViewModel @Inject constructor(
     // checks before posting.
     fun toggleEnabled(on: Boolean) {
         configStore.update { it.copy(enablePushNotifications = on) }
+    }
+
+    fun setFeedNotifications(on: Boolean) {
+        configStore.update { it.copy(enableFeedNotifications = on) }
+    }
+
+    /**
+     * Picks the sound and moves notifications to its channel straight away
+     * (a channel's sound can't change), then plays it, as iOS previews it.
+     */
+    fun setSound(sound: NotificationSound) {
+        configStore.update { it.copy(notificationSoundName = sound.displayName) }
+        localNotifier.ensureChannel()
+        val uri = localNotifier.soundUri(sound)
+        // Best-effort preview: a failed play shouldn't block picking the sound.
+        runCatching {
+            RingtoneManager.getRingtone(context, uri)?.apply {
+                audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                play()
+            }
+        }
     }
 
     fun setPref(npub: String, transform: (PushPrefs) -> PushPrefs) {
@@ -107,7 +140,33 @@ fun NotificationSettingsScreen(
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // One summary when people you follow posted while you were away (iOS).
+            if (enabled) {
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    NotificationToggle(
+                        "New Notes in Your Feed",
+                        SettingsHelp.NOTIFY_FEED_NOTES.text,
+                        config.enableFeedNotifications,
+                        enabled,
+                        viewModel::setFeedNotifications,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Sound (iOS NotificationSoundSection), shown with the rest of the
+            // enabled-only settings as on iOS.
+            if (enabled) {
+                Text("Sound", color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    SoundPicker(NotificationSound.fromName(config.notificationSoundName), viewModel::setSound)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             // Per-account notification preferences
             accounts.forEach { npub ->
@@ -146,6 +205,10 @@ fun NotificationSettingsScreen(
                         NotificationToggle("Reposts", "When someone reposts your notes", prefs.reposts, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(reposts = it) }
                         }
+                        Divider()
+                        NotificationToggle("New Followers", "When someone new follows you", prefs.follows, enabled) {
+                            viewModel.setPref(npub) { p -> p.copy(follows = it) }
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -158,6 +221,37 @@ fun NotificationSettingsScreen(
                 fontSize = 12.sp,
             )
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun SoundPicker(selected: NotificationSound, onSelect: (NotificationSound) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = true }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text("Sound", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Box {
+            Text(selected.displayName, color = LocalNostrVaultColors.current.primary, fontSize = 15.sp)
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                NotificationSound.entries.forEach { sound ->
+                    DropdownMenuItem(
+                        text = { Text(sound.displayName) },
+                        trailingIcon = if (sound == selected) {
+                            { Icon(NostrVaultIcons.Check, contentDescription = null) }
+                        } else {
+                            null
+                        },
+                        // Re-picking the current sound replays it as a preview.
+                        onClick = { onSelect(sound); expanded = false },
+                    )
+                }
+            }
         }
     }
 }

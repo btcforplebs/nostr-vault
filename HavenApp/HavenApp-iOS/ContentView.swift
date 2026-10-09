@@ -13,7 +13,9 @@ struct ContentView: View {
 
     @State private var selectedTab = 0
     @State private var showingDMInbox = false
+    @State private var dmInboxConversation: String?
     @State private var pendingMentionNoteId: IdentifiableString?
+    @State private var pendingProfilePubkey: IdentifiableString?
     @State private var isLandscapeLayout = UIScreen.main.bounds.width >= UIScreen.main.bounds.height
 
     init() {
@@ -69,12 +71,23 @@ struct ContentView: View {
                 }
             }
         }
+        // Every scroll view in the app, not just the Feed's: under a top bar
+        // whose items draw their own glass, iOS 26 otherwise picks the hard
+        // edge, a solid black band with a cut line.
+        .softTopScrollEdge()
         .onAppear {
             DMService.shared.startListening()
             // Auto-connect NIP-46 remote signer if configured
             if configService.config.hasCompletedSetup && configService.config.activeSigningMode() == "nip46" {
                 NIP46Service.shared.connectFromConfig()
             }
+            // A notification tapped on a cold start routes before this view
+            // exists, so its tab switch went nowhere; the target is still parked.
+            if RelayFocus.pending != nil {
+                selectedTab = 4 // Vault tab, relay half
+                VaultSection.shared.showsMedia = false
+            }
+            clearCoversForNotificationNote()
             // Replay any queued notification action from a cold start
             if let action = AppDelegate.pendingAction {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -88,19 +101,23 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
-            selectedTab = 4 // Relay tab
+            selectedTab = 4 // Vault tab, relay half
+            VaultSection.shared.showsMedia = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeed)) { _ in
             selectedTab = 0 // Feed tab
+            clearCoversForNotificationNote()
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenSearch)) { _ in
             selectedTab = 1 // Search tab
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMedia)) { _ in
-            selectedTab = 3 // Media tab
+            selectedTab = 4 // Vault tab, Media half
+            VaultSection.shared.showsMedia = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
             selectedTab = 2 // Profile tab
+            dmInboxConversation = note.object as? String
             showingDMInbox = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
@@ -109,21 +126,24 @@ struct ContentView: View {
                 pendingMentionNoteId = IdentifiableString(id: eventId)
             }
         }
+        // A `nostr:` link from another app opens over the current tab.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenNote)) { notification in
+            if let id = notification.object as? String {
+                pendingMentionNoteId = IdentifiableString(id: id)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenProfile)) { notification in
+            if let pubkey = notification.object as? String {
+                pendingProfilePubkey = IdentifiableString(id: pubkey)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenWallet)) { _ in
             selectedTab = 2 // Profile tab
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
-            selectedTab = 4 // Relay tab
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            selectedTab = 4 // Relay tab
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
-            selectedTab = 4 // Relay tab
-        }
+        .modifier(OpensRelayTab(selectedTab: $selectedTab))
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
-                DMInboxView()
+                DMInboxView(openConversation: dmInboxConversation)
                     .environmentObject(NostrService.shared)
                     .environmentObject(ConfigService.shared)
             }
@@ -133,6 +153,23 @@ struct ContentView: View {
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
         }
+        .sheet(item: $pendingProfilePubkey) { pubkey in
+            ProfileView(pubkey: pubkey.id, onDismiss: { pendingProfilePubkey = nil })
+                .environmentObject(NostrService.shared)
+                .environmentObject(ConfigService.shared)
+        }
+    }
+}
+
+extension ContentView {
+    /// A notification's post is about to open in the Feed tab: switch there
+    /// and drop anything that would cover it.
+    fileprivate func clearCoversForNotificationNote() {
+        guard NotificationOpen.pending != nil else { return }
+        selectedTab = 0
+        showingDMInbox = false
+        pendingMentionNoteId = nil
+        pendingProfilePubkey = nil
     }
 }
 
@@ -159,12 +196,40 @@ struct iPadSidebarView: View {
         configService.allAccountNpubs.count > 1
     }
 
+    @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
+    private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
+
+    /// A sidebar row: one of the feeds (all of which show in the Feed tab),
+    /// or one of the other tabs.
+    private enum SidebarItem: Hashable {
+        case feed(FeedMode)
+        case tab(Int)
+    }
+
+    private var sidebarSelection: Binding<SidebarItem?> {
+        Binding(
+            get: { selectedTab == 0 ? .feed(feedService.feedMode) : .tab(selectedTab) },
+            set: { item in
+                switch item {
+                case .feed(let mode):
+                    selectedTab = 0
+                    feedService.switchMode(mode)
+                case .tab(let tab):
+                    if tab == 3 && selectedTab == 3 {
+                        NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+                    }
+                    selectedTab = tab
+                case nil:
+                    break
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(selection: Binding(
-                get: { selectedTab },
-                set: { if let val = $0 { selectedTab = val } }
-            )) {
+            List(selection: sidebarSelection) {
                 // Account switcher section
                 Section {
                     Button {
@@ -179,6 +244,7 @@ struct iPadSidebarView: View {
                                 size: 32
                             )
                             .id(activeHex)
+                            .zapFlightOrigin()
                             .overlay(
                                 Circle()
                                     .stroke(
@@ -208,15 +274,22 @@ struct iPadSidebarView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Navigation tabs
-                Section {
-                    NavigationLink(value: 0) {
-                        Label("Feed", systemImage: "person.2.wave.2")
+                // Each feed is its own row, in the reader's feed-menu order,
+                // so the current feed shows here and switching is one tap.
+                Section("Feeds") {
+                    ForEach(menuModes, id: \.self) { mode in
+                        NavigationLink(value: SidebarItem.feed(mode)) {
+                            Label(mode.displayName, systemImage: mode.symbolName)
+                        }
                     }
-                    NavigationLink(value: 1) {
+                }
+
+                // Navigation tabs, headed so they read apart from the feeds.
+                Section("Vault") {
+                    NavigationLink(value: SidebarItem.tab(1)) {
                         Label("Search", systemImage: "magnifyingglass")
                     }
-                    NavigationLink(value: 2) {
+                    NavigationLink(value: SidebarItem.tab(2)) {
                         HStack {
                             Label("Profile", systemImage: "person.crop.circle")
                             Spacer()
@@ -227,12 +300,15 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
-                    NavigationLink(value: 3) {
-                        Label("Media", systemImage: "photo.on.rectangle")
+                    NavigationLink(value: SidebarItem.tab(3)) {
+                        Label("WOT", systemImage: "point.3.connected.trianglepath.dotted")
                     }
-                    NavigationLink(value: 4) {
+                    // Your relay and your Blossom files, one row; "My Media" is
+                    // a mode inside it. Tag 4 is the old Relay row's, so
+                    // notification routing still lands here.
+                    NavigationLink(value: SidebarItem.tab(4)) {
                         HStack {
-                            Label("Relay", systemImage: "doc.text.image")
+                            Label("Vault", systemImage: VaultDashboard.symbol)
                             Spacer()
                             if relayManager.hasNewRelayActivity {
                                 Circle()
@@ -241,7 +317,7 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
-                    NavigationLink(value: 5) {
+                    NavigationLink(value: SidebarItem.tab(5)) {
                         Label("Settings", systemImage: "gearshape")
                     }
                 }
@@ -258,33 +334,45 @@ struct iPadSidebarView: View {
                 }
             case 1:
                 NavigationStack(path: $searchPath) {
-                    SearchView()
-                        .navigationTitle("Search")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: FeedNote.self) { note in
-                            NoteDetailView(note: note)
-                        }
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from the results to read it here."
+                    ) {
+                        SearchView()
+                            .navigationTitle("Search")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                    }
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
                 }
             case 2:
                 NavigationStack(path: $profilePath) {
-                    ProfileView(pubkey: activeHex, embeddedInNavigation: false)
-                        .navigationTitle("Profile")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: FeedNote.self) { note in
-                            NoteDetailView(note: note)
-                        }
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from your profile to read it here."
+                    ) {
+                        ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                            .navigationTitle("Profile")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                    }
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
                 }
                 .id(activeHex)
             case 3:
-                MediaTabView()
+                WOTTabView()
             case 4:
-                NoteSplitPane(
-                    emptyTitle: "No Note Selected",
-                    emptyMessage: "Pick a note from the relay to read it here."
-                ) {
-                    VaultView()
+                VaultTabView {
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from the relay to read it here."
+                    ) {
+                        VaultView()
+                    }
                 }
             case 5:
                 NavigationStack {
@@ -316,18 +404,6 @@ struct iPadSidebarView: View {
             if tab == 0 { feedService.markViewed() }
             if tab == 4 { relayManager.markRelayViewed() }
         }
-        .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                MediaUploadNotificationBanner()
-                RelayActivityBanner()
-                ActionToastBanner()
-                ErrorNotificationBanner()
-            }
-            .padding(.top, 4)
-        }
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
         }
@@ -343,9 +419,10 @@ struct iPadSidebarView: View {
                     .keyboardShortcut("2", modifiers: .command)
                 Button("") { selectedTab = 2 }
                     .keyboardShortcut("3", modifiers: .command)
-                Button("") { selectedTab = 3 }
-                    .keyboardShortcut("4", modifiers: .command)
+                // ⌘4 Vault, ⌘5 WOT: the sidebar's order, not the tags'.
                 Button("") { selectedTab = 4 }
+                    .keyboardShortcut("4", modifiers: .command)
+                Button("") { selectedTab = 3 }
                     .keyboardShortcut("5", modifiers: .command)
                 Button("") { selectedTab = 5 }
                     .keyboardShortcut("6", modifiers: .command)
@@ -377,64 +454,140 @@ struct iPhoneTabView: View {
     @State private var mediaPath = NavigationPath()
     @State private var relayPath = NavigationPath()
     @State private var tabBarHeight: CGFloat = 0
+    /// The tab bar alone, without the mini player above it.
+    @State private var tabBarOnlyHeight: CGFloat = 0
+    @ObservedObject private var buttonRow = FloatingButtonRow.shared
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
+    private func syncButtonRow() {
+        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight)
+    }
+
+    /// iPad in portrait keeps this tab layout (the sidebar would collapse and
+    /// leave no visible navigation), but every iPad is wide enough for the list
+    /// and the note side by side, so notes open beside the list there instead
+    /// of covering it. iPhone and compact multitasking widths are unchanged.
+    private var usesNoteSplit: Bool { horizontalSizeClass == .regular }
+
+    /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
+    @ViewBuilder
+    private func noteSplit<Content: View>(
+        _ emptyMessage: String,
+        @ViewBuilder _ content: @escaping () -> Content
+    ) -> some View {
+        if usesNoteSplit {
+            NoteSplitPane(emptyTitle: "No Note Selected", emptyMessage: emptyMessage, content: content)
+        } else {
+            content()
+        }
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
-            FeedView()
-                .toolbar(.hidden, for: .tabBar)
-                .tag(0)
+            Group {
+                // In the split, Feed and Relay do not build their own stack
+                // (NoteSplitPane owns the detail column), so the pane needs one
+                // for their toolbars.
+                if usesNoteSplit {
+                    NavigationStack {
+                        noteSplit("Pick a note from the feed to read it here.") { FeedView() }
+                    }
+                } else {
+                    FeedView()
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .tag(0)
 
             NavigationStack(path: $searchPath) {
-                SearchView()
-                    .navigationTitle("")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { note in
-                        NoteDetailView(note: note)
-                    }
+                noteSplit("Pick a note from the results to read it here.") {
+                    SearchView()
+                        .navigationTitle("")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                }
             }
             .toolbar(.hidden, for: .tabBar)
             .tag(1)
 
             NavigationStack(path: $profilePath) {
-                ProfileView(pubkey: activeHex, embeddedInNavigation: false)
-                    .navigationTitle("Profile")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { note in
-                        NoteDetailView(note: note)
-                    }
+                noteSplit("Pick a note from your profile to read it here.") {
+                    ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                        .navigationTitle("Profile")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                }
             }
             .id(activeHex)
             .toolbar(.hidden, for: .tabBar)
             .tag(2)
 
-            MediaTabView()
+            // Tags keep their old meaning for routing: 4 is the relay (now
+            // the Vault tab, with Media inside); 3, Media's old slot, is WOT.
+            WOTTabView()
                 .toolbar(.hidden, for: .tabBar)
                 .tag(3)
 
-            VaultView()
-                .toolbar(.hidden, for: .tabBar)
-                .tag(4)
+            VaultTabView {
+                if usesNoteSplit {
+                    NavigationStack {
+                        noteSplit("Pick a note from the relay to read it here.") { VaultView() }
+                    }
+                } else {
+                    VaultView()
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .tag(4)
         }
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.floatingTabBarHeight, tabBarHeight)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomTabBar(
-                selectedTab: $selectedTab,
-                searchPath: $searchPath,
-                profilePath: $profilePath,
-                mediaPath: $mediaPath,
-                relayPath: $relayPath,
-                configService: configService,
-                relayManager: relayManager,
-                nostrService: nostrService,
-                dmService: dmService,
-                feedService: feedService
-            )
+            // The music mini player rides above the tab bar on every tab.
+            // Measured together, so screens inset for both.
+            VStack(spacing: 6) {
+                // Leaves room on the right for the screen's floating button
+                // (Post, Blossom, Relay), which drops level with it.
+                // Folds away with the floating button as the bar shrinks;
+                // the folded bar carries a small now-playing button instead.
+                // Faded rather than removed, so the inset never relayouts.
+                ChromeFold(anchor: .bottomLeading) {
+                    MiniPlayerBar()
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, max(12, buttonRow.reservedWidth))
+                BottomTabBar(
+                    selectedTab: $selectedTab,
+                    searchPath: $searchPath,
+                    profilePath: $profilePath,
+                    mediaPath: $mediaPath,
+                    relayPath: $relayPath,
+                    configService: configService,
+                    relayManager: relayManager,
+                    nostrService: nostrService,
+                    dmService: dmService,
+                    feedService: feedService
+                )
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { tabBarOnlyHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, height in tabBarOnlyHeight = height }
+                    }
+                )
+            }
+            .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
+            .onAppear { syncButtonRow() }
             .background(
                 GeometryReader { geo in
                     Color.clear
@@ -443,27 +596,251 @@ struct iPhoneTabView: View {
                 }
             )
         }
-        .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                MediaUploadNotificationBanner()
-                RelayActivityBanner()
-                ActionToastBanner()
-                ErrorNotificationBanner()
-            }
-            .padding(.top, 4)
-        }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
+            }
+        }
+        .overlay {
+            FeedHoldPickerOverlay(feedService: feedService) { mode in
+                feedService.switchMode(mode)
+                selectedTab = 0
             }
         }
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
             if tab == 4 { relayManager.markRelayViewed() }
         }
+    }
+}
+
+// MARK: - Feed Tab Hold Picker
+
+/// Hold the Feed tab, slide up onto a feed, let go: that feed opens. Let go
+/// without moving and the list stays up for a tap; let go anywhere else after
+/// sliding and it closes. A plain tap is still the Feed tab.
+///
+/// The finger never leaves the tab's own drag gesture, so the list does not
+/// need to take touches while dragging: the tab hit-tests the finger against
+/// the rows' global frames itself.
+@MainActor
+final class FeedHoldPicker: ObservableObject {
+    static let shared = FeedHoldPicker()
+
+    @Published var isOpen = false
+    @Published var hovered: FeedMode?
+    /// The Feed tab's frame, global coordinates; the list rises from it.
+    @Published var anchor: CGRect = .zero
+    /// Each row's frame, global coordinates.
+    var rowFrames: [FeedMode: CGRect] = [:]
+
+    /// Closest to the finger first: the list grows upward from the tab, so
+    /// Following (the usual feed) sits right above it.
+    /// In the reader's feed order (Edit Feeds), hidden feeds left out.
+    static var order: [FeedMode] { FeedMode.menuModes.reversed() }
+
+    func mode(at point: CGPoint) -> FeedMode? {
+        rowFrames.first { $0.value.insetBy(dx: -12, dy: 0).contains(point) }?.key
+    }
+
+    func open(from anchor: CGRect) {
+        self.anchor = anchor
+        hovered = nil
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { isOpen = true }
+    }
+
+    func close() {
+        withAnimation(.easeOut(duration: 0.16)) { isOpen = false }
+        hovered = nil
+    }
+}
+
+private struct FeedTabHoldItem: View {
+    let selected: Bool
+    @ObservedObject var feedService: FeedService
+    let onTap: () -> Void
+
+    @ObservedObject private var picker = FeedHoldPicker.shared
+    @State private var frame: CGRect = .zero
+    @State private var pressing = false
+    @State private var moved = false
+    @State private var holdTask: Task<Void, Never>?
+    @State private var startedOpen = false
+
+    private static let holdDelay: UInt64 = 300_000_000
+    private static let slop: CGFloat = 10
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "person.2.wave.2")
+                .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.havenPurple : .white)
+                .frame(height: 24)
+            Text("Feed")
+                .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.havenPurple : .white)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .scaleEffect(picker.isOpen ? 1.08 : (pressing ? 0.94 : 1))
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: pressing)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: picker.isOpen)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged(changed)
+                .onEnded(ended)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Feed")
+        .accessibilityValue(feedService.feedMode.displayName)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint("Hold to pick a feed")
+        .accessibilityAction { onTap() }
+        .accessibilityActions {
+            ForEach(FeedMode.menuModes, id: \.self) { mode in
+                Button(mode.displayName) {
+                    feedService.switchMode(mode)
+                    if !selected { onTap() }
+                }
+            }
+        }
+    }
+
+    private func changed(_ value: DragGesture.Value) {
+        if !pressing {
+            pressing = true
+            moved = false
+            // A touch that starts while the list is already up (tap mode)
+            // picks or dismisses; it does not re-open it.
+            startedOpen = picker.isOpen
+            holdTask?.cancel()
+            holdTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: Self.holdDelay)
+                guard !Task.isCancelled, pressing, !moved, !picker.isOpen else { return }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                picker.open(from: frame)
+            }
+        }
+        let distance = hypot(value.translation.width, value.translation.height)
+        if distance > Self.slop { moved = true }
+        guard picker.isOpen else {
+            // Moved before the hold landed: just a tap that slid off.
+            if moved { holdTask?.cancel() }
+            return
+        }
+        let mode = picker.mode(at: value.location)
+        if mode != picker.hovered {
+            picker.hovered = mode
+            if mode != nil { UISelectionFeedbackGenerator().selectionChanged() }
+        }
+    }
+
+    private func ended(_ value: DragGesture.Value) {
+        holdTask?.cancel()
+        holdTask = nil
+        defer { pressing = false }
+        if picker.isOpen && !startedOpen {
+            if let mode = picker.mode(at: value.location) {
+                select(mode)
+            } else if moved {
+                picker.close()
+            }
+            // Held and let go in place: the list stays up for a tap.
+            return
+        }
+        if picker.isOpen {
+            // Tap on the Feed tab while the list is up: dismiss it.
+            picker.close()
+            return
+        }
+        if !moved && frame.contains(value.location) { onTap() }
+    }
+
+    private func select(_ mode: FeedMode) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        picker.close()
+        if mode != feedService.feedMode { feedService.switchMode(mode) }
+        if !selected { onTap() }
+    }
+}
+
+/// The list itself, drawn over the whole screen so it can rise above the bar.
+private struct FeedHoldPickerOverlay: View {
+    @ObservedObject var feedService: FeedService
+    let onSelect: (FeedMode) -> Void
+    @ObservedObject private var picker = FeedHoldPicker.shared
+
+    var body: some View {
+        GeometryReader { geo in
+            let space = geo.frame(in: .global)
+            ZStack(alignment: .bottomLeading) {
+                if picker.isOpen {
+                    Color.black.opacity(0.28)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { picker.close() }
+                        .transition(.opacity)
+
+                    list
+                        .padding(.leading, max(12, picker.anchor.minX - space.minX))
+                        .padding(.bottom, max(12, space.maxY - picker.anchor.minY + 10))
+                        .transition(
+                            .scale(scale: 0.6, anchor: .bottomLeading)
+                                .combined(with: .opacity)
+                        )
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottomLeading)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(picker.isOpen)
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(FeedHoldPicker.order, id: \.self) { mode in
+                row(mode)
+            }
+        }
+        .padding(6)
+        .fixedSize()
+        .applyGlassRect(cornerRadius: 22)
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+    }
+
+    private func row(_ mode: FeedMode) -> some View {
+        let current = feedService.feedMode == mode
+        let hovered = picker.hovered == mode
+        return Button {
+            picker.close()
+            onSelect(mode)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: mode.symbolName)
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .frame(width: 24)
+                Text(mode.displayName)
+                    .font(.appSystem(size: 16, weight: current ? .bold : .medium))
+                Spacer(minLength: 16)
+                if current {
+                    Image(systemName: "checkmark")
+                        .font(.appSystem(size: 13, weight: .bold))
+                }
+            }
+            .foregroundStyle(hovered ? Color.white : (current ? Color.havenPurple : Color.primary))
+            .padding(.horizontal, 14)
+            .frame(width: 210, height: 42)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(hovered ? Color.havenPurple : Color.clear)
+            )
+            .scaleEffect(hovered ? 1.04 : 1, anchor: .leading)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: hovered)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { picker.rowFrames[mode] = $0 }
     }
 }
 
@@ -482,7 +859,11 @@ struct BottomTabBar: View {
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
 
-    @State private var isCollapsed: Bool = false
+    /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
+    private var chrome: ChromeCollapse { .shared }
+    @State private var availableWidth: CGFloat = 0
+    @State private var collapsedSize: CGSize = .zero
+    @State private var expandedHeight: CGFloat = 0
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
@@ -499,42 +880,67 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isCollapsed {
-                collapsedContent
-            } else {
-                expandedContent
-            }
+        // Both layouts are always present and cross-fade with the scroll, so
+        // the bar can sit anywhere between them while the finger is down.
+        // The capsule's width and height are interpolated between the two
+        // measured sizes; the outer frame keeps the expanded height so the
+        // safe-area inset (and every tab's content under it) never relayouts
+        // per frame.
+        let p = chrome.progress
+        let fullWidth = max(availableWidth - 32, collapsedSize.width)
+        let width = availableWidth > 0 ? lerp(fullWidth, collapsedSize.width, p) : nil
+        let height = expandedHeight > 0 ? lerp(expandedHeight, collapsedSize.height, p) : nil
+
+        ZStack {
+            HStack(spacing: 0) { expandedContent }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .frame(width: availableWidth > 0 ? fullWidth : nil)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { expandedHeight = $0 }
+                // Shrinks with the capsule rather than being clipped by it,
+                // so every tab stays whole while it fades. Gone by 60%, and
+                // the folded layout only starts at 40%, so the two never
+                // read as overlapping.
+                .scaleEffect(width.map { $0 / fullWidth } ?? 1)
+                .opacity(ChromeCollapse.fadeOut(p))
+                .allowsHitTesting(p < 0.5)
+                .accessibilityHidden(p >= 0.5)
+
+            collapsedContent
+                .padding(6)
+                .fixedSize()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { collapsedSize = $0 }
+                .opacity(ChromeCollapse.fadeIn(p))
+                .scaleEffect(lerp(0.85, 1, p))
+                .allowsHitTesting(p >= 0.5)
+                .accessibilityHidden(p < 0.5)
         }
-        .padding(.vertical, isCollapsed ? 6 : 10)
-        .padding(.horizontal, isCollapsed ? 6 : 8)
+        .frame(width: width, height: height)
+        .clipShape(Capsule())
         .applyGlassCapsule()
-        .padding(.horizontal, isCollapsed ? 0 : 16)
-        .padding(.bottom, 0)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: isCollapsed)
-        .onChange(of: feedService.feedScrollingDown) { _, scrollingDown in
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                isCollapsed = scrollingDown
-            }
-        }
+        .frame(maxWidth: .infinity, minHeight: expandedHeight > 0 ? expandedHeight : nil, alignment: .bottom)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
         .onChange(of: selectedTab) { _, _ in
-            // Reset scroll state when switching tabs so bar starts expanded
-            feedService.feedScrollingDown = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                isCollapsed = false
-            }
+            // A new tab starts with the bar fully open.
+            chrome.reset()
         }
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+        a + (b - a) * t
     }
 
     // MARK: - Expanded Content
 
     @ViewBuilder
     private var expandedContent: some View {
-        tabItem(index: 0, title: "Feed", icon: "person.2.wave.2") {
-            NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
+        FeedTabHoldItem(selected: selectedTab == 0, feedService: feedService) {
+            if selectedTab == 0 {
+                NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
+            } else {
+                selectedTab = 0
+            }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         tabItem(index: 1, title: "Search", icon: "magnifyingglass") {
             if !searchPath.isEmpty {
@@ -543,56 +949,62 @@ struct BottomTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("SearchScrollToTop"), object: nil)
             }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         expandedProfileTabItem
-            .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
-        tabItem(index: 3, title: "Media", icon: "photo.on.rectangle") {
-            if !mediaPath.isEmpty {
-                mediaPath = NavigationPath()
-            } else {
-                NotificationCenter.default.post(name: NSNotification.Name("MediaScrollToTop"), object: nil)
-            }
+        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
+            NotificationCenter.default.post(name: .wotTabReselected, object: nil)
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
-        tabItem(index: 4, title: "Relay", icon: "doc.text.image", hasRedBadge: relayManager.hasNewRelayActivity) {
-            if !relayPath.isEmpty {
+        tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: relayManager.hasNewRelayActivity) {
+            if VaultSection.shared.showsMedia {
+                if !mediaPath.isEmpty {
+                    mediaPath = NavigationPath()
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("MediaScrollToTop"), object: nil)
+                }
+            } else if !relayPath.isEmpty {
                 relayPath = NavigationPath()
             } else {
                 relayManager.markRelayViewed()
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 
     // MARK: - Collapsed Content
 
+    /// Feed, Search and Profile compose; the Vault tab opens its dashboard.
+    private var opensVaultDashboard: Bool { selectedTab == 4 }
+
     private var collapsedFABIcon: String {
-        selectedTab <= 2 ? "square.and.pencil" : "antenna.radiowaves.left.and.right"
+        opensVaultDashboard ? VaultDashboard.symbol : "square.and.pencil"
     }
 
     private var collapsedFABColor: Color {
-        selectedTab <= 2 ? Color.havenPurple : relayStatusColor
+        opensVaultDashboard ? relayStatusColor : Color.havenPurple
+    }
+
+    private var collapsedFABLabel: String {
+        opensVaultDashboard ? VaultDashboard.title : "Compose new post"
     }
 
     @ViewBuilder
     private var collapsedContent: some View {
         HStack(spacing: 16) {
+            // Music or a minimized live stream: play/pause, left of the avatar.
+            CollapsedNowPlayingButton()
+
             // Profile avatar — tap to expand tab bar, hold to switch account
             accountSwitchButton {
-                feedService.feedScrollingDown = false
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    isCollapsed = false
-                }
+                chrome.reset()
             } label: {
                 AvatarView(url: nostrService.profiles[activeHex]?.pictureURL, pubkey: activeHex, size: 36)
                     .overlay(
                         Circle()
                             .stroke(Color.havenPurple.opacity(0.6), lineWidth: 2)
                     )
+                    .zapFlightOrigin()
                     .overlay(alignment: .topTrailing) {
                         if dmService.totalUnreadCount > 0 || relayManager.hasNewRelayActivity {
                             Circle()
@@ -605,10 +1017,10 @@ struct BottomTabBar: View {
 
             // Contextual FAB icon — triggers compose or relay dashboard
             Button {
-                if selectedTab <= 2 {
-                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
-                } else {
+                if opensVaultDashboard {
                     NotificationCenter.default.post(name: .openRelayDashboard, object: selectedTab)
+                } else {
+                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
                 }
             } label: {
                 ZStack {
@@ -623,8 +1035,8 @@ struct BottomTabBar: View {
             }
             .buttonStyle(.plain)
             .tint(collapsedFABColor)
+            .accessibilityLabel(collapsedFABLabel)
         }
-        .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
     // MARK: - Tab Item
@@ -682,6 +1094,7 @@ struct BottomTabBar: View {
                         Circle()
                             .stroke(selected ? Color.havenPurple : .white.opacity(0.5), lineWidth: selected ? 2 : 1)
                     )
+                    .zapFlightOrigin()
                     .frame(height: 24)
                     .overlay(alignment: .topTrailing) {
                         if dmService.totalUnreadCount > 0 {
@@ -822,6 +1235,9 @@ struct NoteSplitPane<Content: View>: View {
     /// translation from its start, not a delta since the last callback).
     @State private var dragStartWidth: Double?
 
+    /// The reader folded the note column away to give the list the whole
+    /// pane. Remembered across launches; opening a note brings the column back.
+    @AppStorage("ipad.noteSplit.detailHidden") private var detailHidden = false
 
     var body: some View {
         GeometryReader { geo in
@@ -835,19 +1251,64 @@ struct NoteSplitPane<Content: View>: View {
 
             HStack(spacing: 0) {
                 content()
-                    .frame(width: width)
+                    .frame(width: detailHidden ? geo.size.width : width)
                     .environment(\.noteDetailSelection, selection)
 
-                resizeHandle(maxListWidth: maxListWidth)
+                if !detailHidden {
+                    resizeHandle(maxListWidth: maxListWidth)
+                        // The fold tab is wider than the handle; keep the
+                        // detail column from drawing over (and taking taps
+                        // from) the half that overhangs it.
+                        .zIndex(1)
 
-                detailColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    detailColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.move(edge: .trailing))
+                }
             }
             // GeometryReader hands its child the full space but does not force
             // it to fill: without this the row sizes to its content and the
             // handle has nothing to span.
             .frame(width: geo.size.width, height: geo.size.height)
+            .overlay(alignment: .trailing) {
+                if detailHidden {
+                    detailToggle
+                }
+            }
+            .clipped()
         }
+        .onChange(of: selection.note?.id) { _, id in
+            if id != nil { setDetailHidden(false) }
+        }
+        .onChange(of: selection.noteId) { _, id in
+            if id != nil { setDetailHidden(false) }
+        }
+    }
+
+    private func setDetailHidden(_ hidden: Bool) {
+        guard hidden != detailHidden else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { detailHidden = hidden }
+    }
+
+    /// The tab that folds the note column away, or brings it back. It sits on
+    /// the divider while the column is open and on the pane's trailing edge
+    /// while it is folded, vertically centred so it stays clear of the
+    /// navigation bar, which would otherwise take its taps.
+    private var detailToggle: some View {
+        Button {
+            setDetailHidden(!detailHidden)
+        } label: {
+            Image(systemName: detailHidden ? "chevron.left" : "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 56)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, detailHidden ? 4 : 0)
+        .accessibilityLabel(detailHidden ? "Show note" : "Hide note")
     }
 
     /// The draggable divider. A plain `Divider()` is one hairline wide and
@@ -860,9 +1321,8 @@ struct NoteSplitPane<Content: View>: View {
             Rectangle()
                 .fill(Color(uiColor: .separator))
                 .frame(width: 1)
-            Capsule()
-                .fill(Color(uiColor: .tertiaryLabel))
-                .frame(width: 4, height: 44)
+            // The fold tab doubles as the drag grip's centre mark.
+            detailToggle
         }
         .frame(width: 14)
         .frame(maxHeight: .infinity)
@@ -917,5 +1377,57 @@ struct NoteSplitPane<Content: View>: View {
                 description: Text(emptyMessage)
             )
         }
+    }
+}
+
+/// Every notification that lands in the Vault tab's relay half switches to it. One modifier
+/// rather than a receiver each keeps ContentView's chain inside the type
+/// checker's budget.
+private struct OpensRelayTab: ViewModifier {
+    @Binding var selectedTab: Int
+    @ObservedObject private var tutorialCenter = TutorialCenter.shared
+    @ObservedObject private var vaultSection = VaultSection.shared
+
+    func body(content: Content) -> some View {
+        content
+            // Your Vault starts the first time the Relay tab is picked. Not
+            // from VaultView: the tab view builds it while another tab
+            // shows, and it would take the slot Feeds needs. Re-checked when
+            // a status is saved, like Feeds.
+            .task(id: "\(selectedTab).\(tutorialCenter.revision).\(vaultSection.showsMedia)") {
+                // Its cards point at the relay half; on Media it waits.
+                if selectedTab == 4 && !vaultSection.showsMedia {
+                    tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
+                }
+            }
+            // A last card's Next goes to the next tutorial's page: Your
+            // Vault is the Relay tab, Wallet Connect the wallet on Profile,
+            // Pocket Relay the relay dashboard on the Relay tab.
+            .onChange(of: tutorialCenter.active) { _, active in
+                // Your Vault's cards are on the relay half. Pocket Relay is the
+                // dashboard, which either half opens, so stay where you are.
+                if active == .vault { showVault(media: false) }
+                if active == .pocketRelay { selectedTab = 4 }
+                // Opened once the wallet sheet it came from has closed and
+                // the Relay tab is showing. Already open when the dashboard
+                // started it, and opening it again does nothing.
+                if active == .pocketRelay {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.6))
+                        NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
+                    }
+                }
+                if active == .walletConnect { selectedTab = 2 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in showVault(media: false) }
+    }
+
+    /// The Vault tab, on its relay half or its Media half.
+    private func showVault(media: Bool) {
+        selectedTab = 4
+        VaultSection.shared.showsMedia = media
     }
 }

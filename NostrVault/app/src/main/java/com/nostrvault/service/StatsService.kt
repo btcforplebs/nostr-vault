@@ -2,21 +2,18 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import java.io.File
 import java.io.FileInputStream
-import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 /**
  * Storage statistics and event count tracking service.
@@ -377,21 +374,9 @@ class StatsService @Inject constructor(
         .replace("wss://", "https://")
         .replace("ws://", "http://")
 
-    /** Trust self-signed certs for localhost connections. */
+    /** This device's relay and LAN relays: trust follows [LocalTls]. */
     private fun okhttp3.OkHttpClient.Builder.applyLocalhostTrust(): okhttp3.OkHttpClient.Builder {
-        val trustManager = object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        }
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf<TrustManager>(trustManager), null)
-        sslSocketFactory(sslContext.socketFactory, trustManager)
-        hostnameVerifier { hostname, _ ->
-            hostname == "127.0.0.1" || hostname == "localhost" ||
-                hostname.startsWith("192.168.") || hostname.startsWith("10.")
-        }
-        return this
+        return with(LocalTls) { localTrust() }
     }
 }
 

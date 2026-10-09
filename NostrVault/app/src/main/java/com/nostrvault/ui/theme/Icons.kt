@@ -7,18 +7,28 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Construction
@@ -35,6 +45,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Feed
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFlorist
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Forum
@@ -42,6 +53,9 @@ import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -57,16 +71,28 @@ import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.ArrowCircleDown
+import androidx.compose.material.icons.filled.ArrowCircleUp
+import androidx.compose.material.icons.outlined.ArrowCircleDown
+import androidx.compose.material.icons.outlined.ArrowCircleUp
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PersonOff
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -75,6 +101,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -82,11 +109,22 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.OfflineBolt
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.RemoveModerator
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
 
 /**
  * SF Symbol -> Material Icon mapping.
@@ -131,13 +169,27 @@ object NostrVaultIcons {
     val Back: ImageVector = Icons.AutoMirrored.Filled.ArrowBack // chevron.left
     val Dismiss: ImageVector = Icons.Filled.Close          // xmark
     val Alert: ImageVector = Icons.Filled.Warning          // exclamationmark.triangle.fill
+    val Flag: ImageVector = Icons.Filled.Flag             // flag.fill
     val Create: ImageVector = Icons.Filled.Add             // plus
+    /** Write a post: the Post button, the folded bar's compose action. */
+    val Compose: ImageVector by lazy { squareAndPencil() } // square.and.pencil
+    /** The note action bar's Reply (the "replying to" line keeps [Reply]). */
+    val ReplyAction: ImageVector = Icons.Outlined.ChatBubbleOutline // message
+    /** The note action bar's Zap before you've zapped; [Zap] after. */
+    val ZapOutline: ImageVector = Icons.Outlined.Bolt      // bolt
     val ArrowUp: ImageVector = Icons.Filled.ArrowUpward    // arrow.up
+    val Incoming: ImageVector = Icons.Filled.SouthWest     // arrow.down.left
+    val Outgoing: ImageVector = Icons.Filled.NorthEast     // arrow.up.right
     val Search: ImageVector = Icons.Filled.Search          // magnifyingglass
+    val Sort: ImageVector = Icons.Filled.SwapVert          // arrow.up.arrow.down
     val History: ImageVector = Icons.Filled.History         // clock.arrow.circlepath
     val Media: ImageVector = Icons.Filled.Image            // photo
+    val Popular: ImageVector = Icons.Filled.Whatshot       // flame
+    val Discover: ImageVector = Icons.Filled.AutoAwesome   // sparkles
     val Articles: ImageVector = Icons.Filled.Article       // doc.text
     val Recipes: ImageVector = Icons.Filled.Restaurant     // fork.knife
+    val Polls: ImageVector = Icons.Filled.Poll             // chart.bar.xaxis
+    val Marketplace: ImageVector = Icons.Filled.ShoppingBag // bag
     val Live: ImageVector = Icons.Filled.Videocam          // video.fill
     val Reels: ImageVector = Icons.Filled.VideoLibrary     // play.rectangle.on.rectangle
     val More: ImageVector = Icons.Filled.MoreVert          // ellipsis
@@ -147,7 +199,12 @@ object NostrVaultIcons {
     val Quote: ImageVector = Icons.Filled.FormatQuote         // quote.closing (quotation marks)
     val Refresh: ImageVector = Icons.Filled.Refresh        // arrow.clockwise
     val Check: ImageVector = Icons.Filled.Check            // checkmark
+    val CheckCircle: ImageVector = Icons.Filled.CheckCircle // checkmark.circle.fill
+    val CircleOutline: ImageVector = Icons.Outlined.Circle  // circle
+    val DragHandle: ImageVector = Icons.Filled.DragHandle  // line.3.horizontal
+    val EditFeeds: ImageVector = Icons.Filled.Tune         // slider.horizontal.3
     val Info: ImageVector = Icons.Filled.Info              // info.circle
+    val Tutorials: ImageVector = Icons.Filled.School       // graduationcap
     @Suppress("DEPRECATION")
     val Send: ImageVector = Icons.Filled.Send              // paperplane.fill
     val PersonAdd: ImageVector = Icons.Filled.PersonAdd    // person.badge.plus
@@ -165,6 +222,16 @@ object NostrVaultIcons {
 
     // Navigation (additional)
     val Relay: ImageVector = Icons.Filled.CellTower          // antenna.radiowaves.left.and.right
+    val WebOfTrust: ImageVector = Icons.Filled.Hub           // point.3.connected.trianglepath.dotted
+    val PeopleList: ImageVector = Icons.AutoMirrored.Filled.FormatListBulleted // list.bullet
+
+    // Tab bar (iOS BottomTabBar)
+    val TabFeed: ImageVector = Icons.Filled.People           // person.2.wave.2
+    val TabMedia: ImageVector = Icons.Filled.PhotoLibrary    // photo.on.rectangle
+    /** The Vault tab and its Vault Dashboard (Media and Relay in one). */
+    val TabVault: ImageVector = Icons.Filled.Inventory2      // lock.rectangle.stack
+    /** The Vault tab's Highlights list (NIP-84). */
+    val Highlights: ImageVector = Icons.Filled.BorderColor   // highlighter
     val ChevronDown: ImageVector = Icons.Filled.KeyboardArrowDown // chevron.down
     val MarkAllRead: ImageVector = Icons.Filled.DoneAll      // checkmark.circle
     val Browse: ImageVector = Icons.Filled.Explore           // magnifyingglass.circle
@@ -180,6 +247,10 @@ object NostrVaultIcons {
     val Globe: ImageVector = Icons.Filled.Public                 // globe (alias for filter context)
     val GlobeOutline: ImageVector = Icons.Outlined.Public        // globe.americas
     val BarChart: ImageVector = Icons.Filled.BarChart            // chart.bar.fill
+    val TrustShield: ImageVector = Icons.Filled.VerifiedUser     // checkmark.shield.fill (Web of Trust)
+    val TrustOff: ImageVector = Icons.Filled.RemoveModerator     // shield.slash.fill (Everyone)
+    val Languages: ImageVector = Icons.Filled.Translate          // character.bubble.fill
+    val LanguagesOutline: ImageVector = Icons.Outlined.Translate // character.bubble
 
     // Search / vault filters
     val Layers: ImageVector = Icons.Filled.Layers                // square.stack
@@ -187,12 +258,16 @@ object NostrVaultIcons {
     val TagIcon: ImageVector = Icons.Filled.Tag                  // number/hashtag
     val LinkIcon: ImageVector = Icons.Filled.Link                // link
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
+    val OutsideNetwork: ImageVector = Icons.Filled.PersonSearch  // person.crop.circle.badge.questionmark
+    val Received: ImageVector = Icons.Filled.MoveToInbox         // tray.and.arrow.down.fill
+    val Given: ImageVector = Icons.Filled.Outbox                 // tray.and.arrow.up.fill
 
     // Wallet
 
     // Blossom
     val Blossom: ImageVector = Icons.Filled.LocalFlorist          // camera.macro (flower)
     val Cloud: ImageVector = Icons.Filled.Cloud                   // cloud.fill
+    val CloudDone: ImageVector = Icons.Filled.CloudDone           // checkmark.icloud.fill
     val Video: ImageVector = Icons.Filled.Videocam               // video.fill
     val Gif: ImageVector = Icons.Filled.Gif                       // GIF badge
 
@@ -200,9 +275,53 @@ object NostrVaultIcons {
     val UploadIcon: ImageVector = Icons.Filled.Upload            // arrow.up.doc
     val PlayCircle: ImageVector = Icons.Filled.PlayCircle        // play.circle.fill
     val PlayArrow: ImageVector = Icons.Filled.PlayArrow          // play.fill
+    val Music: ImageVector = Icons.Filled.MusicNote               // music.note
+    val Waveform: ImageVector = Icons.Filled.GraphicEq            // waveform
+    val ArrowUpCircle: ImageVector = Icons.Outlined.ArrowCircleUp      // arrow.up.circle
+    val ArrowUpCircleFill: ImageVector = Icons.Filled.ArrowCircleUp    // arrow.up.circle.fill
+    val ArrowDownCircle: ImageVector = Icons.Outlined.ArrowCircleDown  // arrow.down.circle
+    val ArrowDownCircleFill: ImageVector = Icons.Filled.ArrowCircleDown // arrow.down.circle.fill
     val PauseIcon: ImageVector = Icons.Filled.Pause              // pause.fill
     val Stop: ImageVector = Icons.Filled.Stop                    // stop.fill
     val VolumeUp: ImageVector = Icons.AutoMirrored.Filled.VolumeUp   // speaker.wave.2.fill
     val VolumeOff: ImageVector = Icons.AutoMirrored.Filled.VolumeOff // speaker.slash.fill
     val PictureInPicture: ImageVector = Icons.Filled.PictureInPictureAlt // pip.enter
 }
+
+/**
+ * SF Symbols' square.and.pencil, which Material lacks: a rounded square
+ * open at its top-right corner, with a pencil running into it.
+ */
+private fun squareAndPencil(): ImageVector = ImageVector.Builder(
+    name = "SquareAndPencil",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    // The square, broken where the pencil enters.
+    path(
+        stroke = SolidColor(androidx.compose.ui.graphics.Color.Black),
+        strokeLineWidth = 1.8f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(12f, 4f)
+        horizontalLineTo(6.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, -2.5f, 2.5f)
+        verticalLineTo(17.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, 2.5f, 2.5f)
+        horizontalLineTo(17.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, 2.5f, -2.5f)
+        verticalLineTo(12f)
+    }
+    // The pencil: body and point.
+    path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black)) {
+        moveTo(18.6f, 2.6f)
+        lineTo(21.4f, 5.4f)
+        lineTo(12.6f, 14.2f)
+        lineTo(9.2f, 14.8f)
+        lineTo(9.8f, 11.4f)
+        close()
+    }
+}.build()

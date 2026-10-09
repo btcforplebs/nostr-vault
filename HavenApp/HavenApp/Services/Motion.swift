@@ -135,6 +135,11 @@ enum Motion {
     /// doesn't cut the outward spring off before it arrives at `pulseScale`.
     /// `nil` under Reduce Motion, same as the rest of this vocabulary — the
     /// icon's fill and color already carry the meaning.
+    /// The confirmation burst for a zap landing — a small shockwave and
+    /// spark scatter anchored to the bolt button, distinct from `pop`
+    /// (the icon's own tap feedback). This is the payment's arrival.
+    static var zapBurst: Animation { spring(0.46, 0.72) }
+
     static func firePulse(_ flag: Binding<Bool>) {
         guard !isReduced else { return }
         flag.wrappedValue = true
@@ -240,5 +245,23 @@ enum Motion {
     static func staggered(_ animation: Animation, index: Int, step: Double = 0.05, cap: Int = 6) -> Animation {
         guard !isReduced else { return animation }
         return animation.delay(Double(min(index, cap)) * step)
+    }
+}
+
+/// Press feedback for a solid floating button, such as the Post capsule.
+///
+/// The default style dims a pressed label to about a quarter opacity in a
+/// single frame. On a button floating over the feed, that let the row beneath
+/// show through it mid-tap. This keeps the fill solid: the button settles in
+/// and darkens slightly, then springs back on release (a fade only, under
+/// Reduce Motion).
+struct PressScaleButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.94
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !Motion.isReduced ? pressedScale : 1)
+            .brightness(configuration.isPressed ? -0.08 : 0)
+            .animation(configuration.isPressed ? Motion.control : Motion.pop, value: configuration.isPressed)
     }
 }

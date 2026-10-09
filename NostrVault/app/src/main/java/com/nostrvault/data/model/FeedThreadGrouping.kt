@@ -41,6 +41,22 @@ data class FeedThread(
     /** Everything below the root, in the same order as [entries]. */
     val replies: List<FeedThreadEntry>
         get() = if (root == null) entries else entries.filter { it.note.id != root.id }
+
+    /**
+     * The [limit] most recent replies, kept in reading order. A reply is what
+     * lifts a thread to the top of the feed, so a folded card has to show the
+     * replies that did it rather than the oldest few.
+     */
+    fun latestReplies(limit: Int): List<FeedThreadEntry> {
+        val all = replies
+        if (all.size <= limit) return all
+        val newest = all.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<FeedThreadEntry>> { it.value.note.createdAt }.thenByDescending { it.index })
+            .take(limit)
+            .map { it.value.id }
+            .toSet()
+        return all.filter { it.id in newest }
+    }
 }
 
 /** Mirrors iOS `FeedThreadGrouping.swift`: pure logic, no service/view dependency. */
@@ -60,10 +76,34 @@ object FeedThreadGrouping {
      * @param resolveNote looks up a note that is referenced but not in
      *   [notes] (an ancestor the feed never showed). Returning null is fine —
      *   the thread is then rooted at the highest ancestor that did load.
-     * @return threads ordered by `latestActivity`, newest first.
+     * @param keepFeedOrder keep threads in the order their roots first appear
+     *   in [notes] instead of by latest activity. Popular is ranked by score
+     *   and Global by time, and a reply fetched after the posts must not
+     *   reshuffle either list.
+     * @return threads ordered by `latestActivity`, newest first, unless
+     *   [keepFeedOrder] is set.
      */
+    /**
+     * Drops conversations started by a blocked author (iOS #211). Their root
+     * is withheld from [build], so without this the card would sit on
+     * "Loading the start of this thread..." forever.
+     */
+    fun withoutBlocked(
+        threads: List<FeedThread>,
+        blocked: Set<String>,
+        findNote: (String) -> FeedNote?,
+    ): List<FeedThread> {
+        if (blocked.isEmpty()) return threads
+        return threads.filter { thread ->
+            if (thread.root != null) return@filter true
+            val root = findNote(thread.rootId) ?: return@filter true
+            root.pubkey !in blocked
+        }
+    }
+
     fun build(
         notes: List<FeedNote>,
+        keepFeedOrder: Boolean = false,
         resolveNote: (String) -> FeedNote? = { null },
     ): List<FeedThread> {
         if (notes.isEmpty()) return emptyList()
@@ -146,6 +186,13 @@ object FeedThreadGrouping {
                 currentId = ancestor.parentEventId
                 hops++
             }
+
+            // A root taken from the NIP-10 tag (the reply's parent never
+            // loaded) is no ancestor of anything in the pool, so the walk above
+            // never adds it, and the card kept saying "Loading the start of
+            // this thread…" with the root already fetched.
+            if (pool[root] == null) resolveNote(root)?.let { pool[root] = it }
+            pool[root]?.let { add(it, root) }
         }
 
         val threads = order.mapNotNull { root ->
@@ -156,6 +203,7 @@ object FeedThreadGrouping {
             FeedThread(rootId = root, root = rootNote, entries = entries, latestActivity = latest)
         }
 
+        if (keepFeedOrder) return threads
         return threads.sortedWith(
             compareByDescending<FeedThread> { it.latestActivity }
                 .thenBy { order.indexOf(it.rootId) }
@@ -210,7 +258,89 @@ object FeedThreadGrouping {
         return entries
     }
 
+    /**
+     * The replies under one note, as condensed lines in reading order: each
+     * reply followed by its own replies, oldest first at every level. Depth
+     * starts at 1 for a direct reply and is capped at [MAX_DEPTH]. A note seen
+     * twice (a reply cycle, or a duplicate in the pool) is drawn once. The
+     * thread view's condensed mode. iOS: `FeedThreadGrouping.replyTree`.
+     */
+    fun replyTree(parentId: String, pool: List<FeedNote>): List<FeedThreadEntry> {
+        val children = HashMap<String, MutableList<FeedNote>>()
+        for (note in pool) {
+            note.parentEventId?.let { children.getOrPut(it) { mutableListOf() }.add(note) }
+        }
+        val out = mutableListOf<FeedThreadEntry>()
+        val seen = mutableSetOf(parentId)
+        fun visit(id: String, depth: Int) {
+            for (child in children[id].orEmpty().sortedBy { it.createdAt }) {
+                if (!seen.add(child.id)) continue
+                out.add(FeedThreadEntry(note = child, depth = minOf(depth, MAX_DEPTH)))
+                visit(child.id, depth + 1)
+            }
+        }
+        visit(parentId, 1)
+        return out
+    }
+
     /** The `root`-marked e-tag from NIP-10, when the author wrote one. */
     private fun taggedRootId(note: FeedNote): String? =
         note.tags.firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "root" }?.get(1)
+}
+
+/**
+ * Which replies a thread view shows: blocked people and spam are dropped, and
+ * replies from outside your network are folded until asked for. Pure, so the
+ * rules are pinned by unit tests. iOS: `ThreadReplyVisibility`.
+ */
+object ThreadReplyVisibility {
+
+    /** Replies a thread view shows, and how many more are folded as outside your network. */
+    data class Replies(val visible: List<FeedNote>, val outside: Int)
+
+    /**
+     * Outside: not in your trusted set (Web of Trust plus follows) and not one
+     * of the thread's insiders (you, and the authors of the opened note and
+     * the notes above it). An empty trusted set means the graph has not
+     * loaded, and then nobody counts as outside.
+     */
+    fun isOutside(pubkey: String, trusted: Set<String>, insiders: Set<String>): Boolean =
+        trusted.isNotEmpty() && pubkey !in trusted && pubkey !in insiders
+
+    /** Every note under [rootId], at any depth, among [notes]. Cycle-safe. */
+    fun <T> descendants(rootId: String, notes: List<T>, id: (T) -> String, parentId: (T) -> String?): List<T> {
+        val children = HashMap<String, MutableList<T>>()
+        for (n in notes) parentId(n)?.let { children.getOrPut(it) { mutableListOf() }.add(n) }
+        val result = mutableListOf<T>()
+        val queue = ArrayDeque(listOf(rootId))
+        val seen = mutableSetOf(rootId)
+        while (queue.isNotEmpty()) {
+            val next = queue.removeLast()
+            for (child in children[next].orEmpty()) {
+                if (!seen.add(id(child))) continue
+                result.add(child)
+                queue.addLast(id(child))
+            }
+        }
+        return result
+    }
+
+    /**
+     * The replies under [targetId] in [pool], at any depth, minus [hidden]
+     * ones (blocked, spam). Unless [showOutside], replies from outside your
+     * network are counted rather than returned.
+     */
+    fun replies(
+        targetId: String,
+        pool: List<FeedNote>,
+        hidden: (FeedNote) -> Boolean,
+        trusted: Set<String>,
+        insiders: Set<String>,
+        showOutside: Boolean,
+    ): Replies {
+        val replies = descendants(targetId, pool, { it.id }, { it.parentEventId }).filterNot(hidden)
+        if (showOutside) return Replies(replies, 0)
+        val (outside, visible) = replies.partition { isOutside(it.pubkey, trusted, insiders) }
+        return Replies(visible, outside.size)
+    }
 }

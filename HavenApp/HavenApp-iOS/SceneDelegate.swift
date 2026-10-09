@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import BackgroundTasks
+import Combine
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -33,6 +34,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let statsService = StatsService.shared
         
         let contentView = ContentView()
+            .hashtagLinks()
             .environmentObject(configService)
             .environmentObject(relayManager)
             .environmentObject(nostrService)
@@ -43,6 +45,76 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = UIHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()
+
+        // In-app banners and the zap strike get a window of their own, above
+        // the app's, so a sheet (a profile, a note, compose) can never cover them. It takes
+        // no touches except on the banners themselves.
+        let banners = BannerWindow(windowScene: windowScene)
+        banners.windowLevel = .alert - 1
+        banners.overrideUserInterfaceStyle = .dark
+        // The zap strike flies here too: drawn in the app's own window, a bolt
+        // fired from a profile or a note sheet went off behind that sheet.
+        let host = UIHostingController(rootView: ZStack {
+            ZapFlightStage()
+            AppBannerStack()
+            ReactionTapbackLayer()
+            TutorialStage { BannerHitRegions.frames["tutorial"] = $0 }
+        })
+        // While the tapback bar waits for a tap, this window takes every
+        // touch, so a tap anywhere else closes the bar instead of reaching
+        // the post underneath.
+        ReactionTapback.shared.onModalChange = { modal in
+            BannerHitRegions.frames["tapback"] = modal ? CGRect(x: -1e6, y: -1e6, width: 2e6, height: 2e6) : nil
+        }
+        host.view.backgroundColor = .clear
+        banners.rootViewController = host
+        banners.isHidden = false
+        self.bannerWindow = banners
+
+        // Edit on the post countdown pill reopens the composer here, over
+        // whatever is on top. A FeedView can't do it: there is one per tab,
+        // and none of them can present over a note or profile sheet.
+        editRequestSubscription = PendingPostManager.shared.$editRequest
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] request in
+                PendingPostManager.shared.editRequest = nil
+                self?.presentComposer(for: request)
+            }
+    }
+
+    var bannerWindow: UIWindow?
+    private var editRequestSubscription: AnyCancellable?
+
+    private func presentComposer(for request: PendingPostManager.EditRequest) {
+        guard var top = window?.rootViewController else { return }
+        while let next = top.presentedViewController, !next.isBeingDismissed {
+            top = next
+        }
+        weak var host: UIViewController?
+        let composer = ComposeView(
+            onDismiss: { host?.dismiss(animated: true) },
+            replyTo: request.replyTo,
+            quoteTo: request.quoteTo,
+            initialContent: request.content,
+            restoredDraftId: request.draftId
+        )
+        .hashtagLinks()
+        .environmentObject(ConfigService.shared)
+        .environmentObject(RelayProcessManager.shared)
+        .environmentObject(NostrService.shared)
+        .environmentObject(StatsService.shared)
+        .environmentObject(AppState.shared)
+        let controller = UIHostingController(rootView: composer)
+        host = controller
+        // The composer that just posted may still be sliding away.
+        if let leaving = top.presentedViewController, let coordinator = leaving.transitionCoordinator {
+            coordinator.animate(alongsideTransition: nil) { [weak top] _ in
+                top?.present(controller, animated: true)
+            }
+        } else {
+            top.present(controller, animated: true)
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -73,6 +145,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Refresh what the widgets read. Rate limited inside the bridge, since
         // scene activation fires more often than the data meaningfully changes.
         Task { @MainActor in NVWidgetBridge.publish() }
+
+        // Something was shared to Nostr Vault while it was in the background:
+        // opening the app finishes the upload, notification tapped or not.
+        // Claiming the inbox is atomic, so a notification tap that also routes
+        // here cannot upload a file twice.
+        if NVShareInbox.hasPending {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(NVDeepLink.shareInbox.url)
+            }
+        }
 
         // Show the in-app banner (not a system push) for relay activity while visible.
         LocalNotificationService.shared.appInForeground = true
@@ -108,10 +190,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
-        // Reconnect NIP-46 remote signer if configured
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
-            NIP46Service.shared.connectFromConfig()
-        }
+        // Check the NIP-46 signer session survived the suspension; reconnect
+        // only if it no longer answers.
+        NIP46Service.shared.resumeAfterForeground()
 
         // Reconnect immediately — REQs go out from each socket's .connected
         // event, so a fixed "settle" delay only adds latency. The relay is
@@ -171,10 +252,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
-        // Disconnect NIP-46 remote signer to free resources while backgrounded
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
-            NIP46Service.shared.disconnect()
-        }
+        // The NIP-46 signer session is deliberately kept: approving a request
+        // means switching to the signer app, and disconnecting here killed the
+        // request the moment the user left to approve it. Outstanding requests
+        // hold a background task (NIP46Service.signerRequest).
 
         // Persist the current feed to disk so the next cold launch can restore
         // it instantly. Must run before pauseFeed() while notes are still in
@@ -205,5 +286,56 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard backgroundTaskID != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundTaskID)
         backgroundTaskID = .invalid
+    }
+}
+
+/// A window that passes every touch through to the app below, except
+/// touches that land on a banner.
+final class BannerWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // The hosting view answers for every point it covers, drawn or not, and
+        // on iOS 26 it has no subviews to ask instead. Banners report their own
+        // frames (`bannerHitRegion`); anywhere else the touch goes to the app.
+        guard let hit = super.hitTest(point, with: event),
+              BannerHitRegions.contains(point) else { return nil }
+        return hit
+    }
+}
+
+/// Where each banner is on screen, in BannerWindow coordinates.
+@MainActor
+enum BannerHitRegions {
+    fileprivate static var frames: [String: CGRect] = [:]
+
+    static func contains(_ point: CGPoint) -> Bool {
+        frames.values.contains { $0.contains(point) }
+    }
+}
+
+private extension View {
+    func bannerHitRegion(_ name: String) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            BannerHitRegions.frames[name] = $0
+        }
+    }
+}
+
+/// Every in-app banner, top-centred below the navigation bar.
+struct AppBannerStack: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            PostActionNotificationBanner().bannerHitRegion("postAction")
+            ZapNotificationBanner().bannerHitRegion("zap")
+            FollowNotificationBanner().bannerHitRegion("follow")
+            MediaUploadNotificationBanner().bannerHitRegion("upload")
+            RelayActivityBanner().bannerHitRegion("relayActivity")
+            ActionToastBanner().bannerHitRegion("toast")
+            ErrorNotificationBanner().bannerHitRegion("error")
+            ImportRunningPill()
+            Spacer(minLength: 0)
+        }
+        // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
+        .padding(.top, 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

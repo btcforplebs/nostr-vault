@@ -242,6 +242,7 @@ enum NVDeepLinkRouter {
     /// same way instead of growing a second navigation path.
     @discardableResult
     static func handle(_ url: URL) -> Bool {
+        if let nostr = NostrURI(url: url) { return open(nostr) }
         guard let link = NVDeepLink(url: url) else { return false }
         let center = NotificationCenter.default
 
@@ -269,8 +270,38 @@ enum NVDeepLinkRouter {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 center.post(name: .havenMagicPaste, object: nil)
             }
+        case .shareInbox:
+            center.post(name: .havenOpenMedia, object: nil)
+            // Same beat as Magic Paste: the gallery has to be listening.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                center.post(name: .havenImportShareInbox, object: nil)
+            }
         case .wallet:
             center.post(name: .havenOpenWallet, object: nil)
+        }
+        return true
+    }
+
+    /// A `nostr:` link from another app. Profiles and notes open over whatever
+    /// tab is showing, as a mention tap inside the app does. A link that does
+    /// not decode opens nothing rather than a blank profile or an empty note.
+    private static func open(_ link: NostrURI) -> Bool {
+        let center = NotificationCenter.default
+        switch link {
+        case .profile(let id):
+            guard let pubkey = QuoteReference.profilePubkey(fromBech32: id) else { return false }
+            center.post(name: .havenOpenProfile, object: pubkey)
+        case .event(let id):
+            guard let decoded = Bech32.decode(id) else { return false }
+            let eventId = id.hasPrefix("nevent1")
+                ? QuoteReference.eventID(fromNeventTLV: decoded.data)
+                : (decoded.data.count == 32 ? decoded.hexString : nil)
+            guard let eventId else { return false }
+            center.post(name: .havenOpenNote, object: eventId)
+        case .address(let id):
+            // The note sheet resolves naddr1 itself (kind + author + d tag).
+            guard Bech32.decode(id) != nil else { return false }
+            center.post(name: .havenOpenNote, object: id)
         }
         return true
     }

@@ -73,6 +73,13 @@ class RelayImportService @Inject constructor(
 
     private var importJob: Job? = null
 
+    /** Set when the relay couldn't be restarted after an import (the app was
+     *  in the background). MainActivity starts it on the next foreground. */
+    @Volatile private var relayRestartPending = false
+
+    /** True once if the relay still needs the restart an import couldn't do. */
+    fun takeRelayRestartPending(): Boolean = relayRestartPending.also { relayRestartPending = false }
+
     /**
      * Import notes from seed relays. Stops the running relay, starts it
      * in import mode, polls for progress, then restarts normally.
@@ -89,6 +96,8 @@ class RelayImportService @Inject constructor(
             _importProgress.value = 0f
             _importStatusMessage.value = "Preparing import..."
             _importCompleted.value = false
+            // Keeps the process alive if the app goes to the background.
+            ImportForegroundService.start(context)
 
             try {
                 // 1. Stop the running relay
@@ -100,10 +109,14 @@ class RelayImportService @Inject constructor(
                 val config = configStore.config.value
                 val relayDataDir = File(context.filesDir, "relay_data")
                 RelayConfiguration.ensureDirectories(relayDataDir)
-                val envDict = RelayConfiguration.generateEnvDictionary(config, relayDataDir)
-                envDict.forEach { (key, value) ->
+                val inputs = RelayConfiguration.launchInputs(config, relayDataDir)
+                inputs.env.forEach { (key, value) ->
                     HavenBridge.setEnv(key, value)
                 }
+                // The env above names the relay lists by bare filename, which
+                // Go can't open from the app's working directory, and on a
+                // first-run import (setup) the files don't exist yet.
+                RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)
 
                 // 3. Start relay in import mode on IO thread
                 _importStatusMessage.value = "Importing notes from seed relays..."
@@ -134,10 +147,19 @@ class RelayImportService @Inject constructor(
                 _importStatusMessage.value = "Import failed: ${e.message}"
             } finally {
                 _isImporting.value = false
+                ImportForegroundService.stop(context)
                 // 4. Restart relay in normal mode
                 _importStatusMessage.value = "Restarting relay..."
                 delay(1000)
-                RelayForegroundService.start(context)
+                // Setup's import tour can leave the app before a long import
+                // ends, and a foreground service can't be started from the
+                // background (Android 12+). The relay then starts when the
+                // app is next in the foreground rather than taking it down.
+                runCatching { RelayForegroundService.start(context) }
+                    .onFailure {
+                        Log.w(TAG, "Relay restart after import failed: ${it.message}")
+                        relayRestartPending = true
+                    }
             }
         }
     }

@@ -4,6 +4,13 @@ import Combine
 
 struct NoteDetailView: View {
     let note: FeedNote
+
+    /// A repost opens the note it reposted: the thread, likes, zaps and
+    /// replies all belong to the original. Done here so every way into a
+    /// thread gets it, not each caller.
+    init(note: FeedNote) {
+        self.note = FeedService.shared.threadTarget(for: note)
+    }
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -15,17 +22,23 @@ struct NoteDetailView: View {
     @State private var parentNotes: [FeedNote] = []
     @State private var isLoadingParents = false
     @State private var threadClient: WebSocketClient?
+    /// The reply subscriptions, kept open while the page is on screen so a
+    /// reply that lands later (yours once it broadcasts, or anyone's) shows up.
+    @State private var replyClients: [WebSocketClient] = []
     @State private var cancellables = Set<AnyCancellable>()
     @State private var showingProfilePubkey: String?
     @State private var showingNoteId: String?
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     @State private var showingReportDialog = false
     @State private var showingDeleteConfirm = false
-    @State private var showingEmojiPicker = false
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
 
     @State private var detailedReactions: [NostrEvent] = []
+    /// Responses that aren't replies (spec "below the fold"): quotes,
+    /// highlights, voice replies. Shown in their own section, not as rows.
+    @State private var otherResponses: [FeedNote] = []
     @State private var detailedReposts: [NostrEvent] = []
     @State private var detailedZaps: [NostrEvent] = []
     
@@ -42,19 +55,50 @@ struct NoteDetailView: View {
 
     @State private var focusedNoteId: String = ""
 
+    /// Replies and the conversation above drawn as condensed lines, the same
+    /// lines the threaded feed uses. The note you are reading always stays
+    /// full size with its action bar, so replying is still one tap: that is
+    /// what the old compact mode got wrong (#56). Remembered across threads.
+    @AppStorage("thread.condensedReplies") private var condensedReplies = false
+
     /// The note pinned to the top of the scroll view. Kept in step with
     /// `focusedNoteId` so that whichever note the reader landed on never
     /// moves on screen — thread history that loads in above it just extends
     /// the scrollable area upward instead of shoving the note (and
     /// everything below it) down mid-read.
     @State private var pinnedScrollId: String?
+    /// Set once the reader scrolls or picks another note; until then the
+    /// opened note is kept at the top as the thread above it loads.
+    @State private var didLandOnFocusedNote = false
+    /// Shown from the first frame: the opened note is placed by
+    /// `scrollPosition` before the screen draws. Kept so a late landing
+    /// (history still loading) animates rather than jumps.
+    @State private var isSettled = true
+    private static let settleCap: TimeInterval = 0.6
+    /// Where the opened note sits: a little below the top, so the end of the
+    /// post it answers shows above it as context.
+    private static let landingAnchor = UnitPoint(x: 0.5, y: 0.12)
+    /// Height of the scroll view, for the room left under a short thread.
+    @State private var viewportHeight: CGFloat = 0
+    /// Your Web of Trust plus follows, read once when the view appears.
+    /// Empty while the graph isn't loaded, which counts nobody as outside.
+    @State private var trustedPubkeys: Set<String> = []
+    /// Replies from outside your network are folded until asked for.
+    @State private var showsOutsideReplies = false
 
     private var threadRootId: String {
-        let eTags = note.tags.filter { $0.count >= 2 && $0[0] == "e" }
-        if let explicitRoot = eTags.first(where: { $0.count >= 4 && $0[3] == "root" }) {
-            return explicitRoot[1]
+        NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
+    }
+
+    /// The root's `kind:pubkey:d` address when it's an addressable or
+    /// replaceable event. Comments root on `A` there, and an edited article
+    /// has a new event id, so `#E` alone misses them.
+    private var threadRootCoordinate: String? {
+        if note.kind == NIP10Thread.commentKind {
+            return note.tags.first(where: { $0.count >= 2 && $0[0] == "A" })?[1]
         }
-        return eTags.first?[1] ?? note.id
+        guard threadRootId == note.id else { return nil }
+        return NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
     }
 
     private var focusedNote: FeedNote {
@@ -89,7 +133,7 @@ struct NoteDetailView: View {
     /// feedService.notes alone drops any branch that passes through a parent —
     /// e.g. focus a grandparent and the parent (plus the reply you came from)
     /// silently disappears.
-    private var threadPool: [FeedNote] {
+    private var allThreadNotes: [FeedNote] {
         var seen = Set<String>()
         var pool: [FeedNote] = []
         for n in feedService.notes where seen.insert(n.id).inserted { pool.append(n) }
@@ -99,13 +143,84 @@ struct NoteDetailView: View {
         return pool
     }
 
-    private var dynamicReplies: [FeedNote] {
-        let targetId = (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
-        return threadPool.filter { $0.parentEventId == targetId }
-            .sorted(by: { $0.createdAt < $1.createdAt })
+    /// The opened note and the notes above it: always shown, whoever wrote them.
+    private var contextNoteIds: Set<String> {
+        Set([note.id, focusedNote.id] + dynamicParents.map(\.id))
+    }
+
+    /// Replies under the opened note, at any depth. `feedService.notes` holds
+    /// every note in memory, Global's firehose included, and none of it was
+    /// filtered here, so blocked people and spam showed up as replies. Replies
+    /// now go through the feed's block rule and spam check, and replies from
+    /// outside your network stay folded until asked for.
+    private func threadReplies(in all: [FeedNote]) -> (visible: [FeedNote], outside: Int) {
+        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let blocked = configService.activeAccountBlockedHexPubkeys
+        let insiders = threadInsiders
+        let replies = ThreadReplyVisibility.descendants(of: replyTargetId, in: all, id: \.id, parentId: \.parentEventId)
+            .filter { n in
+                !FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
+                    && !FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
+            }
+        if showsOutsideReplies { return (replies, 0) }
+        var visible: [FeedNote] = []
+        var outside = 0
+        for n in replies {
+            if ThreadReplyVisibility.isOutside(n.pubkey, trusted: trustedPubkeys, insiders: insiders) {
+                outside += 1
+            } else {
+                visible.append(n)
+            }
+        }
+        return (visible, outside)
+    }
+
+    /// People whose replies are never folded: you, and everyone who wrote
+    /// the opened note or the notes above it.
+    private var threadInsiders: Set<String> {
+        var people = Set([nostrService.activeHexPubkey, note.pubkey, focusedNote.pubkey])
+        people.formUnion(dynamicParents.map(\.pubkey))
+        return people
+    }
+
+    private var replyTargetId: String {
+        (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
+    }
+
+    /// Puts the note you opened at the top, with the posts it answers
+    /// scrollable above. Runs again whenever the content above it changes
+    /// (history arriving, images in it loading, the screen size settling),
+    /// until the reader scrolls: a single jump was undone by whatever loaded
+    /// next, and the opened reply ended up down the screen.
+    private func landOnFocusedNote(proxy: ScrollViewProxy) {
+        guard !didLandOnFocusedNote, !dynamicParents.isEmpty else { return }
+        let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
+        // Next runloop turn, once the revealed history has laid out, and once
+        // more after images above have had a moment to size themselves.
+        // Hidden until settled, these moves are invisible; once the thread is
+        // showing (a slow history arriving later) it glides instead of jumping.
+        let move = { (animated: Bool) in
+            guard !didLandOnFocusedNote else { return }
+            if animated && isSettled {
+                withAnimation(Motion.scrollJump) { proxy.scrollTo(target, anchor: Self.landingAnchor) }
+            } else {
+                proxy.scrollTo(target, anchor: Self.landingAnchor)
+            }
+        }
+        DispatchQueue.main.async { move(true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            move(true)
+            settle()
+        }
+    }
+
+    private func settle() {
+        guard !isSettled else { return }
+        withAnimation(Motion.fade) { isSettled = true }
     }
 
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
+        didLandOnFocusedNote = true
         withAnimation(Motion.scrollJump) {
             focusedNoteId = targetId
             pinnedScrollId = targetId
@@ -148,12 +263,48 @@ struct NoteDetailView: View {
                     // Replies Section
                     repliesSection(proxy: proxy)
 
+                    otherResponsesSection
 
+                    // Room under a short thread, so the opened note can scroll
+                    // to the top with the posts it answers above it. Without
+                    // it a reply with few replies of its own stayed at the
+                    // bottom of the screen: there was nothing below to scroll into.
+                    if !dynamicParents.isEmpty {
+                        Color.clear.frame(height: max(0, viewportHeight - 200))
+                    }
                 }
+                // Makes the opened note (a direct child with its id) a scroll
+                // target, so `scrollPosition` below can hold it at the top.
+                // Without this the pin was ignored, and the posts loading in
+                // above pushed the opened reply down out of view.
+                .scrollTargetLayout()
                 .padding(.top, 16)
                 .padding(.bottom, 90)
+                .opacity(isSettled ? 1 : 0)
             }
-            .scrollPosition(id: $pinnedScrollId, anchor: .top)
+            .scrollPosition(id: $pinnedScrollId, anchor: Self.landingAnchor)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            // The reader took over: stop putting the opened note back on top.
+            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in didLandOnFocusedNote = true })
+            .onChange(of: dynamicParents.count) { _, _ in landOnFocusedNote(proxy: proxy) }
+            .onChange(of: viewportHeight) { _, _ in landOnFocusedNote(proxy: proxy) }
+            // Opening a reply loads the conversation above it, which pushed the
+            // reply below the fold: the pin above does not hold, because the
+            // parents are not direct scroll targets. Once they are shown, put
+            // the note you tapped at the top, with its parents scrollable above.
+            .onChange(of: isLoadingParents) { _, loading in
+                guard !loading else { return }
+                landOnFocusedNote(proxy: proxy)
+            }
+            .task {
+                // Parents already cached: they are on screen from the first frame.
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                if !isLoadingParents { landOnFocusedNote(proxy: proxy) }
+                // Nothing above to wait for, or a slow thread: show it anyway.
+                if dynamicParents.isEmpty && !isLoadingParents { settle(); return }
+                try? await Task.sleep(nanoseconds: UInt64(Self.settleCap * 1_000_000_000))
+                settle()
+            }
             .onChange(of: focusedNoteId) { _, newId in
                 if !newId.isEmpty {
                     fetchEngagement(for: newId)
@@ -174,6 +325,7 @@ struct NoteDetailView: View {
         }
         .navigationTitle("")
         .environment(\.feedActions, noteDetailFeedActions)
+        .hashtagLinks()
 
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -182,12 +334,23 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 8) {
+                    // Condensed / full replies
+                    IconFilterButton(
+                        icon: condensedReplies ? "list.bullet.indent" : "rectangle.grid.1x2",
+                        tooltip: condensedReplies ? "Condensed replies" : "Full replies",
+                        isSelected: condensedReplies,
+                        color: .havenPurple
+                    ) {
+                        withAnimation(Motion.panel) { condensedReplies.toggle() }
+                    }
+
                     // Stats toggle
                     IconFilterButton(
                         icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
                         tooltip: "Thread Stats",
                         isSelected: expandedEngagement,
-                        color: .havenPurple
+                        color: .havenPurple,
+                        label: "Stats"
                     ) {
                         withAnimation(Motion.panel) {
                             expandedEngagement.toggle()
@@ -239,13 +402,13 @@ struct NoteDetailView: View {
             .environmentObject(configService)
         }
         .onAppear {
+            trustedPubkeys = feedService.relayTabTrustedPubkeys()
             expandedEngagement = configService.config.noteDetailExpandedEngagement
             if expandedEngagement {
                 fetchAllThreadEngagement()
             }
-            detailedReactions.removeAll()
-            detailedReposts.removeAll()
-            detailedZaps.removeAll()
+            // Coming back to the page keeps what it already showed; the
+            // fetch below adds to it (each list skips ids it already has).
             if focusedNoteId.isEmpty {
                 focusedNoteId = note.id
             }
@@ -262,6 +425,8 @@ struct NoteDetailView: View {
         }
         .onDisappear {
             threadClient?.disconnect()
+            replyClients.forEach { $0.disconnect() }
+            replyClients.removeAll()
             cancellables.removeAll()
         }
         .sheet(item: Binding<IdentifiableString?>(
@@ -278,9 +443,7 @@ struct NoteDetailView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(isPresented: $showingBroadcastSheet) {
             // Broadcast follows focus for the same reason Reply does: the
             // toolbar acts on the note you are looking at, not the one you
@@ -381,9 +544,28 @@ struct NoteDetailView: View {
         .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
     }
 
+    @ViewBuilder
     private func threadHistory(proxy: ScrollViewProxy) -> some View {
+        if condensedReplies {
+            // The conversation above, one line per note, oldest at the top.
+            VStack(alignment: .leading, spacing: 2) {
+                // Notes above it by someone you blocked are left out, as in
+                // the full history.
+                ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
+                    condensedLine(for: parent, depth: 0, proxy: proxy)
+                }
+            }
+            .threadCard()
+            .padding(.horizontal, 16)
+        } else {
+            fullThreadHistory(proxy: proxy)
+        }
+    }
+
+    private func fullThreadHistory(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(dynamicParents) { parent in
+            // Notes above it by someone you blocked are left out.
+            ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
                 let parentProfile = nostrService.profiles[parent.pubkey]
 
                 Group {
@@ -456,12 +638,42 @@ struct NoteDetailView: View {
         }
     }
 
+    /// Quotes, highlights and other responses, under the replies.
+    @ViewBuilder
+    private var otherResponsesSection: some View {
+        if !otherResponses.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quotes & highlights")
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .padding(.horizontal, 16)
+                ForEach(otherResponses) { response in
+                    OtherResponseCard(note: response, profile: nostrService.profiles[response.pubkey])
+                        .padding(.horizontal, 16)
+                }
+            }
+            .padding(.top, 20)
+        }
+    }
+
     private func repliesSection(proxy: ScrollViewProxy) -> some View {
-        let currentReplies = dynamicReplies
-        let pool = threadPool
+        // One pass over everything in memory per redraw; this used to run
+        // four times (replies, pool, and the outside count twice), each a
+        // full scan of up to 10,000 notes, every time the live feed changed.
+        let all = allThreadNotes
+        let split = threadReplies(in: all)
+        let context = contextNoteIds
+        // What the views draw from: the opened note, the notes above it, and
+        // the replies under it that pass `threadReplies`.
+        let pool = all.filter { context.contains($0.id) } + split.visible
+        let targetId = replyTargetId
+        let currentReplies = pool.filter { $0.parentEventId == targetId }
+            .sorted(by: { $0.createdAt < $1.createdAt })
+        let outsideCount = split.outside
 
         return VStack(alignment: .leading, spacing: 12) {
-            if isLoadingReplies {
+            // Replies already in memory — the one you just posted included —
+            // show at once. The spinner is only for an empty page.
+            if isLoadingReplies && currentReplies.isEmpty && outsideCount == 0 {
                 // Subtle loading indicator — replies are being buffered
                 HStack(spacing: 8) {
                     ProgressView()
@@ -474,7 +686,7 @@ struct NoteDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .transition(.opacity)
-            } else if currentReplies.isEmpty {
+            } else if currentReplies.isEmpty && outsideCount == 0 {
                 Text("No replies yet")
                     .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -492,12 +704,83 @@ struct NoteDetailView: View {
 
                 repliesList(currentReplies, pool: pool, proxy: proxy)
             }
+            outsideRepliesButton(count: outsideCount)
         }
     }
 
-    /// The reply tree. Every reply keeps its own card and its own action bar,
-    /// so replying is one tap from wherever you landed.
+    @ViewBuilder
+    private func outsideRepliesButton(count: Int) -> some View {
+        if !isLoadingReplies && count > 0 {
+            Button {
+                withAnimation(Motion.fade) { showsOutsideReplies = true }
+            } label: {
+                Label(count == 1 ? "Show 1 reply from outside your network"
+                                 : "Show \(count) replies from outside your network",
+                      systemImage: "person.crop.circle.badge.questionmark")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    /// The reply tree. Full: every reply keeps its own card and its own action
+    /// bar. Condensed: one card of lines, nested under what they answer; tap
+    /// a line and it becomes the note you are reading, full size.
+    @ViewBuilder
     private func repliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
+        if condensedReplies {
+            let tree = FeedThreadGrouping.replyTree(under: repliesParentId, in: pool)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(tree) { entry in
+                    condensedLine(for: entry.note, depth: entry.depth, pool: pool, proxy: proxy)
+                }
+            }
+            .threadCard()
+            .padding(.horizontal, 16)
+            .transition(.opacity)
+        } else {
+            fullRepliesList(currentReplies, pool: pool, proxy: proxy)
+        }
+    }
+
+    /// What replies answer: the focused note, or the note a bare repost carries.
+    private var repliesParentId: String {
+        (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
+    }
+
+    /// One condensed line, as the threaded feed draws it: a bare repost shows
+    /// the note it carries, credited to its author.
+    private func condensedLine(for note: FeedNote, depth: Int, pool: [FeedNote] = [], proxy: ScrollViewProxy) -> some View {
+        let rowData = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
+        let original = (note.kind == 6 && note.content.isEmpty) ? rowData.resolvedOriginal : nil
+        let shown = original ?? note
+        let replyCount = pool.reduce(0) { $0 + ($1.parentEventId == note.id ? 1 : 0) }
+        return CondensedNoteLine(
+            note: note,
+            profile: nostrService.profiles[shown.pubkey],
+            displayPubkey: original?.pubkey,
+            depth: depth,
+            style: .plain,
+            replyCount: replyCount,
+            contentOverride: original.map { $0.condensedTitle ?? $0.content },
+            postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
+            mediaURLs: shown.mediaURLs,
+            engagement: CondensedEngagement(
+                reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
+                reposts: rowData.stats.reposts
+            ),
+            onProfile: { showingProfilePubkey = $0 },
+            onTap: { selectAndScrollToNote(note.id, proxy: proxy) }
+        )
+        .id(note.id)
+    }
+
+    private func fullRepliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
                 ForEach(currentReplies) { reply in
                     ThreadedReplyNode(
@@ -585,13 +868,13 @@ struct NoteDetailView: View {
     private func fetchReplies() {
         guard !isLoadingReplies else { return }
         isLoadingReplies = true
+        // A refresh replaces the live subscriptions rather than doubling them.
+        replyClients.forEach { $0.disconnect() }
+        replyClients.removeAll()
 
         // Try local relay AND external relays to find replies
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "replies-\(UUID().uuidString.prefix(8))"
@@ -617,8 +900,24 @@ struct NoteDetailView: View {
                         let activeFocusId = self.focusedNoteId.isEmpty ? self.note.id : self.focusedNoteId
                         
                         let repliesFilter: [String: Any] = ["kinds": [1], "#e": [targetRootId], "limit": 150]
+                        // NIP-22 comments name the thread root in uppercase E,
+                        // so one filter reaches them at any depth.
+                        let commentsFilter: [String: Any] = ["kinds": [NIP10Thread.commentKind], "#E": [targetRootId], "limit": 150]
                         let engagementFilter: [String: Any] = ["kinds": [6, 7, 9735], "#e": [activeFocusId], "limit": 150]
-                        let req = ["REQ", subId, repliesFilter, engagementFilter] as [Any]
+                        var filters: [[String: Any]] = [repliesFilter, commentsFilter, engagementFilter]
+                        if let coord = self.threadRootCoordinate {
+                            filters.append(["kinds": [NIP10Thread.commentKind], "#A": [coord], "limit": 150])
+                        }
+                        // Other responses: quotes of any kind (#q), and
+                        // highlights / voice replies pointing at the root.
+                        filters.append(["#q": [targetRootId], "limit": 50])
+                        filters.append(["kinds": Self.otherResponseKinds, "#e": [targetRootId], "limit": 50])
+                        // An article's highlights name it by address, not by
+                        // this version's id, so `#e` alone never finds them.
+                        if let coord = self.threadRootCoordinate {
+                            filters.append(["kinds": Self.otherResponseKinds, "#a": [coord], "limit": 50])
+                        }
+                        let req = (["REQ", subId] as [Any]) + filters.map { $0 as Any }
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
                             client.send(text: str)
@@ -629,16 +928,31 @@ struct NoteDetailView: View {
 
             client.connect(url: url)
         }
-        
-        // Auto-disconnect and flush any remaining buffered replies after 6 seconds
+        replyClients = activeClients
+
+        // Reveal whatever has arrived after 6 seconds even if no relay has
+        // finished. The subscriptions stay open: later replies stream in.
         DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
-            for client in activeClients {
-                client.disconnect()
-            }
             if self.isLoadingReplies {
                 self.flushPendingReplies()
             }
         }
+    }
+
+    /// Highlights (9802) and voice replies (1244) go below the fold.
+    static let otherResponseKinds = [9802, 1244]
+
+    /// A response that isn't a thread row: a quote (a `q` tag on the root,
+    /// and not itself a reply), a highlight, a voice reply, or any other
+    /// kind that points at the root. Replies, comments, reactions, reposts
+    /// and zaps are handled where they always were.
+    private func isOtherResponse(kind: Int, tags: [[String]]) -> Bool {
+        if [1, NIP10Thread.commentKind, 6, 7, 9735].contains(kind) {
+            guard kind == 1 else { return false }
+            let quotesRoot = tags.contains { $0.count >= 2 && $0[0] == "q" && $0[1] == threadRootId }
+            return quotesRoot && NIP10Thread.parentEventId(kind: kind, tags: tags) == nil
+        }
+        return true
     }
 
     private func handleReplyMessage(_ msg: String, client: WebSocketClient) {
@@ -655,7 +969,22 @@ struct NoteDetailView: View {
            let kind = ev["kind"] as? Int,
            let tags = ev["tags"] as? [[String]] {
 
-            if kind == 1 {
+            if isOtherResponse(kind: kind, tags: tags) {
+                // Shown as "<name> highlighted this": it must really be theirs.
+                if !otherResponses.contains(where: { $0.id == id }),
+                   NostrEventVerifier.isValid(ev),
+                   !FeedNote.isNoiseOrSpam(content: content, tags: tags) {
+                    otherResponses.append(FeedNote(
+                        id: id, pubkey: pubkey, content: content,
+                        createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                        tags: tags, kind: kind
+                    ))
+                    otherResponses.sort { $0.createdAt > $1.createdAt }
+                    if nostrService.profiles[pubkey] == nil {
+                        nostrService.fetchMissingProfiles(for: [pubkey])
+                    }
+                }
+            } else if kind == 1 || kind == NIP10Thread.commentKind {
                 let reply = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -720,7 +1049,7 @@ struct NoteDetailView: View {
                 }
             }
         } else if type == "EOSE" {
-            client.disconnect()
+            // Stored replies are all in; stay subscribed for new ones.
             if isLoadingReplies {
                 flushPendingReplies()
             }
@@ -746,10 +1075,7 @@ struct NoteDetailView: View {
     /// reference this specific note and not the root (e.g. legacy clients).
     private func fetchRepliesForNote(_ noteId: String) {
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "focus-replies-\(UUID().uuidString.prefix(8))"
@@ -773,7 +1099,7 @@ struct NoteDetailView: View {
                        let createdAt = ev["created_at"] as? Int64,
                        let kind = ev["kind"] as? Int,
                        let tags = ev["tags"] as? [[String]],
-                       kind == 1 {
+                       kind == 1 || kind == NIP10Thread.commentKind {
 
                         let reply = FeedNote(
                             id: id,
@@ -802,7 +1128,7 @@ struct NoteDetailView: View {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = ["kinds": [1], "#e": [noteId], "limit": 150]
+                        let filter: [String: Any] = ["kinds": [1, NIP10Thread.commentKind], "#e": [noteId], "limit": 150]
                         let req = ["REQ", subId, filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
@@ -827,10 +1153,7 @@ struct NoteDetailView: View {
         detailedZaps.removeAll()
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "eng-\(eventId.prefix(6))-\(UUID().uuidString.prefix(4))"
@@ -894,43 +1217,65 @@ struct NoteDetailView: View {
         isLoadingExpandedEngagement = true
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
-        let subId = "thread-eng-\(UUID().uuidString.prefix(6))"
+        // One request per small batch of notes, sent one after another on
+        // each relay, so every batch gets its own `limit`.
+        let requests = ThreadEngagementQuery.requests(
+            for: noteIds,
+            subscriptionPrefix: "thread-eng-\(UUID().uuidString.prefix(6))"
+        )
+        let threadIds = Set(noteIds)
+        let timeout = min(6.0 + 2.0 * Double(requests.count - 1), 20.0)
 
         for url in relayURLs {
             let client = WebSocketClient()
             client.isTemporary = true
-            let threadIds = Set(noteIds)
+            var nextRequest = 0
+
+            func sendNextRequest() {
+                guard nextRequest < requests.count else {
+                    client.disconnect()
+                    isLoadingExpandedEngagement = false
+                    return
+                }
+                let request = requests[nextRequest]
+                nextRequest += 1
+                let req = ["REQ", request.subscriptionId, request.filter] as [Any]
+                if let data = try? JSONSerialization.data(withJSONObject: req),
+                   let str = String(data: data, encoding: .utf8) {
+                    client.send(text: str)
+                }
+            }
 
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { msg in
-                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds, client: client)
+                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds) { subId in
+                        guard nextRequest > 0, subId == requests[nextRequest - 1].subscriptionId else { return }
+                        let req = ["CLOSE", subId]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                        sendNextRequest()
+                    }
                 }
                 .store(in: &cancellables)
 
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { state in
-                    if state == .connected {
-                        let filter: [String: Any] = ["kinds": [6, 7, 9735], "#e": noteIds, "limit": 500]
-                        let req = ["REQ", subId, filter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                    if state == .connected, nextRequest == 0 {
+                        sendNextRequest()
                     }
                 }
                 .store(in: &cancellables)
 
             client.connect(url: url)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                 client.disconnect()
                 if self.isLoadingExpandedEngagement {
                     self.isLoadingExpandedEngagement = false
@@ -939,7 +1284,7 @@ struct NoteDetailView: View {
         }
     }
 
-    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, client: WebSocketClient) {
+    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, onEOSE: (String) -> Void) {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json[0] as? String else { return }
@@ -990,9 +1335,8 @@ struct NoteDetailView: View {
                nostrService.profiles[senderPubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [senderPubkey])
             }
-        } else if type == "EOSE" {
-            client.disconnect()
-            isLoadingExpandedEngagement = false
+        } else if type == "EOSE", json.count >= 2, let subId = json[1] as? String {
+            onEOSE(subId)
         }
     }
 
@@ -1000,29 +1344,15 @@ struct NoteDetailView: View {
 
     private func groupedReactionsForNote(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForNote(_ noteId: String) -> (count: Int, sats: Int64) {
         let zaps = perNoteZaps[noteId] ?? []
         var totalSats: Int64 = 0
         for zap in zaps {
-            if let descJson = zap.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
-               let descData = descJson.data(using: .utf8),
-               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
-               let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                totalSats += msats / 1000
-            }
+            totalSats += Int64(LiveChat.zapAmountSats(receiptTags: zap.tags))
         }
         return (count: zaps.count, sats: totalSats)
     }
@@ -1031,48 +1361,6 @@ struct NoteDetailView: View {
         Set((perNoteReposts[noteId] ?? []).map(\.pubkey)).count
     }
 
-    private func likeNote() {
-        let noteId = note.id
-        if feedService.likedEventIds.contains(noteId) {
-            UnlikeNotificationManager.shared.startCountdown {
-                self.feedService.likedEventIds.remove(noteId)
-                var stats = self.feedService.noteStats[noteId] ?? NoteStats()
-                stats.reactions = max(0, stats.reactions - 1)
-                self.feedService.noteStats[noteId] = stats
-                self.feedService.saveInteractionState()
-            }
-            return
-        }
-        feedService.likedEventIds.insert(noteId)
-        var currentStats = feedService.noteStats[noteId] ?? NoteStats()
-        currentStats.reactions += 1
-        feedService.noteStats[noteId] = currentStats
-        feedService.saveInteractionState()
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: "+", tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else { return }
-            nostrService.postEvent(signed)
-        }
-    }
-
-    private func reactToNote(with emoji: String) {
-        if !feedService.likedEventIds.contains(note.id) {
-            feedService.likedEventIds.insert(note.id)
-
-            // Proactively update stats locally
-            var currentStats = feedService.noteStats[note.id] ?? NoteStats()
-            currentStats.reactions += 1
-            feedService.noteStats[note.id] = currentStats
-
-            feedService.saveInteractionState()
-        }
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: emoji, tags: [["e", note.id, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else { return }
-            nostrService.postEvent(signed)
-        }
-    }
-    
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
@@ -1138,10 +1426,7 @@ struct NoteDetailView: View {
         isLoadingParents = true
 
         var relayURLs: [URL] = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-        ] : configService.config.activeFeedRelays
+        let externalStrs = configService.config.readRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
         let subId = "thread-\(UUID().uuidString.prefix(8))"
@@ -1213,7 +1498,7 @@ struct NoteDetailView: View {
                 parentNotes.sort { $0.createdAt < $1.createdAt }
             }
 
-            // Also store in feedService so focusedNote / dynamicReplies can resolve them
+            // Also store in feedService so focusedNote and the replies section can resolve them
             if feedService.findNote(id: id) == nil {
                 feedService.parentNotesCache[id] = parent
             }
@@ -1235,14 +1520,8 @@ struct NoteDetailView: View {
 
     private var groupedReactions: [(emoji: String, count: Int, reactorPubkeys: [String])] {
         if configService.config.zapsOnlyMode { return [] }
-        var groups: [String: [String]] = [:]
-        for rx in detailedReactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: []].append(rx.pubkey)
-        }
-        return groups.map { (emoji: $0.key, count: $0.value.count, reactorPubkeys: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count, reactorPubkeys: $0.reactorPubkeys) }
     }
 
     struct ZapDetail: Hashable {
@@ -1260,12 +1539,9 @@ struct NoteDetailView: View {
                   let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
                   let senderPubkey = zapReq["pubkey"] as? String else { continue }
             
-            var amountSats: Int64 = 0
-            if let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                amountSats = msats / 1000
-            }
+            // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+            let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: zap.tags,
+                                                             requestTags: zapReq["tags"] as? [[String]] ?? []))
             let comment = zapReq["content"] as? String ?? ""
             list.append(ZapDetail(id: zap.id, zapperPubkey: senderPubkey, amountSats: amountSats, comment: comment))
         }
@@ -1420,6 +1696,10 @@ struct ZappersListView: View {
                             }
                         }
                     }
+                    // The whole row, not just the avatar and text: a .plain
+                    // button on the Mac only takes clicks where it draws.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
@@ -1683,28 +1963,15 @@ struct ThreadedReplyNode: View {
     // Per-note engagement helpers for this reply node
     private func groupedReactionsForReply(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForReply(_ noteId: String) -> (count: Int, sats: Int64) {
         let zaps = perNoteZaps[noteId] ?? []
         var totalSats: Int64 = 0
         for zap in zaps {
-            if let descJson = zap.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
-               let descData = descJson.data(using: .utf8),
-               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
-               let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                totalSats += msats / 1000
-            }
+            totalSats += Int64(LiveChat.zapAmountSats(receiptTags: zap.tags))
         }
         return (count: zaps.count, sats: totalSats)
     }
@@ -1719,6 +1986,9 @@ struct ThreadedReplyNode: View {
 struct NoteDetailViewWrapper: View {
     let noteId: String
     var onDismiss: (() -> Void)? = nil
+    /// Pushed onto an existing navigation stack rather than presented as a
+    /// sheet: no stack of its own and no Done button — Back closes it.
+    var pushed = false
     @State private var resolvedNote: FeedNote?
     @State private var isLoading = true
     @State private var error: String?
@@ -1730,7 +2000,31 @@ struct NoteDetailViewWrapper: View {
     @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
-        NavigationStack {
+        if pushed {
+            content
+                .onAppear { fetchNote() }
+        } else {
+            NavigationStack {
+                content
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                if let onDismiss = onDismiss {
+                                    onDismiss()
+                                } else {
+                                    dismiss()
+                                }
+                            }
+                        }
+                    }
+            }
+            .onAppear {
+                fetchNote()
+            }
+        }
+    }
+
+    private var content: some View {
             Group {
                 if let note = resolvedNote {
                     NoteDetailView(note: note)
@@ -1750,21 +2044,6 @@ struct NoteDetailViewWrapper: View {
                     }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        if let onDismiss = onDismiss {
-                            onDismiss()
-                        } else {
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
-        .onAppear {
-            fetchNote()
-        }
     }
 
     private func fetchNote() {
@@ -1819,7 +2098,9 @@ struct NoteDetailViewWrapper: View {
             filter = ["ids": [hexId], "limit": 1]
         }
 
-        let relays = [configService.config.nostrURL, "wss://relay.primal.net"].compactMap { URL(string: $0) }
+        // The inbox too: mentions, replies, likes and zaps on this device are stored there.
+        let relays = ([configService.config.nostrURL, configService.config.nostrURL + "/inbox"]
+                      + configService.config.readRelays).compactMap { URL(string: $0) }
         guard !relays.isEmpty else { return }
 
         for url in relays {
@@ -1963,6 +2244,59 @@ struct NoteNavigationLink<Label: View>: View {
                 label()
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+/// One "below the fold" response: who, what kind, and the text. Quotes link
+/// through to the quoting note.
+struct OtherResponseCard: View {
+    let note: FeedNote
+    let profile: FeedProfile?
+
+    private var label: (String, String) {
+        switch note.kind {
+        case 1: return ("Quoted", "quote.bubble")
+        case 9802: return ("Highlighted", "highlighter")
+        case 1244: return ("Voice reply", "waveform")
+        default: return ("Responded", "arrowshape.turn.up.left")
+        }
+    }
+
+    var body: some View {
+        let card = VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 22)
+                Text(profile?.bestName ?? String(note.pubkey.prefix(8)))
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Label(label.0, systemImage: label.1)
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
+            let text = NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs)
+            if !text.characters.isEmpty {
+                Text(text)
+                    .font(.appSystem(size: 14))
+                    .lineLimit(note.kind == 9802 ? 6 : 4)
+                    .padding(.leading, note.kind == 9802 ? 8 : 0)
+                    .overlay(alignment: .leading) {
+                        if note.kind == 9802 {
+                            Rectangle().fill(Color.havenPurple.opacity(0.6)).frame(width: 3)
+                        }
+                    }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+
+        if note.kind == 1 {
+            NoteNavigationLink(note: note) { card }
+                .buttonStyle(.plain)
+        } else {
+            card
         }
     }
 }

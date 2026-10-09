@@ -7,10 +7,12 @@ enum LNURLService {
         case networkError(Error)
         case invalidResponse
         case invalidInvoice
+        case insecureURL
         
         var errorDescription: String? {
             switch self {
             case .invalidAddress: return "Invalid Lightning Address"
+            case .insecureURL: return "This payment link doesn't use a secure (https) connection, so the wallet won't use it."
             case .networkError(let error): return "Network error: \(error.localizedDescription)"
             case .invalidResponse: return "Invalid response from LNURL service"
             case .invalidInvoice: return "Failed to retrieve a valid invoice"
@@ -26,6 +28,8 @@ enum LNURLService {
         let tag: String
         let nostrPubkey: String?
         let allowsNostr: Bool?
+        /// LUD-12: longest comment the service accepts; nil or 0 means none.
+        var commentAllowed: Int? = nil
     }
     
     struct LNURLCallbackResponse: Decodable {
@@ -57,7 +61,8 @@ enum LNURLService {
         let raw = lnurl.lowercased().hasPrefix("lnurl:") ? String(lnurl.dropFirst(6)) : lnurl
         
         // bech32 decode — HRP is "lnurl", data is the UTF-8 encoded URL bytes
-        guard let decoded = Bech32.decode(raw),
+        guard Bech32.hasValidChecksum(raw),
+              let decoded = Bech32.decode(raw),
               let urlString = String(data: decoded.data, encoding: .utf8),
               let url = URL(string: urlString) else {
             RelayProcessManager.shared.addLog("LNURL: Failed to decode lud06 bech32: \(raw.prefix(20))…", level: "ERROR")
@@ -73,7 +78,7 @@ enum LNURLService {
         RelayProcessManager.shared.addLog("LNURL: Resolving \(url.absoluteString)", level: "DEBUG")
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await secureData(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LNURLError.invalidResponse
@@ -101,13 +106,16 @@ enum LNURLService {
     }
     
     /// Fetches a Bolt11 invoice by calling the LNURL callback with an amount and optionally a Nostr Zap Request
-    static func fetchInvoice(callback: String, amountMsat: Int, zapRequest: NostrEvent?) async throws -> String {
+    static func fetchInvoice(callback: String, amountMsat: Int, zapRequest: NostrEvent?, comment: String? = nil) async throws -> String {
         guard var urlComponents = URLComponents(string: callback) else {
             throw LNURLError.invalidResponse
         }
         
         var queryItems = urlComponents.queryItems ?? []
         queryItems.append(URLQueryItem(name: "amount", value: String(amountMsat)))
+        if let comment, !comment.isEmpty {
+            queryItems.append(URLQueryItem(name: "comment", value: comment))
+        }
         
         if let zapRequest = zapRequest {
             if let eventData = try? JSONEncoder().encode(zapRequest),
@@ -125,7 +133,7 @@ enum LNURLService {
         RelayProcessManager.shared.addLog("LNURL: Fetching invoice from \(url.absoluteString)", level: "DEBUG")
         var invoiceRequest = URLRequest(url: url)
         invoiceRequest.timeoutInterval = 10
-        let (data, response) = try await URLSession.shared.data(for: invoiceRequest)
+        let (data, response) = try await secureData(for: invoiceRequest)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LNURLError.invalidResponse
@@ -150,6 +158,137 @@ enum LNURLService {
                 RelayProcessManager.shared.addLog("LNURL: Raw body: \(body)", level: "DEBUG")
             }
             throw LNURLError.invalidInvoice
+        }
+    }
+
+    // MARK: - Wallet send box: any LNURL, pay or withdraw
+
+    /// LUD-03: a service that pays *you*.
+    struct LNURLWithdrawResponse: Decodable {
+        let callback: String
+        let k1: String
+        let minWithdrawable: Int
+        let maxWithdrawable: Int
+        let defaultDescription: String?
+    }
+
+    enum Resolved {
+        case pay(LNURLPayResponse, host: String)
+        case withdraw(LNURLWithdrawResponse, host: String)
+    }
+
+    /// The service's own error (`{"status":"ERROR","reason":…}`), shown as-is
+    /// because it is usually the only useful explanation there is.
+    struct ServiceError: Error, LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
+
+    /// Resolves whatever the user pasted — address, bech32 LNURL or LUD-17
+    /// link — to the pay or withdraw request behind it.
+    static func resolve(_ target: LightningPayTarget) async throws -> Resolved {
+        let url: URL
+        switch target {
+        case .invoice:
+            throw LNURLError.invalidAddress
+        case .address(let lud16):
+            let parts = lud16.components(separatedBy: "@")
+            guard parts.count == 2,
+                  let u = URL(string: "https://\(parts[1])/.well-known/lnurlp/\(parts[0].addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? parts[0])") else {
+                throw LNURLError.invalidAddress
+            }
+            url = u
+        case .lnurl(let bech32):
+            guard Bech32.hasValidChecksum(bech32),
+                  let decoded = Bech32.decode(bech32),
+                  let s = String(data: decoded.data, encoding: .utf8),
+                  let u = URL(string: s) else { throw LNURLError.invalidAddress }
+            url = u
+        case .lnurlURL(let u):
+            url = u
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await secureData(for: request)
+        } catch LNURLError.insecureURL {
+            throw LNURLError.insecureURL
+        } catch {
+            throw LNURLError.networkError(error)
+        }
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if let obj, (obj["status"] as? String)?.uppercased() == "ERROR" {
+            throw ServiceError(reason: obj["reason"] as? String ?? "The service refused the request.")
+        }
+        guard (response as? HTTPURLResponse)?.statusCode == 200, let obj else {
+            throw LNURLError.invalidResponse
+        }
+        let host = url.host ?? ""
+        switch obj["tag"] as? String {
+        case "payRequest":
+            return .pay(try JSONDecoder().decode(LNURLPayResponse.self, from: data), host: host)
+        case "withdrawRequest":
+            return .withdraw(try JSONDecoder().decode(LNURLWithdrawResponse.self, from: data), host: host)
+        default:
+            throw ServiceError(reason: "This link isn't a payment or a withdrawal, so the wallet can't use it.")
+        }
+    }
+
+    /// LUD-03 step two: hand the service an invoice of ours to pay.
+    static func submitWithdraw(_ w: LNURLWithdrawResponse, invoice: String) async throws {
+        guard var comps = URLComponents(string: w.callback) else { throw LNURLError.invalidResponse }
+        var items = comps.queryItems ?? []
+        items.append(URLQueryItem(name: "k1", value: w.k1))
+        items.append(URLQueryItem(name: "pr", value: invoice))
+        comps.queryItems = items
+        guard let url = comps.url else { throw LNURLError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        let (data, _) = try await secureData(for: request)
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard (obj?["status"] as? String)?.uppercased() == "OK" else {
+            throw ServiceError(reason: obj?["reason"] as? String ?? "The service did not accept the withdrawal.")
+        }
+    }
+
+    // MARK: - Transport
+
+    /// LUD-01: LNURL endpoints are https; only a Tor onion service may use
+    /// plain http (it is end-to-end encrypted by Tor). Anything else could be
+    /// rewritten on the way — on shared Wi-Fi, an invoice swapped for the
+    /// same amount pays someone else, and the amount check can't notice.
+    /// The app's Info.plists allow arbitrary loads, so this check is the
+    /// only thing enforcing it.
+    nonisolated static func isAllowedEndpoint(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        return scheme == "https" || (scheme == "http" && host.hasSuffix(".onion"))
+    }
+
+    /// Every LNURL request goes through here: the URL itself, every
+    /// redirect it follows, and every callback the service hands back.
+    private static func secureData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        guard let url = request.url, isAllowedEndpoint(url) else {
+            RelayProcessManager.shared.addLog("LNURL: Refused insecure URL \(request.url?.absoluteString ?? "")", level: "ERROR")
+            throw LNURLError.insecureURL
+        }
+        return try await URLSession.shared.data(for: request, delegate: redirectGuard)
+    }
+
+    private static let redirectGuard = RedirectGuard()
+
+    /// Declines a redirect to anything `isAllowedEndpoint` refuses; the 3xx
+    /// then comes back as the response and fails the status check.
+    private final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            let allowed = request.url.map(LNURLService.isAllowedEndpoint) ?? false
+            completionHandler(allowed ? request : nil)
         }
     }
 }

@@ -12,9 +12,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -25,6 +29,7 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.condensedTitle
 import com.nostrvault.ui.theme.*
 
 /**
@@ -58,30 +63,34 @@ enum class CondensedLineStyle {
 fun condensedIndentWidth(depth: Int): Dp =
     (minOf(depth, FeedThreadGrouping.MAX_DEPTH) * 14).dp
 
-/** The rail that ties a reply back to what it answers. */
-@Composable
-fun ThreadRail(
-    isOled: Boolean,
-    modifier: Modifier = Modifier,
-    themeColor: Color = LocalNostrVaultColors.current.primary,
-) {
-    Box(
-        modifier = modifier
-            .width(1.5.dp)
-            .fillMaxHeight()
-            .padding(end = 8.dp)
-            .background(themeColor.copy(alpha = if (isOled) 0.35f else 0.22f)),
-    )
-}
+/**
+ * The rail that ties a reply back to what it answers: a line down the left edge,
+ * as tall as the row, with the content set in past it. Mirrors iOS
+ * `CondensedNoteLine.rail` (1.5 wide, 8 of space after).
+ *
+ * Drawn behind rather than as a child Box: a `fillMaxHeight` child of a row in a
+ * lazy list gets no height to fill, and padding inside its 1.5 dp width left it
+ * nothing to paint, so the line never showed on Android.
+ */
+fun Modifier.threadRail(color: Color, isOled: Boolean): Modifier =
+    drawBehind {
+        drawRect(
+            color = color.copy(alpha = if (isOled) 0.35f else 0.22f),
+            size = Size(THREAD_RAIL_WIDTH.toPx(), size.height),
+        )
+    }.padding(start = THREAD_RAIL_WIDTH + 8.dp)
+
+private val THREAD_RAIL_WIDTH = 1.5.dp
 
 /**
  * The single condensed representation of a note.
  *
- * Condensed is a property of the feed and nothing else: the feed's condensed
- * and threaded layouts both draw through here, and the thread view is always
- * expanded so a reply is one tap from wherever you landed. Keeping density on
- * one axis is what stops the two surfaces from disagreeing about how dense
- * "condensed" is. Mirrors iOS `CondensedNoteLine.swift`.
+ * The feed's condensed and threaded layouts both draw through here, and so
+ * does the thread view's condensed mode, so the surfaces cannot disagree about
+ * how dense "condensed" is. In the thread view only the conversation around
+ * the note goes condensed: the note you are reading stays full size with its
+ * action bar, so a reply is one tap from wherever you landed. Mirrors iOS
+ * `CondensedNoteLine.swift`.
  */
 @Composable
 fun CondensedNoteLine(
@@ -102,6 +111,8 @@ fun CondensedNoteLine(
     mediaURLs: List<String> = emptyList(),
     engagement: CondensedEngagement = CondensedEngagement.NONE,
     showsMediaThumbnail: Boolean = true,
+    /** A Translate button under the text for posts in another language. */
+    showsTranslate: Boolean = false,
     onProfileClick: (String) -> Unit = {},
     onTap: (() -> Unit)? = null,
     themeColor: Color = LocalNostrVaultColors.current.primary,
@@ -111,12 +122,17 @@ fun CondensedNoteLine(
     val isRoot = depth == 0
     val authorPubkey = displayPubkey ?: note.pubkey
     val displayName = profile?.bestName ?: shortKey(authorPubkey)
-    val displayContent = contentOverride ?: note.content
+    // An article's lines go on its title, a poll's on its question (iOS condensedTitle).
+    val displayContent = contentOverride ?: note.condensedTitle ?: note.content
 
     val avatarSize = if (isRoot) 32.dp else 26.dp
     val nameSize = if (isRoot) 13.sp else 12.sp
     val bodySize = if (isRoot) 14.sp else 13.sp
-    val bodyLineLimit = if (isRoot) 3 else 2
+    // From Settings: a feed row (CARD) is Compact View; a line in a thread
+    // card (PLAIN) is Threaded View, where replies show one fewer than the root.
+    val bodyLineLimit = LocalFeedLineLimits.current.let { limits ->
+        if (style == CondensedLineStyle.CARD) limits.compactLines else limits.threadedLines(isRoot)
+    }
 
     val backgroundColor = when (style) {
         CondensedLineStyle.CARD ->
@@ -140,13 +156,10 @@ fun CondensedNoteLine(
     Row(
         modifier = modifier
             .padding(start = condensedIndentWidth(depth))
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier),
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .then(if (depth > 0) Modifier.threadRail(themeColor, isOled) else Modifier),
         verticalAlignment = Alignment.Top,
     ) {
-        if (depth > 0) {
-            ThreadRail(isOled = isOled, modifier = Modifier.heightIn(min = 1.dp), themeColor = themeColor)
-        }
-
         Row(
             verticalAlignment = Alignment.Top,
             modifier = Modifier
@@ -180,29 +193,27 @@ fun CondensedNoteLine(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (!profile?.nip05.isNullOrBlank()) {
+                        Spacer(Modifier.width(3.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Verified,
+                            contentDescription = "Verified",
+                            tint = Color(0xFF33CC99),
+                            modifier = Modifier.size(9.dp),
+                        )
+                    }
+                    if (note.isFromNostrVault) {
+                        Spacer(Modifier.width(3.dp))
+                        NostrVaultBadge(size = 9.dp)
+                    }
                     Text(
-                        text = " · ${formatTimestamp(note.createdAt.time / 1000)}",
+                        text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
                         color = TertiaryText,
                         fontSize = 11.sp,
                         maxLines = 1,
                     )
                     Spacer(Modifier.weight(1f))
-                    if (replyCount > 0) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Icon(
-                                imageVector = NostrVaultIcons.Chat,
-                                contentDescription = null,
-                                tint = SecondaryText.copy(alpha = if (isOled) 0.6f else 0.7f),
-                                modifier = Modifier.size(9.dp),
-                            )
-                            Text(
-                                text = "$replyCount",
-                                color = SecondaryText.copy(alpha = if (isOled) 0.6f else 0.7f),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    } else if (note.isReply && depth == 0) {
+                    if (note.isReply && depth == 0) {
                         // A reply marker is noise inside a thread — the rail already says it.
                         Icon(
                             imageVector = NostrVaultIcons.Reply,
@@ -220,21 +231,64 @@ fun CondensedNoteLine(
                             modifier = Modifier.size(10.dp),
                         )
                     }
+                    // Same glyph as the full card's Quote button. iOS: CondensedNoteLine.
+                    if (note.quotedEventIds.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Quote,
+                            contentDescription = "Quote",
+                            tint = InfoBlue.copy(alpha = 0.7f),
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
                 }
 
-                if (displayContent.isNotBlank()) {
+                // Every URL comes out of the line (#170 parity); links come
+                // from the text actually shown, which an override replaces.
+                val (bodyMedia, bodyLinks) = remember(displayContent, mediaURLs, note.mediaURLs) {
+                    val media = FeedNote.parseMediaURLs(displayContent).toSet() + mediaURLs + note.mediaURLs
+                    media to FeedNote.parseLinkURLs(displayContent, media)
+                }
+                val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
+                    NostrMentions.collapseGaps(
+                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet()).replace("\n", " ")
+                    ).trim()
+                }
+                if (plainText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
-                    val plainText = remember(note.id, displayContent, profiles) {
-                        NostrMentions.toPlainText(displayContent, profiles, note.mediaURLs.toSet()).replace("\n", " ").trim()
+                    val line = @Composable {
+                        Text(
+                            text = plainText,
+                            color = SecondaryText,
+                            fontSize = bodySize,
+                            maxLines = bodyLineLimit,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = (bodySize.value + 4).sp,
+                        )
                     }
-                    Text(
-                        text = plainText,
-                        color = SecondaryText,
-                        fontSize = bodySize,
-                        maxLines = bodyLineLimit,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = (bodySize.value + 4).sp,
-                    )
+                    if (showsTranslate) {
+                        TranslatableNoteText(
+                            // The note's own text (a poll's whole body, not its
+                            // one-line summary), so the translation cached under
+                            // this key is the one the full card shows too.
+                            noteKey = note.effectiveEventId,
+                            content = contentOverride ?: note.content,
+                            profiles = profiles,
+                            mediaURLs = bodyMedia,
+                            linkURLs = bodyLinks.toSet(),
+                            fontSize = bodySize,
+                            lineHeight = (bodySize.value + 4).sp,
+                            maxLines = bodyLineLimit,
+                            original = line,
+                        )
+                    } else {
+                        line()
+                    }
+                }
+
+                if (bodyLinks.isNotEmpty()) {
+                    Spacer(Modifier.height(3.dp))
+                    CondensedLinkChip(bodyLinks, themeColor)
                 }
 
                 if (!engagement.isEmpty) {
@@ -258,6 +312,31 @@ fun CondensedNoteLine(
                 CondensedMediaThumbnail(mediaURLs, isRoot)
             }
         }
+    }
+}
+
+/** The first link's domain, `+N` for the rest: links the line no longer prints. */
+@Composable
+private fun CondensedLinkChip(links: List<String>, tint: Color) {
+    val label = if (links.size == 1) "Link to ${linkDomain(links[0])}" else "${links.size} links"
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label },
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.LinkIcon,
+            contentDescription = null,
+            tint = tint.copy(alpha = 0.8f),
+            modifier = Modifier.size(10.dp),
+        )
+        Text(
+            text = linkDomain(links[0]) + if (links.size > 1) " +${links.size - 1}" else "",
+            color = SecondaryText,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -313,3 +392,53 @@ private fun CondensedMediaThumbnail(mediaURLs: List<String>, isRoot: Boolean) {
 
 private fun shortKey(key: String): String =
     if (key.length < 12) key else "npub…" + key.takeLast(6)
+
+/** Sent from Nostr Vault on any platform: the `client` tag every Nostr Vault note carries. */
+val FeedNote.isFromNostrVault: Boolean
+    get() = tags.any { it.size > 1 && it[0] == "client" && it[1].startsWith("Nostr Vault") }
+
+/**
+ * A tiny vault doorway, the app icon's shape, beside the author's name on
+ * posts sent from Nostr Vault. Drawn rather than the icon image: the icon is
+ * dark and turns into a blob at name size. iOS: NostrVaultBadge.
+ */
+@Composable
+fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp) {
+    val colors = LocalNostrVaultColors.current
+    val color = colors.primary
+    androidx.compose.foundation.Canvas(
+        Modifier.size(width = size * 0.78f, height = size)
+            .semantics { contentDescription = "Sent from Nostr Vault" },
+    ) {
+        val h = this.size.height
+        val stroke = maxOf(1.dp.toPx(), h * 0.12f)
+        val inset = stroke / 2
+        val w = this.size.width - stroke
+        val r = w / 2
+        val center = androidx.compose.ui.geometry.Offset(this.size.width / 2, h / 2)
+        // Soft glow behind it (iOS: two shadows). Canvas doesn't clip, so it spills past the box.
+        drawCircle(
+            androidx.compose.ui.graphics.Brush.radialGradient(
+                listOf(color.copy(alpha = 0.45f), color.copy(alpha = 0f)), center = center, radius = h * 0.95f,
+            ),
+            radius = h * 0.95f, center = center,
+        )
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(inset, h - inset)
+            lineTo(inset, inset + r)
+            arcTo(androidx.compose.ui.geometry.Rect(inset, inset, inset + w, inset + w), 180f, 180f, false)
+            lineTo(inset + w, h - inset)
+            close()
+        }
+        // Lit from the keyhole, like the icon's doorway.
+        val keyhole = androidx.compose.ui.geometry.Offset(this.size.width / 2, h * 0.67f)
+        drawPath(path, androidx.compose.ui.graphics.Brush.radialGradient(
+            listOf(color.copy(alpha = 0.55f), color.copy(alpha = 0f)), center = keyhole, radius = h * 0.6f,
+        ))
+        // Lighter along the top edge for a little depth.
+        drawPath(path, androidx.compose.ui.graphics.Brush.verticalGradient(listOf(colors.primaryLight, color)),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+        drawCircle(color.copy(alpha = 0.5f), radius = h * 0.2f, center = keyhole)
+        drawCircle(colors.primaryLight, radius = h * 0.13f, center = keyhole)
+    }
+}

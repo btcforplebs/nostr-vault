@@ -1,10 +1,16 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -14,6 +20,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.theme.*
 
 /**
@@ -22,30 +29,41 @@ import com.nostrvault.ui.theme.*
  * - `nostr:npub1...` / `nostr:nprofile1...` → @displayName (clickable)
  * - `nostr:note1...` / `nostr:nevent1...` → stripped (rendered as QuotedNoteCard elsewhere)
  * - Bare URLs → clickable links in theme color
- * - `#hashtag` → theme-colored text
+ * - `#hashtag` → theme-colored, opens that hashtag's feed ([LocalOpenHashtag])
  * - Media URLs → stripped (rendered as MediaPreviewRow elsewhere)
+ * - [linkURLs] → stripped too, for callers that draw a LinkPreviewCard per
+ *   link (#170 parity). A caller that draws no card must not pass them, or
+ *   the link disappears from the note.
+ *
+ * [selectable] lets the text be long-pressed and selected (iOS
+ * `.textSelection(.enabled)`). Mentions, links and hashtags stay tappable,
+ * as link annotations rather than a tap detector that would fight the
+ * selection gesture; [onPlainTextClick] is not supported in that mode.
  */
 @Composable
 fun NostrContentText(
     content: String,
     profiles: Map<String, FeedProfile>,
     mediaURLs: Set<String> = emptySet(),
+    linkURLs: Set<String> = emptySet(),
     onProfileClick: (String) -> Unit = {},
     onPlainTextClick: (() -> Unit)? = null,
     textColor: Color = PrimaryText,
     fontSize: TextUnit = 15.sp,
     lineHeight: TextUnit = 21.sp,
     modifier: Modifier = Modifier,
+    selectable: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
+    val openHashtag = LocalOpenHashtag.current
 
     // Parse structure ONCE per content. The regex passes + bech32 decode
     // (resolvePubkey) are the expensive part and depend only on the text, so
     // memoize them — otherwise they re-run on every recomposition (e.g. each
     // time the global profile map updates while scrolling), which is the main
     // feed-scroll jank source.
-    val segments = remember(content, mediaURLs) { parseContentSegments(content, mediaURLs) }
+    val segments = remember(content, mediaURLs, linkURLs) { parseContentSegments(content, mediaURLs + linkURLs) }
 
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
@@ -75,9 +93,11 @@ fun NostrContentText(
                     }
 
                     is ContentSegment.Hashtag -> {
+                        pushStringAnnotation("hashtag", segment.tag)
                         withStyle(SpanStyle(color = colors.primary)) {
                             append(segment.text)
                         }
+                        pop()
                     }
 
                     // Quoted note references and media URLs are stripped from text
@@ -88,6 +108,29 @@ fun NostrContentText(
     }
 
     if (annotated.text.isBlank()) return
+
+    if (selectable) {
+        // The links are built once per string; they call through these so a
+        // recomposed caller's new lambdas are the ones that run.
+        val currentProfileClick by rememberUpdatedState(onProfileClick)
+        val currentOpenHashtag by rememberUpdatedState(openHashtag)
+        val linked = remember(annotated, openHashtag != null) {
+            withContentLinks(annotated, hashtagsClickable = openHashtag != null) { tag, item ->
+                when (tag) {
+                    "profile" -> currentProfileClick(item)
+                    "url" -> try { uriHandler.openUri(item) } catch (_: Exception) {}
+                    "hashtag" -> currentOpenHashtag?.invoke(item)
+                }
+            }
+        }
+        SelectionContainer(modifier = modifier) {
+            BasicText(
+                text = linked,
+                style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight),
+            )
+        }
+        return
+    }
 
     @Suppress("DEPRECATION")
     ClickableText(
@@ -106,6 +149,12 @@ fun NostrContentText(
                 try { uriHandler.openUri(it.item) } catch (_: Exception) {}
                 return@ClickableText
             }
+            if (openHashtag != null) {
+                annotated.getStringAnnotations("hashtag", offset, offset).firstOrNull()?.let {
+                    openHashtag(it.item)
+                    return@ClickableText
+                }
+            }
             // No annotation matched — plain text was tapped; propagate to parent
             onPlainTextClick?.invoke()
         },
@@ -113,13 +162,39 @@ fun NostrContentText(
     )
 }
 
+/**
+ * [annotated] with each profile / url / hashtag string annotation also made a
+ * clickable link over the same range, calling [onLink] with the annotation's
+ * tag and item. Text styling is left as it was built. Hashtags only become
+ * links when [hashtagsClickable], matching the tap path, where a screen with no
+ * hashtag feed leaves them inert.
+ */
+internal fun withContentLinks(
+    annotated: AnnotatedString,
+    hashtagsClickable: Boolean,
+    onLink: (tag: String, item: String) -> Unit,
+): AnnotatedString {
+    val tags = if (hashtagsClickable) listOf("profile", "url", "hashtag") else listOf("profile", "url")
+    return AnnotatedString.Builder(annotated).apply {
+        for (range in annotated.getStringAnnotations(0, annotated.length)) {
+            if (range.tag !in tags) continue
+            addLink(
+                LinkAnnotation.Clickable(range.tag) { onLink(range.tag, range.item) },
+                range.start,
+                range.end,
+            )
+        }
+    }.toAnnotatedString()
+}
+
 // ── Content parsing ──────────────────────────────────────────────
 
-private sealed class ContentSegment {
+internal sealed class ContentSegment {
     data class PlainText(val text: String) : ContentSegment()
     data class Mention(val pubkey: String) : ContentSegment()
     data class Url(val url: String, val displayUrl: String) : ContentSegment()
-    data class Hashtag(val text: String) : ContentSegment()
+    /** [text] as written ("#Bitcoin"); [tag] is what its feed asks for ("bitcoin"). */
+    data class Hashtag(val text: String, val tag: String) : ContentSegment()
     data class QuoteRef(val identifier: String) : ContentSegment()
     data class MediaUrl(val url: String) : ContentSegment()
 }
@@ -132,13 +207,20 @@ private val URL_REGEX = Regex(
     RegexOption.IGNORE_CASE,
 )
 
+/**
+ * A #hashtag: letters/digits/underscore after a # that starts a word, with at
+ * least one letter, so URL fragments (`page#top`), HTML entities, markdown
+ * labels and issue numbers ("#123") stay plain. Same pattern as iOS
+ * `NostrContentFormatter.hashtagRegex`.
+ */
 private val HASHTAG_REGEX = Regex(
-    """(?<=\s|^)#(\w{1,50})(?=\s|$)""",
+    """(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)""",
 )
 
-private fun parseContentSegments(
+/** [strippedURLs] are dropped from the text: media, and links drawn as cards. */
+internal fun parseContentSegments(
     content: String,
-    mediaURLs: Set<String>,
+    strippedURLs: Set<String>,
 ): List<ContentSegment> {
     // Collect all matches with their ranges
     data class Match(val range: IntRange, val segment: ContentSegment)
@@ -166,7 +248,7 @@ private fun parseContentSegments(
         // Skip if this range overlaps a nostr: mention/quote already captured
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
 
-        if (url in mediaURLs) {
+        if (url in strippedURLs) {
             matches.add(Match(m.range, ContentSegment.MediaUrl(url)))
         } else {
             val displayUrl = url
@@ -182,7 +264,7 @@ private fun parseContentSegments(
     // Hashtags
     for (m in HASHTAG_REGEX.findAll(content)) {
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
-        matches.add(Match(m.range, ContentSegment.Hashtag(m.value)))
+        matches.add(Match(m.range, ContentSegment.Hashtag(m.value, m.groupValues[1].lowercase())))
     }
 
     // Sort by position and build segment list
@@ -203,5 +285,35 @@ private fun parseContentSegments(
         segments.add(ContentSegment.PlainText(content.substring(cursor)))
     }
 
-    return segments
+    return closeGaps(segments)
+}
+
+/**
+ * Close the holes that stripped URLs and quote references leave behind, the
+ * way iOS `stripURLs` does: "see https://x.com now" reads "see now", not
+ * "see  now", and nothing hangs at either end. Text either side of a stripped
+ * piece is joined first, so the gap that spans it collapses too.
+ */
+private fun closeGaps(segments: List<ContentSegment>): List<ContentSegment> {
+    val joined = mutableListOf<ContentSegment>()
+    for (segment in segments) {
+        when (segment) {
+            is ContentSegment.QuoteRef, is ContentSegment.MediaUrl -> {}
+            is ContentSegment.PlainText -> {
+                val last = joined.lastOrNull()
+                if (last is ContentSegment.PlainText) {
+                    joined[joined.lastIndex] = ContentSegment.PlainText(last.text + segment.text)
+                } else {
+                    joined.add(segment)
+                }
+            }
+            else -> joined.add(segment)
+        }
+    }
+    val tidied = joined.map {
+        if (it is ContentSegment.PlainText) ContentSegment.PlainText(NostrMentions.collapseGaps(it.text)) else it
+    }.toMutableList()
+    (tidied.firstOrNull() as? ContentSegment.PlainText)?.let { tidied[0] = ContentSegment.PlainText(it.text.trimStart()) }
+    (tidied.lastOrNull() as? ContentSegment.PlainText)?.let { tidied[tidied.lastIndex] = ContentSegment.PlainText(it.text.trimEnd()) }
+    return tidied.filterNot { it is ContentSegment.PlainText && it.text.isEmpty() }
 }

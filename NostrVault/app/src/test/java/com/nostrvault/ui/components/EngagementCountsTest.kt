@@ -53,4 +53,15 @@ class EngagementCountsTest {
         assertEquals("300M", zapCountLabel(zapCount = 1, zapAmountSats = 300_000_000L))
         assertEquals("2.1B", zapCountLabel(zapCount = 1, zapAmountSats = 2_100_000_000L))
     }
+
+    @Test
+    fun `a profile count gets its plus only when it is a lower bound`() {
+        assertNull(postEngagementLabel(0, isAtLeast = false))
+        assertEquals("64+", postEngagementLabel(64, isAtLeast = true))
+        assertEquals("64", postEngagementLabel(64, isAtLeast = false))
+        assertEquals("2.1k+", postEngagementLabel(2_100, isAtLeast = true))
+        assertEquals("at least 64 likes", postEngagementDescription(64, "likes", isAtLeast = true))
+        assertEquals("3 reposts", postEngagementDescription(3, "reposts", isAtLeast = false))
+        assertNull(postEngagementDescription(0, "quotes", isAtLeast = false))
+    }
 }

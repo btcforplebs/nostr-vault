@@ -1,7 +1,12 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct DMThreadView: View {
     let counterpartyPubkey: String
+    /// Typed into the message box on open, for the owner to edit or send —
+    /// "Message seller" starts with the listing it is about.
+    var initialMessage: String? = nil
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -12,7 +17,25 @@ struct DMThreadView: View {
     @State private var sendError: String?
     @State private var scrollPosition: String?
     @State private var useNIP04: Bool = false
+    /// The photo picked for the next message, already prepared for upload.
+    @State private var pickedPhotoItem: PhotosPickerItem?
+    @State private var attachment: PickedAttachment?
+    @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     @Environment(\.dismiss) private var dismiss
+
+    /// A photo waiting to go out with the next message. GIFs keep their bytes
+    /// so they still move; everything else is re-encoded as a JPEG, which also
+    /// drops the location the camera wrote into it.
+    private struct PickedAttachment {
+        let data: Data
+        let mimeType: String
+        let preview: Image?
+    }
+
+    private var canSend: Bool {
+        !isSending && (attachment != nil || !messageInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     private var conversation: DMConversation? {
         dmService.conversations.first(where: { $0.id == counterpartyPubkey })
@@ -57,7 +80,11 @@ struct DMThreadView: View {
                                     MessageBubbleView(
                                         message: message,
                                         profile: counterpartyProfile,
-                                        containerWidth: geometry.size.width
+                                        containerWidth: geometry.size.width,
+                                        mediaZoom: mediaZoom,
+                                        onOpenImage: { url, all in
+                                            showingMediaUrl = IdentifiableURL(url: url, allURLs: all)
+                                        }
                                     )
                                     .id(message.id)
                                 }
@@ -107,8 +134,49 @@ struct DMThreadView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 6)
 
+                    if let attachment {
+                        HStack {
+                            ZStack(alignment: .topTrailing) {
+                                Group {
+                                    if let preview = attachment.preview {
+                                        preview.resizable().scaledToFill()
+                                    } else {
+                                        Color.secondary.opacity(0.2)
+                                    }
+                                }
+                                .frame(width: 64, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                                Button {
+                                    self.attachment = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.appSystem(size: 18))
+                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(3)
+                                .disabled(isSending)
+                                .accessibilityLabel("Remove photo")
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 6)
+                    }
+
                     // Message input
                     HStack(alignment: .bottom, spacing: 10) {
+                        PhotosPicker(selection: $pickedPhotoItem, matching: .images) {
+                            Image(systemName: "photo")
+                                .font(.appSystem(size: 17, weight: .medium))
+                                .foregroundColor(.havenPurple)
+                                .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSending)
+                        .accessibilityLabel("Attach photo")
+
                         TextField("Message...", text: $messageInput, axis: .vertical)
                             .textFieldStyle(.plain)
                             .lineLimit(1...5)
@@ -138,16 +206,12 @@ struct DMThreadView: View {
                                     .font(.appSystem(size: 15, weight: .bold))
                                     .foregroundColor(.white)
                                     .frame(width: 34, height: 34)
-                                    .background(
-                                        messageInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                            ? Color.secondary.opacity(0.25)
-                                            : Color.havenPurple
-                                    )
+                                    .background(canSend ? Color.havenPurple : Color.secondary.opacity(0.25))
                                     .clipShape(Circle())
                             }
                         }
                         .buttonStyle(.plain)
-                        .disabled(messageInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+                        .disabled(!canSend)
                     }
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
@@ -184,8 +248,21 @@ struct DMThreadView: View {
                     Text(sendError)
                 }
             }
+            .onChange(of: pickedPhotoItem) { _, item in
+                guard let item else { return }
+                pickedPhotoItem = nil
+                Task { await attachPhoto(item) }
+            }
+            .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
             .onAppear {
+                if messageInput.isEmpty, let initialMessage { messageInput = initialMessage }
                 dmService.markRead(conversationWith: counterpartyPubkey)
+                dmService.visibleConversation = counterpartyPubkey
+            }
+            .onDisappear {
+                if dmService.visibleConversation == counterpartyPubkey {
+                    dmService.visibleConversation = nil
+                }
             }
         }
     }
@@ -196,17 +273,68 @@ struct DMThreadView: View {
         }
     }
 
+    private func attachPhoto(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self) else {
+            sendError = "Couldn't read that photo."
+            return
+        }
+        let prepared: PickedAttachment?
+        if item.supportedContentTypes.contains(where: { $0.conforms(to: .gif) }) {
+            prepared = PickedAttachment(data: data, mimeType: "image/gif", preview: Self.image(from: data))
+        } else if let jpeg = LongFormComposeView.coverJPEG(from: data) {
+            prepared = PickedAttachment(data: jpeg, mimeType: "image/jpeg", preview: Self.image(from: jpeg))
+        } else {
+            prepared = nil
+        }
+        guard let prepared else {
+            sendError = "Couldn't read that photo."
+            return
+        }
+        attachment = prepared
+    }
+
+    private static func image(from data: Data) -> Image? {
+        #if canImport(UIKit)
+        return UIImage(data: data).map { Image(uiImage: $0) }
+        #else
+        return NSImage(data: data).map { Image(nsImage: $0) }
+        #endif
+    }
+
     private func sendMessage() {
         let trimmed = messageInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let photo = attachment
+        guard !trimmed.isEmpty || photo != nil, !isSending else { return }
 
         isSending = true
         let messageToSend = trimmed
         messageInput = ""
+        attachment = nil
+        #if os(iOS)
+        // Tapping send while the keyboard holds an uncommitted word (an inline
+        // prediction or autocorrect suggestion) makes UIKit commit it after the
+        // clear above, which writes the sent text back into the field. Clear
+        // again once that commit has landed, unless it's new typing.
+        DispatchQueue.main.async {
+            let leftover = messageInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !leftover.isEmpty && messageToSend.contains(leftover) {
+                messageInput = ""
+            }
+        }
+        #endif
 
         Task {
             do {
-                try await dmService.sendDM(content: messageToSend, to: counterpartyPubkey, useNIP04: useNIP04)
+                // The photo goes up first: a message that names a URL no
+                // server holds would reach them as a dead link.
+                var photoURL: URL?
+                if let photo {
+                    photoURL = try await ModePostPublisher.upload(
+                        data: photo.data, mimeType: photo.mimeType,
+                        configService: configService, nostrService: nostrService).url
+                }
+                let content = DMAttachment.content(text: messageToSend, imageURL: photoURL)
+                try await dmService.sendDM(content: content, to: counterpartyPubkey, useNIP04: useNIP04)
                 await MainActor.run {
                     isSending = false
                 }
@@ -217,6 +345,7 @@ struct DMThreadView: View {
                 await MainActor.run {
                     isSending = false
                     messageInput = messageToSend
+                    attachment = photo
                     sendError = error.localizedDescription
                 }
             }
@@ -230,6 +359,12 @@ struct MessageBubbleView: View {
     let message: DMMessage
     let profile: FeedProfile?
     var containerWidth: CGFloat = 360
+    var mediaZoom: Namespace.ID? = nil
+    /// Opens a photo the message carries; the second argument is all of them.
+    var onOpenImage: ((URL, [URL]) -> Void)? = nil
+
+    /// The message's photos, and its text without their links.
+    private var parts: (text: String, images: [URL]) { DMAttachment.split(message.content) }
 
     private var sentCorners: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -262,12 +397,29 @@ struct MessageBubbleView: View {
 
             VStack(alignment: message.isFromMe ? .trailing : .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(message.content)
-                        .font(.appSystem(size: 15))
-                        .foregroundColor(message.isFromMe ? .white : .primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .textSelection(.enabled)
+                    let split = parts
+                    ForEach(split.images, id: \.absoluteString) { url in
+                        Button {
+                            onOpenImage?(url, split.images)
+                        } label: {
+                            RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 600, height: 600))
+                                .frame(width: min(240, containerWidth * 0.6), height: min(240, containerWidth * 0.6))
+                                .clipped()
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .mediaZoomSource(url, namespace: mediaZoom)
+                        .accessibilityLabel("Photo")
+                    }
+
+                    if !split.text.isEmpty || split.images.isEmpty {
+                        Text(split.text)
+                            .font(.appSystem(size: 15))
+                            .foregroundColor(message.isFromMe ? .white : .primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .textSelection(.enabled)
+                    }
 
                     if message.isNIP04 {
                         HStack(spacing: 3) {
@@ -278,6 +430,7 @@ struct MessageBubbleView: View {
                         }
                         .foregroundColor(message.isFromMe ? .white.opacity(0.6) : .orange.opacity(0.8))
                         .padding(.horizontal, 14)
+                        .padding(.top, split.text.isEmpty ? 8 : 0)
                         .padding(.bottom, 8)
                     }
                 }

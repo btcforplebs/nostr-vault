@@ -41,10 +41,16 @@ android {
         applicationId = "com.nostrvault.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "2.7.0"
+        versionCode = 20
+        versionName = "2.7.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // nostr.build GIF API key. The repo is public, so it never goes in
+        // git: it comes from the gitignored local.properties. Without it the
+        // GIF button stays hidden (a picker that finds nothing must not ship).
+        val gifKey = (localProps["NOSTR_BUILD_GIF_KEY"] as String?)?.trim().orEmpty()
+        buildConfigField("String", "NOSTR_BUILD_GIF_KEY", "\"$gifKey\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -161,6 +167,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ---- Image Loading (Coil) ----
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
@@ -170,6 +177,9 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
     // Live streams are HLS (.m3u8); ExoPlayer needs this to open one.
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    // Music: a MediaSessionService keeps Wavlake playing in the background
+    // with notification and lock-screen controls.
+    implementation("androidx.media3:media3-session:1.5.1")
 
     // ---- JSON ----
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
@@ -191,6 +201,13 @@ dependencies {
     // ---- Markdown ----
     implementation("com.github.jeziellago:compose-markdown:0.5.4")
 
+    // ---- On-device translation (ML Kit) ----
+    // "Translate post": language ID ships its model in the APK; translation
+    // downloads one model per language from Google on first use. The note
+    // text never leaves the phone.
+    implementation("com.google.mlkit:language-id:17.0.6")
+    implementation("com.google.mlkit:translate:17.0.3")
+
     // ---- Permissions ----
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
 
@@ -201,6 +218,8 @@ dependencies {
     // ---- Testing ----
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.13")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

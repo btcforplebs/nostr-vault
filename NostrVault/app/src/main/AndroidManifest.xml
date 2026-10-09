@@ -13,10 +13,16 @@
          so the service starts as dataSync there instead (see
          RelayForegroundService.foregroundServiceType). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Music: background playback of Wavlake songs and live-stream audio. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Battery optimization exemption -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Haptics: the zap strike's crack and rumble (ZapHaptics). Normal
+         permission, granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -107,6 +113,24 @@
             </intent-filter>
         </activity>
 
+        <!-- Music playback (Wavlake): keeps playing in the background, with
+             notification and lock-screen controls via Media3's MediaSession. -->
+        <service
+            android:name=".service.music.MusicPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Holds the foreground while RelayImportService imports notes;
+             the relay service is stopped for the length of the import. -->
+        <service
+            android:name=".service.ImportForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <!-- 24/7 Relay Foreground Service -->
         <service
             android:name=".relay.RelayForegroundService"
@@ -126,6 +150,20 @@
             </intent-filter>
         </receiver>
 
+
+        <!-- Widget settings (Quick Actions slots, Feed source/density/avatars,
+             Mosaic layout). Exported because the launcher starts it with
+             APPWIDGET_CONFIGURE; it can only change widget settings. -->
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NostrVault">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
 
         <!-- Home-screen widgets (Glance). Each receiver names the provider XML
              that gives its size; the widget itself draws from the snapshot file
@@ -164,6 +202,30 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_feed_info" />
+        </receiver>
+
+        <!-- ML Kit (Translate post) brings Google's datatransport, which
+             uploads ML Kit usage logs through its CCT backend. Removing the
+             backend's registration leaves the runtime with nowhere to send
+             them, so they are dropped on the phone: the translation model
+             download stays the only thing ML Kit fetches. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            android:exported="false">
+            <meta-data
+                android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                tools:node="remove" />
+        </service>
+        <receiver
+            android:name=".widget.MosaicReceiver"
+            android:exported="true"
+            android:label="@string/widget_mosaic_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_mosaic_info" />
         </receiver>
     </application>
 

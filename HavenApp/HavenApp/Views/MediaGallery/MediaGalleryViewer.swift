@@ -152,22 +152,29 @@ extension MediaGalleryView {
 
                         Menu {
                             Button(role: .destructive, action: {
-                                deleteMediaFromMirrors(item: item)
+                                pendingViewerDelete = .mirrors
                             }) {
                                 Label("Delete from mirrors", systemImage: "trash")
                             }
                             Button(role: .destructive, action: {
-                                deleteMediaEverywhere(item: item)
+                                pendingViewerDelete = .everywhere
                             }) {
                                 Label("Delete everywhere", systemImage: "trash.fill")
                             }
                         } label: {
                             Image(systemName: "trash")
                                 .font(.appSystem(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
                                 .padding(10)
                                 .background(Color.white.opacity(0.1))
                                 .cornerRadius(8)
+                                .contentShape(Rectangle())
                         }
+                        #if os(macOS)
+                        // Without .button, macOS drops the tile its neighbours have.
+                        .menuStyle(.button)
+                        .menuIndicator(.hidden)
+                        #endif
                         .buttonStyle(.plain)
 
                         SourceIndicatorView(
@@ -231,7 +238,7 @@ extension MediaGalleryView {
 
                 Spacer()
 
-                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true) { mediaItem in
+                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
                     MediaItemRenderer(mediaItem: mediaItem)
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
@@ -269,6 +276,12 @@ extension MediaGalleryView {
                     .foregroundColor(.secondary)
                     .padding(.bottom)
                     .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+            }
+        }
+        .confirmMediaDelete($pendingViewerDelete) { scope in
+            switch scope {
+            case .mirrors: deleteMediaFromMirrors(item: item)
+            case .everywhere: deleteMediaEverywhere(item: item)
             }
         }
         .transition(.opacity)

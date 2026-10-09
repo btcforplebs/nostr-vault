@@ -79,6 +79,7 @@ type Config struct {
 	NegentropyServeEnabled               bool                `json:"negentropy_serve_enabled"`
 	SyncWindowDays                       int                 `json:"sync_window_days"`
 	TombstonePath                        string              `json:"tombstone_path"`
+	FollowersPath                        string              `json:"followers_path"`
 	NotifyBatchLimit                     int                 `json:"notify_batch_limit"`
 	// Event kinds the host app wants notifications for, as a set. Empty means
 	// "no preference expressed" and every notifiable kind qualifies. Without
@@ -158,6 +159,7 @@ func loadConfig() Config {
 		NegentropyServeEnabled:               getEnvBool("NEGENTROPY_SERVE_ENABLED", true),
 		SyncWindowDays:                       getEnvInt("SYNC_WINDOW_DAYS", 30),
 		TombstonePath:                        getEnvString("TOMBSTONE_PATH", "db/tombstones.jsonl"),
+		FollowersPath:                        getEnvString("FOLLOWERS_PATH", "db/followers.json"),
 		NotifyBatchLimit:                     getEnvInt("NOTIFY_BATCH_LIMIT", 5),
 		NotifyKinds:                          getKindSet("NOTIFY_KINDS"),
 		NotifyMaxAgeHours:                    getEnvInt("NOTIFY_MAX_AGE_HOURS", 24),

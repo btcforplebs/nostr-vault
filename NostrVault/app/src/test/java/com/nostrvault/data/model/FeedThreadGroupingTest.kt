@@ -43,6 +43,27 @@ class FeedThreadGroupingTest {
     private fun ids(thread: FeedThread): List<String> = thread.entries.map { it.id }
     private fun depths(thread: FeedThread): List<Int> = thread.entries.map { it.depth }
 
+    /**
+     * Popular and Global: the feed's posts come first, their fetched replies
+     * after them. A fresh reply on a low post must not lift it above the top
+     * one. iOS: testKeepFeedOrderKeepsTheRankingDespiteNewerReplies.
+     */
+    @Test
+    fun `keepFeedOrder keeps the ranking despite newer replies`() {
+        val notes = listOf(
+            note("top", 100),
+            note("second", 200),
+            note("reply", 900, parent = "second", root = "second", author = "bob"),
+        )
+
+        val ranked = FeedThreadGrouping.build(notes, keepFeedOrder = true)
+        assertEquals(listOf("top", "second"), ranked.map { it.rootId })
+        assertEquals(listOf("reply"), ranked[1].replies.map { it.id })
+
+        // Without it, the reply's activity reorders them.
+        assertEquals(listOf("second", "top"), FeedThreadGrouping.build(notes).map { it.rootId })
+    }
+
     @Test
     fun `standalone notes each become their own thread`() {
         val notes = listOf(note("b", 200), note("a", 100))
@@ -151,7 +172,69 @@ class FeedThreadGroupingTest {
     }
 
     @Test
+    fun `latest replies keeps the newest in reading order`() {
+        // Reading order is r1, r1a, r2, r2a, r3; the three newest are r2a, r1a, r3.
+        val notes = listOf(
+            note("r2a", 600, parent = "r2", root = "root"),
+            note("r1a", 500, parent = "r1", root = "root"),
+            note("r3", 400, parent = "root", root = "root"),
+            note("r2", 300, parent = "root", root = "root"),
+            note("r1", 200, parent = "root", root = "root"),
+            note("root", 100),
+        )
+        val thread = FeedThreadGrouping.build(notes)[0]
+
+        assertEquals(listOf("r1", "r1a", "r2", "r2a", "r3"), thread.replies.map { it.id })
+        assertEquals(listOf("r1a", "r2a", "r3"), thread.latestReplies(3).map { it.id })
+        assertEquals(thread.replies.map { it.id }, thread.latestReplies(5).map { it.id })
+    }
+
+    @Test
     fun `empty feed produces no threads`() {
         assertTrue(FeedThreadGrouping.build(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `fetched root shows when the reply's parent is missing`() {
+        // r answers p, which no relay returned; r's NIP-10 root tag names
+        // "root", which was fetched. The root is no ancestor of anything in
+        // the pool, so the parent walk alone never added it and the card said
+        // "Loading the start of this thread…" with the root already cached.
+        val root = note("root", 100, author = "dave")
+        val notes = listOf(note("r", 300, parent = "p", root = "root", author = "bob"))
+
+        val threads = FeedThreadGrouping.build(notes) { id -> if (id == "root") root else null }
+
+        assertEquals(1, threads.size)
+        assertEquals("root", threads[0].rootId)
+        assertEquals("root", threads[0].root?.id)
+        assertEquals(listOf("root", "r"), ids(threads[0]))
+        assertEquals(listOf(0, 1), depths(threads[0]))
+    }
+
+    // ── replyTree (the thread view's condensed replies) ──
+
+    @Test
+    fun `reply tree is depth first oldest first`() {
+        val pool = listOf(
+            note("b", 20, parent = "focus"),
+            note("a", 10, parent = "focus"),
+            note("a2", 40, parent = "a"),
+            note("a1", 30, parent = "a"),
+            note("other", 5, parent = "elsewhere"),
+        )
+        val tree = FeedThreadGrouping.replyTree("focus", pool)
+        assertEquals(listOf("a", "a1", "a2", "b"), tree.map { it.id })
+        assertEquals(listOf(1, 2, 2, 1), tree.map { it.depth })
+    }
+
+    @Test
+    fun `reply tree caps depth and survives cycles`() {
+        val pool = mutableListOf(note("r1", 1, parent = "focus"))
+        for (i in 2..7) pool.add(note("r$i", i.toLong(), parent = "r${i - 1}"))
+        pool.add(note("focus", 0, parent = "r7")) // a cycle back to the top
+        val tree = FeedThreadGrouping.replyTree("focus", pool)
+        assertEquals(7, tree.size)
+        assertEquals(FeedThreadGrouping.MAX_DEPTH, tree.maxOf { it.depth })
     }
 }

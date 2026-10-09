@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import com.nostrvault.BuildConfig
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,7 +43,7 @@ object AmberResultBridge {
 
             if (result.resultCode == Activity.RESULT_OK) {
                 val data = result.data
-                Log.w("AmberResultBridge", "DBG: OK extras keys=${data?.extras?.keySet()} result=${data?.getStringExtra("result")?.length} signature=${data?.getStringExtra("signature")?.length} event=${data?.getStringExtra("event")?.length}")
+                if (BuildConfig.DEBUG) Log.w("AmberResultBridge", "DBG: OK extras keys=${data?.extras?.keySet()} result=${data?.getStringExtra("result")?.length} signature=${data?.getStringExtra("signature")?.length} event=${data?.getStringExtra("event")?.length}")
                 deferred.complete(
                     AmberResult(
                         resultCode = result.resultCode,

@@ -22,15 +22,17 @@ import com.nostrvault.ui.theme.*
 @Composable
 fun CustomZapSheet(
     sheetState: SheetState,
+    /** Starts selected: the default zap amount from Wallet settings, in sats. */
+    defaultAmount: Int,
     onDismiss: () -> Unit,
     onZap: (Int) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
-    var selectedAmount by remember { mutableIntStateOf(21) }
+    var selectedAmount by remember { mutableIntStateOf(defaultAmount.coerceAtLeast(1)) }
     var customAmount by remember { mutableStateOf("") }
     var useCustom by remember { mutableStateOf(false) }
 
-    val presetAmounts = listOf(21, 100, 500, 1_000, 5_000, 10_000)
+    val presetAmounts = listOf(21, 100, 500, 1_000, 5_000, 10_000, 50_000)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -64,9 +66,9 @@ fun CustomZapSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            // Preset grid (2 columns x 3 rows)
+            // Preset grid, 4 across as on iOS
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (row in presetAmounts.chunked(2)) {
+                for (row in presetAmounts.chunked(PRESET_COLUMNS)) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -77,8 +79,11 @@ fun CustomZapSheet(
                                 onClick = {
                                     selectedAmount = amount
                                     useCustom = false
+                                    customAmount = ""
                                 },
                                 shape = RoundedCornerShape(10.dp),
+                                // Four across: the default 24dp side padding would wrap "10K".
+                                contentPadding = PaddingValues(horizontal = 4.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = if (isSelected) colors.primary.copy(alpha = 0.15f)
                                     else WindowBackground.copy(alpha = 0.5f),
@@ -100,9 +105,12 @@ fun CustomZapSheet(
                                     color = if (isSelected) colors.primary else PrimaryText,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     fontSize = 16.sp,
+                                    maxLines = 1,
                                 )
                             }
                         }
+                        // A short last row keeps the grid's column widths.
+                        repeat(PRESET_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -142,6 +150,7 @@ fun CustomZapSheet(
             Button(
                 onClick = {
                     if (effectiveAmount > 0) {
+                        ZapFlight.sheetConfirmed()
                         onZap(effectiveAmount)
                         onDismiss()
                     }
@@ -163,7 +172,7 @@ fun CustomZapSheet(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Zap ${formatZapAmount(effectiveAmount)} sats",
+                    text = "Zap ${if (effectiveAmount > 0) "%,d".format(effectiveAmount) else "---"} sats",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                 )
@@ -172,6 +181,9 @@ fun CustomZapSheet(
     }
 }
 
+private const val PRESET_COLUMNS = 4
+
+/** Preset labels only: every preset is a round number of thousands. */
 private fun formatZapAmount(amount: Int): String {
     return when {
         amount >= 1000 -> "${amount / 1000}K"

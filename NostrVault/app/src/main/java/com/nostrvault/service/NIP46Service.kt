@@ -4,22 +4,72 @@ import android.util.Log
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Port of NIP46Service / cshared.go NIP-46 bridge -- remote signer protocol.
  * All operations delegate to the Go FFI bridge which manages the bunker
  * client lifecycle, WebSocket subscriptions, and RPC timeouts.
  *
- * The Go bridge holds a SINGLE bunker session, so only the active account's
- * signer is connected at any time; switching accounts disconnects/reconnects.
+ * The Go core (#168) keeps one live bunker session per signer; one of them is
+ * active. Switching back to an account whose session is alive re-activates it
+ * with no round trip to the signer instead of logging in again (#229 parity).
  */
 object NIP46Service {
 
     private const val TAG = "NIP46Service"
+
+    /** The bunker calls this service makes, so tests can stand in for the native bridge. */
+    interface Bridge {
+        fun connect(clientSecretKey: String, bunkerUrl: String): String?
+        fun activate(signerPubkey: String): String?
+        fun drop(signerPubkey: String)
+        fun ping(): Int
+    }
+
+    private object NativeBridge : Bridge {
+        override fun connect(clientSecretKey: String, bunkerUrl: String) = HavenBridge.nip46Connect(clientSecretKey, bunkerUrl)
+        override fun activate(signerPubkey: String) = HavenBridge.nip46Activate(signerPubkey)
+        override fun drop(signerPubkey: String) = HavenBridge.nip46Drop(signerPubkey)
+        override fun ping() = HavenBridge.nip46Ping()
+    }
+
+    @Volatile internal var bridge: Bridge = NativeBridge
+
+    /**
+     * Guards the connect / ensure decision only, so two callers cannot both
+     * log in (the second used to tear down, or cancel, the first). It is never
+     * held across a sign request: one hung bunker must not freeze every sign.
+     */
+    private val connectMutex = Mutex()
+
+    /** The user pubkey the active session answers for, when connected. */
+    @Volatile var connectedPubkey: String? = null
+        private set
+
+    /** The Go-side key ([signerKey]) of the active session, when connected. */
+    @Volatile internal var activeSignerKey: String? = null
+        private set
+
+    /**
+     * Kinds signed because the person did something (iOS `userActionKinds`).
+     * 10015 is the hashtag Follow button: a tap, like a kind 3 follow.
+     */
+    val userActionKinds: Set<Int> = setOf(0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 10015, 30023)
+
+    /** Sign requests sent to the active session and not yet answered. */
+    private val outstandingRequests = AtomicInteger(0)
+
+    private val _lastError = MutableStateFlow<String?>(null)
+    /** Why the last connect for an account failed (e.g. a signer answering as another key). */
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     private val _isConnected = MutableStateFlow(false)
     /** Whether a bunker session is currently connected (active account's signer). */
@@ -35,6 +85,8 @@ object NIP46Service {
         withContext(Dispatchers.IO) {
             try {
                 val pubkey = HavenBridge.nip46Connect(clientSecretKey, bunkerUrl)
+                connectedPubkey = pubkey
+                activeSignerKey = if (pubkey != null) bunkerHost(bunkerUrl) else null
                 _isConnected.value = pubkey != null
                 pubkey
             } catch (e: Exception) {
@@ -44,9 +96,165 @@ object NIP46Service {
             }
         }
 
-    /** Connect using a stored per-account bunker config. */
-    suspend fun connectForAccount(cfg: AccountBunkerConfig): String? =
-        connect(cfg.clientSecretKey, cfg.bunkerURI)
+    /**
+     * Makes [expectedPubkey]'s bunker the active signer, under one lock:
+     * re-activates its live session when there is one, else logs in. A
+     * signer that answers for any other key is dropped and the account left
+     * disconnected with an error; it is never kept as connected.
+     * @return [expectedPubkey] on success, null otherwise.
+     */
+    suspend fun connectForAccount(cfg: AccountBunkerConfig, expectedPubkey: String): String? =
+        connectMutex.withLock {
+            withContext(Dispatchers.IO) {
+                if (_isConnected.value && connectedPubkey == expectedPubkey) return@withContext expectedPubkey
+                _isConnected.value = false
+                connectedPubkey = null
+                activeSignerKey = null
+                val signer = signerKey(cfg)
+
+                val reused = try {
+                    if (signer.isEmpty()) null else bridge.activate(signer)
+                } catch (e: Exception) { null }
+                if (reused != null) {
+                    // No ping first: the session's relay pool redials a dropped
+                    // socket on its own, and a signer app asleep on the phone
+                    // (Clave) misses a ping — which used to throw away a working
+                    // session and log in from scratch (up to 90 s, often a fresh
+                    // approval) on every switch. A session that really is dead
+                    // is caught by [recheckSession] after a sign goes unanswered.
+                    if (reused == expectedPubkey) return@withContext accept(expectedPubkey, signer)
+                    bridge.drop(signer)
+                }
+
+                val pubkey = try {
+                    bridge.connect(cfg.clientSecretKey, cfg.bunkerURI)
+                } catch (e: Exception) {
+                    Log.e(TAG, "NIP-46 connect failed: ${e.message}")
+                    null
+                }
+                when {
+                    pubkey == null -> {
+                        _lastError.value = "Could not reach the bunker"
+                        null
+                    }
+                    pubkey != expectedPubkey -> {
+                        if (signer.isNotEmpty()) bridge.drop(signer)
+                        _lastError.value = "This bunker signs as ${pubkey.take(8)}…, not this account"
+                        Log.e(TAG, "NIP-46 connect rejected: signer answered as ${pubkey.take(8)}, expected ${expectedPubkey.take(8)}")
+                        null
+                    }
+                    else -> accept(pubkey, signer)
+                }
+            }
+        }
+
+    /** Resets state between unit tests (no native call). */
+    internal fun disconnectForTest() {
+        _isConnected.value = false
+        connectedPubkey = null
+        activeSignerKey = null
+        outstandingRequests.set(0)
+        _lastError.value = null
+        bridge = NativeBridge
+    }
+
+    private fun accept(pubkey: String, signer: String): String {
+        connectedPubkey = pubkey
+        activeSignerKey = signer.ifEmpty { null }
+        _isConnected.value = true
+        _lastError.value = null
+        return pubkey
+    }
+
+    private fun bunkerHost(uri: String): String =
+        runCatching { java.net.URI(uri).host }.getOrNull().orEmpty()
+
+    /**
+     * The key the Go core files a signer's session under: the bunker link's
+     * host (the remote signer's key), else the stored signer key. The stored
+     * `signerPubkey` is the account's own key, which differs from the remote
+     * signer's for bunkers such as Clave, so it is only a fallback.
+     */
+    fun signerKey(cfg: AccountBunkerConfig): String =
+        bunkerHost(cfg.bunkerURI).ifEmpty { cfg.signerPubkey }
+
+    /**
+     * The session to close when an account's bunker config goes from [old] to
+     * [new] (null: removed). Pairing again over the same signer already
+     * replaced its session in the Go core, so that one is left alone; a
+     * different signer's old session would otherwise linger, live, unused.
+     */
+    fun sessionToClose(old: AccountBunkerConfig?, new: AccountBunkerConfig?): String? {
+        val oldKey = old?.let { signerKey(it) }?.ifEmpty { null } ?: return null
+        return if (new == null || signerKey(new) != oldKey) oldKey else null
+    }
+
+    /**
+     * Closes one signer's Go session, e.g. when its account is removed or
+     * paired again with another signer.
+     */
+    fun dropSession(signerKey: String) {
+        if (signerKey.isEmpty()) return
+        try {
+            bridge.drop(signerKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "NIP-46 drop failed: ${e.message}")
+        }
+        if (activeSignerKey == signerKey) detachForAccountSwitch()
+    }
+
+    /**
+     * Stops treating the current session as this app's signer, leaving it
+     * connected in the Go core. Used on account switch, so switching back is
+     * instant instead of a fresh login.
+     */
+    fun detachForAccountSwitch() {
+        _isConnected.value = false
+        connectedPubkey = null
+        activeSignerKey = null
+    }
+
+    /**
+     * A post the signer never answered may mean a broken session: a relay can
+     * close the reply subscription for good, or the reply listener can sit in
+     * a long redial backoff after an outage. It may also just mean nobody
+     * approved it in time. One ping tells them apart; only if that fails too
+     * (and [sessionKey] is still the active session, with nothing else in
+     * flight) is the session dropped, so the next request logs in afresh.
+     */
+    internal suspend fun recheckSession(sessionKey: String?) {
+        if (sessionKey.isNullOrEmpty() || !stillOnSession(sessionKey)) return
+        val alive = withContext(Dispatchers.IO) {
+            try { bridge.ping() == 0 } catch (e: Exception) { false }
+        }
+        if (alive) return
+        connectMutex.withLock {
+            // Re-check: a switch or another request may have moved on meanwhile.
+            if (!stillOnSession(sessionKey)) return
+            try { bridge.drop(sessionKey) } catch (e: Exception) { Log.e(TAG, "NIP-46 drop failed: ${e.message}") }
+            detachForAccountSwitch()
+            _lastError.value = "The signer did not answer"
+            Log.e(TAG, "NIP-46: signer did not answer a request or a ping; dropped the session, next request logs in again")
+        }
+    }
+
+    private fun stillOnSession(sessionKey: String) =
+        _isConnected.value && outstandingRequests.get() == 0 && activeSignerKey == sessionKey
+
+    /**
+     * Signs through [signerPubkey]'s live session without making it active and
+     * without logging in (the owner's relay AUTH while another account is
+     * active). Null when there is no live session for it.
+     */
+    suspend fun signEventWith(signerPubkey: String, eventJson: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                HavenBridge.nip46SignEventWith(signerPubkey, eventJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "NIP-46 signWith failed: ${e.message}")
+                null
+            }
+        }
 
     /** Disconnect from the NIP-46 bunker. */
     fun disconnect() {
@@ -56,22 +264,36 @@ object NIP46Service {
             Log.e(TAG, "NIP-46 disconnect failed: ${e.message}")
         } finally {
             _isConnected.value = false
+            connectedPubkey = null
+            activeSignerKey = null
         }
     }
 
     /**
      * Sign an event via the remote signer.
+     * @param userInitiated Something the person did (a post, a reaction). Only
+     *   then does a failure trigger [recheckSession]: background requests such
+     *   as relay AUTH routinely go unanswered and say nothing about the session.
      * @return Signed event JSON string, or null on failure.
      */
-    suspend fun signEvent(eventJson: String): String? =
-        withContext(Dispatchers.IO) {
+    suspend fun signEvent(eventJson: String, userInitiated: Boolean = false): String? {
+        // The session this request goes to, so a late failure can never drop
+        // the session of an account switched to while it was waiting.
+        val sessionKey = activeSignerKey
+        val signed = withContext(Dispatchers.IO) {
+            outstandingRequests.incrementAndGet()
             try {
                 HavenBridge.nip46SignEvent(eventJson)
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-46 sign failed: ${e.message}")
                 null
+            } finally {
+                outstandingRequests.decrementAndGet()
             }
         }
+        if (signed == null && userInitiated) recheckSession(sessionKey)
+        return signed
+    }
 
     /** Get the signer's public key. */
     suspend fun getPublicKey(): String? =
@@ -138,6 +360,105 @@ object NIP46Service {
                 false
             }
         }
+
+    // ── Sign in with a signer app (nostrconnect://) ──────────────────────
+
+    /**
+     * One pairing attempt in the client-initiated flow: we show a
+     * nostrconnect:// URI carrying our pubkey and a fresh secret, and the
+     * signer app answers with that secret. Kept for the whole attempt so
+     * "Open signer again" re-sends the SAME request (iOS `NostrConnectRequest`).
+     */
+    data class NostrConnectRequest(
+        val uri: String,
+        val clientSecretKey: String,
+        val clientPubkey: String,
+        val secret: String,
+        val relays: List<String>,
+        /** Unix seconds; the answer is read from here on (a little before shown). */
+        val startedAt: Long,
+    )
+
+    /**
+     * relay.powr.build is the relay Clave's push proxy watches and it keeps
+     * kind 24133, so an answer sent while this app was in the background can
+     * be read back; damus keeps them too. Same pair as iOS.
+     */
+    val nostrConnectRelays = listOf("wss://relay.powr.build", "wss://relay.damus.io")
+
+    private const val NOSTR_CONNECT_PERMS = "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt"
+
+    /** The nostrconnect:// URI for [clientPubkey] and [secret] (NIP-46 client-initiated). */
+    fun nostrConnectUri(clientPubkey: String, secret: String, relays: List<String>): String {
+        val params = relays.map { "relay" to it } + listOf(
+            "secret" to secret,
+            "perms" to NOSTR_CONNECT_PERMS,
+            "name" to "Nostr Vault",
+            "url" to "https://nostrvault.app",
+            "image" to "https://nostrvault.app/assets/haven_icon.png",
+        )
+        return "nostrconnect://$clientPubkey?" + params.joinToString("&") { (k, v) -> "$k=${queryEncode(v)}" }
+    }
+
+    /**
+     * The bunker:// form of a finished nostrconnect pairing: how every later
+     * reconnect reaches the signer. No secret — the pairing is already made,
+     * and the signer answers a paired app's connect with "ack".
+     */
+    fun bunkerUri(signerPubkey: String, relays: List<String>): String =
+        "bunker://$signerPubkey" +
+            if (relays.isEmpty()) "" else "?" + relays.joinToString("&") { "relay=${queryEncode(it)}" }
+
+    /** Percent-encodes a query value, keeping `:` and `/` readable as iOS does; space is %20, never `+`. */
+    private fun queryEncode(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8")
+            .replace("+", "%20")
+            .replace("%3A", ":")
+            .replace("%2F", "/")
+
+    /** A fresh pairing request: a new client key and a random 16-byte secret. */
+    fun makeNostrConnectRequest(nowSeconds: Long = System.currentTimeMillis() / 1000): NostrConnectRequest? {
+        val parts = HavenBridge.generateKeyPair()?.split(":")
+        if (parts == null || parts.size != 2) return null
+        val (clientSK, clientPK) = parts
+        val bytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val secret = bytes.joinToString("") { "%02x".format(it) }
+        return NostrConnectRequest(
+            uri = nostrConnectUri(clientPK, secret, nostrConnectRelays),
+            clientSecretKey = clientSK,
+            clientPubkey = clientPK,
+            secret = secret,
+            relays = nostrConnectRelays,
+            startedAt = nowSeconds - 5,
+        )
+    }
+
+    /**
+     * Waits for the signer's answer to [request] in 15 s rounds, so the
+     * caller's coroutine can be cancelled between them. The Go side accepts
+     * only a signed kind 24133 to our key whose result is our secret ("ack"
+     * is refused: anyone can publish one). Returns the signer's pubkey, or
+     * null on timeout.
+     */
+    suspend fun awaitNostrConnect(request: NostrConnectRequest, timeoutMs: Long = 300_000): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val relaysJson = org.json.JSONArray(request.relays).toString()
+        while (System.currentTimeMillis() < deadline) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val pubkey = withContext(Dispatchers.IO) {
+                try {
+                    HavenBridge.nip46AwaitNostrConnect(
+                        request.clientSecretKey, relaysJson, request.secret, request.startedAt, 15,
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "NIP-46 nostrconnect wait failed: ${e.message}")
+                    null
+                }
+            }
+            if (!pubkey.isNullOrEmpty()) return pubkey
+        }
+        return null
+    }
 
     /** Get pending auth URL (consumed on read). */
     fun getPendingAuthUrl(): String? =

@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.WebSocketClient
@@ -41,9 +42,13 @@ class DMService @Inject constructor(
         private const val FIRE_AND_FORGET_TIMEOUT_MS = 3_000L
         private const val AUTH_TIMEOUT_MS = 5_000L
         private const val EXTERNAL_FETCH_OVERLAP_MS = 60 * 60 * 1000L // 1 hour overlap
+        // NIP-59 backdates a gift wrap's created_at by up to 2 days; plus a minute.
+        private const val GIFT_WRAP_BACKDATE_SECONDS = 2 * 24 * 60 * 60L + 60
         private const val OPTIMISTIC_DEDUP_THRESHOLD_MS = 30_000L
         private const val MAX_INJECTED_DM_IDS = 5_000
         private const val CACHE_SAVE_DEBOUNCE_MS = 500L
+        private const val MAX_OPENED_MESSAGES = 200
+        private const val MAX_SENT_SELF_WRAP_IDS = 500
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -81,6 +86,55 @@ class DMService @Inject constructor(
     private var chatResubJob: Job? = null
 
     private val seenGiftWrapIds = ConcurrentHashMap.newKeySet<String>()
+
+    // ── Notification lookups ──────────────────────────────────────────
+    // The relay raises a notification marker for every DM event it stores,
+    // and the marker cannot say who wrote a gift wrap. These let
+    // LocalNotificationService tell your own sent copies apart and show the
+    // real sender and text.
+
+    /** Ids of the self-copy wraps this device sent. */
+    private val sentSelfWrapIds = ConcurrentHashMap.newKeySet<String>()
+
+    /** Recently decrypted DMs by event id → (counterparty, message). */
+    private val openedMessages = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, Pair<String, DMMessage>>() {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, DMMessage>>?) =
+                size > MAX_OPENED_MESSAGES
+        },
+    )
+
+    /** The conversation whose thread is on screen, so its notifications can stay quiet. */
+    @Volatile var visibleConversation: String? = null
+
+    /** True when [eventId] is the copy of a DM this device just sent to itself. */
+    fun isOwnSentWrap(eventId: String): Boolean = sentSelfWrapIds.contains(eventId)
+
+    /** The counterparty and message decrypted from [eventId], if the inbox has opened it. */
+    fun openedMessage(eventId: String): Pair<String, DMMessage>? =
+        openedMessages[eventId]
+            ?: _conversations.value.firstNotNullOfOrNull { convo ->
+                convo.messages.lastOrNull { it.id == eventId }?.let { convo.id to it }
+            }
+
+    /**
+     * Waits for the inbox to decrypt an event the relay has just reported. The
+     * marker and this service's subscription see the same event at nearly the
+     * same moment. Null when it does not open in time: another account's inbox,
+     * or Amber, which only decrypts while a DM screen is open.
+     */
+    suspend fun awaitOpenedMessage(eventId: String, timeoutMs: Long): Pair<String, DMMessage>? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            openedMessage(eventId)?.let { return it }
+            if (System.currentTimeMillis() >= deadline) return null
+            delay(200)
+        }
+    }
+
+    private fun recordOpened(counterparty: String, message: DMMessage) {
+        openedMessages[message.id] = counterparty to message
+    }
     private val injectedDmIds = ConcurrentHashMap.newKeySet<String>()
 
     // ── Lazy (Amber) decryption queue ─────────────────────────────────
@@ -102,6 +156,44 @@ class DMService @Inject constructor(
     private var lastExternalFetchTimestamp = 0L
     private var hasStarted = false
     private var saveJob: Job? = null
+
+    /**
+     * The account (hex pubkey) whose conversations are in memory, and so the
+     * only cache file they may be written to. Set when they are loaded, not
+     * read at write time: a write landing after a switch used to put one
+     * account's DMs into the other's file.
+     */
+    @Volatile private var loadedCacheKey: String? = null
+
+    init {
+        // Follow account switches, as iOS DMService does. Skips setup's first
+        // account ("" → X) and anything before the inbox has started.
+        scope.launch {
+            configStore.accountSwitches.collect { hex ->
+                // A switch to no account (reset, or an account that can't be
+                // decoded) leaves the inbox alone: there is no one to load.
+                if (hex.isNotEmpty() && hasStarted && hex != loadedCacheKey) switchAccount()
+            }
+        }
+    }
+
+    /** Saves the old account's inbox under its own key, then starts the new one's. */
+    private fun switchAccount() {
+        saveJob?.cancel()
+        val conversations = _conversations.value
+        val oldKey = loadedCacheKey
+        scope.launch(Dispatchers.IO) { if (oldKey != null) writeCache(oldKey, conversations) }
+
+        chatInjectionClient?.disconnect(); chatInjectionClient = null
+        inboxInjectionClient?.disconnect(); inboxInjectionClient = null
+        _conversations.value = emptyList()
+        seenGiftWrapIds.clear()
+        injectedDmIds.clear()
+        openedMessages.clear()
+        sentSelfWrapIds.clear()
+        visibleConversation = null
+        startListening()
+    }
 
     // ══════════════════════════════════════════════════════════════════
     // Lifecycle
@@ -225,7 +317,7 @@ class DMService @Inject constructor(
     private fun subscribeToNip04(client: WebSocketClient) {
         val ownerHex = nostrService.activeHexPubkey
         val subId = "dm-nip04"
-        Log.w(TAG, "DBG: subscribeToNip04 ownerHex=${ownerHex.take(12)} amber=${isAmberMode()}")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: subscribeToNip04 ownerHex=${ownerHex.take(12)} amber=${isAmberMode()}")
 
         // Incoming NIP-04 DMs
         val inFilter = """{"kinds":[4],"#p":["$ownerHex"]}"""
@@ -246,7 +338,7 @@ class DMService @Inject constructor(
             if (parsed.isEmpty()) return
             val type = parsed[0].jsonPrimitive.contentOrNull ?: return
 
-            if (type != "EVENT") Log.w(TAG, "DBG: /chat recv type=$type")
+            if (BuildConfig.DEBUG && type != "EVENT") Log.w(TAG, "DBG: /chat recv type=$type")
             when (type) {
                 "AUTH" -> handleAuthChallenge(parsed, inboxClient)
                 "OK" -> {
@@ -259,7 +351,7 @@ class DMService @Inject constructor(
                     // replaces the subscription) and re-arms it after a reconnect.
                     val success = parsed.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
                     val reason = parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull
-                    Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
                     if (success) sendChatNip17Req()
                 }
                 "CLOSED" -> {
@@ -272,7 +364,7 @@ class DMService @Inject constructor(
                     // sub on a backoff so gift wraps start flowing once WoT warms up.
                     val subId = parsed.getOrNull(1)?.jsonPrimitive?.contentOrNull
                     val reason = parsed.getOrNull(2)?.jsonPrimitive?.contentOrNull
-                    Log.w(TAG, "DBG: /chat CLOSED sub=$subId reason=$reason")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat CLOSED sub=$subId reason=$reason")
                     if (subId == "dm-nip17") scheduleChatResubscribe(generation)
                 }
                 "EVENT" -> {
@@ -319,7 +411,7 @@ class DMService @Inject constructor(
                 delay(12_000)
                 if (switchGeneration != generation) return@launch
                 attempt++
-                Log.w(TAG, "DBG: /chat re-subscribe dm-nip17 attempt=$attempt")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat re-subscribe dm-nip17 attempt=$attempt")
                 sendChatNip17Req()
             }
         }
@@ -336,7 +428,7 @@ class DMService @Inject constructor(
                     if (parsed.size < 3) return
                     val eventObj = parsed[2].jsonObject
                     val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
-                    Log.w(TAG, "DBG: /inbox EVENT kind=$kind")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /inbox EVENT kind=$kind")
 
                     if (kind == 4) {
                         scope.launch {
@@ -344,7 +436,7 @@ class DMService @Inject constructor(
                         }
                     }
                 }
-                else -> Log.w(TAG, "DBG: /inbox recv type=$type")
+                else -> if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /inbox recv type=$type")
             }
         } catch (e: Exception) {
             Log.w(TAG, "NIP-04 relay message parse error: ${e.message}")
@@ -354,7 +446,12 @@ class DMService @Inject constructor(
     private suspend fun handleIncomingGiftWrap(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
+        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
+        // Before any seen/queued claim, so a forged copy carrying a real event's
+        // id cannot shadow the real one. A relay can serve any event under any
+        // author; NIP-04 has no MAC, so a re-IV'd copy of a real DM decrypts to
+        // altered text. Only the signature ties it to its author.
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
         // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
         if (isAmberMode()) { enqueuePendingDecrypt(eventObj, eventId); return }
@@ -376,7 +473,7 @@ class DMService @Inject constructor(
             try {
                 val giftWrapContent = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
                 val giftWrapPubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
-                Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypting (amber=${isAmberMode()})")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypting (amber=${isAmberMode()})")
 
                 val rumorJson = if (isAmberMode()) {
                     // Gift wrap → seal → rumor is TWO NIP-44 layers; Amber must
@@ -385,13 +482,13 @@ class DMService @Inject constructor(
                     NIP17Service.unwrapGiftWrappedDMWithAmber(
                         giftWrapContent, giftWrapPubkey, amberSignerService, silentOnly = true,
                     ) ?: run {
-                        Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} silent decrypt unavailable")
+                        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} silent decrypt unavailable")
                         return@withContext false // signer can't silently decrypt → retryable
                     }
                 } else {
                     val recipientPrivkey = resolvePrivateKey() ?: return@withContext true
                     NIP17Service.unwrapGiftWrappedDM(giftWrapContent, giftWrapPubkey, recipientPrivkey)
-                        ?: run { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                        ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
                 }
 
                 // Parse the rumor JSON to extract sender, content, timestamp, tags
@@ -420,6 +517,7 @@ class DMService @Inject constructor(
                     isNIP04 = false,
                 )
 
+                recordOpened(counterparty, message)
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(counterparty, message)
                 }
@@ -434,7 +532,8 @@ class DMService @Inject constructor(
     private suspend fun handleIncomingNIP04(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
+        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
         // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
         if (isAmberMode()) { enqueuePendingDecrypt(eventObj, eventId); return }
@@ -468,22 +567,22 @@ class DMService @Inject constructor(
                 } else {
                     pubkey
                 }
-                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} fromMe=$isFromMe cp=${counterparty.take(12)} decrypting (amber=${isAmberMode()})")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} fromMe=$isFromMe cp=${counterparty.take(12)} decrypting (amber=${isAmberMode()})")
 
                 // Decrypt (Amber or local key). silentOnly for the Amber path — a
                 // backlog drain must not launch an interactive Intent per message.
                 val plaintext = if (isAmberMode()) {
                     amberSignerService.nip04Decrypt(content, counterparty, silentOnly = true)
                         ?: run {
-                            Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
+                            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
                             return@withContext false // retryable
                         }
                 } else {
                     val privkey = resolvePrivateKey() ?: return@withContext true
                     NIP04Service.decrypt(content, counterparty, privkey)
-                        ?: run { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                        ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
                 }
-                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
 
                 val message = DMMessage(
                     id = eventId,
@@ -494,6 +593,7 @@ class DMService @Inject constructor(
                     isNIP04 = true,
                 )
 
+                recordOpened(counterparty, message)
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(counterparty, message)
                 }
@@ -511,7 +611,7 @@ class DMService @Inject constructor(
         if (!queuedDecryptIds.add(eventId)) return
         pendingDecryptQueue.add(eventObj)
         _pendingDecryptCount.value = pendingDecryptQueue.size
-        Log.w(TAG, "DBG: queued ${eventId.take(8)} for decrypt (pending=${pendingDecryptQueue.size})")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: queued ${eventId.take(8)} for decrypt (pending=${pendingDecryptQueue.size})")
     }
 
     /**
@@ -551,13 +651,26 @@ class DMService @Inject constructor(
                     lastBlockedSize = pendingDecryptQueue.size
                     _decryptBlocked.value = true
                     _pendingDecryptCount.value = pendingDecryptQueue.size
-                    Log.w(TAG, "DBG: drain blocked — signer silent-decrypt unavailable, ${pendingDecryptQueue.size} pending")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: drain blocked — signer silent-decrypt unavailable, ${pendingDecryptQueue.size} pending")
                     return@withLock
                 }
                 _pendingDecryptCount.value = pendingDecryptQueue.size
             }
             _pendingDecryptCount.value = pendingDecryptQueue.size
         }
+    }
+
+    /** Drops one message (a failed send's optimistic copy) from a conversation. */
+    private fun removeMessageFromConversation(counterparty: String, messageId: String) {
+        val current = _conversations.value.toMutableList()
+        val index = current.indexOfFirst { it.id == counterparty }
+        if (index < 0) return
+        val conv = current[index]
+        val remaining = conv.messages.filterNot { it.id == messageId }
+        if (remaining.size == conv.messages.size) return
+        if (remaining.isEmpty()) current.removeAt(index) else current[index] = conv.copy(messages = remaining)
+        _conversations.value = current
+        saveCachedConversations()
     }
 
     private fun addMessageToConversation(counterparty: String, message: DMMessage) {
@@ -599,7 +712,7 @@ class DMService @Inject constructor(
         // Sort by most recent
         current.sortByDescending { it.lastMessage?.timestamp ?: 0L }
         _conversations.value = current
-        Log.w(TAG, "DBG: addMessageToConversation cp=${counterparty.take(12)} → convos=${current.size}")
+        if (BuildConfig.DEBUG) Log.w(TAG, "DBG: addMessageToConversation cp=${counterparty.take(12)} → convos=${current.size}")
         saveCachedConversations()
     }
 
@@ -609,6 +722,12 @@ class DMService @Inject constructor(
 
     /**
      * Send a DM using NIP-17 (default) or NIP-04 (legacy).
+     */
+    /**
+     * Sends a DM. Throws when the message could not be built (no key, a
+     * signer that refused, encryption failed) so the screen can show iOS's
+     * "Failed to Send" alert and hand the text back; nothing was published
+     * then. Once publishing starts, relay failures are only logged.
      */
     suspend fun sendDM(
         content: String,
@@ -641,6 +760,7 @@ class DMService @Inject constructor(
 
         // Create gift wraps in background
         withContext(Dispatchers.IO) {
+            var publishing = false
             try {
                 val ownHexPubkey = nostrService.activeHexPubkey
 
@@ -687,6 +807,7 @@ class DMService @Inject constructor(
                 }
 
                 if (switchGeneration != generation) return@withContext
+                publishing = true
 
                 // Pre-mark our own self-copy gift wrap as seen. It is addressed to
                 // us (kind 1059, #p = self) so it echoes back through every DM
@@ -696,7 +817,12 @@ class DMService @Inject constructor(
                 runCatching {
                     json.parseToJsonElement(selfEvent).jsonObject["id"]
                         ?.jsonPrimitive?.contentOrNull
-                }.getOrNull()?.let { seenGiftWrapIds.add(it) }
+                }.getOrNull()?.let {
+                    seenGiftWrapIds.add(it)
+                    // Its relay notification must not announce your own message.
+                    if (sentSelfWrapIds.size > MAX_SENT_SELF_WRAP_IDS) sentSelfWrapIds.clear()
+                    sentSelfWrapIds.add(it)
+                }
 
                 // Publish to local /chat relay
                 val config = configStore.config.value
@@ -706,23 +832,31 @@ class DMService @Inject constructor(
                     inboxClient?.send("[\"EVENT\",$selfEvent]")
                 }
 
-                // Fetch recipient's DM relays and publish
-                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
-                for (relayUrl in recipientRelays) {
-                    fireAndForgetPublish(recipientEvent, relayUrl)
+                // Your own copy goes to your DM inbox list — the list every
+                // device reads from, Mac relay first — never to whichever of
+                // your relay lists a lookup finds first. Resolving it like a
+                // recipient's could land on your general (kind 10002) relays,
+                // which no device reads DMs from, so the message never showed
+                // on your other devices.
+                for (relayUrl in ownDMInboxRelays(ownHexPubkey)) {
+                    publishAuthenticated(selfEvent, relayUrl, ownHexPubkey)
                 }
 
-                // Publish self copy to own DM relays. Use the same fallback-aware
-                // resolver as the recipient path (kind 10050 → 10002 → fetch-and-wait
-                // → blastr); a bare dmRelayLists lookup returns empty when our own DM
-                // relay list isn't cached yet, stranding the self-copy on the local
-                // relay so our OTHER devices never see the message we sent.
-                val ownRelays = fetchRecipientDMRelays(ownHexPubkey)
-                for (relayUrl in ownRelays) {
-                    fireAndForgetPublish(selfEvent, relayUrl)
+                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
+                for (relayUrl in recipientRelays) {
+                    publishAuthenticated(recipientEvent, relayUrl, ownHexPubkey)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-17 send failed: ${e.message}")
+                if (!publishing) {
+                    // Nothing went out: take back the optimistic bubble.
+                    withContext(Dispatchers.Main.immediate) {
+                        removeMessageFromConversation(recipientHexPubkey, optimisticId)
+                    }
+                    throw e
+                }
             }
         }
     }
@@ -731,6 +865,7 @@ class DMService @Inject constructor(
         val generation = switchGeneration
 
         withContext(Dispatchers.IO) {
+            var publishing = false
             try {
                 val encrypted = if (isAmberMode()) {
                     amberSignerService.nip04Encrypt(content, recipientHexPubkey)
@@ -748,6 +883,7 @@ class DMService @Inject constructor(
                     ?: throw Exception("Signing failed")
 
                 if (switchGeneration != generation) return@withContext
+                publishing = true
 
                 // Optimistic UI
                 val message = DMMessage(
@@ -784,8 +920,11 @@ class DMService @Inject constructor(
                     if (relayUrl in recipientRelays) continue
                     fireAndForgetPublish(eventJson, relayUrl)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-04 send failed: ${e.message}")
+                if (!publishing) throw e
             }
         }
     }
@@ -795,17 +934,18 @@ class DMService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     fun fetchFromExternalRelays() {
+        backfillSentCopiesIfNeeded()
         scope.launch(Dispatchers.IO) {
             val ownerHex = nostrService.activeHexPubkey
             val dmRelays = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
             val inboxRelays = nostrService.relayLists.value[ownerHex] ?: emptyList()
-            // Fall back to configured DM relays + blastr so a fetch still happens
+            // Fall back to configured DM relays + Read relays so a fetch still happens
             // when our own kind 10050/10002 isn't cached yet (e.g. a fresh setup
             // or an account that never published a relay list) — otherwise
             // pull-to-refresh queried zero relays and nothing ever loaded.
-            val configured = configStore.config.value.dmRelays
-            val blastr = configStore.config.value.activeBlastrRelays
-            val allRelays = (dmRelays + inboxRelays + configured + blastr)
+            val configured = ownDMInboxRelays(ownerHex)
+            val read = configStore.config.value.readRelays
+            val allRelays = (configured + dmRelays + inboxRelays + read)
                 .distinct()
                 .filter { !it.contains("localhost") && !it.contains("127.0.0.1") }
                 .take(EXTERNAL_FETCH_MAX_RELAYS)
@@ -837,8 +977,11 @@ class DMService @Inject constructor(
 
                         client.connect()
 
-                        // NIP-17 (kind 1059)
-                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$since}"""
+                        // NIP-17 (kind 1059). A gift wrap's created_at is
+                        // randomized up to 2 days into the past, so the 1-hour
+                        // overlap above would miss most new ones.
+                        val wrapSince = minOf(since, System.currentTimeMillis() / 1000 - GIFT_WRAP_BACKDATE_SECONDS)
+                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince}"""
                         client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
 
                         // NIP-04 incoming (kind 4)
@@ -858,6 +1001,79 @@ class DMService @Inject constructor(
             }
 
             lastExternalFetchTimestamp = System.currentTimeMillis()
+        }
+    }
+
+    @Volatile private var backfillRunning = false
+
+    /**
+     * One-time catch-up, per account, of your own sent copies stranded on
+     * your general (kind 10002) relays. Before the DM inbox list (#212) a
+     * sent copy could go there, and no device reads DMs from those relays;
+     * the regular fetch only reaches 7 days back. Asks your newest 10002
+     * relays (fetched fresh — the cache can be long out of date), the cached
+     * ones and your DM inbox list for every gift wrap addressed to you, with
+     * no time window. Marked done (a file next to the DM cache) only after a
+     * fresh 10002 lookup answered, so a launch without network retries.
+     * Same as the iOS catch-up in #214.
+     */
+    private fun backfillSentCopiesIfNeeded() {
+        val ownerHex = nostrService.activeHexPubkey
+        val dir = configStore.config.value.appSupportDir ?: return
+        if (ownerHex.isBlank() || backfillRunning) return
+        val marker = File(dir, "dm_backfill_v1_${ownerHex.take(16)}")
+        if (marker.exists()) return
+        backfillRunning = true
+        val generation = switchGeneration
+        scope.launch(Dispatchers.IO) {
+            try {
+                val fresh = nostrService.fetchNewestReplaceable(10002, ownerHex, ownDMInboxRelays(ownerHex))
+                if (switchGeneration != generation) return@launch
+                // Every "r" entry, read or write: old builds sent the copy to the read set.
+                val freshRelays = fresh?.tags?.filter { it.size >= 2 && it[0] == "r" }?.map { it[1] }.orEmpty()
+                val relays = (freshRelays + nostrService.relayLists.value[ownerHex].orEmpty() + ownDMInboxRelays(ownerHex))
+                    .map { it.trim().trimEnd('/') }
+                    .filter { it.isNotEmpty() && !NostrService.isLoopbackRelay(it) }
+                    .distinctBy { it.lowercase() }
+                Log.i(TAG, "DM sent-copy catch-up from ${relays.size} relays (fresh 10002: ${fresh != null})")
+                coroutineScope {
+                    relays.map { url ->
+                        launch {
+                            val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                            try {
+                                withTimeoutOrNull(12_000) {
+                                    val subId = "bf-${UUID.randomUUID().toString().take(6)}"
+                                    val done = CompletableDeferred<Unit>()
+                                    val collector = launch {
+                                        client.messages.collect { msg ->
+                                            if (switchGeneration != generation) return@collect
+                                            if (msg.startsWith("[\"EOSE\"") || msg.startsWith("[\"CLOSED\"")) {
+                                                done.complete(Unit)
+                                            } else {
+                                                handleExternalDmMessage(msg, generation)
+                                            }
+                                        }
+                                    }
+                                    launch {
+                                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                        client.send("""["REQ","$subId",{"kinds":[1059],"#p":["$ownerHex"],"limit":1000}]""")
+                                    }
+                                    client.connect()
+                                    done.await()
+                                    collector.cancel()
+                                }
+                            } finally {
+                                client.disconnect()
+                            }
+                        }
+                    }.joinAll()
+                }
+                if (switchGeneration == generation && fresh != null) marker.writeText("done")
+            } catch (e: Exception) {
+                Log.w(TAG, "DM sent-copy catch-up failed: ${e.message}")
+            } finally {
+                backfillRunning = false
+            }
         }
     }
 
@@ -883,14 +1099,14 @@ class DMService @Inject constructor(
     /**
      * The PUBLIC relays to keep persistent DM subscriptions on: the relays we
      * advertise in our kind 10050 (where senders deliver to us), plus our cached
-     * NIP-65 inbox relays and blastr relays as fallbacks. Loopback excluded.
+     * NIP-65 inbox relays and Read relays as fallbacks. Loopback excluded.
      */
     private fun liveExternalRelaySet(ownerHex: String): List<String> {
         val advertised = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
         val inbox = nostrService.relayLists.value[ownerHex] ?: emptyList()
-        val configured = configStore.config.value.dmRelays
-        val blastr = configStore.config.value.activeBlastrRelays
-        return (advertised + configured + inbox + blastr)
+        val configured = ownDMInboxRelays(ownerHex)
+        val read = configStore.config.value.readRelays
+        return (configured + advertised + inbox + read)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.contains("localhost") && !it.contains("127.0.0.1") }
             .distinct()
@@ -1041,12 +1257,12 @@ class DMService @Inject constructor(
                     forceOwner = true,
                 )
             } catch (e: Exception) {
-                Log.w(TAG, "DBG: /chat AUTH sign failed: ${e.message}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat AUTH sign failed: ${e.message}")
                 null
             } ?: return@launch
 
             val eventJson = serializeEvent(authEvent)
-            Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
+            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
             client?.send("[\"AUTH\",$eventJson]")
         }
     }
@@ -1056,12 +1272,15 @@ class DMService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     private fun loadCachedConversations() {
+        val key = currentCacheKey()
+        loadedCacheKey = key
         scope.launch(Dispatchers.IO) {
             try {
-                val key = currentCacheKey()
-                val dir = configStore.config.value.appSupportDir ?: run { Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
+                deleteOldKeyCaches()
+                if (key == null) return@launch // no account: nothing to load
+                val dir = configStore.config.value.appSupportDir ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
                 val file = File(dir, "dm_cache_$key.json")
-                if (!file.exists()) { Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
+                if (!file.exists()) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
 
                 val content = file.readText()
                 val rawConvos = json.decodeFromString<List<DMConversation>>(content)
@@ -1079,7 +1298,7 @@ class DMService @Inject constructor(
                     }
                     if (good.isEmpty()) null else conv.copy(messages = good)
                 }
-                Log.w(TAG, "DBG: loadCache key=$key convos=${convos.size} msgs=${convos.sumOf { it.messages.size }} repairedDropped=$repaired")
+                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: loadCache key=$key convos=${convos.size} msgs=${convos.sumOf { it.messages.size }} repairedDropped=$repaired")
 
                 // Seed dedup set with the messages we KEPT (the dropped ones must be
                 // allowed to re-decrypt).
@@ -1090,7 +1309,8 @@ class DMService @Inject constructor(
                 }
 
                 withContext(Dispatchers.Main.immediate) {
-                    _conversations.value = convos
+                    // A switch while this was reading: the file belongs to the old account.
+                    if (loadedCacheKey == key) _conversations.value = convos
                 }
 
                 if (repaired > 0) {
@@ -1121,8 +1341,12 @@ class DMService @Inject constructor(
     }
 
     private fun writeCacheNow() {
+        val key = loadedCacheKey ?: return
+        writeCache(key, _conversations.value)
+    }
+
+    private fun writeCache(key: String, conversations: List<DMConversation>) {
         try {
-            val key = currentCacheKey()
             val dir = configStore.config.value.appSupportDir ?: return
             val dirFile = File(dir)
             if (!dirFile.exists()) dirFile.mkdirs()
@@ -1130,17 +1354,30 @@ class DMService @Inject constructor(
             val file = File(dir, "dm_cache_$key.json")
             file.writeText(json.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(DMConversation.serializer()),
-                _conversations.value
+                conversations
             ))
         } catch (e: Exception) {
             Log.w(TAG, "DM cache save failed: ${e.message}")
         }
     }
 
-    private fun currentCacheKey(): String {
-        val npub = configStore.config.value.activeAccountNpub
-            ?: configStore.config.value.ownerNpub ?: "default"
-        return npub.take(12)
+    /**
+     * The full hex pubkey of the active account, or null with none (then
+     * nothing is cached). The old key was the npub's first 12 characters
+     * ("npub1" plus 7), which two accounts could share.
+     */
+    private fun currentCacheKey(): String? =
+        configStore.activeAccountHexPubkey.value.ifEmpty { null }
+
+    /**
+     * Deletes caches written under the old keys (truncated npub or hex,
+     * "default"). Some hold another account's DMs (written across a switch),
+     * and none is read again; the inbox refetches from the relays, so nothing
+     * is lost.
+     */
+    private fun deleteOldKeyCaches() {
+        val dir = configStore.config.value.appSupportDir ?: return
+        File(dir).listFiles { f -> DMCacheFiles.isOldKeyCache(f.name) }?.forEach { it.delete() }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1189,15 +1426,104 @@ class DMService @Inject constructor(
             relays.orEmpty().filter { !NostrService.isLoopbackRelay(it) }
 
         reachable(nostrService.dmRelayLists.value[pubkey]).let { if (it.isNotEmpty()) return it }
-        reachable(nostrService.relayLists.value[pubkey]).let { if (it.isNotEmpty()) return it.take(3) }
 
-        // Trigger fetch and wait briefly
+        // No DM relay list known yet: fetch and wait for it. A general
+        // (kind 10002) list is only the fallback for someone who published no
+        // DM list, so it must not win just because it was already cached.
         nostrService.fetchRelayList(pubkey)
         delay(4_000)
 
         reachable(nostrService.dmRelayLists.value[pubkey]).let { if (it.isNotEmpty()) return it }
         reachable(nostrService.relayLists.value[pubkey]).let { if (it.isNotEmpty()) return it.take(3) }
         return reachable(configStore.config.value.activeBlastrRelays).take(3)
+    }
+
+    /**
+     * This account's DM inbox list, minus loopback. For the owner that is the
+     * published list — the Mac relay's inbox first. Other accounts use the
+     * plain DM relays: the owner's Haven inbox only takes DMs for the owner.
+     */
+    private fun ownDMInboxRelays(accountHex: String): List<String> {
+        val config = configStore.config.value
+        val list = if (accountHex == nostrService.ownerHexPubkey) config.dmInboxRelays else config.dmRelays
+        return list.filter { !NostrService.isLoopbackRelay(it) }
+    }
+
+    /**
+     * Publishes to a relay that may require NIP-42 AUTH before it accepts a
+     * write. A Haven inbox (the Mac relay) rejects with "auth-required" until
+     * the sender authenticates, which the plain fire-and-forget publish never
+     * noticed. An auth-required rejection is answered with AUTH signed by the
+     * sending account — never the owner on another account's behalf, which
+     * would tie the accounts together — and, once the relay accepts the AUTH,
+     * the event is sent again. (Relays handle each message concurrently, so
+     * resending before the AUTH is accepted can lose the race.)
+     */
+    private fun publishAuthenticated(eventJson: String, relayUrl: String, senderHex: String) {
+        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return
+        scope.launch(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = this, autoReconnect = false)
+            val result = try {
+                withTimeoutOrNull(15_000) {
+                    val outcome = CompletableDeferred<String>()
+                    var challenge: String? = null
+                    var authId: String? = null
+                    val collector = launch {
+                        client.messages.collect { msg ->
+                            val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                            when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                "AUTH" -> challenge = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull
+                                "OK" -> {
+                                    val id = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull
+                                    val ok = arr.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
+                                    val note = arr.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: ""
+                                    if (id != null && id == authId) {
+                                        if (ok) client.send("[\"EVENT\",$eventJson]") else outcome.complete("AUTH rejected: $note")
+                                    } else if (id == eventId) {
+                                        val ch = challenge
+                                        when {
+                                            ok || note.startsWith("duplicate") -> outcome.complete("accepted")
+                                            note.startsWith("auth-required") && authId == null && ch != null -> {
+                                                if (nostrService.activeHexPubkey != senderHex) {
+                                                    outcome.complete("account switched before AUTH")
+                                                } else {
+                                                    val auth = runCatching {
+                                                        nostrService.signEventAsync(
+                                                            kind = 22242, content = "",
+                                                            tags = listOf(listOf("relay", relayUrl), listOf("challenge", ch)),
+                                                        )
+                                                    }.getOrNull()
+                                                    if (auth == null) {
+                                                        outcome.complete("could not sign AUTH")
+                                                    } else {
+                                                        authId = auth.id
+                                                        client.send("[\"AUTH\",${serializeEvent(auth)}]")
+                                                    }
+                                                }
+                                            }
+                                            else -> outcome.complete("rejected: $note")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    launch {
+                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                        client.send("[\"EVENT\",$eventJson]")
+                    }
+                    client.connect()
+                    val r = outcome.await()
+                    collector.cancel()
+                    r
+                } ?: "timed out"
+            } catch (e: Exception) {
+                "failed: ${e.message}"
+            } finally {
+                client.disconnect()
+            }
+            Log.d(TAG, "DM wrap ${eventId.take(8)} -> $relayUrl: $result")
+        }
     }
 
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
@@ -1241,3 +1567,16 @@ data class DMMessage(
     val isFromMe: Boolean,
     val isNIP04: Boolean = false,
 )
+
+/** Cache file names, kept apart so the old-format rule is unit-tested. */
+internal object DMCacheFiles {
+    /**
+     * A DM cache not keyed on a full 64-hex pubkey: written before the key was
+     * the account's hex ("npub1xxxxxxx", 12 hex characters, "default").
+     */
+    fun isOldKeyCache(name: String): Boolean {
+        if (!name.startsWith("dm_cache_") || !name.endsWith(".json")) return false
+        val key = name.removePrefix("dm_cache_").removeSuffix(".json")
+        return !(key.length == 64 && key.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+}

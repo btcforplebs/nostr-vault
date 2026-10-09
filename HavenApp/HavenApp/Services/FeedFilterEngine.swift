@@ -5,6 +5,37 @@ import Foundation
 /// Direct translation target for Kotlin (pure functions -> pure functions).
 enum FeedFilterEngine {
 
+    // MARK: - Blocked Authors
+
+    /// Whether a row would put a blocked person in front of the user. Checking
+    /// `note.pubkey` alone missed most of it: a bare kind-6 repost carries the
+    /// reposter as its pubkey and shows the original author's post, an
+    /// embedded one swaps in the original author and keeps the reposter in
+    /// `repostedBy`, and a reply shows the post it answers above itself.
+    ///
+    /// - Parameters:
+    ///   - authorOf: looks up the author of a referenced event ID, or nil when
+    ///     that event has not loaded. A bare repost falls back to its `p` tag.
+    static func involvesBlocked(
+        _ note: FeedNote,
+        blocked: Set<String>,
+        authorOf: (String) -> String? = { _ in nil }
+    ) -> Bool {
+        guard !blocked.isEmpty else { return false }
+        if blocked.contains(note.pubkey) { return true }
+        if let reposter = note.repostedBy, blocked.contains(reposter) { return true }
+        if note.kind == 6, let originalId = note.repostedEventId {
+            let original = authorOf(originalId)
+                ?? note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1]
+            if let original, blocked.contains(original) { return true }
+        }
+        if let parentId = note.parentEventId, let parentAuthor = authorOf(parentId),
+           blocked.contains(parentAuthor) {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Feed Note Filtering
 
     /// Filters and sorts notes for the main feed based on mode and user preferences.
@@ -19,11 +50,14 @@ enum FeedFilterEngine {
     ///   - wotPubkeys: Web-of-Trust pubkey set (for global feed filtering).
     ///   - popularFilter: Sub-filter for the Popular feed (all / follows / non-follows).
     ///   - popularNoteScores: Popularity scores keyed by note ID (from the DVM).
-    ///   - throttledPubkeys: Authors whose posts are rate-limited (pubkey -> max visible posts).
     /// - Returns: Filtered and sorted array of notes ready for display.
     static func filterFeedNotes(
         notes: [FeedNote],
         mode: FeedMode,
+        articlesGlobal: Bool = false,
+        pollsGlobal: Bool = false,
+        pollStatus: PollStatusFilter = .all,
+        now: Date = Date(),
         blocked: Set<String>,
         showReposts: Bool,
         showReplies: Bool,
@@ -31,23 +65,43 @@ enum FeedFilterEngine {
         wotPubkeys: Set<String>,
         popularFilter: PopularFilter,
         popularNoteScores: [String: Double],
-        throttledPubkeys: [String: Int]
+        globalLanguages: Set<String> = [],
+        globalRequiresTrust: Bool = true,
+        languageOf: (FeedNote) -> String? = { _ in nil },
+        authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
-        // Articles: long-form only, from the follow set, one event per
+        // Articles: long-form only, one event per
         // `pubkey:d` address. 30023 is a parameterized-replaceable kind, so an
         // edited article arrives as a second event with the same address and
         // both would otherwise show as separate rows.
         if mode == .articles {
             let longForm = notes.filter { note in
-                if blocked.contains(note.pubkey) { return false }
+                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard note.kind == 30023 else { return false }
+                // Global articles trust the same graph as Global, and fail
+                // closed the same way; Following keeps to the follow set.
+                if articlesGlobal {
+                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                }
                 return followedPubkeys.contains(note.pubkey)
             }
             return dedupeAddressable(longForm)
         }
 
+        // Polls: NIP-88 polls only, newest first, scoped like Articles.
+        if mode == .polls {
+            return notes.filter { note in
+                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
+                guard let poll = note.poll, pollStatus.admits(poll, now: now) else { return false }
+                if pollsGlobal {
+                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                }
+                return followedPubkeys.contains(note.pubkey)
+            }
+        }
+
         var filtered = notes.filter { note in
-            if blocked.contains(note.pubkey) { return false }
+            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             if note.kind == 6 && !showReposts { return false }
             if mode == .popular {
                 let isFollowed = followedPubkeys.contains(note.pubkey)
@@ -61,11 +115,15 @@ enum FeedFilterEngine {
                 // firehose — measured at two thirds spam on the default seed
                 // relays. An unusable graph now shows nothing and the caller
                 // says so, rather than quietly showing the worst of Nostr.
-                // The graph is seeded from the starter pack for an owner who
-                // follows nobody, so empty here means "not built yet", not
-                // "this user has no friends".
-                if !wotPubkeys.contains(note.pubkey) { return false }
-                return !note.isReply
+                // Empty means either "not built yet" or "the owner follows
+                // nobody"; nothing else may build a graph, so both show nothing.
+                // "Everyone" (opted into behind a warning) skips the graph.
+                if globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
+                if note.isReply { return false }
+                // Narrowed to chosen languages: notes whose language can't
+                // be told (short, links only) stay. See FeedLanguageDetector.
+                if globalLanguages.isEmpty { return true }
+                return FeedLanguageDetector.admits(detected: languageOf(note), allowed: globalLanguages)
             }
             if mode == .following {
                 // For reposts, membership is judged by the reposter (the follow
@@ -89,11 +147,6 @@ enum FeedFilterEngine {
             }
         }
 
-        // Apply per-author throttle limits
-        if !throttledPubkeys.isEmpty {
-            filtered = applyThrottleLimits(filtered, throttledPubkeys: throttledPubkeys)
-        }
-
         return filtered
     }
 
@@ -104,30 +157,24 @@ enum FeedFilterEngine {
     ///   - blocked: Hex pubkeys the user has blocked.
     ///   - wotPubkeys: Web-of-Trust pubkey set (for global media filtering).
     ///   - isGlobalMedia: Whether the media tab is in global mode.
-    ///   - throttledPubkeys: Authors whose posts are rate-limited.
     /// - Returns: Notes containing media, sorted by date.
     static func filterMediaNotes(
         notes: [FeedNote],
         blocked: Set<String>,
         wotPubkeys: Set<String>,
         isGlobalMedia: Bool,
-        throttledPubkeys: [String: Int]
+        globalRequiresTrust: Bool = true,
+        authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
-        var media = notes.filter { note in
-            if blocked.contains(note.pubkey) { return false }
+        notes.filter { note in
+            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             // Fail closed for the same reason as the Global feed above.
-            if isGlobalMedia && !wotPubkeys.contains(note.pubkey) { return false }
+            if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
             return !note.mediaURLs.isEmpty
         }.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.id > $1.id
         }
-
-        if !throttledPubkeys.isEmpty {
-            media = applyThrottleLimits(media, throttledPubkeys: throttledPubkeys)
-        }
-
-        return media
     }
 
     /// Collapses parameterized-replaceable events to one per `pubkey:d`
@@ -147,20 +194,6 @@ enum FeedFilterEngine {
         return newestByAddress.values.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.id > $1.id
-        }
-    }
-
-    /// For each throttled author, keeps only their N most recent posts.
-    private static func applyThrottleLimits(_ notes: [FeedNote], throttledPubkeys: [String: Int]) -> [FeedNote] {
-        var authorCounts: [String: Int] = [:]
-        return notes.filter { note in
-            guard let maxPosts = throttledPubkeys[note.pubkey] else { return true }
-            let count = authorCounts[note.pubkey, default: 0]
-            if count < maxPosts {
-                authorCounts[note.pubkey] = count + 1
-                return true
-            }
-            return false
         }
     }
 

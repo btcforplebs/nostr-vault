@@ -30,7 +30,7 @@ enum EventPublisher {
     /// Appends the client identification tag for kind-1 notes if not already present.
     /// Returns the updated tags array.
     static func appendClientTag(to tags: [[String]], kind: Int) -> [[String]] {
-        guard kind == 1, !tags.contains(where: { $0.first == "client" }) else { return tags }
+        guard kind == 1 || kind == NIP10Thread.commentKind, !tags.contains(where: { $0.first == "client" }) else { return tags }
         var result = tags
         #if os(iOS)
         let clientName: String
@@ -124,5 +124,21 @@ enum EventPublisher {
         if url.isVideo { return .video }
         if url.isAudio { return .audio }
         return .image
+    }
+}
+
+/// Checks an event received from a relay: its id must be the NIP-01 hash of
+/// its contents and its sig a valid schnorr signature by its pubkey. A relay
+/// can send anything under any id and any author; nothing else proves either.
+enum NostrEventVerifier {
+    static func isValid(_ event: [String: Any]) -> Bool {
+        guard JSONSerialization.isValidJSONObject(event),
+              let data = try? JSONSerialization.data(withJSONObject: event),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        return isValid(json: json)
+    }
+
+    static func isValid(json: String) -> Bool {
+        json.withCString { VerifyEventC(UnsafeMutablePointer(mutating: $0)) } == 1
     }
 }

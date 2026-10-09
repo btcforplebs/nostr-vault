@@ -9,6 +9,7 @@ struct MenuBarView: View {
     #else
     @State private var selectedTab: Tab = .feed
     #endif
+    @State private var settingsPaneRequest: SettingsView.SettingsTab?
     #if os(macOS)
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
@@ -27,6 +28,7 @@ struct MenuBarView: View {
     /// reason iOS presents it from ContentView: a notification route has to be
     /// able to open it without depending on which tab happens to be mounted.
     @State private var showingDMInbox = false
+    @State private var dmInboxConversation: String?
     /// macOS has no navigation stack around the feed and vault, so a
     /// `NavigationLink(value:)` inside a note row has nothing to push onto and the
     /// click is swallowed — quoted notes and parent previews did nothing at all.
@@ -218,6 +220,7 @@ struct MenuBarView: View {
                                                     .stroke(selectedTab == .profile ? Color.white.opacity(0.6) : Color.clear, lineWidth: 1.5)
                                             )
                                             .frame(width: 20, height: 20)
+                                            .zapFlightOrigin()
 
                                         Text("My Profile")
                                             .font(.appSystem(size: 13, weight: selectedTab == .profile ? .semibold : .medium))
@@ -338,7 +341,7 @@ struct MenuBarView: View {
                                     .environmentObject(relayManager)
                                     .transition(.opacity)
                             case .settings:
-                                SettingsView(isEmbedded: true)
+                                SettingsView(isEmbedded: true, paneRequest: $settingsPaneRequest)
                                     .environmentObject(relayManager)
                                     .environmentObject(configService)
                                     .environmentObject(nostrService)
@@ -555,7 +558,7 @@ struct MenuBarView: View {
                                     selectedTab = .feed
                                 }
                                 .contextMenu {
-                                    ForEach(FeedMode.allCases, id: \.self) { mode in
+                                    ForEach(FeedMode.menuModes, id: \.self) { mode in
                                         Button(action: {
                                             selectedTab = .feed
                                             feedService.switchMode(mode)
@@ -881,6 +884,8 @@ struct MenuBarView: View {
             }
             .padding(.top, 4)
         }
+        .overlay { ZapFlightStage() }
+        .hashtagLinks()
         #if os(macOS)
         .environment(\.noteDetailSelection, noteSelection)
         .sheet(isPresented: Binding(
@@ -912,7 +917,7 @@ struct MenuBarView: View {
                 .environmentObject(configService)
         }
         .sheet(isPresented: $showingDMInbox) {
-            DMInboxView()
+            DMInboxView(openConversation: dmInboxConversation)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
                 .frame(minWidth: 480, minHeight: 500)
@@ -929,17 +934,21 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             selectedTab = .notes
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            selectedTab = .notes
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
             selectedTab = .feed
             if let eventId = notification.object as? String {
                 noteSelection.select(id: eventId)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
             // Matches iOS: the profile tab comes up behind the inbox, so
             // dismissing the sheet leaves you somewhere related rather than on
             // whatever tab you happened to be on when the message arrived.
             selectedTab = .profile
+            dmInboxConversation = note.object as? String
             showingDMInbox = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
@@ -995,6 +1004,7 @@ struct MenuBarView: View {
         // that silently threw away your tab if you spent a minute in another app —
         // switch to Safari, come back, and Notes or Feed had become Relay.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
+            settingsPaneRequest = .relays
             selectedTab = .settings
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in

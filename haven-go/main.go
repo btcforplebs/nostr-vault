@@ -94,7 +94,7 @@ func main() {
 		config.WotFetchTimeoutSeconds,
 		config.WotCachePath,
 		config.WotCacheTTLMinutes,
-	).WithFallbackSeeds(loadStarterPack())
+	)
 
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
@@ -120,10 +120,12 @@ func main() {
 		}
 
 		runsafe.Go("subscribeInboxAndChat", func() { subscribeInboxAndChat(mainCtx) })
+		runsafe.Go("followerLedger", func() { runFollowerLedger(mainCtx) })
 		runsafe.Go("syncFeed", func() { syncFeed(mainCtx) })
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
+		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval) })
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))

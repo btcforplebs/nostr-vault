@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.ZapFlight
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -7,8 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,11 +20,20 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,6 +45,7 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
+import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
@@ -44,7 +55,6 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
@@ -56,6 +66,21 @@ import javax.inject.Inject
 
 /** Loading-row fallback when relays never send EOSE (iOS uses 6 s too). */
 private const val LOADING_TIMEOUT_MS = 6_000L
+
+/**
+ * A response that isn't a thread row: a quote (a `q` tag on the root, and not
+ * itself a reply), a highlight, a voice reply, or any other kind pointing at
+ * the root. Replies, comments, reactions, reposts and zaps live elsewhere.
+ * iOS: NoteDetailView.isOtherResponse.
+ */
+internal fun isOtherResponse(note: FeedNote, rootId: String): Boolean {
+    if (note.kind in setOf(1, NIP10Thread.COMMENT_KIND, 6, 7, 9735)) {
+        if (note.kind != 1) return false
+        val quotesRoot = note.tags.any { it.size >= 2 && it[0] == "q" && it[1] == rootId }
+        return quotesRoot && NIP10Thread.parentEventId(note.kind, note.tags) == null
+    }
+    return true
+}
 
 @HiltViewModel
 class NoteDetailViewModel @Inject constructor(
@@ -82,6 +107,10 @@ class NoteDetailViewModel @Inject constructor(
     /** All replies in the thread (flat list used to build the tree). */
     private val _allReplies = MutableStateFlow<List<FeedNote>>(emptyList())
     val allReplies: StateFlow<List<FeedNote>> = _allReplies.asStateFlow()
+
+    /** Quotes, highlights and voice replies: shown under the thread, not as rows. */
+    private val _otherResponses = MutableStateFlow<List<FeedNote>>(emptyList())
+    val otherResponses: StateFlow<List<FeedNote>> = _otherResponses.asStateFlow()
 
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val noteStats: StateFlow<Map<String, NoteStats>> = feedService.noteStats
@@ -120,8 +149,27 @@ class NoteDetailViewModel @Inject constructor(
     private val _perNoteEngagement = MutableStateFlow<Map<String, EngagementDetails>>(emptyMap())
     val perNoteEngagement: StateFlow<Map<String, EngagementDetails>> = _perNoteEngagement.asStateFlow()
 
+    /** The active account's blocked people (hex), kept current so blocking from here hides them at once. */
+    val blockedPubkeys: StateFlow<Set<String>> = configStore.config
+        .map { feedService.blockedHexForActiveAccount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
+
+    /**
+     * Your Web of Trust plus follows, taken once the graph has loaded. Empty
+     * until then, which folds nobody. iOS: `feedService.relayTabTrustedPubkeys()`.
+     */
+    private val _trustedPubkeys = MutableStateFlow<Set<String>>(emptySet())
+    val trustedPubkeys: StateFlow<Set<String>> = _trustedPubkeys.asStateFlow()
+
+    val activeHexPubkey: String get() = nostrService.activeHexPubkey
+
     init {
         loadNoteThread()
+        viewModelScope.launch {
+            if (feedService.wotPubkeys.value.isEmpty()) feedService.loadWotPubkeys()
+            val wot = feedService.wotPubkeys.first { it.isNotEmpty() }
+            _trustedPubkeys.value = wot + feedService.followedPubkeys.value
+        }
         // Optimistic reply insertion: when the user publishes a reply from
         // ComposeNoteScreen it is emitted here immediately, before relay
         // confirmation, so it appears inline without waiting for a round-trip.
@@ -134,6 +182,10 @@ class NoteDetailViewModel @Inject constructor(
 
     private fun loadNoteThread() {
         val cached = feedService.findNote(noteId)
+        if (cached != null && cached.kind == 6) {
+            openRepostedOriginal(cached)
+            return
+        }
         if (cached != null) {
             startThreadLoad(cached)
             return
@@ -145,6 +197,28 @@ class NoteDetailViewModel @Inject constructor(
         nostrService.fetchNoteById(noteId, onRawEvent = feedService::cacheRawEvent) { fetched ->
             _isLoadingNote.value = false
             if (fetched != null) startThreadLoad(fetched)
+        }
+    }
+
+    /**
+     * A repost opens the note it reposted (iOS #326): the thread, likes, zaps,
+     * author and menu all belong to the original. A bare repost whose original
+     * isn't loaded fetches it by id, and keeps the repost if no relay has it.
+     */
+    private fun openRepostedOriginal(repost: FeedNote) {
+        val original = feedService.quoteTarget(repost.id)
+        if (original == null || original.id == repost.id) {
+            startThreadLoad(repost)
+            return
+        }
+        if (original.content.isNotEmpty()) {
+            startThreadLoad(original)
+            return
+        }
+        _isLoadingNote.value = true
+        nostrService.fetchNoteById(original.id, onRawEvent = feedService::cacheRawEvent) { fetched ->
+            _isLoadingNote.value = false
+            startThreadLoad(fetched ?: repost)
         }
     }
 
@@ -189,7 +263,20 @@ class NoteDetailViewModel @Inject constructor(
         val ancestorIds = foundNote.tags
             .filter { it.size >= 2 && it[0] == "e" && (it.size < 4 || it[3] != "mention") }
             .map { it[1] }
-        nostrService.fetchThread(rootId, effectiveId, ancestorIds, onRawEvent = feedService::cacheRawEvent) { threadNotes ->
+        // The root's address when it's addressable or replaceable (or the
+        // A a comment carries), so comments on an edited article still load.
+        val rootCoordinate = if (foundNote.kind == NIP10Thread.COMMENT_KIND) {
+            foundNote.tags.firstOrNull { it.size >= 2 && it[0] == "A" }?.get(1)
+        } else if (rootId == foundNote.id) {
+            NIP10Thread.coordinate(foundNote.kind, foundNote.pubkey, foundNote.tags)
+        } else null
+        nostrService.fetchOtherResponses(rootId, rootCoordinate) { found ->
+            _otherResponses.value = found
+                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
+                .sortedByDescending { it.createdAt }
+            nostrService.fetchMissingProfiles(found.map { it.pubkey }.distinct())
+        }
+        nostrService.fetchThread(rootId, effectiveId, ancestorIds, rootCoordinate, onRawEvent = feedService::cacheRawEvent) { threadNotes ->
             mergeReplies(threadNotes)
             // Rebuild the chain now that fetched notes may fill gaps.
             _parentNotes.value = buildAncestorChain(foundNote, _allReplies.value)
@@ -302,11 +389,12 @@ class NoteDetailViewModel @Inject constructor(
         if (_isZapping.value) return
         viewModelScope.launch {
             _isZapping.value = true
-            val result = zapSendService.zapNote(note.effectiveEventId, note.pubkey, amountSats)
+            val result = zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats)
             _isZapping.value = false
             result.fold(
                 onSuccess = {
-                    _zapMessage.emit("Zapped ⚡$amountSats sats")
+                    ZapFlight.launch(note.effectiveEventId)
+                    _zapMessage.emit("Zapped $amountSats sats")
                     kotlinx.coroutines.delay(3_000)
                     fetchEngagement(note.effectiveEventId)
                 },
@@ -380,14 +468,28 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The people in one thread note's engagement, for its sheet. The thread
+     * batch fetch does not load them (the focused note's own fetch does), so
+     * this runs once when a sheet opens rather than for every row.
+     */
+    fun fetchEngagementProfiles(details: EngagementDetails) {
+        val pubkeys = buildList {
+            details.reactions.mapTo(this) { it.pubkey }
+            details.zaps.mapTo(this) { it.zapperPubkey }
+            details.reposts.mapTo(this) { it.pubkey }
+        }.distinct()
+        if (pubkeys.isNotEmpty()) nostrService.fetchMissingProfiles(pubkeys)
+    }
+
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
     fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]
     fun isLiked(noteId: String): Boolean = likedEventIds.value.contains(noteId)
     fun isReposted(noteId: String): Boolean = repostedEventIds.value.contains(noteId)
 
-    /** Get direct child replies for a given note ID. */
-    fun childRepliesFor(parentId: String): List<FeedNote> =
-        _allReplies.value.filter { it.parentEventId == parentId }
+    /** A note this thread or the feed has loaded: what a bare repost line carries. */
+    fun findNote(id: String): FeedNote? =
+        feedService.findNote(id) ?: _allReplies.value.firstOrNull { it.id == id }
 
     // ── Quoted note resolution (embedded nostr:note1/nevent1 previews) ──
 
@@ -420,6 +522,7 @@ fun NoteDetailScreen(
     val note by viewModel.note.collectAsState()
     val parentNotes by viewModel.parentNotes.collectAsState()
     val allReplies by viewModel.allReplies.collectAsState()
+    val otherResponses by viewModel.otherResponses.collectAsState()
     val isLoadingNote by viewModel.isLoadingNote.collectAsState()
     val isLoadingParents by viewModel.isLoadingParents.collectAsState()
     val isLoadingReplies by viewModel.isLoadingReplies.collectAsState()
@@ -433,10 +536,19 @@ fun NoteDetailScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     // The currently focused note (hero). Starts as the original note,
     // tapping a parent or reply refocuses the thread around it.
     var focusedNoteId by remember { mutableStateOf(noteId) }
+
+    // Replies and the conversation above drawn as condensed lines, the same
+    // lines the threaded feed uses. The note you are reading always stays full
+    // size with its action bar, so replying is still one tap: that is what the
+    // old compact mode got wrong (iOS #56). Remembered across threads.
+    // iOS: @AppStorage("thread.condensedReplies").
+    val threadPrefs = remember { context.getSharedPreferences(THREAD_PREFS, android.content.Context.MODE_PRIVATE) }
+    var condensedReplies by remember { mutableStateOf(threadPrefs.getBoolean(KEY_CONDENSED_REPLIES, false)) }
 
     // Fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced by
     // the focal note, its ancestors, or replies, plus their authors' profiles.
@@ -458,9 +570,10 @@ fun NoteDetailScreen(
     }
 
     // Engagement sheet states
-    var showReactorsSheet by remember { mutableStateOf(false) }
-    var showZappersSheet by remember { mutableStateOf(false) }
-    var showRepostersSheet by remember { mutableStateOf(false) }
+    // Which list is open and whose: a null note id is the focused note
+    // (its own engagement fetch), any other id a note elsewhere in the thread
+    // (the thread-wide batch).
+    var engagementSheet by remember { mutableStateOf<EngagementSheetTarget?>(null) }
 
     // Emoji picker / zap / broadcast targets — any note in the thread, not
     // just the hero (parents and replies have the same action bar).
@@ -468,6 +581,9 @@ fun NoteDetailScreen(
     var zapTargetNote by remember { mutableStateOf<FeedNote?>(null) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var broadcastTargetNote by remember { mutableStateOf<FeedNote?>(null) }
+    // The post bar's Web of Trust button: the author whose map is open.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    val openTrustWeb: (String) -> Unit = { author -> trustWebAuthor = author }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Moderation confirmations. These hold the note they were opened for rather
@@ -484,6 +600,11 @@ fun NoteDetailScreen(
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
+
+    val blockedPubkeys by viewModel.blockedPubkeys.collectAsState()
+    val trustedPubkeys by viewModel.trustedPubkeys.collectAsState()
+    // Replies from outside your network are folded until asked for.
+    var showsOutsideReplies by remember { mutableStateOf(false) }
 
     // Derive focused note, parents, and direct replies from focusedNoteId
     val focusedNote = remember(focusedNoteId, note, allReplies) {
@@ -512,11 +633,46 @@ fun NoteDetailScreen(
         }
     }
 
-    val directReplies = remember(focusedNoteId, allReplies, note) {
-        // Effective id redirects kind-6 reposts to the reposted event, whose
-        // replies are what actually exist on relays.
-        val heroId = focusedNote?.effectiveEventId ?: noteId
-        allReplies.filter { it.parentEventId == heroId }.sortedBy { it.createdAt }
+    // Notes above it by someone you blocked are left out.
+    val shownParents = remember(dynamicParents, blockedPubkeys) {
+        dynamicParents.filter { it.pubkey !in blockedPubkeys }
+    }
+
+    // Effective id redirects kind-6 reposts to the reposted event, whose
+    // replies are what actually exist on relays.
+    val replyTargetId = focusedNote?.effectiveEventId ?: noteId
+
+    // Replies under the opened note, at any depth, through the feed's block
+    // rule and spam check; replies from outside your network stay folded.
+    // You and the authors of the opened note and the notes above it are never
+    // folded. iOS: NoteDetailView.threadReplies (#278).
+    val threadReplies = remember(
+        replyTargetId, allReplies, parentNotes, note, dynamicParents, blockedPubkeys, trustedPubkeys, showsOutsideReplies,
+    ) {
+        val byId = (parentNotes + listOfNotNull(note) + allReplies).associateBy { it.id }
+        val insiders = buildSet {
+            add(viewModel.activeHexPubkey)
+            note?.let { add(it.pubkey) }
+            focusedNote?.let { add(it.pubkey) }
+            dynamicParents.forEach { add(it.pubkey) }
+        }
+        ThreadReplyVisibility.replies(
+            targetId = replyTargetId,
+            pool = allReplies,
+            hidden = { n ->
+                n.isNoise || FeedFilterEngine.involvesBlocked(n, blockedPubkeys) { id ->
+                    byId[id]?.pubkey ?: viewModel.findNote(id)?.pubkey
+                }
+            },
+            trusted = trustedPubkeys,
+            insiders = insiders,
+            showOutside = showsOutsideReplies,
+        )
+    }
+    val visibleReplies = threadReplies.visible
+
+    val directReplies = remember(replyTargetId, visibleReplies) {
+        visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
     }
 
     // Re-fetch engagement when focus changes; when refocusing inside the
@@ -528,20 +684,68 @@ fun NoteDetailScreen(
         if (focusedNoteId != noteId) viewModel.fetchRepliesForFocus(target)
     }
 
-    // Auto-scroll to hero note when focus changes or the parent chain is
-    // revealed. This replaces both the initial scroll and tap-to-focus scroll.
-    LaunchedEffect(focusedNoteId, isLoadingParents) {
-        if (!isLoadingParents && note != null) {
-            // Allow layout to settle after recomposition
-            kotlinx.coroutines.delay(250)
-            val heroIndex = dynamicParents.size
-            if (heroIndex in 0 until listState.layoutInfo.totalItemsCount) {
-                listState.animateScrollToItem(heroIndex, scrollOffset = -100)
-            }
+    // The hero's place in the list: after the loading row while the notes
+    // above it load, then after the parent cards, or after the one card of
+    // condensed lines.
+    val heroIndex = when {
+        isLoadingParents -> if (note?.parentEventId != null) 1 else 0
+        condensedReplies -> if (shownParents.isEmpty()) 0 else 1
+        else -> shownParents.size
+    }
+    val currentHeroIndex by rememberUpdatedState(heroIndex)
+    val viewportHeight by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
+
+    // Set once the reader scrolls or picks another note; until then the
+    // opened note is kept at the top as the thread above it loads.
+    var readerTookOver by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect {
+            if (it is DragInteraction.Start) readerTookOver = true
+        }
+    }
+
+    // Puts the note you opened a little below the top (12% down, so the end
+    // of the post it answers shows above it), with the rest of the posts it
+    // answers scrollable above. Runs again whenever the content above it
+    // changes (history arriving, the layout switching, the screen size
+    // settling), until the reader scrolls: a single jump was undone by
+    // whatever loaded next, and the opened reply ended up down the screen.
+    // iOS #282, #306. The first landing is instant, before the thread has
+    // been seen; a later one (history arriving late) glides instead of jumping.
+    var hasLanded by remember { mutableStateOf(false) }
+    LaunchedEffect(isLoadingParents, heroIndex, viewportHeight, note != null) {
+        if (readerTookOver || isLoadingParents || note == null || heroIndex == 0) return@LaunchedEffect
+        suspend fun land() {
+            if (readerTookOver || heroIndex >= listState.layoutInfo.totalItemsCount) return
+            val offset = -(viewportHeight * THREAD_LANDING_ANCHOR).toInt()
+            // A negative scroll offset puts the item that far below the top.
+            val there = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == heroIndex }?.offset == -offset
+            if (there) return
+            if (hasLanded) listState.animateScrollToItem(heroIndex, offset)
+            else listState.scrollToItem(heroIndex, offset)
+            hasLanded = true
+        }
+        // Next frame, once the revealed history has laid out, and once more
+        // after images above have had a moment to size themselves.
+        withFrameNanos { }
+        land()
+        kotlinx.coroutines.delay(400)
+        land()
+    }
+
+    // A note picked in the thread becomes the hero and scrolls to the top.
+    LaunchedEffect(focusedNoteId) {
+        if (!readerTookOver) return@LaunchedEffect // the opened note: the landing above handles it
+        // Allow layout to settle after recomposition
+        kotlinx.coroutines.delay(250)
+        val index = currentHeroIndex
+        if (index in 0 until listState.layoutInfo.totalItemsCount) {
+            listState.animateScrollToItem(index)
         }
     }
 
     fun scrollToNote(targetId: String) {
+        readerTookOver = true
         focusedNoteId = targetId
         // LaunchedEffect(focusedNoteId) handles the actual scroll after recomposition
     }
@@ -622,20 +826,26 @@ fun NoteDetailScreen(
 
                 Spacer(Modifier.weight(1f))
 
-                // Trailing pill: compact toggle + stats + reply + broadcast
+                // Trailing pill: condensed toggle + stats + reply + broadcast
                 GlassPill {
-                    // Thread stats toggle
+                    // Condensed / full replies
                     IconButton(
-                        onClick = viewModel::toggleExpandedEngagement,
+                        onClick = {
+                            condensedReplies = !condensedReplies
+                            threadPrefs.edit().putBoolean(KEY_CONDENSED_REPLIES, condensedReplies).apply()
+                        },
                         modifier = Modifier.size(40.dp),
                     ) {
                         Icon(
-                            NostrVaultIcons.BarChart,
-                            "Thread Stats",
-                            tint = if (expandedEngagement) colors.primary else SecondaryText,
+                            if (condensedReplies) NostrVaultIcons.ThreadedView else NostrVaultIcons.ExpandedView,
+                            if (condensedReplies) "Condensed replies" else "Full replies",
+                            tint = if (condensedReplies) colors.primary else SecondaryText,
                             modifier = Modifier.size(25.dp),
                         )
                     }
+                    // Thread stats toggle. While on it says "Stats": an icon
+                    // alone gave no hint what it had switched on (iOS #325).
+                    ThreadStatsToggle(isOn = expandedEngagement, onClick = viewModel::toggleExpandedEngagement)
                     // Reply
                     IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
                         Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))
@@ -688,8 +898,27 @@ fun NoteDetailScreen(
                             InlineLoadingRow(text = "Loading thread…", color = colors.primary)
                         }
                     }
+                } else if (condensedReplies) {
+                    // The conversation above, one line per note, oldest at the top.
+                    if (shownParents.isNotEmpty()) {
+                        item(key = "parents_condensed") {
+                            CondensedThreadCard {
+                                for (parent in shownParents) {
+                                    ThreadCondensedLine(
+                                        note = parent,
+                                        depth = 0,
+                                        replyCount = 0,
+                                        viewModel = viewModel,
+                                        profiles = profiles,
+                                        onProfileClick = onProfileClick,
+                                        onTap = { scrollToNote(parent.id) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    items(dynamicParents, key = { "parent_${it.id}" }) { parent ->
+                    items(shownParents, key = { "parent_${it.id}" }) { parent ->
                         val quotedNotesMap = remember(parent.id, parent.quotedEventIds, quotedNotesCache) {
                             parent.quotedEventIds.mapNotNull { qid ->
                                 viewModel.quotedNoteFor(qid)?.let { qid to it }
@@ -698,10 +927,9 @@ fun NoteDetailScreen(
                         NoteCard(
                             note = parent,
                             profile = viewModel.profileFor(parent.pubkey),
-                            stats = viewModel.statsFor(parent.id),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
-                            isLiked = viewModel.isLiked(parent.id),
+                            isLiked = viewModel.isLiked(parent.effectiveEventId),
                             isReposted = viewModel.isReposted(parent.effectiveEventId),
                             isFocused = parent.id == focusedNoteId,
                             parentIsNext = true,
@@ -714,12 +942,23 @@ fun NoteDetailScreen(
                             onReply = onReply,
                             onZap = { zapTargetNote = parent },
                             onBroadcast = { broadcastTargetNote = parent },
+                            onTrustWeb = if (viewModel.isOwnNote(parent.effectiveAuthor)) null else openTrustWeb,
                             isOwnNote = viewModel.isOwnNote(parent.pubkey),
                             onReport = { reportTarget = parent },
                             onBlock = { blockTarget = parent },
                             onDelete = { deleteTarget = parent },
                             onLongPressLike = { emojiTargetNote = parent },
+                            modifier = Modifier.padding(horizontal = ThreadSideInset),
                         )
+                        if (expandedEngagement && parent.id != focusedNoteId) {
+                            perNoteEngagement[parent.id]?.let { details ->
+                                ThreadNoteEngagementRow(
+                                    details = details,
+                                    onClick = { kind -> engagementSheet = EngagementSheetTarget(kind, parent.id) },
+                                    modifier = Modifier.padding(horizontal = ThreadSideInset),
+                                )
+                            }
+                        }
                         // Thread connector line
                         ThreadConnectorLine(color = colors.primary)
                     }
@@ -736,8 +975,9 @@ fun NoteDetailScreen(
                                 viewModel.quotedNoteFor(qid)?.let { qid to it }
                             }.toMap()
                         },
-                        stats = viewModel.statsFor(focusedNote!!.id),
-                        isLiked = viewModel.isLiked(focusedNote!!.id),
+                        stats = viewModel.statsFor(focusedNote!!.effectiveEventId),
+                        engagement = engagementDetails,
+                        isLiked = viewModel.isLiked(focusedNote!!.effectiveEventId),
                         isReposted = viewModel.isReposted(focusedNote!!.effectiveEventId),
                         isOwnNote = viewModel.isOwnNote(focusedNote!!.pubkey),
                         isFollowing = viewModel.isFollowing(focusedNote!!.pubkey),
@@ -755,12 +995,15 @@ fun NoteDetailScreen(
                         onBlock = { blockTarget = focusedNote },
                         onDelete = { deleteTarget = focusedNote },
                         onReport = { reportTarget = focusedNote },
-                        onReactionsClick = { showReactorsSheet = true },
-                        onRepostsClick = { showRepostersSheet = true },
-                        onZapsClick = { showZappersSheet = true },
+                        onReactionsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REACTIONS, null) },
+                        onRepostsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REPOSTS, null) },
+                        onZapsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.ZAPS, null) },
                         onZap = { zapTargetNote = focusedNote },
                         onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
+                        onTrustWeb = focusedNote!!.effectiveAuthor.let { author ->
+                            if (viewModel.isOwnNote(author)) null else ({ openTrustWeb(author) })
+                        },
                     )
                 }
 
@@ -770,7 +1013,7 @@ fun NoteDetailScreen(
                         InlineLoadingRow(text = "Loading replies…", color = colors.primary)
                     }
                 } else if (directReplies.isEmpty()) {
-                    item(key = "replies_empty") {
+                    if (threadReplies.outside == 0) item(key = "replies_empty") {
                         Text(
                             text = "No replies yet",
                             color = SecondaryText,
@@ -794,9 +1037,31 @@ fun NoteDetailScreen(
                 }
 
                 // ── Threaded replies ────────────────────────────
-                items(directReplies, key = { it.id }) { reply ->
+                // Condensed: one card of lines, nested under what they answer;
+                // tap a line and it becomes the note you are reading, full size.
+                if (condensedReplies) {
+                    val tree = FeedThreadGrouping.replyTree(replyTargetId, visibleReplies)
+                    if (tree.isNotEmpty()) {
+                        item(key = "replies_condensed") {
+                            CondensedThreadCard {
+                                for (entry in tree) {
+                                    ThreadCondensedLine(
+                                        note = entry.note,
+                                        depth = entry.depth,
+                                        replyCount = visibleReplies.count { it.parentEventId == entry.note.id },
+                                        viewModel = viewModel,
+                                        profiles = profiles,
+                                        onProfileClick = onProfileClick,
+                                        onTap = { scrollToNote(entry.note.id) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else items(directReplies, key = { it.id }) { reply ->
                     ThreadedReplyNode(
                         reply = reply,
+                        pool = visibleReplies,
                         depth = 1,
                         focusedNoteId = focusedNoteId,
                         themeColor = colors.primary,
@@ -812,6 +1077,7 @@ fun NoteDetailScreen(
                         onQuote = onQuote,
                         onZapNote = { zapTargetNote = it },
                         onBroadcastNote = { broadcastTargetNote = it },
+                        onTrustWeb = openTrustWeb,
                         onModerateNote = { note, action ->
                             when (action) {
                                 Moderation.REPORT -> reportTarget = note
@@ -820,40 +1086,105 @@ fun NoteDetailScreen(
                             }
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
+                        onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
+                        modifier = Modifier.padding(horizontal = ThreadSideInset),
                     )
                 }
 
-                // Bottom spacer
-                item { Spacer(Modifier.height(32.dp)) }
+                // Replies from outside your network, folded until asked for.
+                if (!isLoadingReplies && threadReplies.outside > 0) {
+                    item(key = "outside_replies") {
+                        val count = threadReplies.outside
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showsOutsideReplies = true }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Icon(
+                                NostrVaultIcons.PeopleOutline,
+                                contentDescription = null,
+                                tint = SecondaryText,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (count == 1) "Show 1 reply from outside your network"
+                                else "Show $count replies from outside your network",
+                                color = SecondaryText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+
+                // ── Quotes & highlights (below the fold) ─────────
+                if (otherResponses.isNotEmpty()) {
+                    item(key = "other_header") {
+                        Text(
+                            text = "Quotes & highlights",
+                            color = PrimaryText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+                        )
+                    }
+                    items(otherResponses, key = { "other_${it.id}" }) { response ->
+                        OtherResponseCard(
+                            note = response,
+                            profile = profiles[response.pubkey],
+                            onClick = { if (response.kind == 1) onNoteClick(response.id) },
+                        )
+                    }
+                }
+
+                // Bottom spacer, and room under a short thread so the opened
+                // note can scroll to the top with the posts it answers above
+                // it. Without it a reply with few replies of its own stayed at
+                // the bottom of the screen: there was nothing below to scroll into.
+                item(key = "bottom_room") {
+                    val room = if (shownParents.isNotEmpty()) {
+                        with(density) { viewportHeight.toDp() - 200.dp }.coerceAtLeast(32.dp)
+                    } else {
+                        32.dp
+                    }
+                    Spacer(Modifier.height(room))
+                }
             }
             }
         }
     }
 
     // ── Bottom sheets ────────────────────────────────────────────
-    if (showReactorsSheet) {
-        ReactorsSheet(
-            reactions = engagementDetails?.reactions ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showReactorsSheet = false },
-        )
-    }
-    if (showZappersSheet) {
-        ZappersSheet(
-            zaps = engagementDetails?.zaps ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showZappersSheet = false },
-        )
-    }
-    if (showRepostersSheet) {
-        RepostersSheet(
-            reposts = engagementDetails?.reposts ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showRepostersSheet = false },
-        )
+    engagementSheet?.let { target ->
+        val details = if (target.noteId == null) engagementDetails else perNoteEngagement[target.noteId]
+        if (target.noteId != null) {
+            LaunchedEffect(target) { details?.let(viewModel::fetchEngagementProfiles) }
+        }
+        val dismiss = { engagementSheet = null }
+        when (target.kind) {
+            EngagementSheetKind.REACTIONS -> ReactorsSheet(
+                reactions = details?.reactions ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+            EngagementSheetKind.ZAPS -> ZappersSheet(
+                zaps = details?.zaps ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+            EngagementSheetKind.REPOSTS -> RepostersSheet(
+                reposts = details?.reposts ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+        }
     }
     emojiTargetNote?.let { target ->
         val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -869,6 +1200,7 @@ fun NoteDetailScreen(
     zapTargetNote?.let { target ->
         CustomZapSheet(
             sheetState = zapSheetState,
+            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
             onDismiss = { zapTargetNote = null },
             onZap = { amount ->
                 viewModel.zapNote(target, amount)
@@ -884,6 +1216,16 @@ fun NoteDetailScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { broadcastTargetNote = null },
+            onProfileClick = { broadcastTargetNote = null; onProfileClick(it) },
+        )
+    }
+
+    trustWebAuthor?.let { author ->
+        TrustWebDialog(
+            author = author,
+            initialPath = null,
+            onProfileClick = onProfileClick,
+            onDismiss = { trustWebAuthor = null },
         )
     }
 }
@@ -915,7 +1257,7 @@ private fun InlineLoadingRow(text: String, color: androidx.compose.ui.graphics.C
 private fun ThreadConnectorLine(color: androidx.compose.ui.graphics.Color) {
     Box(
         modifier = Modifier
-            .padding(start = 36.dp)
+            .padding(start = ThreadSideInset + 36.dp)
             .width(1.5.dp)
             .height(12.dp)
             .background(color.copy(alpha = 0.25f)),
@@ -924,8 +1266,8 @@ private fun ThreadConnectorLine(color: androidx.compose.ui.graphics.Color) {
 
 // ── Threaded reply node (recursive) ─────────────────────────────
 // Matches iOS ThreadedReplyNode: recursive tree rendering with depth-based
-// collapsing, focus highlight, and thread connector lines. The thread view is
-// always expanded now — density is decided once, in the feed.
+// collapsing, focus highlight, and thread connector lines. This is the full
+// mode; the condensed toggle swaps the replies for ThreadCondensedLine rows.
 
 /**
  * What a reply's overflow menu asked for. One parameter through the recursive
@@ -936,9 +1278,73 @@ internal enum class Moderation { REPORT, BLOCK, DELETE }
 
 private const val COLLAPSE_DEPTH = 3
 
+private const val THREAD_PREFS = "thread_view"
+private const val KEY_CONDENSED_REPLIES = "condensedReplies"
+
+/**
+ * The thread view's condensed mode: one card of lines, drawn the way the
+ * threaded feed draws a conversation ([FeedThreadCard]). iOS: `.threadCard()`.
+ */
+@Composable
+private fun CondensedThreadCard(content: @Composable ColumnScope.() -> Unit) {
+    val isOled = LocalOledMode.current
+    val themeColor = LocalNostrVaultColors.current.primary
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .background(SecondaryGroupedBg, RoundedCornerShape(12.dp))
+            .border(
+                width = if (isOled) 1.dp else 0.5.dp,
+                color = themeColor.copy(alpha = if (isOled) 0.30f else 0.15f),
+                shape = RoundedCornerShape(12.dp),
+            )
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        content = content,
+    )
+}
+
+/**
+ * One condensed line, as the threaded feed draws it: a bare repost shows the
+ * note it carries, credited to its author. iOS: `NoteDetailView.condensedLine`.
+ */
+@Composable
+private fun ThreadCondensedLine(
+    note: FeedNote,
+    depth: Int,
+    replyCount: Int,
+    viewModel: NoteDetailViewModel,
+    profiles: Map<String, FeedProfile>,
+    onProfileClick: (String) -> Unit,
+    onTap: () -> Unit,
+) {
+    val original = note.repostedEventId?.takeIf { note.isBareRepost }
+        ?.let(viewModel::findNote)?.takeIf { it.kind != 6 }
+    val shown = original?.let { note.withRepostedOriginal(it) } ?: note
+    val stats = viewModel.statsFor(note.effectiveEventId)
+    CondensedNoteLine(
+        note = shown,
+        profile = viewModel.profileFor(shown.pubkey),
+        profiles = profiles,
+        depth = depth,
+        style = CondensedLineStyle.PLAIN,
+        replyCount = replyCount,
+        mediaURLs = shown.mediaURLs,
+        engagement = CondensedEngagement(
+            reactions = if (LocalZapsOnlyMode.current) 0 else stats?.reactions ?: 0,
+            reposts = stats?.reposts ?: 0,
+        ),
+        onProfileClick = onProfileClick,
+        onTap = onTap,
+    )
+}
+
 @Composable
 private fun ThreadedReplyNode(
     reply: FeedNote,
+    /** The replies the thread shows (blocked, spam and folded ones already out). */
+    pool: List<FeedNote>,
     depth: Int,
     focusedNoteId: String,
     themeColor: androidx.compose.ui.graphics.Color,
@@ -955,13 +1361,17 @@ private fun ThreadedReplyNode(
     onQuote: (String) -> Unit,
     onZapNote: (FeedNote) -> Unit,
     onBroadcastNote: (FeedNote) -> Unit,
+    /** Opens the Web of Trust map for an author. */
+    onTrustWeb: (String) -> Unit,
     onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
+    /** A pill in a note's engagement row: open that list for that note. */
+    onEngagementClick: (EngagementSheetKind, String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    // Keyed on the reply list too: late-arriving replies (refocus fetch,
+    // Keyed on the pool too: late-arriving replies (refocus fetch,
     // pull-to-refresh) must recompute each node's children.
-    val allRepliesState by viewModel.allReplies.collectAsState()
-    val childReplies = remember(reply.id, allRepliesState) { viewModel.childRepliesFor(reply.id) }
+    val childReplies = remember(reply.id, pool) { pool.filter { it.parentEventId == reply.id } }
     val isFocusedReply = reply.id == focusedNoteId
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val quotedNotesMap = remember(reply.id, reply.quotedEventIds, quotedNotesCache) {
@@ -971,16 +1381,15 @@ private fun ThreadedReplyNode(
     }
 
     Column(
-        modifier = Modifier.animateContentSize(animationSpec = Motion.panel()),
+        modifier = modifier.animateContentSize(animationSpec = Motion.panel()),
     ) {
         // The reply itself
         NoteCard(
             note = reply,
             profile = viewModel.profileFor(reply.pubkey),
-            stats = viewModel.statsFor(reply.id),
             profiles = profiles,
             quotedNotes = quotedNotesMap,
-            isLiked = viewModel.isLiked(reply.id),
+            isLiked = viewModel.isLiked(reply.effectiveEventId),
             isReposted = viewModel.isReposted(reply.effectiveEventId),
             isFocused = isFocusedReply,
             onNoteClick = { onFocus(reply.id) },
@@ -992,6 +1401,7 @@ private fun ThreadedReplyNode(
             onReply = onReply,
             onZap = { onZapNote(reply) },
             onBroadcast = { onBroadcastNote(reply) },
+            onTrustWeb = if (viewModel.isOwnNote(reply.effectiveAuthor)) null else onTrustWeb,
             isOwnNote = viewModel.isOwnNote(reply.pubkey),
             onReport = { onModerateNote(reply, Moderation.REPORT) },
             onBlock = { onModerateNote(reply, Moderation.BLOCK) },
@@ -999,41 +1409,16 @@ private fun ThreadedReplyNode(
             onLongPressLike = { onLongPressLikeNote(reply) },
         )
 
-        // Per-note engagement row when thread stats are expanded
-        if (expandedEngagement) {
-            val noteEngagement = perNoteEngagement[reply.id]
-            if (noteEngagement != null) {
-                val reactionCount = if (LocalZapsOnlyMode.current) 0 else noteEngagement.reactions.size
-                val zapCount = noteEngagement.zaps.size
-                val repostCount = noteEngagement.reposts.size
-                if (reactionCount > 0 || zapCount > 0 || repostCount > 0) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(start = 50.dp, top = 2.dp, bottom = 4.dp),
-                    ) {
-                        if (reactionCount > 0) {
-                            Text(
-                                text = "❤️ $reactionCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        if (zapCount > 0) {
-                            Text(
-                                text = "⚡ $zapCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        if (repostCount > 0) {
-                            Text(
-                                text = "🔁 $repostCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                }
+        // Per-note engagement when thread stats are on: emoji pills, zap
+        // sats and reposts, each opening its list (iOS ThreadNoteEngagementRow).
+        // The focused one is left out, as on iOS: the hero card shows it.
+        // Data is the thread's one batch fetch, nothing per row.
+        if (expandedEngagement && !isFocusedReply) {
+            perNoteEngagement[reply.id]?.let { details ->
+                ThreadNoteEngagementRow(
+                    details = details,
+                    onClick = { kind -> onEngagementClick(kind, reply.id) },
+                )
             }
         }
 
@@ -1064,44 +1449,47 @@ private fun ThreadedReplyNode(
                     )
                 }
             } else {
-                // Render children with connector line (matches iOS HStack + Rectangle)
-                Row(
+                // Render children with connector line (matches iOS HStack + Rectangle).
+                // Drawn behind the column, not as a fillMaxHeight sibling: that
+                // needed an intrinsic-height pass through every nested note.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .padding(start = 8.dp)
-                        .height(IntrinsicSize.Min),
-                ) {
-                    // Vertical connector line
-                    Box(
-                        modifier = Modifier
-                            .width(1.5.dp)
-                            .fillMaxHeight()
-                            .padding(vertical = 2.dp)
-                            .background(themeColor.copy(alpha = 0.25f)),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (child in childReplies) {
-                            ThreadedReplyNode(
-                                reply = child,
-                                depth = depth + 1,
-                                focusedNoteId = focusedNoteId,
-                                themeColor = themeColor,
-                                viewModel = viewModel,
-                                expandedEngagement = expandedEngagement,
-                                perNoteEngagement = perNoteEngagement,
-                                profiles = profiles,
-                                onProfileClick = onProfileClick,
-                                onNoteClick = onNoteClick,
-                                onArticleClick = onArticleClick,
-                                onFocus = onFocus,
-                                onReply = onReply,
-                                onQuote = onQuote,
-                                onZapNote = onZapNote,
-                                onBroadcastNote = onBroadcastNote,
-                                onModerateNote = onModerateNote,
-                                onLongPressLikeNote = onLongPressLikeNote,
+                        .drawBehind {
+                            val inset = 2.dp.toPx()
+                            drawRect(
+                                color = themeColor.copy(alpha = 0.25f),
+                                topLeft = Offset(0f, inset),
+                                size = Size(1.5.dp.toPx(), (size.height - 2 * inset).coerceAtLeast(0f)),
                             )
                         }
+                        .padding(start = 7.5.dp),
+                ) {
+                    for (child in childReplies) {
+                        ThreadedReplyNode(
+                            reply = child,
+                            pool = pool,
+                            depth = depth + 1,
+                            focusedNoteId = focusedNoteId,
+                            themeColor = themeColor,
+                            viewModel = viewModel,
+                            expandedEngagement = expandedEngagement,
+                            perNoteEngagement = perNoteEngagement,
+                            profiles = profiles,
+                            onProfileClick = onProfileClick,
+                            onNoteClick = onNoteClick,
+                            onArticleClick = onArticleClick,
+                            onFocus = onFocus,
+                            onReply = onReply,
+                            onQuote = onQuote,
+                            onZapNote = onZapNote,
+                            onBroadcastNote = onBroadcastNote,
+                            onTrustWeb = onTrustWeb,
+                            onModerateNote = onModerateNote,
+                            onLongPressLikeNote = onLongPressLikeNote,
+                            onEngagementClick = onEngagementClick,
+                        )
                     }
                 }
             }
@@ -1120,6 +1508,8 @@ private fun HeroNoteCard(
     /** Quoted events keyed by the lookup key `note.quotedEventIds` holds. */
     quotedNotes: Map<String, FeedNote> = emptyMap(),
     stats: NoteStats?,
+    /** Who reacted with what and each zap's amount, for the engagement row. */
+    engagement: EngagementDetails? = null,
     isLiked: Boolean,
     isReposted: Boolean = false,
     isOwnNote: Boolean,
@@ -1144,49 +1534,108 @@ private fun HeroNoteCard(
     onZap: () -> Unit,
     onShare: () -> Unit,
     onBroadcast: () -> Unit,
+    /** Web of Trust for the author; null on your own notes. */
+    onTrustWeb: (() -> Unit)? = null,
 ) {
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
     var showMoreMenu by remember { mutableStateOf(false) }
     val heroContext = LocalContext.current
     val heroClipboard = LocalClipboardManager.current
+    val cardShape = RoundedCornerShape(12.dp)
 
+    // iOS mainNoteLayout: the same card as a focused feed row — 14pt padding,
+    // a 2pt accent border and an accent-tinted glow (opacity 0.35, radius 8),
+    // 16pt in from the screen edges. The glow is the accent, not a grey
+    // elevation shadow, and the surface is opaque so it does not show through.
     Surface(
-        color = SecondaryGroupedBg.copy(alpha = 0.85f),
-        shape = RoundedCornerShape(12.dp),
+        color = SecondaryGroupedBg,
+        shape = cardShape,
         border = androidx.compose.foundation.BorderStroke(2.dp, themeColor),
-        shadowElevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .shadow(
+                elevation = 8.dp,
+                shape = cardShape,
+                ambientColor = themeColor.copy(alpha = 0.35f),
+                spotColor = themeColor.copy(alpha = 0.35f),
+            ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Author header with more menu
+        Column(
+            modifier = Modifier
+                .background(themeColor.copy(alpha = HERO_TINT_ALPHA))
+                .padding(14.dp),
+        ) {
+            // Author header, iOS `.wide` row: 40pt avatar, name with the
+            // NIP-05 seal, relative time on the right, "reply to" under it.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onProfileClick(note.pubkey) },
+                AvatarImage(
+                    url = profile?.pictureURL,
+                    pubkey = note.pubkey,
+                    size = 40.dp,
+                    displayName = profile?.bestName,
+                    modifier = Modifier.clickable { onProfileClick(note.pubkey) },
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    AvatarImage(
-                        url = profile?.pictureURL,
-                        pubkey = note.pubkey,
-                        size = 48.dp,
-                        displayName = profile?.bestName,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = profile?.bestName ?: note.pubkey.take(8) + "...",
                             color = PrimaryText,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clickable { onProfileClick(note.pubkey) },
                         )
-                        profile?.nip05?.let {
-                            Text(text = it, color = SecondaryText, fontSize = 13.sp)
+                        if (!profile?.nip05.isNullOrBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = NostrVaultIcons.Verified,
+                                contentDescription = "Verified",
+                                tint = androidx.compose.ui.graphics.Color(0xFF33CC99),
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        if (note.isFromNostrVault) {
+                            Spacer(Modifier.width(6.dp))
+                            NostrVaultBadge(size = 12.dp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = formatTimestamp(note.postedAt.time / 1000),
+                            color = SecondaryText,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 0.2.sp,
+                        )
+                    }
+                    val replyToPubkey = note.replyToPubkey
+                    if (note.isReply && replyToPubkey != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Reply,
+                                contentDescription = null,
+                                tint = themeColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "reply to ${profiles[replyToPubkey]?.bestName ?: replyToPubkey.take(8) + "..."}",
+                                color = SecondaryText.copy(alpha = 0.7f),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 0.1.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -1196,7 +1645,7 @@ private fun HeroNoteCard(
                 // note is the only place that offers them.
                 Box {
                     IconButton(onClick = { showMoreMenu = true }) {
-                        Icon(NostrVaultIcons.More, "More", tint = SecondaryText)
+                        Icon(NostrVaultIcons.More, "More", tint = SecondaryText, modifier = Modifier.size(18.dp))
                     }
                     NoteActionsMenu(
                         expanded = showMoreMenu,
@@ -1206,8 +1655,8 @@ private fun HeroNoteCard(
                                 NoteAction(NostrVaultIcons.LinkIcon, "Copy link") {
                                     val nevent = HavenBridge.encodeNevent(
                                         note.effectiveEventId,
-                                        note.pubkey,
-                                        note.kind,
+                                        note.effectiveAuthor,
+                                        note.effectiveKind,
                                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                                         ?: note.effectiveEventId
                                     heroClipboard.setText(AnnotatedString(threadLink(nevent)))
@@ -1223,8 +1672,9 @@ private fun HeroNoteCard(
                                 } else {
                                     add(NoteAction(NostrVaultIcons.PersonAdd, "Follow", onClick = onFollow))
                                 }
-                                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = onBlock))
-                                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = onReport))
+                                // Same names and order as the feed's ⋯ menu.
+                                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true, onClick = onReport))
+                                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true, onClick = onBlock))
                             }
                         },
                         onDismiss = { showMoreMenu = false },
@@ -1232,24 +1682,52 @@ private fun HeroNoteCard(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
-            // Content
-            if (note.content.isNotBlank()) {
-                NostrContentText(
+            // Content. A poll draws its question and options as the card,
+            // bigger here, with who picked each option.
+            val poll = remember(note.id, note.kind) { note.poll }
+            if (poll != null) {
+                PollCard(poll = poll, isFocused = true, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
+                Spacer(Modifier.height(12.dp))
+            } else if (note.content.isNotBlank()) {
+                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
+                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                TranslatableNoteText(
+                    noteKey = note.effectiveEventId,
                     content = note.content,
                     profiles = profiles,
-                    mediaURLs = note.mediaURLs.toSet(),
-                    onProfileClick = onProfileClick,
+                    mediaURLs = mediaSet,
+                    linkURLs = linkSet,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
-                )
+                    selectable = true,
+                ) {
+                    // Long-press selects the focused note's text (iOS
+                    // FeedNoteRow `.textSelection(.enabled)`).
+                    NostrContentText(
+                        content = note.content,
+                        profiles = profiles,
+                        mediaURLs = mediaSet,
+                        linkURLs = linkSet,
+                        onProfileClick = onProfileClick,
+                        fontSize = 17.sp,
+                        lineHeight = 24.sp,
+                        selectable = true,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Media
+            // Media, then links, then quotes, as on iOS.
             if (note.mediaURLs.isNotEmpty()) {
                 MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // One card per link: the URLs are out of the text above (#170).
+            for (link in note.cardLinkURLs) {
+                LinkPreviewCard(url = link)
                 Spacer(Modifier.height(12.dp))
             }
 
@@ -1272,31 +1750,68 @@ private fun HeroNoteCard(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Full timestamp
-            Text(
-                text = dateFormat.format(note.createdAt),
-                color = TertiaryText,
-                fontSize = 13.sp,
-            )
-
-            Spacer(Modifier.height(12.dp))
+            // The time is in the header, relative, as on iOS — the card no
+            // longer repeats it as a full date under the body.
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-            // Engagement stats row — only shown when at least one count is non-zero.
-            // Reactions are dropped entirely in Zaps Only mode.
-            val reactions = stats?.reactions ?: 0
-            val reposts = stats?.reposts ?: 0
-            val zaps = stats?.zaps ?: 0
-            val showReactions = reactions > 0 && !LocalZapsOnlyMode.current
-            if (showReactions || reposts > 0 || zaps > 0) {
+            // Engagement row — only shown when at least one count is non-zero.
+            // Reactions as per-emoji pills, zaps as "count · total sats", the
+            // way iOS shows them. The per-event details arrive after the
+            // counts, so the counts stand in until then. Reactions are dropped
+            // entirely in Zaps Only mode.
+            val zapsOnly = LocalZapsOnlyMode.current
+            val emojiGroups = remember(engagement?.reactions, stats?.reactions, zapsOnly) {
+                when {
+                    zapsOnly -> emptyList()
+                    !engagement?.reactions.isNullOrEmpty() -> EngagementSummary.groupReactions(engagement!!.reactions)
+                    (stats?.reactions ?: 0) > 0 -> listOf(EngagementSummary.EmojiGroup("\u2764\uFE0F", stats!!.reactions))
+                    else -> emptyList()
+                }
+            }
+            val reposts = engagement?.reposts?.map { it.pubkey }?.distinct()?.size?.takeIf { it > 0 }
+                ?: stats?.reposts ?: 0
+            val zapDetails = engagement?.zaps.orEmpty()
+            val zapCount = if (zapDetails.isNotEmpty()) zapDetails.size else stats?.zaps ?: 0
+            val zapSats = if (zapDetails.isNotEmpty()) zapDetails.sumOf { it.amountSats } else stats?.zapAmountSats ?: 0L
+            if (emojiGroups.isNotEmpty() || reposts > 0 || zapCount > 0) {
                 Spacer(Modifier.height(12.dp))
                 Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (showReactions) EngagementStat(count = reactions, label = "Likes", onClick = onReactionsClick)
-                    if (reposts > 0) EngagementStat(count = reposts, label = "Reposts", onClick = onRepostsClick)
-                    if (zaps > 0) EngagementStat(count = zaps, label = "Zaps", onClick = onZapsClick)
+                    if (emojiGroups.isNotEmpty()) {
+                        val shown = emojiGroups.take(EngagementSummary.VISIBLE_EMOJI_GROUPS)
+                        EngagementPill(
+                            description = emojiGroups.joinToString(prefix = "Reactions: ") { "${it.emoji} ${it.count}" },
+                            onClick = onReactionsClick,
+                        ) {
+                            shown.forEach { group ->
+                                Text(group.emoji, fontSize = 12.sp)
+                                Spacer(Modifier.width(2.dp))
+                                Text("${group.count}", color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            if (emojiGroups.size > shown.size) {
+                                Text("+${emojiGroups.size - shown.size}", color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                    if (zapCount > 0) {
+                        val text = EngagementSummary.zapText(zapCount, zapSats)
+                        EngagementPill(description = "Zaps: $text sats", onClick = onZapsClick) {
+                            Icon(NostrVaultIcons.Zap, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(text, color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                    if (reposts > 0) {
+                        EngagementPill(description = "Reposts: $reposts", onClick = onRepostsClick) {
+                            Icon(NostrVaultIcons.Repost, contentDescription = null, tint = RepostGreen, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("$reposts", color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
@@ -1308,13 +1823,8 @@ private fun HeroNoteCard(
             // was a hand-duplicated seven-button row under a comment claiming it
             // was identical, which is how it kept Share and Broadcast inline
             // while every other note on this screen had moved them to the menu.
-            //
-            // `stats = null`: the numbers are already in the `EngagementStat`
-            // row above, and the focused note is the worst place to show them
-            // twice.
             EngagementBar(
                 noteId = note.effectiveEventId,
-                stats = null,
                 isLiked = isLiked,
                 isZapped = false,
                 isReposted = isReposted,
@@ -1324,28 +1834,167 @@ private fun HeroNoteCard(
                 onLike = { onLike() },
                 onZap = { onZap() },
                 onLongPressLike = { onLongPressLike() },
+                onTrustWeb = onTrustWeb,
             )
         }
     }
 }
 
+/**
+ * One tappable pill in an engagement row: the hero note's, or with [compact]
+ * the smaller one under each note in the thread (iOS ThreadNoteEngagementRow:
+ * 6x3 padding, 6pt corners, white at 0.04).
+ */
 @Composable
-private fun EngagementStat(count: Int, label: String, onClick: () -> Unit = {}) {
+private fun EngagementPill(
+    description: String,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Text(
-            text = count.toString(),
-            color = PrimaryText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(if (compact) 6.dp else 8.dp))
+            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = if (compact) 0.04f else 0.05f))
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 3.dp else 5.dp),
+        content = content,
+    )
+}
+
+/** Which engagement list a pill opens. */
+private enum class EngagementSheetKind { REACTIONS, ZAPS, REPOSTS }
+
+/** An open engagement sheet: which list, and for which note (null: the focused one). */
+private data class EngagementSheetTarget(val kind: EngagementSheetKind, val noteId: String?)
+
+/**
+ * Under a parent or reply in the thread when thread stats are on: a hairline,
+ * then emoji pills (three, then "+N"), zap sats and reposts, each pill opening
+ * its list. iOS ThreadNoteEngagementRow. Draws nothing for a note with none.
+ */
+@Composable
+private fun ThreadNoteEngagementRow(
+    details: EngagementDetails,
+    onClick: (EngagementSheetKind) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val zapsOnly = LocalZapsOnlyMode.current
+    val row = remember(details, zapsOnly) { EngagementSummary.threadRow(details, zapsOnly) }
+    if (row.isEmpty) return
+    Column(modifier = modifier.padding(horizontal = 12.dp)) {
+        HorizontalDivider(
+            color = SecondaryText.copy(alpha = 0.1f),
+            thickness = 0.5.dp,
+            modifier = Modifier.padding(top = 8.dp),
         )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = label,
-            color = SecondaryText,
-            fontSize = 14.sp,
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+        ) {
+            if (row.emojiGroups.isNotEmpty()) {
+                val shown = row.emojiGroups.take(EngagementSummary.THREAD_ROW_EMOJI_GROUPS)
+                EngagementPill(
+                    description = row.emojiGroups.joinToString(prefix = "Reactions: ") { "${it.emoji} ${it.count}" },
+                    onClick = { onClick(EngagementSheetKind.REACTIONS) },
+                    compact = true,
+                ) {
+                    shown.forEachIndexed { index, group ->
+                        if (index > 0) Spacer(Modifier.width(3.dp))
+                        Text(group.emoji, fontSize = 11.sp)
+                        Spacer(Modifier.width(1.dp))
+                        Text("${group.count}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                    if (row.emojiGroups.size > shown.size) {
+                        Spacer(Modifier.width(3.dp))
+                        Text("+${row.emojiGroups.size - shown.size}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+            if (row.zapCount > 0) {
+                val sats = EngagementSummary.satsText(row.zapSats)
+                EngagementPill(
+                    description = "Zaps: ${row.zapCount}, $sats sats",
+                    onClick = { onClick(EngagementSheetKind.ZAPS) },
+                    compact = true,
+                ) {
+                    Icon(NostrVaultIcons.Zap, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(9.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(sats, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                }
+            }
+            if (row.reposts > 0) {
+                EngagementPill(
+                    description = "Reposts: ${row.reposts}",
+                    onClick = { onClick(EngagementSheetKind.REPOSTS) },
+                    compact = true,
+                ) {
+                    Icon(NostrVaultIcons.Repost, contentDescription = null, tint = RepostGreen, modifier = Modifier.size(9.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("${row.reposts}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
     }
 }
+
+/** One "below the fold" response: who, what kind, and the text. */
+@Composable
+private fun OtherResponseCard(note: FeedNote, profile: FeedProfile?, onClick: () -> Unit) {
+    val label = when (note.kind) {
+        1 -> "Quoted"
+        9802 -> "Highlighted"
+        1244 -> "Voice reply"
+        else -> "Responded"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SecondaryText.copy(alpha = 0.08f))
+            .clickable(enabled = note.kind == 1, onClick = onClick)
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AvatarImage(url = profile?.pictureURL, pubkey = note.pubkey, size = 22.dp, displayName = profile?.bestName)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = profile?.bestName ?: note.pubkey.take(8),
+                color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (note.content.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = note.content,
+                color = PrimaryText,
+                fontSize = 14.sp,
+                maxLines = if (note.kind == 9802) 6 else 4,
+                overflow = TextOverflow.Ellipsis,
+                fontStyle = if (note.kind == 9802) FontStyle.Italic else FontStyle.Normal,
+            )
+        }
+    }
+}
+
+/**
+ * The focused card's accent wash. iOS lays havenPurple at 0.015 over an opaque
+ * card; 0.04 is what the focused [NoteCard] uses on Android, so the hero and a
+ * focused reply read as the same card.
+ */
+private const val HERO_TINT_ALPHA = 0.04f
+
+/**
+ * Parents and replies sit this far in from the screen's edges, lined up with
+ * the focused card (iOS pads both .horizontal 16).
+ */
+private val ThreadSideInset = 16.dp
+
+/** Where the opened note lands in the thread view, as a share of its height from the top (iOS #306). */
+private const val THREAD_LANDING_ANCHOR = 0.12f

@@ -10,6 +10,12 @@ import java.io.File
  * No Android framework dependencies beyond java.io.File.
  */
 object RelayConfiguration {
+    /** Where features read when the owner has no read relays. */
+    val FALLBACK_RELAYS = listOf("wss://relay.primal.net", "wss://nos.lol")
+
+    /** Where the owner's events go when there are no write relays: the default broadcast list. */
+    val FALLBACK_WRITE_RELAYS = listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social")
+
 
     /** Top-level subdirectories created under the relay data root. */
     val dataSubdirs = listOf("data", "blossom", "cache", "db")
@@ -146,7 +152,12 @@ object RelayConfiguration {
             "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS" to "600",
 
             // DM Relays
-            "DM_RELAYS_FILE" to "relays_dm.json",
+            "DM_RELAYS_FILE" to DM_RELAYS_FILE_NAME,
+
+            // Mac relay: synced like any other relay, plus a one-time
+            // full-history copy whose result lands in mac_sync_status.json
+            // (iOS passes the same; see MacSync).
+            "MAC_RELAY_URL" to MacSync.macRelayURL(config),
 
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,
@@ -171,6 +182,51 @@ object RelayConfiguration {
         )
     }
 
+    /**
+     * Everything the relay reads when it starts: its environment plus the
+     * list files written beside it. Two configs with equal inputs run an
+     * identical relay, so this is what decides whether a saved settings
+     * change needs a restart (see [RelayConfigApplier]). The service writes
+     * the list files from this same struct, so the restart check cannot drift
+     * from what the relay actually reads. Port of iOS
+     * RelayConfiguration.LaunchInputs.
+     */
+    data class LaunchInputs(
+        val env: Map<String, String>,
+        val importSeedRelays: List<String>,
+        val blastrRelays: List<String>,
+        val dmRelays: List<String>,
+    )
+
+    /** Name of the DM relay list file the relay reads (DM_RELAYS_FILE). */
+    const val DM_RELAYS_FILE_NAME = "relays_dm.json"
+
+    fun launchInputs(config: HavenConfig, relayDataDir: File): LaunchInputs = LaunchInputs(
+        env = generateEnvDictionary(config, relayDataDir),
+        importSeedRelays = config.importSeedRelays,
+        blastrRelays = config.blastrRelays,
+        dmRelays = config.dmRelays,
+    )
+
+    /**
+     * Writes the relay lists the Go relay reads from files and points their
+     * env vars at them by absolute path: Go opens the bare filename, but the
+     * app's working directory is not the relay data dir. Rewritten every
+     * time, because config is the source of truth. Call after the env from
+     * [launchInputs] is set, since that sets these vars to bare names.
+     */
+    fun writeRelayListFiles(config: HavenConfig, inputs: LaunchInputs, relayDataDir: File) {
+        fun write(envKey: String, fileName: String, content: List<String>) {
+            if (fileName.isEmpty()) return
+            val file = File(relayDataDir, fileName)
+            file.writeText("[" + content.joinToString(",") { "\"$it\"" } + "]")
+            HavenBridge.setEnv(envKey, file.absolutePath)
+        }
+        write("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, inputs.importSeedRelays)
+        write("BLASTR_RELAYS_FILE", config.blastrRelaysFile, inputs.blastrRelays)
+        write("DM_RELAYS_FILE", DM_RELAYS_FILE_NAME, inputs.dmRelays)
+    }
+
     /** Format an environment dictionary as a .env file string. */
     fun formatEnvFile(envDict: Map<String, String>): String = buildString {
         for ((key, value) in envDict.toSortedMap()) {
@@ -184,6 +240,34 @@ object RelayConfiguration {
             }
         }
     }
+
+    /**
+     * The NIP-65 relay list for a new account whose relay is this device.
+     * The device's own relay can't be reached from outside, so it is not
+     * advertised; the public relays every event is broadcast to are. No
+     * marker, so each is both read and write. Loopback and non-wss entries
+     * are left out. Same as iOS.
+     */
+    fun newAccountRelayListTags(broadcastRelays: List<String>): List<List<String>> {
+        val loopback = setOf("localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]")
+        return broadcastRelays.map { it.trim() }
+            .filter { url ->
+                val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return@filter false
+                uri.scheme == "wss" && !uri.host.isNullOrEmpty() && uri.host.lowercase() !in loopback
+            }
+            .distinct()
+            .map { listOf("r", it) }
+    }
+
+    /**
+     * Where a brand-new account's photos go when it has no server of its
+     * own: blossomMirrors is empty on a fresh install, and with no outside
+     * server a photo (the profile picture included) can't be shown to anyone
+     * else. Both accepted an upload signed by a never-seen key (2026-10-07).
+     * nostr.build first at Logen's request. Only setup's New to Nostr path
+     * applies this. Same as iOS.
+     */
+    val newAccountBlossomMirrors = listOf("https://blossom.nostr.build", "https://blossom.primal.net")
 }
 
 /**
@@ -225,12 +309,10 @@ data class HavenConfig(
     val blacklistedNpubsFile: String = "",
     val whitelistedNpubs: List<String>? = null,
     val blockedNpubs: List<String>? = null,
-    // Per-account block/throttle (mirrors iOS blockedNpubsPerAccount /
-    // throttledAccountsPerAccount, keyed by account npub). Throttle is local-only
-    // (never published); blocked accounts are published as a NIP-51 kind-10000
-    // mute list. Default-empty for backward compatibility with old configs.
+    // Per-account block list (mirrors iOS blockedNpubsPerAccount, keyed by
+    // account npub), published as a NIP-51 kind-10000 mute list.
+    // Default-empty for backward compatibility with old configs.
     val blockedNpubsPerAccount: Map<String, List<String>> = emptyMap(),
-    val throttledAccountsPerAccount: Map<String, Map<String, Int>> = emptyMap(),
 
     // Private Relay
     val privateRelayName: String = "Nostr Vault Private",
@@ -241,7 +323,10 @@ data class HavenConfig(
     val chatRelayName: String = "Nostr Vault Chat",
     val chatRelayDescription: String = "Chat relay",
     val chatRelayIcon: String = "",
-    val chatRelayWotDepth: Int = 2,
+    // 3 = follows plus who they follow, matching iOS. At 2 the trust graph is
+    // exactly your follows, so Global (Web of Trust) equals Following and
+    // Discovery (trusted but not followed) is always empty.
+    val chatRelayWotDepth: Int = 3,
     val chatRelayWotRefreshHours: Int = 24,
     val chatRelayMinFollowers: Int = 3,
     val wotRefreshInterval: String = "24h",
@@ -262,10 +347,11 @@ data class HavenConfig(
     // Import
     val importStartDate: String = "2023-01-01",
     val importSeedRelaysFile: String = "relays_import.json",
+    // Same as iOS HavenConfig.importSeedRelays: relay.damus.io replaced
+    // nos.lol and nostr.mom (2026-10-07).
     val importSeedRelays: List<String> = listOf(
         "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
+        "wss://relay.damus.io",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net",
     ),
@@ -281,12 +367,11 @@ data class HavenConfig(
 
     // Blastr
     val blastrRelaysFile: String = "relays_blastr.json",
+    // Default broadcast relays, same as iOS HavenConfig.blastrRelays.
     val blastrRelays: List<String> = listOf(
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
+        "wss://relay.damus.io",
+        "wss://relay.snort.social",
     ),
 
     // DM Relays — the Go relay merges these with importSeedRelays for the
@@ -298,6 +383,14 @@ data class HavenConfig(
         "wss://nos.lol",
         "wss://relay.btcforplebs.com",
     ),
+    /**
+     * When [dmRelays] last changed, in Unix seconds: the created_at of a
+     * published kind 10050 this device adopted, or the time this device
+     * published its own. null = never set, which any published list beats.
+     */
+    val dmRelaysUpdatedAt: Long? = null,
+    /** Never connect: published as the blocked relay list (NIP-51 kind 10006). See [RelayBlocklist]. */
+    val blockedRelays: List<String> = emptyList(),
 
     // Relay URLs
     val inboxRelays: List<String>? = listOf(
@@ -332,6 +425,14 @@ data class HavenConfig(
 
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
+    /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
+    val autoMirrorMedia: Boolean = false,
+    /**
+     * Picking a nostr.build GIF downloads it and uploads it to your own Blossom
+     * servers with the note, instead of posting nostr.build's link. iOS
+     * saveGifsToBlossom; off by default.
+     */
+    val saveGifsToBlossom: Boolean = false,
 
     // Paths (set at runtime by app)
     val relayDataDir: String? = null,
@@ -369,29 +470,67 @@ data class HavenConfig(
     // When true, the bottom tab bar stays fully expanded and never shrinks/hides
     // on scroll. Mirrors iOS HavenConfig.disableTabBarAnimation.
     val disableTabBarAnimation: Boolean = false,
+    /** Lines of note text a row shows in Compact View. Mirrors iOS HavenConfig.compactLineLimit. */
+    val compactLineLimit: Int = 3,
+    /** Lines a thread's root shows in Threaded View; replies show one fewer. Mirrors iOS. */
+    val threadedLineLimit: Int = 3,
     val autoplayVideos: Boolean = true,
+    /**
+     * New posts join the feed on their own while you are at the top, instead
+     * of waiting behind the "New Posts" pill. Off by default. Mirrors iOS
+     * HavenConfig.autoLoadNewPosts.
+     */
+    val autoLoadNewPosts: Boolean = false,
+    /** Reposts in the feed. Mirrors iOS HavenConfig.showReposts. */
+    val showReposts: Boolean = true,
+    /** Replies in the feed. Mirrors iOS HavenConfig.showReplies. */
+    val showReplies: Boolean = true,
+    /**
+     * The floating "New Posts" pill over the feed. Off, waiting posts load on
+     * pull-to-refresh (or by themselves at the top with Auto-Load). On by
+     * default. Mirrors iOS HavenConfig.showNewPostsPill.
+     */
+    val showNewPostsPill: Boolean = true,
+    /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
+    val globalFeedLanguages: List<String> = emptyList(),
+    /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
+    val globalShowsEveryone: Boolean = false,
+    /** A "Translate" button under notes written in another language (on-device ML Kit). On by default. */
+    val showTranslateButton: Boolean = true,
+    /** ISO 639-1 code notes translate into. Empty follows the device language. */
+    val translateTargetLanguage: String = "",
 
     // Performance
     val prefetchAvatars: Boolean = true,
 
     // Advanced / media (client-side; not sent to the Go relay)
     val disableMediaCache: Boolean = false,
-    val cacheTTLDays: Int = 7, // 0 = never evict
+    val cacheTTLDays: Int = 3, // 0 = never evict
     val autoStartRelay: Boolean = true,
 
     // External relay (Android only). Some users keep the client and their
     // relay/Blossom server in separate apps for sandboxing (e.g. Citrine on
-    // the same phone). When on, the embedded relay never starts and every
+    // the same phone), or run their own relay elsewhere (Nostr Vault for Mac
+    // on a domain). When on, the embedded relay never starts and every
     // read, write and upload that targeted it goes to these URLs instead.
     val useExternalRelay: Boolean = false,
     val externalRelayURL: String = "",
     val externalBlossomURL: String = "",
+    /**
+     * Load Blossom media through a local Blossom cache app (Morganite on
+     * 127.0.0.1:24242) when one is running. See LocalBlossomCache.
+     */
+    val useLocalBlossomCache: Boolean = true,
 
     // Notifications. These drive the on-device notifications the embedded
     // relay generates; there is no push server. The APNs forwarder that
     // pushServerURL used to point at was deleted in cd604a3 — it only ever
     // spoke APNs and had no clients left.
     val enablePushNotifications: Boolean = false,
+    /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
+    val enableFeedNotifications: Boolean = false,
+    /** The picked notification sound's name (iOS notificationSoundName); see NotificationSound. */
+    val notificationSoundName: String = "Chime",
     val pushNotifyMentions: Boolean = true,
     val pushNotifyReplies: Boolean = true,
     val pushNotifyDMs: Boolean = true,
@@ -421,6 +560,27 @@ data class HavenConfig(
      *  there and nothing else, so mesh peers never reach the relay itself. */
     val meshPort: Int
         get() = relayPort + 1
+
+    companion object {
+        /**
+         * New installs open the timeline feeds in Threaded View (iOS
+         * e3decc63, Logen 2026-10-08). Not the [feedLayoutModes] default:
+         * config.json leaves out values equal to their default, so a saved
+         * config from before this setting reads back without the key and
+         * would jump to Threaded View. Only a config that never existed
+         * gets it ([newInstall]); saved ones keep their legacy compact choice.
+         */
+        val NEW_INSTALL_FEED_LAYOUTS: Map<String, String> = listOf(
+            com.nostrvault.data.model.FeedMode.FOLLOWING,
+            com.nostrvault.data.model.FeedMode.DISCOVERY,
+            com.nostrvault.data.model.FeedMode.GLOBAL,
+            com.nostrvault.data.model.FeedMode.HASHTAGS,
+            com.nostrvault.data.model.FeedMode.POPULAR,
+        ).associate { it.name to com.nostrvault.data.model.FeedLayoutMode.THREADED.storageKey }
+
+        /** The config for an install with none saved yet (or just reset). */
+        fun newInstall(): HavenConfig = HavenConfig(feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS)
+    }
 
 
     /** Computed local relay WebSocket URL.
@@ -484,6 +644,14 @@ data class HavenConfig(
     val macRelayHttpsURL: String
         get() = macRelayNormalizedBase.let { if (it.isEmpty()) "" else "https://$it" }
 
+    /** The Mac relay's inbox as a DM relay, or "" — see [DMInbox.havenInboxURL]. */
+    val ownHavenDMInboxURL: String
+        get() = DMInbox.havenInboxURL(macRelayURL, macRelayNormalizedBase)
+
+    /** The one DM inbox list: the Haven inbox first, then [dmRelays]. */
+    val dmInboxRelays: List<String>
+        get() = DMInbox.merged(ownHavenDMInboxURL, dmRelays)
+
     // ── Active Relay Lists (with Haven relay prepended) ───────────
 
     /** Active inbox/feed relays (user-configured or defaults). */
@@ -512,11 +680,9 @@ data class HavenConfig(
         get() {
             val relays = blastrRelays.ifEmpty {
                 listOf(
-                    "wss://relay.primal.net",
-                    "wss://nos.lol",
-                    "wss://nostr.mom",
                     "wss://relay.btcforplebs.com",
-                    "wss://nostr-pub.wellorder.net",
+                    "wss://relay.damus.io",
+                    "wss://relay.snort.social",
                 )
             }.toMutableList()
             val macWss = macRelayWssURL
@@ -525,6 +691,33 @@ data class HavenConfig(
             }
             return relays
         }
+
+    /**
+     * The relays features read other people's events from: the feed relays
+     * (Haven relay first), or [RelayConfiguration.FALLBACK_RELAYS] when there
+     * are none. Ask this rather than building a list per feature.
+     */
+    val readRelays: List<String>
+        get() = activeFeedRelays.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }
+
+    /**
+     * The relays the owner's events are sent to: the broadcast relays (Haven
+     * relay first), or [RelayConfiguration.FALLBACK_WRITE_RELAYS] when there are none.
+     */
+    val writeRelays: List<String>
+        get() = activeBlastrRelays.ifEmpty { RelayConfiguration.FALLBACK_WRITE_RELAYS }
+
+    /**
+     * Kind 10002 tags: the Haven relay, then the Read relays (the feed list,
+     * or the setup wizard's inbox list when the feed list was never set) and
+     * the Write relays. See [PublicRelayList].
+     */
+    val publicRelayListTags: List<List<String>>
+        get() = PublicRelayList.tags(
+            ownRelays = listOf(macRelayWssURL),
+            read = feedRelays ?: activeInboxRelays,
+            write = blastrRelays,
+        )
 
     /** Active import seed relays, including the Haven relay if configured. */
     val activeImportSeedRelays: List<String>
@@ -565,8 +758,14 @@ data class HavenConfig(
         accountBunkerConfigs[forNpub]?.takeIf { it.isConfigured }
 
     /** Current signing mode for the active account (resolves per-account state). */
-    fun activeSigningMode(): String {
-        val npub = activeOrOwnerNpub()
+    fun activeSigningMode(): String = effectiveSigningMode(activeOrOwnerNpub())
+
+    /**
+     * The signing mode [npub] actually signs with: its chosen mode, with
+     * nip46 only when a bunker is configured for it. Owner-forced events use
+     * this for the owner, never the active account's mode (#168 parity).
+     */
+    fun effectiveSigningMode(npub: String): String {
         when (accountSigningModes[npub]) {
             "nip46" -> if (bunkerConfig(npub) != null) return "nip46"
             "amber" -> return "amber"
@@ -587,10 +786,6 @@ data class HavenConfig(
     /** Blocked npubs for the active account, falling back to the legacy flat list. */
     fun blockedForActiveAccount(): List<String> =
         blockedNpubsPerAccount[activeOrOwnerNpub()] ?: blockedNpubs ?: emptyList()
-
-    /** Throttled npub -> max-visible-posts map for the active account (local-only). */
-    fun throttledForActiveAccount(): Map<String, Int> =
-        throttledAccountsPerAccount[activeOrOwnerNpub()] ?: emptyMap()
 
     /** Per-account push preferences, falling back to the global flags. */
     fun pushPrefsFor(npub: String): PushPrefs =
@@ -613,6 +808,8 @@ data class PushPrefs(
     val zaps: Boolean = true,
     val reactions: Boolean = false,
     val reposts: Boolean = false,
+    /** Someone new follows this account (or comes back after a week away). */
+    val follows: Boolean = true,
 ) {
     /**
      * Whether any notification at all is wanted. The relay's catch-up summary
@@ -653,27 +850,57 @@ data class AccountBunkerConfig(
 
 /**
  * Normalizes a user-typed relay address: trims it, drops trailing slashes and
- * adds `ws://` when no scheme was given. Returns null unless it is a
- * websocket address on this phone — the feature is for a relay app running
- * beside this one, and the clients that talk to it (and the cleartext
- * allowance in network_security_config) only trust 127.0.0.1 and localhost.
+ * adds a scheme when none was given. Two kinds of address are accepted:
+ *
+ * - A relay app on this phone (Citrine): `ws://` or `wss://` on 127.0.0.1 or
+ *   localhost. A bare address gets `ws://`.
+ * - A relay somewhere else (Nostr Vault for Mac on a domain): `wss://` only.
+ *   A bare address gets `wss://`.
+ *
+ * Plain `ws://` to any other host is refused: network_security_config only
+ * allows cleartext to loopback, so it would validate and then silently fail.
+ * `.onion` is refused too; the app has no Tor client.
  */
 fun normalizeExternalRelayURL(raw: String): String? =
-    normalizeOnDeviceURL(raw, schemes = listOf("ws://", "wss://"))
+    normalizeExternalURL(raw, secure = "wss://", plain = "ws://")
 
-/** Same as [normalizeExternalRelayURL] for a Blossom server (`http(s)://`). */
+/** Same as [normalizeExternalRelayURL] for a Blossom server (`https://`, or `http://` on this phone). */
 fun normalizeExternalBlossomURL(raw: String): String? =
-    normalizeOnDeviceURL(raw, schemes = listOf("http://", "https://"))
+    normalizeExternalURL(raw, secure = "https://", plain = "http://")
 
-private fun normalizeOnDeviceURL(raw: String, schemes: List<String>): String? {
+private val IPV4_LITERAL = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.\\d{1,3}\\.\\d{1,3}$")
+
+/**
+ * Whether [url] points at this phone or a private network: loopback, the
+ * RFC 1918 ranges, Tailscale's 100.64/10, `.local` and `.ts.net` names. A
+ * link to such a host only opens for its owner, so it must never be the
+ * only link a post carries. Hostnames are matched as IP literals, so
+ * `10.example.com` is public.
+ */
+fun isPrivateNetworkURL(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase()?.trim('[', ']') ?: return false
+    if (host == "localhost" || host == "::1" || host.endsWith(".local") || host.endsWith(".ts.net")) return true
+    val m = IPV4_LITERAL.matchEntire(host) ?: return false
+    val a = m.groupValues[1].toInt()
+    val b = m.groupValues[2].toInt()
+    return a == 127 || a == 10 || (a == 192 && b == 168) || (a == 172 && b in 16..31) ||
+        (a == 100 && b in 64..127)
+}
+
+private fun normalizeExternalURL(raw: String, secure: String, plain: String): String? {
     var url = raw.trim().trimEnd('/')
-    if (url.isEmpty()) return null
+    if (url.isEmpty() || url.any { it.isWhitespace() }) return null
     val lower = url.lowercase()
     if ("://" !in lower) {
-        url = schemes.first() + url
-    } else if (schemes.none { lower.startsWith(it) }) {
+        val bareHost = lower.substringBefore('/').substringBefore(':')
+        url = (if (bareHost == "127.0.0.1" || bareHost == "localhost") plain else secure) + url
+    } else if (!lower.startsWith(secure) && !lower.startsWith(plain)) {
         return null
     }
-    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return null
-    return if (host == "127.0.0.1" || host == "localhost") url else null
+    val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase() ?: return null
+    if (host.endsWith(".onion")) return null
+    val onDevice = host == "127.0.0.1" || host == "localhost"
+    if (!onDevice && !url.lowercase().startsWith(secure)) return null
+    return url
 }

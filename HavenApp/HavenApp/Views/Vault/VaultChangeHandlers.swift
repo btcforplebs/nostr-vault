@@ -7,10 +7,15 @@ struct VaultChangeHandlers: ViewModifier {
     let committedSearch: String
     let searchScope: SearchScope
     let contentFilter: ContentFilter
+    /// Notes, Articles or Highlights, plus the Recipes filter on Articles.
+    let noteScopeKey: String
     let eventsCount: Int
     let blacklistedNpubs: [String]
     let activeAccountNpub: String
     let wotCount: Int
+    /// A follow added in the app changes who counts as outside your network
+    /// at once, without waiting for the relay's daily graph rebuild.
+    let followCount: Int
     let onResetAndUpdate: () -> Void
     let onUpdate: () -> Void
     let onViewModeChange: (ViewMode) -> Void
@@ -21,6 +26,7 @@ struct VaultChangeHandlers: ViewModifier {
             .onChange(of: committedSearch) { _, _ in onResetAndUpdate() }
             .onChange(of: searchScope) { _, _ in onResetAndUpdate() }
             .onChange(of: contentFilter) { _, _ in onResetAndUpdate() }
+            .onChange(of: noteScopeKey) { _, _ in onResetAndUpdate() }
             .onChange(of: likesFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: zapsFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: viewMode) { _, newMode in onViewModeChange(newMode) }
@@ -28,5 +34,6 @@ struct VaultChangeHandlers: ViewModifier {
             .onChange(of: blacklistedNpubs) { _, _ in onUpdate() }
             .onChange(of: activeAccountNpub) { _, _ in onResetAndUpdate() }
             .onChange(of: wotCount) { _, _ in onUpdate() }
+            .onChange(of: followCount) { _, _ in onUpdate() }
     }
 }

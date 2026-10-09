@@ -91,7 +91,6 @@ enum RelayConfiguration {
     /// preference change reaches its catch-up summary on the next relay start;
     /// individual notifications are filtered client-side and change immediately.
     static func notifyKinds(config: HavenConfig) -> [Int] {
-        guard config.enablePushNotifications else { return [NotificationPolicy.silentKind] }
         // An account with no stored entry uses NotificationPreferences()'s
         // defaults everywhere else, so it has to count here too — otherwise a
         // user who never opened the notification settings has no entries at all
@@ -103,12 +102,46 @@ enum RelayConfiguration {
         let prefs = Set(accounts.filter { !$0.isEmpty }).map {
             config.notificationPrefsPerAccount[$0] ?? NotificationPreferences()
         }
+        // With phone notifications off, DMs are still marked: the in-app banner
+        // shows them while the app is open (see NotificationPolicy.allowsWithPushOff).
+        guard config.enablePushNotifications else {
+            return NotificationPolicy.notifyKinds(
+                mentionsOrReplies: false,
+                dms: prefs.contains { $0.dms },
+                zaps: false,
+                reactions: false,
+                reposts: false
+            )
+        }
         return NotificationPolicy.notifyKinds(
             mentionsOrReplies: prefs.contains { $0.mentions || $0.replies },
             dms: prefs.contains { $0.dms },
             zaps: prefs.contains { $0.zaps },
             reactions: !config.zapsOnlyMode && prefs.contains { $0.reactions },
             reposts: prefs.contains { $0.reposts }
+        )
+    }
+
+    /// Everything the relay reads when it starts: its environment plus the
+    /// list files written beside it. Two configs with equal inputs run an
+    /// identical relay, so this is what decides whether a saved settings
+    /// change needs a restart. The blocklist is deliberately absent: it
+    /// reaches a running relay live through UpdateBlacklistC.
+    struct LaunchInputs: Equatable {
+        let env: [String: String]
+        let importSeedRelays: [String]
+        let blastrRelays: [String]
+        let dmRelays: [String]
+        let whitelistedNpubs: [String]
+    }
+
+    static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
+        LaunchInputs(
+            env: generateEnvDictionary(config: config, relayDataDir: relayDataDir),
+            importSeedRelays: config.importSeedRelays,
+            blastrRelays: config.activeBlastrRelays,
+            dmRelays: config.dmRelays,
+            whitelistedNpubs: config.whitelistedNpubs
         )
     }
 
@@ -248,6 +281,52 @@ enum RelayConfiguration {
         ]
     }
 
+    /// Relays the app sends an event it just posted to, alongside handing it
+    /// to this device's relay.
+    ///
+    /// The local relay blasts what it stores, but only once, from a background
+    /// goroutine with nothing queued: if iOS suspends the app before that
+    /// finishes, the event never leaves the vault. On 2026-10-04 two replies
+    /// reached the vault and the replied-to author's inbox and nothing else,
+    /// so they never showed on another device's feed. Replaceable events
+    /// (profiles, relay lists) never trigger that blast at all. So every event
+    /// goes out from the app as well; relays drop the duplicate by id.
+    ///
+    /// A kind 10050 also goes to the DM relays it names, where senders look
+    /// for it.
+    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String]) -> [String] {
+        var relays = blastrRelays.isEmpty ? fallbackBroadcastRelays : blastrRelays
+        if kind == 10050 {
+            for tag in tags where tag.count >= 2 && tag[0] == "relay" && !relays.contains(tag[1]) {
+                relays.append(tag[1])
+            }
+        }
+        return relays
+    }
+
+    /// The NIP-65 relay list for a new account whose relay is this device.
+    ///
+    /// The device's own relay can't be reached from outside, so it is not
+    /// advertised; the public relays every event is broadcast to are, which is
+    /// where other clients will actually find this account's notes. No marker,
+    /// so each is both read and write. Loopback and non-wss entries are left out.
+    static func newAccountRelayListTags(broadcastRelays: [String]) -> [[String]] {
+        var seen = Set<String>()
+        var tags: [[String]] = []
+        for relay in broadcastRelays {
+            let url = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let parsed = URL(string: url), parsed.scheme == "wss",
+                  let host = parsed.host?.lowercased(),
+                  host != "localhost", host != "127.0.0.1", host != "0.0.0.0", host != "::1",
+                  seen.insert(url).inserted else { continue }
+            tags.append(["r", url])
+        }
+        return tags
+    }
+
+    /// Where events go when no blastr relays are configured.
+    static let fallbackBroadcastRelays = HavenConfig.fallbackWriteRelays
+
     /// Format an environment dictionary as a .env file string.
     static func formatEnvFile(from envDict: [String: String]) -> String {
         var content = ""
@@ -262,5 +341,39 @@ enum RelayConfiguration {
             }
         }
         return content
+    }
+}
+
+/// Turns the per-relay `OK` replies for one broadcast into a single answer:
+/// accepted as soon as one relay takes the event, refused only once every
+/// relay has answered without taking it (a refusal, a timeout, or no
+/// connection). Used to show "Posted" only when the post really landed.
+struct BroadcastTally {
+    enum Outcome: Equatable { case accepted, refused }
+
+    let relayCount: Int
+    private var answered: Set<String> = []
+    private(set) var outcome: Outcome?
+
+    init(relayCount: Int) {
+        self.relayCount = relayCount
+        if relayCount == 0 { outcome = .refused }
+    }
+
+    /// Records one relay's answer and returns the outcome the first time it
+    /// is decided, `nil` otherwise. Later answers never change it.
+    mutating func record(relay: String, success: Bool, message: String) -> Outcome? {
+        guard outcome == nil, answered.insert(relay).inserted else { return nil }
+        // NIP-01: a relay that already holds the event may say so with
+        // ok=false. The event is there, which is what the user cares about.
+        if success || message.lowercased().hasPrefix("duplicate:") {
+            outcome = .accepted
+            return .accepted
+        }
+        if answered.count >= relayCount {
+            outcome = .refused
+            return .refused
+        }
+        return nil
     }
 }

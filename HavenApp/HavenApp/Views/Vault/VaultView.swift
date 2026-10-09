@@ -7,6 +7,8 @@ struct VaultView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
     @StateObject private var feedService = FeedService.shared
+    /// The openURL around this tab, for #hashtag links (see nostrLinkAction).
+    @Environment(\.openURL) var inheritedOpenURL
 
     @State var navigationPath = NavigationPath()
     @State var committedSearch = ""
@@ -21,8 +23,19 @@ struct VaultView: View {
     @State var initialLoad = false
     @State var isLoadingMore = false
     @State var contentFilter: ContentFilter = .all
+    /// Notes, Articles or Highlights. Only the Vault tab's mode menu changes it.
+    @State var noteScope: VaultNoteScope = .notes
+    /// Articles only: just the recipes.
+    @State var recipesOnly = false
+    /// Articles or Highlights asked for an older page and got nothing back.
+    @State var noOlderPages: Set<VaultNoteScope> = []
+    @State var isLoadingOlder = false
+    /// The Vault tab is showing Media, so none of this view's lists is in sight.
+    @State var vaultShowsMedia = false
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
+    @State var followersFilter: FollowersFilter = .new
+    @State var followerSnapshot: FollowerSnapshot?
 
     // Cached display data (computed in background)
     @State var displayNotes: [NostrEvent] = []
@@ -59,12 +72,17 @@ struct VaultView: View {
     @State var hasNewNotes = false
     @State var hasNewLikes = false
     @State var hasNewZaps = false
+    @State var hasNewFollowers = false
     @State var notificationBaseline: [Int: Int] = [:] // event kind -> count
     @State var hasEstablishedNotificationBaseline = false
 
     @State var showingNoteId: String?
+    /// The row a tapped notification landed on, outlined for a few seconds.
+    @State var focusedEventId: String?
+    @State var focusTask: Task<Void, Never>?
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) var noteDetailSelection
+    @Environment(\.inVaultTab) var vaultTabHostsMedia
 
     /// Opens a note in the split pane's detail column when there is one, and
     /// falls back to the full-screen sheet everywhere else.
@@ -86,6 +104,17 @@ struct VaultView: View {
     /// Cache of parsed zap receipt data keyed by receipt event ID.
     /// Avoids re-parsing JSON description tags on every updateDisplayData cycle.
     @State var zapReceiptCache: [String: ParsedZapReceipt] = [:]
+    /// Posts you zapped, read from the wallet's payment history (NWC), newest
+    /// payment first. Most zap receipts never tag the sender, so relays alone
+    /// leave "Given" empty; the wallet knows every zap it paid.
+    @State var walletGivenNotes: [NostrEvent] = []
+    /// Post id -> sats you paid it, from the same wallet history.
+    @State var walletGivenAmounts: [String: Int64] = [:]
+    /// Post id -> when you last paid a zap on it (unix seconds).
+    @State var walletGivenTimes: [String: Int64] = [:]
+    /// Account + wallet the wallet history was read for; nil until it was.
+    @State var walletGivenKey: String?
+    @State var walletGivenLoading = false
 
     @AppStorage("viewerNoteLayoutMode") var noteLayoutMode: NoteLayoutMode = .expanded
 
@@ -94,13 +123,31 @@ struct VaultView: View {
         case compact
     }
 
+    /// The phone's Relay tab has no layout switch, so it always shows full
+    /// rows; a "compact" left in storage from the old toggle would otherwise
+    /// be stuck on with no way off. The Mac keeps its toggle.
+    var rowLayoutMode: NoteLayoutMode {
+        #if os(iOS)
+        return .expanded
+        #else
+        return noteLayoutMode
+        #endif
+    }
+
     // Debounce mechanism for updateDisplayData
     @State var updateTask: Task<Void, Never>?
     @State var updateGeneration: Int = 0
     @State var showingRelayDashboard = false
-    @State var hasFetchedZapReceipts = false
+    /// The `eventsResetGeneration` the extended zap receipts were fetched in;
+    /// nil until the first fetch. A refresh anywhere (this tab, Media) wipes
+    /// the receipts pulled from feed relays, so a stale generation refetches.
+    @State var zapReceiptsFetchGeneration: Int?
+    /// The `eventsResetGeneration` `requestedMissingIds` belongs to.
+    @State var likedNotesFetchGeneration: Int?
 
     // Static regex pattern to avoid recompilation
+    /// Scroll target for tapping the Relay tab again.
+    static let topAnchor = "vaultTop"
     nonisolated static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
 
 
@@ -121,22 +168,24 @@ struct VaultView: View {
             case .mine: return "My Notes"
             case .tagged: return "Notes I'm Tagged In"
             case .whitelist: return "Whitelisted Notes"
+            case .outside: return "Replies From Outside Your Network"
             }
         case .media:
             return ""
         case .likes:
             switch likesFilter {
             case .onMyNotes: return "Likes on My Notes"
-            case .onTagged: return "Likes on Tagged Notes"
-            case .onWhitelisted: return "Likes on Whitelisted Notes"
             case .myLikes: return "Notes I've Liked"
             }
         case .zaps:
             switch zapsFilter {
             case .onMyNotes: return "Zaps on My Notes"
-            case .onTagged: return "Zaps on Tagged Notes"
-            case .onWhitelisted: return "Zaps on Whitelisted Notes"
             case .myZaps: return "Notes I've Zapped"
+            }
+        case .followers:
+            switch followersFilter {
+            case .new: return "New Followers"
+            case .all: return "All Followers"
             }
         }
     }
@@ -176,16 +225,13 @@ struct VaultView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 leadingToolbarInline
+                    .tutorialAnchor(TutorialContent.vaultModes)
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    // Preferred: full inline icon buttons
-                    trailingToolbarInline
-                    // Fallback: compact menu with labeled items
-                    trailingToolbarMenu
-                }
-                .animation(Motion.toggle, value: viewMode)
+                trailingToolbarInline
+                    .animation(Motion.toggle, value: viewMode)
+                    .tutorialAnchor(TutorialContent.vaultFilters)
             }
             #endif
         }
@@ -233,6 +279,16 @@ struct VaultView: View {
             }
         }
         // -- handlers from viewContentWithHandlers --
+        .onChange(of: vaultModesWithNews, initial: true) { _, modes in
+            if vaultTabHostsMedia { VaultSection.shared.newModes = modes }
+        }
+        .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
+        // A list is marked seen when you leave it as well as when you arrive,
+        // so what came in while you watched doesn't light its dot later.
+        .onChange(of: watchedMode) { old, new in
+            if let old { markTabViewed(old) }
+            if let new { markTabViewed(new) }
+        }
         .modifier(VaultChangeHandlers(
             viewMode: viewMode,
             likesFilter: likesFilter,
@@ -240,10 +296,12 @@ struct VaultView: View {
             committedSearch: committedSearch,
             searchScope: searchScope,
             contentFilter: contentFilter,
+            noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
             wotCount: feedService.wotPubkeys.count,
+            followCount: feedService.followedPubkeys.count,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
                 notesHasLoadedOnce = false
@@ -270,6 +328,7 @@ struct VaultView: View {
                     fetchMissingLikedNotes()
                 }
                 if viewMode == .zaps {
+                    fetchMoreZapReceipts()
                     fetchMissingZappedNotes()
                 }
             }
@@ -289,13 +348,19 @@ struct VaultView: View {
                 withAnimation(Motion.toggle) { viewMode = .notes }
             }
         }
+        // A full refresh empties the lists back to their first page.
+        .onChange(of: nostrService.events.isEmpty) { _, empty in
+            if empty { noOlderPages = [] }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
+            noOlderPages = []
             likesHasLoadedOnce = false
             likesInitialSettled = false
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
-            hasFetchedZapReceipts = false
+            zapReceiptsFetchGeneration = nil
+            likedNotesFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }
@@ -321,12 +386,16 @@ struct VaultView: View {
             // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
             let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
             withAnimation(Motion.toggle) { viewMode = target }
+            if target == .notes { noteScope = .notes; recipesOnly = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .notes }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { note in
+            openNotes(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .followers }
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
@@ -344,7 +413,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView()
+                DashboardView(includesBlossom: vaultTabHostsMedia)
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -357,6 +426,13 @@ struct VaultView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingRelayDashboard = false }
+                        }
+                        if vaultTabHostsMedia {
+                            ToolbarItem(placement: .principal) {
+                                Label(VaultDashboard.title, systemImage: VaultDashboard.symbol)
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.appSystem(size: 17, weight: .bold, design: .rounded))
+                            }
                         }
                     }
             }
@@ -373,11 +449,15 @@ struct VaultView: View {
         ZStack {
             Color.platformWindowBackground.ignoresSafeArea()
 
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
                     listContent
 
-                    if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
+                    if sparseNotesScope {
+                        loadOlderButton
+                    } else if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
                         Color.clear
                             .frame(height: 1)
                             .padding(.bottom, 20)
@@ -396,14 +476,24 @@ struct VaultView: View {
                 refreshAll(.incremental)
             }
             .scrollDirectionTracking(feedService: feedService)
+            // Tapping the Relay tab again: back to the list from a note, or
+            // up to the top, as the Feed tab does.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RelayScrollToTop"))) { _ in
+                if !navigationPath.isEmpty {
+                    navigationPath = NavigationPath()
+                } else {
+                    withAnimation(Motion.scrollJump) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                }
+            }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
+                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Relay")
+                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -415,19 +505,45 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .tutorialAnchor(TutorialContent.vaultRelay)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #else
         GeometryReader { geometry in
             ZStack {
                 Color.platformWindowBackground.ignoresSafeArea()
 
-                if geometry.size.width > 680 {
+                // The dashboard shows at any width. The menu bar's signal button opens
+                // it, and the popped-out window is often wider than 680, where it was
+                // never drawn: the click only switched tabs.
+                if showingRelayDashboard {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("Relay Dashboard")
+                                .font(.appSystem(size: 16, weight: .bold))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Button("Done") {
+                                showingRelayDashboard = false
+                            }
+                            .keyboardShortcut(.defaultAction)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(Color.platformConsoleHeaderBackground)
+
+                        Divider()
+
+                        DashboardView()
+                            .environmentObject(relayManager)
+                            .environmentObject(configService)
+                            .environmentObject(nostrService)
+                            .environmentObject(StatsService.shared)
+                    }
+                } else if geometry.size.width > 680 {
                     VStack(spacing: 0) {
                         desktopHeaderView
 
@@ -455,33 +571,7 @@ struct VaultView: View {
                     }
                     .clipped()
                 } else {
-                    if showingRelayDashboard {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Relay Dashboard")
-                                    .font(.appSystem(size: 16, weight: .bold))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Button("Done") {
-                                    showingRelayDashboard = false
-                                }
-                                .keyboardShortcut(.defaultAction)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 14)
-                            .background(Color.platformConsoleHeaderBackground)
-
-                            Divider()
-
-                            DashboardView()
-                                .environmentObject(relayManager)
-                                .environmentObject(configService)
-                                .environmentObject(nostrService)
-                                .environmentObject(StatsService.shared)
-                        }
-                    } else {
-                        compactViewContent(isNarrow: geometry.size.width < 500)
-                    }
+                    compactViewContent(isNarrow: geometry.size.width < 500)
                 }
             }
         }
@@ -524,12 +614,12 @@ struct VaultView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
+                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text("Relay")
+                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -541,13 +631,12 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .tutorialAnchor(TutorialContent.vaultRelay)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #endif
     }
 
@@ -569,6 +658,8 @@ struct VaultView: View {
                     likesFilterView
                 } else if viewMode == .zaps {
                     zapsFilterView
+                } else if viewMode == .followers {
+                    followersFilterView
                 }
 
                 searchToggleButton
@@ -626,6 +717,10 @@ struct VaultView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             zapsFilterView
                         }
+                    } else if viewMode == .followers {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            followersFilterView
+                        }
                     }
                     searchBar
                 }
@@ -640,6 +735,8 @@ struct VaultView: View {
                             likesFilterView
                         } else if viewMode == .zaps {
                             zapsFilterView
+                        } else if viewMode == .followers {
+                            followersFilterView
                         }
                         refreshButton
                         searchToggleButton
@@ -669,10 +766,12 @@ struct VaultView: View {
             committedSearch: committedSearch,
             searchScope: searchScope,
             contentFilter: contentFilter,
+            noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
             wotCount: feedService.wotPubkeys.count,
+            followCount: feedService.followedPubkeys.count,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
                 notesHasLoadedOnce = false
@@ -699,6 +798,7 @@ struct VaultView: View {
                     fetchMissingLikedNotes()
                 }
                 if viewMode == .zaps {
+                    fetchMoreZapReceipts()
                     fetchMissingZappedNotes()
                 }
             }
@@ -724,7 +824,8 @@ struct VaultView: View {
             likesInitialSettled = false
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
-            hasFetchedZapReceipts = false
+            zapReceiptsFetchGeneration = nil
+            likedNotesFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }
@@ -751,12 +852,16 @@ struct VaultView: View {
             // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
             let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
             withAnimation(Motion.toggle) { viewMode = target }
+            if target == .notes { noteScope = .notes; recipesOnly = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .notes }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { note in
+            openNotes(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .followers }
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
@@ -775,7 +880,7 @@ struct VaultView: View {
         #if os(iOS)
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView()
+                DashboardView(includesBlossom: vaultTabHostsMedia)
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -786,6 +891,13 @@ struct VaultView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingRelayDashboard = false }
+                        }
+                        if vaultTabHostsMedia {
+                            ToolbarItem(placement: .principal) {
+                                Label(VaultDashboard.title, systemImage: VaultDashboard.symbol)
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.appSystem(size: 17, weight: .bold, design: .rounded))
+                            }
                         }
                     }
             }

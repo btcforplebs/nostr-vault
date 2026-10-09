@@ -9,7 +9,10 @@ public struct NostrContentFormatter {
     private static let neventRegex = try! NSRegularExpression(pattern: "nostr:(nevent1[a-z0-9]+)")
     private static let naddrRegex = try! NSRegularExpression(pattern: "nostr:(naddr1[a-z0-9]+)")
     /// Matches bare HTTP(S) URLs that are NOT already inside markdown link syntax.
-    private static let httpURLRegex = try! NSRegularExpression(pattern: #"(?<![(\[])https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
+    /// A #hashtag: letters/digits/underscore after a # that starts a word, so
+    /// URL fragments (`page#top`) and markdown labels are left alone.
+    private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)"#)
+    private static var httpURLRegex: NSRegularExpression { NoteURLs.httpRegex }
 
     // Result cache — keyed on content + mediaURLs count. Note content is immutable
     // so the formatted result can be safely reused.
@@ -42,11 +45,14 @@ public struct NostrContentFormatter {
     private static func formatUncached(_ content: String, mediaURLs: [URL]) -> AttributedString {
         var text = content
 
-        // Strip bare image/video URLs from text (they'll show as thumbnails)
-        for url in mediaURLs {
-            text = text.replacingOccurrences(of: url.absoluteString, with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        // Strip URLs the view renders on its own — media as thumbnails,
+        // links as preview cards.
+        text = stripURLs(mediaURLs, from: text)
+
+        // Links the author typed as markdown show as typed: otherwise
+        // `[@jack](nostr:npub1<someone else>)` reads "@jack" and opens someone
+        // else. Every link below is one the app builds itself.
+        text = MarkdownEscape.linkSyntax(in: text)
 
         // Resolve nostr:npub and nostr:nprofile
         text = replaceWithLinks(in: text, regex: npubRegex, template: "nostr:$1")
@@ -57,6 +63,9 @@ public struct NostrContentFormatter {
 
         // Convert bare HTTP(S) URLs to clickable markdown links
         text = linkifyURLs(in: text)
+
+        // #hashtags open that hashtag's feed (see HashtagLink).
+        text = linkifyHashtags(in: text)
 
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -75,6 +84,28 @@ public struct NostrContentFormatter {
         } catch {
             return AttributedString(text)
         }
+    }
+
+    /// Turns #hashtags into markdown links to `nostrvault://hashtag/<tag>`.
+    /// Runs after URL linkification and skips anything inside a markdown
+    /// link's target, so a URL's own `#fragment` stays part of the URL.
+    private static func linkifyHashtags(in text: String) -> String {
+        let ns = text as NSString
+        var result = ""
+        var cursor = 0
+        // Ranges of "(...)" link targets produced by linkifyURLs/mentions.
+        let targets = (try? NSRegularExpression(pattern: #"\]\([^)]*\)"#))?
+            .matches(in: text, range: NSRange(location: 0, length: ns.length)).map(\.range) ?? []
+        for match in hashtagRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if targets.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) { continue }
+            let tag = ns.substring(with: match.range(at: 1))
+            guard let url = HashtagLink.url(for: tag) else { continue }
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += "[#\(tag)](\(url.absoluteString))"
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
     }
 
     /// Converts bare HTTP(S) URLs to markdown links so they become tappable in the attributed string.
@@ -112,10 +143,10 @@ public struct NostrContentFormatter {
                 displayLabel = urlString
             }
 
-            let markdownLink = "[\(displayLabel)](\(urlString))"
+            let markdownLink = "[\(MarkdownEscape.label(displayLabel))](\(urlString))"
             let fullRange = NSRange(location: adjustedStart, length: range.length)
             result = (result as NSString).replacingCharacters(in: fullRange, with: markdownLink)
-            offset += markdownLink.count - range.length
+            offset += (markdownLink as NSString).length - range.length
         }
 
         return result
@@ -123,6 +154,20 @@ public struct NostrContentFormatter {
 
 
     // MARK: - Plain-text mention resolution (for compact views)
+
+    /// Removes each URL from `text` where it stands whole; see `NoteURLs.strip`.
+    static func stripURLs(_ urls: [URL], from text: String) -> String {
+        NoteURLs.strip(urls, from: text)
+    }
+
+    /// Every HTTP(S) URL in `text`, in order, without duplicates.
+    static func httpURLs(in text: String) -> [URL] {
+        let ns = text as NSString
+        var seen = Set<String>()
+        return NoteURLs.cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            .compactMap { URL(string: ns.substring(with: $0.range)) }
+            .filter { seen.insert($0.absoluteString).inserted }
+    }
 
     /// Replaces nostr:npub and nostr:nprofile with @ProfileName as plain text,
     /// without generating markdown links or AttributedStrings.
@@ -162,30 +207,9 @@ public struct NostrContentFormatter {
         for match in matches {
             let fullRange = NSRange(location: match.range.location + offset, length: match.range.length)
             let matchedValue = nsString.substring(with: match.range(at: 1))
-            var hexPubkey: String?
-            if matchedValue.hasPrefix("npub1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    hexPubkey = decoded.hexString
-                }
-            } else if matchedValue.hasPrefix("nprofile1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    var data = decoded.data
-                    while data.count >= 2 {
-                        let type = data.removeFirst()
-                        let length = Int(data.removeFirst())
-                        if data.count >= length {
-                            let value = data.prefix(length)
-                            if type == 0 && length == 32 {
-                                hexPubkey = value.map { String(format: "%02x", $0) }.joined()
-                                break
-                            }
-                            data.removeFirst(length)
-                        } else {
-                            break
-                        }
-                    }
-                }
-            }
+            // The tap handler resolves the link with this same function, so the
+            // name shown and the profile opened cannot disagree.
+            let hexPubkey = QuoteReference.profilePubkey(fromBech32: matchedValue)
             let displayLabel: String
             if let hex = hexPubkey, let name = NostrService.shared.profiles[hex]?.bestName {
                 displayLabel = "@\(name)"
@@ -198,7 +222,7 @@ public struct NostrContentFormatter {
             }
             let prevLength = fullRange.length
             result = (result as NSString).replacingCharacters(in: fullRange, with: displayLabel)
-            offset += displayLabel.count - prevLength
+            offset += (displayLabel as NSString).length - prevLength
         }
         return result
     }
@@ -215,32 +239,9 @@ public struct NostrContentFormatter {
             let fullRange = NSRange(location: match.range.location + offset, length: match.range.length)
             let matchedValue = nsString.substring(with: match.range(at: 1))
 
-            var hexPubkey: String?
-
-            if matchedValue.hasPrefix("npub1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    hexPubkey = decoded.hexString
-                }
-            } else if matchedValue.hasPrefix("nprofile1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    // TLV parsing for nprofile: Type 0 is the pubkey (32 bytes)
-                    var data = decoded.data
-                    while data.count >= 2 {
-                        let type = data.removeFirst()
-                        let length = Int(data.removeFirst())
-                        if data.count >= length {
-                            let value = data.prefix(length)
-                            if type == 0 && length == 32 {
-                                hexPubkey = value.map { String(format: "%02x", $0) }.joined()
-                                break
-                            }
-                            data.removeFirst(length)
-                        } else {
-                            break
-                        }
-                    }
-                }
-            }
+            // The tap handler resolves the link with this same function, so the
+            // name shown and the profile opened cannot disagree.
+            let hexPubkey = QuoteReference.profilePubkey(fromBech32: matchedValue)
 
             var displayLabel: String
             if let hex = hexPubkey {
@@ -259,10 +260,12 @@ public struct NostrContentFormatter {
             }
 
             // Add markdown bolding so it's even more noticeable
-            let markdownLink = "**[\(displayLabel)](nostr:\(matchedValue))**"
+            // The name is someone else's kind 0: escaped, it cannot close the
+            // label early and point the link somewhere else.
+            let markdownLink = "**[\(MarkdownEscape.label(displayLabel))](nostr:\(matchedValue))**"
             let prevLength = fullRange.length
             result = (result as NSString).replacingCharacters(in: fullRange, with: markdownLink)
-            offset += markdownLink.count - prevLength
+            offset += (markdownLink as NSString).length - prevLength
         }
 
         return result
