@@ -1084,7 +1084,7 @@ class NostrService: ObservableObject {
     private static let serverListStampsKey = "serverListStamps.v1"
 
     func publishServerList(fipsDetectedNpub: String? = nil) {
-        var current = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        var servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
         // phone): another phone's servers and mesh entries stay; only the
@@ -1099,12 +1099,12 @@ class NostrService: ObservableObject {
         // The home vault this phone sends to: listed by the sender, so the
         // kiosk itself never needs the owner's key.
         if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner {
-            current.append("fipsmesh://\(vault.meshNpub)/")
+            servers.append("fipsmesh://\(vault.meshNpub)/")
         }
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
-        let ownMeshNpub = ownMesh, share = shareOwnMesh, current = current
+        let ownMeshNpub = ownMesh, share = shareOwnMesh, current = servers
 
         Task {
             // Start from the newest list on the relays, not this phone's cache
