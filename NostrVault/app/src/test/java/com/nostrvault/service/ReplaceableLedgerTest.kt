@@ -56,4 +56,19 @@ class ReplaceableLedgerTest {
         assertFalse(ledger.mayReplace("0:abc", 100L, "aa", fallbackSeen = 200L))
         assertTrue(ledger.mayReplace("0:abc", 300L, "aa", fallbackSeen = 200L))
     }
+
+    // Tron round 5: an older kind 0 accepted before the disk profile loaded
+    // must not shadow the newer disk copy, in the merge or in the ledger.
+    @Test
+    fun olderProfileFromTheLoadWindowLosesToDisk() {
+        val disk = mapOf("abc" to 200L)
+        val memory = mapOf("abc" to 100L, "new" to 50L)
+        assertEquals(mapOf("abc" to 200L, "new" to 50L), mergeNewer(disk, memory) { it })
+        assertEquals(mapOf("abc" to 300L), mergeNewer(disk, mapOf("abc" to 300L)) { it })
+
+        val ledger = ReplaceableLedger { emptyMap() }
+        assertTrue(ledger.record("0:abc", 100L, "aa")) // before the disk load
+        assertFalse("between old and disk copy", ledger.mayReplace("0:abc", 150L, "aa", fallbackSeen = 200L))
+        assertTrue(ledger.mayReplace("0:abc", 250L, "aa", fallbackSeen = 200L))
+    }
 }

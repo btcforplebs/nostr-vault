@@ -22,12 +22,16 @@ internal class ReplaceableLedger(private val loadFromDisk: () -> Map<String, Lon
     }
 
     private fun winsLocked(key: String, createdAt: Long, id: String, fallbackSeen: Long?): Boolean {
-        val seen = newest[key] ?: fallbackSeen ?: return true
+        // Both count: the ledger may hold an older event accepted before the
+        // cached copy (fallbackSeen, e.g. a kind 0 from disk) finished loading.
+        val recorded = newest[key]
+        if (recorded == null && fallbackSeen == null) return true
+        val seen = maxOf(recorded ?: Long.MIN_VALUE, fallbackSeen ?: Long.MIN_VALUE)
         if (createdAt != seen) return createdAt > seen
-        // Same second: lowest id wins. With no id on record (seeded from disk)
-        // keep accepting, as that is most likely the copy already cached.
-        val seenId = newestId[key] ?: return true
-        return id <= seenId
+        // Same second: lowest id wins. With no id on record (the copy came
+        // from disk) keep accepting, as that is most likely the same event.
+        val seenId = if (recorded == seen) newestId[key] else null
+        return seenId == null || id <= seenId
     }
 
     /** Cheap pre-check before the signature is verified. */
@@ -54,4 +58,19 @@ internal class ReplaceableLedger(private val loadFromDisk: () -> Map<String, Lon
         if (!seeded) return null
         return newest.filterKeys(keep)
     }
+}
+
+/**
+ * Merges a map loaded from disk with what relays delivered while it loaded,
+ * keeping the newer of each by created_at (an unknown created_at loses).
+ */
+internal fun <V> mergeNewer(disk: Map<String, V>, memory: Map<String, V>, createdAt: (V) -> Long?): Map<String, V> {
+    val merged = disk.toMutableMap()
+    for ((key, value) in memory) {
+        val onDisk = merged[key]
+        if (onDisk == null || (createdAt(value) ?: Long.MIN_VALUE) >= (createdAt(onDisk) ?: Long.MIN_VALUE)) {
+            merged[key] = value
+        }
+    }
+    return merged
 }

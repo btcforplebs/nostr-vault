@@ -303,8 +303,10 @@ class NostrService @Inject constructor(
             val dmRelays = profileRepository.loadDMRelayLists()
             val servers = profileRepository.loadServerLists()
             withContext(Dispatchers.Main.immediate) {
-                // Merge: anything a relay delivered during the load is newer.
-                _profiles.value = loaded + _profiles.value
+                // Merge with anything a relay delivered during the load. The
+                // lists have disk stamps in the ledger, so what is in memory
+                // won on created_at; kind 0 has none, so compare here.
+                _profiles.value = mergeNewer(loaded, _profiles.value) { it.createdAt }
                 _relayLists.value = relays + _relayLists.value
                 _outboxRelays.value = outbox + _outboxRelays.value
                 _dmRelayLists.value = dmRelays + _dmRelayLists.value
