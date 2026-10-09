@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaSaveService
+import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.components.VideoPlayer
@@ -131,38 +133,72 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * What a delete left behind, shown in the viewer until tapped. A failure
+     * that timed out with the viewer was gone before anyone could read it.
+     */
+    private val _deleteLeftover = MutableStateFlow<String?>(null)
+    val deleteLeftover = _deleteLeftover.asStateFlow()
+
+    fun dismissDeleteLeftover() {
+        _deleteLeftover.value = null
+    }
+
+    /**
+     * Report a failed delete: in the viewer's own banner when [sticky], so it
+     * stays until tapped, otherwise as a longer-lived warning pill.
+     */
+    private fun reportLeftover(message: String, sticky: Boolean) {
+        if (sticky) _deleteLeftover.value = message
+        else notificationManager.showError(message, ErrorStyle.WARNING, autoDismissMs = 6_000L)
+    }
+
     /** Delete the blob from all external mirrors; the local copy is kept. [onDone] runs after. */
-    fun deleteFromMirrors(item: BlossomMediaItem, onDone: () -> Unit = {}) {
+    fun deleteFromMirrors(item: BlossomMediaItem, sticky: Boolean = false, onDone: () -> Unit = {}) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
             return
         }
+        _deleteLeftover.value = null
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(item.sha256) }
-            notificationManager.showToast(
-                if (count > 0) "Deleted from $count mirror(s)" else "Not found on mirrors",
-            )
+            val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(item.sha256) }
+            when {
+                report.allDeleted -> notificationManager.showToast("Deleted from mirrors")
+                report.failed.isEmpty() -> notificationManager.showError("No mirrors to delete from")
+                else -> reportLeftover(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, sticky)
+            }
             checkMirrors(item.sha256)
             onDone()
         }
     }
 
-    /** Delete everywhere (local + mirrors), then invoke [onDeleted] so the viewer can dismiss. */
-    fun deleteEverywhere(item: BlossomMediaItem, onDeleted: () -> Unit) {
+    /**
+     * Delete everywhere (local + mirrors) and report each place. [onDone] gets
+     * true only when nothing is left anywhere, so the viewer can close; on a
+     * partial delete it stays open with the places named.
+     */
+    fun deleteEverywhere(item: BlossomMediaItem, sticky: Boolean = false, onDone: (allGone: Boolean) -> Unit) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
             return
         }
+        _deleteLeftover.value = null
         viewModelScope.launch {
-            val (localOk, mirrorCount) = withContext(Dispatchers.IO) {
+            val (localOk, report) = withContext(Dispatchers.IO) {
                 val local = async { blossomService.deleteFromLocal(item.sha256) }
                 val mirrors = async { blossomService.deleteFromMirrors(item.sha256) }
                 local.await() to mirrors.await()
             }
-            notificationManager.showToast(
-                if (localOk || mirrorCount > 0) "Deleted everywhere" else "Nothing to delete",
-            )
-            onDeleted()
+            val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
+            if (leftover == null) {
+                notificationManager.showToast("Deleted everywhere")
+            } else {
+                reportLeftover(leftover, sticky)
+                // The cloud badge caches each server's answer for the session;
+                // ask again so it stops showing the pre-delete count.
+                checkMirrors(item.sha256)
+            }
+            onDone(leftover == null)
         }
     }
 
@@ -211,6 +247,7 @@ fun MediaViewerScreen(
     val mirrorStatus by viewModel.mirrorStatus.collectAsState()
     val isCheckingMirrors by viewModel.isCheckingMirrors.collectAsState()
     val pushingSha by viewModel.pushingSha.collectAsState()
+    val deleteLeftover by viewModel.deleteLeftover.collectAsState()
     // Hide all viewer chrome while the activity is shown in a PiP window
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     var showMirrorSheet by remember { mutableStateOf(false) }
@@ -230,6 +267,8 @@ fun MediaViewerScreen(
     // Check mirrors whenever the visible page changes
     LaunchedEffect(pagerState.currentPage) {
         items.getOrNull(pagerState.currentPage)?.let { viewModel.checkMirrors(it.sha256) }
+        // A delete's leftover names one file; it doesn't follow the swipe.
+        viewModel.dismissDeleteLeftover()
     }
 
     // Drag-to-dismiss state
@@ -497,6 +536,20 @@ fun MediaViewerScreen(
             )
         }
 
+        // A delete that left copies behind stays up until tapped, so it can't
+        // be missed; the viewer stays open with it.
+        val leftover = deleteLeftover
+        if (leftover != null && !isInPiP) {
+            DeleteLeftoverBanner(
+                message = leftover,
+                onDismiss = { viewModel.dismissDeleteLeftover() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 64.dp, start = 24.dp, end = 24.dp),
+            )
+        }
+
         // Confirm destructive deletes.
         pendingDelete?.let { scope ->
             if (currentItem == null) {
@@ -507,13 +560,44 @@ fun MediaViewerScreen(
                 scope = scope,
                 onConfirm = {
                     when (scope) {
-                        DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
-                        DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
+                        DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem, sticky = true)
+                        DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem, sticky = true) { allGone ->
+                            if (allGone) onBack()
+                        }
                     }
                     pendingDelete = null
                 },
                 onDismiss = { pendingDelete = null },
             )
+        }
+    }
+}
+
+/** Red tap-to-dismiss banner naming where a delete left the file. Port of the iOS viewer's failure banner. */
+@Composable
+private fun DeleteLeftoverBanner(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onDismiss,
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xCCE53935),
+        contentColor = Color.White,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+        ) {
+            Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(
+                message,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(NostrVaultIcons.Dismiss, contentDescription = "Dismiss", modifier = Modifier.size(12.dp).graphicsLayer { alpha = 0.7f })
         }
     }
 }
