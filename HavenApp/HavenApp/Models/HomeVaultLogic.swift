@@ -93,7 +93,9 @@ enum HomeVaultLogic {
         // Timeout and rate limit are about now, not about the blob. A vault
         // whose mesh door does not take uploads yet (an older kiosk build)
         // answers 404/405: keep the blob for when it does.
-        case 404, 405, 408, 429: return .unreachable("HTTP \(status)")
+        // 409: the vault already spent this auth (#475 takes each id once);
+        // a fresh one may succeed, so it is not a no to the blob.
+        case 404, 405, 408, 409, 429: return .unreachable("HTTP \(status)")
         // The vault answered and said no: 403 not the owner, 411 no length,
         // 413 over the door's 256 MB.
         case 400...499: return .rejected("HTTP \(status)")

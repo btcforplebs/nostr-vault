@@ -58,6 +58,7 @@ final class HomeVaultLogicTests: XCTestCase {
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 413), .rejected("HTTP 413"), "over the door's 256 MB")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 411), .rejected("HTTP 411"))
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 429), .unreachable("HTTP 429"), "rate limit is about now")
+        XCTAssertEqual(HomeVaultLogic.uploadResult(status: 409), .unreachable("HTTP 409"), "a spent auth: sign a fresh one")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 404), .unreachable("HTTP 404"), "a kiosk without the upload door keeps the blob queued")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 502), .unreachable("HTTP 502"))
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 0), .unreachable("HTTP 0"))
