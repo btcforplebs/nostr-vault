@@ -285,6 +285,46 @@ enum TrustMap {
             .prefix(limit)
             .map(\.key)
     }
+
+    /// The WOT tab's layer picker. Picking one only changes what is lit:
+    /// the globe keeps every star, so switching never reloads the web.
+    enum Layer: String, CaseIterable {
+        case everyone, following, furtherOut
+
+        var title: String {
+            switch self {
+            case .everyone: "Everyone"
+            case .following: "Following"
+            case .furtherOut: "Further out"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .everyone: "circle.hexagongrid"
+            case .following: "person.2.fill"
+            case .furtherOut: "sparkles"
+            }
+        }
+    }
+
+    /// How brightly `layer` draws your follows (x) and the outer shell (y).
+    /// The other layer stays faintly there, so the globe keeps its shape.
+    static func layerWeights(_ layer: Layer) -> SIMD2<Double> {
+        switch layer {
+        case .everyone: SIMD2(1, 1)
+        case .following: SIMD2(1, 0.18)
+        case .furtherOut: SIMD2(0.22, 1.6)
+        }
+    }
+
+    /// People in each layer, never counting you. `web` is the relay's whole
+    /// graph, which also holds your follows.
+    static func layerCounts(me: String, follows: Set<String>, web: Set<String>) -> [Layer: Int] {
+        let following = follows.subtracting([me]).count
+        let further = web.subtracting(follows).subtracting([me]).count
+        return [.everyone: following + further, .following: following, .furtherOut: further]
+    }
 }
 
 /// The globe's camera and how it moves. Every step is scaled by the real time
