@@ -281,6 +281,10 @@ class NostrService @Inject constructor(
      *  seeded lazily from disk. Declared above init. */
     private val replaceableNewest = ReplaceableLedger { profileRepository.loadListStampsIfReady() }
 
+    /** Set once loadProfilesFromDisk merged the caches; saves wait for it. */
+    private val profilesLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val saveSkipped = java.util.concurrent.atomic.AtomicBoolean(false)
+
     init {
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
@@ -311,6 +315,8 @@ class NostrService @Inject constructor(
                 _outboxRelays.value = outbox + _outboxRelays.value
                 _dmRelayLists.value = dmRelays + _dmRelayLists.value
                 _serverLists.value = servers + _serverLists.value
+                profilesLoaded.set(true)
+                if (saveSkipped.getAndSet(false)) saveProfilesThrottled()
             }
         }
     }
@@ -1007,6 +1013,12 @@ class NostrService @Inject constructor(
     }
 
     fun saveProfilesThrottled() {
+        // Until the disk caches are merged in, the in-memory maps hold only
+        // what arrived since launch; saving them would overwrite the caches.
+        if (!profilesLoaded.get()) {
+            saveSkipped.set(true)
+            return
+        }
         val now = System.currentTimeMillis()
         if (now - lastProfileSaveTime < PROFILE_SAVE_THROTTLE_MS) return
         lastProfileSaveTime = now

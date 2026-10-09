@@ -71,4 +71,13 @@ class ReplaceableLedgerTest {
         assertFalse("between old and disk copy", ledger.mayReplace("0:abc", 150L, "aa", fallbackSeen = 200L))
         assertTrue(ledger.mayReplace("0:abc", 250L, "aa", fallbackSeen = 200L))
     }
+
+    // Tron round 6: profiles cached before created_at was kept have none; on
+    // the first launch after the upgrade they must not lose to the load window.
+    @Test
+    fun unknownCreatedAtKeepsTheDiskCopy() {
+        val disk = mapOf<String, Long?>("abc" to null, "def" to 200L)
+        val memory = mapOf<String, Long?>("abc" to 100L, "def" to null, "new" to null)
+        assertEquals(mapOf("abc" to null, "def" to 200L, "new" to null), mergeNewer(disk, memory) { it })
+    }
 }

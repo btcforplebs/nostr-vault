@@ -61,16 +61,21 @@ internal class ReplaceableLedger(private val loadFromDisk: () -> Map<String, Lon
 }
 
 /**
- * Merges a map loaded from disk with what relays delivered while it loaded,
- * keeping the newer of each by created_at (an unknown created_at loses).
+ * Merges a map loaded from disk with what relays delivered while it loaded.
+ * The in-memory entry wins only when both created_at are known and it is not
+ * older; when either is unknown (caches written before created_at was kept)
+ * the disk copy stays, and the next event for that key corrects it.
  */
 internal fun <V> mergeNewer(disk: Map<String, V>, memory: Map<String, V>, createdAt: (V) -> Long?): Map<String, V> {
     val merged = disk.toMutableMap()
     for ((key, value) in memory) {
-        val onDisk = merged[key]
-        if (onDisk == null || (createdAt(value) ?: Long.MIN_VALUE) >= (createdAt(onDisk) ?: Long.MIN_VALUE)) {
+        if (key !in merged) {
             merged[key] = value
+            continue
         }
+        val mine = createdAt(value) ?: continue
+        val theirs = createdAt(merged.getValue(key)) ?: continue
+        if (mine >= theirs) merged[key] = value
     }
     return merged
 }
