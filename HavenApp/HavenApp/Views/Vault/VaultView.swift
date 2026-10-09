@@ -27,6 +27,11 @@ struct VaultView: View {
     @State var noteScope: VaultNoteScope = .notes
     /// Articles only: just the recipes.
     @State var recipesOnly = false
+    /// Articles or Highlights asked for an older page and got nothing back.
+    @State var noOlderPages: Set<VaultNoteScope> = []
+    @State var isLoadingOlder = false
+    /// The Vault tab is showing Media, so none of this view's lists is in sight.
+    @State var vaultShowsMedia = false
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
     @State var followersFilter: FollowersFilter = .new
@@ -277,6 +282,13 @@ struct VaultView: View {
         .onChange(of: vaultModesWithNews, initial: true) { _, modes in
             if vaultTabHostsMedia { VaultSection.shared.newModes = modes }
         }
+        .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
+        // A list is marked seen when you leave it as well as when you arrive,
+        // so what came in while you watched doesn't light its dot later.
+        .onChange(of: watchedMode) { old, new in
+            if let old { markTabViewed(old) }
+            if let new { markTabViewed(new) }
+        }
         .modifier(VaultChangeHandlers(
             viewMode: viewMode,
             likesFilter: likesFilter,
@@ -336,8 +348,13 @@ struct VaultView: View {
                 withAnimation(Motion.toggle) { viewMode = .notes }
             }
         }
+        // A full refresh empties the lists back to their first page.
+        .onChange(of: nostrService.events.isEmpty) { _, empty in
+            if empty { noOlderPages = [] }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
+            noOlderPages = []
             likesHasLoadedOnce = false
             likesInitialSettled = false
             zapsHasLoadedOnce = false

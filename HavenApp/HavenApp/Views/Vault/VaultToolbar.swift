@@ -35,10 +35,18 @@ extension VaultView {
         vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && searchScope != .profiles
     }
 
+    /// Gone once a page comes back empty: there is nothing older to load.
+    @ViewBuilder
     var loadOlderButton: some View {
-        Button { loadMore() } label: {
+        if !noOlderPages.contains(noteScope) {
+            loadOlderButtonBody
+        }
+    }
+
+    private var loadOlderButtonBody: some View {
+        Button { loadOlderInScope() } label: {
             HStack(spacing: 6) {
-                if nostrService.isFetching {
+                if isLoadingOlder {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "clock.arrow.circlepath")
@@ -52,7 +60,7 @@ extension VaultView {
             .background(Capsule().fill(Color.havenPurple.opacity(0.12)))
         }
         .buttonStyle(.plain)
-        .disabled(nostrService.isFetching)
+        .disabled(isLoadingOlder)
         .padding(.top, 8)
         .padding(.bottom, 24)
     }

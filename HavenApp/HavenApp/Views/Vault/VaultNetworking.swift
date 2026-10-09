@@ -290,8 +290,11 @@ extension VaultView {
     func loadMore() {
         guard !nostrService.isFetching else { return }
 
-        // Get the oldest timestamp from events
-        guard let oldestTimestamp = nostrService.events.last?.created_at else { return }
+        // Get the oldest timestamp from events. In the Vault tab, Articles and
+        // Highlights page on their own and can reach far back; their pages
+        // mustn't move this cursor, or Notes would skip everything between.
+        let pagedApart: Set<Int> = vaultTabHostsMedia ? [VaultNoteScope.articleKind, VaultNoteScope.highlightKind] : []
+        guard let oldestTimestamp = nostrService.events.last(where: { !pagedApart.contains($0.kind) })?.created_at else { return }
 
         // Request events strictly older than the last one we have
         #if DEBUG
@@ -304,13 +307,41 @@ extension VaultView {
             urls.append(macInbox)
         }
 
+        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: pagingAuthors)
+    }
+
+    /// Whose posts the relay lists page through: you and your whitelist.
+    var pagingAuthors: [String] {
         var authorsSet = Set<String>()
         if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
             authorsSet.insert(ownerHex)
         }
         for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
-        let authors = Array(authorsSet)
+        return Array(authorsSet)
+    }
 
-        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
+    /// Articles' and Highlights' "Load older": one page of just that kind from
+    /// the local relay, older than the oldest one loaded, however far back.
+    func loadOlderInScope() {
+        guard !isLoadingOlder, let url = URL(string: configService.config.nostrURL) else { return }
+        let scope = noteScope
+        let kinds = scope.kinds(from: NostrService.relayTabNoteKinds, split: true)
+        let oldestLoaded = nostrService.events.last(where: { kinds.contains($0.kind) })?.created_at
+        let oldest = oldestLoaded ?? Int64(Date().timeIntervalSince1970)
+        isLoadingOlder = true
+        nostrService.fetchOlder(kinds: Array(kinds), authors: pagingAuthors, until: oldest - 1, from: [url]) { count in
+            // Events land with the next buffer flush (0.3s). Wait for it, so
+            // the spinner holds until the rows show.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isLoadingOlder = false
+                guard let count else { return }
+                // Nothing older, or a page the event caps dropped on arrival:
+                // tapping again would only ask for the same page.
+                let nowOldest = nostrService.events.last(where: { kinds.contains($0.kind) })?.created_at
+                if count == 0 || nowOldest == nil || nowOldest == oldestLoaded {
+                    noOlderPages.insert(scope)
+                }
+            }
+        }
     }
 }

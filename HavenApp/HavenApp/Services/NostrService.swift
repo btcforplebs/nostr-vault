@@ -2755,6 +2755,72 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// One page of older events of the given kinds, for a list that pages on
+    /// its own (the Vault tab's Articles and Highlights). It runs on its own
+    /// connection and leaves the shared fetch state alone, so it neither moves
+    /// the Notes list's paging nor clears `isFetching` under it. `done` gets
+    /// how many events came back, 0 meaning there is nothing older, or nil
+    /// when no relay could be asked or none answered.
+    func fetchOlder(kinds: [Int], authors: [String], until: Int64, limit: Int = 50,
+                    from relayURLs: [URL], done: @escaping (Int?) -> Void) {
+        let urls = relayURLs.filter { !isLocalRelay($0) || isLocalRelayReady }
+        guard !urls.isEmpty, !authors.isEmpty else { done(nil); return }
+
+        let filter: [String: Any] = ["kinds": kinds, "authors": authors, "until": until, "limit": limit]
+        let safeFilter = UncheckedSendable(value: filter)
+        let subId = "older-\(UUID().uuidString.prefix(6))"
+        let page = OlderPage(pending: urls.count)
+        let finish: () -> Void = {
+            guard !page.finished else { return }
+            page.finished = true
+            page.clients.forEach { $0.disconnect() }
+            page.clients.removeAll()
+            done(page.pending == urls.count ? nil : page.ids.count)
+        }
+        // A relay that never answers mustn't leave the button spinning.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { finish() }
+
+        for url in urls {
+            let urlString = url.absoluteString
+            let client = WebSocketClient()
+            client.isTemporary = true
+            trackTemporaryClient(client)
+            page.clients.append(client)
+            client.messageSubject
+                .receive(on: processingQueue)
+                .sink { [weak self, weak client] message in
+                    guard let data = message.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          json.count >= 2, json[1] as? String == subId,
+                          let type = json[0] as? String else { return }
+                    if type == "EVENT" {
+                        let id = (json[safe: 2] as? [String: Any])?["id"] as? String
+                        DispatchQueue.main.async { if let id { page.ids.insert(id) } }
+                        self?.processMessage(message, from: urlString)
+                    } else if type == "EOSE" || type == "CLOSED" {
+                        DispatchQueue.main.async {
+                            client?.disconnect()
+                            page.pending -= 1
+                            if page.pending <= 0 { finish() }
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            client.$connectionState
+                .first(where: { $0 == .connected })
+                .receive(on: DispatchQueue.main)
+                .sink { [weak client] _ in
+                    let req = ["REQ", subId, safeFilter.value] as [Any]
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let str = String(data: data, encoding: .utf8) {
+                        client?.send(text: str)
+                    }
+                }
+                .store(in: &cancellables)
+            client.connect(url: url)
+        }
+    }
+
     /// Fetches zap receipts (kind 9735) with a larger limit to cover more history.
     /// `tagFilter` narrows the request, e.g. `["#P": [me]]` for zaps you sent.
     func fetchZapReceipts(from relayURLs: [URL], limit: Int = 1000, tagFilter: [String: [String]] = [:]) {
@@ -3307,4 +3373,14 @@ final class LocalRelaySearchSession {
         cancellables.removeAll()
         streams.removeAll()
     }
+}
+
+/// The running tally of one `fetchOlder` page. Touched only on the main queue.
+private final class OlderPage: @unchecked Sendable {
+    var pending: Int
+    var ids = Set<String>()
+    var finished = false
+    /// Closed when the page finishes, timeout included.
+    var clients: [WebSocketClient] = []
+    init(pending: Int) { self.pending = pending }
 }

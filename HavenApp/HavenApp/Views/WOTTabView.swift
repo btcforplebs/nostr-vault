@@ -7,25 +7,20 @@ import SwiftUI
 struct WOTTabView: View {
     @EnvironmentObject var configService: ConfigService
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
-    /// Only the follow count, not FeedService itself: the feed publishes on
-    /// every note, and each would redraw the globe.
-    @State private var followCount = FeedService.shared.followedPubkeys.count
 
     private var me: String { configService.activeAccountHexPubkey }
 
     var body: some View {
         NavigationStack {
-            TrustWebView(author: me, path: Self.startingPath(me))
+            TrustWebView(author: me, path: Self.startingPath(me), isWOTTab: true)
                 // The footer's words sit above the floating tab bar.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: tabBarHeight)
                 }
         }
-        // The globe reads your follows once, when it appears, and this tab
-        // stays alive: a new account, or a follow list that loaded or changed
-        // since, draws a new globe.
-        .id("\(me).\(followCount)")
-        .onReceive(FeedService.shared.$followedPubkeys.map(\.count).removeDuplicates()) { followCount = $0 }
+        // This tab stays alive: a new account draws a new globe. The globe
+        // itself keeps up with your follow list.
+        .id(me)
     }
 
     /// The path from you to you: no bridges, nothing to look up.

@@ -216,6 +216,9 @@ struct iPadSidebarView: View {
                     selectedTab = 0
                     feedService.switchMode(mode)
                 case .tab(let tab):
+                    if tab == 3 && selectedTab == 3 {
+                        NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+                    }
                     selectedTab = tab
                 case nil:
                     break
@@ -964,7 +967,9 @@ struct BottomTabBar: View {
             }
         }
 
-        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {}
+        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
+            NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+        }
     }
 
     // MARK: - Collapsed Content

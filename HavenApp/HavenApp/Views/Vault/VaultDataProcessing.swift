@@ -13,9 +13,6 @@ extension VaultView {
             noteScope = scope
             if scope != .articles { recipesOnly = false }
         }
-        // Coming back to Notes from Articles or Highlights doesn't change the
-        // list type, so the new-notes dot has to be cleared here.
-        if scope == .notes { markTabViewed(.notes) }
     }
 
     /// The kinds the Notes entry lists: all of the relay tab's note kinds,
@@ -49,6 +46,15 @@ extension VaultView {
         hasEstablishedNotificationBaseline = true
     }
 
+    /// The list in sight, for the new-activity dots. Nil while the Vault tab
+    /// shows Media, Articles or Highlights: none of the dotted lists is on
+    /// screen then.
+    var watchedMode: ViewMode? {
+        if vaultTabHostsMedia && vaultShowsMedia { return nil }
+        if viewMode == .notes && noteScope != .notes { return nil }
+        return viewMode
+    }
+
     /// Check if new events arrived for categories the user isn't currently viewing.
     func checkForNewNotifications() {
         guard hasEstablishedNotificationBaseline else { return }
@@ -63,18 +69,18 @@ extension VaultView {
         let noteKinds = notesListKinds
         let noteCount = noteKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
         let baselineNotes = noteKinds.reduce(0) { $0 + (notificationBaseline[$1] ?? 0) }
-        if noteCount > baselineNotes && !(viewMode == .notes && noteScope == .notes) {
+        if noteCount > baselineNotes && watchedMode != .notes {
             withAnimation(Motion.fade) { hasNewNotes = true }
         }
 
         // Likes: kind 7 — suppressed in Zaps Only mode (likes are hidden from the UI)
         if !configService.config.zapsOnlyMode
-            && (counts[7] ?? 0) > (notificationBaseline[7] ?? 0) && viewMode != .likes {
+            && (counts[7] ?? 0) > (notificationBaseline[7] ?? 0) && watchedMode != .likes {
             withAnimation(Motion.fade) { hasNewLikes = true }
         }
 
         // Zaps: kind 9735
-        if (counts[9735] ?? 0) > (notificationBaseline[9735] ?? 0) && viewMode != .zaps {
+        if (counts[9735] ?? 0) > (notificationBaseline[9735] ?? 0) && watchedMode != .zaps {
             withAnimation(Motion.fade) { hasNewZaps = true }
         }
     }

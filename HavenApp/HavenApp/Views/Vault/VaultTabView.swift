@@ -29,6 +29,9 @@ struct VaultTabView<Notes: View>: View {
     @ObservedObject private var section = VaultSection.shared
     /// The relay half. iPad wraps it in the note split; the phone uses it as is.
     @ViewBuilder let notes: () -> Notes
+    /// The gallery is built the first time Media shows, then kept. Until then
+    /// a Vault visit doesn't pay for its thumbnails, rescan and mirroring.
+    @State private var mediaBuilt = false
 
     var body: some View {
         ZStack {
@@ -36,12 +39,17 @@ struct VaultTabView<Notes: View>: View {
                 .opacity(section.showsMedia ? 0 : 1)
                 .allowsHitTesting(!section.showsMedia)
                 .accessibilityHidden(section.showsMedia)
-            MediaTabView()
-                .opacity(section.showsMedia ? 1 : 0)
-                .allowsHitTesting(section.showsMedia)
-                .accessibilityHidden(!section.showsMedia)
+            if mediaBuilt || section.showsMedia {
+                MediaTabView()
+                    .opacity(section.showsMedia ? 1 : 0)
+                    .allowsHitTesting(section.showsMedia)
+                    .accessibilityHidden(!section.showsMedia)
+            }
         }
         .environment(\.inVaultTab, true)
+        .onChange(of: section.showsMedia, initial: true) { _, shows in
+            if shows { mediaBuilt = true }
+        }
     }
 }
 
