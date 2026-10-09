@@ -1136,6 +1136,7 @@ class DashboardViewModel @Inject constructor(
             _notesHasLoadedOnce.value = true
             isFullReload = false
             updateConnectionStatus()
+            loadFirstPageInScope()
             // All stored events are in — bypass the debounce
             updateJob?.cancel()
             updateGeneration++
@@ -1404,6 +1405,7 @@ class DashboardViewModel @Inject constructor(
         mode.noteScope?.let { setNoteScope(it) }
         mode.viewMode?.let { if (_viewMode.value != it) setViewMode(it) }
         com.nostrvault.ui.navigation.VaultSection.show(media = mode == VaultMode.MEDIA)
+        if (allRelaysFinished() && activeRelayUrls.isNotEmpty()) loadFirstPageInScope()
     }
 
     fun setNoteScope(scope: VaultNoteScope) {
@@ -1420,6 +1422,22 @@ class DashboardViewModel @Inject constructor(
         _recipesOnly.value = !_recipesOnly.value
         maxDisplayedItems = 50
         scheduleUpdateDisplayData()
+    }
+
+    /**
+     * Articles and Highlights open on their newest page. The relay's first
+     * load is the newest posts of every kind together, so an article older
+     * than those was in none of it, and the list said "No articles found"
+     * until you tapped Load older. Runs once that first load is in.
+     */
+    private fun loadFirstPageInScope() {
+        val scope = _noteScope.value
+        if (!scope.pagesByButton || scope in _noOlderPages.value) return
+        val kind = scope.kinds(RELAY_TAB_NOTE_KINDS).single()
+        viewModelScope.launch {
+            val loaded = allEventsMutex.withLock { allEvents.any { it.kind == kind } }
+            if (!loaded) loadOlderInScope()
+        }
     }
 
     /**

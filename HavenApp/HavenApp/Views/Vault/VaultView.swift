@@ -282,6 +282,7 @@ struct VaultView: View {
             if vaultTabHostsMedia { VaultSection.shared.newModes = modes }
         }
         .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
+        .task(id: firstPageKey) { loadFirstPageInScope() }
         // A list is marked seen when you leave it as well as when you arrive,
         // so what came in while you watched doesn't light its dot later.
         .onChange(of: watchedMode) { old, new in
