@@ -116,16 +116,20 @@ final class HomeVaultSender: ObservableObject {
     }
 
     private func confirmOrSend(sha256: String, vault: HomeVault) async -> Bool {
+        // The dial first, without holding anything: it is a blocking FFI call
+        // the timeout cannot interrupt, and holding `sending` across it would
+        // freeze the queue for as long as it takes (Tron, #473).
+        guard let base = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub),
+              !Task.isCancelled else { return false }
         // A background pass may be sending this very blob: let it finish
-        // rather than race it for the vault's one upload slot (Tron, #473).
-        // ensureOnVault's timeout cancels this wait.
+        // rather than race it for the vault's one upload slot. ensureOnVault's
+        // timeout cancels this wait. No await between the loop and the claim.
         while sending {
             try? await Task.sleep(nanoseconds: 500_000_000)
             if Task.isCancelled { return false }
         }
         sending = true
         defer { sending = false }
-        guard let base = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) else { return false }
         if await HomeVaultTransport.vaultHas(sha256: sha256, base: base) { return true }
         // A background pass may hold the item or the vault's one upload slot:
         // then the vault itself is the answer.
