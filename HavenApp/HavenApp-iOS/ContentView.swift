@@ -300,6 +300,9 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
+                    NavigationLink(value: SidebarItem.tab(3)) {
+                        Label("WOT", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
                     // Your relay and your Blossom files, one row; "My Media" is
                     // a mode inside it. Tag 4 is the old Relay row's, so
                     // notification routing still lands here.
@@ -313,9 +316,6 @@ struct iPadSidebarView: View {
                                     .frame(width: 8, height: 8)
                             }
                         }
-                    }
-                    NavigationLink(value: SidebarItem.tab(3)) {
-                        Label("WOT", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     NavigationLink(value: SidebarItem.tab(5)) {
                         Label("Settings", systemImage: "gearshape")
@@ -952,6 +952,10 @@ struct BottomTabBar: View {
 
         expandedProfileTabItem
 
+        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
+            NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+        }
+
         tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: relayManager.hasNewRelayActivity) {
             if VaultSection.shared.showsMedia {
                 if !mediaPath.isEmpty {
@@ -965,10 +969,6 @@ struct BottomTabBar: View {
                 relayManager.markRelayViewed()
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
-        }
-
-        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
-            NotificationCenter.default.post(name: .wotTabReselected, object: nil)
         }
     }
 
