@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import simd
 #if canImport(UIKit)
 import UIKit
@@ -18,6 +19,7 @@ struct TrustWebView: View {
     /// changes, and tapping the tab again brings it back to you.
     var isWOTTab = false
     @EnvironmentObject var nostrService: NostrService
+    @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     /// One globe: who is at the core and what we know about their follows.
     struct Frame {
@@ -65,6 +67,25 @@ struct TrustWebView: View {
     @State private var deeperFailed: Set<String> = []
     @State private var profilePubkey: String?
     @State private var showingList = false
+    /// Per person whose own globe is showing: the follows worth a profile
+    /// fetch, so their faces can be pictures (`TrustMap.faceCandidates`).
+    @State private var faceCandidates: [String: [String]] = [:]
+    /// Your wider web, for the search's "In your web" tag.
+    @State private var web: Set<String> = []
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+    @State private var searchingRelays = false
+    @State private var relaySearch: Task<Void, Never>?
+    /// The refresh button's run: which step, 0 to 3, and nil when idle.
+    @State private var refreshStep: Int?
+    /// The bar's fill, 0 to 3 (one per step), and what it is doing now.
+    @State private var refreshValue = 0.0
+    @State private var refreshCaption = ""
+    /// Long enough on screen that an empty web means no graph, not a slow one.
+    @State private var webWaitedOut = false
+    /// Your follow list is still on its way (FeedService, mirrored so this
+    /// view doesn't redraw on every feed change).
+    @State private var contactsLoading = true
 
     private var me: String { ConfigService.shared.activeAccountHexPubkey }
     private var centerKey: String { crumbs.last ?? me }
@@ -78,12 +99,14 @@ struct TrustWebView: View {
         GeometryReader { geo in
             if geo.size.width >= Self.wideWidth {
                 HStack(spacing: 0) {
-                    globeArea.overlay(alignment: .topLeading) { crumbRow.padding(.top, 12) }
+                    globeArea.overlay(alignment: .topLeading) {
+                        topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
+                    }
                     sidePanel.frame(width: 360)
                 }
             } else {
                 VStack(spacing: 0) {
-                    crumbRow.padding(.top, 8)
+                    topRows.padding(.top, 8)
                     globeArea
                     footer
                 }
@@ -101,6 +124,13 @@ struct TrustWebView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
         .toolbar {
+            if isWOTTab {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(refreshStep != nil)
+                        .accessibilityLabel(Text("Update your Web of Trust"))
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { showingList = true } label: { Image(systemName: "list.bullet") }
                     .accessibilityLabel(Text("People on this globe"))
@@ -113,13 +143,21 @@ struct TrustWebView: View {
             myFollows = Set(follows)
             frames[me] = Frame(center: me, ring: follows, path: path)
             nostrService.fetchMissingProfiles(for: [me, author] + path.bridges)
-            let graph = FeedService.shared.relayTabTrustedPubkeys()
-            let inner = Set(follows).union([me, author])
-            Task.detached(priority: .userInitiated) {
-                let shell = TrustMap.haze(graph.subtracting(inner))
-                await MainActor.run { haze = shell }
-            }
+            prepareFaces(me)
+            recomputeHaze()
         }
+        .task {
+            try? await Task.sleep(for: .seconds(15))
+            webWaitedOut = true
+        }
+        .onReceive(FeedService.shared.$wotPubkeys.dropFirst()) { _ in
+            // On a cold start the graph lands after the globe opened.
+            recomputeHaze()
+        }
+        .onReceive(FeedService.shared.$isLoadingContacts.combineLatest(FeedService.shared.$hasAttemptedContactLoad)) {
+            contactsLoading = $0 || !$1
+        }
+        .onChange(of: query) { _, text in searchRelays(text) }
         .onReceive(FeedService.shared.$followedPubkeys.dropFirst()) { follows in
             // In place, so you stay wherever you'd gone on the globe.
             guard isWOTTab, Set(follows) != myFollows else { return }
@@ -133,17 +171,14 @@ struct TrustWebView: View {
                 updated.chains = old.chains
             }
             frames[me] = updated
+            prepareFaces(me)
             // Someone you unfollowed moves out to the haze; a new follow leaves it.
-            let graph = FeedService.shared.relayTabTrustedPubkeys()
-            let inner = Set(follows).union([me, author])
-            Task.detached(priority: .userInitiated) {
-                let shell = TrustMap.haze(graph.subtracting(inner))
-                await MainActor.run { haze = shell }
-            }
+            recomputeHaze()
         }
         .onReceive(NotificationCenter.default.publisher(for: .wotTabReselected)) { _ in
             guard isWOTTab else { return }
             peek = nil
+            clearSearch()
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }
@@ -160,18 +195,324 @@ struct TrustWebView: View {
     private var globeArea: some View {
         ZStack(alignment: .bottomLeading) {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
-                             myFollows: myFollows, haze: haze,
+                             myFollows: myFollows, haze: haze, ringFaces: ringFaces,
                              running: profilePubkey == nil && !showingList,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
-                             onEmptyTap: { peek = nil })
+                             onEmptyTap: { peek = nil; searchFocused = false })
             if frame == nil {
-                ProgressView()
+                statusPill("Loading \(name(centerKey))'s follows…", face: centerKey)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if loadingMyFollows {
+                statusPill("Loading your follows…", face: me)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if mappingWeb, peek == nil {
+                statusPill("Mapping your wider web…")
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.bottom, 14)
             }
             if let peek { peekCard(peek) }
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                GeometryReader { geo in
+                    // With the keyboard up the floating tab bar rides on it,
+                    // over the bottom of the globe.
+                    searchResults(maxHeight: max(120, min(380, geo.size.height - (searchFocused ? tabBarHeight : 0) - 20)))
+                }
+            }
         }
+        .overlay(alignment: .top) { refreshBar }
         .clipped()
+    }
+
+    /// Your own globe, before your follow list has come in.
+    private var loadingMyFollows: Bool {
+        guard centerKey == me, let frame, frame.ring.isEmpty else { return false }
+        return contactsLoading || refreshStep == 1
+    }
+
+    /// Your follows are in but the wider web around them isn't yet.
+    private var mappingWeb: Bool {
+        guard isWOTTab, centerKey == me, haze.isEmpty, let frame, !frame.ring.isEmpty else { return false }
+        return !webWaitedOut || refreshStep == 2
+    }
+
+    /// A loading state you can't miss: a spinner, what is loading, and whose.
+    private func statusPill(_ text: String, face: String? = nil) -> some View {
+        HStack(spacing: 10) {
+            if let face {
+                AvatarView(url: nostrService.profiles[face]?.pictureURL, pubkey: face, size: 28)
+            }
+            ProgressView().controlSize(.small).tint(.white)
+            Text(text)
+                .font(.appSystem(size: 14, weight: .semibold))
+                .lineLimit(1)
+        }
+        .padding(.leading, face == nil ? 14 : 6)
+        .padding(.trailing, 16)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.45), radius: 14, y: 4)
+        .accessibilityElement(children: .combine)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Refresh
+
+    @ViewBuilder private var refreshBar: some View {
+        if refreshStep != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: min(refreshValue, 3), total: 3)
+                    .tint(.havenPurple)
+                    .animation(.easeOut(duration: 0.3), value: refreshValue)
+                Text(refreshCaption)
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal)
+            .padding(.top, 4)
+            .transition(.opacity)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// The refresh button: your follow list again, a rebuild of your web
+    /// by the relay (the same one it runs daily), then the faces' pictures.
+    private func refresh() {
+        guard refreshStep == nil else { return }
+        withAnimation {
+            refreshStep = 0
+            refreshValue = 0.05
+            refreshCaption = "Updating your follows…"
+        }
+        Task {
+            await FeedService.shared.refreshContactList()
+            refreshStep = 1
+            refreshValue = 1
+            refreshCaption = "Rebuilding your web…"
+            await rebuildWeb()
+            FeedService.shared.loadWotPubkeys()
+            recomputeHaze()
+            refreshStep = 2
+            refreshValue = 2
+            refreshCaption = "Loading profile pictures…"
+            if let ring = frames[me]?.ring {
+                faceCandidates[me] = TrustMap.faceCandidates(ring)
+            }
+            nostrService.fetchMissingProfiles(for: [me] + (faceCandidates[me] ?? []), force: true)
+            try? await Task.sleep(for: .milliseconds(900))
+            refreshValue = 3
+            refreshCaption = "Up to date"
+            try? await Task.sleep(for: .milliseconds(700))
+            withAnimation { refreshStep = nil }
+        }
+    }
+
+    /// Asks the relay to rebuild the graph now and follows its progress until
+    /// it is saved. A relay that isn't running leaves the graph as it is.
+    private func rebuildWeb() async {
+        let started = await Task.detached { RefreshWotC() == 1 }.value
+        guard started else {
+            refreshCaption = "Relay isn't running. Showing your last saved web."
+            try? await Task.sleep(for: .seconds(1.5))
+            return
+        }
+        // The relay gives up on a slow fetch itself; this only stops a
+        // hung poll from holding the bar forever.
+        let start = Date()
+        var phase = "", phaseStart = start
+        for _ in 0..<720 {
+            try? await Task.sleep(for: .milliseconds(500))
+            let progress = await Task.detached { WotRefresh.progress() }.value
+            guard let progress else { continue }
+            // A new phase or a finished batch restarts the creep.
+            let step = "\(progress.phase)-\(progress.batchesDone)"
+            if step != phase { phase = step; phaseStart = Date() }
+            refreshValue = 1 + progress.fraction(phaseSeconds: Date().timeIntervalSince(phaseStart))
+            refreshCaption = progress.running
+                ? "\(progress.caption) · \(Int(Date().timeIntervalSince(start)))s"
+                : progress.caption
+            if !progress.running { return }
+        }
+    }
+
+    // MARK: - Search
+
+    @ViewBuilder private var topRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isWOTTab { searchField.padding(.horizontal) }
+            // On the WOT tab a lone "You" chip says nothing the globe doesn't.
+            if !isWOTTab || crumbs.count > 1 { crumbRow }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+            TextField("Find someone", text: $query)
+                .focused($searchFocused)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .submitLabel(.search)
+                .onSubmit { if let first = searchMatches.first { pick(first) } }
+            if !query.isEmpty {
+                Button { clearSearch() } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Clear search"))
+            }
+        }
+        .font(.appSystem(size: 15))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+    }
+
+    /// Who the search finds: a pasted key, or names you've seen, people you
+    /// follow first.
+    private var searchMatches: [String] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count == 64, text.allSatisfy(\.isHexDigit) { return [text.lowercased()] }
+        let bare = text.hasPrefix("nostr:") ? String(text.dropFirst(6)) : text
+        if bare.lowercased().hasPrefix("npub1"), let hex = NpubValidation.hexPubkey(fromNpub: bare) { return [hex] }
+        let people = nostrService.profiles.values.map {
+            TrustMap.Person(pubkey: $0.pubkey, names: [$0.displayName, $0.name, $0.nip05].compactMap { $0 })
+        }
+        return TrustMap.searchPeople(text, in: people, follows: myFollows, web: web)
+    }
+
+    private func searchResults(maxHeight: CGFloat) -> some View {
+        let matches = searchMatches
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(matches, id: \.self) { pubkey in
+                    Button { pick(pubkey) } label: { searchRow(pubkey) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(Text("Shows how they reach you"))
+                }
+                if searchingRelays {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Searching relays…").foregroundColor(.secondary)
+                    }
+                    .font(.appSystem(size: 14))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                } else if matches.isEmpty {
+                    Text("No one called \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D} yet.")
+                        .font(.appSystem(size: 14))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: maxHeight)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 18, y: 6)
+        .padding(.horizontal)
+        .padding(.top, 6)
+    }
+
+    private func searchRow(_ pubkey: String) -> some View {
+        let tag = pubkey == me ? "You" : myFollows.contains(pubkey) ? "You follow"
+            : web.contains(pubkey) ? "In your web" : nil
+        return HStack(spacing: 12) {
+            AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name(pubkey)).font(.appSystem(size: 15, weight: .semibold)).foregroundColor(.primary).lineLimit(1)
+                if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
+                    Text(nip05).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 6)
+            if let tag {
+                Text(tag)
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(tag == "In your web" ? .secondary : .havenPurple)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+
+    /// Names you haven't seen yet: ask the search relays, after a pause in
+    /// typing. Profiles they return join the cache, so the list re-ranks.
+    private func searchRelays(_ text: String) {
+        relaySearch?.cancel()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, !trimmed.lowercased().hasPrefix("npub1") else {
+            searchingRelays = false
+            return
+        }
+        searchingRelays = true
+        relaySearch = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            nostrService.globalSearch(query: trimmed) { results in
+                if results.isFinished, query.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed {
+                    searchingRelays = false
+                }
+            }
+            // A relay that never answers mustn't leave the spinner on.
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            searchingRelays = false
+        }
+    }
+
+    private func pick(_ pubkey: String) {
+        clearSearch()
+        peek = nil
+        if crumbs.count > 1 { crumbs = [me] }
+        if pubkey != me { tapped(pubkey) }
+    }
+
+    private func clearSearch() {
+        query = ""
+        searchFocused = false
+        relaySearch?.cancel()
+        searchingRelays = false
+    }
+
+    // MARK: - Faces
+
+    /// Pictures for a globe of everyone someone follows: a spread of their
+    /// follows, the ones with a picture first.
+    private var ringFaces: [String] {
+        guard let frame, frame.center == author, let candidates = faceCandidates[frame.center] else { return [] }
+        return TrustMap.pickFaces(candidates) { nostrService.profiles[$0]?.pictureURL != nil }
+    }
+
+    private func prepareFaces(_ key: String) {
+        guard key == author, let ring = frames[key]?.ring else { return }
+        let candidates = TrustMap.faceCandidates(ring)
+        faceCandidates[key] = candidates
+        nostrService.fetchMissingProfiles(for: candidates)
+    }
+
+    private func recomputeHaze() {
+        let graph = FeedService.shared.relayTabTrustedPubkeys()
+        let inner = myFollows.union([me, author])
+        Task.detached(priority: .userInitiated) {
+            let shell = TrustMap.haze(graph.subtracting(inner))
+            await MainActor.run {
+                haze = shell
+                web = graph
+            }
+        }
     }
 
     // MARK: - Breadcrumbs
@@ -185,7 +526,8 @@ struct TrustWebView: View {
                         .buttonStyle(.plain)
                         .accessibilityHint(Text(index == crumbs.count - 1 ? "" : "Goes back to this step"))
                 }
-                if centerKey != author {
+                // On the WOT tab the destination is always you.
+                if centerKey != author && !isWOTTab {
                     crumbArrow
                     chip(author, on: false, destination: true)
                         .accessibilityElement(children: .ignore)
@@ -235,9 +577,12 @@ struct TrustWebView: View {
                 Text("Looking two steps further out. This downloads a few MB of follow lists.")
             } else if deeperFailed.contains(frame.center) {
                 Text("Couldn't reach the relays to look further out.")
+            } else if frame.center == author && author == me && frame.ring.isEmpty {
+                Text(loadingMyFollows ? "Loading your follows…"
+                     : "No follow list found yet. Follow people and they'll appear here.")
             } else if frame.center == author && author == me {
                 // The WOT tab, before anyone is picked.
-                Text("Everyone you follow, and your web around them. Tap anyone to see how they reach you.")
+                Text("Everyone you follow, and your web around them. Tap a face or search to see how someone reaches you.")
             } else if frame.center == author {
                 Text("Everyone \(them) follows. Tap a face to see their path.")
             } else if !frame.bridges.isEmpty {
@@ -519,12 +864,14 @@ struct TrustWebView: View {
         if let index = crumbs.firstIndex(of: pubkey) { return jump(to: index) }
         crumbs.append(pubkey)
         guard frames[pubkey] == nil else { return }
+        nostrService.fetchMissingProfiles(for: [pubkey])
         Task {
             let list = await TrustPathService.shared.followList(of: pubkey)
             let ring = list ?? []
             let found = await TrustPathService.shared.path(for: author, from: pubkey, follows: ring)
             frames[pubkey] = Frame(center: pubkey, ring: ring, listFound: list != nil, path: found)
             nostrService.fetchMissingProfiles(for: [pubkey] + found.bridges)
+            prepareFaces(pubkey)
         }
     }
 
@@ -714,6 +1061,9 @@ struct TrustGlobeCanvas: View {
     let author: String
     let myFollows: Set<String>
     let haze: [String]
+    /// Follows drawn as faces when the core is the person everyone is
+    /// measured against (your own globe on the WOT tab).
+    let ringFaces: [String]
     /// False while a sheet covers the globe: the clock stops.
     let running: Bool
     let summary: String
@@ -749,13 +1099,14 @@ struct TrustGlobeCanvas: View {
         /// Who is in the ring, not just how many: a follow and an unfollow
         /// together keep the count.
         let ringHash: Int
+        let faces: [String]
     }
 
     private var loadKey: LoadKey? {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
                     chains: $0.chains?.count ?? -1, haze: haze.count, mine: myFollows.count,
-                    ringHash: $0.ring.hashValue)
+                    ringHash: $0.ring.hashValue, faces: ringFaces)
         }
     }
 
@@ -817,7 +1168,7 @@ struct TrustGlobeCanvas: View {
                 try? await Task.sleep(for: Self.turnDelay)
                 guard !Task.isCancelled else { return }
             }
-            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze)
+            scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, ringFaces: ringFaces)
         }
     }
 
@@ -895,6 +1246,8 @@ final class GlobeScene: ObservableObject {
     private var bridges: [String] = []
     private var chains: [TrustMap.Chain] = []
     private var faces: [String] = []
+    /// Faces that are follows on someone's own globe: drawn in the ring's colour.
+    private var ringFaceSet: Set<String> = []
     private var direct = false
 
     private var keys: [String] = []
@@ -916,7 +1269,8 @@ final class GlobeScene: ObservableObject {
 
     // MARK: Data
 
-    func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String]) {
+    func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String],
+              ringFaces: [String] = []) {
         let now = Date.timeIntervalSinceReferenceDate
         let newCenter = !hasLoaded || frame.center != center
         self.me = me
@@ -975,6 +1329,15 @@ final class GlobeScene: ObservableObject {
         }
         for chain in chains.prefix(TrustMap.shownChains) {
             for key in [chain.bridge, chain.via] where taken.insert(key).inserted { shown.append(key) }
+        }
+        // Someone's own globe has no paths to draw: their follows get the faces.
+        let ringSet = Set(frame.ring)
+        ringFaceSet = []
+        if frame.center == author {
+            for key in ringFaces where ringSet.contains(key) && taken.insert(key).inserted {
+                shown.append(key)
+                ringFaceSet.insert(key)
+            }
         }
         faces = shown
         let pictured = Set(shown).union([frame.center, author])
@@ -1262,7 +1625,12 @@ final class GlobeScene: ObservableObject {
         // Faces, back to front: bridges, chain steps and the author.
         var drawn: [(key: String, p: Projected, tint: Color, size: Double)] = []
         for key in faces {
-            if let p = position(key, project) { drawn.append((key, p, accent, 15)) }
+            guard let p = position(key, project) else { continue }
+            if ringFaceSet.contains(key) {
+                drawn.append((key, p, Self.ringColor, 14))
+            } else {
+                drawn.append((key, p, accent, 15))
+            }
         }
         if let authorP { drawn.append((author, authorP, .yellow, 24)) }
         drawn.sort { $0.p.depth < $1.p.depth }
@@ -1287,7 +1655,7 @@ final class GlobeScene: ObservableObject {
                 // Behind the globe: a warm ember, not a face.
                 let e = 3.2 * face.p.scale * zoom
                 context.fill(Path(ellipseIn: CGRect(x: face.p.point.x - e, y: face.p.point.y - e, width: 2 * e, height: 2 * e)),
-                             with: .color(accent.opacity(dim)))
+                             with: .color(face.tint.opacity(dim)))
                 continue
             }
             drawFace(&context, key: face.key, at: face.p.point, r: r, tint: face.tint, opacity: dim, name: name)
@@ -1371,5 +1739,50 @@ enum TrustPathText {
         let rest = path.bridges.count - names.count
         if rest > 0 || path.hasMore { return names.joined(separator: ", ") + " + more" }
         return names.joined(separator: " and ")
+    }
+}
+
+/// The relay's report on a web-of-trust rebuild (`WotRefreshProgressC`).
+struct WotRefresh: Decodable {
+    let running: Bool
+    let phase: String
+    let batches: Int
+    let batchesDone: Int
+    let lists: Int
+    let size: Int
+
+    static func progress() -> WotRefresh? {
+        guard let pointer = WotRefreshProgressC() else { return nil }
+        defer { free(pointer) }
+        return try? JSONDecoder().decode(WotRefresh.self, from: Data(String(cString: pointer).utf8))
+    }
+
+    /// How far through the rebuild, 0 to 1. A relay can take a minute to
+    /// answer, so inside a phase the bar creeps toward the next one with
+    /// time and never reaches it until the relay says so.
+    func fraction(phaseSeconds: TimeInterval) -> Double {
+        let creep = 1 - exp(-phaseSeconds / 25)
+        switch phase {
+        case "follows": return 0.02 + 0.2 * creep
+        case "lists":
+            let done = batches == 0 ? 0 : Double(batchesDone) / Double(batches)
+            let next = batches == 0 ? 1 : Double(batchesDone + 1) / Double(batches)
+            return 0.25 + 0.7 * (done + (min(1, next) - done) * creep)
+        case "counting": return 0.97
+        default: return 1
+        }
+    }
+
+    var caption: String {
+        switch phase {
+        case "follows": return "Reading your follow list…"
+        // The relay counts lists per batch, so a running count sat still.
+        case "lists":
+            return batches > 1 ? "Reading your follows' lists… part \(min(batchesDone + 1, batches)) of \(batches)"
+                : "Reading your follows' lists…"
+        case "counting": return "Counting who your web trusts…"
+        case "saved": return "Your web: \(size.formatted()) people"
+        default: return "Rebuild stopped. Showing your last saved web."
+        }
     }
 }

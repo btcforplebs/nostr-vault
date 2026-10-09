@@ -154,6 +154,56 @@ enum TrustMap {
     private static func allSigners(_ lists: [[String: Any]]) -> Set<String> {
         Set(lists.compactMap { $0["pubkey"] as? String })
     }
+
+    // MARK: Faces on someone's own globe
+
+    /// Follows worth fetching a profile for when a globe shows everyone
+    /// someone follows: a spread around the sphere, the same people each time.
+    static let faceCandidateCount = 48
+    /// Follows drawn as faces on that globe; the rest stay stars.
+    static let ringFaceCount = 16
+
+    static func faceCandidates(_ ring: [String], count: Int = faceCandidateCount) -> [String] {
+        spread(ring.sorted(), count: count)
+    }
+
+    /// Faces for a globe of everyone someone follows: people with a picture
+    /// first, so the globe shows faces rather than initials, then the rest.
+    static func pickFaces(_ candidates: [String], hasPicture: (String) -> Bool,
+                          count: Int = ringFaceCount) -> [String] {
+        let pictured = candidates.filter(hasPicture)
+        let plain = candidates.filter { !hasPicture($0) }
+        return Array((pictured + plain).prefix(count))
+    }
+
+    // MARK: Finding someone
+
+    /// Someone the WOT tab's search can find: their key and every name they go by.
+    struct Person {
+        let pubkey: String
+        let names: [String]
+    }
+
+    /// The WOT tab's search: people you follow first, then your web, then
+    /// everyone else; a name that starts with the query before one that only
+    /// contains it; shorter names first.
+    static func searchPeople(_ query: String, in people: [Person], follows: Set<String>,
+                             web: Set<String>, limit: Int = 8) -> [String] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        var ranked: [(tier: Int, prefix: Int, length: Int, key: String)] = []
+        for person in people {
+            let names = person.names.map { $0.lowercased() }.filter { $0.contains(q) }
+            guard !names.isEmpty else { continue }
+            let tier = follows.contains(person.pubkey) ? 0 : web.contains(person.pubkey) ? 1 : 2
+            let prefix = names.contains { $0.hasPrefix(q) } ? 0 : 1
+            ranked.append((tier, prefix, names.map(\.count).min() ?? 0, person.pubkey))
+        }
+        return ranked
+            .sorted { ($0.tier, $0.prefix, $0.length, $0.key) < ($1.tier, $1.prefix, $1.length, $1.key) }
+            .prefix(limit)
+            .map(\.key)
+    }
 }
 
 /// The globe's camera and how it moves. Every step is scaled by the real time

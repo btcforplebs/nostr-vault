@@ -16,6 +16,8 @@ struct GlobalSearchResults {
     /// created_at of each profile's kind 0, when it came from an event
     /// (absent for profiles from the in-memory cache).
     var profileCreatedAt: [String: Int64] = [:]
+    /// True on the last delivery of a search: every relay has answered.
+    var isFinished = false
 }
 
 /// Lightweight signal published when profile metadata changes, so views can

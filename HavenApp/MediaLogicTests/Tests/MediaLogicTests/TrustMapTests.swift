@@ -204,4 +204,34 @@ final class TrustMapTests: XCTestCase {
                                 TrustMap.Chain(bridge: other, via: via)].sorted { ($0.via, $0.bridge) < ($1.via, $1.bridge) })
         XCTAssertTrue(TrustMap.deeperLinkFilters(follows: [bridge], via: []).isEmpty)
     }
+
+    func testPickFacesPutsPicturesFirstAndCaps() {
+        let candidates = (1...6).map(key)
+        let pictured: Set<String> = [key(2), key(5)]
+        let faces = TrustMap.pickFaces(candidates, hasPicture: pictured.contains, count: 4)
+        XCTAssertEqual(faces, [key(2), key(5), key(1), key(3)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, hasPicture: { _ in false }, count: 10), candidates)
+    }
+
+    func testFaceCandidatesAreStableAndSpread() {
+        let ring = (1...200).map(key)
+        let a = TrustMap.faceCandidates(ring.shuffled(), count: 10)
+        XCTAssertEqual(a, TrustMap.faceCandidates(ring, count: 10))
+        XCTAssertEqual(Set(a).count, 10)
+        XCTAssertEqual(TrustMap.faceCandidates([key(3), key(1)]), [key(1), key(3)].sorted())
+    }
+
+    func testSearchPeopleRanksFollowsThenWebThenPrefix() {
+        let people = [
+            TrustMap.Person(pubkey: key(1), names: ["Alice Stranger"]),
+            TrustMap.Person(pubkey: key(2), names: ["Mal Alice"]),
+            TrustMap.Person(pubkey: key(3), names: ["alice", "alice@example.com"]),
+            TrustMap.Person(pubkey: key(4), names: ["Alicewebber"]),
+            TrustMap.Person(pubkey: key(5), names: ["Bob"]),
+        ]
+        let found = TrustMap.searchPeople(" ALI ", in: people, follows: [key(2), key(3)], web: [key(4)])
+        XCTAssertEqual(found, [key(3), key(2), key(4), key(1)])
+        XCTAssertTrue(TrustMap.searchPeople("  ", in: people, follows: [], web: []).isEmpty)
+        XCTAssertEqual(TrustMap.searchPeople("a", in: people, follows: [], web: [], limit: 2).count, 2)
+    }
 }
