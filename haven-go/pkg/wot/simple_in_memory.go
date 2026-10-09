@@ -48,6 +48,13 @@ type wotCache struct {
 // starter pack, so graphs built from those seeds are thrown away.
 const wotCacheVersion = 3
 
+// listBatchSize is how many follows' lists one request asks for. Seed relays
+// quietly answer oversized author filters with little or nothing: measured
+// against a real 1,018-follow account, 1,000 per request got 383 lists back
+// across the seed set and 250 got 495 (relay.btcforplebs.com went from 3 to
+// 190, nostr-pub.wellorder.net from 6 to 120). 100 got no more than 250.
+const listBatchSize = 250
+
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
 	// layers is the follows + vouches of the graph in pubkeys, saved with it.
@@ -318,7 +325,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
 
-	// Split analysis into batches of 1000 pubkeys and process them sequentially
+	// Split analysis into batches of listBatchSize pubkeys and process them sequentially
 	// Process sequentially with yielding to avoid blocking the host app's UI/Events
 	keys := follows
 	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
@@ -326,11 +333,11 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 	updateProgress(func(p *Progress) {
 		p.Phase = "lists"
-		p.Batches = (len(keys) + 999) / 1000
+		p.Batches = (len(keys) + listBatchSize - 1) / listBatchSize
 		p.Lists = eventsAnalysed.Load()
 	})
 
-	for batch := range slices.Chunk(keys, 1000) {
+	for batch := range slices.Chunk(keys, listBatchSize) {
 		select {
 		case <-ctx.Done():
 			return
