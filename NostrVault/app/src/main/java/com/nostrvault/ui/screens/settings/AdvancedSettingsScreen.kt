@@ -22,6 +22,11 @@ import com.nostrvault.service.MediaCacheService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.nostrvault.ui.screens.dashboard.formatSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -41,7 +46,18 @@ private val WOT_REFRESH_OPTIONS = listOf(
 class AdvancedSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val mediaCacheService: MediaCacheService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
+    private val _cacheBytes = MutableStateFlow<Long?>(null)
+    /** Size of the media cache, null until measured (iOS cacheBytes). */
+    val cacheBytes: StateFlow<Long?> = _cacheBytes.asStateFlow()
+
+    fun measureCache() {
+        viewModelScope.launch {
+            _cacheBytes.value = withContext(Dispatchers.IO) { mediaCacheService.cacheSizeBytes() }
+        }
+    }
+
     val config: StateFlow<HavenConfig> = configStore.config
     /** True while a saved change is restarting the relay onto it. */
     val isRestartingRelay: StateFlow<Boolean> = configStore.relayApplier.isRestarting
@@ -58,7 +74,29 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
     fun setUseLocalBlossomCache(v: Boolean) = save { it.copy(useLocalBlossomCache = v) }
 
-    fun clearMediaCache() = mediaCacheService.clearCache()
+    fun clearMediaCache() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { mediaCacheService.clearCache() }
+            val freed = formatSize(result.bytesFreed)
+            if (result.filesFailed == 0) {
+                notificationManager.showToast("Cleared $freed of temporary copies")
+            } else {
+                notificationManager.showError(
+                    "Cleared $freed, but ${result.filesFailed} files could not be removed",
+                    style = com.nostrvault.ui.notification.ErrorStyle.WARNING,
+                )
+            }
+            measureCache()
+        }
+    }
+
+    companion object {
+        /** The confirm text, with the size when it is known (iOS clearMessage). */
+        fun clearMessage(bytes: Long?): String {
+            val size = bytes?.let { formatSize(it) + " of " } ?: ""
+            return "Removes ${size}temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched."
+        }
+    }
 
     /**
      * Persists the external-relay choice to disk before [onDone] restarts the
@@ -103,6 +141,8 @@ fun AdvancedSettingsScreen(
     val context = LocalContext.current
     var showResetDialog by remember { mutableStateOf(false) }
     var confirmClearCache by remember { mutableStateOf(false) }
+    val cacheBytes by viewModel.cacheBytes.collectAsState()
+    LaunchedEffect(Unit) { viewModel.measureCache() }
 
     Scaffold(
         topBar = {
@@ -160,8 +200,9 @@ fun AdvancedSettingsScreen(
                     "from the phone, offline too. Uploads never go through it."
             )
             PickerRow("Cache TTL", CACHE_TTL_OPTIONS, config.cacheTTLDays) { viewModel.setCacheTTL(it) }
-            TextButton(onClick = { confirmClearCache = true }) {
-                Text("Clear Media Cache", color = ErrorRed)
+            TextButton(onClick = { confirmClearCache = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Clear Media Cache", color = ErrorRed, modifier = Modifier.weight(1f))
+                cacheBytes?.let { Text(formatSize(it), color = SecondaryText) }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -212,7 +253,7 @@ fun AdvancedSettingsScreen(
             onDismissRequest = { confirmClearCache = false },
             title = { Text("Clear Media Cache?") },
             text = {
-                Text("Removes temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched.")
+                Text(AdvancedSettingsViewModel.clearMessage(cacheBytes))
             },
             confirmButton = {
                 TextButton(onClick = {
