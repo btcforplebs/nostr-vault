@@ -449,6 +449,9 @@ extension MediaGalleryView {
         Task {
             let service = BlossomService(configService: configService, nostrService: nostrService)
             let report = await service.deleteFromMirrorsReport(sha256: sha256)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: service, force: true)
             await MainActor.run {
                 if report.allDeleted {
                     ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
@@ -472,6 +475,9 @@ extension MediaGalleryView {
             async let mirrors = service.deleteFromMirrorsReport(sha256: sha256)
             let (localOk, report) = await (local, mirrors)
             let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localOk, mirrors: report)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: service, force: true)
             await MainActor.run {
                 // Only drop the tile once the device copy is really gone.
                 if localOk {

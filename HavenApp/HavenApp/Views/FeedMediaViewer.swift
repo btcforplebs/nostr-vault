@@ -636,6 +636,9 @@ struct FeedMediaViewer: View {
             }
 
             let report = await blossomService.deleteFromMirrorsReport(sha256: sha256)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: blossomService, force: true)
             await MainActor.run {
                 withAnimation(Motion.panel) {
                     if report.allDeleted {
@@ -676,6 +679,9 @@ struct FeedMediaViewer: View {
             let localSuccess = await blossomService.deleteFromLocal(sha256: sha256)
             let report = await blossomService.deleteFromMirrorsReport(sha256: sha256)
             let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localSuccess, mirrors: report)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: blossomService, force: true)
 
             await MainActor.run {
                 withAnimation(Motion.panel) {
