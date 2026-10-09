@@ -163,17 +163,60 @@ enum TrustMap {
     /// Follows drawn as faces on that globe; the rest stay stars.
     static let ringFaceCount = 16
 
-    static func faceCandidates(_ ring: [String], count: Int = faceCandidateCount) -> [String] {
-        spread(ring.sorted(), count: count)
+    /// The follows worth a profile fetch: the ones you interact with most
+    /// (`engagement`), busiest first, then a spread of everyone else.
+    static func faceCandidates(_ ring: [String], engagement: [String: Int] = [:],
+                               count: Int = faceCandidateCount) -> [String] {
+        let engaged = ring.filter { (engagement[$0] ?? 0) > 0 }
+            .sorted { (engagement[$0] ?? 0, $1) > (engagement[$1] ?? 0, $0) }
+        let top = Array(engaged.prefix(count))
+        let taken = Set(top)
+        let rest = ring.filter { !taken.contains($0) }.sorted()
+        return top + spread(rest, count: count - top.count)
     }
 
-    /// Faces for a globe of everyone someone follows: people with a picture
-    /// first, so the globe shows faces rather than initials, then the rest.
-    static func pickFaces(_ candidates: [String], hasPicture: (String) -> Bool,
+    /// Faces for a globe of everyone someone follows, in candidate order:
+    /// only people whose picture has actually loaded (`renders`), so the
+    /// globe shows faces, never initials or broken pictures. The rest stay stars.
+    static func pickFaces(_ candidates: [String], renders: (String) -> Bool,
                           count: Int = ringFaceCount) -> [String] {
-        let pictured = candidates.filter(hasPicture)
-        let plain = candidates.filter { !hasPicture($0) }
-        return Array((pictured + plain).prefix(count))
+        Array(candidates.filter(renders).prefix(count))
+    }
+
+    // MARK: Who you interact with
+
+    /// Kinds that count as you interacting with someone: notes (replies and
+    /// mentions), reposts, reactions, zap receipts.
+    static let engagementKinds = [1, 6, 7, 9735]
+
+    /// How much you and each person interact, from your own events (the
+    /// people they tag) and events aimed at you (who sent them). Your own
+    /// count double, a zap triples. You never score yourself.
+    static func engagementScores(mine: [[String: Any]], toMe: [[String: Any]], me: String) -> [String: Int] {
+        func weight(_ kind: Int) -> Int { kind == 9735 ? 3 : 1 }
+        var scores: [String: Int] = [:]
+        for event in mine {
+            guard (event["pubkey"] as? String) == me, let kind = event["kind"] as? Int else { continue }
+            let tags = event["tags"] as? [[String]] ?? []
+            // A reply tags the whole thread; the last p is who you answered.
+            guard let target = tags.last(where: { $0.count > 1 && $0[0] == "p" })?[1] else { continue }
+            scores[target, default: 0] += 2 * weight(kind)
+        }
+        for event in toMe {
+            guard let kind = event["kind"] as? Int else { continue }
+            let tags = event["tags"] as? [[String]] ?? []
+            guard tags.contains(where: { $0.count > 1 && $0[0] == "p" && $0[1] == me }) else { continue }
+            let sender: String?
+            if kind == 9735 {
+                sender = tags.first(where: { $0.count > 1 && $0[0] == "P" })?[1]
+            } else {
+                sender = event["pubkey"] as? String
+            }
+            guard let sender else { continue }
+            scores[sender, default: 0] += weight(kind)
+        }
+        scores[me] = nil
+        return scores
     }
 
     // MARK: Finding someone

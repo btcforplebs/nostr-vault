@@ -70,6 +70,13 @@ struct TrustWebView: View {
     /// Per person whose own globe is showing: the follows worth a profile
     /// fetch, so their faces can be pictures (`TrustMap.faceCandidates`).
     @State private var faceCandidates: [String: [String]] = [:]
+    /// How much you and each person interact (`TrustMap.engagementScores`):
+    /// your own globe opens on the busiest faces.
+    @State private var engagement: [String: Int] = [:]
+    /// People whose current picture has loaded, so a face is never initials
+    /// or a broken image. Keyed by pubkey and picture URL.
+    @State private var renderedPictures: Set<String> = []
+    @State private var pictureLoader: Task<Void, Never>?
     /// Your wider web, for the search's "In your web" tag.
     @State private var web: Set<String> = []
     @State private var query = ""
@@ -145,6 +152,7 @@ struct TrustWebView: View {
             nostrService.fetchMissingProfiles(for: [me, author] + path.bridges)
             prepareFaces(me)
             recomputeHaze()
+            Task { await loadEngagement() }
         }
         .task {
             try? await Task.sleep(for: .seconds(15))
@@ -297,10 +305,7 @@ struct TrustWebView: View {
             refreshStep = 2
             refreshValue = 2
             refreshCaption = "Loading profile pictures…"
-            if let ring = frames[me]?.ring {
-                faceCandidates[me] = TrustMap.faceCandidates(ring)
-            }
-            nostrService.fetchMissingProfiles(for: [me] + (faceCandidates[me] ?? []), force: true)
+            await loadEngagement(force: true)
             try? await Task.sleep(for: .milliseconds(900))
             refreshValue = 3
             refreshCaption = "Up to date"
@@ -489,18 +494,82 @@ struct TrustWebView: View {
 
     // MARK: - Faces
 
-    /// Pictures for a globe of everyone someone follows: a spread of their
-    /// follows, the ones with a picture first.
+    /// Pictures for a globe of everyone someone follows: on yours, the
+    /// people you interact with most; on anyone else's, a spread of their
+    /// follows. Only pictures that have loaded.
     private var ringFaces: [String] {
         guard let frame, frame.center == author, let candidates = faceCandidates[frame.center] else { return [] }
-        return TrustMap.pickFaces(candidates) { nostrService.profiles[$0]?.pictureURL != nil }
+        return TrustMap.pickFaces(candidates) { pictureRenders($0) }
     }
 
-    private func prepareFaces(_ key: String) {
+    private func pictureKey(_ pubkey: String) -> String? {
+        nostrService.profiles[pubkey]?.pictureURL.map { pubkey + " " + $0.absoluteString }
+    }
+
+    private func pictureRenders(_ pubkey: String) -> Bool {
+        pictureKey(pubkey).map(renderedPictures.contains) ?? false
+    }
+
+    private func prepareFaces(_ key: String, forceProfiles: Bool = false) {
         guard key == author, let ring = frames[key]?.ring else { return }
-        let candidates = TrustMap.faceCandidates(ring)
+        let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:])
         faceCandidates[key] = candidates
-        nostrService.fetchMissingProfiles(for: candidates)
+        nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
+        loadPictures(candidates)
+    }
+
+    /// Loads the candidates' pictures as their profiles arrive, and lets the
+    /// globe take the ones that loaded once a second rather than one by one,
+    /// so it settles a few times, not sixteen.
+    private func loadPictures(_ candidates: [String]) {
+        pictureLoader?.cancel()
+        pictureLoader = Task {
+            var asked: Set<String> = []
+            var loaded: Set<String> = []
+            for _ in 0..<20 {
+                for pubkey in candidates {
+                    guard let key = pictureKey(pubkey), !asked.contains(key),
+                          !renderedPictures.contains(key),
+                          let url = nostrService.profiles[pubkey]?.pictureURL else { continue }
+                    asked.insert(key)
+                    if AvatarImageCache.shared.image(for: url) != nil {
+                        loaded.insert(key)
+                    } else {
+                        AvatarImageCache.shared.load(url: url) { image in
+                            if image != nil { loaded.insert(key) }
+                        }
+                    }
+                }
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                if !loaded.isEmpty {
+                    renderedPictures.formUnion(loaded)
+                    loaded.removeAll()
+                }
+            }
+        }
+    }
+
+    /// Who you interact with, from your own events on the device relay and
+    /// the ones aimed at you in its inbox (the seed relays when it isn't up).
+    private func loadEngagement(force: Bool = false) async {
+        let feed = FeedService.shared
+        let local = feed.localRelayURL
+        let inbox = feed.localInboxURL
+        let outward: [URL] = local.map { [$0] } ?? feed.externalRelayURLs
+        let inward: [URL] = inbox.map { [$0] } ?? feed.externalRelayURLs
+        let kinds = TrustMap.engagementKinds
+        async let mine = ZapHistoryService.query(
+            filters: [["authors": [me], "kinds": kinds, "limit": 1000]], relays: outward)
+        async let toMe = ZapHistoryService.query(
+            filters: [["#p": [me], "kinds": kinds, "limit": 1000]], relays: inward)
+        let (mineEvents, toMeEvents) = await (mine, toMe)
+        let me = me
+        let scores = await Task.detached {
+            TrustMap.engagementScores(mine: mineEvents, toMe: toMeEvents, me: me)
+        }.value
+        engagement = scores
+        prepareFaces(me, forceProfiles: force)
     }
 
     private func recomputeHaze() {

@@ -4757,7 +4757,7 @@ enum FeedPrefetcher {
 
 // MARK: - AvatarView
 
-private final class AvatarImageCache {
+final class AvatarImageCache {
     static let shared = AvatarImageCache()
 
     private let cache = NSCache<NSURL, PlatformImage>()

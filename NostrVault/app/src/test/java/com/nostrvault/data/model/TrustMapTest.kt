@@ -254,15 +254,41 @@ class TrustMapTest {
         assertEquals(listOf("a", "b", "c"), TrustMap.faceCandidates(few))
     }
 
-    @Test fun `pick faces puts pictures first and keeps candidate order`() {
+    @Test fun `face candidates put the most engaged first`() {
+        val ring = (0 until 200).map { key(it) }
+        val engagement = mapOf(key(150) to 9, key(7) to 4, key(42) to 4, key(999) to 50)
+        val picked = TrustMap.faceCandidates(ring, engagement, count = 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        assertEquals(listOf(key(150), key(7), key(42)), picked.take(3))
+        assertEquals(10, picked.toSet().size)
+        assertTrue(key(999) !in picked)
+    }
+
+    @Test fun `pick faces shows only rendered pictures in candidate order`() {
         val candidates = listOf("a", "b", "c", "d", "e")
-        val pictured = setOf("b", "d")
-        assertEquals(listOf("b", "d", "a"), TrustMap.pickFaces(candidates, { it in pictured }, count = 3))
-        assertEquals(listOf("b", "d", "a", "c", "e"), TrustMap.pickFaces(candidates, { it in pictured }))
-        assertEquals(listOf("a", "b"), TrustMap.pickFaces(candidates, { false }, count = 2))
-        assertEquals(listOf("d"), TrustMap.pickFaces(candidates, { it == "d" }, count = 1))
+        val rendered = setOf("b", "d", "e")
+        assertEquals(listOf("b", "d"), TrustMap.pickFaces(candidates, { it in rendered }, count = 2))
+        assertEquals(listOf("b", "d", "e"), TrustMap.pickFaces(candidates, { it in rendered }))
+        assertTrue(TrustMap.pickFaces(candidates, { false }).isEmpty())
         assertTrue(TrustMap.pickFaces(candidates, { true }, count = 0).isEmpty())
-        assertEquals(16, TrustMap.pickFaces((0 until 48).map { "k$it" }, { false }).size)
+        assertEquals(16, TrustMap.pickFaces((0 until 48).map { "k$it" }, { true }).size)
+    }
+
+    @Test fun `engagement scores count both directions`() {
+        val me = key(1); val alice = key(2); val bob = key(3); val carol = key(4)
+        fun ev(pubkey: String, kind: Int, vararg tags: List<String>) = TrustMap.Interaction(pubkey, kind, tags.toList())
+        val mine = listOf(
+            ev(me, 7, listOf("e", "x"), listOf("p", alice)),          // a like: alice +2
+            ev(me, 1, listOf("p", bob), listOf("p", alice)),          // reply to alice in bob's thread: alice +2
+            ev(me, 6, listOf("p", me)),                               // reposting yourself counts for no one
+            ev(bob, 7, listOf("p", carol)),                           // not yours: ignored
+        )
+        val toMe = listOf(
+            ev(bob, 7, listOf("p", me)),                              // bob liked you: +1
+            ev("zapper", 9735, listOf("p", me), listOf("P", carol)), // carol zapped you: +3
+            ev(carol, 1, listOf("p", alice)),                         // not aimed at you: ignored
+        )
+        assertEquals(mapOf(alice to 4, bob to 1, carol to 3), TrustMap.engagementScores(mine, toMe, me))
     }
 
     // ── Search ───────────────────────────────────────────────────────

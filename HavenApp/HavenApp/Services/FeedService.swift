@@ -474,7 +474,7 @@ class FeedService: ObservableObject {
     }
 
     /// Local inbox relay — stores zaps, reactions, and mentions imported from seed relays.
-    private var localInboxURL: URL? {
+    var localInboxURL: URL? {
         guard RelayProcessManager.shared.isRunning,
               !RelayProcessManager.shared.isBooting else { return nil }
         return URL(string: ConfigService.shared.config.nostrURL + "/inbox")
@@ -490,7 +490,7 @@ class FeedService: ObservableObject {
     }
 
     /// Public relays used to supplement the local relay: the read relays.
-    private var externalRelayURLs: [URL] {
+    var externalRelayURLs: [URL] {
         ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
     }
 
