@@ -265,4 +265,19 @@ final class TrustMapTests: XCTestCase {
         XCTAssertTrue(TrustMap.searchPeople("  ", in: people, follows: [], web: []).isEmpty)
         XCTAssertEqual(TrustMap.searchPeople("a", in: people, follows: [], web: [], limit: 2).count, 2)
     }
+
+    func testSeatFacesNeverLetsOneFaceCoverAnother() {
+        let spot = { (k: String, x: Double) in TrustMap.FaceSpot(key: k, x: x, y: 0, r: 10) }
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        let spots = [spot("a", 0), spot("b", 5), spot("c", 40), spot("d", 100)]
+        let core = TrustMap.FaceSpot(key: "core", x: 100, y: 0, r: 20)
+        XCTAssertEqual(TrustMap.seatFaces(spots, blocked: [core]), ["a", "c"])
+        // A face seated last frame keeps its seat over a newcomer in front.
+        XCTAssertEqual(TrustMap.seatFaces(spots, kept: ["b"], blocked: [core]), ["b", "c"])
+        // The author always gets a picture.
+        XCTAssertEqual(TrustMap.seatFaces(spots, always: ["d"], blocked: [core]), ["a", "c", "d"])
+        // A little overlap is fine; covering is not.
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 18)]), ["a", "b"])
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 16)]), ["a"])
+    }
 }

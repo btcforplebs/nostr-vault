@@ -246,8 +246,8 @@ class TrustMapTest {
     @Test fun `face candidates are the ring sorted and spread`() {
         val ring = (0 until 200).map { randomKey(it) }
         val picked = TrustMap.faceCandidates(ring)
-        assertEquals(48, picked.size)
-        assertEquals(TrustMap.spread(ring.sorted(), 48), picked)
+        assertEquals(TrustMap.FACE_CANDIDATES, picked.size)
+        assertEquals(TrustMap.spread(ring.sorted(), TrustMap.FACE_CANDIDATES), picked)
         // Order in doesn't matter: the same people every time.
         assertEquals(picked, TrustMap.faceCandidates(ring.reversed()))
         val few = listOf("c", "a", "b")
@@ -271,7 +271,7 @@ class TrustMapTest {
         assertEquals(listOf("b", "d", "e"), TrustMap.pickFaces(candidates, { it in rendered }))
         assertTrue(TrustMap.pickFaces(candidates, { false }).isEmpty())
         assertTrue(TrustMap.pickFaces(candidates, { true }, count = 0).isEmpty())
-        assertEquals(16, TrustMap.pickFaces((0 until 48).map { "k$it" }, { true }).size)
+        assertEquals(TrustMap.RING_FACES, TrustMap.pickFaces((0 until 100).map { "k$it" }, { true }).size)
     }
 
     @Test fun `engagement scores count both directions`() {
@@ -345,5 +345,21 @@ class TrustMapTest {
         assertNull(TrustMap.pastedKey("npub1throws") { error("bad checksum") })
         assertNull(TrustMap.pastedKey("alice") { author })
         assertNull(TrustMap.pastedKey("ab".repeat(31)) { null })
+    }
+
+    @Test
+    fun seatFacesNeverLetsOneFaceCoverAnother() {
+        fun spot(k: String, x: Double) = TrustMap.FaceSpot(k, x, 0.0, 10.0)
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        val spots = listOf(spot("a", 0.0), spot("b", 5.0), spot("c", 40.0), spot("d", 100.0))
+        val core = listOf(TrustMap.FaceSpot("core", 100.0, 0.0, 20.0))
+        assertEquals(setOf("a", "c"), TrustMap.seatFaces(spots, blocked = core))
+        // A face seated last frame keeps its seat over a newcomer in front.
+        assertEquals(setOf("b", "c"), TrustMap.seatFaces(spots, kept = setOf("b"), blocked = core))
+        // The author always gets a picture.
+        assertEquals(setOf("a", "c", "d"), TrustMap.seatFaces(spots, always = setOf("d"), blocked = core))
+        // A little overlap is fine; covering is not.
+        assertEquals(setOf("a", "b"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 18.0))))
+        assertEquals(setOf("a"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 16.0))))
     }
 }
