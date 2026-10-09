@@ -14,6 +14,9 @@ import UIKit
 struct TrustWebView: View {
     let author: String
     let path: TrustPath
+    /// The WOT tab's globe: it follows your follow list as it loads or
+    /// changes, and tapping the tab again brings it back to you.
+    var isWOTTab = false
     @EnvironmentObject var nostrService: NostrService
 
     /// One globe: who is at the core and what we know about their follows.
@@ -117,6 +120,32 @@ struct TrustWebView: View {
                 await MainActor.run { haze = shell }
             }
         }
+        .onReceive(FeedService.shared.$followedPubkeys.dropFirst()) { follows in
+            // In place, so you stay wherever you'd gone on the globe.
+            guard isWOTTab, Set(follows) != myFollows else { return }
+            myFollows = Set(follows)
+            // Keep what the globe had already found around you.
+            var updated = Frame(center: me, ring: follows, path: path)
+            if let old = frames[me] {
+                updated.bridges = old.bridges
+                updated.seen = old.seen
+                updated.exhausted = old.exhausted
+                updated.chains = old.chains
+            }
+            frames[me] = updated
+            // Someone you unfollowed moves out to the haze; a new follow leaves it.
+            let graph = FeedService.shared.relayTabTrustedPubkeys()
+            let inner = Set(follows).union([me, author])
+            Task.detached(priority: .userInitiated) {
+                let shell = TrustMap.haze(graph.subtracting(inner))
+                await MainActor.run { haze = shell }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wotTabReselected)) { _ in
+            guard isWOTTab else { return }
+            peek = nil
+            jump(to: 0)
+        }
         .sheet(isPresented: $showingList) { peopleList }
         .sheet(item: Binding<IdentifiableString?>(
             get: { profilePubkey.map { IdentifiableString(id: $0) } },
@@ -206,6 +235,9 @@ struct TrustWebView: View {
                 Text("Looking two steps further out. This downloads a few MB of follow lists.")
             } else if deeperFailed.contains(frame.center) {
                 Text("Couldn't reach the relays to look further out.")
+            } else if frame.center == author && author == me {
+                // The WOT tab, before anyone is picked.
+                Text("Everyone you follow, and your web around them. Tap anyone to see how they reach you.")
             } else if frame.center == author {
                 Text("Everyone \(them) follows. Tap a face to see their path.")
             } else if !frame.bridges.isEmpty {
@@ -242,6 +274,9 @@ struct TrustWebView: View {
     /// The globe's words for VoiceOver, which reads the picture as one element.
     private var summary: String {
         guard let frame else { return "Loading who \(name(centerKey)) follows." }
+        if frame.center == me && author == me {
+            return "You, the \(frame.ring.count) people you follow, and your web around them."
+        }
         let them = name(author)
         let who = frame.center == me ? "you follow" : "\(name(frame.center)) follows"
         if frame.bridges.isEmpty {
@@ -711,12 +746,16 @@ struct TrustGlobeCanvas: View {
         let chains: Int
         let haze: Int
         let mine: Int
+        /// Who is in the ring, not just how many: a follow and an unfollow
+        /// together keep the count.
+        let ringHash: Int
     }
 
     private var loadKey: LoadKey? {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
-                    chains: $0.chains?.count ?? -1, haze: haze.count, mine: myFollows.count)
+                    chains: $0.chains?.count ?? -1, haze: haze.count, mine: myFollows.count,
+                    ringHash: $0.ring.hashValue)
         }
     }
 

@@ -7,6 +7,8 @@ struct VaultChangeHandlers: ViewModifier {
     let committedSearch: String
     let searchScope: SearchScope
     let contentFilter: ContentFilter
+    /// Notes, Articles or Highlights, plus the Recipes filter on Articles.
+    let noteScopeKey: String
     let eventsCount: Int
     let blacklistedNpubs: [String]
     let activeAccountNpub: String
@@ -24,6 +26,7 @@ struct VaultChangeHandlers: ViewModifier {
             .onChange(of: committedSearch) { _, _ in onResetAndUpdate() }
             .onChange(of: searchScope) { _, _ in onResetAndUpdate() }
             .onChange(of: contentFilter) { _, _ in onResetAndUpdate() }
+            .onChange(of: noteScopeKey) { _, _ in onResetAndUpdate() }
             .onChange(of: likesFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: zapsFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: viewMode) { _, newMode in onViewModeChange(newMode) }

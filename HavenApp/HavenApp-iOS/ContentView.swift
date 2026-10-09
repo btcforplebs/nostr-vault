@@ -84,7 +84,8 @@ struct ContentView: View {
             // A notification tapped on a cold start routes before this view
             // exists, so its tab switch went nowhere; the target is still parked.
             if RelayFocus.pending != nil {
-                selectedTab = 4 // Relay tab
+                selectedTab = 4 // Vault tab, relay half
+                VaultSection.shared.showsMedia = false
             }
             clearCoversForNotificationNote()
             // Replay any queued notification action from a cold start
@@ -100,7 +101,8 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
-            selectedTab = 4 // Relay tab
+            selectedTab = 4 // Vault tab, relay half
+            VaultSection.shared.showsMedia = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeed)) { _ in
             selectedTab = 0 // Feed tab
@@ -110,7 +112,8 @@ struct ContentView: View {
             selectedTab = 1 // Search tab
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMedia)) { _ in
-            selectedTab = 3 // Media tab
+            selectedTab = 4 // Vault tab, Media half
+            VaultSection.shared.showsMedia = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
             selectedTab = 2 // Profile tab
@@ -213,6 +216,9 @@ struct iPadSidebarView: View {
                     selectedTab = 0
                     feedService.switchMode(mode)
                 case .tab(let tab):
+                    if tab == 3 && selectedTab == 3 {
+                        NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+                    }
                     selectedTab = tab
                 case nil:
                     break
@@ -294,14 +300,12 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
-                    // "My Media" with its own icon: the Media feed above is a
-                    // different thing (other people's posts, not your files).
-                    NavigationLink(value: SidebarItem.tab(3)) {
-                        Label("My Media", systemImage: "photo.stack")
-                    }
+                    // Your relay and your Blossom files, one row; "My Media" is
+                    // a mode inside it. Tag 4 is the old Relay row's, so
+                    // notification routing still lands here.
                     NavigationLink(value: SidebarItem.tab(4)) {
                         HStack {
-                            Label("Relay", systemImage: "doc.text.image")
+                            Label("Vault", systemImage: VaultDashboard.symbol)
                             Spacer()
                             if relayManager.hasNewRelayActivity {
                                 Circle()
@@ -309,6 +313,9 @@ struct iPadSidebarView: View {
                                     .frame(width: 8, height: 8)
                             }
                         }
+                    }
+                    NavigationLink(value: SidebarItem.tab(3)) {
+                        Label("WOT", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     NavigationLink(value: SidebarItem.tab(5)) {
                         Label("Settings", systemImage: "gearshape")
@@ -357,13 +364,15 @@ struct iPadSidebarView: View {
                 }
                 .id(activeHex)
             case 3:
-                MediaTabView()
+                WOTTabView()
             case 4:
-                NoteSplitPane(
-                    emptyTitle: "No Note Selected",
-                    emptyMessage: "Pick a note from the relay to read it here."
-                ) {
-                    VaultView()
+                VaultTabView {
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from the relay to read it here."
+                    ) {
+                        VaultView()
+                    }
                 }
             case 5:
                 NavigationStack {
@@ -410,9 +419,10 @@ struct iPadSidebarView: View {
                     .keyboardShortcut("2", modifiers: .command)
                 Button("") { selectedTab = 2 }
                     .keyboardShortcut("3", modifiers: .command)
-                Button("") { selectedTab = 3 }
-                    .keyboardShortcut("4", modifiers: .command)
+                // ⌘4 Vault, ⌘5 WOT: the sidebar's order, not the tags'.
                 Button("") { selectedTab = 4 }
+                    .keyboardShortcut("4", modifiers: .command)
+                Button("") { selectedTab = 3 }
                     .keyboardShortcut("5", modifiers: .command)
                 Button("") { selectedTab = 5 }
                     .keyboardShortcut("6", modifiers: .command)
@@ -521,11 +531,13 @@ struct iPhoneTabView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(2)
 
-            MediaTabView()
+            // Tags keep their old meaning for routing: 4 is the relay (now
+            // the Vault tab, with Media inside); 3, Media's old slot, is WOT.
+            WOTTabView()
                 .toolbar(.hidden, for: .tabBar)
                 .tag(3)
 
-            Group {
+            VaultTabView {
                 if usesNoteSplit {
                     NavigationStack {
                         noteSplit("Pick a note from the relay to read it here.") { VaultView() }
@@ -940,46 +952,41 @@ struct BottomTabBar: View {
 
         expandedProfileTabItem
 
-        tabItem(index: 3, title: "Media", icon: "photo.on.rectangle") {
-            if !mediaPath.isEmpty {
-                mediaPath = NavigationPath()
-            } else {
-                NotificationCenter.default.post(name: NSNotification.Name("MediaScrollToTop"), object: nil)
-            }
-        }
-
-        tabItem(index: 4, title: "Relay", icon: "doc.text.image", hasRedBadge: relayManager.hasNewRelayActivity) {
-            if !relayPath.isEmpty {
+        tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: relayManager.hasNewRelayActivity) {
+            if VaultSection.shared.showsMedia {
+                if !mediaPath.isEmpty {
+                    mediaPath = NavigationPath()
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("MediaScrollToTop"), object: nil)
+                }
+            } else if !relayPath.isEmpty {
                 relayPath = NavigationPath()
             } else {
                 relayManager.markRelayViewed()
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
         }
+
+        tabItem(index: 3, title: "WOT", icon: "point.3.connected.trianglepath.dotted") {
+            NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+        }
     }
 
     // MARK: - Collapsed Content
 
-    /// Feed, Search and Profile compose; Media opens its Blossom dashboard
-    /// (the same as Android); Relay opens the relay dashboard.
+    /// Feed, Search and Profile compose; the Vault tab opens its dashboard.
+    private var opensVaultDashboard: Bool { selectedTab == 4 }
+
     private var collapsedFABIcon: String {
-        switch selectedTab {
-        case ...2: return "square.and.pencil"
-        case 3: return "camera.macro"
-        default: return "antenna.radiowaves.left.and.right"
-        }
+        opensVaultDashboard ? VaultDashboard.symbol : "square.and.pencil"
     }
 
     private var collapsedFABColor: Color {
-        selectedTab == 4 ? relayStatusColor : Color.havenPurple
+        opensVaultDashboard ? relayStatusColor : Color.havenPurple
     }
 
     private var collapsedFABLabel: String {
-        switch selectedTab {
-        case ...2: return "Compose new post"
-        case 3: return "Blossom Dashboard"
-        default: return "Relay Dashboard"
-        }
+        opensVaultDashboard ? VaultDashboard.title : "Compose new post"
     }
 
     @ViewBuilder
@@ -1010,13 +1017,10 @@ struct BottomTabBar: View {
 
             // Contextual FAB icon — triggers compose or relay dashboard
             Button {
-                switch selectedTab {
-                case ...2:
-                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
-                case 3:
-                    NotificationCenter.default.post(name: .openBlossomDashboard, object: selectedTab)
-                default:
+                if opensVaultDashboard {
                     NotificationCenter.default.post(name: .openRelayDashboard, object: selectedTab)
+                } else {
+                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
                 }
             } label: {
                 ZStack {
@@ -1376,12 +1380,13 @@ struct NoteSplitPane<Content: View>: View {
     }
 }
 
-/// Every notification that lands in the Relay tab switches to it. One modifier
+/// Every notification that lands in the Vault tab's relay half switches to it. One modifier
 /// rather than a receiver each keeps ContentView's chain inside the type
 /// checker's budget.
 private struct OpensRelayTab: ViewModifier {
     @Binding var selectedTab: Int
     @ObservedObject private var tutorialCenter = TutorialCenter.shared
+    @ObservedObject private var vaultSection = VaultSection.shared
 
     func body(content: Content) -> some View {
         content
@@ -1389,8 +1394,9 @@ private struct OpensRelayTab: ViewModifier {
             // from VaultView: the tab view builds it while another tab
             // shows, and it would take the slot Feeds needs. Re-checked when
             // a status is saved, like Feeds.
-            .task(id: "\(selectedTab).\(tutorialCenter.revision)") {
-                if selectedTab == 4 {
+            .task(id: "\(selectedTab).\(tutorialCenter.revision).\(vaultSection.showsMedia)") {
+                // Its cards point at the relay half; on Media it waits.
+                if selectedTab == 4 && !vaultSection.showsMedia {
                     tutorialCenter.startIfEligible(.vault, account: NostrService.shared.activeHexPubkey)
                 }
             }
@@ -1398,7 +1404,10 @@ private struct OpensRelayTab: ViewModifier {
             // Vault is the Relay tab, Wallet Connect the wallet on Profile,
             // Pocket Relay the relay dashboard on the Relay tab.
             .onChange(of: tutorialCenter.active) { _, active in
-                if active == .vault || active == .pocketRelay { selectedTab = 4 }
+                // Your Vault's cards are on the relay half. Pocket Relay is the
+                // dashboard, which either half opens, so stay where you are.
+                if active == .vault { showVault(media: false) }
+                if active == .pocketRelay { selectedTab = 4 }
                 // Opened once the wallet sheet it came from has closed and
                 // the Relay tab is showing. Already open when the dashboard
                 // started it, and opening it again does nothing.
@@ -1410,9 +1419,15 @@ private struct OpensRelayTab: ViewModifier {
                 }
                 if active == .walletConnect { selectedTab = 2 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in selectedTab = 4 }
-            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in selectedTab = 4 }
-            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in selectedTab = 4 }
-            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in selectedTab = 4 }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in showVault(media: false) }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in showVault(media: false) }
+    }
+
+    /// The Vault tab, on its relay half or its Media half.
+    private func showVault(media: Bool) {
+        selectedTab = 4
+        VaultSection.shared.showsMedia = media
     }
 }

@@ -45,6 +45,8 @@ extension Notification.Name {
     /// nothing else needed to open them programmatically.
     static let havenOpenSearch = Notification.Name("com.haven.openSearch")
     static let havenOpenMedia = Notification.Name("com.haven.openMedia")
+    /// The WOT tab was tapped while showing: its globe goes back to you.
+    static let wotTabReselected = Notification.Name("com.haven.wotTabReselected")
     /// Run the Media tab's Magic Paste. Posted after `havenOpenMedia` when the
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
     /// Media tab -> + -> Magic Paste.
