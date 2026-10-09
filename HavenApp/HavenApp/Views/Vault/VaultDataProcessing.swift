@@ -55,6 +55,37 @@ extension VaultView {
         return viewMode
     }
 
+    /// The Vault tab mode on screen, for the tab's red dot. Nil while another
+    /// tab shows, and while a tap in is still on its way to the new list.
+    var modeInSight: VaultMode? {
+        guard vaultTabHostsMedia, vaultSection.isOnScreen, !vaultSection.opensNewActivity else { return nil }
+        return vaultShowsMedia ? .media : vaultMode
+    }
+
+    /// Tapped into the Vault tab while it had a red dot: open the first list,
+    /// in menu order, that the dot is for, unless the one showing has news too.
+    func openNewActivity() {
+        defer { vaultSection.opensNewActivity = false }
+        let news = relayManager.newActivityModes
+        let showing: VaultMode = vaultShowsMedia ? .media : vaultMode
+        guard !news.contains(showing),
+              let target = VaultMode.allCases.first(where: news.contains) else { return }
+        withAnimation(Motion.toggle) {
+            switch target {
+            case .notes, .articles, .highlights:
+                viewMode = .notes
+                noteScope = target == .articles ? .articles : target == .highlights ? .highlights : .notes
+                if target != .articles { recipesOnly = false }
+            case .likes: viewMode = .likes
+            case .zaps: viewMode = .zaps
+            case .followers: viewMode = .followers
+            case .media: break
+            }
+            VaultSection.shared.showsMedia = false
+        }
+        if target == .likes { fetchMissingLikedNotes() }
+    }
+
     /// Check if new events arrived for categories the user isn't currently viewing.
     func checkForNewNotifications() {
         guard hasEstablishedNotificationBaseline else { return }

@@ -58,10 +58,11 @@ enum RelayLogParser {
         var stopBooting: Bool = false
         var stopWotSyncing: Bool = false
         var eventsStoredDelta: Int = 0
-        /// Inbound events from OTHERS that tag you (replies, reactions, zaps,
-        /// reposts, DMs / gift-wraps). Drives the "new relay activity" red dot —
+        /// Kinds of the inbound events from OTHERS that tag you (replies,
+        /// reactions, zaps, reposts, DMs / gift-wraps). Drives the "new relay
+        /// activity" red dot, which needs the kind to say where to look —
         /// deliberately excludes your own posts/blasts and private/outbox writes.
-        var inboxActivityDelta: Int = 0
+        var inboxActivityKinds: Set<Int> = []
         var connectionsDelta: Int = 0
         var isLocked: Bool = false
         var isPortConflict: Bool = false
@@ -82,6 +83,24 @@ enum RelayLogParser {
     private static let pubkeysPattern = try? NSRegularExpression(
         pattern: "pubkeys=(\\d+)", options: .caseInsensitive
     )
+
+    /// The kind of the event an inbox/chat import line (`logInboxImport` in
+    /// haven-go/import.go) reports, or nil for any other line. A "new note"
+    /// line covers comments too; both live in the Notes list, so 1 stands
+    /// for either. Reactions go first: their line leads with the reaction's
+    /// own content, which could say anything.
+    static func inboxActivityKind(in line: String) -> Int? {
+        if line.contains("new reaction in your inbox") { return 7 }
+        if line.contains("new note in your inbox") { return 1 }
+        if line.contains("new zap in your inbox") { return 9735 }
+        if line.contains("new encrypted message in your inbox") { return 4 }
+        if line.contains("new gift-wrapped message in your chat relay") { return 1059 }
+        if line.contains("new repost in your inbox") { return 6 }
+        if line.contains("event in your inbox"), let r = line.range(of: "new event kind ") {
+            return Int(line[r.upperBound...].prefix { $0.isNumber })
+        }
+        return nil
+    }
 
     /// Extract state changes from a single log line.
     /// Pure string parsing — no MainActor, no UI dependencies.
@@ -184,8 +203,8 @@ enum RelayLogParser {
         // exclusively for events authored by other people that tag you. Your own
         // posts ("event stored"/"blasted event") never hit this path, so this is
         // the precise signal for the "new relay activity" red dot.
-        if line.contains("in your inbox") || line.contains("in your chat relay") {
-            batch.inboxActivityDelta += 1
+        if let kind = inboxActivityKind(in: line) {
+            batch.inboxActivityKinds.insert(kind)
         }
 
         // Local notification markers — collect for LocalNotificationService.

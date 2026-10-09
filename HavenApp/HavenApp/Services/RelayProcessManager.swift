@@ -65,8 +65,11 @@ class RelayProcessManager: ObservableObject {
     @Published var cpuUsage: Double = 0
     @Published var activeConnections: Int = 0
     @Published var eventsStored: Int = 0
-    /// Red dot: true only when events from OTHERS arrive in your inbox/chat relay.
-    @Published var hasNewRelayActivity: Bool = false
+    /// The Vault lists that events from OTHERS landed in, via your inbox/chat
+    /// relay, since you last looked at each. The Vault tab's red dot shows
+    /// while any remain; the mode pill marks which.
+    @Published private(set) var newActivityModes: Set<VaultMode> = []
+    var hasNewRelayActivity: Bool { !newActivityModes.isEmpty }
 
     private var outputPipe: Pipe?
     private var stderrPipe: Pipe?
@@ -166,8 +169,9 @@ class RelayProcessManager: ObservableObject {
     
     typealias LogEntry = RelayLogParser.LogEntry
     
-    func markRelayViewed() {
-        hasNewRelayActivity = false
+    /// `mode` is on screen, so what came into it has been seen.
+    func markRelayViewed(_ mode: VaultMode) {
+        if newActivityModes.contains(mode) { newActivityModes.remove(mode) }
     }
 
     /// Enqueue a lifecycle operation behind all previously enqueued ones.
@@ -790,7 +794,7 @@ class RelayProcessManager: ObservableObject {
         // Reset the log-based event counter so import counts don't
         // carry over and corrupt the post-import stats refresh.
         eventsStored = 0
-        hasNewRelayActivity = false
+        newActivityModes = []
 
         let relayDataDir = ConfigService.shared.relayDataDir
         RelayConfiguration.ensureDirectories(under: relayDataDir)
@@ -1100,8 +1104,11 @@ class RelayProcessManager: ObservableObject {
         }
         // Red dot reflects only inbound activity from OTHERS (events tagging you /
         // DMs) — never your own posts, blasts, or private/outbox writes.
-        if batch.inboxActivityDelta > 0 {
-            hasNewRelayActivity = true
+        let zapsOnly = ConfigService.shared.config.zapsOnlyMode
+        let landed = Set(batch.inboxActivityKinds.compactMap(VaultMode.listing(inboxKind:)))
+            .filter { !(zapsOnly && $0 == .likes) } // no Likes list to open
+        if !landed.isSubset(of: newActivityModes) {
+            newActivityModes.formUnion(landed)
         }
         if batch.connectionsDelta != 0 {
             activeConnections = max(0, activeConnections + batch.connectionsDelta)
