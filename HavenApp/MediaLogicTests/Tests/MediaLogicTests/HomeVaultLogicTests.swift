@@ -25,7 +25,7 @@ final class HomeVaultLogicTests: XCTestCase {
 
     func testMediaQueuesAheadOfNotesSoANoteNeverLandsFirst() {
         func item(_ kind: HomeVaultItem.Kind, _ id: String) -> HomeVaultItem {
-            HomeVaultItem(kind: kind, id: id, ownerHex: "aa", eventJSON: nil, contentType: nil, added: Date(), attempts: 0)
+            HomeVaultItem(kind: kind, id: id, ownerHex: "aa", eventJSON: nil, contentType: nil, added: Date(), attempts: 0, notBefore: nil)
         }
         let queue = [item(.blob, "b1"), item(.event, "e1"), item(.event, "e2")]
         XCTAssertEqual(HomeVaultLogic.insertionIndex(for: .blob, in: queue), 1)
@@ -42,8 +42,10 @@ final class HomeVaultLogicTests: XCTestCase {
     func testOkAnswers() {
         XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",true,""]"#, id: "abc"), .sent)
         XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",false,"duplicate: have it"]"#, id: "abc"), .sent)
-        XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",false,"blocked: not the owner"]"#, id: "abc"),
-                       .rejected("blocked: not the owner"))
+        XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",false,"restricted: the mesh accepts only the owner's own events"]"#, id: "abc"),
+                       .rejected("restricted: the mesh accepts only the owner's own events"), "the door's final no")
+        XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",false,"auth-required: x"]"#, id: "abc"), .unreachable("auth-required: x"))
+        XCTAssertEqual(HomeVaultLogic.okResult(#"["OK","abc",false,"rate-limited: slow"]"#, id: "abc"), .unreachable("rate-limited: slow"))
         XCTAssertNil(HomeVaultLogic.okResult(#"["OK","other",true,""]"#, id: "abc"), "someone else's OK")
         XCTAssertNil(HomeVaultLogic.okResult(#"["NOTICE","hi"]"#, id: "abc"))
         XCTAssertNil(HomeVaultLogic.okResult("not json", id: "abc"))
@@ -53,7 +55,8 @@ final class HomeVaultLogicTests: XCTestCase {
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 200), .sent)
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 201), .sent)
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 403), .rejected("HTTP 403"), "not the owner: retrying won't help")
-        XCTAssertEqual(HomeVaultLogic.uploadResult(status: 413), .rejected("HTTP 413"))
+        XCTAssertEqual(HomeVaultLogic.uploadResult(status: 413), .rejected("HTTP 413"), "over the door's 256 MB")
+        XCTAssertEqual(HomeVaultLogic.uploadResult(status: 411), .rejected("HTTP 411"))
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 429), .unreachable("HTTP 429"), "rate limit is about now")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 404), .unreachable("HTTP 404"), "a kiosk without the upload door keeps the blob queued")
         XCTAssertEqual(HomeVaultLogic.uploadResult(status: 502), .unreachable("HTTP 502"))
@@ -62,7 +65,7 @@ final class HomeVaultLogicTests: XCTestCase {
 
     func testQueueSurvivesARoundTrip() throws {
         let item = HomeVaultItem(kind: .event, id: "e1", ownerHex: "aa", eventJSON: #"{"id":"e1"}"#, contentType: nil,
-                                 added: Date(timeIntervalSince1970: 1_000), attempts: 2)
+                                 added: Date(timeIntervalSince1970: 1_000), attempts: 2, notBefore: Date(timeIntervalSince1970: 2_000))
         let back = try JSONDecoder().decode([HomeVaultItem].self, from: JSONEncoder().encode([item]))
         XCTAssertEqual(back, [item])
     }
@@ -75,17 +78,18 @@ final class ServerListMergeTests: XCTestCase {
     private let third = "npub1" + String(repeating: "z", count: 58)
     private func mesh(_ n: String) -> String { "fipsmesh://\(n)/" }
 
-    func testASenderKeepsTheKioskEntryFirst() {
-        let existing = ["https://a.example/", mesh(kiosk)]
+    func testPublicServersComeBeforeMeshEntries() {
+        // NIP-F1 order (Tao): a sender keeps the kiosk entry, after the public servers.
+        let existing = [mesh(kiosk), "https://a.example/"]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                 homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: false)
-        XCTAssertEqual(out, [mesh(kiosk), "https://a.example/"])
+                                                 ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/", mesh(kiosk)])
     }
 
     func testOtherMeshEntriesKeepTheirOrder() {
         let existing = ["https://a.example/", mesh(third), mesh(kiosk)]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                 homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me, shareOwnMesh: false)
         XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
     }
 
@@ -94,34 +98,34 @@ final class ServerListMergeTests: XCTestCase {
         let existing = ["https://a.example/", "https://b.example/", "https://c.example/"]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example"],
                                                  previouslyManaged: ["https://a.example/", "https://b.example/"],
-                                                 homeVaultNpub: nil, ownMeshNpub: nil, shareOwnMesh: false)
+                                                 ownMeshNpub: nil, shareOwnMesh: false)
         XCTAssertEqual(out, ["https://a.example", "https://c.example/"])
     }
 
     func testThisPhonesMeshEntryOnlyWhileSharingAndLast() {
-        let existing = [mesh(me), "https://a.example/", mesh(kiosk)]
+        let existing = [mesh(me), "https://a.example/", mesh(kiosk), "https://other-phone.example/"]
         let sharing = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                     homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: true)
-        XCTAssertEqual(sharing, ["https://a.example/", mesh(kiosk), mesh(me)])
+                                                     ownMeshNpub: me, shareOwnMesh: true)
+        XCTAssertEqual(sharing, ["https://a.example/", "https://other-phone.example/", mesh(kiosk), mesh(me)])
         let stopped = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                     homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: false)
-        XCTAssertEqual(stopped, ["https://a.example/", mesh(kiosk)])
+                                                     ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(stopped, ["https://a.example/", "https://other-phone.example/", mesh(kiosk)])
     }
 
-    func testAWithdrawnHomeVaultIsNotPutBack() {
+    func testAWithdrawnKioskEntryIsNotPutBack() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"], previouslyManaged: [],
-                                                 homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me, shareOwnMesh: false)
         XCTAssertEqual(out, ["https://a.example/"])
     }
 
     func testAMeshOnlyListIsNeverPublished() {
         XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [mesh(kiosk)], current: [], previouslyManaged: [],
-                                                    homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: true))
+                                                    ownMeshNpub: me, shareOwnMesh: true))
     }
 
     func testMalformedMeshEntriesAreDropped() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", "fipsmesh://\(kiosk)/evil"], current: [],
-                                                 previouslyManaged: [], homeVaultNpub: nil, ownMeshNpub: nil, shareOwnMesh: false)
+                                                 previouslyManaged: [], ownMeshNpub: nil, shareOwnMesh: false)
         XCTAssertEqual(out, ["https://a.example/"])
     }
 }
@@ -133,5 +137,42 @@ final class ServerListStampTests: XCTestCase {
         XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 4, id: "a", than: (5, "z")), "a stale replay")
         XCTAssertTrue(HomeVaultLogic.isNewer(createdAt: 5, id: "a", than: (5, "b")))
         XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 5, id: "b", than: (5, "b")), "the same event again")
+    }
+}
+
+final class HomeVaultRetryTests: XCTestCase {
+    func testBackoffDoublesFromAMinuteUpToSixHours() {
+        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 1), 60)
+        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 2), 120)
+        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 4), 480)
+        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 30), 6 * 3600)
+    }
+
+    func testItemsExpireByAgeOrTries() {
+        let now = Date(timeIntervalSince1970: 100 * 86400)
+        func item(daysOld: Double, attempts: Int) -> HomeVaultItem {
+            HomeVaultItem(kind: .blob, id: "b", ownerHex: "aa", eventJSON: nil, contentType: nil,
+                          added: now.addingTimeInterval(-daysOld * 86400), attempts: attempts, notBefore: nil)
+        }
+        XCTAssertFalse(HomeVaultLogic.isExpired(item(daysOld: 13, attempts: 39), now: now))
+        XCTAssertTrue(HomeVaultLogic.isExpired(item(daysOld: 15, attempts: 0), now: now))
+        XCTAssertTrue(HomeVaultLogic.isExpired(item(daysOld: 0, attempts: 40), now: now))
+    }
+
+    func testAQueueWrittenBeforeBackoffStillLoads() throws {
+        let old = #"[{"kind":"event","id":"e1","ownerHex":"aa","eventJSON":"{}","added":0,"attempts":1}]"#
+        let items = try JSONDecoder().decode([HomeVaultItem].self, from: Data(old.utf8))
+        XCTAssertEqual(items.first?.notBefore, nil)
+    }
+
+    func testTheKioskOnlyLinkIsThePublicServersAddress() {
+        let sha = String(repeating: "a", count: 64)
+        XCTAssertEqual(HomeVaultLogic.publicBlobURL(server: "https://blossom.primal.net/", sha256: sha, contentType: "image/jpeg")?.absoluteString,
+                       "https://blossom.primal.net/\(sha).jpg")
+        XCTAssertEqual(HomeVaultLogic.publicBlobURL(server: "https://b.example", sha256: sha, contentType: "application/x-thing")?.absoluteString,
+                       "https://b.example/\(sha)")
+        XCTAssertNil(HomeVaultLogic.publicBlobURL(server: "fipsmesh://npub1x/", sha256: sha, contentType: "image/png"), "never a mesh address")
+        XCTAssertNil(HomeVaultLogic.publicBlobURL(server: "https://npub1x.fips", sha256: sha, contentType: "image/png"))
+        XCTAssertNil(HomeVaultLogic.publicBlobURL(server: "http://127.0.0.1:3355", sha256: sha, contentType: "image/png"), "never loopback")
     }
 }

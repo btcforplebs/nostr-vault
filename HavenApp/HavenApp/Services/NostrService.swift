@@ -1088,12 +1088,10 @@ class NostrService: ObservableObject {
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
         // phone): another phone's servers and mesh entries stay; only the
-        // servers this phone manages change. The home vault goes first.
-        var homeVault: String?
+        // servers this phone manages change. Public servers first (NIP-F1).
         var ownMesh: String?
         var shareOwnMesh = false
         #if os(iOS)
-        if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner { homeVault = vault.meshNpub }
         ownMesh = FipsMeshService.shared.ownMeshNpub
         // Kiosk mode: this vault is on the FIPS mesh, listed last. Never the
         // only usable entry (NIP-F1): the merge refuses a mesh-only list.
@@ -1101,7 +1099,7 @@ class NostrService: ObservableObject {
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
-        let homeVaultNpub = homeVault, ownMeshNpub = ownMesh, share = shareOwnMesh
+        let ownMeshNpub = ownMesh, share = shareOwnMesh
 
         Task {
             // Start from the newest list on the relays, not this phone's cache
@@ -1123,7 +1121,6 @@ class NostrService: ObservableObject {
                 existing: existing,
                 current: current,
                 previouslyManaged: previouslyManaged,
-                homeVaultNpub: homeVaultNpub,
                 ownMeshNpub: ownMeshNpub,
                 shareOwnMesh: share
             ) else {

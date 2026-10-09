@@ -4079,7 +4079,7 @@ struct HomeVaultSection: View {
                     if sender.sending {
                         ProgressView()
                     } else if !sender.queue.isEmpty {
-                        Button("Send now") { Task { await sender.drain() } }
+                        Button("Send now") { Task { await sender.drain(userInitiated: true) } }
                             .font(.appCaption)
                     }
                 }

@@ -12,7 +12,9 @@ struct HomeVault: Codable, Equatable {
 }
 
 struct HomeVaultItem: Codable, Equatable, Identifiable {
-    enum Kind: String, Codable { case event, blob }
+    /// event and blob go to the home vault over the mesh; mirror is the
+    /// public upload of a blob the note already links to (kiosk-only blob).
+    enum Kind: String, Codable { case event, blob, mirror }
     var kind: Kind
     /// Event id, or the blob's sha256.
     var id: String
@@ -22,6 +24,8 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     var contentType: String?
     var added: Date
     var attempts: Int
+    /// Not before this (per-item backoff). Optional: older queues lack it.
+    var notBefore: Date?
 }
 
 enum HomeVaultSendResult: Equatable {
@@ -74,6 +78,12 @@ enum HomeVaultLogic {
         let message = arr.count >= 4 ? (arr[3] as? String ?? "") : ""
         // A copy the vault already has is as good as sent.
         if accepted || message.hasPrefix("duplicate:") { return .sent }
+        // About now, not about the event (NIP-01 prefixes). The mesh door
+        // never asks for AUTH today; if it ever does, posts wait, not vanish.
+        for transient in ["rate-limited:", "error:", "auth-required:"] where message.hasPrefix(transient) {
+            return .unreachable(message)
+        }
+        // Includes "restricted:", the door's answer to anyone but the owner.
         return .rejected(message.isEmpty ? "refused" : message)
     }
 
@@ -84,7 +94,8 @@ enum HomeVaultLogic {
         // whose mesh door does not take uploads yet (an older kiosk build)
         // answers 404/405: keep the blob for when it does.
         case 404, 405, 408, 429: return .unreachable("HTTP \(status)")
-        // The vault answered and said no (auth, size, type).
+        // The vault answered and said no: 403 not the owner, 411 no length,
+        // 413 over the door's 256 MB.
         case 400...499: return .rejected("HTTP \(status)")
         default: return .unreachable("HTTP \(status)")
         }
@@ -97,13 +108,13 @@ extension HomeVaultLogic {
     /// One rule for every phone that publishes the owner's 10063 (Tao, FIPS
     /// thread): merge into the newest list, never replace it. Only the https
     /// servers this phone manages change; every other entry keeps its order.
+    /// NIP-F1 order: public servers first, mesh entries after them (Tao's call;
+    /// senders pick the home vault from the setting, not from list order).
     ///
     /// - existing: the newest signed 10063 seen for the owner.
     /// - current: this phone's own servers now (config order, https).
     /// - previouslyManaged: what this phone published last time, so a server
     ///   removed here is removed, while another phone's server is kept.
-    /// - homeVaultNpub: listed first, if the list still carries it (the kiosk
-    ///   withdrew it otherwise, and a stale entry must not come back).
     /// - ownMeshNpub/shareOwnMesh: this phone's mesh entry, listed last while
     ///   it shares (kiosk mode) and dropped otherwise.
     /// Returns nil when the result has no https server: a list only mesh
@@ -112,7 +123,6 @@ extension HomeVaultLogic {
         existing: [String],
         current: [String],
         previouslyManaged: Set<String>,
-        homeVaultNpub: String?,
         ownMeshNpub: String?,
         shareOwnMesh: Bool
     ) -> [String]? {
@@ -129,19 +139,13 @@ extension HomeVaultLogic {
             if seen.insert(key(url)).inserted { out.append(url) }
         }
 
-        if let home = homeVaultNpub, home != ownMeshNpub,
-           existing.contains(where: { meshNpub(fromEntry: $0) == home }) {
-            add("fipsmesh://\(home)/")
+        current.filter { !$0.hasPrefix("fipsmesh://") }.forEach(add)
+        for url in existing where !url.hasPrefix("fipsmesh://") && !dropped.contains(key(url)) {
+            add(url)  // another phone's server
         }
-        current.filter { meshNpub(fromEntry: $0) == nil }.forEach(add)
         for url in existing {
-            if let npub = meshNpub(fromEntry: url) {
-                if npub != ownMeshNpub { add(url) }
-            } else if url.hasPrefix("fipsmesh://") {
-                continue  // malformed mesh entry: readers ignore it, so do we
-            } else if !dropped.contains(key(url)) {
-                add(url)  // another phone's server
-            }
+            // Malformed mesh entries are dropped: readers ignore them too.
+            if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
         if shareOwnMesh, let own = ownMeshNpub { add("fipsmesh://\(own)/") }
 
@@ -159,5 +163,47 @@ extension HomeVaultLogic {
         guard let seen else { return true }
         if createdAt != seen.createdAt { return createdAt > seen.createdAt }
         return id < seen.id
+    }
+}
+
+// MARK: - Retry, give up, and the kiosk-only link
+
+extension HomeVaultLogic {
+    static let maxAttempts = 40
+    static let maxAge: TimeInterval = 14 * 24 * 3600
+
+    /// 1 min, doubling, up to 6 h: a kiosk that is off for a day costs a
+    /// handful of tries, not one a minute (and not a signer prompt a minute).
+    static func backoff(afterAttempts attempts: Int) -> TimeInterval {
+        let minutes = pow(2.0, Double(max(attempts - 1, 0)))
+        return min(60 * minutes, 6 * 3600)
+    }
+
+    /// Too old or tried too often: give up on it (logged, not silent).
+    static func isExpired(_ item: HomeVaultItem, now: Date) -> Bool {
+        item.attempts >= maxAttempts || now.timeIntervalSince(item.added) > maxAge
+    }
+
+    /// The link a note carries when only this phone and the kiosk hold the
+    /// blob: where it will be once the public upload goes through (BUD-01
+    /// `/<sha256>.<ext>`). Never a fipsmesh or loopback address (Tao).
+    static func publicBlobURL(server: String, sha256: String, contentType: String) -> URL? {
+        guard server.hasPrefix("https://"), !server.contains(".fips") else { return nil }
+        var base = server
+        while base.hasSuffix("/") { base.removeLast() }
+        let ext: String
+        switch contentType.lowercased() {
+        case "image/jpeg", "image/jpg": ext = ".jpg"
+        case "image/png": ext = ".png"
+        case "image/gif": ext = ".gif"
+        case "image/webp": ext = ".webp"
+        case "image/heic": ext = ".heic"
+        case "video/mp4": ext = ".mp4"
+        case "video/quicktime": ext = ".mov"
+        case "video/webm": ext = ".webm"
+        case "audio/mpeg": ext = ".mp3"
+        default: ext = ""
+        }
+        return URL(string: "\(base)/\(sha256)\(ext)")
     }
 }

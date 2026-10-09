@@ -461,9 +461,11 @@ class BlossomService: @unchecked Sendable {
         // A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
         let signer = await MainActor.run { nostrService.activeHexPubkey }
         let size = source.byteCount
-        await MainActor.run {
+        let toHomeVault = await MainActor.run {
             HomeVaultSender.shared.enqueue(blobSha256: sha256, contentType: contentType, signer: signer, byteCount: size)
         }
+        #else
+        let toHomeVault = false
         #endif
 
         // Step 2: Get mirrors on main actor
@@ -480,6 +482,9 @@ class BlossomService: @unchecked Sendable {
 
         if skipOutsideServers {
             appLog("saved \(sha256.prefix(8)) on this device only — an earlier attachment found every outside server down")
+            if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+                return .hosted(link)
+            }
             return .savedOnDevice(unreachable: mirrors)
         }
 
@@ -504,9 +509,50 @@ class BlossomService: @unchecked Sendable {
             return .hosted(externalURL)
         }
 
+        if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+            return .hosted(link)
+        }
         appLog("post upload paused at stage 2 of 2 — saved on this device, no outside server accepted it after two passes; the post will wait for one", level: "WARN")
         return .savedOnDevice(unreachable: mirrors)
     }
+
+    /// The blob is on this phone and on its way to the home vault, but no public
+    /// server has it yet. The note goes out now (Logen's call) with the link the
+    /// first public server will serve it at, and the public upload keeps being
+    /// retried; NIP-F1 readers find the kiosk copy by hash meanwhile. nil: hold
+    /// the note as before.
+    private func kioskOnlyLink(toHomeVault: Bool, mirrors: [String], sha256: String, contentType: String) async -> URL? {
+        #if os(iOS)
+        guard toHomeVault,
+              let server = mirrors.first(where: { HomeVaultLogic.publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }),
+              let link = HomeVaultLogic.publicBlobURL(server: server, sha256: sha256, contentType: contentType) else { return nil }
+        let signer = await MainActor.run { nostrService.activeHexPubkey }
+        await MainActor.run {
+            HomeVaultSender.shared.enqueue(mirrorSha256: sha256, contentType: contentType, signer: signer)
+        }
+        appLog("\(sha256.prefix(8)) is on this phone and going to the home vault; the note links \(link.absoluteString) and the public upload keeps retrying")
+        return link
+        #else
+        return nil
+        #endif
+    }
+
+    #if os(iOS)
+    /// One more public upload of a blob this phone already holds (the
+    /// kiosk-only case). True once the server the note links (the first
+    /// public one) has it; another server alone leaves the link dead.
+    func mirrorFromLocal(sha256: String, contentType: String) async -> Bool {
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+        guard let linked = mirrors.first(where: { HomeVaultLogic.publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }),
+              let linkedHost = URL(string: linked)?.host,
+              let data = await HomeVaultTransport.localBlob(sha256: sha256) else { return false }
+        let auth = await makeUploadAuth(sha256: sha256)
+        let urls = await mirrorUploadPass(source: .data(data), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
+        let done = urls.contains { $0.host == linkedHost }
+        if done { appLog("kiosk-only \(sha256.prefix(8)) is now on \(linkedHost), where the note links it") }
+        return done
+    }
+    #endif
 
     /// One concurrent BUD-02 upload pass over all configured mirrors.
     /// Returns the URLs of every mirror that accepted the blob.

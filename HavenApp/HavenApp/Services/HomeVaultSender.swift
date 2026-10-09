@@ -73,17 +73,26 @@ final class HomeVaultSender: ObservableObject {
               let id = eventDict["id"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: eventDict),
               let json = String(data: data, encoding: .utf8) else { return }
-        add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0))
+        add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil))
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
-    func enqueue(blobSha256 sha256: String, contentType: String, signer: String, byteCount: Int) {
-        guard let vault = homeVault, signer == vault.ownerHex else { return }
+    /// True when it is queued for the home vault.
+    @discardableResult
+    func enqueue(blobSha256 sha256: String, contentType: String, signer: String, byteCount: Int) -> Bool {
+        guard let vault = homeVault, signer == vault.ownerHex else { return false }
         guard byteCount <= Self.maxBlobBytes else {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
-            return
+            return false
         }
-        add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0))
+        add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil))
+        return true
+    }
+
+    /// The public upload of a blob a note already links (kiosk-only case).
+    /// Retried until the linked server has it, home vault or not.
+    func enqueue(mirrorSha256 sha256: String, contentType: String, signer: String) {
+        add(HomeVaultItem(kind: .mirror, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: Date().addingTimeInterval(60)))
     }
 
     private func add(_ item: HomeVaultItem) {
@@ -94,8 +103,10 @@ final class HomeVaultSender: ObservableObject {
         } else {
             queue.append(item)
         }
-        if queue.count > Self.maxQueue {
-            let dropped = queue.removeFirst()
+        // Over the cap the oldest mesh copy goes; a pending public upload is
+        // kept, because a published note already links to where it will be.
+        if queue.count > Self.maxQueue, let oldest = queue.firstIndex(where: { $0.kind != .mirror }) {
+            let dropped = queue.remove(at: oldest)
             appLog("queue full — dropped the oldest (\(dropped.kind.rawValue) \(dropped.id.prefix(8)))", level: "WARN")
         }
         saveQueue()
@@ -105,7 +116,7 @@ final class HomeVaultSender: ObservableObject {
     // MARK: - Sending
 
     func drainSoon() {
-        guard homeVault != nil, !queue.isEmpty else {
+        guard !queue.isEmpty else {
             retryTimer?.invalidate()
             retryTimer = nil
             return
@@ -113,10 +124,12 @@ final class HomeVaultSender: ObservableObject {
         Task { await drain() }
     }
 
-    /// Send what is queued, oldest first, stopping at the first failure (the
-    /// kiosk is unreachable, so the rest would fail too).
-    func drain() async {
-        guard !sending, let vault = homeVault, !queue.isEmpty else { return }
+    /// One pass over the queue, oldest first. Each item has its own backoff,
+    /// so one that keeps failing does not hold up the rest; a note still waits
+    /// while media queued before it has not reached the vault. `userInitiated`
+    /// (Send now) ignores the backoff and may ask an external signer.
+    func drain(userInitiated: Bool = false) async {
+        guard !sending, !queue.isEmpty else { return }
         sending = true
         defer { sending = false }
 
@@ -128,33 +141,88 @@ final class HomeVaultSender: ObservableObject {
         }
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
 
-        guard let base = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) else {
-            noteFailure("the mesh did not reach your home vault")
-            return
+        let now = Date()
+        for item in queue where HomeVaultLogic.isExpired(item, now: now) {
+            appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
+            remove(item)
         }
-        while let item = queue.first(where: { $0.ownerHex == vault.ownerHex }) {
+
+        let active = UIApplication.shared.applicationState == .active
+        // A bunker signer may need a person: never ask it from the background.
+        let signerNeedsPerson = ConfigService.shared.config.activeSigningMode() != "local"
+        var base: URL?
+        var meshTried = false
+        var meshWhy: String?
+        var mediaWaiting = false
+        var waiting = false
+
+        for item in queue {
+            if !userInitiated, let notBefore = item.notBefore, notBefore > now { waiting = true; continue }
+            let needsSigner = item.kind != .event
+            if needsSigner && signerNeedsPerson && !active && !userInitiated { waiting = true; continue }
+
             let result: HomeVaultSendResult
-            switch item.kind {
-            case .event: result = await HomeVaultTransport.sendEvent(json: item.eventJSON ?? "", id: item.id, base: base)
-            case .blob: result = await sendBlob(item, base: base)
+            if item.kind == .mirror {
+                let blossom = BlossomService(configService: ConfigService.shared, nostrService: NostrService.shared)
+                let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream")
+                result = ok ? .sent : .unreachable("no public server took it yet")
+            } else {
+                guard let vault = homeVault, vault.ownerHex == item.ownerHex,
+                      vault.ownerHex == NostrService.shared.activeHexPubkey else { waiting = true; continue }
+                if item.kind == .event && mediaWaiting { waiting = true; continue }
+                if !meshTried {
+                    meshTried = true
+                    // The vault must still be in the owner's list: a kiosk that withdrew it is off.
+                    let listed = HomeVaultLogic.meshEntries(serverList: NostrService.shared.serverLists[vault.ownerHex] ?? [], excluding: nil)
+                    if !listed.contains(vault.meshNpub) {
+                        meshWhy = "your home vault is not in your server list right now"
+                    } else if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
+                        base = url
+                    } else {
+                        meshWhy = "the mesh did not reach your home vault"
+                    }
+                }
+                guard let base else {
+                    if item.kind == .blob { mediaWaiting = true }
+                    backOff(item)
+                    waiting = true
+                    continue
+                }
+                switch item.kind {
+                case .event: result = await HomeVaultTransport.sendEvent(json: item.eventJSON ?? "", id: item.id, base: base)
+                default: result = await sendBlob(item, base: base)
+                }
             }
             switch result {
             case .sent:
                 appLog("sent \(item.kind.rawValue) \(item.id.prefix(8))")
                 remove(item)
             case .rejected(let why):
-                // The kiosk read it and said no: retrying would only say no again.
+                // The other side read it and said no: retrying would only say no again.
                 appLog("refused \(item.kind.rawValue) \(item.id.prefix(8)): \(why)", level: "WARN")
                 remove(item)
             case .unreachable(let why):
-                bumpAttempts(item)
-                noteFailure(why)
-                return
+                if item.kind == .blob { mediaWaiting = true }
+                backOff(item)
+                waiting = true
+                appLog("\(item.kind.rawValue) \(item.id.prefix(8)) will retry: \(why)")
             }
         }
-        lastResult = "Up to date"
-        retryTimer?.invalidate()
-        retryTimer = nil
+
+        if queue.isEmpty {
+            lastResult = "Up to date"
+            retryTimer?.invalidate()
+            retryTimer = nil
+        } else if waiting {
+            noteFailure(meshWhy ?? "\(queue.count) waiting to retry")
+        }
+    }
+
+    private func backOff(_ item: HomeVaultItem) {
+        guard let i = queue.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
+        queue[i].attempts += 1
+        queue[i].notBefore = Date().addingTimeInterval(HomeVaultLogic.backoff(afterAttempts: queue[i].attempts))
+        saveQueue()
     }
 
     private func sendBlob(_ item: HomeVaultItem, base: URL) async -> HomeVaultSendResult {
@@ -204,12 +272,6 @@ final class HomeVaultSender: ObservableObject {
         saveQueue()
     }
 
-    private func bumpAttempts(_ item: HomeVaultItem) {
-        guard let i = queue.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
-        queue[i].attempts += 1
-        saveQueue()
-    }
-
     // MARK: - Persistence
 
     private static var queueURL: URL {
@@ -221,7 +283,13 @@ final class HomeVaultSender: ObservableObject {
 
     private static func loadQueue() -> [HomeVaultItem] {
         guard let data = try? Data(contentsOf: queueURL) else { return [] }
-        return (try? JSONDecoder().decode([HomeVaultItem].self, from: data)) ?? []
+        if let items = try? JSONDecoder().decode([HomeVaultItem].self, from: data) { return items }
+        // Unreadable: set it aside rather than overwrite it with the next save.
+        let aside = queueURL.appendingPathExtension("corrupt")
+        try? FileManager.default.removeItem(at: aside)
+        try? FileManager.default.moveItem(at: queueURL, to: aside)
+        print("Home vault: queue file unreadable, moved to \(aside.lastPathComponent)")
+        return []
     }
 
     private func saveQueue() {
