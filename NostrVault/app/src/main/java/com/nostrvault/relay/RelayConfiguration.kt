@@ -423,6 +423,10 @@ data class HavenConfig(
     // Npubs allowed to reach this device over the mesh. Nobody else can.
     val fipsPeers: List<String> = emptyList(),
 
+    // The owner's other device (a kiosk phone) that also gets their posts and
+    // media over the mesh: its mesh npub, from their 10063. Null for none.
+    val homeVaultNpub: String? = null,
+
     // What one sharing session may send to the mesh before sharing stops (NIP-F1).
     val fipsServeLimitBytes: Long = 1L shl 30,
 

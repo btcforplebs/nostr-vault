@@ -34,7 +34,7 @@ class BlossomPostOutcomeTest {
             // Port 9 (discard) — nothing answers, so the local save fails fast.
             HavenConfig(ownerNpub = "npub1owner", blossomMirrors = emptyList(), relayPort = 9)
         )
-        return BlossomService(configStore, signer, mockk(relaxed = true))
+        return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true))
     }
 
     private fun signer(): NostrService = mockk<NostrService>(relaxed = true).also {

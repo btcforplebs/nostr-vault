@@ -50,6 +50,7 @@ class NostrService @Inject constructor(
     private val amberSignerService: AmberSignerService,
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
     private val lookupPool: LookupSocketPool,
+    private val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
@@ -289,6 +290,15 @@ class NostrService @Inject constructor(
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
         FipsMediaRouter.requestServerList = { fetchServerList(it) }
+        homeVault.ownerHex = { ownerHexPubkey }
+        homeVault.ownerIsActive = { ownerHexPubkey.isNotEmpty() && activeHexPubkey == ownerHexPubkey }
+        homeVault.signerIsLocal = {
+            SignerRouting.route(configStore.config.value, true, ownerHexPubkey, activeHexPubkey) is SignerRoute.Local
+        }
+        homeVault.ownerServerList = { _serverLists.value[ownerHexPubkey] }
+        homeVault.signer = { kind, content, tags ->
+            signEventAsync(kind = kind, content = content, tags = tags, forceOwner = true)?.let { serializeEvent(it) }
+        }
     }
 
     fun initialize() {
@@ -1393,6 +1403,10 @@ class NostrService @Inject constructor(
     fun postEvent(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
 
+        // 0. The owner's home vault on the mesh, which passes it on to the
+        //    regular relays too. Queued while it is out of reach.
+        homeVault.offerEvent(event.id, event.pubkey, eventJson)
+
         // 1. Post to local relay
         scope.launch(Dispatchers.IO) {
             val localUrl = configStore.config.value.nostrURL
@@ -1800,8 +1814,22 @@ class NostrService @Inject constructor(
     fun publishServerList() {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
-        val tags = mirrors.map { listOf("server", it) }
-        signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
+        scope.launch(Dispatchers.IO) {
+            // Merge into the newest signed list, so a kiosk's fipsmesh:// entry
+            // survives this phone editing its own servers. The cache only when
+            // the relays couldn't say; a confirmed "none" starts empty.
+            val owner = ownerHexPubkey
+            val lookup = runCatching {
+                lookupNewestReplaceable(10063, owner, _outboxRelays.value[owner].orEmpty().take(3))
+            }.getOrNull()
+            val newest = when {
+                lookup?.event != null -> profileRepository.parseServerListTags(lookup.event.tags)
+                lookup?.confirmedNone == true -> emptyList()
+                else -> _serverLists.value[owner].orEmpty()
+            }
+            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(newest, mirrors)
+            signAndPost(kind = 10063, content = "", tags = servers.map { listOf("server", it) }, forceOwner = true)
+        }
     }
 
     fun deleteNote(noteId: String) {
