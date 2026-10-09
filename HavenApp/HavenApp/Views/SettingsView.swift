@@ -121,7 +121,7 @@ struct SettingsView: View {
             ("Account", [.accounts, .blocked, .followingBackup, .wallet]),
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
-            ("Relays", [.relays]),
+            ("Relays", [.relays, .blossom]),
             ("Your Vault Relay", relayTabs),
             ("Help", [.tutorials]),
             ("Advanced", [.proofOfWork, .advanced, .logs]),
