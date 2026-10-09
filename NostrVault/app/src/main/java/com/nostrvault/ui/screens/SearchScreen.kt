@@ -161,6 +161,9 @@ class SearchViewModel @Inject constructor(
     /** Your own notes have no trust path, so they get no Web of Trust button. */
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
 
+    /** The avatar quick menu: Follow/Unfollow and Block (iOS FeedView avatar toolbar). */
+    val avatarMenu = com.nostrvault.ui.components.avatarMenuActions(feedService, ::isOwnNote)
+
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
@@ -872,6 +875,7 @@ fun SearchScreen(
                         }
                         NoteCard(
                             note = note,
+                            avatarMenu = viewModel.avatarMenu,
                             profile = viewModel.profileFor(note.pubkey),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,

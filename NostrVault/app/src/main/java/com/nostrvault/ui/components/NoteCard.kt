@@ -101,6 +101,20 @@ class AvatarMenuActions(
 )
 
 /**
+ * The menu wired straight to [feedService], for screens outside the main
+ * feed (search, hashtags, threads, profiles). Follow shows its banner and
+ * Block publishes the mute list, as from the feed.
+ */
+fun avatarMenuActions(feedService: com.nostrvault.service.FeedService, isOwn: (String) -> Boolean) =
+    AvatarMenuActions(
+        isOwn = isOwn,
+        isFollowed = feedService::isFollowing,
+        onFollow = { feedService.followUser(it) },
+        onUnfollow = { feedService.unfollowUser(it) },
+        onBlock = feedService::blockUser,
+    )
+
+/**
  * [content] (an avatar) that opens the [menu] for [pubkey] when tapped, or
  * the profile when there is no menu or the avatar is your own.
  */

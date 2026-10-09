@@ -66,7 +66,12 @@ class ProfileViewModel @Inject constructor(
     private val blossomService: com.nostrvault.service.BlossomService,
     private val mediaCacheService: com.nostrvault.service.MediaCacheService,
     private val mediaSaveService: com.nostrvault.service.MediaSaveService,
+    dmService: com.nostrvault.service.DMService,
 ) : ViewModel() {
+
+    /** Unread messages across your DMs, for the dot on your profile's Messages button. */
+    val unreadDMCount: StateFlow<Int> = dmService.totalUnreadCountFlow
+
 
     /**
      * Likes, reposts, replies, quotes and zap sats under each post, by post
@@ -658,6 +663,12 @@ class ProfileViewModel @Inject constructor(
 
     /** Your own notes have no trust path, so they get no Web of Trust button. */
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
+
+    /** The wallet belongs to the Vault's owner account; another account's profile has no ⚡ button (iOS). */
+    fun isOwnerAccount(pubkey: String): Boolean = pubkey == nostrService.ownerHexPubkey
+
+    /** The avatar quick menu: Follow/Unfollow and Block (iOS FeedView avatar toolbar). */
+    val avatarMenu = com.nostrvault.ui.components.avatarMenuActions(feedService, ::isOwnNote)
 
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }

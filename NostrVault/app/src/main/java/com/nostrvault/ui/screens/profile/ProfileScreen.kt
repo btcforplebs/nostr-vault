@@ -85,6 +85,8 @@ fun ProfileScreen(
     val counts by viewModel.counts.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
+    val isOwnerAccount = remember(pubkey) { viewModel.isOwnerAccount(pubkey) }
+    val unreadDMs by viewModel.unreadDMCount.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -192,14 +194,18 @@ fun ProfileScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                GlassPill {
-                    if (isOwnProfile) {
-                        IconButton(onClick = onOpenLightning, modifier = Modifier.size(40.dp)) {
-                            Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
-                        }
-                    } else {
+                if (!isOwnProfile) {
+                    GlassPill {
                         IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Back, "Back", tint = PrimaryText, modifier = Modifier.size(25.dp))
+                        }
+                    }
+                } else if (isOwnerAccount) {
+                    // The wallet is the owner account's; another account's
+                    // profile shows no ⚡ (iOS isOwnerProfile).
+                    GlassPill {
+                        IconButton(onClick = onOpenLightning, modifier = Modifier.size(40.dp)) {
+                            Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
                     }
                 }
@@ -209,7 +215,19 @@ fun ProfileScreen(
                 GlassPill {
                     if (isOwnProfile) {
                         IconButton(onClick = onNavigateToDMs, modifier = Modifier.size(40.dp)) {
-                            Icon(NostrVaultIcons.DMs, "Messages", tint = PrimaryText, modifier = Modifier.size(25.dp))
+                            BadgedBox(
+                                badge = {
+                                    // A plain dot, as on iOS: there is something to read.
+                                    if (unreadDMs > 0) androidx.compose.material3.Badge(containerColor = ErrorRed, modifier = Modifier.size(8.dp))
+                                },
+                            ) {
+                                Icon(
+                                    NostrVaultIcons.DMs,
+                                    if (unreadDMs > 0) "Messages, unread" else "Messages",
+                                    tint = PrimaryText,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
                         }
                         IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Settings, "Settings", tint = PrimaryText, modifier = Modifier.size(25.dp))
@@ -504,6 +522,7 @@ fun ProfileScreen(
                     }
                     NoteCard(
                         note = note,
+                        avatarMenu = viewModel.avatarMenu,
                         // A repost on this profile is someone else's note:
                         // credit its author, not the profile's owner.
                         profile = if (selectedSection == ProfileSection.TAGGED || note.kind == 6)
