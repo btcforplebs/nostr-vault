@@ -50,7 +50,7 @@ final class HomeVaultSender: ObservableObject {
 
     /// The owner's own mesh vaults from their 10063, minus this phone's.
     static func meshEntries(serverList: [String]) -> [String] {
-        HomeVaultLogic.meshEntries(serverList: serverList, excluding: FipsMeshService.shared.status?.npub)
+        HomeVaultLogic.meshEntries(serverList: serverList, excluding: FipsMeshService.shared.ownMeshNpub)
     }
 
     func setHomeVault(_ vault: HomeVault?) {

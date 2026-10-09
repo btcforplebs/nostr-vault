@@ -90,3 +90,74 @@ enum HomeVaultLogic {
         }
     }
 }
+
+// MARK: - 10063 merge
+
+extension HomeVaultLogic {
+    /// One rule for every phone that publishes the owner's 10063 (Tao, FIPS
+    /// thread): merge into the newest list, never replace it. Only the https
+    /// servers this phone manages change; every other entry keeps its order.
+    ///
+    /// - existing: the newest signed 10063 seen for the owner.
+    /// - current: this phone's own servers now (config order, https).
+    /// - previouslyManaged: what this phone published last time, so a server
+    ///   removed here is removed, while another phone's server is kept.
+    /// - homeVaultNpub: listed first, if the list still carries it (the kiosk
+    ///   withdrew it otherwise, and a stale entry must not come back).
+    /// - ownMeshNpub/shareOwnMesh: this phone's mesh entry, listed last while
+    ///   it shares (kiosk mode) and dropped otherwise.
+    /// Returns nil when the result has no https server: a list only mesh
+    /// readers can use must not go out (NIP-F1).
+    static func mergeServerList(
+        existing: [String],
+        current: [String],
+        previouslyManaged: Set<String>,
+        homeVaultNpub: String?,
+        ownMeshNpub: String?,
+        shareOwnMesh: Bool
+    ) -> [String]? {
+        func key(_ url: String) -> String {
+            var k = url.trimmingCharacters(in: .whitespaces).lowercased()
+            while k.hasSuffix("/") { k.removeLast() }
+            return k
+        }
+        let mine = Set(current.map(key))
+        let dropped = Set(previouslyManaged.map(key)).subtracting(mine)
+        var out: [String] = []
+        var seen = Set<String>()
+        func add(_ url: String) {
+            if seen.insert(key(url)).inserted { out.append(url) }
+        }
+
+        if let home = homeVaultNpub, home != ownMeshNpub,
+           existing.contains(where: { meshNpub(fromEntry: $0) == home }) {
+            add("fipsmesh://\(home)/")
+        }
+        current.filter { meshNpub(fromEntry: $0) == nil }.forEach(add)
+        for url in existing {
+            if let npub = meshNpub(fromEntry: url) {
+                if npub != ownMeshNpub { add(url) }
+            } else if url.hasPrefix("fipsmesh://") {
+                continue  // malformed mesh entry: readers ignore it, so do we
+            } else if !dropped.contains(key(url)) {
+                add(url)  // another phone's server
+            }
+        }
+        if shareOwnMesh, let own = ownMeshNpub { add("fipsmesh://\(own)/") }
+
+        guard out.contains(where: { meshNpub(fromEntry: $0) == nil }) else { return nil }
+        return out
+    }
+}
+
+// MARK: - Newest 10063 wins
+
+extension HomeVaultLogic {
+    /// NIP-01 for replaceable events: the newer created_at wins, and a tie goes
+    /// to the lower id. `seen` is the stamp of the list already kept.
+    static func isNewer(createdAt: Int64, id: String, than seen: (createdAt: Int64, id: String)?) -> Bool {
+        guard let seen else { return true }
+        if createdAt != seen.createdAt { return createdAt > seen.createdAt }
+        return id < seen.id
+    }
+}

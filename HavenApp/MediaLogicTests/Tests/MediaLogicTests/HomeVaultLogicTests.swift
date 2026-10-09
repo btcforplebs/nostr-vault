@@ -67,3 +67,71 @@ final class HomeVaultLogicTests: XCTestCase {
         XCTAssertEqual(back, [item])
     }
 }
+
+/// Merging the owner's 10063 across phones (merge, never replace).
+final class ServerListMergeTests: XCTestCase {
+    private let kiosk = "npub1" + String(repeating: "q", count: 58)
+    private let me = "npub1" + String(repeating: "p", count: 58)
+    private let third = "npub1" + String(repeating: "z", count: 58)
+    private func mesh(_ n: String) -> String { "fipsmesh://\(n)/" }
+
+    func testASenderKeepsTheKioskEntryFirst() {
+        let existing = ["https://a.example/", mesh(kiosk)]
+        let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
+                                                 homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, [mesh(kiosk), "https://a.example/"])
+    }
+
+    func testOtherMeshEntriesKeepTheirOrder() {
+        let existing = ["https://a.example/", mesh(third), mesh(kiosk)]
+        let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
+                                                 homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
+    }
+
+    func testOnlyServersThisPhoneManagedAreRemoved() {
+        // b was ours and is gone from config; c is another phone's.
+        let existing = ["https://a.example/", "https://b.example/", "https://c.example/"]
+        let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example"],
+                                                 previouslyManaged: ["https://a.example/", "https://b.example/"],
+                                                 homeVaultNpub: nil, ownMeshNpub: nil, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example", "https://c.example/"])
+    }
+
+    func testThisPhonesMeshEntryOnlyWhileSharingAndLast() {
+        let existing = [mesh(me), "https://a.example/", mesh(kiosk)]
+        let sharing = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
+                                                     homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: true)
+        XCTAssertEqual(sharing, ["https://a.example/", mesh(kiosk), mesh(me)])
+        let stopped = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
+                                                     homeVaultNpub: nil, ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(stopped, ["https://a.example/", mesh(kiosk)])
+    }
+
+    func testAWithdrawnHomeVaultIsNotPutBack() {
+        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"], previouslyManaged: [],
+                                                 homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/"])
+    }
+
+    func testAMeshOnlyListIsNeverPublished() {
+        XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [mesh(kiosk)], current: [], previouslyManaged: [],
+                                                    homeVaultNpub: kiosk, ownMeshNpub: me, shareOwnMesh: true))
+    }
+
+    func testMalformedMeshEntriesAreDropped() {
+        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", "fipsmesh://\(kiosk)/evil"], current: [],
+                                                 previouslyManaged: [], homeVaultNpub: nil, ownMeshNpub: nil, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/"])
+    }
+}
+
+final class ServerListStampTests: XCTestCase {
+    func testNewerWinsAndATieGoesToTheLowerId() {
+        XCTAssertTrue(HomeVaultLogic.isNewer(createdAt: 5, id: "b", than: nil))
+        XCTAssertTrue(HomeVaultLogic.isNewer(createdAt: 6, id: "z", than: (5, "a")))
+        XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 4, id: "a", than: (5, "z")), "a stale replay")
+        XCTAssertTrue(HomeVaultLogic.isNewer(createdAt: 5, id: "a", than: (5, "b")))
+        XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 5, id: "b", than: (5, "b")), "the same event again")
+    }
+}

@@ -47,6 +47,11 @@ final class FipsMeshService: ObservableObject {
 
     private init() {}
 
+    /// This phone's mesh npub, remembered from the last time the engine ran,
+    /// so a 10063 published while it is off can drop this phone's old entry.
+    var ownMeshNpub: String? { status?.npub ?? UserDefaults.standard.string(forKey: Self.ownNpubKey) }
+    private static let ownNpubKey = "fipsMesh.ownNpub"
+
     /// The 10063 entry for this phone's vault while kiosk mode is on.
     var meshServerURL: String? {
         guard kioskActive, let npub = status?.npub else { return nil }
@@ -163,6 +168,7 @@ final class FipsMeshService: ObservableObject {
         }
         engineOp = Task { _ = await op.value }
         let url = await op.value
+        if url != nil { refresh() }
         if url != nil, !kioskActive, !starting, !clientActive {
             clientActive = true
             // iOS suspends the engine in the background anyway; stop it cleanly
@@ -209,6 +215,7 @@ final class FipsMeshService: ObservableObject {
         guard let raw = NvFipsStatusJSON() else { return }
         defer { NvFipsFreeString(raw) }
         status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
+        if let npub = status?.npub { UserDefaults.standard.set(npub, forKey: Self.ownNpubKey) }
     }
 
     struct MeshError: Error {

@@ -1066,30 +1066,64 @@ class NostrService: ObservableObject {
     /// Call whenever blossomMirrors changes (settings, setup wizard).
     /// Pass fipsDetectedNpub when available to include the detected .fips address.
     @MainActor
-    func publishServerList(fipsDetectedNpub: String? = nil) {
-        var mirrors = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
-        #if os(iOS)
-        // Kiosk mode: this vault is on the FIPS mesh. Last, so apps that try
-        // servers in order use the normal ones first; apps that do not know
-        // the scheme skip it. Never the only usable entry (NIP-F1): with no
-        // public server, apps without FIPS would get a list they can't use.
-        if let mesh = FipsMeshService.shared.meshServerURL,
-           ConfigService.shared.config.hasPublicBlossomMirror, !mirrors.contains(mesh) {
-            mirrors.append(mesh)
+    /// Keeps the newest 10063 per author (persisted), so a replay is ignored.
+    @discardableResult
+    func acceptServerListStamp(pubkey: String, createdAt: Int64, id: String) -> Bool {
+        var stamps = UserDefaults.standard.dictionary(forKey: Self.serverListStampsKey) as? [String: String] ?? [:]
+        let seen = stamps[pubkey].flatMap { s -> (createdAt: Int64, id: String)? in
+            let parts = s.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let t = Int64(parts[0]) else { return nil }
+            return (t, String(parts[1]))
         }
+        guard HomeVaultLogic.isNewer(createdAt: createdAt, id: id, than: seen) else { return false }
+        stamps[pubkey] = "\(createdAt):\(id)"
+        UserDefaults.standard.set(stamps, forKey: Self.serverListStampsKey)
+        return true
+    }
+
+    private static let serverListStampsKey = "serverListStamps.v1"
+
+    func publishServerList(fipsDetectedNpub: String? = nil) {
+        let current = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        let owner = activeHexPubkey
+        // Merge into the newest list, never replace it (one rule for every
+        // phone): another phone's servers and mesh entries stay; only the
+        // servers this phone manages change. The home vault goes first.
+        var homeVault: String?
+        var ownMesh: String?
+        var shareOwnMesh = false
+        #if os(iOS)
+        if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner { homeVault = vault.meshNpub }
+        ownMesh = FipsMeshService.shared.ownMeshNpub
+        // Kiosk mode: this vault is on the FIPS mesh, listed last. Never the
+        // only usable entry (NIP-F1): the merge refuses a mesh-only list.
+        shareOwnMesh = FipsMeshService.shared.meshServerURL != nil && ConfigService.shared.config.hasPublicBlossomMirror
         #endif
-        guard !mirrors.isEmpty else {
+        let managedKey = "serverListManaged.\(owner)"
+        let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
+        guard let merged = HomeVaultLogic.mergeServerList(
+            existing: serverLists[owner] ?? [],
+            current: current,
+            previouslyManaged: previouslyManaged,
+            homeVaultNpub: homeVault,
+            ownMeshNpub: ownMesh,
+            shareOwnMesh: shareOwnMesh
+        ) else {
             #if DEBUG
-            print("NostrService: No Blossom mirrors configured, skipping Kind 10063 publish")
+            print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
             #endif
             return
         }
 
-        // Build ["server", url] tags — ordered by reliability (local relay first via activeBlossomMirrors)
-        let tags = mirrors.map { ["server", $0] }
+        let tags = merged.map { ["server", $0] }
 
         Task {
             if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
+                // Ours is now the newest: merge from it next time, even before it echoes back.
+                if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id) {
+                    serverLists[event.pubkey] = merged
+                }
+                UserDefaults.standard.set(current.filter { HomeVaultLogic.meshNpub(fromEntry: $0) == nil }, forKey: managedKey)
                 postEvent(event)
                 #if DEBUG
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
@@ -2457,8 +2491,12 @@ class NostrService: ObservableObject {
             if event.kind == 10063 {
                 let servers = ProfileRepository.parseServerListTags(event.tags)
                 let pubkey = event.pubkey
+                let createdAt = event.created_at, eventId = event.id
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
+                    // A relay replaying an older list must not undo a newer one:
+                    // every phone merges into the list it keeps here.
+                    guard self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId) else { return }
                     if !servers.isEmpty { self.serverLists[pubkey] = servers }
                     self.saveProfilesThrottled()
                 }
