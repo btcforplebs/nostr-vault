@@ -132,7 +132,8 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback, toHomeVault)
 
     suspend fun uploadAndMirror(
         fileURL: File,
@@ -140,15 +141,17 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback, toHomeVault)
 
     private suspend fun uploadAndMirror(
         source: UploadSource,
         sha256: String,
         contentType: String,
         allowLocalFallback: Boolean,
+        toHomeVault: Boolean,
     ): String? {
-        val attempt = upload(source, sha256, contentType, skipOutsideServers = false)
+        val attempt = upload(source, sha256, contentType, skipOutsideServers = false, toHomeVault = toHomeVault)
         return when (val outcome = attempt.outcome) {
             is PostUploadOutcome.Hosted -> outcome.url
             // Local-relay URL, only ever returned for save-to-vault flows.
@@ -202,6 +205,8 @@ class BlossomService @Inject constructor(
         sha256: String,
         contentType: String,
         skipOutsideServers: Boolean,
+        /** False for DM attachments: the vault's mesh door serves any blob to anyone with its hash. */
+        toHomeVault: Boolean = true,
     ): UploadAttempt = withContext(Dispatchers.IO) {
         // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
         // every mirror. The event is server-agnostic (no "u" tag), so one
@@ -222,7 +227,7 @@ class BlossomService @Inject constructor(
         }
         if (!localOk) Log.w(TAG, "Local relay upload failed for ${sha256.take(8)} — continuing with mirrors")
         // The owner's home vault on the mesh gets a copy too; it queues while unreachable.
-        when (source) {
+        if (toHomeVault) when (source) {
             is UploadSource.Data -> homeVault.offerBlob(sha256, contentType, source.data)
             is UploadSource.FileSource -> homeVault.offerBlob(sha256, contentType, source.file)
         }

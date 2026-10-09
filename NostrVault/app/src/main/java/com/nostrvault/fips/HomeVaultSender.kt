@@ -24,7 +24,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -64,6 +64,26 @@ class HomeVaultSender @Inject constructor(
     @Volatile
     var ownerHex: () -> String = { "" }
 
+    /**
+     * Whether the owner is the active account. The home vault is the owner's
+     * (picked from their 10063, signed for with their key), so nothing is
+     * offered or sent while another account is active. Wired by NostrService.
+     */
+    @Volatile
+    var ownerIsActive: () -> Boolean = { false }
+
+    /**
+     * Whether signing as the owner needs no human (a local key, not Amber or
+     * a bunker). A background retry must not prompt for every queued blob.
+     * Wired by NostrService.
+     */
+    @Volatile
+    var signerIsLocal: () -> Boolean = { false }
+
+    /** The owner's current 10063, or null when it isn't known. Wired by NostrService. */
+    @Volatile
+    var ownerServerList: () -> List<String>? = { null }
+
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val drainLock = Mutex()
@@ -87,6 +107,9 @@ class HomeVaultSender @Inject constructor(
     /** The chosen home vault's mesh npub, or null when there is none. */
     val homeVaultNpub: String? get() = configStore.config.value.homeVaultNpub
 
+    /** The home vault to send to right now: none while another account is active. */
+    private val activeVault: String? get() = homeVaultNpub?.takeIf { ownerIsActive() }
+
     init {
         if (queue.size > 0) scheduleRetry()
     }
@@ -104,43 +127,79 @@ class HomeVaultSender @Inject constructor(
 
     /** Also send this signed event to the home vault, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
-        if (homeVaultNpub == null || pubkey.isEmpty() || pubkey != ownerHex()) return
-        if (queue.addEvent(eventId, eventJson)) drainSoon()
+        if (activeVault == null || pubkey.isEmpty() || pubkey != ownerHex()) return
+        if (queue.addEvent(eventId, eventJson)) drainSoon() else full()
     }
 
     /** Also send this blob to the home vault, copied from [source]. */
     fun offerBlob(sha256: String, contentType: String, source: File) {
-        if (homeVaultNpub == null) return
-        if (queue.addBlob(sha256, contentType) { source.copyTo(it, overwrite = true) }) drainSoon()
+        if (activeVault == null) return
+        if (queue.addBlob(sha256, safeType(contentType)) { source.copyTo(it, overwrite = true) }) drainSoon() else full()
     }
 
     fun offerBlob(sha256: String, contentType: String, data: ByteArray) {
-        if (homeVaultNpub == null) return
-        if (queue.addBlob(sha256, contentType) { it.writeBytes(data) }) drainSoon()
+        if (activeVault == null) return
+        if (queue.addBlob(sha256, safeType(contentType)) { it.writeBytes(data) }) drainSoon() else full()
     }
 
-    fun drainSoon() {
-        scope.launch { drain() }
+    /**
+     * The MIME type to store. Another app chose it (a share's
+     * `ContentResolver.getType`), so one OkHttp can't parse is replaced
+     * here, never handed to `toMediaType()` on a retry.
+     */
+    private fun safeType(contentType: String): String =
+        contentType.takeIf { it.toMediaTypeOrNull() != null } ?: "application/octet-stream"
+
+    private fun full() {
+        Log.w(TAG, "home vault queue is full; not queued")
+        problem("The queue is full")
     }
 
-    /** Send what waits, oldest first, stopping at the first that can't go yet. */
-    suspend fun drain() = drainLock.withLock {
+    fun drainSoon(userInitiated: Boolean = false) {
+        scope.launch { drain(userInitiated) }
+    }
+
+    /**
+     * Send what is due, oldest first. An item that comes back RETRY waits
+     * its own backoff and the rest go on; only an unreachable vault stops
+     * the pass. [userInitiated] (Send now) ignores backoff and may prompt
+     * an external signer; a background pass never does.
+     */
+    suspend fun drain(userInitiated: Boolean = false) = drainLock.withLock {
         publish()
-        val npub = homeVaultNpub ?: return@withLock
+        val npub = activeVault ?: return@withLock
+        val now = System.currentTimeMillis()
+        queue.items().filter { HomeVaultRules.expired(it, now) }.forEach {
+            Log.w(TAG, "home vault: gave up on ${it.type} ${it.key.take(8)} after ${it.attempts} tries")
+            queue.remove(it.key)
+        }
         val items = queue.items()
-        if (items.isEmpty()) return@withLock
+        if (items.isEmpty()) return@withLock publish()
+        // Re-checked each pass: a stale or withdrawn list must not keep
+        // sending to a vault the owner no longer lists. It waits instead.
+        val listed = ownerServerList()
+        if (listed != null && HomeVaultRules.candidates(listed, null).none { it == npub }) {
+            problem("Home vault is not on the mesh now")
+            scheduleRetry()
+            return@withLock publish()
+        }
         if (!FipsBridge.status().running) {
             problem("The mesh is off")
             scheduleRetry()
-            return@withLock
+            return@withLock publish()
         }
         val base = FipsMediaRouter.ingressBase(npub)
         if (base == null) {
             problem("Home vault not reachable")
             scheduleRetry()
-            return@withLock
+            return@withLock publish()
         }
         for (item in items) {
+            if (!userInitiated && item.nextAt > now) continue
+            if (item.type == HomeVaultQueue.TYPE_BLOB && !userInitiated && !signerIsLocal()) {
+                problem("Your signer needs you: tap Send now")
+                continue
+            }
             val outcome = try {
                 when (item.type) {
                     HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item)
@@ -148,9 +207,19 @@ class HomeVaultSender @Inject constructor(
                     else -> HomeVaultSend.REJECTED
                 }
             } catch (e: IOException) {
+                // The vault, not the item: stop and try the lot later.
                 Log.w(TAG, "home vault: ${item.type} ${item.key.take(8)}: ${e.message}")
                 FipsMediaRouter.forget(npub)
-                HomeVaultSend.RETRY
+                problem("Home vault not reachable")
+                break
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Anything else is this item's fault and would fail every
+                // time; dropping it keeps one bad entry from blocking or
+                // crashing every launch.
+                Log.e(TAG, "home vault: dropping ${item.type} ${item.key.take(8)}", e)
+                HomeVaultSend.REJECTED
             }
             when (outcome) {
                 HomeVaultSend.SENT -> {
@@ -163,12 +232,12 @@ class HomeVaultSender @Inject constructor(
                     problem("The home vault refused a ${item.type}")
                 }
                 HomeVaultSend.RETRY -> {
-                    problem("Home vault not reachable")
-                    scheduleRetry()
-                    break
+                    val attempts = item.attempts + 1
+                    queue.update(item.copy(attempts = attempts, nextAt = now + HomeVaultRules.backoffMs(attempts)))
                 }
             }
         }
+        if (queue.size > 0) scheduleRetry()
         publish()
     }
 
@@ -186,9 +255,10 @@ class HomeVaultSender @Inject constructor(
             return HomeVaultSend.RETRY
         }
         val type = item.contentType ?: "application/octet-stream"
+        val mediaType = type.toMediaTypeOrNull() ?: return HomeVaultSend.REJECTED
         val request = Request.Builder()
             .url("$base/upload")
-            .put(file.asRequestBody(type.toMediaType()))
+            .put(file.asRequestBody(mediaType))
             .header("Authorization", "Nostr $auth")
             .header("Content-Type", type)
             .build()
@@ -266,7 +336,7 @@ class HomeVaultSender @Inject constructor(
         retryJob = scope.launch {
             while (isActive) {
                 delay(RETRY_MS)
-                if (queue.size == 0 || homeVaultNpub == null) break
+                if (queue.size == 0 || activeVault == null) break
                 drain()
             }
         }

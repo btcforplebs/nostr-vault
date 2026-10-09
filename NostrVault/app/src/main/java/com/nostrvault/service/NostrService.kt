@@ -281,6 +281,11 @@ class NostrService @Inject constructor(
         FipsMediaRouter.serverLists = { _serverLists.value }
         FipsMediaRouter.requestServerList = { fetchServerList(it) }
         homeVault.ownerHex = { ownerHexPubkey }
+        homeVault.ownerIsActive = { ownerHexPubkey.isNotEmpty() && activeHexPubkey == ownerHexPubkey }
+        homeVault.signerIsLocal = {
+            SignerRouting.route(configStore.config.value, true, ownerHexPubkey, activeHexPubkey) is SignerRoute.Local
+        }
+        homeVault.ownerServerList = { _serverLists.value[ownerHexPubkey] }
         homeVault.signer = { kind, content, tags ->
             signEventAsync(kind = kind, content = content, tags = tags, forceOwner = true)?.let { serializeEvent(it) }
         }

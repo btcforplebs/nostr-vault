@@ -67,7 +67,7 @@ class MeshSettingsViewModel @Inject constructor(
         viewModelScope.launch { homeVault.setHomeVault(npub) }
     }
 
-    fun sendHomeVaultNow() = homeVault.drainSoon()
+    fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
 
     val shareRelay = mesh.shareRelay
     val peers = mesh.peers
@@ -449,7 +449,8 @@ private fun HomeVaultCard(
             Text(
                 "Also send your posts and media to another of your devices on the " +
                     "mesh, like a phone in kiosk mode. It keeps them and passes your " +
-                    "posts on to the regular relays. This phone keeps its copy too.",
+                    "posts on to the regular relays. This phone keeps its copy too. " +
+                    "Direct-message attachments are never sent there.",
                 color = SecondaryText,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

@@ -114,5 +114,74 @@ class HomeVaultQueueTest {
         // Nothing published yet.
         assertEquals(listOf("https://a.example"), HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example"), kiosk))
     }
+
+    @Test
+    fun `auth-required and restricted wait instead of dropping the post`() {
+        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.eventOutcome(false, "auth-required: log in"))
+        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.eventOutcome(false, "restricted: not yet"))
+    }
+
+    @Test
+    fun `backoff doubles from a minute and stops at six hours`() {
+        assertEquals(60_000L, HomeVaultRules.backoffMs(1))
+        assertEquals(120_000L, HomeVaultRules.backoffMs(2))
+        assertEquals(6 * 60 * 60_000L, HomeVaultRules.backoffMs(12))
+        assertEquals(6 * 60 * 60_000L, HomeVaultRules.backoffMs(1000))
+    }
+
+    @Test
+    fun `an item too old or tried too often is given up on`() {
+        val now = 100L * 24 * 60 * 60_000L
+        val fresh = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_EVENT, queuedAt = now - 1000)
+        assertFalse(HomeVaultRules.expired(fresh, now))
+        assertTrue(HomeVaultRules.expired(fresh.copy(queuedAt = now - HomeVaultRules.MAX_AGE_MS - 1), now))
+        assertTrue(HomeVaultRules.expired(fresh.copy(attempts = HomeVaultRules.MAX_ATTEMPTS), now))
+    }
+
+    @Test
+    fun `a full queue refuses more, by count and by bytes`() {
+        val byCount = HomeVaultQueue(tmp.newFolder(), maxItems = 2)
+        assertTrue(byCount.addEvent("e1", "{}"))
+        assertTrue(byCount.addEvent("e2", "{}"))
+        assertFalse(byCount.addEvent("e3", "{}"))
+        assertFalse(byCount.addBlob(sha, "image/png") { it.writeText("x") })
+        assertEquals(2, byCount.size)
+
+        val byBytes = HomeVaultQueue(tmp.newFolder(), maxBlobBytes = 10)
+        assertTrue(byBytes.addBlob(sha, "image/png") { it.writeText("12345") })
+        val other = "b".repeat(64)
+        assertFalse(byBytes.addBlob(other, "image/png") { it.writeText("123456") })
+        assertFalse(byBytes.blobFile(other).exists())
+        assertFalse(java.io.File(byBytes.blobFile(other).path + ".part").exists())
+    }
+
+    @Test
+    fun `a retry is recorded on the item`() {
+        val q = HomeVaultQueue(tmp.newFolder())
+        q.addEvent("e1", "{}")
+        q.update(q.items().single().copy(attempts = 3, nextAt = 42))
+        assertEquals(3, q.items().single().attempts)
+        assertEquals(42L, q.items().single().nextAt)
+    }
+
+    @Test
+    fun `a corrupt list is set aside and its blobs are not orphaned`() {
+        val dir = tmp.newFolder()
+        HomeVaultQueue(dir).addBlob(sha, "image/png") { it.writeText("x") }
+        java.io.File(dir, "queue.json").writeText("{not json")
+        val q = HomeVaultQueue(dir)
+        assertEquals(0, q.size)
+        assertFalse(q.blobFile(sha).exists())
+        assertTrue(java.io.File(dir, "queue.json.corrupt").exists())
+    }
+
+    @Test
+    fun `blob files with no item are swept on open`() {
+        val dir = tmp.newFolder()
+        java.io.File(dir, "blobs").mkdirs()
+        val stray = java.io.File(dir, "blobs/" + "c".repeat(64)).apply { writeText("x") }
+        HomeVaultQueue(dir)
+        assertFalse(stray.exists())
+    }
 }
 
