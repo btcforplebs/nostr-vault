@@ -53,6 +53,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.ui.navigation.FloatingButtonRow
+import com.nostrvault.tutorials.TutorialContent
+import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
@@ -839,7 +841,9 @@ fun MediaGalleryScreen(
             Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
                     onClick = onOpenDashboard,
-                    modifier = Modifier.floatingRowButton(),
+                    modifier = Modifier
+                        .floatingRowButton()
+                        .tutorialAnchor(TutorialContent.VAULT_RELAY),
                     color = dashboardColor,
                     shape = CircleShape,
                     shadowElevation = 8.dp,

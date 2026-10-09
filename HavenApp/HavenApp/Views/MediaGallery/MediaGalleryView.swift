@@ -28,6 +28,8 @@ struct MediaGalleryView: View {
     /// The viewer's Delete menu choice, waiting on its confirmation.
     @State var pendingViewerDelete: MediaDeleteScope?
     @State var initialLoad = false
+    /// The Vault tab is showing this half, so Your Vault's cards point here.
+    @State var vaultShowsMedia = false
     @State var mediaSourceFilter: MediaSourceFilter = .all
     @State var mediaLocationFilter: MediaLocationFilter = .all
     @State var contentFilter: ContentFilter = .all
@@ -180,6 +182,7 @@ struct MediaGalleryView: View {
             ToolbarItem(placement: .cancellationAction) {
                 if inVaultTab {
                     VaultModePill(mode: .media, zapsOnly: configService.config.zapsOnlyMode)
+                        .tutorialAnchor(TutorialContent.vaultModes, isActive: vaultShowsMedia)
                 } else {
                     leadingToolbarInline
                 }
@@ -229,6 +232,7 @@ struct MediaGalleryView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
             openDashboard()
         }
+        .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -293,6 +297,7 @@ struct MediaGalleryView: View {
                             .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay, isActive: inVaultTab && vaultShowsMedia)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
@@ -411,6 +416,7 @@ struct MediaGalleryView: View {
                             .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay, isActive: inVaultTab && vaultShowsMedia)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)

@@ -28,6 +28,12 @@ extension VaultView {
         }
     }
 
+    /// Your Vault's cards point at this half's pill and Vault button unless
+    /// the Vault tab is showing Media, whose pill and button take them.
+    var showsVaultTutorialAnchors: Bool {
+        !(vaultTabHostsMedia && vaultShowsMedia)
+    }
+
     /// Articles and Highlights are a few rows among many notes. The list's
     /// end is always on screen, so loading older pages on sight would walk
     /// the whole relay; they page by button instead.

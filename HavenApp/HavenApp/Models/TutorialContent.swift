@@ -57,7 +57,7 @@ extension TutorialID {
             return []
             #endif
         case .vault:
-            // Its anchors are the iPhone/iPad vault toolbar and Relay button.
+            // Its anchors are the iPhone/iPad Vault tab's pill and Vault button.
             #if os(iOS)
             return TutorialContent.vault
             #else
@@ -131,29 +131,25 @@ enum TutorialContent {
         ),
     ]
 
-    /// The vault's top-left pill (Notes, Likes, Zaps, Followers), its
-    /// top-right filters, and the Relay button over the list.
+    /// The Vault tab's dropdown pill and its floating Vault button. Both
+    /// halves carry them; the one showing takes the card.
     static let vaultModes = "vault.modes"
-    static let vaultFilters = "vault.filters"
     static let vaultRelay = "vault.relay"
 
-    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "2. Your vault",
-    /// kept to what each part of the screen does, like Feeds.
+    /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "2. Your vault".
+    /// Two cards since the Vault tab (Tod's copy, Nostr-Vault Marketing
+    /// 2026-10-09): the pill is a dropdown now, and the button hands off to
+    /// Pocket Relay on the dashboard.
     static let vault: [TutorialStep] = [
         TutorialStep(
             anchor: vaultModes,
             title: "Your vault",
-            body: "Switch between your posts, likes, zaps and followers. All of it is kept on this phone, not on someone else's server."
-        ),
-        TutorialStep(
-            anchor: vaultFilters,
-            title: "Narrow it down",
-            body: "Filters for the tab you're on. On Notes you can show everything, just your posts, posts that mention you, or replies from people outside your network."
+            body: "Everything you post, like, zap and save, kept right here on your phone. Tap to pick what you see: notes, articles, media and more."
         ),
         TutorialStep(
             anchor: vaultRelay,
             title: "Your relay",
-            body: "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work."
+            body: "Your vault is a real relay, running on this phone. Tap Vault to watch it work."
         ),
     ]
 

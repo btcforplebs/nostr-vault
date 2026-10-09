@@ -159,12 +159,15 @@ final class TutorialCenter: ObservableObject {
 
 extension View {
     /// Marks this view as something a tutorial card can point at.
-    func tutorialAnchor(_ name: String) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-            TutorialCenter.shared.setAnchor(name, frame: frame)
+    /// `isActive` false leaves the name to another view that carries it:
+    /// the Vault tab's two halves both stay alive, and only the one showing
+    /// should be pointed at.
+    func tutorialAnchor(_ name: String, isActive: Bool = true) -> some View {
+        onGeometryChange(for: CGRect?.self) { isActive ? $0.frame(in: .global) : nil } action: { frame in
+            if let frame { TutorialCenter.shared.setAnchor(name, frame: frame) }
         }
         .onDisappear {
-            TutorialCenter.shared.setAnchor(name, frame: nil)
+            if isActive { TutorialCenter.shared.setAnchor(name, frame: nil) }
         }
     }
 }

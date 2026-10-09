@@ -52,7 +52,9 @@ import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
 import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.chromeFold
 import com.nostrvault.ui.navigation.Screen
@@ -115,6 +117,14 @@ fun VaultTabScreen(
 
     // The folded bar's corner button opens the Vault Dashboard (iOS parity).
     LaunchedEffect(Unit) { feedService.relayDashboardRequest.collect { openDashboard() } }
+    // Your Vault starts the first time the Vault tab shows, on either half
+    // (after Fill your vault; see TutorialProgress), and again when a status
+    // changes quietly. Each half carries its pill and Vault button.
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    LaunchedEffect(tutorialRevision) {
+        TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
+    }
+
     // Pocket Relay's cards are on the dashboard: open it for them, on
     // whichever half you're on (Your Vault's "Next", or a replay).
     val activeTutorial by TutorialCenter.active.collectAsState()
@@ -141,6 +151,7 @@ fun VaultTabScreen(
                         statusColor = statusColor,
                         onSelect = viewModel::selectMode,
                         onOpenDashboard = openDashboard,
+                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
                     )
                 },
                 dashboardColor = statusColor,

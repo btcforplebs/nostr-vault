@@ -144,8 +144,6 @@ fun NostrVaultNavHost(
     // already on it.
     val activeTutorial by com.nostrvault.tutorials.TutorialCenter.active.collectAsState()
     LaunchedEffect(activeTutorial) {
-        // Your Vault's cards are on the relay half.
-        if (activeTutorial == com.nostrvault.tutorials.TutorialID.VAULT) VaultSection.show(media = false)
         val route = activeTutorial?.let(::tutorialRoute) ?: return@LaunchedEffect
         if (route == Screen.Feed.route || navController.currentDestination?.route == route) return@LaunchedEffect
         navigateToTutorialRoute(navController, route)
