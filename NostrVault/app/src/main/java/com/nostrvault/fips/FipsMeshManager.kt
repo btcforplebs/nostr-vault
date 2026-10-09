@@ -143,8 +143,25 @@ class FipsMeshManager @Inject constructor(
     private fun startOptions() = FipsStartOptions(
         peers = configStore.config.value.fipsPeers,
         lan = true,
-        maxServeBytes = configStore.config.value.fipsServeLimitBytes,
+        // What is left of this sharing session's allowance: a restart for a
+        // peer or limit change must not hand out a fresh one (Tron, #471).
+        maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, carriedServeBytes.get()),
     )
+
+    /** Bytes served this sharing session by engines since restarted. Reset when sharing is switched. */
+    private val carriedServeBytes = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** One reaction to a reached cap at a time; the Mesh screen polls too. */
+    private val turningOffForCap = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Restart to apply start-time settings, keeping what was already served. */
+    private suspend fun restartKeepingAllowance() {
+        if (configStore.config.value.fipsShareRelay) {
+            carriedServeBytes.addAndGet(FipsBridge.status().counters.servedTx)
+        }
+        FipsBridge.stop()
+        start(persist = false)
+    }
 
     /** What one sharing session may send before it stops. Applies from the next start. */
     val serveLimitBytes: StateFlow<Long> = configStore.config
@@ -154,10 +171,7 @@ class FipsMeshManager @Inject constructor(
     /** The library takes the limit at start, so a running node restarts to apply it. */
     suspend fun setServeLimit(bytes: Long) = withContext(Dispatchers.IO) {
         configStore.updateAsync { it.copy(fipsServeLimitBytes = bytes) }
-        if (_status.value.running) {
-            FipsBridge.stop()
-            start(persist = false)
-        }
+        if (_status.value.running) restartKeepingAllowance()
         refresh()
     }
 
@@ -170,10 +184,7 @@ class FipsMeshManager @Inject constructor(
     suspend fun setPeers(npubs: List<String>) = withContext(Dispatchers.IO) {
         val cleaned = npubs.map { it.trim() }.filter { it.startsWith("npub1") }.distinct()
         configStore.updateAsync { it.copy(fipsPeers = cleaned) }
-        if (_status.value.running) {
-            FipsBridge.stop()
-            start(persist = false)
-        }
+        if (_status.value.running) restartKeepingAllowance()
         refresh()
     }
 
@@ -201,6 +212,8 @@ class FipsMeshManager @Inject constructor(
      */
     suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
         configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
+        // Switching sharing starts a new session with a full allowance.
+        carriedServeBytes.set(0)
         if (!_status.value.running) return@withContext
         if (enabled) {
             offerRelay()
@@ -227,18 +240,32 @@ class FipsMeshManager @Inject constructor(
         _status.value = status
         // The library already stopped sharing; turn the switch off to match, so
         // the next launch does not share again on its own.
-        if (status.capReached && configStore.config.value.fipsShareRelay) {
-            val mb = status.maxServeBytes shr 20
-            val limit = if (mb >= 1024 && mb % 1024 == 0L) "${mb / 1024} GB" else "$mb MB"
-            Log.i(TAG, "sharing off: serve limit $limit reached")
-            setShareRelay(false)
-            _lastError.value = "Sharing turned off: the mesh downloaded $limit from this phone, " +
-                "your limit for one session. Turn it on again to share more."
+        if (status.capReached && configStore.config.value.fipsShareRelay &&
+            turningOffForCap.compareAndSet(false, true)
+        ) {
+            try {
+                val mb = configStore.config.value.fipsServeLimitBytes shr 20
+                val limit = if (mb >= 1024 && mb % 1024 == 0L) "${mb / 1024} GB" else "$mb MB"
+                Log.i(TAG, "sharing off: serve limit $limit reached")
+                setShareRelay(false)
+                _lastError.value = "Sharing turned off: the mesh downloaded $limit from this phone, " +
+                    "your limit for one session. Turn it on again to share more."
+            } finally {
+                turningOffForCap.set(false)
+            }
         }
     }
 
     private companion object {
         const val TAG = "FipsMeshManager"
-        const val WATCH_INTERVAL_MS = 5_000L
+        // A limit that takes a gigabyte to reach needs no faster check.
+        const val WATCH_INTERVAL_MS = 30_000L
     }
 }
+
+/**
+ * What a restarted engine may still serve this session. Never 0: the library
+ * reads 0 as "use the default", which would hand out a fresh allowance.
+ */
+internal fun remainingServeBytes(limit: Long, alreadyServed: Long): Long =
+    (limit - alreadyServed).coerceAtLeast(1)

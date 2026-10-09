@@ -471,6 +471,20 @@ pub fn run(
     run_with(my_addr, mtu, to_mesh, from_mesh, &ctl)
 }
 
+/// Why a new mesh connection is turned away, if it is. No address means no
+/// per-visitor accounting, so it is turned away too.
+fn admit(
+    limits: &ServeLimits,
+    peer_tx: &HashMap<IpAddress, u64>,
+    splices: &[Splice],
+    addr: Option<IpAddress>,
+) -> Option<&'static str> {
+    match addr {
+        Some(a) => refuse(limits, peer_tx, splices, a),
+        None => Some("no remote address"),
+    }
+}
+
 /// Why a new connection from `addr` is turned away, if it is.
 fn refuse(
     limits: &ServeLimits,
@@ -596,12 +610,7 @@ pub fn run_with(
                     listeners.swap_remove(i);
                     let remote = s.remote_endpoint();
                     let addr = remote.map(|e| e.addr);
-                    // No address means no per-visitor accounting: turn it away.
-                    let why = match addr {
-                        Some(a) => refuse(&limits, &peer_tx, &splices, a),
-                        None => Some("no remote address"),
-                    };
-                    if let Some(why) = why {
+                    if let Some(why) = admit(&limits, &peer_tx, &splices, addr) {
                         println!("mesh refused {remote:?}: {why}");
                         c.served_refused.fetch_add(1, Ordering::Relaxed);
                         s.abort();
@@ -877,6 +886,18 @@ mod tests {
 
     fn check(head: &str) -> Option<std::result::Result<String, &'static str>> {
         check_head(head.as_bytes(), 0, &T).map(|r| r.map(|b| String::from_utf8(b).unwrap()))
+    }
+
+    #[test]
+    fn a_visitor_without_an_address_is_turned_away() {
+        let none: HashMap<IpAddress, u64> = HashMap::new();
+        let open = ServeLimits::default();
+        assert_eq!(admit(&open, &none, &[], None), Some("no remote address"));
+        let a = IpAddress::Ipv6(Ipv6Addr::LOCALHOST);
+        assert_eq!(admit(&open, &none, &[], Some(a)), None, "no caps set: let it in");
+        let capped = ServeLimits { per_peer_bytes: 10, ..Default::default() };
+        let spent: HashMap<IpAddress, u64> = [(a, 10)].into();
+        assert_eq!(admit(&capped, &spent, &[], Some(a)), Some("over its byte cap"));
     }
 
     #[test]

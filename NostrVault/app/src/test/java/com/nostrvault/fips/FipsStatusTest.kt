@@ -62,6 +62,13 @@ class FipsStatusTest {
         assertEquals(FipsCounters(1, 3, 10, 20, 2, 4, 30, 40), status.counters)
     }
 
+    @Test fun `a restart mid-session keeps what was already served`() {
+        assertEquals(700L shl 20, remainingServeBytes(1L shl 30, 324L shl 20))
+        // Spent in full: 1 byte, not 0 — 0 would make the library use its full default.
+        assertEquals(1L, remainingServeBytes(1L shl 30, 1L shl 30))
+        assertEquals(1L, remainingServeBytes(1L shl 30, 2L shl 30))
+    }
+
     @Test fun `a reached serve cap decodes, so sharing can be switched off`() {
         val status = FipsBridge.parseStatus(
             """{"running":true,"exported":[],"cap_reached":true,"max_serve_bytes":1073741824,""" +
