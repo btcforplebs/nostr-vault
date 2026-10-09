@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
@@ -12,6 +16,31 @@ import (
 // upload allocates Content-Length bytes up front and holds the whole blob in
 // memory, so the cap is checked before the body is touched.
 const meshMaxUploadBytes = 256 << 20
+
+// Mesh server limits. A peer that sends headers and then goes quiet must not
+// hold a goroutine or a connection open indefinitely. Vars so tests can shrink them.
+var (
+	meshReadHeaderTimeout = 10 * time.Second
+	meshIdleTimeout       = 60 * time.Second
+	// One blob in or out may take this long; set per request, since a
+	// server-wide write timeout would also cut long-lived websockets.
+	meshTransferTimeout = 30 * time.Minute
+)
+
+// meshUploadSlots: one owner upload at a time. khatru holds the whole blob
+// in memory, so this bounds the kiosk at one meshMaxUploadBytes buffer.
+var meshUploadSlots = make(chan struct{}, 1)
+
+// newMeshServer is the mesh port's HTTP server.
+func newMeshServer(addr string) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           http.HandlerFunc(meshHandler),
+		ReadHeaderTimeout: meshReadHeaderTimeout,
+		IdleTimeout:       meshIdleTimeout,
+		MaxHeaderBytes:    64 << 10,
+	}
+}
 
 type meshPeerKey struct{}
 
@@ -33,7 +62,8 @@ func isMeshConn(ctx context.Context) bool {
 // signature:
 //   - GET/HEAD /<sha256>[.ext]: read one blob (meshBlobHandler).
 //   - PUT/HEAD /upload: Blossom upload, owner-signed kind 24242 or 403
-//     (RejectUpload), at most meshMaxUploadBytes.
+//     (checked here, before khatru allocates), at most meshMaxUploadBytes,
+//     one at a time.
 //   - websocket on /: outbox relay, EVENTs signed by the owner only
 //     (meshOwnerEventsOnly), no queries.
 //
@@ -48,6 +78,13 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.URL.Path == "/upload" && (r.Method == http.MethodPut || r.Method == http.MethodHead):
+		// Check whose key signed the upload before khatru sees it: khatru
+		// allocates Content-Length bytes before its RejectUpload whitelist
+		// runs, so a throwaway key could make the kiosk hold 256 MB.
+		if code, msg := meshUploadAuthorized(r); code != 0 {
+			http.Error(w, msg, code)
+			return
+		}
 		if r.Method == http.MethodPut {
 			if r.ContentLength <= 0 {
 				http.Error(w, "Content-Length required", http.StatusLengthRequired)
@@ -58,6 +95,15 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, meshMaxUploadBytes)
+			select {
+			case meshUploadSlots <- struct{}{}:
+				defer func() { <-meshUploadSlots }()
+			default:
+				w.Header().Set("Retry-After", "30")
+				http.Error(w, "another upload is in progress", http.StatusServiceUnavailable)
+				return
+			}
+			setTransferDeadline(w)
 		}
 		// Keep the request on the Blossom mux: khatru routes websocket,
 		// NIP-11 and NIP-86 by header before the path.
@@ -72,8 +118,47 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Del("Content-Type")
 		dynamicRelayHandler(w, markMesh(r))
 	default:
+		setTransferDeadline(w)
 		meshBlobHandler(w, r)
 	}
+}
+
+func setTransferDeadline(w http.ResponseWriter) {
+	rc := http.NewResponseController(w)
+	deadline := time.Now().Add(meshTransferTimeout)
+	_ = rc.SetReadDeadline(deadline)
+	_ = rc.SetWriteDeadline(deadline)
+}
+
+// meshUploadAuthorized: the upload's kind 24242 must be signed by a
+// whitelisted key. Returns 0 when it is, else an HTTP status and reason.
+// khatru re-checks expiration, the "t" tag and the whitelist afterwards.
+func meshUploadAuthorized(r *http.Request) (int, string) {
+	token := r.Header.Get("Authorization")
+	if !strings.HasPrefix(token, "Nostr ") {
+		return http.StatusUnauthorized, "missing \"Authorization\" header"
+	}
+	raw, err := base64.StdEncoding.DecodeString(token[6:])
+	if err != nil {
+		return http.StatusBadRequest, "invalid base64 token"
+	}
+	var ev nostr.Event
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		return http.StatusBadRequest, "broken event"
+	}
+	if ev.Kind != 24242 {
+		return http.StatusForbidden, "invalid event"
+	}
+	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+		return http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
+	}
+	if !ev.CheckID() {
+		return http.StatusForbidden, "invalid event"
+	}
+	if ok, _ := ev.CheckSignature(); !ok {
+		return http.StatusForbidden, "invalid signature"
+	}
+	return 0, ""
 }
 
 func markMesh(r *http.Request) *http.Request {
@@ -113,4 +198,3 @@ func meshAwareConnectionLimiter(inner func(r *http.Request) bool) func(r *http.R
 		return local(r)
 	}
 }
-

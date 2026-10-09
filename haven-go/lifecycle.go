@@ -77,7 +77,7 @@ func (c *relayCycle) startMeshServer() {
 		return
 	}
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(meshHandler)}
+	srv := newMeshServer(addr)
 	c.meshServer = srv
 	c.spawn("mesh-http-server", func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -491,12 +491,13 @@ func initRelays(ctx context.Context) error {
 	)
 
 	relayCtx := ctx
-	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx) })
+	blastQ := openBlastQueue(blastPendingFile)
+	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
 	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
 		slog.Info("event stored")
 		// The relay's context, not the connection's: a sender that hangs up
 		// right after OK (the other phone over the mesh) must not cut the blast.
-		runsafe.Go("blast", func() { blastOrKeep(relayCtx, event) })
+		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
 		return nil
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.

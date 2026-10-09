@@ -14,7 +14,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,7 +116,9 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 
 // Size is checked before khatru allocates Content-Length bytes.
 func TestMeshUploadSizeChecks(t *testing.T) {
+	h := startHaven(t)
 	door := startMeshDoor(t)
+	auth := blossomUploadAuth(t, h.ownerSK, []byte("x"))
 	addr := strings.TrimPrefix(door, "http://")
 	status := func(head string) string {
 		conn, err := net.Dial("tcp", addr)
@@ -126,10 +131,10 @@ func TestMeshUploadSizeChecks(t *testing.T) {
 		line, _ := bufio.NewReader(conn).ReadString('\n')
 		return line
 	}
-	if got := status(fmt.Sprintf("PUT /upload HTTP/1.1\r\nHost: x\r\nContent-Length: %d\r\n\r\n", meshMaxUploadBytes+1)); !strings.Contains(got, " 413 ") {
+	if got := status(fmt.Sprintf("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Length: %d\r\n\r\n", auth, meshMaxUploadBytes+1)); !strings.Contains(got, " 413 ") {
 		t.Errorf("oversize upload: %q, want 413", got)
 	}
-	if got := status("PUT /upload HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"); !strings.Contains(got, " 411 ") {
+	if got := status("PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: " + auth + "\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"); !strings.Contains(got, " 411 ") {
 		t.Errorf("upload without length: %q, want 411", got)
 	}
 }
@@ -213,16 +218,15 @@ func TestMeshConnectionsFaceTheLimiter(t *testing.T) {
 // A note no relay took survives a restart and goes out once a relay answers.
 func TestBlastQueueSurvivesRestart(t *testing.T) {
 	t.Chdir(t.TempDir())
-	prevConfig, prevPool, prevQueue := config, pool, pendingBlasts.snapshot()
-	t.Cleanup(func() {
-		config, pool = prevConfig, prevPool
-		pendingBlasts = blastQueue{loaded: true, events: prevQueue}
-	})
+	prevConfig, prevPool := config, pool
+	t.Cleanup(func() { config, pool = prevConfig, prevPool })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pool = nostr.NewSimplePool(ctx)
-	pendingBlasts = blastQueue{}
 
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	config.WhitelistedPubKeys = map[string]struct{}{pk: {}}
 	dead, _ := net.Listen("tcp", "127.0.0.1:0")
 	deadURL := "ws://" + dead.Addr().String()
 	dead.Close()
@@ -230,12 +234,12 @@ func TestBlastQueueSurvivesRestart(t *testing.T) {
 	config.BlastrTimeoutSeconds = 1
 
 	ev := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "kiosk offline"}
-	ev.Sign(nostr.GeneratePrivateKey())
-	blastOrKeep(ctx, &ev)
+	ev.Sign(sk)
+	blastOrKeep(ctx, openBlastQueue(blastPendingFile), &ev)
 
-	pendingBlasts = blastQueue{} // restart: only the file remains
-	if q := pendingBlasts.snapshot(); len(q) != 1 || q[0].ID != ev.ID {
-		t.Fatalf("queue after restart: %v", q)
+	q := openBlastQueue(blastPendingFile) // restart: only the file remains
+	if s := q.snapshot(); len(s) != 1 || s[0].Event.ID != ev.ID {
+		t.Fatalf("queue after restart: %v", s)
 	}
 
 	got := make(chan string, 1)
@@ -247,13 +251,13 @@ func TestBlastQueueSurvivesRestart(t *testing.T) {
 	srv := httptest.NewServer(live)
 	defer srv.Close()
 
-	retryPendingOnce(ctx) // still offline: stays queued
-	if len(pendingBlasts.snapshot()) != 1 {
+	retryPendingOnce(ctx, q) // still offline: stays queued
+	if len(q.snapshot()) != 1 {
 		t.Fatal("note dropped while every relay was down")
 	}
 
 	config.BlastrRelays = []string{"ws" + strings.TrimPrefix(srv.URL, "http")}
-	retryPendingOnce(ctx)
+	retryPendingOnce(ctx, q)
 	select {
 	case id := <-got:
 		if id != ev.ID {
@@ -262,11 +266,165 @@ func TestBlastQueueSurvivesRestart(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("queued note never reached the relay")
 	}
-	if q := pendingBlasts.snapshot(); len(q) != 0 {
-		t.Fatalf("queue after send: %d left", len(q))
+	if s := q.snapshot(); len(s) != 0 {
+		t.Fatalf("queue after send: %d left", len(s))
 	}
-	data, _ := os.ReadFile(blastPendingPath)
+	data, _ := os.ReadFile(blastPendingFile)
 	if strings.Contains(string(data), ev.ID) {
 		t.Fatal("sent note still on disk")
+	}
+}
+
+// Age counts from when the note was queued, not its created_at; notes that
+// are not this account's (another account's file, tampering) never go out.
+func TestBlastQueueAgeAndOwnership(t *testing.T) {
+	t.Chdir(t.TempDir())
+	prevConfig := config
+	t.Cleanup(func() { config = prevConfig })
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	config.WhitelistedPubKeys = map[string]struct{}{pk: {}}
+	// Nothing listens here, so a retry that does try leaves the note queued.
+	dead, _ := net.Listen("tcp", "127.0.0.1:0")
+	config.BlastrRelays = []string{"ws://" + dead.Addr().String()}
+	dead.Close()
+	config.BlastrTimeoutSeconds = 1
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	prevPool := pool
+	pool = nostr.NewSimplePool(ctx)
+	t.Cleanup(func() { pool = prevPool })
+
+	oldNote := nostr.Event{Kind: 1, CreatedAt: nostr.Timestamp(time.Now().Add(-30 * 24 * time.Hour).Unix()), Content: "imported"}
+	oldNote.Sign(sk)
+	stale := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "queued long ago"}
+	stale.Sign(sk)
+	foreign := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "other account"}
+	foreign.Sign(nostr.GeneratePrivateKey())
+	tampered := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "signed"}
+	tampered.Sign(sk)
+	tampered.Content = "changed"
+
+	q := openBlastQueue(blastPendingFile)
+	now := time.Now().Unix()
+	q.items = []pendingBlast{
+		{Event: oldNote, QueuedAt: now},
+		{Event: stale, QueuedAt: now - int64(8*24*time.Hour/time.Second)},
+		{Event: foreign, QueuedAt: now},
+		{Event: tampered, QueuedAt: now},
+	}
+	retryPendingOnce(ctx, q)
+	left := q.snapshot()
+	if len(left) != 1 || left[0].Event.ID != oldNote.ID {
+		ids := []string{}
+		for _, p := range left {
+			ids = append(ids, p.Event.Content)
+		}
+		t.Fatalf("left %v, want only the old-created_at note that was queued just now", ids)
+	}
+}
+
+// The queue file is bound to the data root it was opened in, so a blast that
+// finishes after an account switch (chdir) does not write into the new account.
+func TestBlastQueueStaysInItsAccount(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	t.Chdir(a)
+	q := openBlastQueue(blastPendingFile)
+	t.Chdir(b)
+	ev := nostr.Event{Kind: 1, CreatedAt: nostr.Now()}
+	ev.Sign(nostr.GeneratePrivateKey())
+	q.add(&ev)
+	if _, err := os.Stat(filepath.Join(b, blastPendingFile)); err == nil {
+		t.Fatal("account A's note was written into account B's data root")
+	}
+	if _, err := os.Stat(filepath.Join(a, blastPendingFile)); err != nil {
+		t.Fatal("note not saved in its own account")
+	}
+}
+
+// Tron's proof: strangers claiming 250 MB uploads with a valid signature made
+// khatru allocate before its whitelist ran.
+func TestMeshStrangerUploadAllocatesNothing(t *testing.T) {
+	startHaven(t)
+	door := startMeshDoor(t)
+	addr := strings.TrimPrefix(door, "http://")
+	const claimed = 250 << 20
+	const peers = 8
+
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var wg sync.WaitGroup
+	for i := 0; i < peers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			auth := blossomUploadAuth(t, nostr.GeneratePrivateKey(), []byte("x"))
+			fmt.Fprintf(conn, "PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", auth, claimed, strings.Repeat("A", 60))
+			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+			line, _ := bufio.NewReader(conn).ReadString('\n')
+			if !strings.Contains(line, " 403 ") {
+				t.Errorf("stranger upload: %q, want 403", line)
+			}
+		}()
+	}
+	wg.Wait()
+	runtime.ReadMemStats(&after)
+	if grew := int64(after.TotalAlloc) - int64(before.TotalAlloc); grew > claimed/4 {
+		t.Fatalf("strangers made the kiosk allocate %d MB", grew>>20)
+	}
+}
+
+// Headers then silence: the mesh server drops the connection.
+func TestMeshServerDropsSilentPeers(t *testing.T) {
+	saved := meshReadHeaderTimeout
+	meshReadHeaderTimeout = 300 * time.Millisecond
+	defer func() { meshReadHeaderTimeout = saved }()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newMeshServer(ln.Addr().String())
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprint(conn, "GET / HTTP/1.1\r\nHost: x\r\n") // never finishes the headers
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	start := time.Now()
+	_, err = io.ReadAll(conn)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		t.Fatal("silent peer still connected after 3 s")
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("silent peer held the connection too long")
+	}
+}
+
+// One upload at a time: a second owner upload waits its turn (503 + Retry-After).
+func TestMeshOneUploadAtATime(t *testing.T) {
+	h := startHaven(t)
+	door := startMeshDoor(t)
+	meshUploadSlots <- struct{}{} // an upload is in progress
+	defer func() { <-meshUploadSlots }()
+	body := []byte("second photo")
+	r, _ := http.NewRequest(http.MethodPut, door+"/upload", bytes.NewReader(body))
+	r.Header.Set("Authorization", blossomUploadAuth(t, h.ownerSK, body))
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("second upload: %d, want 503 with Retry-After", resp.StatusCode)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 // the owner's notes out once it is back.
 
 var (
-	blastPendingPath    = "blast_pending.json" // relative to the relay data root, like wot_cache.json
+	blastPendingFile    = "blast_pending.json" // in the relay data root, like wot_cache.json
 	blastRetryInterval  = time.Minute
 	blastRetryFirstWait = 10 * time.Second
 )
@@ -27,43 +28,48 @@ const (
 	blastPendingMaxAge = 7 * 24 * time.Hour
 )
 
-type blastQueue struct {
-	mu     sync.Mutex
-	loaded bool
-	events []nostr.Event
+type pendingBlast struct {
+	Event    nostr.Event `json:"event"`
+	QueuedAt int64       `json:"queued_at"` // unix seconds; age counts from here, not created_at
 }
 
-var pendingBlasts blastQueue
+// blastQueue belongs to one relay start: initRelays opens it with the
+// absolute path of the current account's data root, so a blast still in
+// flight after an account switch lands in its own account's file.
+type blastQueue struct {
+	mu    sync.Mutex
+	path  string
+	items []pendingBlast
+}
 
-// loadLocked reads the queue from disk once per process.
-func (q *blastQueue) loadLocked() {
-	if q.loaded {
-		return
-	}
-	q.loaded = true
-	data, err := os.ReadFile(blastPendingPath)
+func openBlastQueue(file string) *blastQueue {
+	path, err := filepath.Abs(file)
 	if err != nil {
-		return
+		path = file
 	}
-	var events []nostr.Event
-	if err := json.Unmarshal(data, &events); err != nil {
+	q := &blastQueue{path: path}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return q
+	}
+	if err := json.Unmarshal(data, &q.items); err != nil {
 		slog.Warn("⚠️ unreadable blast queue, starting empty", "error", err)
-		return
+		q.items = nil
 	}
-	q.events = events
+	return q
 }
 
 func (q *blastQueue) saveLocked() {
-	data, err := json.Marshal(q.events)
+	data, err := json.Marshal(q.items)
 	if err != nil {
 		return
 	}
-	tmp := blastPendingPath + ".tmp"
+	tmp := q.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		slog.Error("🚫 could not save blast queue", "error", err)
 		return
 	}
-	if err := os.Rename(tmp, blastPendingPath); err != nil {
+	if err := os.Rename(tmp, q.path); err != nil {
 		_ = os.Remove(tmp)
 		slog.Error("🚫 could not save blast queue", "error", err)
 	}
@@ -72,51 +78,51 @@ func (q *blastQueue) saveLocked() {
 func (q *blastQueue) add(ev *nostr.Event) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.loadLocked()
-	for _, e := range q.events {
-		if e.ID == ev.ID {
+	for _, p := range q.items {
+		if p.Event.ID == ev.ID {
 			return
 		}
 	}
-	q.events = append(q.events, *ev)
-	if len(q.events) > blastPendingMax {
-		q.events = q.events[len(q.events)-blastPendingMax:]
+	if len(q.items) >= blastPendingMax {
+		// Keep the ones already waiting: they have waited longest to get out.
+		slog.Warn("⚠️ blast queue full, not keeping note", "id", ev.ID)
+		return
 	}
+	q.items = append(q.items, pendingBlast{Event: *ev, QueuedAt: time.Now().Unix()})
 	q.saveLocked()
-	slog.Info("📮 note kept for a later blast", "id", ev.ID, "pending", len(q.events))
+	slog.Info("📮 note kept for a later blast", "id", ev.ID, "pending", len(q.items))
 }
 
 func (q *blastQueue) remove(id string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for i, e := range q.events {
-		if e.ID == id {
-			q.events = append(q.events[:i], q.events[i+1:]...)
+	for i, p := range q.items {
+		if p.Event.ID == id {
+			q.items = append(q.items[:i], q.items[i+1:]...)
 			q.saveLocked()
 			return
 		}
 	}
 }
 
-func (q *blastQueue) snapshot() []nostr.Event {
+func (q *blastQueue) snapshot() []pendingBlast {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.loadLocked()
-	return append([]nostr.Event(nil), q.events...)
+	return append([]pendingBlast(nil), q.items...)
 }
 
 // blastOrKeep blasts ev and queues it if no relay took it.
-func blastOrKeep(ctx context.Context, ev *nostr.Event) {
+func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 	if len(config.BlastrRelays) == 0 {
 		return
 	}
 	if blast(ctx, ev) == 0 {
-		pendingBlasts.add(ev)
+		q.add(ev)
 	}
 }
 
 // retryPendingBlasts runs for the relay's lifetime, re-blasting queued notes.
-func retryPendingBlasts(ctx context.Context) {
+func retryPendingBlasts(ctx context.Context, q *blastQueue) {
 	wait := blastRetryFirstWait
 	for {
 		select {
@@ -125,26 +131,35 @@ func retryPendingBlasts(ctx context.Context) {
 		case <-time.After(wait):
 		}
 		wait = blastRetryInterval
-		retryPendingOnce(ctx)
+		retryPendingOnce(ctx, q)
 	}
 }
 
-func retryPendingOnce(ctx context.Context) {
+func retryPendingOnce(ctx context.Context, q *blastQueue) {
 	if len(config.BlastrRelays) == 0 {
 		return
 	}
-	cutoff := nostr.Timestamp(time.Now().Add(-blastPendingMaxAge).Unix())
-	for _, ev := range pendingBlasts.snapshot() {
+	cutoff := time.Now().Add(-blastPendingMaxAge).Unix()
+	for _, p := range q.snapshot() {
 		if ctx.Err() != nil {
 			return
 		}
-		if ev.CreatedAt < cutoff {
+		ev := p.Event
+		// The file is on disk: check it is still a valid note from this
+		// account before sending it anywhere.
+		_, whitelisted := config.WhitelistedPubKeys[ev.PubKey]
+		if ok, _ := ev.CheckSignature(); !ok || !whitelisted {
+			slog.Warn("🗑️ dropping a queued note that is not this account's", "id", ev.ID)
+			q.remove(ev.ID)
+			continue
+		}
+		if p.QueuedAt < cutoff {
 			slog.Warn("🗑️ dropping a note that never reached a relay", "id", ev.ID)
-			pendingBlasts.remove(ev.ID)
+			q.remove(ev.ID)
 			continue
 		}
 		if blast(ctx, &ev) > 0 {
-			pendingBlasts.remove(ev.ID)
+			q.remove(ev.ID)
 		}
 	}
 }
