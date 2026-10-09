@@ -122,9 +122,11 @@ enum RelayConfiguration {
         #if os(iOS)
         let enableTLS = "1"
         let relayBindAddress = "127.0.0.1"
+        let meshPlainPort = String(config.meshPlainPort)
         #else
         let enableTLS = "0"
         let relayBindAddress = "0.0.0.0"
+        let meshPlainPort = ""
         #endif
 
         return [
@@ -242,6 +244,7 @@ enum RelayConfiguration {
 
             // TLS
             "HAVEN_ENABLE_TLS": enableTLS,
+            "HAVEN_MESH_PLAIN_PORT": meshPlainPort,
         ]
     }
 

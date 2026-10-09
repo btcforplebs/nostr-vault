@@ -34,8 +34,11 @@ type relayCycle struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	server *http.Server // nil in import mode
-	pool   *nostr.SimplePool
-	wg     sync.WaitGroup
+	// meshServer serves the same handler as plain HTTP on loopback while
+	// server speaks TLS (iOS). The FIPS mesh tunnel carries plain HTTP.
+	meshServer *http.Server
+	pool       *nostr.SimplePool
+	wg         sync.WaitGroup
 }
 
 // spawn runs fn on a goroutine registered with the cycle's WaitGroup and

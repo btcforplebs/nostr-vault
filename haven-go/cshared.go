@@ -306,6 +306,19 @@ func StartRelayC(importMode bool) {
 			}
 		})
 
+		// iOS serves TLS for App Transport Security, but the FIPS mesh tunnel
+		// carries plain HTTP: give it the same handler on a loopback-only port.
+		if port, err := strconv.Atoi(os.Getenv("HAVEN_MESH_PLAIN_PORT")); err == nil && port > 0 && certPath != "" {
+			meshAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+			cycle.meshServer = &http.Server{Addr: meshAddr, Handler: mux}
+			cycle.spawn("mesh-http-server", func() {
+				if err := cycle.meshServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Printf("🚫 mesh HTTP server exited: %v", err)
+				}
+			})
+			log.Printf("🔗 mesh listening at http://%s", meshAddr)
+		}
+
 		// Brief delay to ensure server binds to port before returning
 		time.Sleep(100 * time.Millisecond)
 
@@ -390,6 +403,10 @@ func StopRelayC() {
 				log.Printf("⚠️ HTTP server shutdown error (force-closing): %v", err)
 				c.server.Close() // hard close if graceful timed out
 			}
+		}
+		if c.meshServer != nil {
+			// Its handlers are the same ones server just drained; close outright.
+			c.meshServer.Close()
 		}
 		// All background goroutines are context-driven, so this normally
 		// returns quickly; if something straggles, closing the DBs after a

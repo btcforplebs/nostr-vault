@@ -14,6 +14,9 @@ struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
+    /// Loopback port where the relay also answers plain HTTP on iOS, whose
+    /// main port is TLS-only. The FIPS mesh tunnel carries plain HTTP.
+    var meshPlainPort: Int { relayPort + 1 }
     var dbEngine: String = "badger"
     var blossomPath: String = "blossom/"
     var logLevel: String = "INFO"
