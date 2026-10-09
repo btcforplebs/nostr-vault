@@ -448,12 +448,16 @@ extension MediaGalleryView {
         guard !sha256.isEmpty else { return }
         Task {
             let service = BlossomService(configService: configService, nostrService: nostrService)
-            let success = await service.deleteFromMirrors(sha256: sha256)
+            let report = await service.deleteFromMirrorsReport(sha256: sha256)
             await MainActor.run {
-                if success {
+                if report.allDeleted {
                     ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+                } else if report.failed.isEmpty {
+                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", color: .red.opacity(0.85))
                 } else {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Failed to delete from mirrors", color: .red.opacity(0.85))
+                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                                   message: "Still on " + ListFormatter.localizedString(byJoining: report.failedHosts),
+                                                   color: .red.opacity(0.85), seconds: 6)
                 }
             }
         }
@@ -465,11 +469,12 @@ extension MediaGalleryView {
         Task {
             let service = BlossomService(configService: configService, nostrService: nostrService)
             async let local = service.deleteFromLocal(sha256: sha256)
-            async let mirrors = service.deleteFromMirrors(sha256: sha256)
-            let (localOk, mirrorsOk) = await (local, mirrors)
+            async let mirrors = service.deleteFromMirrorsReport(sha256: sha256)
+            let (localOk, report) = await (local, mirrors)
+            let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localOk, mirrors: report)
             await MainActor.run {
-                let succeeded = localOk || mirrorsOk
-                if succeeded {
+                // Only drop the tile once the device copy is really gone.
+                if localOk {
                     // Instantly clean up local state
                     self.blossomCache.items.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
                     self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
@@ -484,14 +489,11 @@ extension MediaGalleryView {
                     scheduleUpdateDisplayData()
                 }
 
-                if localOk && mirrorsOk {
-                    ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
-                } else if localOk {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Deleted locally (Mirrors failed)", color: .orange.opacity(0.85))
-                } else if mirrorsOk {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Deleted from mirrors, local failed", color: .orange.opacity(0.85))
+                if let leftover {
+                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: leftover,
+                                                   color: .orange.opacity(0.85), seconds: 6)
                 } else {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Failed to delete", color: .red.opacity(0.85))
+                    ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
                 }
             }
         }
