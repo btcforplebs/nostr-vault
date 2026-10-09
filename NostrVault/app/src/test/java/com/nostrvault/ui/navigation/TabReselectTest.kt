@@ -8,23 +8,23 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Relay / Media tab reselect reaches only that tab's screen (iOS #275). */
+/** Vault / WOT tab reselect reaches only that tab's screen (iOS #275). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TabReselectTest {
     @Test
     fun eachTabHearsOnlyItsOwnReselect() = runTest {
         val relay = mutableListOf<Screen>()
-        val media = mutableListOf<Screen>()
+        val wot = mutableListOf<Screen>()
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         val a = launch(dispatcher) { TabReselect.of(Screen.Dashboard).toList(relay) }
-        val b = launch(dispatcher) { TabReselect.of(Screen.MediaGallery).toList(media) }
+        val b = launch(dispatcher) { TabReselect.of(Screen.WOT).toList(wot) }
 
         TabReselect.request(Screen.Dashboard)
-        TabReselect.request(Screen.MediaGallery)
+        TabReselect.request(Screen.WOT)
         TabReselect.request(Screen.Dashboard)
 
         assertEquals(listOf(Screen.Dashboard, Screen.Dashboard), relay)
-        assertEquals(listOf(Screen.MediaGallery), media)
+        assertEquals(listOf(Screen.WOT), wot)
         a.cancel(); b.cancel()
     }
 }

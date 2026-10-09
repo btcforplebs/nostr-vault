@@ -26,6 +26,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -224,12 +229,49 @@ fun TrustWebDialog(
     }
 }
 
+/**
+ * The WOT tab: the globe with nobody picked. You sit at the core with your
+ * follows around you and the rest of your web as the haze. Tapping a face
+ * centres on them and shows how they reach you: the same globe a post's WOT
+ * button opens, pointed back at you. Tapping the tab again ([reselects])
+ * brings it back to you. Port of iOS WOTTabView.
+ */
+@Composable
+fun TrustWebTab(
+    onProfileClick: (String) -> Unit,
+    reselects: kotlinx.coroutines.flow.Flow<*>,
+    /** The floating tab bar's height, so the footer's words sit above it. */
+    bottomInset: androidx.compose.ui.unit.Dp,
+) {
+    val trust = rememberTrustPathServices().trustPathService()
+    val me by trust.meUpdates.collectAsState()
+    Box(Modifier.fillMaxSize().background(Color.Black).background(SpaceBrush)) {
+        // A new account draws a new globe; the globe keeps up with your follows itself.
+        if (me.isNotEmpty()) androidx.compose.runtime.key(me) {
+            TrustWebContent(
+                author = me,
+                // The path from you to you: no bridges, nothing to look up.
+                path = TrustPath.resolve(me, me, emptySet(), emptySet(), emptyList()),
+                onProfileClick = onProfileClick,
+                onDismiss = null,
+                isWOTTab = true,
+                reselects = reselects,
+                bottomInset = bottomInset,
+            )
+        }
+    }
+}
+
 @Composable
 private fun TrustWebContent(
     author: String,
     path: TrustPath,
     onProfileClick: ((String) -> Unit)?,
-    onDismiss: () -> Unit,
+    /** Null in the WOT tab, which has nothing to close. */
+    onDismiss: (() -> Unit)?,
+    isWOTTab: Boolean = false,
+    reselects: kotlinx.coroutines.flow.Flow<*>? = null,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val services = rememberTrustPathServices()
     val trust = services.trustPathService()
@@ -239,7 +281,7 @@ private fun TrustWebContent(
     val scope = rememberCoroutineScope()
 
     val me = remember { trust.me }
-    val myFollows = remember { trust.myFollows().toSet() }
+    var myFollows by remember { mutableStateOf(trust.myFollows().toSet()) }
     var crumbs by remember { mutableStateOf(listOf(me)) }
     var frames by remember { mutableStateOf(mapOf(me to TrustFrame(me, trust.myFollows(), true, path))) }
     /** The faint outer shell around you: your web of trust past your follows. */
@@ -268,7 +310,7 @@ private fun TrustWebContent(
 
     // Again when the trust graph lands: on a cold start it's still loading, and
     // a haze computed then stays empty all session.
-    LaunchedEffect(trustGraphUpdate) {
+    LaunchedEffect(trustGraphUpdate, myFollows) {
         val graph = trust.myTrustGraph()
         val inner = myFollows + me + author
         haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner) }
@@ -356,6 +398,27 @@ private fun TrustWebContent(
         peek = null
         showingList = false
         onProfileClick?.invoke(pubkey)
+    }
+
+    if (isWOTTab) {
+        // The tab lives on, so it follows your follow list as it loads or
+        // changes, in place, so you stay wherever you'd gone on the globe.
+        LaunchedEffect(Unit) {
+            trust.followUpdates.collect { follows ->
+                val set = follows.toSet()
+                if (set == myFollows) return@collect
+                myFollows = set
+                frames = frames + (me to TrustFrame(me, follows, true, path))
+            }
+        }
+        // Tapping the tab again brings the globe back to you.
+        LaunchedEffect(reselects) {
+            reselects?.collect {
+                peek = null
+                showingList = false
+                jump(0)
+            }
+        }
     }
 
     // Back steps along the breadcrumbs before it closes the globe.
@@ -467,7 +530,15 @@ private fun TrustWebContent(
         }
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+    val insets = if (isWOTTab) {
+        // The floating tab bar covers the bottom edge, system inset included.
+        Modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .padding(bottom = bottomInset)
+    } else {
+        Modifier.safeDrawingPadding()
+    }
+    Column(Modifier.fillMaxSize().then(insets)) {
         TopBar(
             title = if (centerKey == me) "Web of Trust" else name(centerKey),
             onDone = onDismiss,
@@ -607,6 +678,9 @@ private fun explainer(
         !frame.listFound -> append("No relay checked had ${name(frame.center)}'s follow list, so their globe can't be drawn.")
         lookingDeeper -> append("Looking two steps further out. This downloads a few MB of follow lists.")
         deeperFailed -> append("Couldn't reach the relays to look further out.")
+        // The WOT tab, before anyone is picked.
+        frame.center == author && author == me ->
+            append("Everyone you follow, and your web around them. Tap anyone to see how they reach you.")
         frame.center == author -> append("Everyone $them follows. Tap a face to see their path.")
         frame.bridges.isNotEmpty() -> when {
             center != null -> {
@@ -649,6 +723,9 @@ private fun explainer(
 /** The globe's words for TalkBack, which reads the picture as one element. */
 private fun summary(frame: TrustFrame?, me: String, author: String, centerKey: String, name: (String) -> String): String {
     if (frame == null) return "Loading who ${name(centerKey)} follows."
+    if (frame.center == me && author == me) {
+        return "You, the ${frame.ring.size} people you follow, and your web around them."
+    }
     val them = name(author)
     val who = if (frame.center == me) "you follow" else "${name(frame.center)} follows"
     if (frame.bridges.isEmpty()) {
@@ -662,11 +739,13 @@ private fun summary(frame: TrustFrame?, me: String, author: String, centerKey: S
 // ── Small pieces ─────────────────────────────────────────────────────
 
 @Composable
-private fun TopBar(title: String, onDone: () -> Unit, onList: (() -> Unit)?) {
+private fun TopBar(title: String, onDone: (() -> Unit)?, onList: (() -> Unit)?) {
     val accent = LocalNostrVaultColors.current.primary
     Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp)) {
-        TextButton(onClick = onDone, modifier = Modifier.align(Alignment.CenterStart)) {
-            Text("Done", color = accent, fontSize = 16.sp)
+        if (onDone != null) {
+            TextButton(onClick = onDone, modifier = Modifier.align(Alignment.CenterStart)) {
+                Text("Done", color = accent, fontSize = 16.sp)
+            }
         }
         Text(
             title,

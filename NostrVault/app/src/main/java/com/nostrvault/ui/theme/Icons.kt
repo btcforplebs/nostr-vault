@@ -54,6 +54,8 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -226,8 +228,10 @@ object NostrVaultIcons {
     // Tab bar (iOS BottomTabBar)
     val TabFeed: ImageVector = Icons.Filled.People           // person.2.wave.2
     val TabMedia: ImageVector = Icons.Filled.PhotoLibrary    // photo.on.rectangle
-    @Suppress("DEPRECATION")
-    val TabRelay: ImageVector = Icons.Filled.Feed            // doc.text.image
+    /** The Vault tab and its Vault Dashboard (Media and Relay in one). */
+    val TabVault: ImageVector = Icons.Filled.Inventory2      // lock.rectangle.stack
+    /** The Vault tab's Highlights list (NIP-84). */
+    val Highlights: ImageVector = Icons.Filled.BorderColor   // highlighter
     val ChevronDown: ImageVector = Icons.Filled.KeyboardArrowDown // chevron.down
     val MarkAllRead: ImageVector = Icons.Filled.DoneAll      // checkmark.circle
     val Browse: ImageVector = Icons.Filled.Explore           // magnifyingglass.circle

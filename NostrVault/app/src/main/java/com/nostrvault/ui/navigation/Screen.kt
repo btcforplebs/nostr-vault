@@ -8,7 +8,8 @@ sealed class Screen(val route: String) {
     // Bottom nav tabs
     data object Feed : Screen("feed")
     data object Search : Screen("search")
-    data object MediaGallery : Screen("media")
+    /** The Web of Trust globe centred on you (iOS WOTTabView). */
+    data object WOT : Screen("wot")
     data object DMInbox : Screen("dm_inbox")
     data object Profile : Screen("profile/{pubkey}") {
         fun createRoute(pubkey: String) = "profile/$pubkey"
@@ -85,10 +86,13 @@ sealed class Screen(val route: String) {
     data object HavenRelaySettings : Screen("settings/haven_relay")
 
     // Dashboard
+    /**
+     * The Vault tab: the relay's lists and the Blossom gallery in one, the
+     * half picked by [VaultSection]. The route keeps the old Relay tab's name.
+     */
     data object Dashboard : Screen("dashboard")
     /** The feed dashboard: your follows' last 24 hours (feed menu > Dashboard). */
     data object FeedDashboard : Screen("feed_dashboard")
-    data object BlossomDashboard : Screen("blossom_dashboard")
     data object LogViewer : Screen("log_viewer")
     data object RelayActivity : Screen("relay_activity")
 

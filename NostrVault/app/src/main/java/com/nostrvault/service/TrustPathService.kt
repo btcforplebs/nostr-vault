@@ -36,6 +36,12 @@ class TrustPathService @Inject constructor(
     /** Who you follow, as the feed knows it. */
     fun myFollows(): List<String> = feedService.followedPubkeys.value
 
+    /** You, live: the WOT tab draws a new globe when the account switches. */
+    val meUpdates: StateFlow<String> get() = configStore.activeAccountHexPubkey
+
+    /** Who you follow, live: the WOT tab's globe keeps up as the list loads or changes. */
+    val followUpdates: StateFlow<List<String>> get() = feedService.followedPubkeys
+
     /** Your trust graph plus your follows; empty until the graph has loaded. */
     fun myTrustGraph(): Set<String> = feedService.relayTabTrustedPubkeys()
 

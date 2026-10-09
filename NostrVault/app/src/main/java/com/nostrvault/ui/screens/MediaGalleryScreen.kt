@@ -555,7 +555,12 @@ enum class MediaLayoutMode { GRID, LIST }
 fun MediaGalleryScreen(
     onMediaClick: (Int) -> Unit,
     onNoteClick: (String) -> Unit,
-    onBlossomClick: () -> Unit,
+    /** The Vault Dashboard (relay and Blossom in one), which the Vault tab presents. */
+    onOpenDashboard: () -> Unit,
+    /** The Vault tab's mode pill, on Media. */
+    modePill: @Composable () -> Unit,
+    /** The relay's health, which colours the Vault button as on the relay half. */
+    dashboardColor: androidx.compose.ui.graphics.Color,
     feedService: FeedService,
     viewModel: MediaGalleryViewModel = hiltViewModel(),
     /** The viewer's save and delete actions, reused by the long-press menu. */
@@ -589,9 +594,10 @@ fun MediaGalleryScreen(
             if (isGrid) gridState.firstVisibleItemScrollOffset else listState.firstVisibleItemScrollOffset
         },
     )
-    // Tapping the Media tab again goes to the top of the grid or list (iOS #275).
+    // Tapping the Vault tab again on Media goes to the top of the grid or list
+    // (iOS #275). Only the half on screen is composed, so only it hears this.
     LaunchedEffect(isGrid) {
-        com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.MediaGallery).collect {
+        com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.Dashboard).collect {
             if (isGrid) gridState.animateScrollToItem(0) else listState.animateScrollToItem(0)
         }
     }
@@ -669,19 +675,15 @@ fun MediaGalleryScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    // Leading: media type filter icons. No "Other" chip, as on
-                    // iOS: the row now also holds the sort menu, and All still
-                    // includes those files.
-                    MediaTypeFilterPill(
-                        selection = typeSelection,
-                        onSelect = onTypeTap,
-                        filters = MediaTypeFilter.entries - MediaTypeFilter.OTHER,
-                    )
+                    // Leading: the Vault tab's mode pill. The type filters that
+                    // sat here fold into a menu on the right (iOS mediaTypeMenu).
+                    modePill()
 
                     Spacer(Modifier.weight(1f))
 
-                    // Sort + layout toggle + upload
+                    // Type + sort + layout toggle + upload
                     GlassPill {
+                        MediaTypeMenu(selection = typeSelection, onSelect = onTypeTap)
                         Box {
                             IconButton(
                                 onClick = { showSortMenu = true },
@@ -810,9 +812,9 @@ fun MediaGalleryScreen(
             val folded by rememberChromeFolded()
             Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
-                    onClick = onBlossomClick,
+                    onClick = onOpenDashboard,
                     modifier = Modifier.floatingRowButton(),
-                    color = colors.primary,
+                    color = dashboardColor,
                     shape = CircleShape,
                     shadowElevation = 8.dp,
                 ) {
@@ -823,14 +825,14 @@ fun MediaGalleryScreen(
                             .padding(horizontal = 18.dp),
                     ) {
                         Icon(
-                            imageVector = NostrVaultIcons.Blossom,
+                            imageVector = NostrVaultIcons.TabVault,
                             contentDescription = null,
                             tint = PrimaryText,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Blossom",
+                            text = "Vault",
                             color = PrimaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -1586,6 +1588,54 @@ internal fun MediaTypeFilterPill(
                 accentColor = colors.primary,
                 onClick = { onSelect(filter) },
             )
+        }
+    }
+}
+
+/**
+ * The type filters as one menu, for the Vault tab, where the mode pill takes
+ * the leading cluster: All Media, then Photos, Videos and GIFs, ticked when
+ * on. Same taps as [MediaTypeFilterPill] (iOS mediaTypeMenu).
+ */
+@Composable
+private fun MediaTypeMenu(
+    selection: Set<MediaTypeFilter>,
+    onSelect: (MediaTypeFilter) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val all = MediaTypeSelection.isAll(selection)
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = NostrVaultIcons.GridLayout,
+                contentDescription = if (all) "Media type: all" else "Media type: filtered",
+                tint = if (all) SecondaryText else colors.primary,
+                modifier = Modifier.size(25.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            for ((filter, label, icon) in listOf(
+                Triple(MediaTypeFilter.ALL, "All Media", NostrVaultIcons.GridLayout),
+                Triple(MediaTypeFilter.PHOTO, "Photos", NostrVaultIcons.Media),
+                Triple(MediaTypeFilter.VIDEO, "Videos", NostrVaultIcons.Video),
+                Triple(MediaTypeFilter.GIF, "GIFs", NostrVaultIcons.Gif),
+            )) {
+                // All ticks only when everything is on; a type, only when narrowed.
+                val on = if (filter == MediaTypeFilter.ALL) all else !all && filter in selection
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = if (on) {
+                        { Icon(NostrVaultIcons.Check, contentDescription = "On", tint = colors.primary, modifier = Modifier.size(18.dp)) }
+                    } else null,
+                    // A type toggles and the menu stays open for the next; All closes it.
+                    onClick = {
+                        onSelect(filter)
+                        if (filter == MediaTypeFilter.ALL) expanded = false
+                    },
+                )
+            }
         }
     }
 }
