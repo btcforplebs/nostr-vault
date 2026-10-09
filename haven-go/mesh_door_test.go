@@ -38,6 +38,7 @@ func blossomUploadAuth(t *testing.T, sk string, body []byte) string {
 	ev := nostr.Event{
 		Kind:      24242,
 		CreatedAt: nostr.Now(),
+		Content:   nostr.GeneratePrivateKey(), // distinct id per call, like a real per-send signature
 		Tags: nostr.Tags{
 			{"t", "upload"},
 			{"x", hex.EncodeToString(sum[:])},
@@ -555,5 +556,63 @@ func TestMeshListenerCapAndLifetime(t *testing.T) {
 	}
 	if !closedWithin(conns[0], time.Second) {
 		t.Fatal("connection outlived meshConnMaxLifetime")
+	}
+}
+
+// Tron round 3: a real upload costs about the blob twice (the door's chunks,
+// then khatru's copy), not the doubling-buffer churn on top.
+func TestMeshUploadAllocation(t *testing.T) {
+	h := startHaven(t)
+	door := startMeshDoor(t)
+	body := bytes.Repeat([]byte("v"), 32<<20)
+	auth := blossomUploadAuth(t, h.ownerSK, body)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if code := meshPut(t, door, auth, body); code != http.StatusOK {
+		t.Fatalf("owner upload: %d", code)
+	}
+	runtime.ReadMemStats(&after)
+	// 96 MB expected: the door's chunks, khatru's buffer, and the test's
+	// in-memory filesystem copy (the base commit measured 64 without the door's).
+	// Doubling-buffer churn or a late EOF (khatru then doubles) pushes it past 150.
+	if grew := int64(after.TotalAlloc) - int64(before.TotalAlloc); grew > 100<<20 {
+		t.Fatalf("a 32 MB upload allocated %d MB", grew>>20)
+	}
+}
+
+// A trickle below the minimum rate loses the slot, and the token it used is spent.
+func TestMeshSlowUploadDropped(t *testing.T) {
+	savedGrace, savedRate := meshRateGrace, meshMinRate
+	meshRateGrace, meshMinRate = 200*time.Millisecond, 1<<20
+	defer func() { meshRateGrace, meshMinRate = savedGrace, savedRate }()
+	h := startHaven(t)
+	door := startMeshDoor(t)
+	body := bytes.Repeat([]byte("s"), 4<<20)
+	auth := blossomUploadAuth(t, h.ownerSK, body)
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(door, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Length: %d\r\n\r\n", auth, len(body))
+	start := time.Now()
+	for i := 0; i < 20 && time.Since(start) < 3*time.Second; i++ {
+		if _, err := conn.Write(body[i*100 : i*100+100]); err != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	line, _ := bufio.NewReader(conn).ReadString('\n')
+	if !strings.Contains(line, " 400 ") {
+		t.Fatalf("trickled upload: %q, want 400", line)
+	}
+	if code := meshPut(t, door, auth, body); code != http.StatusForbidden {
+		t.Fatalf("same token after a stalled try: %d, want 403", code)
+	}
+	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
+		t.Fatalf("fresh token (control): %d, want 200", code)
 	}
 }

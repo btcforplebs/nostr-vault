@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -33,8 +32,11 @@ var (
 	// One blob in or out may take this long; set per request, since a
 	// server-wide write timeout would also cut long-lived websockets.
 	meshTransferTimeout = 30 * time.Minute
-	// An upload must make progress at least this often.
-	meshIdleRead = 30 * time.Second
+	// An upload must make progress at least this often, and after the
+	// grace period average at least meshMinRate bytes a second.
+	meshIdleRead  = 30 * time.Second
+	meshRateGrace = 30 * time.Second
+	meshMinRate   = 64.0 * 1024
 	// At most this many mesh connections at once, each at most this long.
 	meshMaxConns        = 32
 	meshConnMaxLifetime = 30 * time.Minute
@@ -108,10 +110,6 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "blob too large for the mesh", http.StatusRequestEntityTooLarge)
 				return
 			}
-			if meshAuthUsed(auth.ID) {
-				http.Error(w, "authorization already used", http.StatusForbidden)
-				return
-			}
 			select {
 			case meshUploadSlots <- struct{}{}:
 				defer func() { <-meshUploadSlots }()
@@ -120,27 +118,27 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "another upload is in progress", http.StatusServiceUnavailable)
 				return
 			}
+			// Spend the auth on admission: an attempt that stalls or fails
+			// cannot be repeated with the same token (senders sign per try).
+			if !meshAuthUse(auth) {
+				http.Error(w, "authorization already used", http.StatusForbidden)
+				return
+			}
 			// Read the body here, so memory grows with bytes that actually
 			// arrive rather than with the Content-Length a peer claims.
-			body, err := readMeshBody(w, r)
+			body, hash, err := readMeshBody(w, r)
 			if err != nil {
 				http.Error(w, "upload body: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			sum := sha256.Sum256(body)
-			if auth.Tags.FindWithValue("x", hex.EncodeToString(sum[:])) == nil {
+			if auth.Tags.FindWithValue("x", hash) == nil {
 				// A token signed for another blob (a public mirror holds
 				// one for its hour) cannot put anything else here.
 				http.Error(w, "authorization does not cover this blob", http.StatusForbidden)
 				return
 			}
-			if !meshAuthUse(auth) {
-				http.Error(w, "authorization already used", http.StatusForbidden)
-				return
-			}
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-			r.Header.Set("Content-Length", strconv.Itoa(len(body)))
+			r.Body = body
+			r.Header.Set("Content-Length", strconv.FormatInt(r.ContentLength, 10))
 		}
 		// Keep the request on the Blossom mux: khatru routes websocket,
 		// NIP-11 and NIP-86 by header before the path.
@@ -220,13 +218,6 @@ var (
 	meshAuthSeen = map[string]int64{} // event id -> expiration
 )
 
-func meshAuthUsed(id string) bool {
-	meshAuthMu.Lock()
-	defer meshAuthMu.Unlock()
-	_, used := meshAuthSeen[id]
-	return used
-}
-
 // meshAuthUse records ev as used; false if it already was.
 func meshAuthUse(ev *nostr.Event) bool {
 	meshAuthMu.Lock()
@@ -244,36 +235,74 @@ func meshAuthUse(ev *nostr.Event) bool {
 	return true
 }
 
-// readMeshBody reads a PUT body of exactly Content-Length bytes. Each read
-// must make progress within meshIdleRead, inside the request's overall
-// transfer deadline.
-func readMeshBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+// readMeshBody reads a PUT body of exactly Content-Length bytes into 1 MB
+// chunks (no doubling copies) and hashes it on the way. Each read must make
+// progress within meshIdleRead, the average must stay above meshMinRate
+// after meshRateGrace, all inside the overall transfer deadline.
+func readMeshBody(w http.ResponseWriter, r *http.Request) (io.ReadCloser, string, error) {
 	rc := http.NewResponseController(w)
-	end := time.Now().Add(meshTransferTimeout)
+	start := time.Now()
+	end := start.Add(meshTransferTimeout)
 	_ = rc.SetWriteDeadline(end)
-	body := bytes.NewBuffer(make([]byte, 0, min(r.ContentLength, 1<<20)))
 	limited := io.LimitReader(r.Body, r.ContentLength+1)
-	chunk := make([]byte, 64<<10)
+	h := sha256.New()
+	var chunks [][]byte
+	var got int64
 	for {
 		next := time.Now().Add(meshIdleRead)
 		if next.After(end) {
 			next = end
 		}
 		_ = rc.SetReadDeadline(next)
-		n, err := limited.Read(chunk)
-		body.Write(chunk[:n])
+		if len(chunks) == 0 || len(chunks[len(chunks)-1]) == cap(chunks[len(chunks)-1]) {
+			chunks = append(chunks, make([]byte, 0, min(r.ContentLength-got+1, 1<<20)))
+		}
+		last := chunks[len(chunks)-1]
+		n, err := limited.Read(last[len(last):cap(last)])
+		chunks[len(chunks)-1] = last[:len(last)+n]
+		h.Write(last[len(last) : len(last)+n])
+		got += int64(n)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, "", err
+		}
+		if elapsed := time.Since(start); elapsed > meshRateGrace &&
+			float64(got) < meshMinRate*(elapsed-meshRateGrace).Seconds() {
+			return nil, "", errors.New("upload too slow")
 		}
 	}
-	if int64(body.Len()) != r.ContentLength {
-		return nil, errors.New("length does not match Content-Length")
+	if got != r.ContentLength {
+		return nil, "", errors.New("length does not match Content-Length")
 	}
-	return body.Bytes(), nil
+	return &chunkReader{chunks: chunks}, hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// chunkReader hands the chunks to khatru and drops each once read, so the
+// door's copy shrinks while khatru's grows.
+type chunkReader struct{ chunks [][]byte }
+
+func (c *chunkReader) Read(p []byte) (int, error) {
+	for len(c.chunks) > 0 && len(c.chunks[0]) == 0 {
+		c.chunks[0] = nil
+		c.chunks = c.chunks[1:]
+	}
+	if len(c.chunks) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, c.chunks[0])
+	c.chunks[0] = c.chunks[0][n:]
+	if len(c.chunks[0]) == 0 && len(c.chunks) == 1 {
+		// EOF with the last bytes: khatru grows its full-size buffer when
+		// a read fills it and EOF only comes on the next call.
+		c.chunks = nil
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func (c *chunkReader) Close() error { c.chunks = nil; return nil }
 
 // meshListener caps the mesh port at meshMaxConns connections at once (every
 // peer is 127.0.0.1, so only a global cap means anything) and closes any
