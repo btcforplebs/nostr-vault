@@ -37,6 +37,9 @@ final class FipsMeshService: ObservableObject {
     /// The last start or stop sent to the engine. Each new one waits for it,
     /// so a stop can never land after the start that follows it.
     private var engineOp: Task<Void, Never>?
+    /// Bumped by each start and each cancel. Only the latest start can go live;
+    /// an older one that finishes stops the engine instead.
+    private var startGen = 0
 
     private init() {}
 
@@ -49,13 +52,15 @@ final class FipsMeshService: ObservableObject {
     func startKiosk() {
         guard !kioskActive, !starting else { return }
         starting = true
+        startGen += 1
+        let gen = startGen
         lastError = nil
         let port = ConfigService.shared.config.relayPort
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
             await previous?.value
             let result = Self.startAndShare(port: port)
-            await MainActor.run { self.didStart(result) }
+            await MainActor.run { self.didStart(gen: gen, result) }
         }
     }
 
@@ -63,6 +68,7 @@ final class FipsMeshService: ObservableObject {
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
+            startGen += 1
             return
         }
         guard kioskActive else { return }
@@ -100,10 +106,12 @@ final class FipsMeshService: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { end() }
     }
 
-    private func didStart(_ result: Result<Void, MeshError>) {
-        guard starting else {
-            // Cancelled while starting (toggle off, or the app left).
-            if case .success = result { stopEngine() }
+    private func didStart(gen: Int, _ result: Result<Void, MeshError>) {
+        guard starting, gen == startGen else {
+            // Cancelled while starting, or superseded by a newer start. A newer
+            // start still in flight reuses this engine (start is idempotent), and a
+            // stop queued here would land after it, so only stop when none is.
+            if case .success = result, !starting { stopEngine() }
             return
         }
         starting = false
