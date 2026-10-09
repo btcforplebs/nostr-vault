@@ -194,7 +194,6 @@ fun FeedScreen(
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
     val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
-    val connectionColor by viewModel.connectionColor.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
     // subscribe the whole screen to every metadata batch; each feed row narrows
     // its own read below instead.
@@ -556,7 +555,6 @@ fun FeedScreen(
                 feedMode = feedMode,
                 collapsed = scrollingDown,
                 connectionStatus = connectionStatus,
-                connectionColor = connectionColor,
                 layoutMode = layoutMode,
                 autoLoad = autoLoad,
                 showReposts = showReposts,
@@ -1745,11 +1743,10 @@ private fun FeedFullNoteRowContent(
 private fun FeedTopBar(
     feedMode: FeedMode,
     /// Folded past halfway with the bottom bar (the pieces fold continuously
-    /// with the finger, via chromeFold): only the connection dot and the
+    /// with the finger, via chromeFold): only the feed icon and the
     /// layout button stay, like the iOS top bar. Folded pieces take no taps.
     collapsed: Boolean,
     connectionStatus: String,
-    connectionColor: String,
     layoutMode: FeedLayoutMode,
     autoLoad: Boolean,
     showReposts: Boolean,
@@ -1786,15 +1783,6 @@ private fun FeedTopBar(
     val menuStored by FeedMenuSettings.stored.collectAsState()
     val menuModes = remember(menuStored) { FeedMenuSettings.menuModes(menuStored) }
 
-    // Resolve connection dot color (FeedRelayHealth.dotColor)
-    val dotColor = when (connectionColor) {
-        "green" -> SuccessGreen
-        "yellow" -> WarningYellow
-        "orange" -> ZapOrange
-        "red" -> ErrorRed
-        else -> SecondaryText
-    }
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -1805,9 +1793,8 @@ private fun FeedTopBar(
             // the pills fold keeps the feed from jumping under your thumb.
             .heightIn(min = 48.dp),
     ) {
-        // ── Leading pill: one tap target. The icon names the current feed and
-        // its corner dot carries the connection status; tapping anywhere on the
-        // pill opens the feed list, with Dashboard at the bottom of it
+        // ── Leading pill: one tap target. The icon names the current feed;
+        // tapping anywhere on the pill opens the feed list, with Dashboard at the bottom of it
         // (the old separate dot opened the dashboard, and sat so close to the
         // feed menu that it was easy to hit by mistake). Folded, only the
         // icon is left, and it opens the same list.
@@ -1831,15 +1818,6 @@ private fun FeedTopBar(
                         contentDescription = null,
                         tint = PrimaryText,
                         modifier = Modifier.size(18.dp),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .offset(x = (-1).dp, y = (-1).dp)
-                            .size(8.dp)
-                            .shadow(3.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(dotColor),
                     )
                 }
 

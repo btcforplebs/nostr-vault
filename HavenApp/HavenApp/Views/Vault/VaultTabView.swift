@@ -92,23 +92,16 @@ enum VaultMode: String, CaseIterable {
     }
 }
 
-/// The Vault tab's mode picker, built like the Feed tab's: the mode's icon
-/// with the relay's health dot, its name, and a chevron. The menu lists the
+/// The Vault tab's mode picker, built like the Feed tab's: the mode's icon,
+/// its name, and a chevron. The menu lists the
 /// modes, then the Vault Dashboard, as the feed menu ends with its dashboard.
 struct VaultModePill: View {
     let mode: VaultMode
     var zapsOnly = false
-    @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var section = VaultSection.shared
 
     /// Modes with something new since you last looked.
     private var newModes: Set<VaultMode> { section.newModes }
-
-    private var dotColor: Color {
-        if relayManager.isBooting { return .yellow }
-        if relayManager.isRunning && relayManager.isWotSyncing { return .orange }
-        return relayManager.isRunning ? .green : .red
-    }
 
     private var modes: [VaultMode] {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
@@ -143,13 +136,6 @@ struct VaultModePill: View {
                     .font(.appSystem(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 30, height: 30)
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(dotColor)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: dotColor.opacity(0.6), radius: 2)
-                            .offset(x: -1, y: -1)
-                    }
                     .overlay(alignment: .topTrailing) {
                         if hasNewElsewhere {
                             Circle()

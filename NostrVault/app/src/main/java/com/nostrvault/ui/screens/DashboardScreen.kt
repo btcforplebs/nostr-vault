@@ -2597,7 +2597,7 @@ fun DashboardScreen(
         }
     }
 
-    // Connection dot color for FAB
+    // The Vault button carries the relay health colour.
     val dotColor = connectionDotColor(connectionColor)
 
     // Where the list is relative to its top: the chrome always shows near it.
@@ -2634,7 +2634,6 @@ fun DashboardScreen(
                     mode = VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope),
                     zapsOnly = zapsOnly,
                     newModes = newModes,
-                    statusColor = dotColor,
                     onSelect = viewModel::selectMode,
                     onOpenDashboard = onOpenDashboard,
                     modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
@@ -2815,7 +2814,7 @@ fun DashboardScreen(
     }
 }
 
-/** The local relay connection's colour, for the Vault button and the pill's health dot. */
+/** The local relay connection's colour, for the Vault button. */
 internal fun connectionDotColor(connectionColor: String): androidx.compose.ui.graphics.Color = when (connectionColor) {
     "green" -> SuccessGreen
     "yellow", "orange" -> ZapOrange

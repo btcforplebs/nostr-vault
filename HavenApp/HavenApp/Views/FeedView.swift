@@ -638,8 +638,7 @@ struct FeedView: View {
     private var isCompactWidth: Bool { horizontalSizeClass == .compact }
 
     /// One tap target: the whole pill opens the feed picker, with the feed
-    /// dashboard at the bottom of it. The icon names the current feed and its
-    /// corner dot carries the connection status the old separate dot showed.
+    /// dashboard at the bottom of it. The icon names the current feed.
     /// Folded, only the icon's circle is left.
     private var feedLeadingToolbar: some View {
         // Its own Equatable view so the open menu is only rebuilt when the
@@ -649,7 +648,6 @@ struct FeedView: View {
         FeedPickerMenu(
             mode: feedService.feedMode,
             connectionStatus: feedService.connectionStatus,
-            dotColor: feedService.connectionDotColor,
             isCompactWidth: isCompactWidth,
             modes: menuModes,
             onSelect: { feedService.switchMode($0) },
@@ -1293,19 +1291,6 @@ struct FeedView: View {
     #if os(macOS)
     private var macFeedHeader: some View {
         HStack(spacing: 12) {
-            // Connection dot
-            // Opens Settings > Relays, where the feed relays are edited.
-            Button(action: { NotificationCenter.default.post(name: .havenOpenFeedRelaySettings, object: nil) }) {
-                Circle()
-                    .fill(feedService.connectionDotColor)
-                    .frame(width: 10, height: 10)
-                    .shadow(color: feedService.connectionDotColor.opacity(0.8), radius: 3)
-            }
-            .buttonStyle(.plain)
-            .help(String(localized: "feed.help.relayStatus"))
-            .accessibilityLabel("Relay status")
-            .accessibilityValue(feedService.connectionStatus)
-
             // Feed mode picker
             Menu {
                 ForEach(menuModes, id: \.self) { mode in
@@ -5080,7 +5065,6 @@ extension View {
 struct FeedPickerMenu: View, Equatable {
     let mode: FeedMode
     let connectionStatus: String
-    let dotColor: Color
     let isCompactWidth: Bool
     /// The feeds to list, in the reader's order.
     let modes: [FeedMode]
@@ -5092,8 +5076,6 @@ struct FeedPickerMenu: View, Equatable {
         lhs.mode == rhs.mode
             && lhs.modes == rhs.modes
             && lhs.connectionStatus == rhs.connectionStatus
-            // The dot also follows relay health while the status stays "Live".
-            && lhs.dotColor == rhs.dotColor
             && lhs.isCompactWidth == rhs.isCompactWidth
     }
 
@@ -5132,13 +5114,6 @@ struct FeedPickerMenu: View, Equatable {
                     .font(.appSystem(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 30, height: 30)
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(dotColor)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: dotColor.opacity(0.6), radius: 2)
-                            .offset(x: -1, y: -1)
-                    }
 
                 // Always laid out, only faded: removing it would resize the
                 // toolbar item and make the navigation bar relayout mid-fold.
