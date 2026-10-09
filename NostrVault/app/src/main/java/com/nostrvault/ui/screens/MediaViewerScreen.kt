@@ -188,11 +188,24 @@ class MediaViewerViewModel @Inject constructor(
     private val _sourceVersion = MutableStateFlow(0)
     val sourceVersion = _sourceVersion.asStateFlow()
 
-    /** Where the viewer's copy of [item] lives. Port of iOS `MediaCacheService.getSource(for:)`. */
-    fun source(item: BlossomMediaItem): MediaCacheService.MediaSource = viewerMediaSource(
-        inVault = item.isLocal || (item.sha256.isNotEmpty() && mediaCacheService.isInLocalBlossom(item.sha256)),
-        cached = mediaCacheService.isCached(item.displayUrl),
-    )
+    /**
+     * The hash each Save to Vault stored its bytes under, by the item's own
+     * hash. A server may serve bytes that hash differently from what it
+     * listed; the badge still reads On phone after the save.
+     */
+    private val savedShas = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Where the viewer's copy of [item] lives. Port of iOS
+     * `MediaCacheService.getSource(for:)`. Reads the disk, so off the main thread.
+     */
+    suspend fun source(item: BlossomMediaItem): MediaCacheService.MediaSource = withContext(Dispatchers.IO) {
+        val hashes = listOfNotNull(item.sha256.ifEmpty { null }, savedShas[item.sha256])
+        viewerMediaSource(
+            inVault = item.isLocal || hashes.any { mediaCacheService.isInLocalBlossom(it) },
+            cached = mediaCacheService.isCached(item.displayUrl),
+        )
+    }
 
     private val _savingSha = MutableStateFlow<String?>(null)
     /** The blob Save to Vault is working on, or null. */
@@ -208,11 +221,12 @@ class MediaViewerViewModel @Inject constructor(
         viewModelScope.launch {
             _savingSha.value = item.sha256
             try {
-                val outcome = withContext(Dispatchers.IO) { blossomService.saveUrlToVault(item.displayUrl) }
-                if (outcome == BlossomService.VaultSave.FAILED) {
-                    notificationManager.showError(outcome.message)
+                val result = withContext(Dispatchers.IO) { blossomService.saveUrlToVault(item.displayUrl) }
+                if (result.outcome == BlossomService.VaultSave.FAILED) {
+                    notificationManager.showError(result.outcome.message)
                 } else {
-                    notificationManager.showToast(outcome.message)
+                    result.savedSha?.let { savedShas[item.sha256] = it }
+                    notificationManager.showToast(result.outcome.message)
                     _sourceVersion.value++
                     if (currentSha == item.sha256) checkMirrors(item.sha256)
                 }
@@ -537,7 +551,9 @@ fun MediaViewerScreen(
             else -> Color.Gray
         }
         val source = currentItem?.let { item ->
-            remember(item.sha256, item.displayUrl, sourceVersion) { viewModel.source(item) }
+            produceState<MediaCacheService.MediaSource?>(null, item.sha256, item.displayUrl, sourceVersion) {
+                value = viewModel.source(item)
+            }.value
         }
         if (!isInPiP) Column(
             horizontalAlignment = Alignment.CenterHorizontally,

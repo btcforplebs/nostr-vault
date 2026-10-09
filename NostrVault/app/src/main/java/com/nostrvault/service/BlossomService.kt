@@ -644,16 +644,24 @@ class BlossomService @Inject constructor(
         BACKED_UP("Saved to your vault and your Blossom"),
     }
 
+    /** What Save to Vault did, and the hash the vault stored the downloaded bytes under (null on failure). */
+    data class VaultSaveResult(val outcome: VaultSave, val savedSha: String?)
+
     /**
      * Stores a file that is only on outside servers (or a link) in the vault
-     * on this phone, then uploads it to any server that lacks it. Port of iOS
-     * `MediaBackupActions.saveToVault`.
+     * on this phone. Then, only when the URL itself names the blob (its last
+     * path part is the 64-hex hash), uploads it to any server that lacks it;
+     * otherwise it stays on this phone only. Port of iOS
+     * `MediaBackupActions.saveToVault`, which guards on `blossomHash(in:)`.
      */
-    suspend fun saveUrlToVault(url: String): VaultSave {
-        val saved = mirrorUrlToLocal(url) ?: return VaultSave.FAILED
-        val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
-            pushToMissing(saved).let { it == null || it is MirrorPushResult.AllAccepted }
-        return if (backedUp) VaultSave.BACKED_UP else VaultSave.ON_PHONE
+    suspend fun saveUrlToVault(url: String): VaultSaveResult {
+        val saved = mirrorUrlToLocal(url) ?: return VaultSaveResult(VaultSave.FAILED, null)
+        val hash = blossomHashInUrl(url)
+        if (hash == null || configStore.config.value.activeBlossomMirrors.isEmpty()) {
+            return VaultSaveResult(VaultSave.ON_PHONE, saved)
+        }
+        val backedUp = pushToMissing(hash).let { it == null || it is MirrorPushResult.AllAccepted }
+        return VaultSaveResult(if (backedUp) VaultSave.BACKED_UP else VaultSave.ON_PHONE, saved)
     }
 
     /**
@@ -1173,6 +1181,19 @@ fun blobPresence(
     in 400..499 -> BlobPresence.ABSENT
     else -> BlobPresence.UNREACHABLE
 }
+
+/**
+ * The blob hash a URL names: its last path part is 64 hex, optionally with an
+ * extension. Null otherwise; BUD-02 lets a server pick any URL for a blob.
+ * Port of iOS `MediaCacheService.blossomHash(in:)`.
+ */
+fun blossomHashInUrl(url: String): String? {
+    val last = url.substringBefore('#').substringBefore('?').trimEnd('/').substringAfterLast('/')
+    val match = BLOSSOM_HASH_PATH.matchEntire(last) ?: return null
+    return match.groupValues[1].lowercase()
+}
+
+private val BLOSSOM_HASH_PATH = Regex("^([a-fA-F0-9]{64})(\\.[a-zA-Z0-9]+)?$")
 
 /** "blossom.primal.net" for a server's base URL; the URL itself when it has no host. */
 internal fun serverHost(url: String): String =
