@@ -324,6 +324,11 @@ func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 		s.rejects.remove(ev.ID) // already stored; clear any stale stub
 		return nil
 	}
+	// Deleted here (by its author or the owner): permanent, so tombstone it
+	// like any other content-based reject and stop it being re-offered.
+	if isDeleted(ctx, dst.Store, &ev) {
+		return s.tombs.Add(ev.ID, ev.CreatedAt)
+	}
 	if err := dst.Publish(ctx, ev); err != nil {
 		log.Println("🚫 error importing synced note", ev.ID, ":", err)
 		return err // keep the stub (if any): a failed store must not re-loop
@@ -394,7 +399,7 @@ func (s *outboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan 
 }
 
 func (s *outboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
-	// No tombstones here: the sync filter is authors=owner, so rejects are
+	// Tombstones only for deletions (below): the sync filter is authors=owner, so other rejects are
 	// either relay misbehavior or whitelist/blacklist state that can change —
 	// both must stay re-fetchable rather than be permanently suppressed.
 	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
@@ -405,6 +410,11 @@ func (s *outboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	}
 	if isDuplicate(ctx, s.outbox, &ev) {
 		return nil
+	}
+	// A deletion, unlike the whitelist/blacklist state above, does not change,
+	// so this one reject is tombstoned (nil-safe).
+	if isDeleted(ctx, s.outbox.Store, &ev) {
+		return s.tombs.Add(ev.ID, ev.CreatedAt)
 	}
 	if err := s.outbox.Publish(ctx, ev); err != nil {
 		log.Println("🚫 error importing synced owner event", ev.ID, ":", err)

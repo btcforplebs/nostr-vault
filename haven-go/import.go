@@ -153,6 +153,10 @@ func importOwnerNotes(ctx context.Context) {
 						slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
 						continue
 					}
+					if isDeleted(ctx, outboxDB, ev.Event) {
+						slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+						continue
+					}
 					if err := wdb.Publish(ctx, *ev.Event); err != nil {
 						log.Println("🚫  error importing note", ev.ID, ":", err)
 						nFailedImportNotes++
@@ -225,6 +229,10 @@ func importTaggedNotes(ctx context.Context) {
 					dbToWrite := wdbInbox
 					if c.chat {
 						dbToWrite = wdbChat
+					}
+					if isDeleted(ctx, dbToWrite.Store, ev.Event) {
+						slog.Debug("🚫 skipping deleted tagged event", "id", ev.ID)
+						continue
 					}
 					if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
 						log.Println("🚫 error importing tagged note", ev.ID, ":", err)
@@ -850,6 +858,10 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 		slog.Debug("ℹ️ skipping duplicate event", "id", ev.ID)
 		return
 	}
+	if isDeleted(ctx, dbToPublish.Store, ev.Event) {
+		slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+		return
+	}
 
 	if err := dbToPublish.Publish(ctx, *ev.Event); err != nil {
 		log.Println("🚫 error importing tagged note", ev.ID, ":", "from relay", relayURL, ":", err)
@@ -1010,6 +1022,9 @@ func processOwnerEvent(ctx context.Context, ev nostr.RelayEvent, wdbOutbox event
 		return
 	}
 	if isDuplicate(ctx, wdbOutbox, ev.Event) {
+		return
+	}
+	if isDeleted(ctx, wdbOutbox.Store, ev.Event) {
 		return
 	}
 	if err := wdbOutbox.Publish(ctx, *ev.Event); err != nil {

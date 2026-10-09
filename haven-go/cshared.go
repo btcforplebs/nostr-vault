@@ -501,7 +501,7 @@ func UpdateBlacklistC(npubsJSON *C.char) {
 	}
 	pubkeys := make(map[string]struct{}, len(npubs))
 	for _, npub := range npubs {
-		if pk := nPubToPubkey(strings.TrimSpace(npub)); pk != "" {
+		if pk := nPubToPubkey("blacklist", strings.TrimSpace(npub)); pk != "" {
 			pubkeys[pk] = struct{}{}
 		}
 	}
