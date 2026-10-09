@@ -262,6 +262,30 @@ extension QuoteReferenceTests {
         XCTAssertFalse(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", "other-post"]], matches: coordinate))
     }
 
+    /// `d` tags match byte for byte, not by Unicode equivalence.
+    ///
+    /// Swift's `==` on String is canonical equivalence, so a reference naming
+    /// the NFD form used to match an event whose `d` tag is the NFC form. They
+    /// are different events: a relay filters tags on exact bytes and would
+    /// never have answered the NFD reference with the NFC event. This only
+    /// showed up on the local match against events already loaded.
+    func testDTagMatchesOnBytesNotUnicodeEquivalence() {
+        let nfc = "\u{00E9}sa"        // precomposed é
+        let nfd = "e\u{0301}sa"       // e + combining acute
+        XCTAssertEqual(nfc, nfd, "precondition: Swift == treats these as equal")
+        XCTAssertFalse(Array(nfc.utf8) == Array(nfd.utf8), "precondition: their bytes differ")
+
+        let reference = QuoteReference.coordinate(kind: 30023, pubkey: "pk", dTag: nfd)
+        XCTAssertFalse(
+            QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", nfc]], matches: reference),
+            "an NFD reference must not match the NFC event"
+        )
+        // The same form still matches.
+        XCTAssertTrue(
+            QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", nfd]], matches: reference)
+        )
+    }
+
     /// An event id is never matched by a coordinate and vice versa — the id
     /// field of an addressable event is not what a coordinate names.
     func testCoordinateDoesNotMatchOnIdAlone() {
