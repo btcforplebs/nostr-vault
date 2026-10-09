@@ -14,8 +14,8 @@ struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
-    /// Loopback port where the relay also answers plain HTTP on iOS, whose
-    /// main port is TLS-only. The FIPS mesh tunnel carries plain HTTP.
+    /// Loopback port the FIPS mesh tunnel forwards to: plain HTTP, blob
+    /// GET/HEAD only, so mesh peers never reach the relay itself (NIP-F1).
     var meshPlainPort: Int { relayPort + 1 }
     var dbEngine: String = "badger"
     var blossomPath: String = "blossom/"
@@ -721,6 +721,12 @@ struct HavenConfig: Codable, Equatable {
     /// Active Blossom mirrors (convenience, no detected FIPS npub).
     var activeBlossomMirrors: [String] {
         activeBlossomMirrors(detectedNpub: nil)
+    }
+
+    /// Whether any mirror works for apps without the FIPS mesh. A fipsmesh
+    /// entry must never be a user's only server (NIP-F1).
+    var hasPublicBlossomMirror: Bool {
+        activeBlossomMirrors.contains { $0.hasPrefix("https://") && !$0.contains(".fips") }
     }
 
     /// Active feed relays, including the Mac relay if configured.

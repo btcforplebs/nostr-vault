@@ -81,6 +81,19 @@ object HavenBridge {
      */
     external fun requestRelaySync()
 
+    private external fun setMeshServingNative(on: Boolean)
+
+    /**
+     * Open or close the relay's FIPS mesh port (loopback, blob reads only).
+     * It listens only while sharing is on. Kept across relay restarts.
+     * Maps to Go: SetMeshServingC()
+     */
+    fun setMeshServing(on: Boolean) {
+        if (!isLoaded) return
+        runCatching { setMeshServingNative(on) }
+            .onFailure { android.util.Log.w("HavenBridge", "setMeshServing($on): $it") }
+    }
+
     /**
      * Re-run the copy from the Mac relay and its missing-events check; the
      * result lands in mac_sync_status.json. Non-blocking, coalesced, and a

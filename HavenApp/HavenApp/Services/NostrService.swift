@@ -1071,8 +1071,10 @@ class NostrService: ObservableObject {
         #if os(iOS)
         // Kiosk mode: this vault is on the FIPS mesh. Last, so apps that try
         // servers in order use the normal ones first; apps that do not know
-        // the scheme skip it.
-        if let mesh = FipsMeshService.shared.meshServerURL, !mirrors.contains(mesh) {
+        // the scheme skip it. Never the only usable entry (NIP-F1): with no
+        // public server, apps without FIPS would get a list they can't use.
+        if let mesh = FipsMeshService.shared.meshServerURL,
+           ConfigService.shared.config.hasPublicBlossomMirror, !mirrors.contains(mesh) {
             mirrors.append(mesh)
         }
         #endif

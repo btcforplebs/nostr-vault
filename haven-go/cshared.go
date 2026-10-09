@@ -356,17 +356,9 @@ func StartRelayC(importMode bool) {
 			}
 		})
 
-		// iOS serves TLS for App Transport Security, but the FIPS mesh tunnel
-		// carries plain HTTP: give it the same handler on a loopback-only port.
-		if port, err := strconv.Atoi(os.Getenv("HAVEN_MESH_PLAIN_PORT")); err == nil && port > 0 && certPath != "" {
-			meshAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-			cycle.meshServer = &http.Server{Addr: meshAddr, Handler: mux}
-			cycle.spawn("mesh-http-server", func() {
-				if err := cycle.meshServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					log.Printf("🚫 mesh HTTP server exited: %v", err)
-				}
-			})
-			log.Printf("🔗 mesh listening at http://%s", meshAddr)
+		// Sharing was on before this start (relay restart): reopen the mesh port.
+		if meshWanted.Load() {
+			cycle.startMeshServer()
 		}
 
 		// Brief delay to ensure server binds to port before returning
@@ -455,7 +447,7 @@ func StopRelayC() {
 			}
 		}
 		if c.meshServer != nil {
-			// Its handlers are the same ones server just drained; close outright.
+			// Blob reads only, nothing to drain carefully; close outright.
 			c.meshServer.Close()
 		}
 		// All background goroutines are context-driven, so this normally
@@ -491,6 +483,14 @@ func RequestMacSyncCheckC() {
 	// Re-runs the Mac relay full-history copy and its missing-events check;
 	// the result lands in mac_sync_status.json. No-op without a Mac relay.
 	RequestMacSyncCheck()
+}
+
+//export SetMeshServingC
+func SetMeshServingC(on C.int) {
+	// The host turns FIPS sharing on or off. The mesh port only listens
+	// while sharing, so with the mesh off no app on the device can read
+	// blobs from it in plain HTTP.
+	setMeshServing(on != 0)
 }
 
 //export TrimMemoryC
