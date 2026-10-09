@@ -763,35 +763,57 @@ class BlossomService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Delete a blob from all external mirrors.
+     * Which servers a delete reached. A delete is only done when [failed] is
+     * empty: the file is still public on every server listed there.
+     * Port of iOS `BlossomService.MirrorDeleteResult`.
      */
-    suspend fun deleteFromMirrors(sha256: String): Int = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        var successCount = 0
+    data class MirrorDeleteResult(
+        val deleted: List<String> = emptyList(),
+        val failed: List<String> = emptyList(),
+    ) {
+        val allDeleted: Boolean get() = failed.isEmpty() && deleted.isNotEmpty()
 
-        val jobs = mirrors.map { mirror ->
+        /** Hosts still holding the file, for the banner ("blossom.primal.net"). */
+        val failedHosts: List<String> get() = failed.map { serverHost(it) }
+    }
+
+    /**
+     * Delete a blob from every mirror and report each one. A 404 counts as
+     * deleted: the file is not there either way. One mirror succeeding used to
+     * count as success, so a file left on two of three servers read as deleted.
+     */
+    suspend fun deleteFromMirrors(sha256: String): MirrorDeleteResult = withContext(Dispatchers.IO) {
+        val mirrors = configStore.config.value.activeBlossomMirrors
+        if (mirrors.isEmpty()) return@withContext MirrorDeleteResult()
+
+        val outcomes = mirrors.map { mirror ->
             async {
-                try {
+                mirror to try {
                     val authHeader = createAuthHeader("delete", sha256)
                     val request = Request.Builder()
-                        .url("$mirror/$sha256")
+                        .url("${mirror.trimEnd('/')}/$sha256")
                         .delete()
                         .addHeader("Authorization", "Nostr $authHeader")
                         .build()
 
-                    val response = remoteClient.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        synchronized(this@BlossomService) { successCount++ }
+                    remoteClient.newCall(request).execute().use { response ->
+                        val gone = response.isSuccessful || response.code == 404
+                        if (!gone) Log.w(TAG, "Delete from $mirror: HTTP ${response.code}")
+                        gone
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Delete from $mirror failed: ${e.message}")
+                    false
                 }
             }
-        }
-        jobs.awaitAll()
-        successCount
+        }.awaitAll()
+        MirrorDeleteResult(
+            deleted = outcomes.filter { it.second }.map { it.first },
+            failed = outcomes.filterNot { it.second }.map { it.first },
+        )
     }
 
+    /** @return true if the file is gone from this device (deleted, or never stored here). */
     fun deleteFromLocal(sha256: String): Boolean {
         val config = configStore.config.value
         val dir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return false
@@ -805,7 +827,8 @@ class BlossomService @Inject constructor(
         if (!matches.isNullOrEmpty()) {
             return matches.all { it.delete() }
         }
-        return false
+        // Nothing to delete is the outcome asked for, like a mirror's 404.
+        return true
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -887,13 +910,21 @@ class BlossomService @Inject constructor(
      */
     private fun checkBlobExists(mirror: String, sha256: String): BlobPresence {
         return try {
+            // Not HEAD: after a delete, blossom.band and blossom.nostr.build keep
+            // answering HEAD with the old size, while a GET redirects to a "404"
+            // placeholder image served as 200. A GET shows where the blob really
+            // ends up; only its headers are read, never the body.
             val request = Request.Builder()
                 .url("${mirror.trimEnd('/')}/$sha256")
-                .head()
+                .get()
+                .header("Range", "bytes=0-0")
                 .build()
             val client = if (isLocalhost(mirror)) localClient else presenceClient
             client.newCall(request).execute().use { response ->
-                blobPresence(response.code, response.header("Content-Type"), response.header("Content-Length"))
+                blobPresence(
+                    response.code, response.header("Content-Type"), response.header("Content-Length"),
+                    sha256 = sha256, finalUrl = response.request.url.toString(),
+                )
             }
         } catch (e: Exception) {
             BlobPresence.UNREACHABLE
@@ -1089,14 +1120,48 @@ enum class BlobPresence {
 }
 
 /** The decision behind a HEAD check, split out so it can be tested without a server. Matches iOS. */
-fun blobPresence(statusCode: Int, contentType: String?, contentLength: String?): BlobPresence = when (statusCode) {
+/**
+ * [finalUrl] is where redirects ended. A blob's own location names its hash;
+ * a redirect that lands anywhere else is a placeholder.
+ */
+fun blobPresence(
+    statusCode: Int,
+    contentType: String?,
+    contentLength: String?,
+    sha256: String? = null,
+    finalUrl: String? = null,
+): BlobPresence = when (statusCode) {
     in 200..299 -> when {
+        sha256 != null && finalUrl != null && !finalUrl.lowercase().contains(sha256.lowercase()) -> BlobPresence.ABSENT
         contentType?.lowercase()?.startsWith("text/html") == true -> BlobPresence.ABSENT
         contentLength?.toLongOrNull() == 0L -> BlobPresence.ABSENT
         else -> BlobPresence.PRESENT
     }
     in 400..499 -> BlobPresence.ABSENT
     else -> BlobPresence.UNREACHABLE
+}
+
+/** "blossom.primal.net" for a server's base URL; the URL itself when it has no host. */
+internal fun serverHost(url: String): String =
+    runCatching { java.net.URI(url).host }.getOrNull() ?: url
+
+/**
+ * What a Delete everywhere left behind, or null when nothing is left. Names
+ * each place so a partial delete can't pass for a full one. Port of iOS
+ * `BlossomService.deleteEverywhereLeftover`.
+ */
+fun deleteEverywhereLeftover(localDeleted: Boolean, mirrors: BlossomService.MirrorDeleteResult): String? {
+    val places = mirrors.failedHosts.toMutableList()
+    if (!localDeleted) places += "this device"
+    if (places.isEmpty()) return null
+    return "Still on " + joinPlaces(places)
+}
+
+/** "a", "a and b", "a, b and c". */
+internal fun joinPlaces(places: List<String>): String = when (places.size) {
+    0 -> ""
+    1 -> places[0]
+    else -> places.dropLast(1).joinToString(", ") + " and " + places.last()
 }
 
 /** How many of the user's Blossom servers hold one file. Port of iOS `BlossomBackupSummary`. */

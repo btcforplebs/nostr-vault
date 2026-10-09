@@ -112,8 +112,9 @@ class NotificationManager @Inject constructor() {
 
     // ── Error pills ───────────────────────────────────────────
 
-    fun showError(message: String, style: ErrorStyle = ErrorStyle.ERROR) {
+    fun showError(message: String, style: ErrorStyle = ErrorStyle.ERROR, autoDismissMs: Long? = null) {
         val notification = ErrorNotification(message = message, style = style)
+            .let { if (autoDismissMs != null) it.copy(autoDismissMs = autoDismissMs) else it }
         addNotification(notification)
         scheduleDismiss(notification.id, notification.autoDismissMs)
     }
