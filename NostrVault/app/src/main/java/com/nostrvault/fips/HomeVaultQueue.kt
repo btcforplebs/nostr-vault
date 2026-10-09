@@ -96,7 +96,9 @@ class HomeVaultQueue(
      * it is pushed from this phone's own relay.
      */
     fun addPublicCopy(sha256: String, contentType: String, server: String, now: Long = System.currentTimeMillis()): Boolean =
-        add(Item(key = sha256, type = TYPE_PUBLIC_COPY, contentType = contentType, server = server, queuedAt = now))
+        // Keyed by blob and server: the same blob published again after the
+        // mirror order changed names a second server, and each needs its copy.
+        add(Item(key = publicCopyKey(sha256, server), type = TYPE_PUBLIC_COPY, contentType = contentType, server = server, queuedAt = now))
 
     fun blobFile(sha256: String): File = File(blobDir, sha256)
 
@@ -153,6 +155,11 @@ class HomeVaultQueue(
         const val TYPE_EVENT = "event"
         const val TYPE_BLOB = "blob"
         const val TYPE_PUBLIC_COPY = "public-copy"
+
+        fun publicCopyKey(sha256: String, server: String) = "$sha256@$server"
+
+        /** The blob a key names: a public copy's key is `<sha256>@<server>`. */
+        fun shaOf(key: String) = key.substringBefore('@')
         const val MAX_ITEMS = 500
         const val MAX_BLOB_BYTES = 1L * 1024 * 1024 * 1024
     }

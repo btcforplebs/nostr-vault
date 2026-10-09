@@ -178,6 +178,7 @@ class BlossomService @Inject constructor(
         toHomeVault: Boolean,
     ): String? {
         val attempt = upload(source, sha256, contentType, skipOutsideServers = false, toHomeVault = toHomeVault)
+        if (toHomeVault) homeVault.drainSoon()
         return when (val outcome = attempt.outcome) {
             is PostUploadOutcome.Hosted -> outcome.url
             // Local-relay URL, only ever returned for save-to-vault flows.
@@ -222,6 +223,7 @@ class BlossomService @Inject constructor(
         onProgress: ((Float) -> Unit)? = null,
     ): PostUploadOutcome =
         upload(UploadSource.FileSource(fileURL), sha256, contentType, skipOutsideServers).outcome
+            .also { homeVault.drainSoon() }
 
     /** What one upload did, plus the local URL when the local save succeeded. */
     private data class UploadAttempt(val outcome: PostUploadOutcome, val localUrl: String?)

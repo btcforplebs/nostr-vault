@@ -243,4 +243,15 @@ class HomeVaultQueueTest {
         // Send now ignores backoff.
         assertEquals(3, HomeVaultRules.select(items, 50, true, true, { false }).toTry.size)
     }
+
+    @Test
+    fun `the same blob published under two servers gets a copy for each`() {
+        val q = HomeVaultQueue(tmp.newFolder())
+        assertTrue(q.addPublicCopy(sha, "image/png", "https://a.example"))
+        assertTrue(q.addPublicCopy(sha, "image/png", "https://a.example"))
+        assertTrue(q.addPublicCopy(sha, "image/png", "https://b.example"))
+        assertEquals(listOf("https://a.example", "https://b.example"), q.items().map { it.server })
+        assertEquals(listOf(sha, sha), q.items().map { HomeVaultQueue.shaOf(it.key) })
+    }
 }
+

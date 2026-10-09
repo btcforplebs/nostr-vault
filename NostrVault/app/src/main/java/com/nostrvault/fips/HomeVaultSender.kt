@@ -155,14 +155,21 @@ class HomeVaultSender @Inject constructor(
      */
     suspend fun ensureOnVault(sha256: String): Boolean {
         val npub = activeVault ?: return false
+        // The composer is waiting: a background pass already holding the
+        // lock (minutes, with a long queue) means "not now", and the post
+        // waits as it would have without a home vault.
+        if (withTimeoutOrNull(ENSURE_LOCK_WAIT_MS) { drainLock.lock() } == null) {
+            Log.w(TAG, "home vault busy; not confirming ${sha256.take(8)} for this post")
+            return false
+        }
         return try {
-            drainLock.withLock {
-                val base = FipsMediaRouter.ingressBase(npub) ?: return@withLock false
+            run {
+                val base = FipsMediaRouter.ingressBase(npub) ?: return@run false
                 val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
                 if (item != null) {
                     val outcome = sendBlob(base, item, ensureClient)
                     record(item, outcome, npub, System.currentTimeMillis())
-                    return@withLock outcome == HomeVaultSend.SENT
+                    return@run outcome == HomeVaultSend.SENT
                 }
                 ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
             }
@@ -172,6 +179,7 @@ class HomeVaultSender @Inject constructor(
             Log.w(TAG, "home vault: could not confirm ${sha256.take(8)}: ${e.message}")
             false
         } finally {
+            drainLock.unlock()
             publish()
         }
     }
@@ -240,15 +248,16 @@ class HomeVaultSender @Inject constructor(
         if (selection.heldForSigner) problem("Your signer needs you: tap Send now")
         for (item in selection.toTry) {
             val server = item.server
+            val sha = HomeVaultQueue.shaOf(item.key)
             val hosted = if (server == null) {
                 false
             } else {
-                val auth = uploadAuth(item.key)
+                val auth = uploadAuth(sha, "Upload Blob")
                 if (auth == null) {
                     false
                 } else {
                     try {
-                        hostPublicly(item.key, item.contentType ?: "application/octet-stream", server, auth)
+                        hostPublicly(sha, item.contentType ?: "application/octet-stream", server, auth)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Throwable) {
@@ -287,6 +296,11 @@ class HomeVaultSender @Inject constructor(
     }
 
     /** Also send this blob to the home vault, copied from [source]. */
+    /**
+     * Also send this blob to the home vault, copied from [source]. Queued
+     * only: the upload calls [drainSoon] once it is done, so a background
+     * pass is not holding the lock while the post asks [ensureOnVault].
+     */
     fun offerBlob(sha256: String, contentType: String, source: File) =
         offer(sha256, contentType, source.length()) { source.copyTo(it, overwrite = true) }
 
@@ -302,7 +316,8 @@ class HomeVaultSender @Inject constructor(
             Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
             false
         }
-        if (queued) drainSoon() else full()
+        if (!queued) full()
+        publish()
     }
 
     /**
@@ -473,7 +488,7 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun uploadAuth(sha256: String): String? {
+    private suspend fun uploadAuth(sha256: String, content: String = "Upload to home vault"): String? {
         val expiration = System.currentTimeMillis() / 1000 + 600
         val tags = listOf(
             listOf("t", "upload"),
@@ -481,7 +496,7 @@ class HomeVaultSender @Inject constructor(
             listOf("expiration", expiration.toString()),
         )
         val signed = try {
-            signer(AUTH_KIND, "Upload to home vault", tags)
+            signer(AUTH_KIND, content, tags)
         } catch (e: Exception) {
             Log.w(TAG, "home vault: upload auth not signed: ${e.message}")
             null
@@ -561,5 +576,6 @@ class HomeVaultSender @Inject constructor(
         const val RETRY_MS = 60_000L
         const val EVENT_OK_TIMEOUT_MS = 15_000L
         const val ENSURE_CALL_TIMEOUT_S = 45L
+        const val ENSURE_LOCK_WAIT_MS = 10_000L
     }
 }
