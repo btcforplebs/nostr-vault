@@ -51,7 +51,6 @@ import com.nostrvault.ui.screens.dm.DMInboxScreen
 import com.nostrvault.ui.screens.dm.DMThreadScreen
 import com.nostrvault.ui.screens.dm.NewMessageScreen
 import com.nostrvault.ui.screens.feed.FeedScreen
-import com.nostrvault.ui.screens.profile.ProfileEditScreen
 import com.nostrvault.ui.screens.profile.ProfileScreen
 import com.nostrvault.ui.screens.settings.AccountSettingsScreen
 import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
@@ -398,12 +397,6 @@ fun NostrVaultNavHost(
                         onProfileClick = { pk ->
                             navController.navigate(Screen.Profile.createRoute(pk))
                         },
-                        onEditProfile = {
-                            navController.navigate(Screen.ProfileEdit.route)
-                        },
-                        onCompose = {
-                            navController.navigate(Screen.ComposeNote.createRoute())
-                        },
                         onReply = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
                         },
@@ -612,13 +605,6 @@ fun NostrVaultNavHost(
                                 popUpTo(Screen.ComposeNote.route) { inclusive = true }
                             }
                         },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.ProfileEdit.route) {
-                    ProfileEditScreen(
-                        onSaved = { navController.popBackStack() },
                         onBack = { navController.popBackStack() },
                     )
                 }

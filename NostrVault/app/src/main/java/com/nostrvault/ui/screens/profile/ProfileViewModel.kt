@@ -16,7 +16,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -179,10 +178,6 @@ class ProfileViewModel @Inject constructor(
     private val _isBlocked = MutableStateFlow(false)
     val isBlocked: StateFlow<Boolean> = _isBlocked.asStateFlow()
 
-    /** Pull-to-refresh on your own profile. */
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-
     /** null until known → UI shows "∞" for other users (mirrors iOS). */
     private val _followersCount = MutableStateFlow<Int?>(null)
     val followersCount: StateFlow<Int?> = _followersCount.asStateFlow()
@@ -289,34 +284,6 @@ class ProfileViewModel @Inject constructor(
         _hasMoreNotes.value = true
         _hasMoreTagged.value = true
         _isLoadingOlder.value = false
-    }
-
-    /**
-     * Pull-to-refresh, in place: a new stream adds what is new while the
-     * notes, counts and tabs on screen stay until something replaces them,
-     * so the page never blanks and refills. Metadata is fetched again.
-     * iOS: ProfileView.refreshProfile().
-     */
-    fun refresh() {
-        val pk = _pubkey.value
-        if (pk.isEmpty() || _isRefreshing.value) return
-        _isRefreshing.value = true
-        _isLoading.value = true
-        // A page of older notes in flight dies with the old stream.
-        stream?.close(); stream = null
-        pageToken++
-        _isLoadingOlder.value = false
-        nostrService.fetchMissingProfiles(listOf(pk), force = true)
-        loadEngagement(force = true)
-        loadProfile()
-        shop.load(pk, force = true)
-        loadExtras(pk, force = true)
-        viewModelScope.launch {
-            // Done once the first page is in (the spinner the load drives
-            // drops on EOSE), or after a few seconds regardless.
-            withTimeoutOrNull(8_000) { _isLoading.first { !it } }
-            _isRefreshing.value = false
-        }
     }
 
     /** Set once your own follower ledger supplied the FOLLOWERS count. */
