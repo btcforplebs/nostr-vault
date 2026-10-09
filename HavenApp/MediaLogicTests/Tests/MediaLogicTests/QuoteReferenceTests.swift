@@ -90,6 +90,87 @@ final class QuoteReferenceTests: XCTestCase {
         XCTAssertEqual(QuoteReference.parseCoordinate(coordinate ?? "")?.dTag, "")
     }
 
+    /// A type-0 entry that is present but carries no bytes is a real empty `d`
+    /// tag, not a missing one, so it must still resolve. The distinction matters
+    /// because the bad-UTF-8 case below is rejected, and Foundation decodes empty
+    /// data to "" rather than nil — the two must not be conflated.
+    func testZeroLengthDTagEntryStillResolves() {
+        var payload = Data([0, 0])                                       // d-tag, no bytes
+        payload += Data([2, 32]) + Data(repeating: 0x22, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let parts = QuoteReference.naddrParts(fromTLV: payload)
+        XCTAssertEqual(parts?.dTag, "")
+        XCTAssertEqual(parts?.kind, 30023)
+    }
+
+    /// The whole reference fails on a `d` tag that is not valid UTF-8.
+    ///
+    /// Decoding it to nil and falling back to "" named a different, legal
+    /// coordinate: the same author's empty-`d` event of the same kind. A `nostr:`
+    /// link or a quoted naddr comes from outside the app, so whoever wrote it
+    /// chose those bytes — this is how one event got opened under another's name.
+    func testBadUTF8DTagIsRejected() {
+        var payload = Data([0, 2]) + Data([0xff, 0xfe])                  // d-tag, invalid UTF-8
+        payload += Data([2, 32]) + Data(repeating: 0x22, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertNil(QuoteReference.naddrParts(fromTLV: payload))
+        XCTAssertNil(QuoteReference.coordinate(fromNaddrTLV: payload))
+    }
+
+    /// The regression stated as the attack: the crafted payload must not come out
+    /// as the coordinate it was being mistaken for.
+    func testBadUTF8DTagDoesNotBecomeTheEmptyDTagCoordinate() {
+        let pubkey = Data(repeating: 0x22, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let crafted = Data([0, 2]) + Data([0xff, 0xfe]) + Data([2, 32]) + pubkey + kind
+        let emptyDTag = Data([0, 0]) + Data([2, 32]) + pubkey + kind
+        XCTAssertNotNil(QuoteReference.coordinate(fromNaddrTLV: emptyDTag))
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: crafted),
+            QuoteReference.coordinate(fromNaddrTLV: emptyDTag)
+        )
+    }
+
+    /// Lone continuation bytes, a truncated sequence and an overlong encoding are
+    /// all rejected. Swift's UTF-8 decoding is strict about each of them; the test
+    /// pins that, because a lossy decode would turn them into U+FFFD and quietly
+    /// name an event nobody wrote.
+    func testEachKindOfInvalidUTF8IsRejected() {
+        let tail = Data([2, 32]) + Data(repeating: 0x33, count: 32)
+            + Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        for bytes in [Data([0x80]), Data([0xC3]), Data([0xC0, 0x80]), Data([0xED, 0xA0, 0x80])] {
+            let payload = Data([0, UInt8(bytes.count)]) + bytes + tail
+            XCTAssertNil(
+                QuoteReference.naddrParts(fromTLV: payload),
+                "expected \(bytes.map { String(format: "%02x", $0) }.joined()) to be refused"
+            )
+        }
+    }
+
+    /// Valid multi-byte UTF-8 is not collateral damage of the check above.
+    func testMultiByteDTagSurvives() {
+        let dTag = "träume-🐝"
+        let bytes = Data(dTag.utf8)
+        var payload = Data([0, UInt8(bytes.count)]) + bytes
+        payload += Data([2, 32]) + Data(repeating: 0x44, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: payload)?.dTag, dTag)
+    }
+
+    /// The relay hint is read by nobody on purpose: honouring it would let the
+    /// author of a link choose a host for the app to connect to. A payload that
+    /// carries one still parses, and the hint never becomes the `d` tag.
+    func testRelayHintIsIgnored() {
+        let hint = Data("wss://evil.example/x".utf8)
+        var payload = Data([1, UInt8(hint.count)]) + hint                // relay hint
+        payload += Data([0, 5]) + Data("intro".utf8)
+        payload += Data([2, 32]) + Data(repeating: 0x55, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let parts = QuoteReference.naddrParts(fromTLV: payload)
+        XCTAssertEqual(parts?.dTag, "intro")
+        XCTAssertEqual(parts?.kind, 30023)
+    }
+
     // MARK: - Coordinate round trip
 
     func testCoordinateRoundTrip() {

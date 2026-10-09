@@ -40,11 +40,6 @@ enum QuoteReference {
         return nil
     }
 
-    /// A `"naddr:<kind>:<pubkey>:<d-tag>"` coordinate from an `naddr` TLV payload.
-    ///
-    /// NIP-19 naddr TLV: type 0 = d-tag (UTF-8), 1 = relay, 2 = pubkey (32 bytes),
-    /// 3 = kind (4 bytes, big endian). Kind and pubkey are both required — without
-    /// them the reference names no event.
     /// The pubkey a profile mention names, from its decoded bech32 payload.
     /// `npub` is the 32 raw bytes; `nprofile` is TLV with the pubkey as type 0
     /// and relay hints after it. Hex-encoding an nprofile's whole payload —
@@ -61,14 +56,34 @@ enum QuoteReference {
         }
     }
 
-    static func coordinate(fromNaddrTLV payload: Data) -> String? {
-        var dTag: String?
+    /// The kind, author and `d` tag an `naddr` TLV payload names, or nil when it
+    /// names no event we can trust.
+    ///
+    /// NIP-19 naddr TLV: type 0 = d-tag (UTF-8), 1 = relay, 2 = pubkey (32 bytes),
+    /// 3 = kind (4 bytes, big endian). Kind and pubkey are both required — without
+    /// them the reference names no event.
+    ///
+    /// The relay hint (type 1) is read by nobody on purpose. The naddr in a
+    /// `nostr:` link or in someone else's note is attacker-controlled, and
+    /// honouring its hint would let whoever wrote the link choose a host for the
+    /// app to connect to. Lookups go to the user's configured relays instead.
+    ///
+    /// A type-0 value that is not valid UTF-8 fails the whole reference. It used
+    /// to decode to nil and fall back to `""`, which is a *different, legal*
+    /// coordinate — the author's empty-`d` event of the same kind — so a crafted
+    /// naddr opened one event under the name of another. A zero-length type-0
+    /// value is a real empty `d` tag and still resolves; Foundation decodes empty
+    /// data to `""`, not nil, so the two cases stay apart.
+    static func naddrParts(fromTLV payload: Data) -> (kind: Int, pubkey: String, dTag: String)? {
+        var dTag = ""
         var pubkey: String?
         var kind: UInt32?
 
         for entry in tlvEntries(payload) {
             switch entry.type {
-            case 0: dTag = String(data: Data(entry.value), encoding: .utf8)
+            case 0:
+                guard let decoded = String(data: Data(entry.value), encoding: .utf8) else { return nil }
+                dTag = decoded
             case 2 where entry.value.count == 32: pubkey = hex(entry.value)
             case 3 where entry.value.count == 4:
                 kind = Data(entry.value).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
@@ -77,7 +92,14 @@ enum QuoteReference {
         }
 
         guard let kind = kind, let pubkey = pubkey else { return nil }
-        return coordinate(kind: Int(kind), pubkey: pubkey, dTag: dTag ?? "")
+        return (Int(kind), pubkey, dTag)
+    }
+
+    /// A `"naddr:<kind>:<pubkey>:<d-tag>"` coordinate from an `naddr` TLV payload.
+    /// Same rules as `naddrParts(fromTLV:)`, which does the reading.
+    static func coordinate(fromNaddrTLV payload: Data) -> String? {
+        guard let parts = naddrParts(fromTLV: payload) else { return nil }
+        return coordinate(kind: parts.kind, pubkey: parts.pubkey, dTag: parts.dTag)
     }
 
     /// Builds the coordinate string. One definition, so the parser below cannot drift from it.
