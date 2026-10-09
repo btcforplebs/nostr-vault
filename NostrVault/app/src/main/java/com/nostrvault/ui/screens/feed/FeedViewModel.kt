@@ -53,7 +53,12 @@ class FeedViewModel @Inject constructor(
     private val marketplaceFeedService: MarketplaceFeedService,
     private val reelsFeedService: ReelsFeedService,
     private val interestListService: com.nostrvault.service.InterestListService,
+    relayImportService: com.nostrvault.service.RelayImportService,
 ) : ViewModel() {
+
+    /** The relay is importing; an empty feed says so rather than "no notes". */
+    val isRelayImporting: StateFlow<Boolean> = relayImportService.isImporting
+    val relayImportStatus: StateFlow<String> = relayImportService.importStatusMessage
 
     private companion object {
         /** Relays answer metadata in bursts; three UI passes a second is plenty. */

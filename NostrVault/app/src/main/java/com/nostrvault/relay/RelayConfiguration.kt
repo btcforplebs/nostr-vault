@@ -522,6 +522,9 @@ data class HavenConfig(
     val pushNotifyZaps: Boolean = true,
     val pushNotifyReactions: Boolean = false,
     val pushNotifyReposts: Boolean = false,
+    /** Setup's "Stay in the Loop" step (or the one launch-time ask for paths
+     *  without it) has dealt with POST_NOTIFICATIONS; don't ask again. */
+    val notificationPermissionAsked: Boolean = false,
     // Per-account push preferences (mirrors iOS). Master enable + server URL
     // stay global above; each account keeps its own per-type toggles. Falls
     // back to the global flags for accounts without an entry (back-compat).

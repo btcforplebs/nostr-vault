@@ -22,6 +22,8 @@ fun ImportExportSection(
     isExportingJsonl: Boolean,
     isExportingMedia: Boolean,
     isImportingBlossom: Boolean,
+    // iOS DashboardView.actionsAreEnabled: the relay must be up (or importing).
+    actionsEnabled: Boolean,
     onImportNotes: () -> Unit,
     onImportBlossom: () -> Unit,
     onExportJsonl: () -> Unit,
@@ -121,7 +123,7 @@ fun ImportExportSection(
                 icon = NostrVaultIcons.Import,
                 title = "Import Notes",
                 isLoading = isImporting,
-                enabled = !isImporting && !isExportingJsonl && !isExportingMedia,
+                enabled = actionsEnabled && !isImporting && !isExportingJsonl && !isExportingMedia,
                 modifier = Modifier.weight(1f),
                 onClick = onImportNotes,
             )
@@ -130,7 +132,7 @@ fun ImportExportSection(
                 icon = NostrVaultIcons.Blossom,
                 title = "Import Blossom",
                 isLoading = isImportingBlossom,
-                enabled = !isImportingBlossom,
+                enabled = actionsEnabled && !isImportingBlossom,
                 modifier = Modifier.weight(1f),
                 onClick = onImportBlossom,
             )
@@ -144,7 +146,7 @@ fun ImportExportSection(
                 icon = NostrVaultIcons.Backup,
                 title = "Export JSONL",
                 isLoading = isExportingJsonl,
-                enabled = !isImporting && !isExportingJsonl && !isExportingMedia,
+                enabled = actionsEnabled && !isImporting && !isExportingJsonl && !isExportingMedia,
                 modifier = Modifier.weight(1f),
                 onClick = onExportJsonl,
             )
@@ -152,9 +154,17 @@ fun ImportExportSection(
                 icon = NostrVaultIcons.UploadIcon,
                 title = "Export Media",
                 isLoading = isExportingMedia,
-                enabled = !isImporting && !isExportingJsonl && !isExportingMedia,
+                enabled = actionsEnabled && !isImporting && !isExportingJsonl && !isExportingMedia,
                 modifier = Modifier.weight(1f),
                 onClick = onExportMedia,
+            )
+        }
+        if (!actionsEnabled) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Start the relay to import or export.",
+                color = SecondaryText,
+                fontSize = 12.sp,
             )
         }
     }

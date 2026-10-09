@@ -2900,7 +2900,12 @@ internal fun VaultDashboardSheet(
             isLocked = currentIsLocked,
             isPortConflict = currentIsPortConflict,
             onRefresh = viewModel::loadStats,
-            blossomSection = { BlossomDashboardSections() },
+            blossomSection = {
+                BlossomDashboardSections(onOpenSettings = {
+                    onDismiss()
+                    onNavigate(Screen.BlossomSettings)
+                })
+            },
             onStartRelay = { RelayForegroundService.start(context) },
             onStopRelay = { RelayForegroundService.stop(context) },
             onRestartRelay = {
@@ -3722,6 +3727,9 @@ private fun DashboardSheetContent(
                 isExportingJsonl = isExportingJsonl,
                 isExportingMedia = isExportingMedia,
                 isImportingBlossom = isImportingBlossom,
+                actionsEnabled = isImporting ||
+                    relayStatus == RelayForegroundService.RelayStatus.RUNNING ||
+                    relayStatus == RelayForegroundService.RelayStatus.IMPORTING,
                 onImportNotes = onImportNotes,
                 onImportBlossom = onImportBlossom,
                 onExportJsonl = onExportJsonl,

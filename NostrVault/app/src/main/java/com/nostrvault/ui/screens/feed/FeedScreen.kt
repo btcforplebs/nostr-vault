@@ -10,6 +10,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -189,6 +190,8 @@ fun FeedScreen(
     val notes by viewModel.filteredNotes.collectAsState()
     val mediaNotes by viewModel.mediaNotes.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val isRelayImporting by viewModel.isRelayImporting.collectAsState()
+    val relayImportStatus by viewModel.relayImportStatus.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
@@ -756,6 +759,10 @@ fun FeedScreen(
                     onNoteClick = onNoteClick,
                     onLoadMore = viewModel::loadMore,
                 )
+            } else if (notes.isEmpty() && isRelayImporting) {
+                // The relay is busy importing ("Keep it running"), so nothing
+                // loads until it's back. iOS FeedView.importingFeedView.
+                ImportingFeedPlaceholder(relayImportStatus)
             } else if (notes.isEmpty() && isRefreshing) {
                 // Shimmer skeleton loading
                 SkeletonFeed(count = 5)
@@ -1222,26 +1229,52 @@ private fun ArticleList(
         if (notes.none { c in RecipeTopics.categoriesOf(it.tags) }) category = null
     }
     val shown = remember(notes, category) { RecipeTopics.filter(notes, category) }
+    // Recipes are image-forward: a grid of photo tiles, like iOS's
+    // LazyVGrid(.adaptive(minimum: 150)) of RecipeCardView.
+    if (isRecipes) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 150.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding() + 16.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (categories.isNotEmpty()) item(key = "recipe-categories", span = { GridItemSpan(maxLineSpan) }) {
+                // The grid already insets 16dp, so the chip row adds none.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 8.dp),
+                ) {
+                    RecipeCategoryChip("All", category == null) { category = null }
+                    categories.forEach { name ->
+                        RecipeCategoryChip(name.replaceFirstChar { it.titlecase() }, category == name) {
+                            category = if (category == name) null else name
+                        }
+                    }
+                }
+            }
+            items(shown, key = { it.id }) { note ->
+                RecipeCard(
+                    note = note,
+                    authorName = profiles[note.pubkey]?.bestName ?: ("npub…" + note.pubkey.takeLast(6)),
+                    onClick = { onArticleClick(note.id) },
+                )
+            }
+        }
+        return
+    }
     LazyColumn(
         contentPadding = contentPadding,
         modifier = Modifier.fillMaxSize(),
     ) {
-        if (categories.isNotEmpty()) item(key = "recipe-categories") {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                RecipeCategoryChip("All", category == null) { category = null }
-                categories.forEach { name ->
-                    RecipeCategoryChip(name.replaceFirstChar { it.titlecase() }, category == name) {
-                        category = if (category == name) null else name
-                    }
-                }
-            }
-        }
         items(shown, key = { it.id }) { note ->
             val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
             Column(
@@ -1295,6 +1328,65 @@ private fun ArticleList(
                 )
             }
             HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
+        }
+    }
+}
+
+/** One tile in the Recipes grid (iOS RecipeCardView): hero image, title, author. */
+@Composable
+private fun RecipeCard(note: FeedNote, authorName: String, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SecondaryGroupedBg)
+            .border(0.5.dp, SeparatorColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+                .background(colors.primaryPale),
+        ) {
+            val url = meta.imageUrl
+            if (url != null) {
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    NostrVaultIcons.Recipes,
+                    contentDescription = null,
+                    tint = colors.primary.copy(alpha = 0.7f),
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+                text = meta.title,
+                color = PrimaryText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 18.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = authorName,
+                color = SecondaryText,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -2255,6 +2347,35 @@ internal fun ScopedEmptyPlaceholder(
         titleOverride = text.title,
         actionLabel = text.action,
     )
+}
+
+@Composable
+private fun ImportingFeedPlaceholder(statusMessage: String) {
+    val colors = LocalNostrVaultColors.current
+    val stage = com.nostrvault.setup.ImportTourStage.from(statusMessage, completed = false).text
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        CircularProgressIndicator(color = colors.primary)
+        Text(
+            text = "Your feed fills in as your notes come home",
+            color = PrimaryText,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = stage,
+            color = SecondaryText,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable
