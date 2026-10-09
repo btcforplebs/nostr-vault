@@ -2056,36 +2056,22 @@ struct NoteDetailViewWrapper: View {
         // Build the appropriate REQ filter based on identifier type
         let filter: [String: Any]
         if noteId.hasPrefix("naddr1") {
-            // NIP-19 naddr TLV: type 0 = d-tag, type 1 = relay, type 2 = pubkey, type 3 = kind
             guard let decoded = Bech32.decode(noteId) else {
                 self.isLoading = false
                 self.error = "Invalid naddr identifier"
                 return
             }
-            var data = decoded.data
-            var dTag: String?
-            var pubkey: String?
-            var kind: Int?
-            while data.count >= 2 {
-                let tlvType = data.removeFirst()
-                let length = Int(data.removeFirst())
-                guard data.count >= length else { break }
-                let value = data.prefix(length)
-                switch tlvType {
-                case 0: dTag = String(data: Data(value), encoding: .utf8)
-                case 2 where length == 32: pubkey = value.map { String(format: "%02x", $0) }.joined()
-                case 3 where length == 4:
-                    kind = Int(Data(value).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian })
-                default: break
-                }
-                data.removeFirst(length)
-            }
-            guard let k = kind, let p = pubkey else {
+            // One reader for every naddr the app meets — a `nostr:` link from
+            // another app lands here, a quoted naddr inside a note goes through
+            // `coordinate(fromNaddrTLV:)`, and both must agree on what a payload
+            // names. It also refuses a `d` tag that is not valid UTF-8 instead of
+            // reading it as the empty `d` tag, which named a different event.
+            guard let parts = QuoteReference.naddrParts(fromTLV: decoded.data) else {
                 self.isLoading = false
                 self.error = "Could not decode naddr"
                 return
             }
-            filter = ["kinds": [k], "authors": [p], "#d": [dTag ?? ""], "limit": 1]
+            filter = ["kinds": [parts.kind], "authors": [parts.pubkey], "#d": [parts.dTag], "limit": 1]
         } else {
             let hexId: String
             if noteId.hasPrefix("note1") {
