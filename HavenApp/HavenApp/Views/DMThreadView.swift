@@ -21,6 +21,8 @@ struct DMThreadView: View {
     @State private var pickedPhotoItem: PhotosPickerItem?
     @State private var attachment: PickedAttachment?
     @State private var showingMediaUrl: IdentifiableURL?
+    /// The other person's profile, opened from the header.
+    @State private var showingProfile: IdentifiableString?
     @Namespace private var mediaZoom
     @Environment(\.dismiss) private var dismiss
 
@@ -103,6 +105,13 @@ struct DMThreadView: View {
                         .onChange(of: messages.count) { _, _ in
                             scrollToBottom(proxy)
                         }
+                    }
+                }
+                .overlay {
+                    if messages.isEmpty {
+                        Text("Start a conversation")
+                            .font(.appSystem(size: 15))
+                            .foregroundColor(.secondary)
                     }
                 }
 
@@ -225,6 +234,27 @@ struct DMThreadView: View {
             }
             .background(Color.platformWindowBackground.ignoresSafeArea())
             .navigationTitle(counterpartyProfile?.bestName ?? "DM")
+            .toolbar {
+                // Who this is, and a way to their profile (Android DMThreadScreen).
+                ToolbarItem(placement: .principal) {
+                    Button { showingProfile = IdentifiableString(id: counterpartyPubkey) } label: {
+                        HStack(spacing: 8) {
+                            AvatarView(url: counterpartyProfile?.pictureURL, pubkey: counterpartyPubkey, size: 28)
+                            Text(counterpartyProfile?.bestName ?? String(counterpartyPubkey.prefix(8)) + "…")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens their profile")
+                }
+            }
+            .sheet(item: $showingProfile) { p in
+                ProfileView(pubkey: p.id, onDismiss: { showingProfile = nil })
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #else

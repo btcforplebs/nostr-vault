@@ -46,10 +46,14 @@ extension MediaGalleryView {
                         .font(.appSystem(size: 18, weight: .bold, design: .default))
                         .tracking(0.2)
 
-                    Text("Try changing your filter settings")
-                        .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .tracking(0.3)
+                    // Only when a filter is what hid it all; with no media
+                    // at all there is no setting to change (as on Android).
+                    if mediaTotalCount > 0 {
+                        Text("Try changing your filter settings")
+                            .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
