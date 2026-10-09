@@ -506,6 +506,20 @@ func WotRefreshProgressC() *C.char {
 	return C.CString(string(result))
 }
 
+//export WotNewcomersC
+func WotNewcomersC(from C.int) *C.char {
+	// JSON {"total": n, "pubkeys": [...]}: people the running (or last)
+	// rebuild found who weren't on the saved web, from index from on. Pass
+	// the total from the last call to get only the people found since.
+	// The caller frees the string.
+	pubkeys, total := wot.Newcomers(int(from))
+	result, _ := json.Marshal(struct {
+		Total   int      `json:"total"`
+		Pubkeys []string `json:"pubkeys"`
+	}{total, pubkeys})
+	return C.CString(string(result))
+}
+
 //export RequestCatchUpC
 func RequestCatchUpC() {
 	// Like RequestRelaySyncC, but for the app returning from absence
