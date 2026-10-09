@@ -50,6 +50,9 @@ struct ProfileView: View {
 
     // Edit profile
     @State private var showingEditProfile = false
+    /// Fields from an autosave that did not reach the relays; the next edit
+    /// opens with them.
+    @State private var unsavedDraft: [String: String]?
 
     // Compose post
     @State private var showingCompose = false
@@ -420,22 +423,23 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 bannerHeader
                 VStack(spacing: 0) {
+                    // Who, what they say, where to find them, then what you
+                    // can do. One rule above the tabs instead of one between
+                    // every block.
                     headerBlock
-                    actionRow
-                        .padding(.top, 4)
                     if let about = profile?.about, !about.isEmpty {
                         bioBlock(about)
                     } else if awaitingMetadata {
                         bioPlaceholder
                     }
-                    divider
-                    statsBlock
-                    divider
                     if awaitingMetadata {
-                        identityPlaceholder
+                        linksPlaceholder
                     } else {
-                        identityBlock
+                        linksRow
                     }
+                    followCountsRow
+                    actionRow
+                        .padding(.top, 14)
                     divider
                     sectionTabBar
                     sectionContent
@@ -460,15 +464,13 @@ struct ProfileView: View {
         // The banner draws its own scrim under the bar; the system edge would
         // lay a grey band over it.
         .hiddenTopScrollEdge()
-        .if(isOwnProfile) { view in
-            view.refreshable {
-                // Its own task: SwiftUI cancels the refresh task when this
-                // page redraws mid-refresh, which cut every wait inside short
-                // and dropped the spinner at once. Awaiting a separate task
-                // holds the pull open until the load is actually done.
-                await Task { await refreshProfile() }.value
-            }
+        #if os(iOS)
+        // Your own profile has nothing that needs pulling fresh, so the pull
+        // opens the editor instead (Logen). Swiping the editor away saves.
+        .pullToEdit(isEnabled: isOwnProfile && !showsDismissButton) {
+            showingEditProfile = true
         }
+        #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .onAppear {
@@ -677,8 +679,7 @@ struct ProfileView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 if isOwnProfile {
-                    // `.refreshable` on the scroll view is the profile's only refresh
-                    // path, and macOS has no pull-to-refresh to reach it.
+                    // The profile's only refresh path; on iOS the pull opens the editor.
                     Button(action: { Task { await refreshProfile() } }) {
                         Image(systemName: "arrow.clockwise")
                             .foregroundColor(.havenPurple)
@@ -728,10 +729,18 @@ struct ProfileView: View {
         }
         #endif
         .sheet(isPresented: $showingEditProfile) {
-            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
-                applyProfileUpdate(updated)
-            }
+            let existing = profile ?? FeedProfile(pubkey: pubkey)
+            #if os(iOS)
+            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, draft: unsavedDraft,
+                            onSave: applyProfileUpdate,
+                            onAutosave: { initial, edited in autosaveProfile(existing, initial: initial, edited: edited) },
+                            onDiscard: { unsavedDraft = nil })
             .environmentObject(nostrService)
+            .presentationDragIndicator(.visible)
+            #else
+            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, onSave: applyProfileUpdate)
+            .environmentObject(nostrService)
+            #endif
         }
         #if os(macOS)
         // On iPhone and iPad every banner is drawn in its own window above all
@@ -915,19 +924,6 @@ struct ProfileView: View {
                         .redacted(reason: .placeholder)
                         .accessibilityHidden(true)
                 }
-
-                Button(action: copyNpub) {
-                    HStack(spacing: 5) {
-                        Text(formattedNpub)
-                            .font(.appSystem(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        Image(systemName: copiedNpub ? "checkmark" : "doc.on.doc")
-                            .font(.appSystem(size: 9))
-                            .foregroundColor(copiedNpub ? .green : .secondary.opacity(0.6))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(copiedNpub ? "Public key copied" : "Copy public key")
             }
         }
         .padding(.horizontal, 16)
@@ -1007,17 +1003,13 @@ struct ProfileView: View {
             .accessibilityHidden(true)
     }
 
-    private var identityPlaceholder: some View {
-        identityRowContent(
-            label: "LIGHTNING",
-            value: "name@wallet.example",
-            icon: "bolt.fill",
-            tint: .secondary,
-            copied: false,
-            trailing: AnyView(EmptyView())
-        )
-        .redacted(reason: .placeholder)
-        .accessibilityHidden(true)
+    private var linksPlaceholder: some View {
+        linkChip("name@wallet.example", icon: "bolt.fill", tint: .secondary)
+            .redacted(reason: .placeholder)
+            .accessibilityHidden(true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
     }
 
     // MARK: - Bio
@@ -1053,7 +1045,11 @@ struct ProfileView: View {
     private func actionButtons(compact: Int) -> some View {
         HStack(spacing: 8) {
             if isOwnProfile {
+                #if os(macOS)
                 actionPill("Post", icon: "pencil", filled: true) { showingCompose = true }
+                #endif
+                // Pulling the page down opens this too; the button stays for
+                // VoiceOver and anyone who has not found the pull.
                 actionPill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
                 trustWebButton
             } else {
@@ -1175,40 +1171,45 @@ struct ProfileView: View {
         .accessibilityLabel("More")
     }
 
-    // MARK: - Stats block
+    // MARK: - Follow counts
 
-    private var statsBlock: some View {
-        HStack(spacing: 0) {
-            statCell(value: countText(for: .notes), label: "NOTES")
-            statDivider
-            statCell(value: countText(for: .media), label: "MEDIA")
-            statDivider
+    /// One line under the links. The Notes and Media counts already sit on
+    /// their tabs, so only the two that open somewhere else are here.
+    private var followCountsRow: some View {
+        HStack(spacing: 18) {
             Button { openFollowList(.following) } label: {
-                if isOwnProfile {
-                    statCell(
-                        value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
-                        label: "FOLLOWING"
-                    )
-                } else {
-                    statCell(
-                        value: followingCount.map(shortInt) ?? "—",
-                        label: "FOLLOWING"
-                    )
-                }
+                followCount(followingDisplay, label: "Following")
             }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            statDivider
             Button { openFollowList(.followers) } label: {
-                statCell(
-                    value: displayedFollowersCount.map(shortInt) ?? "—",
-                    label: "FOLLOWERS"
-                )
+                followCount(displayedFollowersCount.map(shortInt) ?? "—", label: "Followers")
             }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    private var followingDisplay: String {
+        if isOwnProfile {
+            return shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count)
+        }
+        return followingCount.map(shortInt) ?? "—"
+    }
+
+    private func followCount(_ value: String, label: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(value)
+                .font(.appSystem(size: 14, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(.primary)
+            Text(label)
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+        }
+        .lineLimit(1)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Follow lists
@@ -1254,153 +1255,54 @@ struct ProfileView: View {
         .environmentObject(configService)
     }
 
-    private var statDivider: some View {
-        Rectangle()
-            .fill(Color.platformSeparator.opacity(0.4))
-            .frame(width: 0.5)
-            .padding(.vertical, 10)
-    }
+    // MARK: - Links
 
-    private func statCell(value: String, label: String, tint: Color = .primary) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.appSystem(size: 18, weight: .bold, design: .monospaced))
-                .foregroundColor(tint)
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
-            Text(label)
-                .font(.appSystem(size: 9, weight: .semibold))
-                .tracking(0.6)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Identity block (table-style rows)
-
-    @ViewBuilder
-    private var identityBlock: some View {
-        VStack(spacing: 0) {
+    /// Lightning address, website and npub, one wrapping row of chips in
+    /// place of a table row each. Tap copies, or opens the website.
+    private var linksRow: some View {
+        ProfileChipFlow(spacing: 8) {
             if let lud16 = lightningAddress {
-                identityRow(
-                    label: "LIGHTNING",
-                    value: lud16,
-                    icon: "bolt.fill",
-                    tint: .orange,
-                    copied: copiedLightning,
-                    trailing: zapInlineButton(lud16: lud16),
-                    action: { copyToClipboard(lud16); triggerCopied($copiedLightning) }
-                )
+                Button { copyToClipboard(lud16); triggerCopied($copiedLightning) } label: {
+                    linkChip(lud16, icon: copiedLightning ? "checkmark" : "bolt.fill",
+                             tint: copiedLightning ? .green : .orange)
+                }
+                .accessibilityLabel(copiedLightning ? "Lightning address copied" : "Copy Lightning address \(lud16)")
             }
-
             if let website = profile?.website, !website.isEmpty,
                let url = URL(string: website.hasPrefix("http") ? website : "https://\(website)") {
-                identityDivider
-                Button(action: { openURL(url) }) {
-                    identityRowContent(
-                        label: "WEBSITE",
-                        value: website.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: ""),
-                        icon: "globe",
-                        tint: .havenPurple,
-                        copied: false,
-                        trailing: AnyView(
-                            Image(systemName: "arrow.up.right.square")
-                                .font(.appSystem(size: 13, weight: .semibold))
-                                .foregroundColor(.havenPurple)
-                        )
-                    )
+                let shown = website.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
+                Button { openURL(url) } label: {
+                    linkChip(shown, icon: "globe", tint: .havenPurple)
                 }
-                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(shown)")
             }
+            Button(action: copyNpub) {
+                linkChip(formattedNpub, icon: copiedNpub ? "checkmark" : "key.fill",
+                         tint: copiedNpub ? .green : .secondary)
+            }
+            .accessibilityLabel(copiedNpub ? "Public key copied" : "Copy public key")
         }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
-    private var identityDivider: some View {
-        Rectangle()
-            .fill(Color.platformSeparator.opacity(0.4))
-            .frame(height: 0.5)
-            .padding(.leading, 16)
-    }
-
-    private func zapInlineButton(lud16: String) -> AnyView {
-        if isOwnerProfile {
-            return AnyView(EmptyView())
-        }
-        guard !ConfigService.shared.config.nwcURI.isEmpty else { return AnyView(EmptyView()) }
-        return AnyView(
-            HStack(spacing: 3) {
-                Image(systemName: "bolt.fill")
-                    .font(.appSystem(size: 10, weight: .bold))
-                Text("\(defaultZapSats)")
-                    .font(.appSystem(size: 11, weight: .bold, design: .monospaced))
-            }
-            .foregroundColor(.orange)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.orange.opacity(0.15))
-            .cornerRadius(4)
-            .overlay { ZapBurstView(isAnimating: $showLightning) }
-            .contentShape(RoundedRectangle(cornerRadius: 4))
-            .onLongPressGesture {
-                #if os(iOS)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats)
-            }
-            .onTapGesture {
-                Task { await zapProfile(lud16: lud16) }
-            }
-        )
-    }
-
-    /// `trailing` (the zap pill) sits beside the copy button, not in its label,
-    /// so a click on the pill can only ever zap, never also copy the address.
-    private func identityRow(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Button(action: action) {
-                identityRowContent(label: label, value: value, icon: icon, tint: tint, copied: copied, trailing: AnyView(EmptyView()), trailingPadding: 0)
-            }
-            .buttonStyle(.plain)
-            trailing
-        }
-        .padding(.trailing, 16)
-    }
-
-    private func identityRowContent(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView, trailingPadding: CGFloat = 16) -> some View {
-        HStack(spacing: 12) {
+    private func linkChip(_ text: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
             Image(systemName: icon)
-                .font(.appSystem(size: 13, weight: .semibold))
+                .font(.appSystem(size: 10, weight: .bold))
                 .foregroundColor(tint)
-                .frame(width: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.appSystem(size: 9, weight: .heavy))
-                    .tracking(0.8)
-                    .foregroundColor(.secondary)
-                Text(value)
-                    .font(.appSystem(size: 13, design: .monospaced))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            if copied {
-                Image(systemName: "checkmark")
-                    .font(.appSystem(size: 11, weight: .bold))
-                    .foregroundColor(.green)
-            }
-
-            trailing
+            Text(text)
+                .font(.appSystem(size: 12, weight: .medium))
+                .foregroundColor(.primary.opacity(0.8))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, trailingPadding)
-        .padding(.vertical, 10)
-        // A plain button on macOS only takes clicks on drawn pixels; without
-        // this the Spacer gap and the padding ignored clicks.
-        .contentShape(Rectangle())
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .background(Capsule().fill(Color.secondary.opacity(0.1)))
+        .contentShape(Capsule())
     }
 
     // MARK: - Section tab bar
@@ -2077,6 +1979,26 @@ struct ProfileView: View {
         nostrService.saveProfilesThrottled()
     }
 
+    /// The edit sheet was swiped away with changes. They show at once and are
+    /// published behind; if that fails the page goes back to what it showed
+    /// and keeps the changes for the next edit.
+    private func autosaveProfile(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) {
+        let shownBefore = nostrService.profiles[pubkey]
+        unsavedDraft = nil
+        applyProfileUpdate(ProfileEditView.preview(existing, initial: initial, edited: edited))
+        Task {
+            switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
+                                                 initial: initial, edited: edited) {
+            case .success(let updated):
+                applyProfileUpdate(updated)
+            case .failure:
+                nostrService.profiles[pubkey] = shownBefore
+                unsavedDraft = edited
+                ErrorNotificationManager.shared.show("Profile not saved. Pull down to try again.")
+            }
+        }
+    }
+
     // MARK: - Note streaming
 
     private func fetchAuthorNotes() {
@@ -2653,7 +2575,16 @@ struct ProfileEditView: View {
     @EnvironmentObject var nostrService: NostrService
 
     let existing: FeedProfile
+    /// Unsaved fields from an autosave that failed, by kind-0 key, laid over
+    /// `existing` when the form opens so nothing typed is lost.
+    var draft: [String: String]? = nil
     let onSave: (FeedProfile) -> Void
+    /// iOS: called when the sheet goes away, swiped down or Done, with what
+    /// the form showed when opened and what it holds now (by kind-0 key). The
+    /// profile page publishes them; nil keeps the Cancel and Save buttons.
+    var onAutosave: ((_ initial: [String: String], _ edited: [String: String]) -> Void)? = nil
+    /// Discard was tapped: whatever `draft` held is thrown away too.
+    var onDiscard: (() -> Void)? = nil
 
     @State private var displayName: String = ""
     @State private var name: String = ""
@@ -2668,6 +2599,12 @@ struct ProfileEditView: View {
     @State private var errorMessage: String?
     /// What the form showed when opened, by kind-0 key: a save applies only fields changed from it.
     @State private var initialFields: [String: String] = [:]
+    /// Set by Discard, so closing the sheet afterwards does not save.
+    @State private var discarded = false
+
+    private var hasChanges: Bool {
+        ProfileEditView.hasChanges(initial: initialFields, edited: formFields())
+    }
 
     var body: some View {
         platformContainer {
@@ -2727,6 +2664,10 @@ struct ProfileEditView: View {
             }
         }
         .onAppear { loadFromExisting() }
+        .onDisappear {
+            guard let onAutosave, !discarded, hasChanges else { return }
+            onAutosave(initialFields, formFields())
+        }
     }
 
     @ViewBuilder
@@ -2741,7 +2682,59 @@ struct ProfileEditView: View {
         #endif
     }
 
+    @ViewBuilder
     private var editHeader: some View {
+        if onAutosave != nil {
+            autosaveHeader
+        } else {
+            saveHeader
+        }
+    }
+
+    /// No Save button: swiping the sheet down, or Done, saves. Discard is the
+    /// way out without saving, and only does anything once a field changed.
+    private var autosaveHeader: some View {
+        HStack {
+            Button("Discard") {
+                discarded = true
+                onDiscard?()
+                performDismiss()
+            }
+            .foregroundColor(hasChanges ? .red : .secondary)
+            .disabled(!hasChanges)
+
+            Spacer()
+
+            VStack(spacing: 1) {
+                Text("Edit Profile")
+                    .font(.appSystem(size: 15, weight: .semibold))
+                Text(hasChanges ? "Swipe down to save" : "Swipe down to close")
+                    .font(.appSystem(size: 11))
+                    .foregroundColor(.secondary)
+                    .contentTransition(.opacity)
+            }
+
+            Spacer()
+
+            Button(action: performDismiss) {
+                Text("Done")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .background(Color.platformControlBackground)
+        .overlay(
+            Rectangle()
+                .fill(Color.platformSeparator.opacity(0.5))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
+    private var saveHeader: some View {
         HStack {
             Button("Cancel") { performDismiss() }
                 .foregroundColor(.secondary)
@@ -2918,6 +2911,23 @@ struct ProfileEditView: View {
         lud16 = existing.lud16 ?? ""
         website = existing.website ?? ""
         initialFields = formFields()
+        if let draft { applyFields(draft) }
+    }
+
+    private func applyFields(_ fields: [String: String]) {
+        for (key, value) in fields {
+            switch key {
+            case ProfileMetadataMerge.displayName: displayName = value
+            case ProfileMetadataMerge.name: name = value
+            case ProfileMetadataMerge.about: about = value
+            case ProfileMetadataMerge.picture: pictureURL = value
+            case ProfileMetadataMerge.banner: bannerURL = value
+            case ProfileMetadataMerge.nip05: nip05 = value
+            case ProfileMetadataMerge.lud16: lud16 = value
+            case ProfileMetadataMerge.website: website = value
+            default: break
+            }
+        }
     }
 
     private func formFields() -> [String: String] {
@@ -2940,51 +2950,80 @@ struct ProfileEditView: View {
         let initial = initialFields
 
         Task {
-            // A kind 0 replaces the whole profile. Start from the newest one on
-            // the relays so lud06 and every key this form doesn't show
-            // survive; if it can't be fetched, publishing would wipe them, so
-            // don't (same rule as the follow list).
-            let pubkey = nostrService.activeHexPubkey
-            let alsoAsk = (nostrService.outboxRelays[pubkey] ?? []) + (nostrService.relayLists[pubkey] ?? [])
-            let lookup = await nostrService.lookupNewestReplaceable(kind: 0, for: pubkey, alsoAsk: alsoAsk)
-            guard lookup.event != nil || lookup.confirmedNone else {
-                errorMessage = "Couldn't load your current profile from the relays. Nothing was changed; try again."
+            switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
+                                                 initial: initial, edited: edited) {
+            case .success(let updated):
+                onSave(updated)
                 isSaving = false
-                return
-            }
-            let merged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
-                                                    initial: initial, edited: edited)
-            guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
-                errorMessage = "Could not encode profile."
+                performDismiss()
+            case .failure(let failure):
+                errorMessage = failure.message
                 isSaving = false
-                return
             }
-
-            guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: []) else {
-                errorMessage = "Could not sign event. Check that your key is available."
-                isSaving = false
-                return
-            }
-
-            nostrService.postEvent(signed)
-
-            var updated = existing
-            updated.name = merged[ProfileMetadataMerge.name] as? String
-            updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
-            updated.about = merged[ProfileMetadataMerge.about] as? String
-            updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
-            updated.bannerURL = (merged[ProfileMetadataMerge.banner] as? String).flatMap { URL(string: $0) }
-            updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
-            updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
-            updated.lud06 = merged["lud06"] as? String
-            updated.website = merged[ProfileMetadataMerge.website] as? String
-            updated.metadataCreatedAt = signed.created_at
-
-            onSave(updated)
-
-            isSaving = false
-            performDismiss()
         }
+    }
+
+    struct SaveFailure: Error { let message: String }
+
+    /// True when a field differs from what the form showed, ignoring the
+    /// spaces and newlines a save trims anyway.
+    static func hasChanges(initial: [String: String], edited: [String: String]) -> Bool {
+        edited.contains { key, value in
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+                != (initial[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// `existing` with the changed fields applied, for showing an edit before
+    /// the relays have it.
+    static func preview(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) -> FeedProfile {
+        let shown = initial.filter { !$0.value.isEmpty }.mapValues { $0 as Any }
+        return profile(existing, from: ProfileMetadataMerge.merge(base: shown, initial: initial, edited: edited))
+    }
+
+    /// Publishes the changed fields as a new kind 0 and returns the profile it
+    /// describes.
+    static func publish(nostrService: NostrService, existing: FeedProfile,
+                        initial: [String: String], edited: [String: String]) async -> Result<FeedProfile, SaveFailure> {
+        // A kind 0 replaces the whole profile. Start from the newest one on
+        // the relays so lud06 and every key this form doesn't show
+        // survive; if it can't be fetched, publishing would wipe them, so
+        // don't (same rule as the follow list).
+        let pubkey = nostrService.activeHexPubkey
+        let alsoAsk = (nostrService.outboxRelays[pubkey] ?? []) + (nostrService.relayLists[pubkey] ?? [])
+        let lookup = await nostrService.lookupNewestReplaceable(kind: 0, for: pubkey, alsoAsk: alsoAsk)
+        guard lookup.event != nil || lookup.confirmedNone else {
+            return .failure(SaveFailure(message: "Couldn't load your current profile from the relays. Nothing was changed; try again."))
+        }
+        let merged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
+                                                initial: initial, edited: edited)
+        guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
+            return .failure(SaveFailure(message: "Could not encode profile."))
+        }
+
+        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: []) else {
+            return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
+        }
+
+        nostrService.postEvent(signed)
+
+        var updated = profile(existing, from: merged)
+        updated.lud06 = merged["lud06"] as? String
+        updated.metadataCreatedAt = signed.created_at
+        return .success(updated)
+    }
+
+    private static func profile(_ existing: FeedProfile, from merged: [String: Any]) -> FeedProfile {
+        var updated = existing
+        updated.name = merged[ProfileMetadataMerge.name] as? String
+        updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
+        updated.about = merged[ProfileMetadataMerge.about] as? String
+        updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
+        updated.bannerURL = (merged[ProfileMetadataMerge.banner] as? String).flatMap { URL(string: $0) }
+        updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
+        updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
+        updated.website = merged[ProfileMetadataMerge.website] as? String
+        return updated
     }
 
     private func performDismiss() {
@@ -3313,6 +3352,139 @@ private extension View {
         }
     }
 }
+
+/// Chips left to right, wrapping to a new line when the next one does not
+/// fit. A chip wider than the row is held to the row and truncates.
+private struct ProfileChipFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for subview in subviews {
+            let size = Self.size(of: subview, in: width)
+            if x + size.width > width && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            widest = max(widest, x - spacing)
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: proposal.width ?? widest, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = Self.size(of: subview, in: bounds.width)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: .init(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+
+    private static func size(of subview: LayoutSubview, in width: CGFloat) -> CGSize {
+        subview.sizeThatFits(ProposedViewSize(width: width.isFinite ? width : nil, height: nil))
+    }
+}
+
+#if os(iOS)
+// MARK: - Pull to edit
+
+private extension View {
+    /// Pulling the top of the page down past a mark and letting go calls
+    /// `onTrigger`. A label in the space the pull opens says what letting go
+    /// will do. Needs scroll geometry, so iOS 17 keeps the button only.
+    @ViewBuilder
+    func pullToEdit(isEnabled: Bool, onTrigger: @escaping () -> Void) -> some View {
+        if #available(iOS 18.0, *), isEnabled {
+            modifier(PullToEditModifier(onTrigger: onTrigger))
+        } else {
+            self
+        }
+    }
+}
+
+/// How far the page is pulled past its top. A reference held in `@State`, so
+/// the per-frame writes redraw only the label, not the profile.
+private final class PullToEditState: ObservableObject {
+    static let threshold: CGFloat = 96
+
+    @Published private(set) var distance: CGFloat = 0
+    var isArmed: Bool { distance >= Self.threshold }
+
+    func update(_ newDistance: CGFloat) {
+        // Rounded so a resting page publishes nothing.
+        let rounded = newDistance.rounded()
+        guard rounded != distance else { return }
+        let wasArmed = isArmed
+        distance = rounded
+        if isArmed && !wasArmed {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct PullToEditModifier: ViewModifier {
+    let onTrigger: () -> Void
+
+    @State private var pull = PullToEditState()
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                max(0, -(geo.contentOffset.y + geo.contentInsets.top))
+            } action: { _, distance in
+                pull.update(distance)
+            }
+            .onScrollPhaseChange { oldPhase, newPhase in
+                // Let go past the mark. Pulling back above it first cancels.
+                if oldPhase == .interacting, newPhase != .interacting, pull.isArmed {
+                    onTrigger()
+                }
+            }
+            .overlay(alignment: .top) {
+                // The overlay keeps to the safe area, so this sits just under
+                // the bars, over the banner as it comes down.
+                PullToEditLabel(pull: pull)
+                    .padding(.top, 10)
+                    .allowsHitTesting(false)
+            }
+    }
+}
+
+private struct PullToEditLabel: View {
+    @ObservedObject var pull: PullToEditState
+
+    var body: some View {
+        let progress = min(pull.distance / PullToEditState.threshold, 1)
+        HStack(spacing: 6) {
+            Image(systemName: pull.isArmed ? "pencil.circle.fill" : "pencil")
+                .font(.appSystem(size: 13, weight: .bold))
+            Text(pull.isArmed ? "Release to edit profile" : "Pull to edit profile")
+                .font(.appSystem(size: 13, weight: .semibold))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+        // It lands on the banner, which can be any picture: a dark disc
+        // until armed, then the accent.
+        .background(Capsule().fill(pull.isArmed ? Color.havenPurple : Color.black.opacity(0.6)))
+        .opacity(Double(max(0, progress * 1.6 - 0.2)))
+        .scaleEffect(0.85 + 0.15 * progress)
+        .animation(Motion.fade, value: pull.isArmed)
+        .accessibilityHidden(true)
+    }
+}
+#endif
 
 /// Notes received by the profile's stream and waiting to go on screen. A
 /// reference, so adding to it does not redraw the page.
