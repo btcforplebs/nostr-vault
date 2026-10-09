@@ -54,6 +54,8 @@ class NostrService @Inject constructor(
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
         private val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+        /** Lists cached on disk; their created_at is cached alongside (kind 0 keeps its own). */
+        private val PERSISTED_LIST_KINDS = setOf(10002, 10050, 10063)
 
         /**
          * A loopback address means "this machine". Advertising one, or
@@ -275,6 +277,10 @@ class NostrService @Inject constructor(
     // Initialization
     // ══════════════════════════════════════════════════════════════════
 
+    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS].
+     *  Declared above init: initialize() seeds it from disk. */
+    private val replaceableNewest = ConcurrentHashMap<String, Long>()
+
     init {
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
@@ -288,6 +294,12 @@ class NostrService @Inject constructor(
     }
 
     private fun loadProfilesFromDisk() {
+        // The lists below come back from disk, so their created_at must too:
+        // otherwise the first fetch after launch accepts any older signed copy.
+        // Read before any relay traffic, not on the IO launch below.
+        for ((key, createdAt) in profileRepository.loadListStamps()) {
+            replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        }
         scope.launch(Dispatchers.IO) {
             val loaded = profileRepository.loadProfiles()
             val relays = profileRepository.loadRelayLists()
@@ -558,9 +570,6 @@ class NostrService @Inject constructor(
         }
         scheduleBufferFlush()
     }
-
-    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
-    private val replaceableNewest = ConcurrentHashMap<String, Long>()
 
     /**
      * True when [eventObj] is validly signed and not older than the newest event of
@@ -1010,6 +1019,9 @@ class NostrService @Inject constructor(
             profileRepository.saveOutboxRelays(_outboxRelays.value)
             profileRepository.saveDMRelayLists(_dmRelayLists.value)
             profileRepository.saveServerLists(_serverLists.value)
+            profileRepository.saveListStamps(
+                replaceableNewest.filterKeys { it.substringBefore(':').toIntOrNull() in PERSISTED_LIST_KINDS }
+            )
         }
     }
 
