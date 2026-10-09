@@ -67,6 +67,17 @@ class TrustMapTest {
         assertTrue("kept ${kept.size}", kept.size > 2100)
     }
 
+    @Test fun `lite globe is for phones with 4 GB or less`() {
+        val gb = 1024L * 1024 * 1024
+        assertTrue(TrustMap.isLite(3_725_528L * 1024, lowRamDevice = false)) // moto g play 2026
+        assertTrue(TrustMap.isLite(4 * gb, lowRamDevice = false))
+        assertFalse(TrustMap.isLite(5_500_000_000L, lowRamDevice = false))
+        assertTrue(TrustMap.isLite(8 * gb, lowRamDevice = true))
+        // Unknown memory reads as a full phone.
+        assertFalse(TrustMap.isLite(0, lowRamDevice = false))
+        assertTrue(TrustMap.HAZE_CAP_LITE < TrustMap.HAZE_CAP)
+    }
+
     // ── Globe camera ─────────────────────────────────────────────────
 
     private fun flicked() = GlobeCamera().apply { flick(800.0, -300.0, 0.0, reduceMotion = false) }
