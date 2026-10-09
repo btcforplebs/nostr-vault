@@ -1101,23 +1101,38 @@ class NostrService: ObservableObject {
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
-        guard let merged = HomeVaultLogic.mergeServerList(
-            existing: serverLists[owner] ?? [],
-            current: current,
-            previouslyManaged: previouslyManaged,
-            homeVaultNpub: homeVault,
-            ownMeshNpub: ownMesh,
-            shareOwnMesh: shareOwnMesh
-        ) else {
-            #if DEBUG
-            print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
-            #endif
-            return
-        }
-
-        let tags = merged.map { ["server", $0] }
+        let homeVaultNpub = homeVault, ownMeshNpub = ownMesh, share = shareOwnMesh
 
         Task {
+            // Start from the newest list on the relays, not this phone's cache
+            // (same rule as Android): the cache only when the relays could not
+            // say, and nothing when they all confirmed there is none.
+            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [])
+            let existing: [String]
+            if let newest = lookup.event {
+                if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id) {
+                    serverLists[owner] = ProfileRepository.parseServerListTags(newest.tags)
+                }
+                existing = serverLists[owner] ?? []
+            } else if lookup.confirmedNone {
+                existing = []
+            } else {
+                existing = serverLists[owner] ?? []
+            }
+            guard let merged = HomeVaultLogic.mergeServerList(
+                existing: existing,
+                current: current,
+                previouslyManaged: previouslyManaged,
+                homeVaultNpub: homeVaultNpub,
+                ownMeshNpub: ownMeshNpub,
+                shareOwnMesh: share
+            ) else {
+                #if DEBUG
+                print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
+                #endif
+                return
+            }
+            let tags = merged.map { ["server", $0] }
             if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
                 // Ours is now the newest: merge from it next time, even before it echoes back.
                 if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id) {
