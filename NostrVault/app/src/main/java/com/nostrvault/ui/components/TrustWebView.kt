@@ -339,6 +339,12 @@ private fun TrustWebContent(
     var showingList by remember { mutableStateOf(false) }
     /** Your whole trust graph, for the search's "In your web" tag. */
     var web by remember { mutableStateOf(emptySet<String>()) }
+    /**
+     * How many of your follows follow each person past them (the relay's
+     * vouches), and who of the drawn shell is Close. Null on an old cache.
+     */
+    var vouches by remember { mutableStateOf<Map<String, Int>?>(null) }
+    var closeHaze by remember { mutableStateOf(emptySet<String>()) }
     // An empty follow list means "not in yet" until a load has finished.
     val loadingFollows by trust.isLoadingFollows.collectAsState()
     val followsAttempted by trust.followsAttempted.collectAsState()
@@ -386,8 +392,13 @@ private fun TrustWebContent(
     LaunchedEffect(trustGraphUpdate, myFollows) {
         val graph = trust.myTrustGraph()
         val inner = myFollows + me + author
-        haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
+        val counts = trust.myVouches()
+        val shell = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
+        closeHaze = counts?.let { v -> shell.filterTo(HashSet()) { (v[it] ?: 0) >= TrustMap.CLOSE_VOUCHES } }.orEmpty()
+        haze = shell
         web = graph
+        vouches = counts
+        if (layer !in TrustMap.layers(counts != null)) layer = TrustMap.Layer.EVERYONE
     }
 
     // The web grew: count the newcomers into the pill, which folds away a few
@@ -789,6 +800,7 @@ private fun TrustWebContent(
         Box(if (clip) modifier.clipToBounds() else modifier) {
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
+                closeHaze = closeHaze,
                 lite = lite,
                 ringFaces = ringFaces,
                 running = !showingList,
@@ -867,7 +879,7 @@ private fun TrustWebContent(
     if (isWOTTab) {
         // Full bleed, like the feed: space runs under the status bar and the
         // floating tab bar, and the bar's glass pills sit over it (iOS WOT bar).
-        val counts = remember(myFollows, web) { TrustMap.layerCounts(me, myFollows, web) }
+        val counts = remember(myFollows, web, vouches) { TrustMap.layerCounts(me, myFollows, web, vouches) }
         Box(Modifier.fillMaxSize()) {
             globeArea(Modifier.fillMaxSize(), clip = false, overlayPadding = PaddingValues(bottom = bottomInset))
             Column(
@@ -879,6 +891,7 @@ private fun TrustWebContent(
             ) {
                 WotTopBar(
                     layer = layer,
+                    layers = TrustMap.layers(vouches != null),
                     counts = counts,
                     onLayer = { layer = it },
                     refreshing = refreshState != null,
@@ -1207,6 +1220,7 @@ private val TrustMap.Layer.icon: ImageVector
     get() = when (this) {
         TrustMap.Layer.EVERYONE -> NostrVaultIcons.WebOfTrust
         TrustMap.Layer.FOLLOWING -> NostrVaultIcons.People
+        TrustMap.Layer.CLOSE -> NostrVaultIcons.Groups
         TrustMap.Layer.FURTHER_OUT -> NostrVaultIcons.Sparkles
     }
 
@@ -1224,6 +1238,7 @@ private fun compactCount(n: Int): String =
 @Composable
 private fun WotTopBar(
     layer: TrustMap.Layer,
+    layers: List<TrustMap.Layer>,
     counts: Map<TrustMap.Layer, Int>,
     onLayer: (TrustMap.Layer) -> Unit,
     refreshing: Boolean,
@@ -1261,7 +1276,7 @@ private fun WotTopBar(
                 Spacer(Modifier.width(6.dp))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                TrustMap.Layer.entries.forEach { item ->
+                layers.forEach { item ->
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -1839,6 +1854,7 @@ private data class LoadKey(
     val bridges: Int,
     val chains: Int,
     val haze: Int,
+    val close: Int,
     val mine: Int,
     /** The ring's faces when the core is the author; they change as pictures stream in. */
     val faces: List<String>,
@@ -1863,6 +1879,8 @@ private fun TrustGlobe(
     author: String,
     myFollows: Set<String>,
     haze: List<String>,
+    /** The part of [haze] at least [TrustMap.CLOSE_VOUCHES] of your follows follow. */
+    closeHaze: Set<String> = emptySet(),
     /** A phone with little memory: stars are drawn as points. */
     lite: Boolean,
     /**
@@ -1890,6 +1908,7 @@ private fun TrustGlobe(
     val active = running && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     val currentFrame by rememberUpdatedState(frame)
     val currentHaze by rememberUpdatedState(haze)
+    val currentCloseHaze by rememberUpdatedState(closeHaze)
     val currentRingFaces by rememberUpdatedState(ringFaces)
     val currentFollows by rememberUpdatedState(myFollows)
     val currentName by rememberUpdatedState(name)
@@ -1922,15 +1941,15 @@ private fun TrustGlobe(
     }
 
     val loadKey = frame?.let {
-        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size,
-            if (it.center == author) ringFaces else emptyList())
+        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, closeHaze.size,
+            myFollows.size, if (it.center == author) ringFaces else emptyList())
     }
     LaunchedEffect(loadKey) {
         val first = currentFrame ?: return@LaunchedEffect
         // Turn to the new person first, then let the globe re-settle around them.
         if (scene.hasLoaded && first.center != scene.center && !Motion.isReduced) delay(TURN_DELAY_MS)
         val latest = currentFrame ?: return@LaunchedEffect
-        scene.load(latest, me, author, currentFollows, currentHaze, currentRingFaces)
+        scene.load(latest, me, author, currentFollows, currentHaze, currentCloseHaze, currentRingFaces)
     }
 
     val faceKeys = scene.faceKeys
@@ -2077,7 +2096,7 @@ private class GlobeScene(
     /** Draw stars as batched points: the oval paths cost a slow phone a whole frame. */
     private val lite: Boolean = false,
 ) {
-    enum class Kind { RING, MUTUAL, HAZE, BRIDGE, VIA }
+    enum class Kind { RING, MUTUAL, HAZE, CLOSE_HAZE, BRIDGE, VIA }
 
     private class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
         var radiusTarget = radius
@@ -2129,12 +2148,11 @@ private class GlobeScene(
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
     /**
-     * How brightly your follows and the outer shell are drawn, easing toward
-     * the picked layer's ([TrustMap.layerWeights]).
+     * How brightly your follows, the Close shell and the rest of the shell
+     * are drawn, easing toward the picked layer's ([TrustMap.layerWeights]).
      */
-    private var followsWeight = 1.0
-    private var shellWeight = 1.0
-    private var weightTarget = 1.0 to 1.0
+    private var weights = TrustMap.Weights(1.0, 1.0, 1.0)
+    private var weightTarget = weights
     /** Faces drawn with a picture last frame, so they keep their seat. */
     private var seated: Set<String> = emptySet()
     private var direct = false
@@ -2155,6 +2173,7 @@ private class GlobeScene(
         author: String,
         myFollows: Set<String>,
         haze: List<String>,
+        closeHaze: Set<String> = emptySet(),
         ringFaces: List<String> = emptyList(),
     ) {
         val now = nowSeconds()
@@ -2167,7 +2186,9 @@ private class GlobeScene(
         // Every star's shell and look for this core.
         val bridgeSet = frame.bridges.toSet()
         val want = HashMap<String, Pair<Kind, Double>>()
-        if (frame.center == me) for (key in haze) want[key] = Kind.HAZE to TrustMap.OUTER_RADIUS
+        if (frame.center == me) for (key in haze) {
+            want[key] = (if (key in closeHaze) Kind.CLOSE_HAZE else Kind.HAZE) to TrustMap.OUTER_RADIUS
+        }
         for (key in frame.ring) {
             val kind = when {
                 key in bridgeSet -> Kind.BRIDGE
@@ -2266,10 +2287,7 @@ private class GlobeScene(
     /** Lights one layer and dims the rest. Nothing is reloaded. */
     fun focus(layer: TrustMap.Layer) {
         weightTarget = TrustMap.layerWeights(layer)
-        if (Motion.isReduced) {
-            followsWeight = weightTarget.first
-            shellWeight = weightTarget.second
-        }
+        if (Motion.isReduced) weights = weightTarget
         wake()
     }
 
@@ -2295,15 +2313,15 @@ private class GlobeScene(
         // Turned on mid-spin: stop, or the spin never decays and the clock never sleeps.
         if (reduceMotion) camera.spin = Vec3.ZERO
         camera.step(dt, now, reduceMotion)
-        val fading = followsWeight != weightTarget.first || shellWeight != weightTarget.second
+        val fading = weights != weightTarget
         if (fading) {
             val ease = 1 - exp(-dt * 8)
-            followsWeight += (weightTarget.first - followsWeight) * ease
-            shellWeight += (weightTarget.second - shellWeight) * ease
-            if (abs(weightTarget.first - followsWeight) < 0.005 && abs(weightTarget.second - shellWeight) < 0.005) {
-                followsWeight = weightTarget.first
-                shellWeight = weightTarget.second
-            }
+            fun step(from: Double, to: Double) = if (abs(to - from) < 0.005) to else from + (to - from) * ease
+            weights = TrustMap.Weights(
+                step(weights.follows, weightTarget.follows),
+                step(weights.close, weightTarget.close),
+                step(weights.further, weightTarget.further),
+            )
             frameCount.longValue++
         }
         if (settling) {
@@ -2374,7 +2392,7 @@ private class GlobeScene(
         }
         for (star in stars) if (star.isFace) consider(star, 30.0 * density)
         if (best == null && camera.zoom >= 1.6) {
-            for (star in stars) if (!star.isFace && star.kind != Kind.HAZE) consider(star, 16.0 * density)
+            for (star in stars) if (!star.isFace && star.kind != Kind.HAZE && star.kind != Kind.CLOSE_HAZE) consider(star, 16.0 * density)
         }
         return best
     }
@@ -2473,13 +2491,19 @@ private class GlobeScene(
 
         for (star in stars) {
             if (star.isFace) continue
-            val a = star.alpha * (if (star.kind == Kind.HAZE) shellWeight else followsWeight)
+            val a = star.alpha * when (star.kind) {
+                Kind.HAZE -> weights.further
+                Kind.CLOSE_HAZE -> weights.close
+                else -> weights.follows
+            }
             if (a <= 0.02) continue
             val p = project.of(star) ?: continue
             if (p.x < -pad || p.y < -pad || p.x > w + pad || p.y > h + pad) continue
             val front = p.front
             val (slot, base, size) = when (star.kind) {
                 Kind.HAZE -> Triple(Slot.HAZE, 0.06 + 0.16 * front, 1.2)
+                // A touch brighter and bigger: close enough to tell apart in the shell.
+                Kind.CLOSE_HAZE -> Triple(Slot.HAZE, 0.10 + 0.22 * front, 1.4)
                 Kind.RING -> Triple(Slot.RING, 0.25 + 0.65 * front, 2.1)
                 Kind.MUTUAL -> Triple(Slot.MUTUAL, 0.45 + 0.55 * front, 2.4)
                 Kind.BRIDGE, Kind.VIA -> Triple(Slot.HOT, 0.35 + 0.65 * front, 2.8)
@@ -2583,7 +2607,7 @@ private class GlobeScene(
         }
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
-            val a = (index[face.key] ?: coreStar).alpha * (if (face.key == author) 1.0 else followsWeight)
+            val a = (index[face.key] ?: coreStar).alpha * (if (face.key == author) 1.0 else weights.follows)
             val dim = (0.35 + 0.65 * face.p.front) * a
             val behind = face.p.depth < -0.1 && face.key != author
             // No room for its picture here: a bright star in its colour.

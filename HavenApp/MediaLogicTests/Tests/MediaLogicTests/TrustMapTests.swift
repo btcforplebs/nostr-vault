@@ -293,14 +293,41 @@ final class TrustMapTests: XCTestCase {
     }
 
     func testPickingALayerDimsTheOtherOneWithoutHidingIt() {
-        XCTAssertEqual(TrustMap.layerWeights(.everyone), SIMD2(1, 1))
-        let following = TrustMap.layerWeights(.following)
-        XCTAssertEqual(following.x, 1)
-        XCTAssertLessThan(following.y, 0.5)
-        XCTAssertGreaterThan(following.y, 0)
-        let further = TrustMap.layerWeights(.furtherOut)
-        XCTAssertLessThan(further.x, 0.5)
-        XCTAssertGreaterThan(further.x, 0)
-        XCTAssertGreaterThan(further.y, 1)
+        XCTAssertEqual(TrustMap.layerWeights(.everyone), SIMD3(1, 1, 1))
+        for layer in [TrustMap.Layer.following, .close, .furtherOut] {
+            let w = TrustMap.layerWeights(layer)
+            // Every part stays faintly there; only the picked one is bright.
+            XCTAssertGreaterThan(simd_reduce_min(w), 0, "\(layer)")
+        }
+        XCTAssertEqual(TrustMap.layerWeights(.following).x, 1)
+        XCTAssertLessThan(TrustMap.layerWeights(.following).y, 0.5)
+        XCTAssertGreaterThan(TrustMap.layerWeights(.close).y, 1)
+        XCTAssertLessThan(TrustMap.layerWeights(.close).z, 0.5)
+        XCTAssertGreaterThan(TrustMap.layerWeights(.furtherOut).z, 1)
+        XCTAssertLessThan(TrustMap.layerWeights(.furtherOut).y, 0.5)
+    }
+
+    func testCloseSplitsTheWebAtTenVouches() {
+        let follows: Set<String> = [key(1)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4)]
+        let vouches = [key(2): 10, key(3): 9, key(4): 3]
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(counts[.close], 1)
+        XCTAssertEqual(counts[.furtherOut], 2)
+        XCTAssertEqual(counts[.everyone], 4)
+        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        let old = TrustMap.layerCounts(me: me, follows: follows, web: web)
+        XCTAssertNil(old[.close])
+        XCTAssertEqual(old[.furtherOut], 3)
+        XCTAssertEqual(TrustMap.layers(hasVouches: false), [.everyone, .following, .furtherOut])
+        XCTAssertEqual(TrustMap.layers(hasVouches: true), [.everyone, .following, .close, .furtherOut])
+    }
+
+    func testVouchesComeFromTheCacheAndAreNilOnAnOldOne() throws {
+        let new = Data(#"{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"#.utf8)
+        XCTAssertEqual(TrustMap.vouches(fromCache: new), ["a": 12, "c": 3])
+        let old = Data(#"{"pubkeys":{"a":true},"timestamp":1}"#.utf8)
+        XCTAssertNil(TrustMap.vouches(fromCache: old))
+        XCTAssertNil(TrustMap.vouches(fromCache: Data("not json".utf8)))
     }
 }
