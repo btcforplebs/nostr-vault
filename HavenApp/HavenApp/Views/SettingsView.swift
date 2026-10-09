@@ -2465,6 +2465,7 @@ struct BackupSettingsView: View {
                     clearStatus()
                     return
                 }
+                VaultHistory.lastNotesBackup = Date()
                 #if os(macOS)
                 presentSavePanel(title: "Save JSONL Backup", defaultName: "nostrvault-backup.zip", tempPath: tempPath)
                 #else
@@ -2552,6 +2553,7 @@ struct BackupSettingsView: View {
                     clearStatus()
                     return
                 }
+                VaultHistory.lastMediaBackup = Date()
                 #if os(macOS)
                 presentSavePanel(title: "Save Blossom Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
                 #else
