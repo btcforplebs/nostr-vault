@@ -280,4 +280,27 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 18)]), ["a", "b"])
         XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 16)]), ["a"])
     }
+
+    func testLayerCountsSplitFollowsFromTheRestAndSkipYou() {
+        let follows: Set<String> = [me, key(1), key(2)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5)]
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web)
+        XCTAssertEqual(counts[.following], 2)
+        XCTAssertEqual(counts[.furtherOut], 3)
+        XCTAssertEqual(counts[.everyone], 5)
+        // A follow the relay hasn't mapped yet still counts as a follow.
+        XCTAssertEqual(TrustMap.layerCounts(me: me, follows: [key(9)], web: [])[.everyone], 1)
+    }
+
+    func testPickingALayerDimsTheOtherOneWithoutHidingIt() {
+        XCTAssertEqual(TrustMap.layerWeights(.everyone), SIMD2(1, 1))
+        let following = TrustMap.layerWeights(.following)
+        XCTAssertEqual(following.x, 1)
+        XCTAssertLessThan(following.y, 0.5)
+        XCTAssertGreaterThan(following.y, 0)
+        let further = TrustMap.layerWeights(.furtherOut)
+        XCTAssertLessThan(further.x, 0.5)
+        XCTAssertGreaterThan(further.x, 0)
+        XCTAssertGreaterThan(further.y, 1)
+    }
 }

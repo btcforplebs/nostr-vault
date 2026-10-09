@@ -1,5 +1,11 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -160,6 +166,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.max
@@ -374,9 +381,22 @@ private fun TrustWebContent(
     LaunchedEffect(Unit) { delay(WEB_WAIT_MS); webWaitOver = true }
     /** The refresh button's run; null when idle. */
     var refreshState by remember { mutableStateOf<RefreshState?>(null) }
+    /** The WOT tab's layer picker: which part of your web is lit. */
+    var layer by remember { mutableStateOf(TrustMap.Layer.EVERYONE) }
+    /** The WOT tab's search field is open under the bar. */
+    var searchOpen by remember { mutableStateOf(false) }
+    /**
+     * People who joined your web since you last looked, for the
+     * "↑ N new people" pill; [webSeen] is the count they're measured from.
+     */
+    var newPeople by remember { mutableIntStateOf(0) }
+    var webSeen by remember { mutableStateOf<Int?>(null) }
 
     val centerKey = crumbs.last()
     val frame = frames[centerKey]
+    /** Your follows are in but the wider web around them isn't yet. */
+    val mappingWeb = centerKey == me && frame != null && frame.ring.isNotEmpty() && haze.isEmpty() &&
+        web.isEmpty() && !webWaitOver
 
     fun name(pubkey: String): String =
         if (pubkey == me) "You" else profiles[pubkey]?.bestName ?: "npub…${pubkey.takeLast(6)}"
@@ -394,6 +414,18 @@ private fun TrustWebContent(
         val inner = myFollows + me + author
         haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
         web = graph
+    }
+
+    // The web grew: count the newcomers into the pill, which folds away a few
+    // seconds after the last one arrives. The first count is the start.
+    LaunchedEffect(web.size) {
+        if (!isWOTTab) return@LaunchedEffect
+        val seen = webSeen
+        webSeen = web.size
+        if (seen == null || web.size <= seen) return@LaunchedEffect
+        newPeople += web.size - seen
+        delay(NEW_PEOPLE_SHOWN_MS)
+        newPeople = 0
     }
 
     // With the author in the middle there are no bridges, so the ring gets
@@ -592,6 +624,7 @@ private fun TrustWebContent(
                 peek = null
                 showingList = false
                 clearSearch()
+                searchOpen = false
                 jump(0)
             }
         }
@@ -747,19 +780,27 @@ private fun TrustWebContent(
     }
 
     @Composable
-    fun globeArea(modifier: Modifier) {
-        Box(modifier.clipToBounds()) {
+    fun globeArea(
+        modifier: Modifier,
+        /** Off on the WOT tab, where the globe runs to the screen's edges. */
+        clip: Boolean = true,
+        /** Keeps the pills and the peek card clear of the floating tab bar. */
+        overlayPadding: PaddingValues = PaddingValues(0.dp),
+    ) {
+        Box(if (clip) modifier.clipToBounds() else modifier) {
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
                 lite = lite,
                 ringFaces = ringFaces,
                 running = !showingList,
+                layer = if (isWOTTab) layer else TrustMap.Layer.EVERYONE,
                 summary = summary(frame, me, author, centerKey, ::name),
                 profiles = profiles, name = ::name,
                 onTap = ::tapped,
                 // A tap on open space also puts the keyboard away.
                 onEmptyTap = { peek = null; if (searchFocused) focusManager.clearFocus() },
             )
+            Box(Modifier.matchParentSize().padding(overlayPadding)) {
             when {
                 // Someone tapped, their follow list still on its way.
                 frame == null -> StatusPill(
@@ -772,7 +813,8 @@ private fun TrustWebContent(
                     modifier = Modifier.align(Alignment.Center),
                 )
                 // Your follows are in but the wider web (the haze) isn't yet.
-                centerKey == me && frame.ring.isNotEmpty() && haze.isEmpty() && web.isEmpty() && !webWaitOver ->
+                // The WOT tab says so in its live pill instead.
+                !isWOTTab && mappingWeb ->
                     StatusPill(
                         text = "Mapping your wider web…", accent = accent, small = true,
                         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
@@ -795,36 +837,86 @@ private fun TrustWebContent(
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
             }
+            }
         }
     }
 
-    val insets = if (isWOTTab) {
-        // The floating tab bar covers the bottom edge, system inset included.
-        Modifier
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-            .padding(bottom = bottomInset)
-    } else {
-        Modifier.safeDrawingPadding()
-    }
-    Column(Modifier.fillMaxSize().then(insets)) {
+    if (isWOTTab) {
+        // Full bleed, like the feed: space runs under the status bar and the
+        // floating tab bar, and the bar's glass pills sit over it (iOS WOT bar).
+        val counts = remember(myFollows, web) { TrustMap.layerCounts(me, myFollows, web) }
+        Box(Modifier.fillMaxSize()) {
+            globeArea(Modifier.fillMaxSize(), clip = false, overlayPadding = PaddingValues(bottom = bottomInset))
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
+            ) {
+                WotTopBar(
+                    layer = layer,
+                    counts = counts,
+                    onLayer = { layer = it },
+                    refreshing = refreshState != null,
+                    onRebuild = ::refresh,
+                    searchOpen = searchOpen,
+                    onSearch = {
+                        if (searchOpen) clearSearch()
+                        else peek = null
+                        searchOpen = !searchOpen
+                    },
+                    showingList = showingList,
+                    onGlobe = { showingList = false },
+                    onList = { showingList = true },
+                )
+                if (searchOpen) {
+                    val focus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { focus.requestFocus() }
+                    SearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        onFocusChange = { searchFocused = it },
+                        onSearch = { keyboard?.hide() },
+                        onClear = ::clearSearch,
+                        accent = accent,
+                        modifier = Modifier.focusRequester(focus),
+                    )
+                    if (query.isNotBlank()) {
+                        // Above the keyboard when it's up, else above the tab bar.
+                        val ime = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+                        SearchResults(
+                            query = query.trim(),
+                            hits = hits,
+                            searching = searchingRelays && pasted == null,
+                            profiles = profiles,
+                            name = ::name,
+                            accent = accent,
+                            onPick = ::pick,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(bottom = maxOf(ime, bottomInset) + 8.dp),
+                        )
+                    }
+                }
+                if (crumbs.size > 1) crumbRow(Modifier.fillMaxWidth())
+                WotLivePill(
+                    caption = when {
+                        refreshState != null -> "Rebuilding your web"
+                        mappingWeb -> "Mapping your web"
+                        else -> null
+                    },
+                    newPeople = newPeople,
+                    onClick = { newPeople = 0 },
+                )
+            }
+        }
+    } else Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         TopBar(
             title = if (centerKey == me) "Web of Trust" else name(centerKey),
             onDone = onDismiss,
             onList = { showingList = true },
-            onRefresh = if (isWOTTab) ::refresh else null,
-            refreshing = refreshState != null,
         )
-        if (isWOTTab) {
-            RefreshProgress(state = refreshState, accent = accent)
-            SearchField(
-                query = query,
-                onQueryChange = { query = it },
-                onFocusChange = { searchFocused = it },
-                onSearch = { keyboard?.hide() },
-                onClear = ::clearSearch,
-                accent = accent,
-            )
-        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             if (maxWidth >= WIDE_WIDTH) {
@@ -903,23 +995,6 @@ private fun TrustWebContent(
                 }
             }
         }
-        if (isWOTTab && query.isNotBlank()) {
-            // The column already stops above the tab bar; the keyboard covers
-            // that too and more, so only what it covers past the bar is added.
-            val ime = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-            SearchResults(
-                query = query.trim(),
-                hits = hits,
-                searching = searchingRelays && pasted == null,
-                profiles = profiles,
-                name = ::name,
-                accent = accent,
-                onPick = ::pick,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = (ime - bottomInset).coerceAtLeast(0.dp)),
-            )
-        }
         }
     }
 
@@ -946,6 +1021,8 @@ private fun isLiteGlobe(context: android.content.Context): Boolean {
 private const val SEARCH_DEBOUNCE_MS = 350L
 /** "Mapping your wider web…" gives up after this; an empty web may just be empty. */
 private const val WEB_WAIT_MS = 15_000L
+/** How long the "↑ N new people" pill stays after the last newcomer. */
+private const val NEW_PEOPLE_SHOWN_MS = 5_000L
 /** Seconds the globe keeps taking in faces' pictures as profiles arrive. */
 private const val PICTURE_WAIT_TICKS = 20
 /** Refresh: follows, web, pictures. */
@@ -1074,9 +1151,6 @@ private fun TopBar(
     title: String,
     onDone: (() -> Unit)?,
     onList: (() -> Unit)?,
-    /** The WOT tab's refresh; null elsewhere. */
-    onRefresh: (() -> Unit)? = null,
-    refreshing: Boolean = false,
 ) {
     val accent = LocalNostrVaultColors.current.primary
     Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp)) {
@@ -1096,12 +1170,6 @@ private fun TopBar(
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp),
         )
         Row(Modifier.align(Alignment.CenterEnd)) {
-            if (onRefresh != null) {
-                IconButton(onClick = onRefresh, enabled = !refreshing) {
-                    Icon(NostrVaultIcons.Refresh, contentDescription = "Refresh",
-                        tint = if (refreshing) SecondaryText else accent)
-                }
-            }
             if (onList != null) {
                 IconButton(onClick = onList) {
                     Icon(NostrVaultIcons.PeopleList, contentDescription = "People on this globe", tint = accent)
@@ -1111,39 +1179,154 @@ private fun TopBar(
     }
 }
 
+/** The WOT tab's layer picker icons, iOS `TrustMap.Layer.symbolName`. */
+private val TrustMap.Layer.icon: ImageVector
+    get() = when (this) {
+        TrustMap.Layer.EVERYONE -> NostrVaultIcons.WebOfTrust
+        TrustMap.Layer.FOLLOWING -> NostrVaultIcons.People
+        TrustMap.Layer.FURTHER_OUT -> NostrVaultIcons.Sparkles
+    }
+
+/** 16K, 1.5K, 912: short enough that a menu row stays on one line (iOS compactName). */
+private fun compactCount(n: Int): String =
+    android.icu.text.CompactDecimalFormat
+        .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
+        .format(n)
+
 /**
- * The refresh button's progress: a thin bar under the top bar and the step
- * it's on, so a slow relay reads as working rather than stuck. Fades out once
- * every step is done.
+ * The WOT tab's bar: the feed's two glass pills. Left is the layer picker,
+ * built like the feed picker (icon, name, chevron; the rare Rebuild at the
+ * bottom after a divider). Right are search and the globe / list toggle.
  */
 @Composable
-private fun RefreshProgress(state: RefreshState?, accent: Color) {
-    // Kept while fading out, so the bar leaves full rather than empty.
-    var shown by remember { mutableStateOf(RefreshState(0f, "")) }
-    if (state != null) shown = state
-    val progress by animateFloatAsState(
-        targetValue = (shown.fill / REFRESH_STEPS).coerceIn(0f, 1f),
-        animationSpec = tween(300),
-        label = "refresh",
-    )
-    AnimatedVisibility(visible = state != null, enter = fadeIn(), exit = fadeOut()) {
-        Column(Modifier.fillMaxWidth()) {
-            LinearProgressIndicator(
-                progress = { progress },
-                color = accent,
-                trackColor = Color.White.copy(alpha = 0.08f),
-                gapSize = 0.dp,
-                drawStopIndicator = {},
-                modifier = Modifier.fillMaxWidth().height(3.dp),
+private fun WotTopBar(
+    layer: TrustMap.Layer,
+    counts: Map<TrustMap.Layer, Int>,
+    onLayer: (TrustMap.Layer) -> Unit,
+    refreshing: Boolean,
+    onRebuild: () -> Unit,
+    searchOpen: Boolean,
+    onSearch: () -> Unit,
+    showingList: Boolean,
+    onGlobe: () -> Unit,
+    onList: () -> Unit,
+) {
+    val accent = LocalNostrVaultColors.current.primary
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .heightIn(min = 48.dp),
+    ) {
+        Box {
+            GlassPill(
+                horizontalArrangement = Arrangement.Start,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Pick a layer") { expanded = true }
+                    .semantics { contentDescription = "Showing: ${layer.title}, ${counts[layer] ?: 0} people" },
+            ) {
+                Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                    Icon(layer.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(layer.title, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Spacer(Modifier.width(2.dp))
+                Icon(NostrVaultIcons.ChevronDown, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                TrustMap.Layer.entries.forEach { item ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "${item.title} · ${compactCount(counts[item] ?: 0)}",
+                                fontWeight = if (item == layer) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        leadingIcon = { Icon(item.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = if (item == layer) {
+                            { Icon(NostrVaultIcons.Check, contentDescription = "Current layer", modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        onClick = {
+                            onLayer(item)
+                            expanded = false
+                        },
+                    )
+                }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(if (refreshing) "Rebuilding…" else "Rebuild your web") },
+                    leadingIcon = { Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    enabled = !refreshing,
+                    onClick = {
+                        expanded = false
+                        onRebuild()
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        GlassPill(horizontalArrangement = Arrangement.Start) {
+            IconButton(onClick = onSearch, modifier = Modifier.size(40.dp)) {
+                Icon(NostrVaultIcons.Search, contentDescription = "Find someone",
+                    tint = if (searchOpen) accent else SecondaryText, modifier = Modifier.size(22.dp))
+            }
+            Box(
+                Modifier
+                    .padding(horizontal = 4.dp)
+                    .width(1.dp)
+                    .height(20.dp)
+                    .background(Color.White.copy(alpha = 0.15f)),
             )
-            Text(
-                shown.caption,
-                color = SecondaryText,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 2.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-            )
+            IconButton(onClick = onGlobe, modifier = Modifier.size(40.dp)) {
+                Icon(NostrVaultIcons.Globe, contentDescription = "Globe",
+                    tint = if (!showingList) accent else SecondaryText, modifier = Modifier.size(22.dp))
+            }
+            IconButton(onClick = onList, modifier = Modifier.size(40.dp)) {
+                Icon(NostrVaultIcons.PeopleList, contentDescription = "List",
+                    tint = if (showingList) accent else SecondaryText, modifier = Modifier.size(22.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The feed's purple "New Posts" button, for people: a rebuild running
+ * ([caption]), or how many joined your web since you looked. Nothing when
+ * neither.
+ */
+@Composable
+private fun WotLivePill(caption: String?, newPeople: Int, onClick: () -> Unit) {
+    val accent = LocalNostrVaultColors.current.primary
+    val shape = RoundedCornerShape(50)
+    AnimatedVisibility(
+        visible = caption != null || newPeople > 0,
+        enter = fadeIn(Motion.chrome()),
+        exit = fadeOut(Motion.chrome()),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .shadow(8.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
+                .clip(shape)
+                .background(accent)
+                .clickable(enabled = newPeople > 0, onClick = onClick)
+                .padding(vertical = 10.dp, horizontal = 20.dp)
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        ) {
+            if (newPeople > 0) {
+                Icon(NostrVaultIcons.ArrowUp, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("${NumberFormat.getIntegerInstance().format(newPeople)} new people",
+                    color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            } else {
+                CircularProgressIndicator(color = PrimaryText, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(caption.orEmpty(), color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -1203,6 +1386,7 @@ private fun SearchField(
     onSearch: () -> Unit,
     onClear: () -> Unit,
     accent: Color,
+    modifier: Modifier = Modifier,
 ) {
     BasicTextField(
         value = query,
@@ -1216,7 +1400,7 @@ private fun SearchField(
             imeAction = ImeAction.Search,
         ),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .onFocusChanged { onFocusChange(it.isFocused) },
@@ -1552,6 +1736,8 @@ private fun TrustGlobe(
     ringFaces: List<String>,
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
+    /** Which part of the web is lit (the WOT tab's layer picker). */
+    layer: TrustMap.Layer = TrustMap.Layer.EVERYONE,
     summary: String,
     profiles: Map<String, FeedProfile>,
     name: (String) -> String,
@@ -1587,6 +1773,8 @@ private fun TrustGlobe(
     LaunchedEffect(center) {
         if (scene.hasLoaded && center != scene.center) scene.turn(center)
     }
+
+    LaunchedEffect(layer) { scene.focus(layer) }
 
     // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
     LaunchedEffect(scene) {
@@ -1800,6 +1988,13 @@ private class GlobeScene(
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
+    /**
+     * How brightly your follows and the outer shell are drawn, easing toward
+     * the picked layer's ([TrustMap.layerWeights]).
+     */
+    private var followsWeight = 1.0
+    private var shellWeight = 1.0
+    private var weightTarget = 1.0 to 1.0
     /** Faces drawn with a picture last frame, so they keep their seat. */
     private var seated: Set<String> = emptySet()
     private var direct = false
@@ -1928,6 +2123,16 @@ private class GlobeScene(
         wake()
     }
 
+    /** Lights one layer and dims the rest. Nothing is reloaded. */
+    fun focus(layer: TrustMap.Layer) {
+        weightTarget = TrustMap.layerWeights(layer)
+        if (Motion.isReduced) {
+            followsWeight = weightTarget.first
+            shellWeight = weightTarget.second
+        }
+        wake()
+    }
+
     fun wake() {
         if (!awake) {
             lastTick = null
@@ -1950,6 +2155,17 @@ private class GlobeScene(
         // Turned on mid-spin: stop, or the spin never decays and the clock never sleeps.
         if (reduceMotion) camera.spin = Vec3.ZERO
         camera.step(dt, now, reduceMotion)
+        val fading = followsWeight != weightTarget.first || shellWeight != weightTarget.second
+        if (fading) {
+            val ease = 1 - exp(-dt * 8)
+            followsWeight += (weightTarget.first - followsWeight) * ease
+            shellWeight += (weightTarget.second - shellWeight) * ease
+            if (abs(weightTarget.first - followsWeight) < 0.005 && abs(weightTarget.second - shellWeight) < 0.005) {
+                followsWeight = weightTarget.first
+                shellWeight = weightTarget.second
+            }
+            frameCount.longValue++
+        }
         if (settling) {
             val age = now - born
             val glide = 1 - exp(-dt * 7)
@@ -1963,7 +2179,7 @@ private class GlobeScene(
             if (age > SETTLE_TIME) settle()
         }
         frameCount.longValue++
-        if (!settling && !camera.wantsFrames(now, reduceMotion)) awake = false
+        if (!settling && !fading && !camera.wantsFrames(now, reduceMotion)) awake = false
     }
 
     /** Land every star where it's heading and drop the ones that faded out. */
@@ -2117,7 +2333,7 @@ private class GlobeScene(
 
         for (star in stars) {
             if (star.isFace) continue
-            val a = star.alpha
+            val a = star.alpha * (if (star.kind == Kind.HAZE) shellWeight else followsWeight)
             if (a <= 0.02) continue
             val p = project.of(star) ?: continue
             if (p.x < -pad || p.y < -pad || p.x > w + pad || p.y > h + pad) continue
@@ -2128,7 +2344,7 @@ private class GlobeScene(
                 Kind.MUTUAL -> Triple(Slot.MUTUAL, 0.45 + 0.55 * front, 2.4)
                 Kind.BRIDGE, Kind.VIA -> Triple(Slot.HOT, 0.35 + 0.65 * front, 2.8)
             }
-            val level = (base * a * LEVELS).roundToInt()
+            val level = (min(1.0, base * a) * LEVELS).roundToInt()
             if (level <= 0) continue
             val r = size * p.scale * zoom * density
             if (lite) {
@@ -2227,7 +2443,7 @@ private class GlobeScene(
         }
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
-            val a = (index[face.key] ?: coreStar).alpha
+            val a = (index[face.key] ?: coreStar).alpha * (if (face.key == author) 1.0 else followsWeight)
             val dim = (0.35 + 0.65 * face.p.front) * a
             val behind = face.p.depth < -0.1 && face.key != author
             // No room for its picture here: a bright star in its colour.

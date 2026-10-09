@@ -362,4 +362,27 @@ class TrustMapTest {
         assertEquals(setOf("a", "b"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 18.0))))
         assertEquals(setOf("a"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 16.0))))
     }
+
+    @Test
+    fun layerCountsSplitFollowsFromTheRestAndSkipYou() {
+        val follows = setOf(me, key(1), key(2))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
+        val counts = TrustMap.layerCounts(me, follows, web)
+        assertEquals(2, counts[TrustMap.Layer.FOLLOWING])
+        assertEquals(3, counts[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(5, counts[TrustMap.Layer.EVERYONE])
+        // A follow the relay hasn't mapped yet still counts as a follow.
+        assertEquals(1, TrustMap.layerCounts(me, setOf(key(9)), emptySet())[TrustMap.Layer.EVERYONE])
+    }
+
+    @Test
+    fun pickingALayerDimsTheOtherOneWithoutHidingIt() {
+        assertEquals(1.0 to 1.0, TrustMap.layerWeights(TrustMap.Layer.EVERYONE))
+        val (follows, shell) = TrustMap.layerWeights(TrustMap.Layer.FOLLOWING)
+        assertEquals(1.0, follows, 0.0)
+        assertTrue(shell > 0 && shell < 0.5)
+        val (dimFollows, brightShell) = TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT)
+        assertTrue(dimFollows > 0 && dimFollows < 0.5)
+        assertTrue(brightShell > 1)
+    }
 }

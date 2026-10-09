@@ -345,6 +345,29 @@ object TrustMap {
         }
         return routes.sortedWith(compareBy({ it.via }, { it.bridge }))
     }
+
+    /**
+     * The WOT tab's layer picker. Picking one only changes what is lit: the
+     * globe keeps every star, so switching never reloads the web. iOS
+     * `TrustMap.Layer`.
+     */
+    enum class Layer(val title: String) {
+        EVERYONE("Everyone"), FOLLOWING("Following"), FURTHER_OUT("Further out"),
+    }
+
+    /** How brightly [layer] draws your follows (first) and the outer shell (second). */
+    fun layerWeights(layer: Layer): Pair<Double, Double> = when (layer) {
+        Layer.EVERYONE -> 1.0 to 1.0
+        Layer.FOLLOWING -> 1.0 to 0.18
+        Layer.FURTHER_OUT -> 0.22 to 1.6
+    }
+
+    /** People in each layer, never counting you. [web] is the relay's whole graph, follows included. */
+    fun layerCounts(me: String, follows: Set<String>, web: Set<String>): Map<Layer, Int> {
+        val following = (follows - me).size
+        val further = (web - follows - me).size
+        return mapOf(Layer.EVERYONE to following + further, Layer.FOLLOWING to following, Layer.FURTHER_OUT to further)
+    }
 }
 
 /** A point or direction in globe space: x right, y up, z toward the viewer. */
