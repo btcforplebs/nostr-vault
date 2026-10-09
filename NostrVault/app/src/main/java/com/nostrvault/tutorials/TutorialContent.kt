@@ -89,24 +89,21 @@ object TutorialContent {
         ),
     )
 
-    /** The vault's mode pill (Notes, Likes, Zaps, Followers), its filters,
-     *  and the Relay button over the list. */
+    /** The Vault tab's dropdown pill and its floating Vault button. Each
+     *  half carries them. Two cards since the Vault tab (Tod's copy,
+     *  Nostr-Vault Marketing 2026-10-09); the button hands off to Pocket
+     *  Relay on the dashboard. */
     const val VAULT_MODES = "vault.modes"
-    const val VAULT_FILTERS = "vault.filters"
     const val VAULT_RELAY = "vault.relay"
 
     val vault = listOf(
         TutorialStep(
             VAULT_MODES, "Your vault",
-            "Switch between your posts, likes, zaps and followers. All of it is kept on this phone, not on someone else's server.",
-        ),
-        TutorialStep(
-            VAULT_FILTERS, "Narrow it down",
-            "Filters for the tab you're on. On Notes you can show everything, just your posts, posts that mention you, or replies from people outside your network.",
+            "Everything you post, like, zap and save, kept right here on your phone. Tap to pick what you see: notes, articles, media and more.",
         ),
         TutorialStep(
             VAULT_RELAY, "Your relay",
-            "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work.",
+            "Your vault is a real relay, running on this phone. Tap Vault to watch it work.",
         ),
     )
 
