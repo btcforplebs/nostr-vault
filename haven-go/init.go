@@ -41,10 +41,27 @@ var (
 	privateDB    DBBackend
 )
 
+// isOnionHost reports whether the relay URL's host is a Tor .onion address.
+// It matches the host's last label only, so a clearnet domain that merely
+// contains "onion" (onion.example.com) keeps https/wss.
+func isOnionHost(url string) bool {
+	host := url
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".onion")
+}
+
 // getHTTPScheme returns the appropriate HTTP scheme based on the URL.
 // Returns "http://" for .onion domains (Tor), "https://" for regular domains.
 func getHTTPScheme(url string) string {
-	if strings.Contains(url, ".onion") {
+	if isOnionHost(url) {
 		return "http://"
 	}
 	return "https://"
@@ -53,7 +70,7 @@ func getHTTPScheme(url string) string {
 // getWSScheme returns the appropriate WebSocket scheme based on the URL.
 // Returns "ws://" for .onion domains (Tor), "wss://" for regular domains.
 func getWSScheme(url string) string {
-	if strings.Contains(url, ".onion") {
+	if isOnionHost(url) {
 		return "ws://"
 	}
 	return "wss://"

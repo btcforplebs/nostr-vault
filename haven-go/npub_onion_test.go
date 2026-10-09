@@ -46,4 +46,17 @@ func TestRelaySchemesForOnion(t *testing.T) {
 	if got := getWSScheme(config.RelayURL); got != "wss://" {
 		t.Errorf("clearnet ws scheme = %q", got)
 	}
+
+	for url, want := range map[string]bool{
+		"abc.onion":               true,
+		"abc.onion:8080":          true,
+		"ABC.ONION/inbox":         true,
+		"onion.example.com":       false,
+		"relay.onion.example.com": false,
+		"example.com/x.onion":     false,
+	} {
+		if got := isOnionHost(url); got != want {
+			t.Errorf("isOnionHost(%q) = %v, want %v", url, got, want)
+		}
+	}
 }

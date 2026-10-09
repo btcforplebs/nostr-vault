@@ -241,3 +241,37 @@ func TestNegStoresSkipDeletedEvents(t *testing.T) {
 		t.Fatal("control event was not stored — the test cannot tell a skip from a broken store")
 	}
 }
+
+// The owner's delete requests must reach the chat and inbox stores (or the
+// deletion is not stored and does not stick), and need no AUTH round trip.
+// Anyone else's delete request, and the owner's other events, are unaffected.
+func TestOwnerDeleteRequestPassesStorePolicies(t *testing.T) {
+	owner, stranger := hexid('0'), hexid('1')
+	saved := config
+	t.Cleanup(func() { config = saved })
+	config = Config{
+		OwnerPubKey:        owner,
+		WhitelistedPubKeys: map[string]struct{}{owner: {}},
+		BlacklistedPubKeys: map[string]struct{}{},
+	}
+	ctx := context.Background() // not authenticated
+	ev := func(pk string, kind int) *nostr.Event {
+		return &nostr.Event{ID: hexid('a'), PubKey: pk, Kind: kind, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"e", hexid('b')}}}
+	}
+	policies := map[string]func(context.Context, *nostr.Event) (bool, string){
+		"MustNotBeBlacklistedToPost": MustNotBeBlacklistedToPost,
+		"EventMustBeChatRelated":     EventMustBeChatRelated,
+		"MustTagWhitelistedPubKey":   MustTagWhitelistedPubKey,
+	}
+	for name, policy := range policies {
+		if reject, msg := policy(ctx, ev(owner, nostr.KindDeletion)); reject {
+			t.Errorf("%s rejected the owner's delete request: %s", name, msg)
+		}
+		if reject, _ := policy(ctx, ev(stranger, nostr.KindDeletion)); !reject {
+			t.Errorf("%s accepted a stranger's unauthenticated delete request", name)
+		}
+		if reject, _ := policy(ctx, ev(owner, nostr.KindTextNote)); !reject {
+			t.Errorf("%s accepted the owner's unauthenticated kind 1 — the bypass is wider than delete requests", name)
+		}
+	}
+}
