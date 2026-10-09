@@ -10,6 +10,8 @@ import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -172,6 +174,41 @@ class TrustPathService @Inject constructor(
         return if (answered.get()) emptyList() else null
     }
 
+    /**
+     * How much you and each person interact ([TrustMap.engagementScores]):
+     * your own events from this device's relay, and the ones aimed at you
+     * from its inbox. The read relays when the device relay isn't up.
+     */
+    suspend fun engagement(): Map<String, Int> {
+        val me = me
+        if (me.isEmpty()) return emptyMap()
+        val config = configStore.config.value
+        val kinds = TrustMap.ENGAGEMENT_KINDS.joinToString(",")
+        val fallback = config.readRelays.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }.take(MAX_RELAYS)
+        val outward = config.nostrURL?.let { listOf(it) } ?: fallback
+        val inward = config.localInboxURL?.let { listOf(it) } ?: fallback
+        val mine = nostrService.queryRawEvents(
+            listOf("""{"authors":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), outward)
+        val toMe = nostrService.queryRawEvents(
+            listOf("""{"#p":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), inward)
+        return withContext(Dispatchers.Default) {
+            fun interactions(events: List<kotlinx.serialization.json.JsonObject>) = events
+                .filter { HavenBridge.verifyEvent(it.toString()) }
+                .mapNotNull { e ->
+                    val pubkey = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                        ?: return@mapNotNull null
+                    val kind = (e["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.intOrNull
+                        ?: return@mapNotNull null
+                    val tags = (e["tags"] as? kotlinx.serialization.json.JsonArray).orEmpty().map { tag ->
+                        (tag as? kotlinx.serialization.json.JsonArray).orEmpty()
+                            .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+                    }
+                    TrustMap.Interaction(pubkey, kind, tags)
+                }
+            TrustMap.engagementScores(interactions(mine), interactions(toMe), me)
+        }
+    }
+
     /** Signed follow lists from one relay. A list that fails its signature is dropped. */
     private suspend fun query(
         filters: List<FollowListFilter>,
@@ -208,5 +245,7 @@ class TrustPathService @Inject constructor(
     private companion object {
         /** Public relays tried before giving up on finding more bridges. */
         const val MAX_RELAYS = 3
+        /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */
+        const val ENGAGEMENT_LIMIT = 1000
     }
 }

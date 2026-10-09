@@ -205,12 +205,12 @@ final class TrustMapTests: XCTestCase {
         XCTAssertTrue(TrustMap.deeperLinkFilters(follows: [bridge], via: []).isEmpty)
     }
 
-    func testPickFacesPutsPicturesFirstAndCaps() {
+    func testPickFacesShowsOnlyRenderedPicturesInOrder() {
         let candidates = (1...6).map(key)
-        let pictured: Set<String> = [key(2), key(5)]
-        let faces = TrustMap.pickFaces(candidates, hasPicture: pictured.contains, count: 4)
-        XCTAssertEqual(faces, [key(2), key(5), key(1), key(3)])
-        XCTAssertEqual(TrustMap.pickFaces(candidates, hasPicture: { _ in false }, count: 10), candidates)
+        let rendered: Set<String> = [key(2), key(5), key(6)]
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 2), [key(2), key(5)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 10), [key(2), key(5), key(6)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: { _ in false }), [])
     }
 
     func testFaceCandidatesAreStableAndSpread() {
@@ -219,6 +219,37 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(a, TrustMap.faceCandidates(ring, count: 10))
         XCTAssertEqual(Set(a).count, 10)
         XCTAssertEqual(TrustMap.faceCandidates([key(3), key(1)]), [key(1), key(3)].sorted())
+    }
+
+    func testFaceCandidatesPutTheMostEngagedFirst() {
+        let ring = (1...200).map(key)
+        let engagement = [key(150): 9, key(7): 4, key(42): 4, key(999): 50]
+        let picked = TrustMap.faceCandidates(ring, engagement: engagement, count: 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        XCTAssertEqual(Array(picked.prefix(3)), [key(150), key(7), key(42)])
+        XCTAssertEqual(picked.count, 10)
+        XCTAssertEqual(Set(picked).count, 10)
+        XCTAssertFalse(picked.contains(key(999)))
+    }
+
+    func testEngagementScoresCountBothDirections() {
+        let me = key(1), alice = key(2), bob = key(3), carol = key(4)
+        func ev(_ pubkey: String, _ kind: Int, _ tags: [[String]]) -> [String: Any] {
+            ["pubkey": pubkey, "kind": kind, "tags": tags]
+        }
+        let mine = [
+            ev(me, 7, [["e", "x"], ["p", alice]]),               // a like: alice +2
+            ev(me, 1, [["p", bob], ["p", alice]]),               // reply in bob's thread to alice: alice +2
+            ev(me, 6, [["p", me]]),                              // reposting myself counts for no one
+            ev(bob, 7, [["p", carol]]),                          // not mine: ignored
+        ]
+        let toMe = [
+            ev(bob, 7, [["p", me]]),                             // bob liked me: +1
+            ev("zapper", 9735, [["p", me], ["P", carol]]),       // carol zapped me: +3
+            ev(carol, 1, [["p", alice]]),                        // not aimed at me: ignored
+        ]
+        let scores = TrustMap.engagementScores(mine: mine, toMe: toMe, me: me)
+        XCTAssertEqual(scores, [alice: 4, bob: 1, carol: 3])
     }
 
     func testSearchPeopleRanksFollowsThenWebThenPrefix() {

@@ -397,16 +397,39 @@ private fun TrustWebContent(
     }
 
     // With the author in the middle there are no bridges, so the ring gets
-    // the faces. Pictures win, so the pick changes as profiles stream in.
-    val ringCandidates = remember(frame?.center, frame?.ring) {
-        if (frame != null && frame.center == author) TrustMap.faceCandidates(frame.ring) else emptyList()
+    // the faces: on your own globe, the people you interact with most.
+    var engagement by remember { mutableStateOf(emptyMap<String, Int>()) }
+    LaunchedEffect(Unit) { engagement = trust.engagement() }
+    val ringCandidates = remember(frame?.center, frame?.ring, engagement) {
+        if (frame != null && frame.center == author) {
+            TrustMap.faceCandidates(frame.ring, if (author == me) engagement else emptyMap())
+        } else emptyList()
     }
     LaunchedEffect(ringCandidates) {
         if (ringCandidates.isNotEmpty()) nostrService.fetchMissingProfiles(ringCandidates)
     }
-    val picturedCount = ringCandidates.count { !profiles[it]?.pictureURL.isNullOrBlank() }
-    val ringFaces = remember(ringCandidates, picturedCount) {
-        TrustMap.pickFaces(ringCandidates, { !profiles[it]?.pictureURL.isNullOrBlank() })
+    // Only pictures that loaded become faces ("pubkey url" keys), taken in
+    // once a second so the globe settles a few times, not sixteen.
+    var renderedPictures by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(ringCandidates) {
+        val asked = HashSet<String>()
+        val loaded = java.util.Collections.synchronizedSet(HashSet<String>())
+        repeat(PICTURE_WAIT_TICKS) {
+            for (pubkey in ringCandidates) {
+                val url = nostrService.profiles.value[pubkey]?.pictureURL?.takeIf { it.isNotBlank() } ?: continue
+                val key = "$pubkey $url"
+                if (key in renderedPictures || !asked.add(key)) continue
+                launch { if (avatarRenders(appContext, url)) loaded += key }
+            }
+            delay(1_000)
+            val batch = synchronized(loaded) { loaded.toSet().also { loaded.clear() } }
+            if (batch.isNotEmpty()) renderedPictures = renderedPictures + batch
+        }
+    }
+    val ringFaces = remember(ringCandidates, renderedPictures) {
+        TrustMap.pickFaces(ringCandidates, { pubkey ->
+            profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
+        })
     }
 
     fun jump(index: Int) {
@@ -639,7 +662,9 @@ private fun TrustWebContent(
                 kotlinx.coroutines.withTimeoutOrNull(TRUST_GRAPH_WAIT_MS) { trust.trustGraphUpdates.drop(1).first() }
 
                 refreshState = RefreshState(2f, "Loading profile pictures…")
-                nostrService.fetchMissingProfiles(listOf(me) + TrustMap.faceCandidates(trust.myFollows()), force = true)
+                val scores = trust.engagement()
+                engagement = scores
+                nostrService.fetchMissingProfiles(listOf(me) + TrustMap.faceCandidates(trust.myFollows(), scores), force = true)
                 refreshState = RefreshState(REFRESH_STEPS.toFloat(), "Up to date")
                 delay(REFRESH_DONE_HOLD_MS)
             } finally {
@@ -921,6 +946,8 @@ private fun isLiteGlobe(context: android.content.Context): Boolean {
 private const val SEARCH_DEBOUNCE_MS = 350L
 /** "Mapping your wider web…" gives up after this; an empty web may just be empty. */
 private const val WEB_WAIT_MS = 15_000L
+/** Seconds the globe keeps taking in faces' pictures as profiles arrive. */
+private const val PICTURE_WAIT_TICKS = 20
 /** Refresh: follows, web, pictures. */
 private const val REFRESH_STEPS = 3
 /** How long refresh waits for the trust graph to be read off disk. */

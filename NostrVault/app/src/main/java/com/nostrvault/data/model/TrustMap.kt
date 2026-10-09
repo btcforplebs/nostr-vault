@@ -115,20 +115,62 @@ object TrustMap {
     /**
      * Who might get a face when the core is the author. There are no bridges
      * there, so without these the only face is the core and "tap anyone" is
-     * false. Spread around the globe, and the same people every time.
+     * false. The people you interact with most ([engagement]) come first,
+     * busiest first; then a spread of the rest, the same people every time.
      */
-    fun faceCandidates(ring: List<String>, count: Int = FACE_CANDIDATES): List<String> =
-        spread(ring.sorted(), count)
+    fun faceCandidates(
+        ring: List<String>,
+        engagement: Map<String, Int> = emptyMap(),
+        count: Int = FACE_CANDIDATES,
+    ): List<String> {
+        val top = ring.filter { (engagement[it] ?: 0) > 0 }
+            .sortedWith(compareByDescending<String> { engagement[it] ?: 0 }.thenBy { it })
+            .take(count)
+        val taken = top.toSet()
+        return top + spread(ring.filter { it !in taken }.sorted(), count - top.size)
+    }
 
     /**
-     * Up to [count] of [candidates]: those with a profile picture first, then
-     * the rest, each in candidate order. A face with only an initial looks like
-     * a gap, so pictures win while they're streaming in.
+     * Up to [count] of [candidates], in candidate order: only people whose
+     * picture has actually loaded ([renders]), so the globe shows faces,
+     * never initials or broken pictures. The rest stay dots.
      */
-    fun pickFaces(candidates: List<String>, hasPicture: (String) -> Boolean, count: Int = RING_FACES): List<String> {
+    fun pickFaces(candidates: List<String>, renders: (String) -> Boolean, count: Int = RING_FACES): List<String> {
         if (count <= 0) return emptyList()
-        val (pictured, plain) = candidates.partition(hasPicture)
-        return (pictured + plain).take(count)
+        return candidates.filter(renders).take(count)
+    }
+
+    /** Kinds that count as interacting: notes (replies, mentions), reposts, reactions, zap receipts. */
+    val ENGAGEMENT_KINDS = listOf(1, 6, 7, 9735)
+
+    /** The parts of an event [engagementScores] reads. */
+    data class Interaction(val pubkey: String, val kind: Int, val tags: List<List<String>>)
+
+    /**
+     * How much you and each person interact, from your own events ([mine]:
+     * the people they tag) and events aimed at you ([toMe]: who sent them).
+     * Your own count double, a zap triples. You never score yourself.
+     */
+    fun engagementScores(mine: List<Interaction>, toMe: List<Interaction>, me: String): Map<String, Int> {
+        fun weight(kind: Int) = if (kind == 9735) 3 else 1
+        val scores = HashMap<String, Int>()
+        for (event in mine) {
+            if (event.pubkey != me) continue
+            // A reply tags the whole thread; the last p is who you answered.
+            val target = event.tags.lastOrNull { it.size > 1 && it[0] == "p" }?.get(1) ?: continue
+            scores[target] = (scores[target] ?: 0) + 2 * weight(event.kind)
+        }
+        for (event in toMe) {
+            if (event.tags.none { it.size > 1 && it[0] == "p" && it[1] == me }) continue
+            val sender = if (event.kind == 9735) {
+                event.tags.firstOrNull { it.size > 1 && it[0] == "P" }?.get(1)
+            } else {
+                event.pubkey
+            } ?: continue
+            scores[sender] = (scores[sender] ?: 0) + weight(event.kind)
+        }
+        scores.remove(me)
+        return scores
     }
 
     /** How close a search hit is to you: the tag on its row, and its rank. */
