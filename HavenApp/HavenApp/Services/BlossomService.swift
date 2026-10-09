@@ -552,7 +552,9 @@ class BlossomService: @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: file) }
         let auth = await makeUploadAuth(sha256: sha256)
         let urls = await mirrorUploadPass(source: .file(file), sha256: sha256, contentType: contentType, mirrors: [server], authBase64: auth, progress: nil)
-        let done = urls.contains { HomeVaultLogic.sameServer($0, server) }
+        // One server asked, so any result is that server taking it. The URL it
+        // returns is its descriptor's, which may name a CDN host (Tron, #473).
+        let done = !urls.isEmpty
         if done { appLog("kiosk-only \(sha256.prefix(8)) is now on \(server), where the note links it") }
         return done
     }

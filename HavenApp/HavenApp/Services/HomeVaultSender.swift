@@ -116,6 +116,15 @@ final class HomeVaultSender: ObservableObject {
     }
 
     private func confirmOrSend(sha256: String, vault: HomeVault) async -> Bool {
+        // A background pass may be sending this very blob: let it finish
+        // rather than race it for the vault's one upload slot (Tron, #473).
+        // ensureOnVault's timeout cancels this wait.
+        while sending {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return false }
+        }
+        sending = true
+        defer { sending = false }
         guard let base = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) else { return false }
         if await HomeVaultTransport.vaultHas(sha256: sha256, base: base) { return true }
         // A background pass may hold the item or the vault's one upload slot:
@@ -296,7 +305,7 @@ final class HomeVaultSender: ObservableObject {
         guard let auth = await signUploadAuth(sha256: item.id, size: size) else {
             return .unreachable("could not sign the upload")
         }
-        return await HomeVaultTransport.upload(file: file, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base)
+        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base)
     }
 
     /// Signed at send time: a queued item can wait longer than an auth lives.
@@ -405,13 +414,15 @@ enum HomeVaultTransport {
     }
 
     /// BUD-02 `PUT /upload` to the vault, streamed from `file`, with the owner's 24242 authorisation.
-    static func upload(file: URL, sha256: String, contentType: String, authBase64: String, base: URL) async -> SendResult {
+    static func upload(file: URL, size: Int, sha256: String, contentType: String, authBase64: String, base: URL) async -> SendResult {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
         request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue(sha256, forHTTPHeaderField: "X-SHA-256")
+        // The door answers 411 (final) without a length; never leave it to URLSession.
+        request.setValue(String(size), forHTTPHeaderField: "Content-Length")
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         do {

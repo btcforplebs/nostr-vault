@@ -222,15 +222,6 @@ extension HomeVaultLogic {
 }
 
 extension HomeVaultLogic {
-    /// The same server: scheme, host and port (a default port counts as given).
-    static func sameServer(_ url: URL, _ server: String) -> Bool {
-        guard let other = URL(string: server) else { return false }
-        func port(_ u: URL) -> Int? { u.port ?? (u.scheme == "https" ? 443 : u.scheme == "http" ? 80 : nil) }
-        return url.scheme?.lowercased() == other.scheme?.lowercased()
-            && url.host?.lowercased() == other.host?.lowercased()
-            && port(url) == port(other)
-    }
-
     /// The first configured server a public note may name, if any.
     static func linkServer(mirrors: [String], sha256: String, contentType: String) -> String? {
         mirrors.first { publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }

@@ -191,12 +191,4 @@ final class HomeVaultLinkTests: XCTestCase {
                        "https://blossom.band/", "the first public one, skipping the home server")
         XCTAssertNil(HomeVaultLogic.linkServer(mirrors: ["https://10.0.0.2"], sha256: sha, contentType: "image/png"))
     }
-
-    func testTheSameServerMeansTheSamePortToo() {
-        let url = URL(string: "https://blossom.band/\(sha).png")!
-        XCTAssertTrue(HomeVaultLogic.sameServer(url, "https://blossom.band/"))
-        XCTAssertTrue(HomeVaultLogic.sameServer(url, "https://BLOSSOM.band:443"))
-        XCTAssertFalse(HomeVaultLogic.sameServer(url, "https://blossom.band:8443"), "another port is another server")
-        XCTAssertFalse(HomeVaultLogic.sameServer(url, "https://nostr.media"))
-    }
 }
