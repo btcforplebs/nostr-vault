@@ -187,8 +187,10 @@ struct TrustWebView: View {
             guard isWOTTab else { return }
             await followRebuilds()
         }
-        .onReceive(FeedService.shared.$wotPubkeys.dropFirst()) { _ in
-            // On a cold start the graph lands after the globe opened.
+        .onReceive(FeedService.shared.$wotPubkeys.dropFirst().removeDuplicates()) { _ in
+            // On a cold start the graph lands after the globe opened. Only on
+            // a change: with an empty graph, recomputeHaze() reloads the cache
+            // and assigns the same empty set, which would land here again.
             recomputeHaze()
         }
         .onReceive(FeedService.shared.$isLoadingContacts.combineLatest(FeedService.shared.$hasAttemptedContactLoad)) {
