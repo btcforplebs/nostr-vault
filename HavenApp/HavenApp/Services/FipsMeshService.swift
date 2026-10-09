@@ -88,6 +88,7 @@ final class FipsMeshService: ObservableObject {
         let previous = engineOp
         engineOp = Task.detached {
             await previous?.value
+            SetMeshServingC(0)
             NvFipsStop()
         }
     }
@@ -164,8 +165,11 @@ final class FipsMeshService: ObservableObject {
         guard let port = UInt16(exactly: port) else {
             return .failure(MeshError(message: "Relay port \(port) is out of range"))
         }
+        // The relay's mesh port listens only while sharing.
+        SetMeshServingC(1)
         let shared = NvFipsExport(port)
         guard shared == 0 else {
+            SetMeshServingC(0)
             NvFipsStop()
             return .failure(MeshError(message: "Could not share the relay (\(shared))"))
         }

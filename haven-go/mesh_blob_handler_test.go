@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -83,5 +84,50 @@ func TestMeshBlobHandlerKeepsPeersOffTheRelay(t *testing.T) {
 			t.Errorf("%s: NIP-11 served = %v, want %v", h.name, got, h.wantRely)
 		}
 		srv.Close()
+	}
+}
+
+// The mesh port listens only between sharing on and sharing off.
+func TestMeshPortOnlyWhileSharing(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	_, port, _ := net.SplitHostPort(addr)
+	t.Setenv("HAVEN_MESH_PLAIN_PORT", port)
+
+	listening := func() bool {
+		conn, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
+		if err == nil {
+			conn.Close()
+		}
+		return err == nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &relayCycle{ctx: ctx, cancel: cancel, server: &http.Server{}}
+	relayLC.current.Store(c)
+	defer relayLC.current.Store(nil)
+	defer meshWanted.Store(false)
+
+	if listening() {
+		t.Fatal("mesh port open before sharing")
+	}
+	setMeshServing(true)
+	deadline := time.Now().Add(2 * time.Second)
+	for !listening() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !listening() {
+		t.Fatal("mesh port closed while sharing")
+	}
+	setMeshServing(false)
+	if listening() {
+		t.Fatal("mesh port still open after sharing off")
+	}
+	if !c.waitBackground(2 * time.Second) {
+		t.Fatal("mesh server goroutine did not exit")
 	}
 }

@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.di.ApplicationScope
+import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -148,6 +149,7 @@ class FipsMeshManager @Inject constructor(
      */
     private fun offerRelay() {
         val port = configStore.config.value.meshPort
+        HavenBridge.setMeshServing(true)
         val rc = FipsBridge.export(port)
         if (rc != 0) Log.w(TAG, "FipsBridgeExport($port) failed: $rc")
     }
@@ -166,6 +168,7 @@ class FipsMeshManager @Inject constructor(
         } else {
             // Withdrawing means dropping the endpoint. The identity is
             // persisted, so the address survives the restart.
+            HavenBridge.setMeshServing(false)
             FipsBridge.stop()
             start(persist = false)
         }
@@ -173,6 +176,7 @@ class FipsMeshManager @Inject constructor(
     }
 
     suspend fun stop() = withContext(Dispatchers.IO) {
+        HavenBridge.setMeshServing(false)
         FipsBridge.stop()
         configStore.updateAsync { it.copy(fipsMeshEnabled = false) }
         refresh()

@@ -28,6 +28,9 @@ object FipsMediaRouter {
 
     private val requested = LruCache<String, Long>(1024)
 
+    /** Vaults that sent wrong or oversized bytes: not asked again this session. */
+    private val distrusted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     private class Ingress(val base: String?, val at: Long)
     private val ingress = LruCache<String, Ingress>(32)
 
@@ -73,6 +76,7 @@ object FipsMediaRouter {
      * the main thread. A failure is remembered for [INGRESS_RETRY_MS].
      */
     fun ingressBase(npub: String): String? {
+        if (npub in distrusted) return null
         val now = System.currentTimeMillis()
         ingress.get(npub)?.let { cached ->
             if (cached.base != null) return cached.base
@@ -82,6 +86,15 @@ object FipsMediaRouter {
         if (result.url == null) Log.w(TAG, "ingress ${npub.take(12)}: ${result.error}")
         ingress.put(npub, Ingress(result.url, now))
         return result.url
+    }
+
+    /**
+     * Stop asking [npub] for the rest of the session. Wrong bytes are not a
+     * passing fault, and each try can cost up to the read cap in data.
+     */
+    fun distrust(npub: String) {
+        distrusted.add(npub)
+        ingress.remove(npub)
     }
 
     /** Drop a base that stopped answering (node restarted, vault evicted). */
