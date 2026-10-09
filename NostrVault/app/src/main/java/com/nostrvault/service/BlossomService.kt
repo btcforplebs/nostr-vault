@@ -106,6 +106,29 @@ class BlossomService @Inject constructor(
         return true
     }
 
+    init {
+        homeVault.hostPublicly = { sha256, contentType -> hostLocalBlob(sha256, contentType) != null }
+    }
+
+    /**
+     * No public server took [sha256], but the owner's home vault has it:
+     * publish under the first public server's https URL now, and keep
+     * pushing the copy there. NIP-F1 readers find it on the vault by hash
+     * through the owner's 10063; other apps once the public copy lands. A
+     * mesh address never goes in a note. Null when there is no home vault,
+     * no public server, or the vault doesn't have it: the post waits.
+     */
+    private suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
+        if (homeVault.homeVaultNpub == null) return null
+        val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
+            com.nostrvault.relay.isPrivateNetworkURL(it)
+        } ?: return null
+        if (!homeVault.ensureOnVault(sha256)) return null
+        homeVault.needsPublicCopy(sha256, contentType)
+        Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
+        return PostUploadOutcome.Hosted("$server/$sha256")
+    }
+
     private val remoteClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(600, TimeUnit.SECONDS) // 10min for large files
@@ -263,6 +286,7 @@ class BlossomService @Inject constructor(
         // Only skip when the blob is safe here; if the local save failed, an
         // outside server is the only place it can go, so try them anyway.
         if (skipOutsideServers && localOk) {
+            if (toHomeVault) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
             Log.i(TAG, "Saved ${sha256.take(8)} on this device only — an earlier attachment found every outside server down")
             return@withContext UploadAttempt(PostUploadOutcome.SavedOnDevice(mirrors), savedLocalUrl)
         }
@@ -281,6 +305,10 @@ class BlossomService @Inject constructor(
 
         if (external == null) {
             Log.e(TAG, "All Blossom mirror uploads failed for ${sha256.take(8)} (saved on this device: $localOk)")
+            // The public copy is pushed from this phone's relay, so only when it is here.
+            if (localOk && toHomeVault) {
+                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
+            }
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)

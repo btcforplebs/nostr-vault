@@ -1805,9 +1805,7 @@ class NostrService @Inject constructor(
                 lookup?.confirmedNone == true -> emptyList()
                 else -> _serverLists.value[owner].orEmpty()
             }
-            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(
-                newest, mirrors, configStore.config.value.homeVaultNpub,
-            )
+            val servers = com.nostrvault.fips.HomeVaultRules.mergeServerList(newest, mirrors)
             signAndPost(kind = 10063, content = "", tags = servers.map { listOf("server", it) }, forceOwner = true)
         }
     }

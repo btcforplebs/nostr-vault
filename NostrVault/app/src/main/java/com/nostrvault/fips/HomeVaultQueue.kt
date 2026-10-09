@@ -86,6 +86,13 @@ class HomeVaultQueue(
         add(Item(key = sha256, type = TYPE_BLOB, contentType = contentType, queuedAt = now))
     }
 
+    /**
+     * Remember that [sha256] still has to reach a public server. No bytes:
+     * it is pushed from this phone's own relay.
+     */
+    fun addPublicCopy(sha256: String, contentType: String, now: Long = System.currentTimeMillis()): Boolean =
+        add(Item(key = sha256, type = TYPE_PUBLIC_COPY, contentType = contentType, queuedAt = now))
+
     fun blobFile(sha256: String): File = File(blobDir, sha256)
 
     fun update(item: Item) = synchronized(lock) {
@@ -140,6 +147,7 @@ class HomeVaultQueue(
     companion object {
         const val TYPE_EVENT = "event"
         const val TYPE_BLOB = "blob"
+        const val TYPE_PUBLIC_COPY = "public-copy"
         const val MAX_ITEMS = 500
         const val MAX_BLOB_BYTES = 1L * 1024 * 1024 * 1024
     }
@@ -167,14 +175,23 @@ object HomeVaultRules {
      * The 10063 a phone publishes: it merges, never replaces. [newest] is the
      * newest signed list (any device's); [managed] the servers this phone
      * manages, which replace every non-mesh entry. Every `fipsmesh://` entry
-     * is kept, in order, since other devices put those there; the home
-     * vault's goes first.
+     * is kept, in order, since other devices put those there, and they go
+     * after the public servers (NIP-F1): BUD-03 clients try servers in order.
+     * The home vault is the setting, not a list position.
      */
-    fun mergeServerList(newest: List<String>, managed: List<String>, homeVaultNpub: String?): List<String> {
-        val mesh = newest.filter { FipsMediaRouter.meshNpubIn(it) != null }.distinct()
-        val home = mesh.filter { homeVaultNpub != null && FipsMediaRouter.meshNpubIn(it) == homeVaultNpub }
-        return (home + managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + (mesh - home.toSet())).distinct()
+    fun mergeServerList(newest: List<String>, managed: List<String>): List<String> {
+        val mesh = newest.filter { FipsMediaRouter.meshNpubIn(it) != null }
+        return (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
     }
+
+    /**
+     * The server a note's URL names when only the home vault has the blob
+     * yet: the first public `https` one. Mesh readers fetch the hash from
+     * the home vault meanwhile (NIP-F1), everyone else once the public copy
+     * lands. Null when there is none, so the post waits as before.
+     */
+    fun publicServerFor(mirrors: List<String>, isPrivate: (String) -> Boolean): String? =
+        mirrors.firstOrNull { it.startsWith("https://") && !isPrivate(it) }?.trimEnd('/')
 
     fun candidates(ownerServerList: List<String>, ownMeshNpub: String?): List<String> =
         ownerServerList.mapNotNull { FipsMediaRouter.meshNpubIn(it) }
@@ -187,13 +204,14 @@ object HomeVaultRules {
         // NIP-01 prefixes. A duplicate is already there. Rate limits and
         // relay errors pass, and so may auth: this sender has no NIP-42, so a
         // door that starts asking must not make every post vanish. Anything
-        // else (blocked, invalid, pow) is final.
+        // else is final, including restricted: (the door's answer to a key
+        // that isn't the owner's).
         message.startsWith("duplicate:") -> HomeVaultSend.SENT
         RETRY_PREFIXES.any { message.startsWith(it) } -> HomeVaultSend.RETRY
         else -> HomeVaultSend.REJECTED
     }
 
-    private val RETRY_PREFIXES = listOf("rate-limited:", "error:", "auth-required:", "restricted:")
+    private val RETRY_PREFIXES = listOf("rate-limited:", "error:", "auth-required:")
 
     /** Wait before the next try after [attempts] RETRYs: 1 min doubling, at most 6 h. */
     fun backoffMs(attempts: Int): Long =

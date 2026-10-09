@@ -99,26 +99,43 @@ class HomeVaultQueueTest {
     }
 
     @Test
-    fun `publishing 10063 keeps other devices' mesh entries, home vault first`() {
+    fun `publishing 10063 keeps every mesh entry, after the public servers`() {
         val other = "npub1" + "z".repeat(58)
-        val newest = listOf("https://old.example", "fipsmesh://$other/", "fipsmesh://$kiosk/")
+        val newest = listOf("fipsmesh://$kiosk/", "https://old.example", "fipsmesh://$other/")
         assertEquals(
-            listOf("fipsmesh://$kiosk/", "https://new.example", "fipsmesh://$other/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://new.example"), homeVaultNpub = kiosk),
-        )
-        // No home vault chosen: mesh entries stay, in their order, after this phone's servers.
-        assertEquals(
-            listOf("https://new.example", "fipsmesh://$other/", "fipsmesh://$kiosk/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://new.example"), homeVaultNpub = null),
+            listOf("https://new.example", "fipsmesh://$kiosk/", "fipsmesh://$other/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://new.example")),
         )
         // Nothing published yet.
-        assertEquals(listOf("https://a.example"), HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example"), kiosk))
+        assertEquals(listOf("https://a.example"), HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example")))
     }
 
     @Test
-    fun `auth-required and restricted wait instead of dropping the post`() {
+    fun `a kiosk-only blob is published under the first public https server`() {
+        val private = setOf("https://192.168.1.5:4443")
+        val mirrors = listOf("https://192.168.1.5:4443", "http://plain.example", "https://blossom.example/", "https://b2.example")
+        assertEquals("https://blossom.example", HomeVaultRules.publicServerFor(mirrors) { it in private })
+        assertEquals(null, HomeVaultRules.publicServerFor(listOf("https://192.168.1.5:4443")) { it in private })
+        assertEquals(null, HomeVaultRules.publicServerFor(emptyList()) { false })
+    }
+
+    @Test
+    fun `a pending public copy survives a restart and carries no bytes`() {
+        val dir = tmp.newFolder()
+        assertTrue(HomeVaultQueue(dir).addPublicCopy(sha, "video/mp4"))
+        val item = HomeVaultQueue(dir).items().single()
+        assertEquals(HomeVaultQueue.TYPE_PUBLIC_COPY, item.type)
+        assertEquals("video/mp4", item.contentType)
+        assertFalse(HomeVaultQueue(dir).blobFile(sha).exists())
+    }
+
+    @Test
+    fun `auth-required waits, restricted is final`() {
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.eventOutcome(false, "auth-required: log in"))
-        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.eventOutcome(false, "restricted: not yet"))
+        assertEquals(
+            HomeVaultSend.REJECTED,
+            HomeVaultRules.eventOutcome(false, "restricted: the mesh accepts only the owner's own events"),
+        )
     }
 
     @Test

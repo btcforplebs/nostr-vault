@@ -85,6 +85,18 @@ class HomeVaultSender @Inject constructor(
     var ownerServerList: () -> List<String>? = { null }
 
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
+
+    /**
+     * Blobs a note was published for while only the home vault had them.
+     * Each is pushed to the public servers until one takes it.
+     */
+    private val publicCopies = HomeVaultQueue(File(context.filesDir, "home_vault_public_copies"))
+    private var publicJob: Job? = null
+    private val publicLock = Mutex()
+
+    /** Host a blob from this phone's relay on the public servers; true once one has it. Wired by BlossomService. */
+    @Volatile
+    var hostPublicly: suspend (sha256: String, contentType: String) -> Boolean = { _, _ -> false }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val drainLock = Mutex()
     private var retryJob: Job? = null
@@ -97,11 +109,13 @@ class HomeVaultSender @Inject constructor(
 
     data class State(
         val waiting: Int = 0,
+        /** Notes already out whose media no public server has yet. */
+        val publicPending: Int = 0,
         val lastSentAt: Long? = null,
         val lastProblem: String? = null,
     )
 
-    private val _state = MutableStateFlow(State(waiting = queue.size))
+    private val _state = MutableStateFlow(State(waiting = queue.size, publicPending = publicCopies.size))
     val state: StateFlow<State> = _state.asStateFlow()
 
     /** The chosen home vault's mesh npub, or null when there is none. */
@@ -112,6 +126,73 @@ class HomeVaultSender @Inject constructor(
 
     init {
         if (queue.size > 0) scheduleRetry()
+        if (publicCopies.size > 0) schedulePublicCopies()
+    }
+
+    /**
+     * Make sure the home vault has [sha256] now: send what waits, then ask
+     * it. Called while the owner is posting, so it may prompt the signer.
+     */
+    suspend fun ensureOnVault(sha256: String): Boolean {
+        val npub = activeVault ?: return false
+        return withTimeoutOrNull(ENSURE_TIMEOUT_MS) {
+            drain(userInitiated = true)
+            val base = FipsMediaRouter.ingressBase(npub) ?: return@withTimeoutOrNull false
+            try {
+                client.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
+            } catch (e: IOException) {
+                false
+            }
+        } ?: false
+    }
+
+    /** Keep pushing [sha256] to the public servers until one has it. */
+    fun needsPublicCopy(sha256: String, contentType: String) {
+        if (publicCopies.addPublicCopy(sha256, safeType(contentType))) schedulePublicCopies()
+    }
+
+    /** Push the public copies every minute while any wait. One loop at a time. */
+    private fun schedulePublicCopies() {
+        if (publicJob?.isActive == true) return
+        publicJob = scope.launch {
+            while (isActive && publicCopies.size > 0) {
+                publicPass(userInitiated = false)
+                delay(RETRY_MS)
+            }
+        }
+    }
+
+    /**
+     * One try at each due public copy, with the vault queue's backoff and
+     * give-up rules. Each try signs an upload auth, so a background pass
+     * skips them unless the signer is a local key; Send now does them all.
+     */
+    private suspend fun publicPass(userInitiated: Boolean) = publicLock.withLock {
+        val now = System.currentTimeMillis()
+        for (item in publicCopies.items()) {
+            if (HomeVaultRules.expired(item, now)) {
+                Log.w(TAG, "public copy of ${item.key.take(8)}: gave up after ${item.attempts} tries")
+                publicCopies.remove(item.key)
+                continue
+            }
+            if (!userInitiated && (item.nextAt > now || !signerIsLocal())) continue
+            val hosted = try {
+                hostPublicly(item.key, item.contentType ?: "application/octet-stream")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "public copy of ${item.key.take(8)}: ${e.message}")
+                false
+            }
+            if (hosted) {
+                publicCopies.remove(item.key)
+                Log.i(TAG, "public copy of ${item.key.take(8)} is up")
+            } else {
+                val attempts = item.attempts + 1
+                publicCopies.update(item.copy(attempts = attempts, nextAt = now + HomeVaultRules.backoffMs(attempts)))
+            }
+        }
+        publish()
     }
 
     suspend fun setHomeVault(npub: String?) {
@@ -156,7 +237,10 @@ class HomeVaultSender @Inject constructor(
     }
 
     fun drainSoon(userInitiated: Boolean = false) {
-        scope.launch { drain(userInitiated) }
+        scope.launch {
+            drain(userInitiated)
+            if (userInitiated) publicPass(userInitiated = true)
+        }
     }
 
     /**
@@ -347,7 +431,7 @@ class HomeVaultSender @Inject constructor(
     }
 
     private fun publish() {
-        _state.value = _state.value.copy(waiting = queue.size)
+        _state.value = _state.value.copy(waiting = queue.size, publicPending = publicCopies.size)
     }
 
     private fun Response.reason(max: Int): String =
@@ -358,5 +442,6 @@ class HomeVaultSender @Inject constructor(
         const val AUTH_KIND = 24242
         const val RETRY_MS = 60_000L
         const val EVENT_OK_TIMEOUT_MS = 15_000L
+        const val ENSURE_TIMEOUT_MS = 60_000L
     }
 }

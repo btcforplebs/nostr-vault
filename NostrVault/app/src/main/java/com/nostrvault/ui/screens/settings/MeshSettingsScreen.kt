@@ -491,7 +491,16 @@ private fun HomeVaultCard(
                     color = if (state.waiting > 0) SecondaryText else SuccessGreen,
                     fontSize = 13.sp,
                 )
-                if (state.waiting > 0) {
+                if (state.publicPending > 0) {
+                    Text(
+                        "${state.publicPending} on the home vault only. Other apps see " +
+                            "${if (state.publicPending == 1) "it" else "them"} once a public server takes a copy.",
+                        color = SecondaryText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
+                if (state.waiting > 0 || state.publicPending > 0) {
                     TextButton(onClick = onSendNow, enabled = enabled) { Text("Send now", fontSize = 13.sp) }
                 }
             }
