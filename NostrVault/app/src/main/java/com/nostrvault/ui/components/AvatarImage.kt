@@ -132,6 +132,13 @@ internal suspend fun prefetchAvatar(context: Context, url: String, httpClient: o
     prefetchAvatarLoader(context, httpClient).execute(avatarRequest(context, url))
 }
 
+/**
+ * Loads [url] as [AvatarImage] will and says whether it decoded, so a caller
+ * can show only pictures that render. A cached picture answers at once.
+ */
+internal suspend fun avatarRenders(context: Context, url: String): Boolean =
+    avatarImageLoader(context).execute(avatarRequest(context, url)) is coil.request.SuccessResult
+
 @Volatile private var prefetchAvatarLoaderInstance: ImageLoader? = null
 
 /** [avatarImageLoader] on the feed prefetch lane's [httpClient]. */

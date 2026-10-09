@@ -240,4 +240,126 @@ class TrustMapTest {
         )
         assertTrue(TrustMap.deeperLinkFilters(listOf(bridge), emptyList()).isEmpty())
     }
+
+    // ── Ring faces ───────────────────────────────────────────────────
+
+    @Test fun `face candidates are the ring sorted and spread`() {
+        val ring = (0 until 200).map { randomKey(it) }
+        val picked = TrustMap.faceCandidates(ring)
+        assertEquals(TrustMap.FACE_CANDIDATES, picked.size)
+        assertEquals(TrustMap.spread(ring.sorted(), TrustMap.FACE_CANDIDATES), picked)
+        // Order in doesn't matter: the same people every time.
+        assertEquals(picked, TrustMap.faceCandidates(ring.reversed()))
+        val few = listOf("c", "a", "b")
+        assertEquals(listOf("a", "b", "c"), TrustMap.faceCandidates(few))
+    }
+
+    @Test fun `face candidates put the most engaged first`() {
+        val ring = (0 until 200).map { key(it) }
+        val engagement = mapOf(key(150) to 9, key(7) to 4, key(42) to 4, key(999) to 50)
+        val picked = TrustMap.faceCandidates(ring, engagement, count = 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        assertEquals(listOf(key(150), key(7), key(42)), picked.take(3))
+        assertEquals(10, picked.toSet().size)
+        assertTrue(key(999) !in picked)
+    }
+
+    @Test fun `pick faces shows only rendered pictures in candidate order`() {
+        val candidates = listOf("a", "b", "c", "d", "e")
+        val rendered = setOf("b", "d", "e")
+        assertEquals(listOf("b", "d"), TrustMap.pickFaces(candidates, { it in rendered }, count = 2))
+        assertEquals(listOf("b", "d", "e"), TrustMap.pickFaces(candidates, { it in rendered }))
+        assertTrue(TrustMap.pickFaces(candidates, { false }).isEmpty())
+        assertTrue(TrustMap.pickFaces(candidates, { true }, count = 0).isEmpty())
+        assertEquals(TrustMap.RING_FACES, TrustMap.pickFaces((0 until 100).map { "k$it" }, { true }).size)
+    }
+
+    @Test fun `engagement scores count both directions`() {
+        val me = key(1); val alice = key(2); val bob = key(3); val carol = key(4)
+        fun ev(pubkey: String, kind: Int, vararg tags: List<String>) = TrustMap.Interaction(pubkey, kind, tags.toList())
+        val mine = listOf(
+            ev(me, 7, listOf("e", "x"), listOf("p", alice)),          // a like: alice +2
+            ev(me, 1, listOf("p", bob), listOf("p", alice)),          // reply to alice in bob's thread: alice +2
+            ev(me, 6, listOf("p", me)),                               // reposting yourself counts for no one
+            ev(bob, 7, listOf("p", carol)),                           // not yours: ignored
+        )
+        val toMe = listOf(
+            ev(bob, 7, listOf("p", me)),                              // bob liked you: +1
+            ev("zapper", 9735, listOf("p", me), listOf("P", carol)), // carol zapped you: +3
+            ev(carol, 1, listOf("p", alice)),                         // not aimed at you: ignored
+        )
+        assertEquals(mapOf(alice to 4, bob to 1, carol to 3), TrustMap.engagementScores(mine, toMe, me))
+    }
+
+    // ── Search ───────────────────────────────────────────────────────
+
+    private fun person(key: String, display: String? = null, name: String? = null, nip05: String? = null) =
+        FeedProfile(pubkey = key, name = name, displayName = display, nip05 = nip05)
+
+    @Test fun `search matches display name, name and nip05 ignoring case`() {
+        val people = listOf(
+            person("1", display = "Alice Smith"),
+            person("2", name = "bob"),
+            person("3", nip05 = "carol@ALICE.com"),
+            person("4", display = "Dave"),
+        )
+        val hits = TrustMap.searchPeople("ALICE", people, emptySet(), emptySet()).map { it.pubkey }
+        assertEquals(setOf("1", "3"), hits.toSet())
+        assertEquals(listOf("2"), TrustMap.searchPeople("Bo", people, emptySet(), emptySet()).map { it.pubkey })
+        assertTrue(TrustMap.searchPeople("   ", people, emptySet(), emptySet()).isEmpty())
+        assertTrue(TrustMap.searchPeople("zed", people, emptySet(), emptySet()).isEmpty())
+    }
+
+    @Test fun `search ranks follows, then web, then prefix, then shorter name`() {
+        val people = listOf(
+            person("other", display = "Ann"),
+            person("web", display = "Ann Web"),
+            person("follow", display = "Joanne"),
+            person("followPrefixLong", display = "Annabelle"),
+            person("followPrefixShort", display = "Anna"),
+        )
+        val follows = setOf("follow", "followPrefixLong", "followPrefixShort")
+        val hits = TrustMap.searchPeople("ann", people, follows, setOf("web"))
+        assertEquals(listOf("followPrefixShort", "followPrefixLong", "follow", "web", "other"), hits.map { it.pubkey })
+        assertEquals(
+            listOf(TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.WEB, TrustMap.Tier.OTHER),
+            hits.map { it.tier },
+        )
+        // A follow is also in the web: it's still tagged as a follow.
+        assertEquals(TrustMap.Tier.FOLLOW, TrustMap.searchPeople("joanne", people, follows, follows).single().tier)
+    }
+
+    @Test fun `search stops at the limit`() {
+        val people = (0 until 20).map { person("k$it", display = "Sam $it") }
+        assertEquals(8, TrustMap.searchPeople("sam", people, emptySet(), emptySet()).size)
+        assertEquals(3, TrustMap.searchPeople("sam", people, emptySet(), emptySet(), limit = 3).size)
+    }
+
+    @Test fun `a pasted hex key or npub names one person`() {
+        val hex = "AB".repeat(32)
+        assertEquals(hex.lowercase(), TrustMap.pastedKey("  $hex ") { null })
+        assertEquals(author, TrustMap.pastedKey("npub1xyz") { if (it == "npub1xyz") author else null })
+        assertEquals(author, TrustMap.pastedKey("nostr:npub1xyz") { author })
+        assertNull(TrustMap.pastedKey("npub1bad") { null })
+        assertNull(TrustMap.pastedKey("npub1short") { "abc" })
+        assertNull(TrustMap.pastedKey("npub1throws") { error("bad checksum") })
+        assertNull(TrustMap.pastedKey("alice") { author })
+        assertNull(TrustMap.pastedKey("ab".repeat(31)) { null })
+    }
+
+    @Test
+    fun seatFacesNeverLetsOneFaceCoverAnother() {
+        fun spot(k: String, x: Double) = TrustMap.FaceSpot(k, x, 0.0, 10.0)
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        val spots = listOf(spot("a", 0.0), spot("b", 5.0), spot("c", 40.0), spot("d", 100.0))
+        val core = listOf(TrustMap.FaceSpot("core", 100.0, 0.0, 20.0))
+        assertEquals(setOf("a", "c"), TrustMap.seatFaces(spots, blocked = core))
+        // A face seated last frame keeps its seat over a newcomer in front.
+        assertEquals(setOf("b", "c"), TrustMap.seatFaces(spots, kept = setOf("b"), blocked = core))
+        // The author always gets a picture.
+        assertEquals(setOf("a", "c", "d"), TrustMap.seatFaces(spots, always = setOf("d"), blocked = core))
+        // A little overlap is fine; covering is not.
+        assertEquals(setOf("a", "b"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 18.0))))
+        assertEquals(setOf("a"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 16.0))))
+    }
 }

@@ -483,7 +483,8 @@ class NostrService: ObservableObject {
                 self.profiles[profile.pubkey] = profile
             }
             if snapshot.isFinished { self.mentionSearchSession = nil }
-            completion(GlobalSearchResults(profiles: snapshot.profiles, notes: snapshot.notes))
+            completion(GlobalSearchResults(profiles: snapshot.profiles, notes: snapshot.notes,
+                                           isFinished: snapshot.isFinished))
         }
         mentionSearchSession = session
         session.start()

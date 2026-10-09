@@ -1847,8 +1847,11 @@ class NostrService @Inject constructor(
         if (additions.isNotEmpty()) _profiles.value = current + additions
     }
 
-    /** Who a callback search belongs to; each gets its own slot. */
-    enum class SearchCaller { FEED, MENTION }
+    /**
+     * Who a callback search belongs to; each gets its own slot. WOT is the
+     * WOT tab's "Find someone", so typing there never cancels a feed search.
+     */
+    enum class SearchCaller { FEED, MENTION, WOT }
 
     /**
      * One in-flight callback search per caller. Feed search and @-mention

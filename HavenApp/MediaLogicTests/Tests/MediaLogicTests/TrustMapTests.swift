@@ -204,4 +204,80 @@ final class TrustMapTests: XCTestCase {
                                 TrustMap.Chain(bridge: other, via: via)].sorted { ($0.via, $0.bridge) < ($1.via, $1.bridge) })
         XCTAssertTrue(TrustMap.deeperLinkFilters(follows: [bridge], via: []).isEmpty)
     }
+
+    func testPickFacesShowsOnlyRenderedPicturesInOrder() {
+        let candidates = (1...6).map(key)
+        let rendered: Set<String> = [key(2), key(5), key(6)]
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 2), [key(2), key(5)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 10), [key(2), key(5), key(6)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: { _ in false }), [])
+    }
+
+    func testFaceCandidatesAreStableAndSpread() {
+        let ring = (1...200).map(key)
+        let a = TrustMap.faceCandidates(ring.shuffled(), count: 10)
+        XCTAssertEqual(a, TrustMap.faceCandidates(ring, count: 10))
+        XCTAssertEqual(Set(a).count, 10)
+        XCTAssertEqual(TrustMap.faceCandidates([key(3), key(1)]), [key(1), key(3)].sorted())
+    }
+
+    func testFaceCandidatesPutTheMostEngagedFirst() {
+        let ring = (1...200).map(key)
+        let engagement = [key(150): 9, key(7): 4, key(42): 4, key(999): 50]
+        let picked = TrustMap.faceCandidates(ring, engagement: engagement, count: 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        XCTAssertEqual(Array(picked.prefix(3)), [key(150), key(7), key(42)])
+        XCTAssertEqual(picked.count, 10)
+        XCTAssertEqual(Set(picked).count, 10)
+        XCTAssertFalse(picked.contains(key(999)))
+    }
+
+    func testEngagementScoresCountBothDirections() {
+        let me = key(1), alice = key(2), bob = key(3), carol = key(4)
+        func ev(_ pubkey: String, _ kind: Int, _ tags: [[String]]) -> [String: Any] {
+            ["pubkey": pubkey, "kind": kind, "tags": tags]
+        }
+        let mine = [
+            ev(me, 7, [["e", "x"], ["p", alice]]),               // a like: alice +2
+            ev(me, 1, [["p", bob], ["p", alice]]),               // reply in bob's thread to alice: alice +2
+            ev(me, 6, [["p", me]]),                              // reposting myself counts for no one
+            ev(bob, 7, [["p", carol]]),                          // not mine: ignored
+        ]
+        let toMe = [
+            ev(bob, 7, [["p", me]]),                             // bob liked me: +1
+            ev("zapper", 9735, [["p", me], ["P", carol]]),       // carol zapped me: +3
+            ev(carol, 1, [["p", alice]]),                        // not aimed at me: ignored
+        ]
+        let scores = TrustMap.engagementScores(mine: mine, toMe: toMe, me: me)
+        XCTAssertEqual(scores, [alice: 4, bob: 1, carol: 3])
+    }
+
+    func testSearchPeopleRanksFollowsThenWebThenPrefix() {
+        let people = [
+            TrustMap.Person(pubkey: key(1), names: ["Alice Stranger"]),
+            TrustMap.Person(pubkey: key(2), names: ["Mal Alice"]),
+            TrustMap.Person(pubkey: key(3), names: ["alice", "alice@example.com"]),
+            TrustMap.Person(pubkey: key(4), names: ["Alicewebber"]),
+            TrustMap.Person(pubkey: key(5), names: ["Bob"]),
+        ]
+        let found = TrustMap.searchPeople(" ALI ", in: people, follows: [key(2), key(3)], web: [key(4)])
+        XCTAssertEqual(found, [key(3), key(2), key(4), key(1)])
+        XCTAssertTrue(TrustMap.searchPeople("  ", in: people, follows: [], web: []).isEmpty)
+        XCTAssertEqual(TrustMap.searchPeople("a", in: people, follows: [], web: [], limit: 2).count, 2)
+    }
+
+    func testSeatFacesNeverLetsOneFaceCoverAnother() {
+        let spot = { (k: String, x: Double) in TrustMap.FaceSpot(key: k, x: x, y: 0, r: 10) }
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        let spots = [spot("a", 0), spot("b", 5), spot("c", 40), spot("d", 100)]
+        let core = TrustMap.FaceSpot(key: "core", x: 100, y: 0, r: 20)
+        XCTAssertEqual(TrustMap.seatFaces(spots, blocked: [core]), ["a", "c"])
+        // A face seated last frame keeps its seat over a newcomer in front.
+        XCTAssertEqual(TrustMap.seatFaces(spots, kept: ["b"], blocked: [core]), ["b", "c"])
+        // The author always gets a picture.
+        XCTAssertEqual(TrustMap.seatFaces(spots, always: ["d"], blocked: [core]), ["a", "c", "d"])
+        // A little overlap is fine; covering is not.
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 18)]), ["a", "b"])
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 16)]), ["a"])
+    }
 }

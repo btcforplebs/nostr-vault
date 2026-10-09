@@ -478,6 +478,34 @@ func RequestRelaySyncC() {
 	RequestRelaySync()
 }
 
+//export RefreshWotC
+func RefreshWotC() C.int {
+	// Rebuilds the web of trust now (the WOT tab's refresh button) instead of
+	// at the next daily refresh. 1 when a rebuild started or was already
+	// running; 0 when the relay isn't up or trust is off. Poll
+	// WotRefreshProgressC for how far it has got.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RefreshWotC: recovered from panic: %v", r)
+		}
+	}()
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil { // server == nil means import cycle
+		return 0
+	}
+	if wot.RefreshNow(c.ctx, wot.GetInstance(), c.spawn) {
+		return 1
+	}
+	return 0
+}
+
+//export WotRefreshProgressC
+func WotRefreshProgressC() *C.char {
+	// JSON of wot.Progress. The caller frees the string.
+	result, _ := json.Marshal(wot.CurrentProgress())
+	return C.CString(string(result))
+}
+
 //export RequestCatchUpC
 func RequestCatchUpC() {
 	// Like RequestRelaySyncC, but for the app returning from absence
