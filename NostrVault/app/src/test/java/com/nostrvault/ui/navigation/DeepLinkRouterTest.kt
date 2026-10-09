@@ -23,6 +23,12 @@ class DeepLinkRouterTest {
         override fun neventToHex(nevent1: String) = if (nevent1 == "nevent1good") hexNote else null
         override fun npubToHex(npub: String) = if (npub == "npub1good") hexAuthor else null
         override fun nprofileToHex(nprofile: String) = if (nprofile == "nprofile1good") hexAuthor else null
+        override fun naddrToCoordinate(naddr1: String) = when (naddr1) {
+            "naddr1qqart" -> com.nostrvault.data.model.QuoteRef.Coordinate(30023, hexAuthor, "a/b?c#d")
+            "naddr1qqdm" -> com.nostrvault.data.model.QuoteRef.Coordinate(4, hexAuthor, "")
+            "naddr1qqpf" -> com.nostrvault.data.model.QuoteRef.Coordinate(0, hexAuthor, "")
+            else -> null
+        }
     }
 
     private fun route(uri: String) = DeepLinkRouter.fromUri(uri, decoder)?.route
@@ -81,8 +87,38 @@ class DeepLinkRouterTest {
         assertNull(route("nostr:npub1typo"))
     }
 
-    @Test fun `naddr has no screen yet and must not fall through to the feed`() {
+    @Test fun `an naddr link opens the address screen with only the bech32 in the route`() {
+        assertEquals(Screen.AddressLink.createRoute("naddr1qqart"), route("nostr:naddr1qqart"))
+        assertEquals("naddr/naddr1qqart", route("nostr:naddr1qqart"))
+        // Shared text, upper case, and the nostr: prefix all take the same validated path.
+        assertEquals("naddr/naddr1qqart", route("naddr1qqart"))
+        assertEquals("naddr/naddr1qqart", route("NOSTR:NADDR1QQART"))
+    }
+
+    @Test fun `an naddr that does not decode, or names a non-addressable kind, opens nothing`() {
         assertNull(route("nostr:naddr1qqxnzd3exyc"))
+        assertNull(route("nostr:naddr1qqdm"))
+        assertNull(route("nostr:naddr1qqpf"))
+    }
+
+    @Test fun `an naddr with characters outside bech32 never reaches the decoder or a route`() {
+        assertNull(route("nostr:naddr1qqart/../settings"))
+        assertNull(route("nostr:naddr1qqart#x"))
+        assertNull(route("nostr:naddr1qqart%2F"))
+        assertNull(route("nostr:naddr1"))
+    }
+
+    @Test fun `even a decoder that accepts anything cannot put route characters in the route`() {
+        val lenient = object : NostrEntityDecoder by decoder {
+            override fun naddrToCoordinate(naddr1: String) =
+                com.nostrvault.data.model.QuoteRef.Coordinate(30023, hexAuthor, "")
+        }
+        listOf("naddr1qqart/../settings", "naddr1qqart#x", "naddr1qqart%2F", "naddr1qqb").forEach {
+            assertNull(it, DeepLinkRouter.fromUri("nostr:$it", lenient))
+        }
+        assertEquals("naddr/naddr1qqart", DeepLinkRouter.fromUri("nostr:naddr1qqart", lenient)?.route)
+        // A query is dropped before the entity is read, as for every nostr: link.
+        assertEquals("naddr/naddr1qqart", DeepLinkRouter.fromUri("nostr:naddr1qqart?x=/../settings", lenient)?.route)
     }
 
     @Test fun `hex ids are accepted directly`() {

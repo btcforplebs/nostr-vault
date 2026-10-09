@@ -39,6 +39,76 @@ object QuoteRef {
         fun naddrToCoordinate(naddr1: String): Coordinate?
     }
 
+    /**
+     * Reads a decoded naddr payload (NIP-19 TLV): type 0 = the `d` tag
+     * (UTF-8), 1 = relay hint, 2 = author (32 bytes), 3 = kind (4 bytes,
+     * big-endian). The one reader for every naddr the app meets — a quoted
+     * `nostr:naddr1…` in a note and a `nostr:` link from another app — so both
+     * agree on what a payload names. Port of iOS `QuoteReference.naddrParts(fromTLV:)`.
+     *
+     * Null, naming nothing, when:
+     * - kind or author is missing (a fetch without them is unbounded);
+     * - the `d` tag is not valid UTF-8. A lossy decode turned it into U+FFFD
+     *   text; iOS read it as the empty `d` tag, which named a different event
+     *   by the same author (#479). A zero-length `d` is a real empty `d` tag.
+     * - an entry runs past the end, or the `d` tag, author or kind appears
+     *   twice: a malformed payload yields nothing, not a guess.
+     *
+     * The relay hint is never read. Every lookup asks the user's own relays,
+     * so a link cannot make the app dial a host of the sender's choosing.
+     */
+    fun coordinateFromNaddrTlv(payload: ByteArray): Coordinate? {
+        var dTag: String? = null
+        var pubkey: String? = null
+        var kind: Int? = null
+        var i = 0
+        while (i < payload.size) {
+            if (i + 2 > payload.size) return null
+            val type = payload[i].toInt() and 0xFF
+            val length = payload[i + 1].toInt() and 0xFF
+            i += 2
+            if (i + length > payload.size) return null
+            val value = payload.copyOfRange(i, i + length)
+            i += length
+            when (type) {
+                0 -> {
+                    if (dTag != null) return null
+                    dTag = strictUtf8(value) ?: return null
+                }
+                2 -> if (length == 32) {
+                    if (pubkey != null) return null
+                    pubkey = value.joinToString("") { "%02x".format(it) }
+                }
+                3 -> if (length == 4) {
+                    if (kind != null) return null
+                    kind = value.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
+                }
+            }
+        }
+        val resolvedKind = kind ?: return null
+        val resolvedPubkey = pubkey ?: return null
+        return Coordinate(resolvedKind, resolvedPubkey, dTag ?: "")
+    }
+
+    /** [bytes] as UTF-8, or null when they are not valid UTF-8. Keeps a leading BOM. */
+    private fun strictUtf8(bytes: ByteArray): String? = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            .decode(java.nio.ByteBuffer.wrap(bytes))
+            .toString()
+    } catch (_: java.nio.charset.CharacterCodingException) {
+        null
+    }
+
+    /**
+     * Kinds a `nostr:naddr1…` link from another app may open: the addressable
+     * range (NIP-01, 30000–39999) only. naddr can name any kind, but a link
+     * naming a profile (0), a follow list (3), a DM (4) or a gift wrap (1059)
+     * must not land in a reader as if it were a post.
+     */
+    fun isLinkableKind(kind: Int): Boolean = kind in 30000..39999
+
     /** What a lookup key names. */
     sealed class Key {
         /** A 64-hex event id, fetched with an `ids` filter. */
