@@ -144,6 +144,7 @@ class FipsMeshManager @Inject constructor(
         // What is left of this sharing session's allowance: neither a restart
         // for a peer or limit change nor an app launch hands out a fresh one.
         engineBase = configStore.config.value.fipsServedBytes
+        engineGen++
         return FipsStartOptions(
             peers = configStore.config.value.fipsPeers,
             lan = true,
@@ -158,11 +159,15 @@ class FipsMeshManager @Inject constructor(
      */
     @Volatile private var engineBase = 0L
 
+    /** Bumped whenever the engine (and so `engineBase`) is replaced. */
+    @Volatile private var engineGen = 0L
+
     /** One reaction to a reached cap at a time; the Mesh screen polls too. */
     private val turningOffForCap = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Restart to apply start-time settings, keeping what was already served. */
     private suspend fun restartKeepingAllowance() {
+        engineGen++  // a refresh reading the old engine now discards its count
         if (configStore.config.value.fipsShareRelay) {
             val served = engineBase + FipsBridge.status().counters.servedTx
             configStore.updateAsync { it.copy(fipsServedBytes = served) }
@@ -219,9 +224,9 @@ class FipsMeshManager @Inject constructor(
      * decisions, so this is a separate switch and it is off by default.
      */
     suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
-        configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
         // Switching sharing starts a new session with a full allowance.
-        configStore.updateAsync { it.copy(fipsServedBytes = 0) }
+        configStore.updateAsync { it.copy(fipsShareRelay = enabled, fipsServedBytes = 0) }
+        engineGen++
         engineBase = 0
         if (!_status.value.running) return@withContext
         if (enabled) {
@@ -245,12 +250,16 @@ class FipsMeshManager @Inject constructor(
 
     /** Re-read the bridge. Polled: nothing ever calls back into the JVM. */
     suspend fun refresh(): Unit = withContext(Dispatchers.IO) {
+        // Base and count must belong to the same engine: read the base first and
+        // drop the write if a restart swapped engines meanwhile (Tron, #471).
+        val gen = engineGen
+        val base = engineBase
         val status = FipsBridge.status()
         _status.value = status
         // Keep the session's count on disk as it grows, so an app restart
         // (Android kills background processes often) resumes it.
-        if (status.running && configStore.config.value.fipsShareRelay) {
-            servedToPersist(engineBase, status.counters.servedTx, configStore.config.value.fipsServedBytes)
+        if (status.running && configStore.config.value.fipsShareRelay && gen == engineGen) {
+            servedToPersist(base, status.counters.servedTx, configStore.config.value.fipsServedBytes)
                 ?.let { served -> configStore.updateAsync { it.copy(fipsServedBytes = served) } }
         }
         // The library already stopped sharing; turn the switch off to match, so
