@@ -130,7 +130,7 @@ class TutorialProgressTest {
         )
     }
 
-    /** Pocket Relay points at the relay card, its activity, then its address. */
+    /** Vault in Your Pocket points at the relay card, its activity, then its address. */
     @Test fun pocketRelayCardsPointAtTheDashboard() {
         assertEquals(
             listOf(TutorialContent.RELAY_STATUS, TutorialContent.RELAY_ACTIVITY, TutorialContent.RELAY_ADDRESS),
@@ -166,10 +166,20 @@ class TutorialProgressTest {
     @Test fun nextFollowsTheIosOrder() {
         assertEquals(TutorialID.FEEDS, TutorialID.FILL_YOUR_VAULT.next)
         assertEquals(TutorialID.VAULT, TutorialID.FEEDS.next)
-        assertEquals(TutorialID.WALLET_CONNECT, TutorialID.VAULT.next)
-        assertEquals(TutorialID.POCKET_RELAY, TutorialID.WALLET_CONNECT.next)
-        assertNull(TutorialID.POCKET_RELAY.next)
+        assertEquals(TutorialID.POCKET_RELAY, TutorialID.VAULT.next)
+        assertEquals(TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY.next)
+        assertNull(TutorialID.WALLET_CONNECT.next)
         assertNull(TutorialID.IMPORT_TOUR.next)
+    }
+
+    /** The vault is a personal relay and media server, not a "pocket relay"
+     *  (nostr-vault Tutorial thread 2026-10-09). */
+    @Test fun noCopySaysPocketRelay() {
+        TutorialID.entries.forEach { id ->
+            val text = (listOf(id.title, id.summary) + id.steps.flatMap { listOf(it.title, it.body) })
+                .joinToString(" ").lowercase()
+            assertFalse(id.name, text.contains("pocket relay"))
+        }
     }
 
     @Test fun importTourCoversVaultAndPocketRelay() {

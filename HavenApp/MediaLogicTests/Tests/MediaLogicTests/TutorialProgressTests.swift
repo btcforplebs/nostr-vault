@@ -151,11 +151,22 @@ final class TutorialProgressTests: XCTestCase {
         ])
     }
 
-    /// Pocket Relay points at the relay card, its activity, then its address.
+    /// Vault in Your Pocket points at the relay card, its activity, then its
+    /// address.
     func testPocketRelayCardsPointAtTheDashboard() {
         XCTAssertEqual(TutorialContent.pocketRelay.map(\.anchor), [
             TutorialContent.relayStatus, TutorialContent.relayActivity, TutorialContent.relayAddress,
         ])
+    }
+
+    /// The vault is a personal relay and media server, not a "pocket relay"
+    /// (nostr-vault Tutorial thread 2026-10-09).
+    func testNoCopySaysPocketRelay() {
+        for id in TutorialID.allCases {
+            let text = ([id.title, id.summary] + id.steps.flatMap { [$0.title, $0.body] })
+                .joined(separator: " ").lowercased()
+            XCTAssertFalse(text.contains("pocket relay"), "\(id)")
+        }
     }
 
     /// Only a tutorial that can run is offered as next, so the last card
@@ -167,16 +178,13 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertNil(TutorialID.feeds.next)
         #endif
         #if os(iOS)
-        XCTAssertEqual(TutorialID.vault.next, .walletConnect)
+        XCTAssertEqual(TutorialID.vault.next, .pocketRelay)
+        XCTAssertEqual(TutorialID.pocketRelay.next, .walletConnect)
         #else
         XCTAssertNil(TutorialID.vault.next)
-        #endif
-        #if os(iOS)
-        XCTAssertEqual(TutorialID.walletConnect.next, .pocketRelay)
-        #else
-        XCTAssertNil(TutorialID.walletConnect.next)
-        #endif
         XCTAssertNil(TutorialID.pocketRelay.next)
+        #endif
+        XCTAssertNil(TutorialID.walletConnect.next)
         XCTAssertNil(TutorialID.importTour.next)
         // Fill your feed's last card opens Discover and starts Feeds.
         #if os(iOS)

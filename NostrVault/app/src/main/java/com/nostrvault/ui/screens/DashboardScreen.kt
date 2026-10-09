@@ -2888,7 +2888,7 @@ internal fun VaultDashboardSheet(
         val currentConfig by viewModel.configStore.config.collectAsState()
         val context = LocalContext.current
 
-        // The Pocket Relay tutorial starts the first time the dashboard
+        // The Vault in Your Pocket tutorial starts the first time the dashboard
         // opens. The sheet is its own window, so it draws its own cards.
         LaunchedEffect(tutorialRevision) {
             TutorialCenter.startIfEligible(TutorialID.POCKET_RELAY, viewModel.nostrService.activeHexPubkey)
