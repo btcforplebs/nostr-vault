@@ -137,6 +137,7 @@ object NostrVaultIcons {
     // Brand / navigation
     val AppIcon: ImageVector = Icons.Filled.Dns           // server.rack
     val Accounts: ImageVector = Icons.Filled.Key           // person.badge.key
+    val Key: ImageVector = Icons.Filled.Key                // key.fill
     val Blocked: ImageVector = Icons.Filled.PersonOff      // person.crop.circle.badge.xmark
     val Appearance: ImageVector = Icons.Filled.Palette     // paintpalette
     @Suppress("DEPRECATION")

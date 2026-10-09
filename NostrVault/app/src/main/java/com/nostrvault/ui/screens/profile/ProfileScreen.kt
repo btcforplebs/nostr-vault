@@ -14,7 +14,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -42,9 +41,10 @@ import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.theme.*
 
 /**
- * User profile screen — ports iOS ProfileView: header + status badge, action
- * row, stats, identity rows, 4 section tabs (Notes/Media/Replies/Tagged) with
- * counts, infinite scroll, a media grid, and a full-screen media viewer.
+ * User profile screen — ports iOS ProfileView: header + status badge, bio,
+ * link chips, follow counts, action row, section tabs with counts, infinite
+ * scroll, a media grid, and a full-screen media viewer. On your own profile,
+ * pulling the page down opens Edit Profile (iOS #456).
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -54,8 +54,6 @@ fun ProfileScreen(
     /** Where a quoted long-form post opens; the note screen would show its Markdown source. */
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
-    onEditProfile: () -> Unit,
-    onCompose: () -> Unit = {},
     onReply: (String) -> Unit = {},
     onQuote: (String) -> Unit = {},
     onNavigateToDMs: () -> Unit = {},
@@ -73,6 +71,7 @@ fun ProfileScreen(
     onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
+    editViewModel: ProfileEditViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(pubkey) {
         if (viewModel.pubkey.isEmpty() || viewModel.pubkey != pubkey) {
@@ -89,7 +88,6 @@ fun ProfileScreen(
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val hasMoreNotes by viewModel.hasMoreNotes.collectAsState()
     val hasMoreTagged by viewModel.hasMoreTagged.collectAsState()
@@ -169,6 +167,15 @@ fun ProfileScreen(
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
     var zapSheetOpen by remember { mutableStateOf(false) }
+    // Edit Profile, over this page; swiping it away saves. Not saveable: the
+    // form lives in the view model, so after process death the sheet would
+    // come back empty.
+    var editingProfile by remember { mutableStateOf(false) }
+    val openEditor = { editViewModel.open(); editingProfile = true }
+    val copyNpub = {
+        npub?.let { clipboard.setText(AnnotatedString(it)) }
+        Unit
+    }
 
     GlassScaffold(
         // The banner runs up under the toolbar; the toolbar's fade comes in
@@ -216,8 +223,8 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
-        // Items before the section tabs: header, actions, bio (when there is
-        // one), stats and identity rows.
+        // Items before the section tabs: header, bio (when there is one),
+        // links, follow counts and actions.
         val tabsIndex = if (profile?.about?.isNotBlank() == true) 5 else 4
         // A section is at least as tall as the screen, so picking one with a
         // single item keeps the tabs where they were instead of the page
@@ -255,16 +262,46 @@ fun ProfileScreen(
                 ProfileHeader(
                     profile = profile,
                     pubkey = pubkey,
-                    npub = npub,
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     followsMe = followsMe,
-                    onCopyNpub = {
-                        npub?.let {
-                            clipboard.setText(AnnotatedString(it))
-                            Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
-                        }
+                )
+            }
+
+
+            profile?.about?.takeIf { it.isNotBlank() }?.let { bio ->
+                item {
+                    NostrContentText(
+                        content = bio,
+                        profiles = allProfiles,
+                        onProfileClick = openOtherProfile,
+                        textColor = PrimaryText.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                    )
+                }
+            }
+
+            item {
+                ProfileLinksRow(
+                    lightning = lightningAddress,
+                    website = website,
+                    npub = npub,
+                    onCopyLightning = {
+                        lightningAddress?.let { clipboard.setText(AnnotatedString(it)) }
                     },
+                    onCopyNpub = copyNpub,
+                )
+            }
+
+            item {
+                ProfileFollowCounts(
+                    following = followingCount,
+                    followers = followersCount,
+                    onOpenFollowList = { tab -> onOpenFollowList(tab, followersCount) },
                 )
             }
 
@@ -275,8 +312,7 @@ fun ProfileScreen(
                     isBlocked = isBlocked,
                     canZap = canZap,
                     zapSats = viewModel.defaultZapSats,
-                    onCompose = onCompose,
-                    onEditProfile = onEditProfile,
+                    onEditProfile = openEditor,
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
@@ -284,55 +320,15 @@ fun ProfileScreen(
                     onZapLongPress = { zapSheetOpen = true },
                     onTrustWeb = { trustWebAuthor = pubkey },
                     onCopyNpub = {
-                        npub?.let {
-                            clipboard.setText(AnnotatedString(it))
-                            Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
-                        }
+                        copyNpub()
+                        Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
                     },
                 )
-            }
-
-            profile?.about?.takeIf { it.isNotBlank() }?.let { bio ->
-                item {
-                    NostrContentText(
-                        content = bio,
-                        profiles = allProfiles,
-                        onProfileClick = openOtherProfile,
-                        textColor = SecondaryText,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            item {
-                ProfileStatsRow(
-                    notes = counts.notes,
-                    media = counts.media,
-                    following = followingCount,
-                    followers = followersCount,
-                    onOpenFollowList = { tab -> onOpenFollowList(tab, followersCount) },
-                    isOwnProfile = isOwnProfile,
-                )
-            }
-
-            item {
-                ProfileIdentityRows(
-                    lightning = lightningAddress,
-                    website = website,
-                    // The inline zap chip, beside the copy row (iOS zapInlineButton).
-                    zapSats = viewModel.defaultZapSats.takeIf { canZap && !isOwnProfile },
-                    onZap = { viewModel.zap() },
-                    onZapLongPress = { zapSheetOpen = true },
-                    onCopyLightning = {
-                        lightningAddress?.let {
-                            clipboard.setText(AnnotatedString(it))
-                            Toast.makeText(context, "Lightning address copied", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                // One rule above the tabs instead of one between every block.
+                HorizontalDivider(
+                    color = SeparatorColor.copy(alpha = 0.6f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(vertical = 16.dp),
                 )
             }
 
@@ -340,6 +336,12 @@ fun ProfileScreen(
                 ProfileSectionTabs(
                     selected = selectedSection,
                     counts = counts,
+                    hasMore = { section ->
+                        when (section) {
+                            ProfileSection.TAGGED -> hasMoreTagged
+                            else -> section.isNoteList && hasMoreNotes
+                        }
+                    },
                     extraCounts = mapOf(
                         ProfileSection.SHOP to shopListings.size,
                         ProfileSection.ARTICLES to articles.size,
@@ -546,16 +548,17 @@ fun ProfileScreen(
             }
         }
         }
-        // Pull to refresh on your own profile, as on iOS.
+        // Your own profile has nothing that needs pulling fresh, so the pull
+        // opens the editor instead (iOS #456).
         if (isOwnProfile) {
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = viewModel::refresh,
-                modifier = Modifier.fillMaxSize(),
-            ) { list() }
+            PullToEditBox(labelTop = padding.calculateTopPadding(), onTrigger = openEditor) { list() }
         } else {
             list()
         }
+    }
+
+    if (editingProfile) {
+        ProfileEditSheet(viewModel = editViewModel, onClose = { editingProfile = false })
     }
 
     openListing?.let { listing ->
@@ -747,18 +750,16 @@ private fun CenteredSpinner(tint: Color) {
 private fun ProfileHeader(
     profile: com.nostrvault.data.model.FeedProfile?,
     pubkey: String,
-    npub: String?,
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     followsMe: Boolean,
-    onCopyNpub: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         AvatarImage(
@@ -785,6 +786,9 @@ private fun ProfileHeader(
                     color = PrimaryText,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (!profile?.nip05.isNullOrBlank()) {
                     Spacer(Modifier.width(6.dp))
@@ -800,20 +804,7 @@ private fun ProfileHeader(
             }
 
             profile?.nip05?.takeIf { it.isNotBlank() }?.let {
-                Text(text = it, color = SecondaryText, fontSize = 12.sp)
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(onClick = onCopyNpub),
-            ) {
-                Text(
-                    text = npub?.let { "${it.take(12)}…${it.takeLast(8)}" } ?: "npub…",
-                    color = SecondaryText,
-                    fontSize = 11.sp,
-                )
-                Spacer(Modifier.width(5.dp))
-                Icon(NostrVaultIcons.Copy, "Copy", tint = SecondaryText, modifier = Modifier.size(11.dp))
+                Text(text = it, color = SecondaryText, fontSize = 12.sp, maxLines = 1)
             }
         }
     }
@@ -858,7 +849,6 @@ private fun ProfileActionRow(
     isBlocked: Boolean,
     canZap: Boolean,
     zapSats: Int,
-    onCompose: () -> Unit,
     onEditProfile: () -> Unit,
     onFollow: () -> Unit,
     onMessage: () -> Unit,
@@ -880,7 +870,9 @@ private fun ProfileActionRow(
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (isOwnProfile) {
-                ActionChip("Post", NostrVaultIcons.Compose, Color.White, colors.primary, onClick = onCompose, modifier = Modifier.weight(1f))
+                // Post is the floating button. Pulling the page down opens
+                // Edit Profile too; the button stays for TalkBack and anyone
+                // who has not found the pull.
                 ActionChip("Edit Profile", NostrVaultIcons.Edit, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
             } else {
@@ -925,7 +917,7 @@ private fun ProfileActionRow(
     androidx.compose.ui.layout.SubcomposeLayout(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp),
     ) { constraints ->
         val rows = (0..2).map { level -> subcompose(level) { buttons(compact = level) }.first() }
         val chosen = rows.firstOrNull { it.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth } ?: rows.last()
@@ -993,145 +985,145 @@ private fun ActionIcon(
     }
 }
 
+/**
+ * Lightning address, website and npub as one wrapping row of chips, in place
+ * of a table row each. Tap copies, or opens the website (iOS #456 linksRow).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProfileStatsRow(
-    notes: Int,
-    media: Int,
-    following: Int?,
-    followers: Int?,
-    isOwnProfile: Boolean,
-    onOpenFollowList: (FollowListTab) -> Unit = {},
+private fun ProfileLinksRow(
+    lightning: String?,
+    website: String?,
+    npub: String?,
+    onCopyLightning: () -> Unit,
+    onCopyNpub: () -> Unit,
 ) {
-    Row(
-        horizontalArrangement = Arrangement.SpaceEvenly,
+    val colors = LocalNostrVaultColors.current
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val copiedGreen = Color(0xFF4CAF50)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp),
     ) {
-        ProfileStat(shortInt(notes), "NOTES")
-        ProfileStat(shortInt(media), "MEDIA")
-        ProfileStat(following?.let { shortInt(it) } ?: "—", "FOLLOWING") {
+        lightning?.let { address ->
+            var copied by remember { mutableStateOf(false) }
+            CopiedReset(copied) { copied = false }
+            LinkChip(
+                text = address,
+                icon = if (copied) NostrVaultIcons.Check else NostrVaultIcons.Zap,
+                tint = if (copied) copiedGreen else Color(0xFFFF9800),
+                description = if (copied) "Lightning address copied" else "Copy Lightning address $address",
+                onClick = { onCopyLightning(); copied = true },
+            )
+        }
+        website?.let { site ->
+            val shown = site.removePrefix("https://").removePrefix("http://")
+            LinkChip(
+                text = shown,
+                icon = NostrVaultIcons.Globe,
+                tint = colors.primary,
+                description = "Open $shown",
+                onClick = { runCatching { uriHandler.openUri(if (site.startsWith("http")) site else "https://$site") } },
+            )
+        }
+        npub?.let {
+            var copied by remember { mutableStateOf(false) }
+            CopiedReset(copied) { copied = false }
+            LinkChip(
+                text = "${it.take(12)}…${it.takeLast(8)}",
+                icon = if (copied) NostrVaultIcons.Check else NostrVaultIcons.Key,
+                tint = if (copied) copiedGreen else SecondaryText,
+                description = if (copied) "Public key copied" else "Copy public key",
+                onClick = { onCopyNpub(); copied = true },
+            )
+        }
+    }
+}
+
+/** Puts a chip's checkmark back to its icon a moment after a copy. */
+@Composable
+private fun CopiedReset(copied: Boolean, reset: () -> Unit) {
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1_500)
+            reset()
+        }
+    }
+}
+
+@Composable
+private fun LinkChip(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier
+            .height(26.dp)
+            .clip(CircleShape)
+            .background(SecondaryText.copy(alpha = 0.1f))
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = 10.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(11.dp))
+        Text(
+            text,
+            color = PrimaryText.copy(alpha = 0.8f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * `1.0k Following  639 Followers`, each opening its list. The Notes and Media
+ * counts already sit on their tabs, so only these two are here.
+ */
+@Composable
+private fun ProfileFollowCounts(
+    following: Int?,
+    followers: Int?,
+    onOpenFollowList: (FollowListTab) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+    ) {
+        FollowCount(following?.let(ProfileCountText::short) ?: "—", "Following") {
             onOpenFollowList(FollowListTab.FOLLOWING)
         }
         // Your own comes from the relay's follower ledger, so it is exact.
-        ProfileStat(followers?.let { shortInt(it) } ?: "—", "FOLLOWERS") {
+        FollowCount(followers?.let(ProfileCountText::short) ?: "—", "Followers") {
             onOpenFollowList(FollowListTab.FOLLOWERS)
         }
     }
 }
 
 @Composable
-private fun ProfileStat(value: String, label: String, onClick: (() -> Unit)? = null) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = if (onClick != null) {
-            Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
-                .padding(horizontal = 6.dp, vertical = 2.dp)
-        } else Modifier,
-    ) {
-        Text(value, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = SecondaryText, fontSize = 12.sp)
-    }
-}
-
-private fun shortInt(n: Int): String = when {
-    n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
-    n >= 1_000 -> String.format("%.1fk", n / 1_000.0)
-    else -> n.toString()
-}
-
-@Composable
-private fun ProfileIdentityRows(
-    lightning: String?,
-    website: String?,
-    /** The inline zap chip's amount; null hides it (your own profile, or no wallet). */
-    zapSats: Int?,
-    onZap: () -> Unit,
-    onZapLongPress: () -> Unit,
-    onCopyLightning: () -> Unit,
-) {
-    val colors = LocalNostrVaultColors.current
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    if (lightning == null && website == null) return
-    Column(modifier = Modifier.fillMaxWidth()) {
-        lightning?.let {
-            IdentityRow(NostrVaultIcons.Zap, "LIGHTNING", it, Color(0xFFFF9800), onClick = onCopyLightning) {
-                if (zapSats != null) InlineZapChip(zapSats, onZap, onZapLongPress)
-            }
-        }
-        website?.let {
-            val display = it.removePrefix("https://").removePrefix("http://")
-            IdentityRow(NostrVaultIcons.Globe, "WEBSITE", display, colors.primary, onClick = {
-                val url = if (it.startsWith("http")) it else "https://$it"
-                runCatching { uriHandler.openUri(url) }
-            })
-        }
-    }
-}
-
-@Composable
-private fun IdentityRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    tint: Color,
-    onClick: () -> Unit,
-    /** Sits beside the row's copy target, not in it, so each tap does one thing. */
-    trailing: @Composable () -> Unit = {},
-) {
+private fun FollowCount(value: String, label: String, onClick: () -> Unit) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onClick)
-                .padding(start = 16.dp, top = 10.dp, bottom = 10.dp),
-        ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(label, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                Text(value, color = PrimaryText, fontSize = 13.sp, maxLines = 1)
-            }
-        }
-        trailing()
-    }
-}
-
-/**
- * The small bolt + amount chip on the LIGHTNING row: tap zaps the default,
- * long-press picks an amount. iOS `zapInlineButton`.
- */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-private fun InlineZapChip(sats: Int, onZap: () -> Unit, onLongPress: () -> Unit) {
-    val orange = Color(0xFFFF9800)
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
-            .padding(start = 8.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(orange.copy(alpha = 0.15f))
-            .combinedClickable(
-                onClick = onZap,
-                onLongClick = {
-                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-                onLongClickLabel = "Choose an amount",
-            )
-            .semantics(mergeDescendants = true) { contentDescription = "Zap $sats sats" }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {},
     ) {
-        Icon(NostrVaultIcons.Zap, contentDescription = null, tint = orange, modifier = Modifier.size(10.dp))
-        Text("$sats", color = orange, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1)
+        Text(value, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier.alignByBaseline())
+        Text(label, color = SecondaryText, fontSize = 13.sp, maxLines = 1, modifier = Modifier.alignByBaseline())
     }
 }
 
@@ -1141,6 +1133,8 @@ private fun InlineZapChip(sats: Int, onZap: () -> Unit, onLongPress: () -> Unit)
 private fun ProfileSectionTabs(
     selected: ProfileSection,
     counts: ProfileCounts,
+    /** Whether older pages may still raise a tab's count; it reads "48+" until they can't. */
+    hasMore: (ProfileSection) -> Boolean,
     /** Counts for the tabs that are not notes: Shop, Articles, diVines, Music. */
     extraCounts: Map<ProfileSection, Int>,
     shown: (ProfileSection) -> Boolean,
@@ -1162,7 +1156,7 @@ private fun ProfileSectionTabs(
         sections.forEach { section ->
             val isSelected = section == selected
             val c = countFor(section)
-            val label = if (c > 0) shortInt(c) else null
+            val label = if (c > 0) ProfileCountText.of(c, hasMore(section)) else null
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier

@@ -61,7 +61,6 @@ sealed class Screen(val route: String) {
     data object ModeCompose : Screen("compose_mode/{kind}") {
         fun createRoute(kind: String) = "compose_mode/$kind"
     }
-    data object ProfileEdit : Screen("profile_edit")
     data object Drafts : Screen("drafts")
 
     // Wallet

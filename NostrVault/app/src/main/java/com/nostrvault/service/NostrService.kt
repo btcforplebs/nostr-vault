@@ -1796,6 +1796,17 @@ class NostrService @Inject constructor(
         if (additions.isNotEmpty()) _profiles.value = current + additions
     }
 
+    /**
+     * Shows [profile] for [pubkey] at once, ahead of the relays: your own
+     * edit while it publishes, or what was shown before when that failed.
+     * Null removes the entry.
+     */
+    fun showLocalProfile(pubkey: String, profile: FeedProfile?) {
+        _profiles.update { if (profile == null) it - pubkey else it + (pubkey to profile) }
+        noteProfileUpdated(pubkey)
+        saveProfilesThrottled()
+    }
+
     /** Who a callback search belongs to; each gets its own slot. */
     enum class SearchCaller { FEED, MENTION }
 
