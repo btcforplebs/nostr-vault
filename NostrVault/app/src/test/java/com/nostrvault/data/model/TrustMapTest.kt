@@ -240,4 +240,84 @@ class TrustMapTest {
         )
         assertTrue(TrustMap.deeperLinkFilters(listOf(bridge), emptyList()).isEmpty())
     }
+
+    // ── Ring faces ───────────────────────────────────────────────────
+
+    @Test fun `face candidates are the ring sorted and spread`() {
+        val ring = (0 until 200).map { randomKey(it) }
+        val picked = TrustMap.faceCandidates(ring)
+        assertEquals(48, picked.size)
+        assertEquals(TrustMap.spread(ring.sorted(), 48), picked)
+        // Order in doesn't matter: the same people every time.
+        assertEquals(picked, TrustMap.faceCandidates(ring.reversed()))
+        val few = listOf("c", "a", "b")
+        assertEquals(listOf("a", "b", "c"), TrustMap.faceCandidates(few))
+    }
+
+    @Test fun `pick faces puts pictures first and keeps candidate order`() {
+        val candidates = listOf("a", "b", "c", "d", "e")
+        val pictured = setOf("b", "d")
+        assertEquals(listOf("b", "d", "a"), TrustMap.pickFaces(candidates, { it in pictured }, count = 3))
+        assertEquals(listOf("b", "d", "a", "c", "e"), TrustMap.pickFaces(candidates, { it in pictured }))
+        assertEquals(listOf("a", "b"), TrustMap.pickFaces(candidates, { false }, count = 2))
+        assertEquals(listOf("d"), TrustMap.pickFaces(candidates, { it == "d" }, count = 1))
+        assertTrue(TrustMap.pickFaces(candidates, { true }, count = 0).isEmpty())
+        assertEquals(16, TrustMap.pickFaces((0 until 48).map { "k$it" }, { false }).size)
+    }
+
+    // ── Search ───────────────────────────────────────────────────────
+
+    private fun person(key: String, display: String? = null, name: String? = null, nip05: String? = null) =
+        FeedProfile(pubkey = key, name = name, displayName = display, nip05 = nip05)
+
+    @Test fun `search matches display name, name and nip05 ignoring case`() {
+        val people = listOf(
+            person("1", display = "Alice Smith"),
+            person("2", name = "bob"),
+            person("3", nip05 = "carol@ALICE.com"),
+            person("4", display = "Dave"),
+        )
+        val hits = TrustMap.searchPeople("ALICE", people, emptySet(), emptySet()).map { it.pubkey }
+        assertEquals(setOf("1", "3"), hits.toSet())
+        assertEquals(listOf("2"), TrustMap.searchPeople("Bo", people, emptySet(), emptySet()).map { it.pubkey })
+        assertTrue(TrustMap.searchPeople("   ", people, emptySet(), emptySet()).isEmpty())
+        assertTrue(TrustMap.searchPeople("zed", people, emptySet(), emptySet()).isEmpty())
+    }
+
+    @Test fun `search ranks follows, then web, then prefix, then shorter name`() {
+        val people = listOf(
+            person("other", display = "Ann"),
+            person("web", display = "Ann Web"),
+            person("follow", display = "Joanne"),
+            person("followPrefixLong", display = "Annabelle"),
+            person("followPrefixShort", display = "Anna"),
+        )
+        val follows = setOf("follow", "followPrefixLong", "followPrefixShort")
+        val hits = TrustMap.searchPeople("ann", people, follows, setOf("web"))
+        assertEquals(listOf("followPrefixShort", "followPrefixLong", "follow", "web", "other"), hits.map { it.pubkey })
+        assertEquals(
+            listOf(TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.WEB, TrustMap.Tier.OTHER),
+            hits.map { it.tier },
+        )
+        // A follow is also in the web: it's still tagged as a follow.
+        assertEquals(TrustMap.Tier.FOLLOW, TrustMap.searchPeople("joanne", people, follows, follows).single().tier)
+    }
+
+    @Test fun `search stops at the limit`() {
+        val people = (0 until 20).map { person("k$it", display = "Sam $it") }
+        assertEquals(8, TrustMap.searchPeople("sam", people, emptySet(), emptySet()).size)
+        assertEquals(3, TrustMap.searchPeople("sam", people, emptySet(), emptySet(), limit = 3).size)
+    }
+
+    @Test fun `a pasted hex key or npub names one person`() {
+        val hex = "AB".repeat(32)
+        assertEquals(hex.lowercase(), TrustMap.pastedKey("  $hex ") { null })
+        assertEquals(author, TrustMap.pastedKey("npub1xyz") { if (it == "npub1xyz") author else null })
+        assertEquals(author, TrustMap.pastedKey("nostr:npub1xyz") { author })
+        assertNull(TrustMap.pastedKey("npub1bad") { null })
+        assertNull(TrustMap.pastedKey("npub1short") { "abc" })
+        assertNull(TrustMap.pastedKey("npub1throws") { error("bad checksum") })
+        assertNull(TrustMap.pastedKey("alice") { author })
+        assertNull(TrustMap.pastedKey("ab".repeat(31)) { null })
+    }
 }

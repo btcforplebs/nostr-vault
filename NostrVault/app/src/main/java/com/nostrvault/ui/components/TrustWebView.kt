@@ -1,6 +1,29 @@
 package com.nostrvault.ui.components
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.NostrService
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -117,6 +140,7 @@ import com.nostrvault.data.model.GlobeCamera
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.data.model.Vec3
+import com.nostrvault.data.model.WotRefreshProgress
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -300,6 +324,17 @@ private fun TrustWebContent(
     var failed by remember { mutableStateOf(emptySet<String>()) }
     var deeperFailed by remember { mutableStateOf(emptySet<String>()) }
     var showingList by remember { mutableStateOf(false) }
+    /** Your whole trust graph, for the search's "In your web" tag. */
+    var web by remember { mutableStateOf(emptySet<String>()) }
+    // An empty follow list means "not in yet" until a load has finished.
+    val loadingFollows by trust.isLoadingFollows.collectAsState()
+    val followsAttempted by trust.followsAttempted.collectAsState()
+    // Nothing says when the trust graph has been tried, so its pill gives up
+    // after a while rather than spin all session for an empty web.
+    var webWaitOver by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(WEB_WAIT_MS); webWaitOver = true }
+    /** The refresh button's run; null when idle. */
+    var refreshState by remember { mutableStateOf<RefreshState?>(null) }
 
     val centerKey = crumbs.last()
     val frame = frames[centerKey]
@@ -319,6 +354,20 @@ private fun TrustWebContent(
         val graph = trust.myTrustGraph()
         val inner = myFollows + me + author
         haze = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
+        web = graph
+    }
+
+    // With the author in the middle there are no bridges, so the ring gets
+    // the faces. Pictures win, so the pick changes as profiles stream in.
+    val ringCandidates = remember(frame?.center, frame?.ring) {
+        if (frame != null && frame.center == author) TrustMap.faceCandidates(frame.ring) else emptyList()
+    }
+    LaunchedEffect(ringCandidates) {
+        if (ringCandidates.isNotEmpty()) nostrService.fetchMissingProfiles(ringCandidates)
+    }
+    val picturedCount = ringCandidates.count { !profiles[it]?.pictureURL.isNullOrBlank() }
+    val ringFaces = remember(ringCandidates, picturedCount) {
+        TrustMap.pickFaces(ringCandidates, { !profiles[it]?.pictureURL.isNullOrBlank() })
     }
 
     fun jump(index: Int) {
@@ -405,6 +454,64 @@ private fun TrustWebContent(
         onProfileClick?.invoke(pubkey)
     }
 
+    // ── Search (WOT tab only) ──
+    var query by remember { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
+    var searchingRelays by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val pasted = remember(query) { TrustMap.pastedKey(query, HavenBridge::decodeNpub) }
+    val hits = remember(query, pasted, profiles, myFollows, web) {
+        if (pasted != null) {
+            listOf(TrustMap.PersonHit(pasted, when (pasted) {
+                in myFollows -> TrustMap.Tier.FOLLOW
+                in web -> TrustMap.Tier.WEB
+                else -> TrustMap.Tier.OTHER
+            }))
+        } else {
+            TrustMap.searchPeople(query, profiles.values, myFollows, web)
+        }
+    }
+
+    if (isWOTTab) {
+        // Names not cached yet come from the relays. Their profiles land in
+        // the cache, so the local ranking above just runs again; nothing here
+        // reads the results.
+        LaunchedEffect(query) {
+            val text = query.trim()
+            if (text.isEmpty()) {
+                nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
+                searchingRelays = false
+                return@LaunchedEffect
+            }
+            if (pasted != null) {
+                nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
+                searchingRelays = false
+                nostrService.fetchMissingProfiles(listOf(pasted))
+                return@LaunchedEffect
+            }
+            delay(SEARCH_DEBOUNCE_MS)
+            searchingRelays = true
+            nostrService.globalSearch(text, NostrService.SearchCaller.WOT) { searchingRelays = false }
+        }
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose { nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT) }
+        }
+    }
+
+    fun clearSearch() {
+        query = ""
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
+
+    /** A search row: back to you, then off to them as if their face was tapped. */
+    fun pick(pubkey: String) {
+        clearSearch()
+        jump(0)
+        tapped(pubkey)
+    }
+
     if (isWOTTab) {
         // The tab lives on, so it follows your follow list as it loads or
         // changes, in place, so you stay wherever you'd gone on the globe.
@@ -421,6 +528,7 @@ private fun TrustWebContent(
             reselects?.collect {
                 peek = null
                 showingList = false
+                clearSearch()
                 jump(0)
             }
         }
@@ -428,9 +536,81 @@ private fun TrustWebContent(
 
     // Back steps along the breadcrumbs before it closes the globe.
     BackHandler(enabled = crumbs.size > 1) { jump(crumbs.size - 2) }
+    // Registered after the crumbs' handler, so it goes first: a search in
+    // progress is cleared before back moves the globe.
+    BackHandler(enabled = isWOTTab && (searchFocused || query.isNotEmpty())) { clearSearch() }
+
+    val rootRingEmpty = isWOTTab && centerKey == me && frame != null && frame.ring.isEmpty()
+    val followsPending = rootRingEmpty && (loadingFollows || !followsAttempted)
+
+    /**
+     * The WOT tab's refresh: your follow list, then the relay rebuilds your
+     * wider web, then the ring's pictures. Each step runs even if the one
+     * before came back empty or failed, since each can still help on its own.
+     * The bar fills one unit a step, out of [REFRESH_STEPS]. Mirrors iOS.
+     */
+    fun refresh() {
+        if (refreshState != null) return
+        refreshState = RefreshState(0f, "Updating your follows…")
+        scope.launch {
+            try {
+                try {
+                    trust.refreshFollows()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+
+                refreshState = RefreshState(1f, "Rebuilding your web…")
+                // False when the relay isn't up; throws on a library from before the call existed.
+                val started = withContext(Dispatchers.IO) { runCatching { HavenBridge.refreshWot() }.getOrDefault(false) }
+                if (!started) {
+                    refreshState = RefreshState(1f, "Relay isn't running. Showing your last saved web.")
+                    delay(RELAY_DOWN_HOLD_MS)
+                } else {
+                    val rebuildStart = System.nanoTime()
+                    // The creep restarts at each new phase and each finished
+                    // batch, so the bar never sits on the next batch's mark.
+                    var step: Pair<String, Int>? = null
+                    var phaseStarted = rebuildStart
+                    fun seconds(since: Long) = (System.nanoTime() - since) / 1e9
+                    for (poll in 0 until MAX_WOT_POLLS) {
+                        val progress = withContext(Dispatchers.IO) {
+                            WotRefreshProgress.parse(runCatching { HavenBridge.getWotRefreshProgress() }.getOrNull())
+                        }
+                        if (progress != null) {
+                            val now = progress.phase to progress.batchesDone
+                            if (now != step) {
+                                step = now
+                                phaseStarted = System.nanoTime()
+                            }
+                            refreshState = RefreshState(
+                                1f + progress.fraction(seconds(phaseStarted)).toFloat(),
+                                progress.caption(seconds(rebuildStart).toLong()),
+                            )
+                            if (!progress.running) break
+                        }
+                        delay(WOT_POLL_MS)
+                    }
+                }
+                // The rebuild saved a new graph: read it in, and the haze
+                // follows through trustGraphUpdates. Give it a moment to land.
+                trust.reloadTrustGraph()
+                kotlinx.coroutines.withTimeoutOrNull(TRUST_GRAPH_WAIT_MS) { trust.trustGraphUpdates.drop(1).first() }
+
+                refreshState = RefreshState(2f, "Loading profile pictures…")
+                nostrService.fetchMissingProfiles(listOf(me) + TrustMap.faceCandidates(trust.myFollows()), force = true)
+                refreshState = RefreshState(REFRESH_STEPS.toFloat(), "Up to date")
+                delay(REFRESH_DONE_HOLD_MS)
+            } finally {
+                refreshState = null
+            }
+        }
+    }
 
     val explainer = explainer(frame, me, author, centerKey, ::name, myFollows,
-        lookingDeeper = frame?.center in lookingDeeper, deeperFailed = frame?.center in deeperFailed, accent = accent)
+        lookingDeeper = frame?.center in lookingDeeper, deeperFailed = frame?.center in deeperFailed, accent = accent,
+        noFollows = rootRingEmpty && !followsPending)
 
     @Composable
     fun crumbRow(modifier: Modifier) {
@@ -507,14 +687,31 @@ private fun TrustWebContent(
             TrustGlobe(
                 frame = frame, center = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
                 lite = lite,
+                ringFaces = ringFaces,
                 running = !showingList,
                 summary = summary(frame, me, author, centerKey, ::name),
                 profiles = profiles, name = ::name,
                 onTap = ::tapped,
-                onEmptyTap = { peek = null },
+                // A tap on open space also puts the keyboard away.
+                onEmptyTap = { peek = null; if (searchFocused) focusManager.clearFocus() },
             )
-            if (frame == null) {
-                CircularProgressIndicator(color = accent, modifier = Modifier.align(Alignment.Center))
+            when {
+                // Someone tapped, their follow list still on its way.
+                frame == null -> StatusPill(
+                    text = "Loading ${name(centerKey)}'s follows…",
+                    pubkey = centerKey, profile = profiles[centerKey], accent = accent,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+                followsPending -> StatusPill(
+                    text = "Loading your follows…", accent = accent,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+                // Your follows are in but the wider web (the haze) isn't yet.
+                centerKey == me && frame.ring.isNotEmpty() && haze.isEmpty() && web.isEmpty() && !webWaitOver ->
+                    StatusPill(
+                        text = "Mapping your wider web…", accent = accent, small = true,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                    )
             }
             peek?.let { pubkey ->
                 val followsAuthor = frame?.bridges?.contains(pubkey) == true ||
@@ -549,8 +746,22 @@ private fun TrustWebContent(
             title = if (centerKey == me) "Web of Trust" else name(centerKey),
             onDone = onDismiss,
             onList = { showingList = true },
+            onRefresh = if (isWOTTab) ::refresh else null,
+            refreshing = refreshState != null,
         )
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+        if (isWOTTab) {
+            RefreshProgress(state = refreshState, accent = accent)
+            SearchField(
+                query = query,
+                onQueryChange = { query = it },
+                onFocusChange = { searchFocused = it },
+                onSearch = { keyboard?.hide() },
+                onClear = ::clearSearch,
+                accent = accent,
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
             if (maxWidth >= WIDE_WIDTH) {
                 // Tablets: the globe takes the screen and the words move to a side panel.
                 Row(Modifier.fillMaxSize()) {
@@ -627,6 +838,24 @@ private fun TrustWebContent(
                 }
             }
         }
+        if (isWOTTab && query.isNotBlank()) {
+            // The column already stops above the tab bar; the keyboard covers
+            // that too and more, so only what it covers past the bar is added.
+            val ime = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+            SearchResults(
+                query = query.trim(),
+                hits = hits,
+                searching = searchingRelays && pasted == null,
+                profiles = profiles,
+                name = ::name,
+                accent = accent,
+                onPick = ::pick,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = (ime - bottomInset).coerceAtLeast(0.dp)),
+            )
+        }
+        }
     }
 
     if (showingList && frame != null) {
@@ -648,6 +877,24 @@ private fun isLiteGlobe(context: android.content.Context): Boolean {
     val info = android.app.ActivityManager.MemoryInfo().also(am::getMemoryInfo)
     return TrustMap.isLite(info.totalMem, am.isLowRamDevice)
 }
+/** Typing pauses this long before the relays are asked. */
+private const val SEARCH_DEBOUNCE_MS = 350L
+/** "Mapping your wider web…" gives up after this; an empty web may just be empty. */
+private const val WEB_WAIT_MS = 15_000L
+/** Refresh: follows, web, pictures. */
+private const val REFRESH_STEPS = 3
+/** How long refresh waits for the trust graph to be read off disk. */
+private const val TRUST_GRAPH_WAIT_MS = 1_500L
+/** The full bar holds this long before it fades, so the end reads as done. */
+private const val REFRESH_DONE_HOLD_MS = 700L
+/** "Relay isn't running" stays up this long before refresh goes on. */
+private const val RELAY_DOWN_HOLD_MS = 1_500L
+/** The relay's rebuild is polled this often, at most [MAX_WOT_POLLS] times (6 minutes). */
+private const val WOT_POLL_MS = 500L
+private const val MAX_WOT_POLLS = 720
+
+/** Where a refresh is: [fill] out of [REFRESH_STEPS], and what it's doing. */
+private data class RefreshState(val fill: Float, val caption: String)
 
 /**
  * "47", or "at least 5" while relays may hold more: the count is only the
@@ -677,6 +924,8 @@ private fun explainer(
     lookingDeeper: Boolean,
     deeperFailed: Boolean,
     accent: Color,
+    /** The WOT tab's follow list came back empty: say so rather than "tap anyone". */
+    noFollows: Boolean = false,
 ): AnnotatedString = buildAnnotatedString {
     if (frame == null) {
         append("Loading who ${name(centerKey)} follows…")
@@ -692,6 +941,7 @@ private fun explainer(
         !frame.listFound -> append("No relay checked had ${name(frame.center)}'s follow list, so their globe can't be drawn.")
         lookingDeeper -> append("Looking two steps further out. This downloads a few MB of follow lists.")
         deeperFailed -> append("Couldn't reach the relays to look further out.")
+        noFollows -> append("No follows found yet. Follow people and they'll appear here.")
         // The WOT tab, before anyone is picked.
         frame.center == author && author == me ->
             append("Everyone you follow, and your web around them. Tap anyone to see how they reach you.")
@@ -753,7 +1003,14 @@ private fun summary(frame: TrustFrame?, me: String, author: String, centerKey: S
 // ── Small pieces ─────────────────────────────────────────────────────
 
 @Composable
-private fun TopBar(title: String, onDone: (() -> Unit)?, onList: (() -> Unit)?) {
+private fun TopBar(
+    title: String,
+    onDone: (() -> Unit)?,
+    onList: (() -> Unit)?,
+    /** The WOT tab's refresh; null elsewhere. */
+    onRefresh: (() -> Unit)? = null,
+    refreshing: Boolean = false,
+) {
     val accent = LocalNostrVaultColors.current.primary
     Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp)) {
         if (onDone != null) {
@@ -771,10 +1028,225 @@ private fun TopBar(title: String, onDone: (() -> Unit)?, onList: (() -> Unit)?) 
             textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp),
         )
-        if (onList != null) {
-            IconButton(onClick = onList, modifier = Modifier.align(Alignment.CenterEnd)) {
-                Icon(NostrVaultIcons.PeopleList, contentDescription = "People on this globe", tint = accent)
+        Row(Modifier.align(Alignment.CenterEnd)) {
+            if (onRefresh != null) {
+                IconButton(onClick = onRefresh, enabled = !refreshing) {
+                    Icon(NostrVaultIcons.Refresh, contentDescription = "Refresh",
+                        tint = if (refreshing) SecondaryText else accent)
+                }
             }
+            if (onList != null) {
+                IconButton(onClick = onList) {
+                    Icon(NostrVaultIcons.PeopleList, contentDescription = "People on this globe", tint = accent)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The refresh button's progress: a thin bar under the top bar and the step
+ * it's on, so a slow relay reads as working rather than stuck. Fades out once
+ * every step is done.
+ */
+@Composable
+private fun RefreshProgress(state: RefreshState?, accent: Color) {
+    // Kept while fading out, so the bar leaves full rather than empty.
+    var shown by remember { mutableStateOf(RefreshState(0f, "")) }
+    if (state != null) shown = state
+    val progress by animateFloatAsState(
+        targetValue = (shown.fill / REFRESH_STEPS).coerceIn(0f, 1f),
+        animationSpec = tween(300),
+        label = "refresh",
+    )
+    AnimatedVisibility(visible = state != null, enter = fadeIn(), exit = fadeOut()) {
+        Column(Modifier.fillMaxWidth()) {
+            LinearProgressIndicator(
+                progress = { progress },
+                color = accent,
+                trackColor = Color.White.copy(alpha = 0.08f),
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+            )
+            Text(
+                shown.caption,
+                color = SecondaryText,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 2.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
+/**
+ * What the globe is waiting on, said in words over it: a spinner, the person
+ * when there is one, and a line. [small] for the quieter "wider web" note.
+ */
+@Composable
+private fun StatusPill(
+    text: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    pubkey: String? = null,
+    profile: FeedProfile? = null,
+    small: Boolean = false,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (small) 6.dp else 8.dp),
+        modifier = modifier
+            .padding(horizontal = 24.dp)
+            .shadow(8.dp, RoundedCornerShape(50))
+            .clip(RoundedCornerShape(50))
+            .background(Surface2.copy(alpha = 0.92f))
+            .padding(horizontal = if (small) 12.dp else 14.dp, vertical = if (small) 6.dp else 8.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+    ) {
+        CircularProgressIndicator(
+            color = accent,
+            strokeWidth = 1.5.dp,
+            modifier = Modifier.size(if (small) 12.dp else 14.dp),
+        )
+        if (pubkey != null) {
+            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 22.dp, displayName = profile?.bestName)
+        }
+        Text(
+            text,
+            color = PrimaryText,
+            fontSize = if (small) 12.sp else 14.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * The WOT tab's "Find someone": a way in for anyone who doesn't know where on
+ * the globe a person is. Results show while there's text.
+ */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+    onSearch: () -> Unit,
+    onClear: () -> Unit,
+    accent: Color,
+) {
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
+        cursorBrush = SolidColor(accent),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.None,
+            autoCorrectEnabled = false,
+            imeAction = ImeAction.Search,
+        ),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .onFocusChanged { onFocusChange(it.isFocused) },
+        decorationBox = { field ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .heightIn(min = 40.dp)
+                    .padding(start = 12.dp, end = 4.dp),
+            ) {
+                Icon(NostrVaultIcons.Search, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(18.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) Text("Find someone", color = SecondaryText, fontSize = 15.sp, maxLines = 1)
+                    field()
+                }
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
+                        Icon(NostrVaultIcons.Dismiss, contentDescription = "Clear search", tint = SecondaryText,
+                            modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        },
+    )
+}
+
+/**
+ * The search's results over the globe: people you follow first, then your
+ * wider web, then anyone the relays know. While relays are being asked, a
+ * last row says so; their answers re-rank this list as they land.
+ */
+@Composable
+private fun SearchResults(
+    query: String,
+    hits: List<TrustMap.PersonHit>,
+    searching: Boolean,
+    profiles: Map<String, FeedProfile>,
+    name: (String) -> String,
+    accent: Color,
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .shadow(12.dp, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(Surface2.copy(alpha = 0.96f))
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+    ) {
+        for (hit in hits) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Move them to the middle of the globe") { onPick(hit.pubkey) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .semantics(mergeDescendants = true) { },
+            ) {
+                val profile = profiles[hit.pubkey]
+                AvatarImage(url = profile?.pictureURL, pubkey = hit.pubkey, size = 32.dp, displayName = profile?.bestName)
+                Text(name(hit.pubkey), color = PrimaryText, fontSize = 15.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                when (hit.tier) {
+                    TrustMap.Tier.FOLLOW -> Text("You follow", color = accent, fontSize = 12.sp, maxLines = 1)
+                    TrustMap.Tier.WEB -> Text("In your web", color = SecondaryText, fontSize = 12.sp, maxLines = 1)
+                    TrustMap.Tier.OTHER -> {}
+                }
+            }
+        }
+        if (searching) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = accent, strokeWidth = 1.5.dp, modifier = Modifier.size(16.dp))
+                }
+                Text("Searching relays…", color = SecondaryText, fontSize = 14.sp)
+            }
+        } else if (hits.isEmpty()) {
+            Text(
+                "No one called \u201c$query\u201d yet",
+                color = SecondaryText,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            )
         }
     }
 }
@@ -979,6 +1451,8 @@ private data class LoadKey(
     val chains: Int,
     val haze: Int,
     val mine: Int,
+    /** The ring's faces when the core is the author; they change as pictures stream in. */
+    val faces: List<String>,
 )
 
 /** Spinning and turning to a person both take about this long; a new person's globe settles in after it. */
@@ -1002,6 +1476,11 @@ private fun TrustGlobe(
     haze: List<String>,
     /** A phone with little memory: stars are drawn as points. */
     lite: Boolean,
+    /**
+     * Faces for the ring when the core is the author, who has no bridges to
+     * show: without these the only face is the core ([TrustMap.pickFaces]).
+     */
+    ringFaces: List<String>,
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
     summary: String,
@@ -1018,6 +1497,7 @@ private fun TrustGlobe(
     val active = running && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     val currentFrame by rememberUpdatedState(frame)
     val currentHaze by rememberUpdatedState(haze)
+    val currentRingFaces by rememberUpdatedState(ringFaces)
     val currentFollows by rememberUpdatedState(myFollows)
     val currentName by rememberUpdatedState(name)
     val currentOnTap by rememberUpdatedState(onTap)
@@ -1045,14 +1525,15 @@ private fun TrustGlobe(
     }
 
     val loadKey = frame?.let {
-        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size)
+        LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, myFollows.size,
+            if (it.center == author) ringFaces else emptyList())
     }
     LaunchedEffect(loadKey) {
         val first = currentFrame ?: return@LaunchedEffect
         // Turn to the new person first, then let the globe re-settle around them.
         if (scene.hasLoaded && first.center != scene.center && !Motion.isReduced) delay(TURN_DELAY_MS)
         val latest = currentFrame ?: return@LaunchedEffect
-        scene.load(latest, me, author, currentFollows, currentHaze)
+        scene.load(latest, me, author, currentFollows, currentHaze, currentRingFaces)
     }
 
     val faceKeys = scene.faceKeys
@@ -1145,6 +1626,8 @@ private fun TrustGlobe(
                             key == center && key == me -> accent
                             key == center -> Color.White
                             key == author -> AuthorTint
+                            // The core is the author: these are their follows.
+                            center == author -> RingColor
                             else -> accent
                         }
                         val profile = profiles[key]
@@ -1260,7 +1743,14 @@ private class GlobeScene(
 
     // ── Data ─────────────────────────────────────────────────────────
 
-    fun load(frame: TrustFrame, me: String, author: String, myFollows: Set<String>, haze: List<String>) {
+    fun load(
+        frame: TrustFrame,
+        me: String,
+        author: String,
+        myFollows: Set<String>,
+        haze: List<String>,
+        ringFaces: List<String> = emptyList(),
+    ) {
         val now = nowSeconds()
         reduceMotion = Motion.isReduced
         val newCenter = !hasLoaded || frame.center != center
@@ -1314,7 +1804,10 @@ private class GlobeScene(
         chains = frame.chains.orEmpty()
         val shown = ArrayList<String>()
         val taken = hashSetOf(frame.center, author)
-        for (key in TrustMap.spread(bridges, MAX_FACES)) if (taken.add(key)) shown += key
+        // The core is the author, so there are no bridges: give the ring faces
+        // instead, or there'd be nothing to tap but the core.
+        val faceSource = if (frame.center == author) ringFaces.filter { it in frame.ringSet } else TrustMap.spread(bridges, MAX_FACES)
+        for (key in faceSource) if (taken.add(key)) shown += key
         for (chain in chains.take(TrustMap.SHOWN_CHAINS)) {
             for (key in listOf(chain.bridge, chain.via)) if (taken.add(key)) shown += key
         }
@@ -1623,7 +2116,7 @@ private class GlobeScene(
         val drawn = ArrayList<Drawn>()
         for (key in faces) {
             val p = index[key]?.let { project.of(it) } ?: continue
-            drawn += Drawn(key, p, GlobeAccent, 15.0)
+            drawn += Drawn(key, p, if (center == author) RingColor else GlobeAccent, 15.0)
         }
         if (authorP != null) drawn += Drawn(author, authorP, AuthorTint, 24.0)
         drawn.sortBy { it.p.depth }

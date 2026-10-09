@@ -107,6 +107,87 @@ object TrustMap {
         return (0 until count).map { sorted[it * sorted.size / count] }
     }
 
+    /** Ring people considered for faces when the core is the author (the WOT tab). */
+    const val FACE_CANDIDATES = 48
+    /** Ring faces drawn when the core is the author; the rest stay dots. */
+    const val RING_FACES = 16
+
+    /**
+     * Who might get a face when the core is the author. There are no bridges
+     * there, so without these the only face is the core and "tap anyone" is
+     * false. Spread around the globe, and the same people every time.
+     */
+    fun faceCandidates(ring: List<String>, count: Int = FACE_CANDIDATES): List<String> =
+        spread(ring.sorted(), count)
+
+    /**
+     * Up to [count] of [candidates]: those with a profile picture first, then
+     * the rest, each in candidate order. A face with only an initial looks like
+     * a gap, so pictures win while they're streaming in.
+     */
+    fun pickFaces(candidates: List<String>, hasPicture: (String) -> Boolean, count: Int = RING_FACES): List<String> {
+        if (count <= 0) return emptyList()
+        val (pictured, plain) = candidates.partition(hasPicture)
+        return (pictured + plain).take(count)
+    }
+
+    /** How close a search hit is to you: the tag on its row, and its rank. */
+    enum class Tier { FOLLOW, WEB, OTHER }
+
+    data class PersonHit(val pubkey: String, val tier: Tier)
+
+    /**
+     * The WOT tab's search over profiles already cached: a case-insensitive
+     * "contains" on display name, name and NIP-05. People you follow come
+     * first, then your wider web, then everyone else; within that a name that
+     * starts with the query beats one that only contains it, then the shorter
+     * name wins, since it's the closer match. Instant, so it runs every keystroke.
+     */
+    fun searchPeople(
+        query: String,
+        people: Collection<FeedProfile>,
+        follows: Set<String>,
+        web: Set<String>,
+        limit: Int = 8,
+    ): List<PersonHit> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty() || limit <= 0) return emptyList()
+        class Ranked(val hit: PersonHit, val prefix: Boolean, val length: Int)
+        val ranked = ArrayList<Ranked>()
+        for (person in people) {
+            val fields = listOfNotNull(person.displayName, person.name, person.nip05)
+                .map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+            if (fields.none { it.contains(q) }) continue
+            val tier = when (person.pubkey) {
+                in follows -> Tier.FOLLOW
+                in web -> Tier.WEB
+                else -> Tier.OTHER
+            }
+            val name = person.displayName?.trim()?.takeIf { it.isNotEmpty() }
+                ?: person.name?.trim()?.takeIf { it.isNotEmpty() }
+                ?: person.nip05.orEmpty()
+            ranked += Ranked(PersonHit(person.pubkey, tier), fields.any { it.startsWith(q) }, name.length)
+        }
+        return ranked
+            .sortedWith(compareBy({ it.hit.tier }, { !it.prefix }, { it.length }, { it.hit.pubkey }))
+            .take(limit)
+            .map { it.hit }
+    }
+
+    /**
+     * The key a pasted npub or 64-hex names, or null. [decodeNpub] is the app's
+     * NIP-19 decoder, passed in so this stays pure. A "nostr:" prefix is fine.
+     */
+    fun pastedKey(query: String, decodeNpub: (String) -> String?): String? {
+        val text = query.trim().removePrefix("nostr:")
+        if (text.length == 64 && text.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return text.lowercase()
+        if (text.startsWith("npub1", ignoreCase = true)) {
+            return runCatching { decodeNpub(text.lowercase()) }.getOrNull()?.takeIf { it.length == 64 }
+        }
+        return null
+    }
+
     /**
      * The next "show everyone" filters: follows whose lists haven't come back
      * yet, tagging the author, chunked for relays that cap a request's size.

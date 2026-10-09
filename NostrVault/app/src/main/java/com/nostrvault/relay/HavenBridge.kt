@@ -266,6 +266,26 @@ object HavenBridge {
     external fun computePopularNotes(): String?
 
     // -----------------------------------------------------------------------
+    // Web of trust rebuild
+    // -----------------------------------------------------------------------
+
+    /**
+     * Rebuild the web of trust now (the WOT tab's refresh) instead of at the
+     * next daily refresh. True when a rebuild started or was already running;
+     * false when the relay isn't up or trust is off. Throws
+     * UnsatisfiedLinkError on a library that predates it.
+     * Maps to Go: RefreshWotC()
+     */
+    external fun refreshWot(): Boolean
+
+    /**
+     * How far the latest rebuild has got, as JSON (wot.Progress): running,
+     * phase, batches, batchesDone, lists, size. See [com.nostrvault.data.model.WotRefreshProgress].
+     * Maps to Go: WotRefreshProgressC()
+     */
+    external fun getWotRefreshProgress(): String?
+
+    // -----------------------------------------------------------------------
     // Follower ledger
     // -----------------------------------------------------------------------
 

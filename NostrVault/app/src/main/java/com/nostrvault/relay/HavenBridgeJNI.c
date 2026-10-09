@@ -93,6 +93,8 @@ extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON
 extern char* NIP46AwaitNostrConnectC(const char* clientSK, const char* relaysJSON, const char* secret, long long since, int waitSeconds);
 extern char* ComputePopularNotesC(void);
 extern char* GetFollowersC(const char* owner);
+extern int RefreshWotC(void);
+extern char* WotRefreshProgressC(void);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 
@@ -471,6 +473,18 @@ Java_com_nostrvault_relay_HavenBridge_nip46GetPendingAuthUrl(JNIEnv *env, jobjec
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, ComputePopularNotesC());
+}
+
+// ---- Web of trust rebuild ----
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_refreshWot(JNIEnv *env, jobject thiz) {
+    return RefreshWotC() == 1 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getWotRefreshProgress(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, WotRefreshProgressC());
 }
 
 // ---- Follower ledger ----
