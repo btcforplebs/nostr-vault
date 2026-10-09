@@ -148,7 +148,6 @@ fun VaultTabScreen(
                         mode = VaultMode.MEDIA,
                         zapsOnly = com.nostrvault.ui.theme.LocalZapsOnlyMode.current,
                         newModes = newModes,
-                        statusColor = statusColor,
                         onSelect = viewModel::selectMode,
                         onOpenDashboard = openDashboard,
                         modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
@@ -211,7 +210,6 @@ internal fun VaultModePill(
     mode: VaultMode,
     zapsOnly: Boolean,
     newModes: Set<VaultMode>,
-    statusColor: Color,
     onSelect: (VaultMode) -> Unit,
     onOpenDashboard: () -> Unit,
     modifier: Modifier = Modifier,
@@ -231,16 +229,6 @@ internal fun VaultModePill(
         ) {
             Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 Icon(mode.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
-                // The relay's health, as on the Feed pill.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = (-1).dp, y = (-1).dp)
-                        .size(8.dp)
-                        .shadow(3.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(statusColor),
-                )
                 androidx.compose.animation.AnimatedVisibility(
                     visible = newElsewhere,
                     enter = scaleIn() + fadeIn(),
