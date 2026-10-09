@@ -27,11 +27,16 @@ final class FipsMeshService: ObservableObject {
     }
 
     @Published private(set) var kioskActive = false
+    /// A start is in flight. The toggle shows on, and a second tap cancels it.
+    @Published private(set) var starting = false
     @Published private(set) var status: Status?
     @Published private(set) var lastError: String?
 
     private var pollTimer: Timer?
     private var resignObserver: NSObjectProtocol?
+    /// The last start or stop sent to the engine. Each new one waits for it,
+    /// so a stop can never land after the start that follows it.
+    private var engineOp: Task<Void, Never>?
 
     private init() {}
 
@@ -42,16 +47,24 @@ final class FipsMeshService: ObservableObject {
     }
 
     func startKiosk() {
-        guard !kioskActive else { return }
+        guard !kioskActive, !starting else { return }
+        starting = true
         lastError = nil
         let port = ConfigService.shared.config.relayPort
-        Task.detached(priority: .userInitiated) {
+        let previous = engineOp
+        engineOp = Task.detached(priority: .userInitiated) {
+            await previous?.value
             let result = Self.startAndShare(port: port)
             await MainActor.run { self.didStart(result) }
         }
     }
 
     func stopKiosk() {
+        if starting {
+            // didStart sees the cancel and stops the engine.
+            starting = false
+            return
+        }
         guard kioskActive else { return }
         kioskActive = false
         UIApplication.shared.isIdleTimerDisabled = false
@@ -59,16 +72,50 @@ final class FipsMeshService: ObservableObject {
         pollTimer = nil
         if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
         resignObserver = nil
-        Task.detached { NvFipsStop() }
+        stopEngine()
         status = nil
+        publishServerListInBackgroundTask()
+    }
+
+    private func stopEngine() {
+        let previous = engineOp
+        engineOp = Task.detached {
+            await previous?.value
+            NvFipsStop()
+        }
+    }
+
+    /// stopKiosk runs from didEnterBackground: ask iOS for time so the 10063
+    /// without the mesh entry goes out before the app is suspended.
+    private func publishServerListInBackgroundTask() {
+        var task = UIBackgroundTaskIdentifier.invalid
+        let end = {
+            guard task != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
+        task = UIApplication.shared.beginBackgroundTask(withName: "fipsmesh-10063") { end() }
         NostrService.shared.publishServerList()
+        // publishServerList does not report completion; signing and posting take well under this.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { end() }
     }
 
     private func didStart(_ result: Result<Void, MeshError>) {
+        guard starting else {
+            // Cancelled while starting (toggle off, or the app left).
+            if case .success = result { stopEngine() }
+            return
+        }
+        starting = false
         switch result {
         case .failure(let error):
             lastError = error.message
         case .success:
+            // The app left while the engine was starting: kiosk mode never goes live.
+            guard UIApplication.shared.applicationState != .background else {
+                stopEngine()
+                return
+            }
             kioskActive = true
             UIApplication.shared.isIdleTimerDisabled = true
             // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.

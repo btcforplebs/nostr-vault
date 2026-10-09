@@ -3580,7 +3580,7 @@ struct BlossomSettingsView: View {
             #else
             Section {
                 Toggle(isOn: Binding(
-                    get: { mesh.kioskActive },
+                    get: { mesh.kioskActive || mesh.starting },
                     set: { on in on ? mesh.startKiosk() : mesh.stopKiosk() }
                 )) {
                     VStack(alignment: .leading, spacing: 4) {
