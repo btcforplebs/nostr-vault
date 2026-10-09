@@ -893,6 +893,19 @@ class FeedService @Inject constructor(
         }
     }
 
+    /**
+     * Fetch your follow list again, for the WOT tab's refresh button. Returns
+     * once the load has finished, found a list or not (it has its own
+     * timeout). One already running is waited on rather than started twice.
+     */
+    suspend fun refreshContactList() {
+        if (_isLoadingContacts.value) {
+            _isLoadingContacts.first { !it }
+            return
+        }
+        loadContactList()
+    }
+
     private suspend fun loadContactList() {
         val myGeneration = ++contactLoadGeneration
         _isLoadingContacts.value = true

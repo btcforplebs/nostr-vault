@@ -154,6 +154,137 @@ enum TrustMap {
     private static func allSigners(_ lists: [[String: Any]]) -> Set<String> {
         Set(lists.compactMap { $0["pubkey"] as? String })
     }
+
+    // MARK: Faces on someone's own globe
+
+    /// Follows worth fetching a profile for when a globe shows everyone
+    /// someone follows: a spread around the sphere, the same people each time.
+    static let faceCandidateCount = 64
+    /// Follows drawn as faces on that globe; the rest stay stars. Faces
+    /// that would cover another are held back as stars (`seatFaces`).
+    static let ringFaceCount = 40
+
+    /// The follows worth a profile fetch: the ones you interact with most
+    /// (`engagement`), busiest first, then a spread of everyone else.
+    static func faceCandidates(_ ring: [String], engagement: [String: Int] = [:],
+                               count: Int = faceCandidateCount) -> [String] {
+        let engaged = ring.filter { (engagement[$0] ?? 0) > 0 }
+            .sorted { (engagement[$0] ?? 0, $1) > (engagement[$1] ?? 0, $0) }
+        let top = Array(engaged.prefix(count))
+        let taken = Set(top)
+        let rest = ring.filter { !taken.contains($0) }.sorted()
+        return top + spread(rest, count: count - top.count)
+    }
+
+    /// Faces for a globe of everyone someone follows, in candidate order:
+    /// only people whose picture has actually loaded (`renders`), so the
+    /// globe shows faces, never initials or broken pictures. The rest stay stars.
+    static func pickFaces(_ candidates: [String], renders: (String) -> Bool,
+                          count: Int = ringFaceCount) -> [String] {
+        Array(candidates.filter(renders).prefix(count))
+    }
+
+    /// A face on screen this frame: where it is and how big.
+    struct FaceSpot {
+        let key: String
+        let x: Double
+        let y: Double
+        let r: Double
+    }
+
+    /// How much two faces may overlap, as a share of their radii, before the
+    /// one behind is held back as a star.
+    static let faceOverlap = 0.15
+
+    /// Which faces get a picture this frame, so no face covers another:
+    /// `spots` front-most first, `always` (the author) seated first, then
+    /// faces seated last frame (`kept`, so a face doesn't flicker as the
+    /// globe turns), then the rest. `blocked` are areas no face may cover.
+    static func seatFaces(_ spots: [FaceSpot], always: Set<String> = [], kept: Set<String> = [],
+                          blocked: [FaceSpot] = []) -> Set<String> {
+        var seated: [FaceSpot] = blocked
+        var keys: Set<String> = []
+        func fits(_ a: FaceSpot) -> Bool {
+            seated.allSatisfy { b in
+                let reach = (a.r + b.r) * (1 - faceOverlap)
+                return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) >= reach * reach
+            }
+        }
+        for pass in 0..<3 {
+            for spot in spots where !keys.contains(spot.key) {
+                let turn = always.contains(spot.key) ? 0 : kept.contains(spot.key) ? 1 : 2
+                guard turn == pass, pass == 0 || fits(spot) else { continue }
+                seated.append(spot)
+                keys.insert(spot.key)
+            }
+        }
+        return keys
+    }
+
+    // MARK: Who you interact with
+
+    /// Kinds that count as you interacting with someone: notes (replies and
+    /// mentions), reposts, reactions, zap receipts.
+    static let engagementKinds = [1, 6, 7, 9735]
+
+    /// How much you and each person interact, from your own events (the
+    /// people they tag) and events aimed at you (who sent them). Your own
+    /// count double, a zap triples. You never score yourself.
+    static func engagementScores(mine: [[String: Any]], toMe: [[String: Any]], me: String) -> [String: Int] {
+        func weight(_ kind: Int) -> Int { kind == 9735 ? 3 : 1 }
+        var scores: [String: Int] = [:]
+        for event in mine {
+            guard (event["pubkey"] as? String) == me, let kind = event["kind"] as? Int else { continue }
+            let tags = event["tags"] as? [[String]] ?? []
+            // A reply tags the whole thread; the last p is who you answered.
+            guard let target = tags.last(where: { $0.count > 1 && $0[0] == "p" })?[1] else { continue }
+            scores[target, default: 0] += 2 * weight(kind)
+        }
+        for event in toMe {
+            guard let kind = event["kind"] as? Int else { continue }
+            let tags = event["tags"] as? [[String]] ?? []
+            guard tags.contains(where: { $0.count > 1 && $0[0] == "p" && $0[1] == me }) else { continue }
+            let sender: String?
+            if kind == 9735 {
+                sender = tags.first(where: { $0.count > 1 && $0[0] == "P" })?[1]
+            } else {
+                sender = event["pubkey"] as? String
+            }
+            guard let sender else { continue }
+            scores[sender, default: 0] += weight(kind)
+        }
+        scores[me] = nil
+        return scores
+    }
+
+    // MARK: Finding someone
+
+    /// Someone the WOT tab's search can find: their key and every name they go by.
+    struct Person {
+        let pubkey: String
+        let names: [String]
+    }
+
+    /// The WOT tab's search: people you follow first, then your web, then
+    /// everyone else; a name that starts with the query before one that only
+    /// contains it; shorter names first.
+    static func searchPeople(_ query: String, in people: [Person], follows: Set<String>,
+                             web: Set<String>, limit: Int = 8) -> [String] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        var ranked: [(tier: Int, prefix: Int, length: Int, key: String)] = []
+        for person in people {
+            let names = person.names.map { $0.lowercased() }.filter { $0.contains(q) }
+            guard !names.isEmpty else { continue }
+            let tier = follows.contains(person.pubkey) ? 0 : web.contains(person.pubkey) ? 1 : 2
+            let prefix = names.contains { $0.hasPrefix(q) } ? 0 : 1
+            ranked.append((tier, prefix, names.map(\.count).min() ?? 0, person.pubkey))
+        }
+        return ranked
+            .sorted { ($0.tier, $0.prefix, $0.length, $0.key) < ($1.tier, $1.prefix, $1.length, $1.key) }
+            .prefix(limit)
+            .map(\.key)
+    }
 }
 
 /// The globe's camera and how it moves. Every step is scaled by the real time
