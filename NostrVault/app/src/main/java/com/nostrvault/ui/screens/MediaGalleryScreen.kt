@@ -188,7 +188,7 @@ class MediaGalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _busySha.value = item.sha256
             try {
-                val outcome = blossomService.saveUrlToVault(item.displayUrl)
+                val outcome = blossomService.saveUrlToVault(item.displayUrl).outcome
                 if (outcome == BlossomService.VaultSave.FAILED) {
                     notificationManager.showError(outcome.message)
                     return@launch

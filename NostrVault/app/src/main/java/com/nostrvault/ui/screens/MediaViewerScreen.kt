@@ -188,11 +188,24 @@ class MediaViewerViewModel @Inject constructor(
     private val _sourceVersion = MutableStateFlow(0)
     val sourceVersion = _sourceVersion.asStateFlow()
 
-    /** Where the viewer's copy of [item] lives. Port of iOS `MediaCacheService.getSource(for:)`. */
-    fun source(item: BlossomMediaItem): MediaCacheService.MediaSource = viewerMediaSource(
-        inVault = item.isLocal || (item.sha256.isNotEmpty() && mediaCacheService.isInLocalBlossom(item.sha256)),
-        cached = mediaCacheService.isCached(item.displayUrl),
-    )
+    /**
+     * The hash each Save to Vault stored its bytes under, by the item's own
+     * hash. A server may serve bytes that hash differently from what it
+     * listed; the badge still reads On phone after the save.
+     */
+    private val savedShas = SavedVaultHashes()
+
+    /**
+     * Where the viewer's copy of [item] lives. Port of iOS
+     * `MediaCacheService.getSource(for:)`. Reads the disk, so off the main thread.
+     */
+    suspend fun source(item: BlossomMediaItem): MediaCacheService.MediaSource = withContext(Dispatchers.IO) {
+        val hashes = listOfNotNull(item.sha256.ifEmpty { null }, savedShas.savedHash(item))
+        viewerMediaSource(
+            inVault = item.isLocal || hashes.any { mediaCacheService.isInLocalBlossom(it) },
+            cached = mediaCacheService.isCached(item.displayUrl),
+        )
+    }
 
     private val _savingSha = MutableStateFlow<String?>(null)
     /** The blob Save to Vault is working on, or null. */
@@ -206,13 +219,14 @@ class MediaViewerViewModel @Inject constructor(
     fun saveToVault(item: BlossomMediaItem) {
         if (_savingSha.value != null) return
         viewModelScope.launch {
-            _savingSha.value = item.sha256
+            _savingSha.value = viewerItemKey(item)
             try {
-                val outcome = withContext(Dispatchers.IO) { blossomService.saveUrlToVault(item.displayUrl) }
-                if (outcome == BlossomService.VaultSave.FAILED) {
-                    notificationManager.showError(outcome.message)
+                val result = withContext(Dispatchers.IO) { blossomService.saveUrlToVault(item.displayUrl) }
+                if (result.outcome == BlossomService.VaultSave.FAILED) {
+                    notificationManager.showError(result.outcome.message)
                 } else {
-                    notificationManager.showToast(outcome.message)
+                    result.savedSha?.let { savedShas.record(item, it) }
+                    notificationManager.showToast(result.outcome.message)
                     _sourceVersion.value++
                     if (currentSha == item.sha256) checkMirrors(item.sha256)
                 }
@@ -226,7 +240,7 @@ class MediaViewerViewModel @Inject constructor(
     fun cacheLocally(item: BlossomMediaItem) {
         if (_cachingSha.value != null) return
         viewModelScope.launch {
-            _cachingSha.value = item.sha256
+            _cachingSha.value = viewerItemKey(item)
             try {
                 val data = withContext(Dispatchers.IO) { mediaCacheService.fetchData(item.displayUrl) }
                 if (data == null) notificationManager.showError("Could not cache this file")
@@ -537,7 +551,9 @@ fun MediaViewerScreen(
             else -> Color.Gray
         }
         val source = currentItem?.let { item ->
-            remember(item.sha256, item.displayUrl, sourceVersion) { viewModel.source(item) }
+            produceState<MediaCacheService.MediaSource?>(null, item.sha256, item.displayUrl, sourceVersion) {
+                value = viewModel.source(item)
+            }.value
         }
         if (!isInPiP) Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -550,8 +566,8 @@ fun MediaViewerScreen(
             if (currentItem != null && source != null) {
                 MediaSourceRow(
                     source = source,
-                    saving = savingSha == currentItem.sha256,
-                    caching = cachingSha == currentItem.sha256,
+                    saving = savingSha == viewerItemKey(currentItem),
+                    caching = cachingSha == viewerItemKey(currentItem),
                     onSaveToVault = { viewModel.saveToVault(currentItem) },
                     onCacheLocally = { viewModel.cacheLocally(currentItem) },
                 )
@@ -677,6 +693,23 @@ fun MediaViewerScreen(
             )
         }
     }
+}
+
+/**
+ * One key per viewer item: its hash, or its URL for a link-only item whose
+ * hash is "". Keying by the hash alone made every link-only item share "".
+ */
+internal fun viewerItemKey(item: BlossomMediaItem): String = item.sha256.ifEmpty { item.displayUrl }
+
+/** The hash each Save to Vault stored an item's bytes under, by [viewerItemKey]. */
+internal class SavedVaultHashes {
+    private val byItem = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun record(item: BlossomMediaItem, savedSha: String) {
+        byItem[viewerItemKey(item)] = savedSha
+    }
+
+    fun savedHash(item: BlossomMediaItem): String? = byItem[viewerItemKey(item)]
 }
 
 /** Where the viewer's copy lives: on the phone, a temporary copy, or only a link. */
