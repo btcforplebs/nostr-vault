@@ -18,7 +18,7 @@ import (
 // the owner's notes out once it is back.
 
 var (
-	blastPendingFile    = "blast_pending.json" // in the relay data root, like wot_cache.json
+	blastPendingFile    = "blast_queue.json" // in the relay data root, like wot_cache.json
 	blastRetryInterval  = time.Minute
 	blastRetryFirstWait = 10 * time.Second
 )
@@ -148,7 +148,7 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 		// The file is on disk: check it is still a valid note from this
 		// account before sending it anywhere.
 		_, whitelisted := config.WhitelistedPubKeys[ev.PubKey]
-		if ok, _ := ev.CheckSignature(); !ok || !whitelisted {
+		if ok, _ := ev.CheckSignature(); !ok || !ev.CheckID() || !whitelisted {
 			slog.Warn("🗑️ dropping a queued note that is not this account's", "id", ev.ID)
 			q.remove(ev.ID)
 			continue

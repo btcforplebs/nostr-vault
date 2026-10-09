@@ -1,11 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/khatru"
@@ -25,6 +33,11 @@ var (
 	// One blob in or out may take this long; set per request, since a
 	// server-wide write timeout would also cut long-lived websockets.
 	meshTransferTimeout = 30 * time.Minute
+	// An upload must make progress at least this often.
+	meshIdleRead = 30 * time.Second
+	// At most this many mesh connections at once, each at most this long.
+	meshMaxConns        = 32
+	meshConnMaxLifetime = 30 * time.Minute
 )
 
 // meshUploadSlots: one owner upload at a time. khatru holds the whole blob
@@ -81,7 +94,8 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		// Check whose key signed the upload before khatru sees it: khatru
 		// allocates Content-Length bytes before its RejectUpload whitelist
 		// runs, so a throwaway key could make the kiosk hold 256 MB.
-		if code, msg := meshUploadAuthorized(r); code != 0 {
+		auth, code, msg := meshUploadAuthorized(r)
+		if code != 0 {
 			http.Error(w, msg, code)
 			return
 		}
@@ -94,7 +108,10 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "blob too large for the mesh", http.StatusRequestEntityTooLarge)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, meshMaxUploadBytes)
+			if meshAuthUsed(auth.ID) {
+				http.Error(w, "authorization already used", http.StatusForbidden)
+				return
+			}
 			select {
 			case meshUploadSlots <- struct{}{}:
 				defer func() { <-meshUploadSlots }()
@@ -103,7 +120,27 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "another upload is in progress", http.StatusServiceUnavailable)
 				return
 			}
-			setTransferDeadline(w)
+			// Read the body here, so memory grows with bytes that actually
+			// arrive rather than with the Content-Length a peer claims.
+			body, err := readMeshBody(w, r)
+			if err != nil {
+				http.Error(w, "upload body: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			sum := sha256.Sum256(body)
+			if auth.Tags.FindWithValue("x", hex.EncodeToString(sum[:])) == nil {
+				// A token signed for another blob (a public mirror holds
+				// one for its hour) cannot put anything else here.
+				http.Error(w, "authorization does not cover this blob", http.StatusForbidden)
+				return
+			}
+			if !meshAuthUse(auth) {
+				http.Error(w, "authorization already used", http.StatusForbidden)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+			r.Header.Set("Content-Length", strconv.Itoa(len(body)))
 		}
 		// Keep the request on the Blossom mux: khatru routes websocket,
 		// NIP-11 and NIP-86 by header before the path.
@@ -131,34 +168,155 @@ func setTransferDeadline(w http.ResponseWriter) {
 }
 
 // meshUploadAuthorized: the upload's kind 24242 must be signed by a
-// whitelisted key. Returns 0 when it is, else an HTTP status and reason.
-// khatru re-checks expiration, the "t" tag and the whitelist afterwards.
-func meshUploadAuthorized(r *http.Request) (int, string) {
+// whitelisted key, unexpired, for "upload". Returns the event, or an HTTP
+// status and reason. khatru re-checks the whitelist afterwards.
+func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 	token := r.Header.Get("Authorization")
 	if !strings.HasPrefix(token, "Nostr ") {
-		return http.StatusUnauthorized, "missing \"Authorization\" header"
+		return nil, http.StatusUnauthorized, "missing \"Authorization\" header"
 	}
 	raw, err := base64.StdEncoding.DecodeString(token[6:])
 	if err != nil {
-		return http.StatusBadRequest, "invalid base64 token"
+		return nil, http.StatusBadRequest, "invalid base64 token"
 	}
 	var ev nostr.Event
 	if err := json.Unmarshal(raw, &ev); err != nil {
-		return http.StatusBadRequest, "broken event"
+		return nil, http.StatusBadRequest, "broken event"
 	}
 	if ev.Kind != 24242 {
-		return http.StatusForbidden, "invalid event"
+		return nil, http.StatusForbidden, "invalid event"
 	}
 	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
-		return http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
+		return nil, http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
+	}
+	if authExpiration(&ev) <= time.Now().Unix() {
+		return nil, http.StatusForbidden, "authorization expired"
+	}
+	if ev.Tags.FindWithValue("t", "upload") == nil {
+		return nil, http.StatusForbidden, "authorization is not for upload"
 	}
 	if !ev.CheckID() {
-		return http.StatusForbidden, "invalid event"
+		return nil, http.StatusForbidden, "invalid event"
 	}
 	if ok, _ := ev.CheckSignature(); !ok {
-		return http.StatusForbidden, "invalid signature"
+		return nil, http.StatusForbidden, "invalid signature"
 	}
-	return 0, ""
+	return &ev, 0, ""
+}
+
+func authExpiration(ev *nostr.Event) int64 {
+	tag := ev.Tags.Find("expiration")
+	if tag == nil {
+		return 0
+	}
+	exp, _ := strconv.ParseInt(tag[1], 10, 64)
+	return exp
+}
+
+// Blossom auth is one per upload: an auth event that already put a blob
+// here is refused, until it would have expired anyway.
+var (
+	meshAuthMu   sync.Mutex
+	meshAuthSeen = map[string]int64{} // event id -> expiration
+)
+
+func meshAuthUsed(id string) bool {
+	meshAuthMu.Lock()
+	defer meshAuthMu.Unlock()
+	_, used := meshAuthSeen[id]
+	return used
+}
+
+// meshAuthUse records ev as used; false if it already was.
+func meshAuthUse(ev *nostr.Event) bool {
+	meshAuthMu.Lock()
+	defer meshAuthMu.Unlock()
+	now := time.Now().Unix()
+	for id, exp := range meshAuthSeen {
+		if exp <= now {
+			delete(meshAuthSeen, id)
+		}
+	}
+	if _, used := meshAuthSeen[ev.ID]; used {
+		return false
+	}
+	meshAuthSeen[ev.ID] = authExpiration(ev)
+	return true
+}
+
+// readMeshBody reads a PUT body of exactly Content-Length bytes. Each read
+// must make progress within meshIdleRead, inside the request's overall
+// transfer deadline.
+func readMeshBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	rc := http.NewResponseController(w)
+	end := time.Now().Add(meshTransferTimeout)
+	_ = rc.SetWriteDeadline(end)
+	body := bytes.NewBuffer(make([]byte, 0, min(r.ContentLength, 1<<20)))
+	limited := io.LimitReader(r.Body, r.ContentLength+1)
+	chunk := make([]byte, 64<<10)
+	for {
+		next := time.Now().Add(meshIdleRead)
+		if next.After(end) {
+			next = end
+		}
+		_ = rc.SetReadDeadline(next)
+		n, err := limited.Read(chunk)
+		body.Write(chunk[:n])
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if int64(body.Len()) != r.ContentLength {
+		return nil, errors.New("length does not match Content-Length")
+	}
+	return body.Bytes(), nil
+}
+
+// meshListener caps the mesh port at meshMaxConns connections at once (every
+// peer is 127.0.0.1, so only a global cap means anything) and closes any
+// connection, websockets included, after meshConnMaxLifetime.
+type meshListener struct {
+	net.Listener
+	slots chan struct{}
+}
+
+func newMeshListener(ln net.Listener) net.Listener {
+	return &meshListener{Listener: ln, slots: make(chan struct{}, meshMaxConns)}
+}
+
+func (l *meshListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case l.slots <- struct{}{}:
+			mc := &meshConn{Conn: c, release: func() { <-l.slots }}
+			mc.timer = time.AfterFunc(meshConnMaxLifetime, func() { mc.Close() })
+			return mc, nil
+		default:
+			c.Close() // full: refuse now rather than queue
+		}
+	}
+}
+
+type meshConn struct {
+	net.Conn
+	release func()
+	timer   *time.Timer
+	once    sync.Once
+}
+
+func (c *meshConn) Close() error {
+	c.once.Do(func() {
+		c.timer.Stop()
+		c.release()
+	})
+	return c.Conn.Close()
 }
 
 func markMesh(r *http.Request) *http.Request {

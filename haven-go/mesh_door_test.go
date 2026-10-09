@@ -428,3 +428,132 @@ func TestMeshOneUploadAtATime(t *testing.T) {
 		t.Fatalf("second upload: %d, want 503 with Retry-After", resp.StatusCode)
 	}
 }
+
+func signedUploadAuth(t *testing.T, sk string, body []byte, expires time.Time) string {
+	t.Helper()
+	sum := sha256.Sum256(body)
+	ev := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Tags: nostr.Tags{
+		{"t", "upload"}, {"x", hex.EncodeToString(sum[:])}, {"expiration", fmt.Sprint(expires.Unix())},
+	}}
+	ev.Sign(sk)
+	j, _ := json.Marshal(ev)
+	return "Nostr " + base64.StdEncoding.EncodeToString(j)
+}
+
+// Tron round 2: one owner auth (a public mirror holds one for its hour)
+// replayed from eight connections claiming 250 MB and sending 60 bytes.
+func TestMeshReplayedAuthAllocatesNothing(t *testing.T) {
+	saved := meshIdleRead
+	meshIdleRead = 500 * time.Millisecond
+	defer func() { meshIdleRead = saved }()
+	h := startHaven(t)
+	door := startMeshDoor(t)
+	addr := strings.TrimPrefix(door, "http://")
+	const claimed = 250 << 20
+	auth := blossomUploadAuth(t, h.ownerSK, []byte("x"))
+
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			fmt.Fprintf(conn, "PUT /upload HTTP/1.1\r\nHost: x\r\nAuthorization: %s\r\nContent-Length: %d\r\n\r\n%s", auth, claimed, strings.Repeat("A", 60))
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			line, _ := bufio.NewReader(conn).ReadString('\n')
+			if line == "" {
+				t.Error("a stalled upload still held its connection after 5 s")
+			}
+		}()
+	}
+	wg.Wait()
+	runtime.ReadMemStats(&after)
+	if grew := int64(after.TotalAlloc) - int64(before.TotalAlloc); grew > 32<<20 {
+		t.Fatalf("claimed sizes made the kiosk allocate %d MB", grew>>20)
+	}
+}
+
+func TestMeshUploadAuthBinding(t *testing.T) {
+	h := startHaven(t)
+	door := startMeshDoor(t)
+	put := func(auth string, body []byte) int {
+		r, _ := http.NewRequest(http.MethodPut, door+"/upload", bytes.NewReader(body))
+		r.Header.Set("Authorization", auth)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	a, b := []byte("blob a"), []byte("blob b")
+
+	if code := put(blossomUploadAuth(t, h.ownerSK, a), b); code != http.StatusForbidden {
+		t.Errorf("auth for another blob: %d, want 403", code)
+	}
+	expired := signedUploadAuth(t, h.ownerSK, a, time.Now().Add(-time.Minute))
+	if code := put(expired, a); code != http.StatusForbidden {
+		t.Errorf("expired auth: %d, want 403", code)
+	}
+	once := blossomUploadAuth(t, h.ownerSK, a)
+	if code := put(once, a); code != http.StatusOK {
+		t.Fatalf("first use (control): %d, want 200", code)
+	}
+	if code := put(once, a); code != http.StatusForbidden {
+		t.Errorf("same auth again: %d, want 403", code)
+	}
+}
+
+func TestMeshListenerCapAndLifetime(t *testing.T) {
+	savedMax, savedLife := meshMaxConns, meshConnMaxLifetime
+	meshMaxConns, meshConnMaxLifetime = 2, 400*time.Millisecond
+	defer func() { meshMaxConns, meshConnMaxLifetime = savedMax, savedLife }()
+
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := newMeshListener(raw)
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go io.Copy(io.Discard, c) // hold it open like a quiet peer
+		}
+	}()
+	closedWithin := func(c net.Conn, d time.Duration) bool {
+		c.SetReadDeadline(time.Now().Add(d))
+		_, err := c.Read(make([]byte, 1))
+		ne, timeout := err.(net.Error)
+		return err != nil && !(timeout && ne.Timeout())
+	}
+	var conns []net.Conn
+	for i := 0; i < 3; i++ {
+		c, err := net.Dial("tcp", raw.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		conns = append(conns, c)
+		time.Sleep(50 * time.Millisecond)
+	}
+	if closedWithin(conns[0], 100*time.Millisecond) {
+		t.Fatal("first connection refused (control)")
+	}
+	if !closedWithin(conns[2], 200*time.Millisecond) {
+		t.Fatal("third connection admitted over the cap")
+	}
+	if !closedWithin(conns[0], time.Second) {
+		t.Fatal("connection outlived meshConnMaxLifetime")
+	}
+}
