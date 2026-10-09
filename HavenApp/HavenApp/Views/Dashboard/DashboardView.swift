@@ -41,7 +41,7 @@ struct DashboardView: View {
         .onAppear {
             statsService.refreshStats()
         }
-        // The Pocket Relay tutorial starts the first time the dashboard opens.
+        // The Vault in Your Pocket tutorial starts the first time the dashboard opens.
         .task(id: TutorialCenter.shared.revision) {
             TutorialCenter.shared.startIfEligible(.pocketRelay, account: NostrService.shared.activeHexPubkey)
         }

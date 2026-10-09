@@ -138,9 +138,9 @@ fun NostrVaultNavHost(
     val relayActivity by hasNewRelayActivity.collectAsState()
 
     // A tutorial whose cards are on another page goes there: a last card's
-    // "Next", or Replay in Settings. Your Vault and Pocket Relay are the
-    // Vault tab (which opens its dashboard for Pocket Relay, over either
-    // half), Wallet Connect the wallet. A page starting its own tutorial is
+    // "Next", or Replay in Settings. Your Vault and Vault in Your Pocket are
+    // the Vault tab (which opens its dashboard for Vault in Your Pocket, over
+    // either half), Wallet Connect the wallet. A page starting its own tutorial is
     // already on it.
     val activeTutorial by com.nostrvault.tutorials.TutorialCenter.active.collectAsState()
     LaunchedEffect(activeTutorial) {
