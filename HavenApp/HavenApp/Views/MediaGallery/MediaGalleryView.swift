@@ -69,6 +69,10 @@ struct MediaGalleryView: View {
     // before the display data has been computed at least once.
     @State var mediaHasLoadedOnce: Bool = false
 
+    /// Media before the type and location filters, so an empty grid can say
+    /// whether a filter hid everything or there is nothing yet.
+    @State var mediaTotalCount: Int = 0
+
     #if os(macOS)
     @State var keyMonitor: Any? = nil
     #endif
