@@ -142,8 +142,12 @@ final class HomeVaultSender: ObservableObject {
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
 
         let now = Date()
+        var gaveUp: [String] = []
         for item in queue where HomeVaultLogic.isExpired(item, now: now) {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
+            gaveUp.append(item.kind == .mirror
+                ? "a photo a note links never reached your public server"
+                : "a \(item.kind == .event ? "note" : "photo") never reached your home vault")
             remove(item)
         }
 
@@ -166,6 +170,10 @@ final class HomeVaultSender: ObservableObject {
                 if !userInitiated { waiting = true; continue }
                 prompts += 1
             }
+
+            // Everything signs as the owner it was queued for: with another
+            // account active, an upload would carry that account's key.
+            guard item.ownerHex == NostrService.shared.activeHexPubkey else { waiting = true; continue }
 
             let result: HomeVaultSendResult
             if item.kind == .mirror {
@@ -221,6 +229,10 @@ final class HomeVaultSender: ObservableObject {
             retryTimer = nil
         } else if waiting {
             noteFailure(meshWhy ?? "\(queue.count) waiting to retry")
+        }
+        // Giving up must not read like success on the card.
+        if let first = gaveUp.first {
+            lastResult = "Gave up: \(first)" + (gaveUp.count > 1 ? " (and \(gaveUp.count - 1) more)" : "") + ". It is still on this phone."
         }
     }
 
