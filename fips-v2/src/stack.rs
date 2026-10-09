@@ -87,6 +87,21 @@ pub struct Counters {
     /// Bytes from friends' vaults, and requests sent to them.
     pub read_rx: AtomicU64,
     pub read_tx: AtomicU64,
+    /// Mesh connections turned away or cut by a `ServeLimits` cap.
+    pub served_refused: AtomicU64,
+}
+
+/// Caps on what the mesh may pull while sharing, counted from the moment
+/// sharing is turned on. Zero means no cap.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ServeLimits {
+    /// Bytes sent to the mesh, all visitors together. Reaching it turns
+    /// sharing off (`Control::cap_reached`) until it is turned on again.
+    pub total_bytes: u64,
+    /// Bytes sent to one visitor. Past it, that visitor is cut and turned away.
+    pub per_peer_bytes: u64,
+    /// Connections one visitor may hold open at once.
+    pub per_peer_open: usize,
 }
 
 /// Runtime control of a running stack. Shared with the thread that drives it.
@@ -105,6 +120,10 @@ pub struct Control {
     /// Loopback ports whose listener the stack should drop (`close_connect`).
     closed_connects: Mutex<Vec<u16>>,
     stop: AtomicBool,
+    limits: Mutex<ServeLimits>,
+    /// Sharing was turned off by `ServeLimits::total_bytes`. Cleared by the
+    /// next `set_serve`.
+    cap_reached: AtomicBool,
     /// Sockets the stack holds, listeners included; a leak shows up here.
     sockets: AtomicU64,
     pub counters: Counters,
@@ -123,6 +142,7 @@ impl Control {
         let want = {
             let mut serve = self.serve.lock().unwrap();
             *serve = forward;
+            self.cap_reached.store(false, Ordering::SeqCst);
             self.serve_gen.fetch_add(1, Ordering::SeqCst) + 1
         };
         let end = std::time::Instant::now() + Duration::from_secs(2);
@@ -180,6 +200,20 @@ impl Control {
     /// Ends `run`: every connection is reset and the thread returns.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+    }
+
+    /// Takes effect at once, on connections already open too.
+    pub fn set_limits(&self, limits: ServeLimits) {
+        *self.limits.lock().unwrap() = limits;
+    }
+
+    pub fn limits(&self) -> ServeLimits {
+        *self.limits.lock().unwrap()
+    }
+
+    /// True once the total cap has turned sharing off.
+    pub fn cap_reached(&self) -> bool {
+        self.cap_reached.load(Ordering::SeqCst)
     }
 }
 
@@ -266,11 +300,25 @@ struct Splice {
     head: Vec<u8>,
     local_eof: bool,
     local_shut: bool,
+    /// The visitor, for a served splice (its caps are counted per address).
+    remote: Option<IpAddress>,
+    /// Over a cap: cut after this poll.
+    over: bool,
 }
 
 impl Splice {
     fn new(handle: SocketHandle, stream: TcpStream, kind: Kind) -> Self {
-        Self { handle, stream, kind, pending: Vec::new(), head: Vec::new(), local_eof: false, local_shut: false }
+        Self {
+            handle,
+            stream,
+            kind,
+            pending: Vec::new(),
+            head: Vec::new(),
+            local_eof: false,
+            local_shut: false,
+            remote: None,
+            over: false,
+        }
     }
 }
 
@@ -423,6 +471,23 @@ pub fn run(
     run_with(my_addr, mtu, to_mesh, from_mesh, &ctl)
 }
 
+/// Why a new connection from `addr` is turned away, if it is.
+fn refuse(
+    limits: &ServeLimits,
+    peer_tx: &HashMap<IpAddress, u64>,
+    splices: &[Splice],
+    addr: IpAddress,
+) -> Option<&'static str> {
+    if limits.per_peer_bytes > 0 && peer_tx.get(&addr).copied().unwrap_or(0) >= limits.per_peer_bytes {
+        return Some("over its byte cap");
+    }
+    let open = splices.iter().filter(|sp| sp.kind == Kind::Served && sp.remote == Some(addr)).count();
+    if limits.per_peer_open > 0 && open >= limits.per_peer_open {
+        return Some("too many open");
+    }
+    None
+}
+
 /// Serve and connect on one TUN, as `ctl` says, until `ctl.stop()`.
 pub fn run_with(
     my_addr: Ipv6Addr,
@@ -447,12 +512,24 @@ pub fn run_with(
     let mut dying: Vec<SocketHandle> = Vec::new();
     let mut next_port: u16 = 49152;
     let c = &ctl.counters;
+    // What this sharing session has sent, in all and per visitor. A session is
+    // one serve generation: `set_serve` starts a new one.
+    let mut session_gen = u64::MAX;
+    let mut session_tx: u64 = 0;
+    let mut peer_tx: HashMap<IpAddress, u64> = HashMap::new();
+    let mut capped_gen: Option<u64> = None;
 
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         let stopping = ctl.stop.load(Ordering::SeqCst);
         let (serve, generation) = ctl.serve_now();
-        let serve = if stopping { None } else { serve };
+        if generation != session_gen {
+            session_gen = generation;
+            session_tx = 0;
+            peer_tx.clear();
+        }
+        let limits = ctl.limits();
+        let serve = if stopping || capped_gen == Some(generation) { None } else { serve };
 
         if serve.is_none() {
             // Sharing off: stop listening, and cut what is being served.
@@ -518,13 +595,24 @@ pub fn run_with(
                 if s.is_active() {
                     listeners.swap_remove(i);
                     let remote = s.remote_endpoint();
+                    let addr = remote.map(|e| e.addr);
+                    if let Some(why) = addr.and_then(|a| refuse(&limits, &peer_tx, &splices, a)) {
+                        println!("mesh refused {remote:?}: {why}");
+                        c.served_refused.fetch_add(1, Ordering::Relaxed);
+                        s.abort();
+                        dying.push(h);
+                        busy = true;
+                        continue;
+                    }
                     let local = TcpStream::connect_timeout(&forward, Duration::from_secs(3))
                         .and_then(|stream| local_ready(&stream).map(|()| stream));
                     match local {
                         Ok(stream) => {
                             println!("mesh accept {remote:?} -> {forward}");
                             c.served_total.fetch_add(1, Ordering::Relaxed);
-                            splices.push(Splice::new(h, stream, Kind::Served));
+                            let mut sp = Splice::new(h, stream, Kind::Served);
+                            sp.remote = addr;
+                            splices.push(sp);
                         }
                         Err(e) => {
                             eprintln!("forward {forward} failed: {e}");
@@ -648,6 +736,7 @@ pub fn run_with(
                 Kind::Served => (&c.served_rx, &c.served_tx),
                 Kind::Read => (&c.read_rx, &c.read_tx),
             };
+            let mut sent: u64 = 0;
 
             // mesh -> local
             if sp.pending.is_empty()
@@ -680,6 +769,7 @@ pub fn run_with(
             {
                 sp.head.drain(..n);
                 tx.fetch_add(n as u64, Ordering::Relaxed);
+                sent += n as u64;
                 busy |= n > 0;
             }
             if sp.head.is_empty() && !sp.local_eof && s.may_send() && s.send_capacity() > s.send_queue() {
@@ -692,6 +782,7 @@ pub fn run_with(
                     Ok(n) => {
                         let _ = s.send_slice(&buf[..n]);
                         tx.fetch_add(n as u64, Ordering::Relaxed);
+                        sent += n as u64;
                         busy = true;
                     }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -699,6 +790,17 @@ pub fn run_with(
                         eprintln!("local read failed: {e}");
                         sp.local_eof = true;
                         s.abort();
+                    }
+                }
+            }
+
+            if sp.kind == Kind::Served && sent > 0 {
+                session_tx += sent;
+                if let Some(a) = sp.remote {
+                    let total = peer_tx.entry(a).or_default();
+                    *total += sent;
+                    if limits.per_peer_bytes > 0 && *total >= limits.per_peer_bytes {
+                        sp.over = true;
                     }
                 }
             }
@@ -726,6 +828,24 @@ pub fn run_with(
                 sockets.remove(sp.handle);
             }
             !done
+        });
+
+        // Over the total: sharing goes off (the next poll cuts everything served).
+        if limits.total_bytes > 0 && session_tx >= limits.total_bytes && capped_gen != Some(generation) {
+            println!("mesh sharing off: {session_tx} bytes sent, cap {}", limits.total_bytes);
+            capped_gen = Some(generation);
+            ctl.cap_reached.store(true, Ordering::SeqCst);
+        }
+        // Over a visitor's cap: cut those splices now, with an RST.
+        splices.retain(|sp| {
+            if !sp.over {
+                return true;
+            }
+            c.served_refused.fetch_add(1, Ordering::Relaxed);
+            sockets.get_mut::<tcp::Socket>(sp.handle).abort();
+            let _ = socket2::SockRef::from(&sp.stream).set_linger(Some(Duration::ZERO));
+            dying.push(sp.handle);
+            false
         });
 
         let served = splices.iter().filter(|sp| sp.kind == Kind::Served).count();

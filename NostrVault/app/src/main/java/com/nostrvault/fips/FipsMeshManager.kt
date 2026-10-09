@@ -120,7 +120,23 @@ class FipsMeshManager @Inject constructor(
     private fun startOptions() = FipsStartOptions(
         peers = configStore.config.value.fipsPeers,
         lan = true,
+        maxServeBytes = configStore.config.value.fipsServeLimitBytes,
     )
+
+    /** What one sharing session may send before it stops. Applies from the next start. */
+    val serveLimitBytes: StateFlow<Long> = configStore.config
+        .map { it.fipsServeLimitBytes }
+        .stateIn(appScope, SharingStarted.Eagerly, 1L shl 30)
+
+    /** The library takes the limit at start, so a running node restarts to apply it. */
+    suspend fun setServeLimit(bytes: Long) = withContext(Dispatchers.IO) {
+        configStore.updateAsync { it.copy(fipsServeLimitBytes = bytes) }
+        if (_status.value.running) {
+            FipsBridge.stop()
+            start(persist = false)
+        }
+        refresh()
+    }
 
     /**
      * Replace the list of npubs allowed to reach this device.
@@ -160,7 +176,7 @@ class FipsMeshManager @Inject constructor(
      * Being findable on the mesh and being reachable on it are separate
      * decisions, so this is a separate switch and it is off by default.
      */
-    suspend fun setShareRelay(enabled: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setShareRelay(enabled: Boolean): Unit = withContext(Dispatchers.IO) {
         configStore.updateAsync { it.copy(fipsShareRelay = enabled) }
         if (!_status.value.running) return@withContext
         if (enabled) {
@@ -183,8 +199,19 @@ class FipsMeshManager @Inject constructor(
     }
 
     /** Re-read the bridge. Polled: nothing ever calls back into the JVM. */
-    suspend fun refresh() = withContext(Dispatchers.IO) {
-        _status.value = FipsBridge.status()
+    suspend fun refresh(): Unit = withContext(Dispatchers.IO) {
+        val status = FipsBridge.status()
+        _status.value = status
+        // The library already stopped sharing; turn the switch off to match, so
+        // the next launch does not share again on its own.
+        if (status.capReached && configStore.config.value.fipsShareRelay) {
+            val mb = status.maxServeBytes shr 20
+            val limit = if (mb >= 1024 && mb % 1024 == 0L) "${mb / 1024} GB" else "$mb MB"
+            Log.i(TAG, "sharing off: serve limit $limit reached")
+            setShareRelay(false)
+            _lastError.value = "Sharing turned off: the mesh downloaded $limit from this phone, " +
+                "your limit for one session. Turn it on again to share more."
+        }
     }
 
     private companion object {

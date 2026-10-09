@@ -62,6 +62,17 @@ class FipsStatusTest {
         assertEquals(FipsCounters(1, 3, 10, 20, 2, 4, 30, 40), status.counters)
     }
 
+    @Test fun `a reached serve cap decodes, so sharing can be switched off`() {
+        val status = FipsBridge.parseStatus(
+            """{"running":true,"exported":[],"cap_reached":true,"max_serve_bytes":1073741824,""" +
+                """"counters":{"served_refused":2}}"""
+        )
+
+        assertTrue(status.capReached)
+        assertEquals(1L shl 30, status.maxServeBytes)
+        assertEquals(2, status.counters.servedRefused)
+    }
+
     @Test fun `an unknown field does not throw away the whole snapshot`() {
         // The Rust side will add counters; a strict parser would turn that into
         // "stopped" on a node that is running.
@@ -81,11 +92,15 @@ class FipsStatusTest {
         // StartOptions in lib.rs is serde(default) with snake_case names; a
         // misspelt key is silently ignored there, so pin every one here.
         val encoded = FipsBridge.encodeOptions(
-            FipsStartOptions(peers = listOf("npub1a"), relays = listOf("wss://r"), udpPort = 2121, lan = true)
+            FipsStartOptions(
+                peers = listOf("npub1a"), relays = listOf("wss://r"), udpPort = 2121, lan = true,
+                maxServeBytes = 5L shl 30,
+            )
         )
         val obj = Json.parseToJsonElement(encoded).jsonObject
 
-        assertEquals(setOf("peers", "relays", "udp_port", "lan"), obj.keys)
+        assertEquals(setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes"), obj.keys)
+        assertEquals("5368709120", obj["max_serve_bytes"]!!.jsonPrimitive.content)
         assertEquals("npub1a", obj["peers"]!!.jsonArray[0].jsonPrimitive.content)
         assertEquals("2121", obj["udp_port"]!!.jsonPrimitive.content)
         assertEquals("true", obj["lan"]!!.jsonPrimitive.content)
