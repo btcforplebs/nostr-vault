@@ -19,7 +19,7 @@ class HomeVaultQueueTest {
     fun `a queue survives a restart, in order`() {
         val dir = tmp.newFolder()
         HomeVaultQueue(dir).apply {
-            assertTrue(addBlob(sha, "image/jpeg", now = 1) { it.writeText("bytes") })
+            assertTrue(addBlob(sha, "image/jpeg", 5, now = 1) { it.writeText("bytes") })
             assertTrue(addEvent("e1", """{"id":"e1"}""", now = 2))
         }
         val reopened = HomeVaultQueue(dir)
@@ -33,15 +33,15 @@ class HomeVaultQueueTest {
         val q = HomeVaultQueue(tmp.newFolder())
         q.addEvent("e1", "{}")
         q.addEvent("e1", "{}")
-        q.addBlob(sha, "image/png") { it.writeText("x") }
-        q.addBlob(sha, "image/png") { it.writeText("x") }
+        q.addBlob(sha, "image/png", 1) { it.writeText("x") }
+        q.addBlob(sha, "image/png", 1) { it.writeText("x") }
         assertEquals(2, q.size)
     }
 
     @Test
     fun `removing a blob deletes its bytes`() {
         val q = HomeVaultQueue(tmp.newFolder())
-        q.addBlob(sha, "image/png") { it.writeText("x") }
+        q.addBlob(sha, "image/png", 1) { it.writeText("x") }
         q.remove(sha)
         assertEquals(0, q.size)
         assertFalse(q.blobFile(sha).exists())
@@ -50,7 +50,7 @@ class HomeVaultQueueTest {
     @Test
     fun `a blob whose copy fails is not queued`() {
         val q = HomeVaultQueue(tmp.newFolder())
-        assertFalse(q.addBlob(sha, "image/png") { throw java.io.IOException("disk full") })
+        assertFalse(q.addBlob(sha, "image/png", 1) { throw java.io.IOException("disk full") })
         assertEquals(0, q.size)
         assertFalse(q.blobFile(sha).exists())
     }
@@ -58,7 +58,7 @@ class HomeVaultQueueTest {
     @Test
     fun `clear empties the queue and the blobs`() {
         val q = HomeVaultQueue(tmp.newFolder())
-        q.addBlob(sha, "image/png") { it.writeText("x") }
+        q.addBlob(sha, "image/png", 1) { it.writeText("x") }
         q.addEvent("e1", "{}")
         q.clear()
         assertEquals(0, q.size)
@@ -151,7 +151,9 @@ class HomeVaultQueueTest {
         val now = 100L * 24 * 60 * 60_000L
         val fresh = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_EVENT, queuedAt = now - 1000)
         assertFalse(HomeVaultRules.expired(fresh, now))
-        assertTrue(HomeVaultRules.expired(fresh.copy(queuedAt = now - HomeVaultRules.MAX_AGE_MS - 1), now))
+        assertTrue(HomeVaultRules.expired(fresh.copy(attempts = 1, queuedAt = now - HomeVaultRules.MAX_AGE_MS - 1), now))
+        // Never tried: the wall clock alone (jumped forward, set by hand) must not empty the queue.
+        assertFalse(HomeVaultRules.expired(fresh.copy(queuedAt = now - HomeVaultRules.MAX_AGE_MS - 1), now))
         assertTrue(HomeVaultRules.expired(fresh.copy(attempts = HomeVaultRules.MAX_ATTEMPTS), now))
     }
 
@@ -161,13 +163,13 @@ class HomeVaultQueueTest {
         assertTrue(byCount.addEvent("e1", "{}"))
         assertTrue(byCount.addEvent("e2", "{}"))
         assertFalse(byCount.addEvent("e3", "{}"))
-        assertFalse(byCount.addBlob(sha, "image/png") { it.writeText("x") })
+        assertFalse(byCount.addBlob(sha, "image/png", 1) { it.writeText("x") })
         assertEquals(2, byCount.size)
 
         val byBytes = HomeVaultQueue(tmp.newFolder(), maxBlobBytes = 10)
-        assertTrue(byBytes.addBlob(sha, "image/png") { it.writeText("12345") })
+        assertTrue(byBytes.addBlob(sha, "image/png", 5) { it.writeText("12345") })
         val other = "b".repeat(64)
-        assertFalse(byBytes.addBlob(other, "image/png") { it.writeText("123456") })
+        assertFalse(byBytes.addBlob(other, "image/png", 6) { it.writeText("123456") })
         assertFalse(byBytes.blobFile(other).exists())
         assertFalse(java.io.File(byBytes.blobFile(other).path + ".part").exists())
     }
@@ -184,7 +186,7 @@ class HomeVaultQueueTest {
     @Test
     fun `a corrupt list is set aside and its blobs are not orphaned`() {
         val dir = tmp.newFolder()
-        HomeVaultQueue(dir).addBlob(sha, "image/png") { it.writeText("x") }
+        HomeVaultQueue(dir).addBlob(sha, "image/png", 1) { it.writeText("x") }
         java.io.File(dir, "queue.json").writeText("{not json")
         val q = HomeVaultQueue(dir)
         assertEquals(0, q.size)
@@ -200,5 +202,13 @@ class HomeVaultQueueTest {
         HomeVaultQueue(dir)
         assertFalse(stray.exists())
     }
-}
 
+    @Test
+    fun `an oversized blob is refused before a byte is copied`() {
+        val q = HomeVaultQueue(tmp.newFolder(), maxBlobBytes = 10)
+        var copied = false
+        assertFalse(q.addBlob(sha, "video/mp4", 11) { copied = true; it.writeText("x") })
+        assertFalse(copied)
+        assertEquals(0, q.size)
+    }
+}

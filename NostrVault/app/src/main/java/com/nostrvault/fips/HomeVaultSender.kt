@@ -6,6 +6,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -97,7 +98,12 @@ class HomeVaultSender @Inject constructor(
     /** Host a blob from this phone's relay on the public servers; true once one has it. Wired by BlossomService. */
     @Volatile
     var hostPublicly: suspend (sha256: String, contentType: String) -> Boolean = { _, _ -> false }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // A failure that escapes a pass (a full disk while saving the queue) is
+    // logged, never allowed to kill the app: a queue on disk would re-run
+    // the same pass after every launch.
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Log.e(TAG, "home vault", e) },
+    )
     private val drainLock = Mutex()
     private var retryJob: Job? = null
 
@@ -167,15 +173,28 @@ class HomeVaultSender @Inject constructor(
      * give-up rules. Each try signs an upload auth, so a background pass
      * skips them unless the signer is a local key; Send now does them all.
      */
-    private suspend fun publicPass(userInitiated: Boolean) = publicLock.withLock {
+    private suspend fun publicPass(userInitiated: Boolean) {
+        try {
+            publicPassLocked(userInitiated)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "public copy pass failed", e)
+        }
+    }
+
+    private suspend fun publicPassLocked(userInitiated: Boolean) = publicLock.withLock {
         val now = System.currentTimeMillis()
+        val localSigner = signerIsLocal()
+        var prompts = 0
         for (item in publicCopies.items()) {
             if (HomeVaultRules.expired(item, now)) {
                 Log.w(TAG, "public copy of ${item.key.take(8)}: gave up after ${item.attempts} tries")
                 publicCopies.remove(item.key)
                 continue
             }
-            if (!userInitiated && (item.nextAt > now || !signerIsLocal())) continue
+            if (!userInitiated && (item.nextAt > now || !localSigner)) continue
+            if (!localSigner && prompts++ >= HomeVaultRules.PROMPTS_PER_TAP) continue
             val hosted = try {
                 hostPublicly(item.key, item.contentType ?: "application/octet-stream")
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -209,18 +228,27 @@ class HomeVaultSender @Inject constructor(
     /** Also send this signed event to the home vault, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
         if (activeVault == null || pubkey.isEmpty() || pubkey != ownerHex()) return
-        if (queue.addEvent(eventId, eventJson)) drainSoon() else full()
+        // Off the caller's thread: postEvent runs on the main thread.
+        scope.launch { if (queue.addEvent(eventId, eventJson)) drain() else full() }
     }
 
     /** Also send this blob to the home vault, copied from [source]. */
-    fun offerBlob(sha256: String, contentType: String, source: File) {
-        if (activeVault == null) return
-        if (queue.addBlob(sha256, safeType(contentType)) { source.copyTo(it, overwrite = true) }) drainSoon() else full()
-    }
+    fun offerBlob(sha256: String, contentType: String, source: File) =
+        offer(sha256, contentType, source.length()) { source.copyTo(it, overwrite = true) }
 
-    fun offerBlob(sha256: String, contentType: String, data: ByteArray) {
+    fun offerBlob(sha256: String, contentType: String, data: ByteArray) =
+        offer(sha256, contentType, data.size.toLong()) { it.writeBytes(data) }
+
+    /** Synchronous (the caller's source may be deleted next), and never throws into an upload. */
+    private fun offer(sha256: String, contentType: String, byteCount: Long, writeTo: (File) -> Unit) {
         if (activeVault == null) return
-        if (queue.addBlob(sha256, safeType(contentType)) { it.writeBytes(data) }) drainSoon() else full()
+        val queued = try {
+            queue.addBlob(sha256, safeType(contentType), byteCount, writeTo = writeTo)
+        } catch (e: Exception) {
+            Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
+            false
+        }
+        if (queued) drainSoon() else full()
     }
 
     /**
@@ -233,7 +261,10 @@ class HomeVaultSender @Inject constructor(
 
     private fun full() {
         Log.w(TAG, "home vault queue is full; not queued")
-        problem("The queue is full")
+        problem(
+            if (signerIsLocal()) "The queue is full; new media is not being sent"
+            else "The queue is full; new media is not being sent. Tap Send now to approve what waits",
+        )
     }
 
     fun drainSoon(userInitiated: Boolean = false) {
@@ -249,7 +280,19 @@ class HomeVaultSender @Inject constructor(
      * the pass. [userInitiated] (Send now) ignores backoff and may prompt
      * an external signer; a background pass never does.
      */
-    suspend fun drain(userInitiated: Boolean = false) = drainLock.withLock {
+    suspend fun drain(userInitiated: Boolean = false) {
+        try {
+            drainPass(userInitiated)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Queue bookkeeping (a full disk) failed outside any one item.
+            Log.e(TAG, "home vault pass failed", e)
+            problem("Could not update the queue")
+        }
+    }
+
+    private suspend fun drainPass(userInitiated: Boolean) = drainLock.withLock {
         publish()
         val npub = activeVault ?: return@withLock
         val now = System.currentTimeMillis()
@@ -278,11 +321,17 @@ class HomeVaultSender @Inject constructor(
             scheduleRetry()
             return@withLock publish()
         }
+        val localSigner = signerIsLocal()
+        var prompts = 0
         for (item in items) {
             if (!userInitiated && item.nextAt > now) continue
-            if (item.type == HomeVaultQueue.TYPE_BLOB && !userInitiated && !signerIsLocal()) {
-                problem("Your signer needs you: tap Send now")
-                continue
+            if (item.type == HomeVaultQueue.TYPE_BLOB && !localSigner) {
+                // Each blob is one signer prompt; a tap approves a batch, not the whole queue.
+                if (!userInitiated || prompts >= HomeVaultRules.PROMPTS_PER_TAP) {
+                    problem("Your signer needs you: tap Send now")
+                    continue
+                }
+                prompts++
             }
             val outcome = try {
                 when (item.type) {

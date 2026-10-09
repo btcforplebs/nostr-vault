@@ -64,12 +64,15 @@ class HomeVaultQueue(
     fun addBlob(
         sha256: String,
         contentType: String,
+        /** The blob's size, checked before copying so an oversized one is never written. */
+        byteCount: Long,
         now: Long = System.currentTimeMillis(),
         writeTo: (File) -> Unit,
     ): Boolean = synchronized(lock) {
         val current = load()
         if (current.any { it.key == sha256 }) return true
         if (current.size >= maxItems) return false
+        if (blobBytes() + byteCount > maxBlobBytes) return false
         blobDir.mkdirs()
         val file = blobFile(sha256)
         val temp = File(blobDir, "$sha256.part")
@@ -218,8 +221,16 @@ object HomeVaultRules {
         (60_000L shl (attempts - 1).coerceIn(0, 9)).coerceAtMost(6 * 60 * 60_000L)
 
     /** Dropped instead of tried again: too old, or retried too often. */
+    /**
+     * The age limit only applies once an item has been tried: it reads the
+     * wall clock, and a clock jumped forward (or a date set by hand) must
+     * not silently empty a queue that never got a chance to send.
+     */
     fun expired(item: HomeVaultQueue.Item, now: Long): Boolean =
-        now - item.queuedAt > MAX_AGE_MS || item.attempts >= MAX_ATTEMPTS
+        item.attempts >= MAX_ATTEMPTS || (item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS)
+
+    /** External-signer prompts one Send now may cause. */
+    const val PROMPTS_PER_TAP = 10
 
     const val MAX_AGE_MS = 14L * 24 * 60 * 60_000L
     const val MAX_ATTEMPTS = 40
