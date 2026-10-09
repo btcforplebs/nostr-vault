@@ -1146,7 +1146,9 @@ class FeedService @Inject constructor(
                                 val parsed = json.parseToJsonElement(msg).jsonArray
                                 if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
                                     val eventObj = parsed[2].jsonObject
-                                    if (eventObj["kind"]?.jsonPrimitive?.intOrNull != 3) return@collect
+                                    // Restore republishes this list as yours, so like
+                                    // fetchContactList only the owner's signed kind 3 counts.
+                                    if (!isOwnSignedContactList(eventObj, ownerHex, HavenBridge::verifyEvent)) return@collect
                                     val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
                                     if (collected.containsKey(id)) return@collect
                                     val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
@@ -4218,3 +4220,12 @@ internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNot
     val hit = index[id] ?: return null
     return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
 }
+
+/**
+ * A kind 3 that [ownerHex] wrote and signed. A relay can answer a REQ with
+ * anything, and Following Backup's Restore republishes the list as yours.
+ */
+internal fun isOwnSignedContactList(event: JsonObject, ownerHex: String, verify: (String) -> Boolean): Boolean =
+    (event["kind"] as? JsonPrimitive)?.intOrNull == 3 &&
+        (event["pubkey"] as? JsonPrimitive)?.contentOrNull == ownerHex &&
+        verify(event.toString())

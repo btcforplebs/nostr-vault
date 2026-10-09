@@ -1,11 +1,11 @@
 package com.nostrvault.ui.screens.settings
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -110,6 +111,14 @@ class FollowingBackupViewModel @Inject constructor(
     val currentFollowedPubkeys: List<String>
         get() = feedService.followedPubkeys.value.toList()
 
+    /** Live follows, so a Re-follow turns into a checkmark (iOS currentSet). */
+    val followedPubkeys: StateFlow<List<String>> = feedService.followedPubkeys
+
+    /** Names and avatars for the people a snapshot diff lists. */
+    fun fetchProfiles(pubkeys: List<String>) {
+        if (pubkeys.isNotEmpty()) nostrService.fetchMissingProfiles(pubkeys)
+    }
+
 
     fun scanRelays() {
         if (_isScanning.value) return
@@ -155,6 +164,16 @@ fun FollowingBackupScreen(
 ) {
     val snapshots by viewModel.snapshots.collectAsState()
     var expandedId by remember { mutableStateOf<String?>(null) }
+    /** The list a Restore button picked, waiting for the confirm (iOS showRestoreAlert). */
+    var pendingRestore by remember { mutableStateOf<PendingRestore?>(null) }
+    val followed by viewModel.followedPubkeys.collectAsState()
+    val followedSet = remember(followed) { followed.toSet() }
+    // Who changed since the open snapshot. Taken once per open, so someone
+    // re-followed stays on the list with a checkmark, as on iOS.
+    val expandedSnapshot = snapshots.firstOrNull { it.id == expandedId }
+    val removed = remember(expandedSnapshot) { expandedSnapshot?.let(viewModel::removedSince).orEmpty() }
+    val added = remember(expandedSnapshot) { expandedSnapshot?.let(viewModel::addedSince).orEmpty() }
+    LaunchedEffect(removed, added) { viewModel.fetchProfiles(removed + added) }
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
 
     Scaffold(
@@ -282,7 +301,9 @@ fun FollowingBackupScreen(
                                 fontSize = 13.sp,
                             )
                         }
-                        if (isActive) TextButton(onClick = { viewModel.restoreList(event.pTags, event.content) }) {
+                        if (isActive) TextButton(onClick = {
+                            pendingRestore = PendingRestore(event.pTags, event.content, event.followCount, "backup")
+                        }) {
                             Text("Restore")
                         }
                     }
@@ -310,7 +331,8 @@ fun FollowingBackupScreen(
                 }
             }
 
-            itemsIndexed(snapshots, key = { _, s -> s.id }) { _, snapshot ->
+            snapshots.forEach { snapshot ->
+                item(key = snapshot.id) {
                     val isExpanded = expandedId == snapshot.id
 
                     Surface(
@@ -357,90 +379,132 @@ fun FollowingBackupScreen(
                             }
 
                             AnimatedVisibility(visible = isExpanded && isActive) {
-                                val removed = remember(snapshot) { viewModel.removedSince(snapshot) }
-                                val added = remember(snapshot) { viewModel.addedSince(snapshot) }
-
                                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                                    if (removed.isNotEmpty()) {
-                                        Text(
-                                            text = "Removed since (${removed.size}):",
-                                            color = ErrorRed,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium,
-                                        )
-                                        removed.take(20).forEach { pk ->
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(start = 8.dp),
-                                            ) {
-                                                Text(
-                                                    text = "- ${pk.take(16)}...",
-                                                    color = ErrorRed.copy(alpha = 0.8f),
-                                                    fontSize = 12.sp,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                if (isActive) TextButton(
-                                                    onClick = { viewModel.refollow(pk) },
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                                ) { Text("Re-follow", fontSize = 12.sp) }
-                                            }
-                                        }
-                                        if (removed.size > 20) {
-                                            Text(
-                                                text = "  ... and ${removed.size - 20} more",
-                                                color = TertiaryText,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(start = 8.dp),
-                                            )
-                                        }
-                                        Spacer(Modifier.height(8.dp))
-                                    }
-
-                                    if (added.isNotEmpty()) {
-                                        Text(
-                                            text = "Added since (${added.size}):",
-                                            color = SuccessGreen,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium,
-                                        )
-                                        added.take(20).forEach { pk ->
-                                            Text(
-                                                text = "+ ${pk.take(16)}...",
-                                                color = SuccessGreen.copy(alpha = 0.8f),
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(start = 8.dp),
-                                            )
-                                        }
-                                        if (added.size > 20) {
-                                            Text(
-                                                text = "  ... and ${added.size - 20} more",
-                                                color = TertiaryText,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(start = 8.dp),
-                                            )
-                                        }
-                                    }
-
                                     if (removed.isEmpty() && added.isEmpty()) {
                                         Text(
                                             text = "No changes since this snapshot",
                                             color = TertiaryText,
                                             fontSize = 13.sp,
                                         )
+                                        Spacer(Modifier.height(12.dp))
                                     }
-
-                                    Spacer(Modifier.height(12.dp))
-                                    Button(
-                                        onClick = {
-                                            viewModel.restoreList(snapshot.pTags, snapshot.contactListContent)
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) { Text("Restore This List") }
+                                    // iOS only offers Restore when it would change something.
+                                    if (snapshot.followCount > 0 && (removed.isNotEmpty() || added.isNotEmpty())) {
+                                        Button(
+                                            onClick = {
+                                                pendingRestore = PendingRestore(
+                                                    snapshot.pTags, snapshot.contactListContent, snapshot.followCount, "snapshot",
+                                                )
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) { Text("Restore This List") }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                // Everyone who changed, as rows of their own so a long list stays lazy.
+                if (snapshot.id == expandedId && isActive) {
+                    if (removed.isNotEmpty()) {
+                        item(key = "${snapshot.id}-removed") {
+                            DiffHeader("No Longer Following (${removed.size})", "People in this snapshot that you no longer follow.")
+                        }
+                        items(removed, key = { "${snapshot.id}-r-$it" }) { pk ->
+                            BackupPersonRow(pk, profiles[pk]) {
+                                if (pk in followedSet) {
+                                    Icon(NostrVaultIcons.CheckCircle, contentDescription = "Following", tint = SuccessGreen, modifier = Modifier.size(22.dp))
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { viewModel.refollow(pk) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(30.dp),
+                                    ) { Text("Re-follow", fontSize = 12.sp) }
+                                }
+                            }
+                        }
+                    }
+                    if (added.isNotEmpty()) {
+                        item(key = "${snapshot.id}-added") {
+                            DiffHeader("Added Since (${added.size})", "People you follow now that were not in this snapshot.")
+                        }
+                        items(added, key = { "${snapshot.id}-a-$it" }) { pk ->
+                            BackupPersonRow(pk, profiles[pk]) {
+                                Text(
+                                    "New",
+                                    color = SuccessGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .background(SuccessGreen.copy(alpha = 0.12f), RoundedCornerShape(50))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             }
         }
+
+    pendingRestore?.let { restore ->
+        // Same title, message and buttons as iOS ContactListBackupDetailView.
+        AlertDialog(
+            onDismissRequest = { pendingRestore = null },
+            title = { Text("Restore Contact List?") },
+            text = { Text(restoreMessage(viewModel.currentFollowingCount, restore.followCount, restore.source)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRestore = null
+                    viewModel.restoreList(restore.pTags, restore.content)
+                }) { Text("Restore", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestore = null }) { Text("Cancel") }
+            },
+        )
     }
+}
+
+/** A list a Restore button picked; [source] is "backup" (relay) or "snapshot" (local). */
+private data class PendingRestore(
+    val pTags: List<List<String>>,
+    val content: String,
+    val followCount: Int,
+    val source: String,
+)
+
+internal fun restoreMessage(currentCount: Int, restoreCount: Int, source: String): String =
+    "This will replace your current $currentCount follows with $restoreCount follows from this $source " +
+        "and publish the updated list to your relays."
+
+@Composable
+private fun DiffHeader(title: String, caption: String) {
+    Column(modifier = Modifier.padding(top = 8.dp, start = 4.dp)) {
+        Text(title, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(caption, color = TertiaryText, fontSize = 12.sp)
+    }
+}
+
+/** Avatar, name and NIP-05 for one person in a snapshot diff (iOS profileRow). */
+@Composable
+private fun BackupPersonRow(pubkey: String, profile: FeedProfile?, trailing: @Composable () -> Unit) {
+    val name = profile?.bestName ?: (pubkey.take(8) + "..." + pubkey.takeLast(4))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SecondaryGroupedBg, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 34.dp, displayName = profile?.bestName)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            profile?.nip05?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        trailing()
+    }
+}

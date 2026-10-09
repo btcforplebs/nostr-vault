@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -212,13 +213,14 @@ private fun FullLogEntryRow(
 
         Spacer(Modifier.width(8.dp))
 
-        // Message
-        Text(
-            text = entry.message,
-            color = PrimaryText.copy(alpha = 0.9f),
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(1f),
-        )
+        // Message: long-press selects and copies, like iOS .textSelection(.enabled).
+        SelectionContainer(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entry.message,
+                color = PrimaryText.copy(alpha = 0.9f),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
     }
 }
