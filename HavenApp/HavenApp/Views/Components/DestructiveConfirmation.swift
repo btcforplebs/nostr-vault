@@ -155,7 +155,15 @@ enum MediaDeleteScope: Identifiable {
 
 private struct MediaDeleteConfirmation: ViewModifier {
     @Binding var scope: MediaDeleteScope?
+    /// The blob's hash. When some of your posts link it, Delete everywhere
+    /// also offers to delete them, so no post is left showing a dead image.
+    let hash: String?
     let action: (MediaDeleteScope) -> Void
+
+    private var postCount: Int {
+        guard scope == .everywhere, let hash else { return 0 }
+        return NostrService.shared.ownEvents(referencingBlob: hash).count
+    }
 
     private var isPresented: Binding<Bool> {
         Binding(
@@ -165,24 +173,43 @@ private struct MediaDeleteConfirmation: ViewModifier {
     }
 
     func body(content: Content) -> some View {
+        let posts = postCount
         content.alert(scope?.title ?? "", isPresented: isPresented, presenting: scope) { pending in
             Button("Cancel", role: .cancel) {}
                 .keyboardShortcut(.defaultAction)
-            Button(pending.confirmTitle, role: .destructive) { action(pending) }
+            if pending == .everywhere, posts > 0, let hash {
+                Button(posts == 1 ? "Delete file and post" : "Delete file and \(posts) posts", role: .destructive) {
+                    Task {
+                        await NostrService.shared.deleteOwnEvents(referencingBlob: hash)
+                        action(pending)
+                    }
+                }
+                Button("Delete file only", role: .destructive) { action(pending) }
+            } else {
+                Button(pending.confirmTitle, role: .destructive) { action(pending) }
+            }
         } message: { pending in
-            Text(pending.message)
+            if pending == .everywhere, posts > 0 {
+                Text(pending.message + (posts == 1
+                    ? " One of your posts uses it and will show a broken image unless you delete that post too."
+                    : " \(posts) of your posts use it and will show a broken image unless you delete them too."))
+            } else {
+                Text(pending.message)
+            }
         }
     }
 }
 
 extension View {
     /// Ask before deleting a media blob. Setting `scope` presents the alert;
-    /// confirming runs `action` with it, and either button clears it.
+    /// confirming runs `action` with it, and either button clears it. With
+    /// `hash`, Delete everywhere offers to delete your posts that use it.
     func confirmMediaDelete(
         _ scope: Binding<MediaDeleteScope?>,
+        hash: String?,
         action: @escaping (MediaDeleteScope) -> Void
     ) -> some View {
-        modifier(MediaDeleteConfirmation(scope: scope, action: action))
+        modifier(MediaDeleteConfirmation(scope: scope, hash: hash, action: action))
     }
 }
 

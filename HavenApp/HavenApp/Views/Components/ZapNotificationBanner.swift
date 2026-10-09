@@ -789,12 +789,12 @@ class ActionToastManager: ObservableObject {
 
     @Published var notifications: [Toast] = []
 
-    func show(icon: String, message: String, color: Color? = nil) {
+    func show(icon: String, message: String, color: Color? = nil, seconds: Double = 2.5) {
         let toast = Toast(icon: icon, message: message, color: color ?? Color.havenPurple)
         notifications.append(toast)
 
         Task {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             withAnimation(Motion.bannerOut) {
                 notifications.removeAll { $0.id == toast.id }
             }
@@ -833,7 +833,8 @@ struct ActionToastBanner: View {
                         .font(.appSystem(size: 12, weight: .bold))
                     Text(toast.message)
                         .font(.appSystem(size: 13, weight: .bold))
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 20)

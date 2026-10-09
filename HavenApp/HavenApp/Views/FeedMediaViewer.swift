@@ -350,7 +350,7 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
-        .confirmMediaDelete($pendingDelete) { scope in
+        .confirmMediaDelete($pendingDelete, hash: extractSHA256FromURL()) { scope in
             switch scope {
             case .mirrors: deleteFromMirrorsTapped()
             case .everywhere: deleteEverywhereTapped()
@@ -635,15 +635,23 @@ struct FeedMediaViewer: View {
                 return
             }
 
-            let success = await blossomService.deleteFromMirrors(sha256: sha256)
+            let report = await blossomService.deleteFromMirrorsReport(sha256: sha256)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: blossomService, force: true)
             await MainActor.run {
                 withAnimation(Motion.panel) {
-                    deleteStatus = success ? .success : .failed("Failed to delete from mirrors")
-                    isDeleting = false
-                    if success {
-                        isOnMirror = false
+                    if report.allDeleted {
+                        deleteStatus = .success
+                    } else if report.failed.isEmpty {
+                        deleteStatus = .failed("No mirrors to delete from")
+                    } else {
+                        deleteStatus = .failed("Still on " + ListFormatter.localizedString(byJoining: report.failedHosts))
                     }
+                    isDeleting = false
                 }
+                // A failure stays up until tapped, so it can't be missed.
+                guard report.allDeleted else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     withAnimation(Motion.bannerOut) {
                         self.deleteStatus = nil
@@ -669,23 +677,21 @@ struct FeedMediaViewer: View {
             }
 
             let localSuccess = await blossomService.deleteFromLocal(sha256: sha256)
-            let mirrorsSuccess = await blossomService.deleteFromMirrors(sha256: sha256)
+            let report = await blossomService.deleteFromMirrorsReport(sha256: sha256)
+            let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localSuccess, mirrors: report)
+            // The cloud badges cache each server's answer for the session;
+            // ask again so they stop showing the pre-delete count.
+            await BlossomBackupStore.shared.refresh(hash: sha256, service: blossomService, force: true)
 
             await MainActor.run {
                 withAnimation(Motion.panel) {
-                    if localSuccess && mirrorsSuccess {
-                        deleteStatus = .success
-                        isOnMirror = false
-                    } else if localSuccess {
-                        deleteStatus = .failed("Deleted locally, mirror deletion failed")
-                        isOnMirror = false
-                    } else if mirrorsSuccess {
-                        deleteStatus = .failed("Deleted from mirrors, local failed")
-                    } else {
-                        deleteStatus = .failed("Failed to delete")
-                    }
+                    deleteStatus = leftover.map { .failed($0) } ?? .success
+                    if localSuccess { isOnMirror = false }
                     isDeleting = false
                 }
+                // A partial delete keeps the viewer and its banner open until
+                // the banner is tapped; closing after 2 s hid the failure.
+                guard leftover == nil else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     withAnimation(Motion.bannerOut) {
                         self.deleteStatus = nil
@@ -842,17 +848,28 @@ struct FeedMediaViewer: View {
                 .foregroundColor(.white)
 
             case .failed(let message):
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.appSystem(size: 14, weight: .semibold))
-                    Text(message)
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .lineLimit(2)
+                Button {
+                    withAnimation(Motion.bannerOut) { deleteStatus = nil }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.appSystem(size: 14, weight: .semibold))
+                        Text(message)
+                            .font(.appSystem(size: 13, weight: .semibold))
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
+                        Image(systemName: "xmark")
+                            .font(.appSystem(size: 11, weight: .bold))
+                            .opacity(0.7)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.red.opacity(0.8)))
+                    .foregroundColor(.white)
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(Capsule().fill(Color.red.opacity(0.8)))
-                .foregroundColor(.white)
+                .buttonStyle(.plain)
+                .accessibilityHint("Dismiss")
+                .padding(.horizontal, 24)
             }
         }
         .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
@@ -891,17 +908,28 @@ struct FeedMediaViewer: View {
                 .foregroundColor(.white)
 
             case .failed(let message):
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.appSystem(size: 14, weight: .semibold))
-                    Text(message)
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .lineLimit(2)
+                Button {
+                    withAnimation(Motion.bannerOut) { deleteStatus = nil }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.appSystem(size: 14, weight: .semibold))
+                        Text(message)
+                            .font(.appSystem(size: 13, weight: .semibold))
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
+                        Image(systemName: "xmark")
+                            .font(.appSystem(size: 11, weight: .bold))
+                            .opacity(0.7)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.red.opacity(0.8)))
+                    .foregroundColor(.white)
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .background(Capsule().fill(Color.red.opacity(0.8)))
-                .foregroundColor(.white)
+                .buttonStyle(.plain)
+                .accessibilityHint("Dismiss")
+                .padding(.horizontal, 24)
             }
         }
         .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
