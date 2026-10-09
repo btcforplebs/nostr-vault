@@ -219,6 +219,9 @@ struct iPadSidebarView: View {
                     if tab == 3 && selectedTab == 3 {
                         NotificationCenter.default.post(name: .wotTabReselected, object: nil)
                     }
+                    if tab == 4 && selectedTab != 4 && relayManager.hasNewRelayActivity {
+                        VaultSection.shared.opensNewActivity = true
+                    }
                     selectedTab = tab
                 case nil:
                     break
@@ -402,7 +405,9 @@ struct iPadSidebarView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
-            if tab == 4 { relayManager.markRelayViewed() }
+        }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            VaultSection.shared.isOnScreen = tab == 4
         }
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
@@ -609,7 +614,9 @@ struct iPhoneTabView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
-            if tab == 4 { relayManager.markRelayViewed() }
+        }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            VaultSection.shared.isOnScreen = tab == 4
         }
     }
 }
@@ -966,9 +973,11 @@ struct BottomTabBar: View {
             } else if !relayPath.isEmpty {
                 relayPath = NavigationPath()
             } else {
-                relayManager.markRelayViewed()
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
+        } onSelect: {
+            // The dot goes to where the news is, not to the list you left.
+            if relayManager.hasNewRelayActivity { VaultSection.shared.opensNewActivity = true }
         }
     }
 
@@ -1041,12 +1050,13 @@ struct BottomTabBar: View {
 
     // MARK: - Tab Item
 
-    private func tabItem(index: Int, title: String, icon: String, hasRedBadge: Bool = false, onReselect: @escaping () -> Void) -> some View {
+    private func tabItem(index: Int, title: String, icon: String, hasRedBadge: Bool = false, onReselect: @escaping () -> Void, onSelect: @escaping () -> Void = {}) -> some View {
         let selected = selectedTab == index
         return Button {
             if selectedTab == index {
                 onReselect()
             } else {
+                onSelect()
                 selectedTab = index
             }
         } label: {

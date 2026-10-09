@@ -6,6 +6,7 @@ struct VaultView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @ObservedObject var vaultSection = VaultSection.shared
     @StateObject private var feedService = FeedService.shared
     /// The openURL around this tab, for #hashtag links (see nostrLinkAction).
     @Environment(\.openURL) var inheritedOpenURL
@@ -283,6 +284,17 @@ struct VaultView: View {
         }
         .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
         .task(id: firstPageKey) { loadFirstPageInScope() }
+        // The Vault tab's red dot: tapping in opens the list it's for, and a
+        // list stops counting as new once it's on screen.
+        .onChange(of: vaultSection.opensNewActivity, initial: true) { _, opens in
+            if opens { openNewActivity() }
+        }
+        .onChange(of: modeInSight, initial: true) { _, mode in
+            if let mode { relayManager.markRelayViewed(mode) }
+        }
+        .onChange(of: relayManager.newActivityModes) { _, _ in
+            if let modeInSight { relayManager.markRelayViewed(modeInSight) }
+        }
         // A list is marked seen when you leave it as well as when you arrive,
         // so what came in while you watched doesn't light its dot later.
         .onChange(of: watchedMode) { old, new in

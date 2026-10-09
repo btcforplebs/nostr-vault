@@ -11,6 +11,12 @@ final class VaultSection: ObservableObject {
     /// Modes with something new, published by the relay half so the pill
     /// shows the same dots on the Media half.
     @Published var newModes: Set<VaultMode> = []
+    /// Whether the Vault tab is the one on screen. The iOS shell sets it from
+    /// the selected tab; a mode only counts as seen while it's in sight.
+    @Published var isOnScreen = false
+    /// Set when you tap into the Vault tab: it then opens the list its red
+    /// dot is for, instead of whichever one you left it on.
+    @Published var opensNewActivity = false
 }
 
 private struct InVaultTabKey: EnvironmentKey { static let defaultValue = false }
@@ -78,6 +84,18 @@ enum VaultMode: String, CaseIterable {
         }
     }
 
+    /// Where an inbound event of `kind` from someone else shows up. Nil for
+    /// DMs, which the Profile tab's dot covers, and for kinds no list shows.
+    static func listing(inboxKind kind: Int) -> VaultMode? {
+        switch kind {
+        case 7: return .likes
+        case 9735: return .zaps
+        case VaultNoteScope.articleKind: return .articles
+        case VaultNoteScope.highlightKind: return .highlights
+        default: return NostrService.relayTabNoteKinds.contains(kind) ? .notes : nil
+        }
+    }
+
     func select() {
         switch self {
         case .notes: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.notes)
@@ -99,9 +117,11 @@ struct VaultModePill: View {
     let mode: VaultMode
     var zapsOnly = false
     @ObservedObject private var section = VaultSection.shared
+    @EnvironmentObject var relayManager: RelayProcessManager
 
-    /// Modes with something new since you last looked.
-    private var newModes: Set<VaultMode> { section.newModes }
+    /// Modes with something new since you last looked: the relay half's own
+    /// dots, and what others sent that lit the Vault tab's dot.
+    private var newModes: Set<VaultMode> { section.newModes.union(relayManager.newActivityModes) }
 
     private var modes: [VaultMode] {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
