@@ -52,6 +52,21 @@ class TrustPathService @Inject constructor(
      */
     val trustGraphUpdates: StateFlow<Set<String>> get() = feedService.wotPubkeys
 
+    /** True while your follow list is being fetched. */
+    val isLoadingFollows: StateFlow<Boolean> get() = feedService.isLoadingContacts
+
+    /**
+     * True once a follow-list load has finished, found or not. Until then an
+     * empty follow list means "not in yet", not "follows no one".
+     */
+    val followsAttempted: StateFlow<Boolean> get() = feedService.hasAttemptedContactLoad
+
+    /** The WOT tab's refresh, step 1: fetch your follow list again. */
+    suspend fun refreshFollows() = feedService.refreshContactList()
+
+    /** Step 2: read the relay's trust graph again; [trustGraphUpdates] carries the result. */
+    fun reloadTrustGraph() = feedService.loadWotPubkeys()
+
     suspend fun path(author: String): TrustPath = path(author, me, myFollows(), myTrustGraph())
 
     /**
