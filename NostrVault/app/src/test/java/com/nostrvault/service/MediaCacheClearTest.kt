@@ -3,6 +3,8 @@ package com.nostrvault.service
 import com.nostrvault.data.local.ConfigStore
 import io.mockk.every
 import io.mockk.mockk
+import com.nostrvault.relay.HavenConfig
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -21,7 +23,13 @@ class MediaCacheClearTest {
         root = Files.createTempDirectory("mediacache").toFile()
         val context = mockk<android.content.Context>(relaxed = true)
         every { context.cacheDir } returns root
-        service = MediaCacheService(context, mockk<ConfigStore>(relaxed = true))
+        // A real config: the service's startup eviction reads it on a background
+        // coroutine, and a relaxed mock's value fails there and leaks into
+        // whichever test runs next. TTL 0 ("Never") keeps that sweep away from
+        // the files these tests write.
+        val configStore = mockk<ConfigStore>(relaxed = true)
+        every { configStore.config } returns MutableStateFlow(HavenConfig(cacheTTLDays = 0))
+        service = MediaCacheService(context, configStore)
     }
 
     private fun write(file: File, bytes: Int) {
