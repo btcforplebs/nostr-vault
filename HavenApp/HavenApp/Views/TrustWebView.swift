@@ -273,6 +273,7 @@ struct TrustWebView: View {
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
                              focus: isWOTTab ? card : nil,
+                             focusBridges: isWOTTab ? cardPath?.bridges ?? [] : [],
                              onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {
@@ -1592,6 +1593,8 @@ struct TrustGlobeCanvas: View {
     let onTap: (String) -> Void
     /// The person the trust card is about: the globe turns to face them.
     var focus: String? = nil
+    /// The people you follow who follow `focus`: its threads run through them.
+    var focusBridges: [String] = []
     /// A tap that lands on no one, e.g. to close the peek card.
     var onEmptyTap: () -> Void = {}
 
@@ -1674,7 +1677,11 @@ struct TrustGlobeCanvas: View {
             scene.focus(layer)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .onChange(of: focus) { _, key in if let key { scene.turn(to: key) } }
+        .onChange(of: focus) { _, key in
+            if let key { scene.turn(to: key) }
+            scene.trace(to: key, through: focusBridges)
+        }
+        .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -1783,6 +1790,14 @@ final class GlobeScene: ObservableObject {
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
+    /// Who the core follows, for a direct thread to the traced person.
+    private var ring: Set<String> = []
+    /// The trust card's person on the WOT tab. The globe stays on you, so they
+    /// take the author's place: threads run from you through `traceBridges`.
+    private var traceTarget: String?
+    private var traceBridges: [String] = []
+    /// A traced person who had no star of their own (found by search).
+    private var tracedStar: String?
     /// How brightly your follows (x), the Close shell (y) and the rest of the
     /// shell (z) are drawn, easing toward the picked layer's
     /// (`TrustMap.layerWeights`).
@@ -1835,6 +1850,7 @@ final class GlobeScene: ObservableObject {
         for key in frame.bridges where want[key] == nil { want[key] = (.bridge, TrustMap.ringRadius) }
         want[author] = (.bridge, TrustMap.authorRadius)
         want[frame.center] = (.ring, 0)
+        if let tracedStar, want[tracedStar] == nil { want[tracedStar] = (.bridge, TrustMap.outerRadius) }
 
         for i in keys.indices where want[keys[i]] == nil {
             radiusTarget[i] = 2.4      // drifts out and fades
@@ -1859,6 +1875,7 @@ final class GlobeScene: ObservableObject {
         }
 
         direct = frame.center != author && frame.ring.contains(author)
+        ring = Set(frame.ring)
         bridges = frame.center == author ? [] : frame.bridges
         chains = frame.chains ?? []
         var shown: [String] = []
@@ -1879,10 +1896,7 @@ final class GlobeScene: ObservableObject {
             }
         }
         faces = shown
-        let pictured = Set(shown).union([frame.center, author])
-        for i in keys.indices { isFace[i] = pictured.contains(keys[i]) }
-        let symbols = (frame.center == author ? [author] : [frame.center, author]) + shown
-        if faceKeys != symbols { faceKeys = symbols }
+        seatFaces()
 
         born = now
         settling = true
@@ -1899,6 +1913,51 @@ final class GlobeScene: ObservableObject {
             }
         }
         hasLoaded = true
+        if reduceMotion { settle() }
+        wake()
+    }
+
+    /// Who is drawn with a picture. While a person is traced only they and
+    /// their bridges are; the rest keep their symbols for when the card closes.
+    private func seatFaces() {
+        var symbols = (center == author ? [author] : [center, author]) + faces
+        let traced = traceTarget.map { [$0] + traceBridges } ?? []
+        for key in traced where !symbols.contains(key) { symbols.append(key) }
+        let pictured = Set([center] + (traceTarget == nil ? [author] + faces : traced))
+        for i in keys.indices { isFace[i] = pictured.contains(keys[i]) }
+        if faceKeys != symbols { faceKeys = symbols }
+    }
+
+    /// Draws the threads from the core to `key` through `bridges`, or drops
+    /// them for nil. The core and the author stay where they are.
+    func trace(to key: String?, through bridges: [String]) {
+        let target = key == center ? nil : key
+        let through = target == nil ? [] : bridges.filter { $0 != center && $0 != target }
+        guard target != traceTarget || through != traceBridges else { return }
+        let now = Date.timeIntervalSinceReferenceDate
+        if let old = tracedStar, old != target, let i = index[old] {
+            alphaTarget[i] = 0
+            tracedStar = nil
+        }
+        if let target, index[target] == nil {
+            index[target] = keys.count
+            keys.append(target)
+            dirs.append(TrustMap.direction(of: target))
+            kinds.append(.bridge)
+            isFace.append(false)
+            radius.append(TrustMap.outerRadius)
+            radiusTarget.append(TrustMap.outerRadius)
+            alpha.append(0)
+            alphaTarget.append(1)
+            tracedStar = target
+        }
+        traceTarget = target
+        traceBridges = through
+        seatFaces()
+        threadsBorn = now
+        threadProgress = reduceMotion ? 1 : 0
+        born = now
+        settling = true
         if reduceMotion { settle() }
         wake()
     }
@@ -2058,6 +2117,12 @@ final class GlobeScene: ObservableObject {
         let k = min(1, min(size.width, size.height) / 620)
         let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
         guard let core = project(dirs[centerIndex] * radius[centerIndex]) else { return }
+        // The trust card's person, if any, takes the author's place.
+        let author = traceTarget ?? self.author
+        let bridges = traceTarget == nil ? self.bridges : traceBridges
+        let chains = traceTarget == nil ? self.chains : []
+        let faces = traceTarget == nil ? self.faces : traceBridges
+        let direct = traceTarget.map { ring.contains($0) } ?? self.direct
         let origin = project(.zero) ?? core
         let coreR = 22 * k * core.scale * min(zoom, 1.8)
 
@@ -2179,7 +2244,7 @@ final class GlobeScene: ObservableObject {
         var drawn: [(key: String, p: Projected, tint: Color, size: Double)] = []
         for key in faces {
             guard let p = position(key, project) else { continue }
-            if ringFaceSet.contains(key) {
+            if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14))
             } else {
                 drawn.append((key, p, accent, 15))
