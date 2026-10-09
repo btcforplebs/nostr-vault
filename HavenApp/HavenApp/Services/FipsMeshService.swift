@@ -140,7 +140,8 @@ final class FipsMeshService: ObservableObject {
             }
             kioskActive = true
             UIApplication.shared.isIdleTimerDisabled = true
-            NSLog("FipsMesh: kiosk live, serve limit %lld bytes", Self.serveLimit)
+            // print reaches relay.log (stdout), the file pulled off a device.
+            print("FipsMesh: kiosk live, serve limit \(Self.serveLimit) bytes")
             // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.
             // A banner or Control Center (willResignActive) does not.
             resignObserver = NotificationCenter.default.addObserver(
@@ -163,7 +164,7 @@ final class FipsMeshService: ObservableObject {
         // The engine already stopped sharing; end kiosk so the mesh entry is withdrawn too.
         if kioskActive, status?.cap_reached == true {
             let limit = ByteCountFormatter.string(fromByteCount: Int64(status?.max_serve_bytes ?? 0), countStyle: .file)
-            NSLog("FipsMesh: kiosk off, serve limit %@ reached", limit)
+            print("FipsMesh: kiosk off, serve limit \(limit) reached")
             stopKiosk()
             lastError = "Kiosk mode turned off: the mesh downloaded \(limit) from this phone, your limit for one session. Turn it on again to share more."
         }
