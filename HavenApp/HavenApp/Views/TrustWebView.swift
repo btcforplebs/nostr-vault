@@ -113,20 +113,20 @@ struct TrustWebView: View {
 
     var body: some View {
         GeometryReader { geo in
-            if geo.size.width >= Self.wideWidth {
+            if geo.size.width >= Self.wideWidth, !isWOTTab {
                 HStack(spacing: 0) {
                     globeArea.overlay(alignment: .topLeading) {
-                        Group {
-                            if isWOTTab { wotTopRows(height: geo.size.height) } else { topRows.padding(.top, 12) }
-                        }
-                        .frame(maxWidth: 460, alignment: .leading)
+                        topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
                     }
                     sidePanel.frame(width: 360)
                 }
             } else if isWOTTab {
                 // Full bleed, like the feed: space runs under the status bar
                 // and the floating tab bar, and the bar's glass sits over it.
-                globeArea.overlay(alignment: .top) { wotTopRows(height: geo.size.height) }
+                // On every width: the explainer side panel went with the footer.
+                globeArea.overlay(alignment: .top) {
+                    wotTopRows(height: geo.size.height).frame(maxWidth: 560)
+                }
             } else {
                 VStack(spacing: 0) {
                     topRows.padding(.top, 8)
