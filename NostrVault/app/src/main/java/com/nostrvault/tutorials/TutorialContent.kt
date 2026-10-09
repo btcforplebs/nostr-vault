@@ -12,7 +12,7 @@ val TutorialID.title: String
         TutorialID.FEEDS -> "Your Feeds"
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
-        TutorialID.POCKET_RELAY -> "Pocket Relay vs Public Relay"
+        TutorialID.POCKET_RELAY -> "Vault in Your Pocket"
         TutorialID.IMPORT_TOUR -> "How Your Vault Works"
     }
 
@@ -22,7 +22,7 @@ val TutorialID.summary: String
         TutorialID.FEEDS -> "What each feed shows and how to pick yours."
         TutorialID.VAULT -> "Everything you've posted, kept on this device."
         TutorialID.WALLET_CONNECT -> "Link a wallet so you can send zaps."
-        TutorialID.POCKET_RELAY -> "Who can reach the relay in your pocket."
+        TutorialID.POCKET_RELAY -> "A personal relay and media server, and how it differs from public relays."
         TutorialID.IMPORT_TOUR -> "Your own copy, your relay, and public relays."
     }
 
@@ -58,13 +58,15 @@ object TutorialContent {
     /** The guide is `FillYourFeedOverlay`. */
     const val FILL_YOUR_VAULT_HAS_GUIDE = true
 
-    /** The order the "Next: …" chain walks. The import tour isn't in it. */
+    /** The order the "Next: …" chain walks. The import tour isn't in it.
+     *  Your Vault hands over to Vault in Your Pocket: its last card points
+     *  at the Vault button that opens the dashboard. */
     val ORDER = listOf(
         TutorialID.FILL_YOUR_VAULT,
         TutorialID.FEEDS,
         TutorialID.VAULT,
-        TutorialID.WALLET_CONNECT,
         TutorialID.POCKET_RELAY,
+        TutorialID.WALLET_CONNECT,
     )
 
     const val FEED_PICKER = "feeds.picker"
@@ -91,8 +93,8 @@ object TutorialContent {
 
     /** The Vault tab's dropdown pill and its floating Vault button. Each
      *  half carries them. Two cards since the Vault tab (Tod's copy,
-     *  Nostr-Vault Marketing 2026-10-09); the button hands off to Pocket
-     *  Relay on the dashboard. */
+     *  Nostr-Vault Marketing 2026-10-09); the button hands off to Vault in
+     *  Your Pocket on the dashboard. */
     const val VAULT_MODES = "vault.modes"
     const val VAULT_RELAY = "vault.relay"
 
@@ -127,24 +129,25 @@ object TutorialContent {
         ),
     )
 
-    /** The relay dashboard's status card, the address in it, and the
-     *  activity card under it. */
+    /** The Vault Dashboard's status card, the address in it, and the
+     *  activity card under it. Tod's "vault in your pocket" copy: a personal
+     *  relay and Blossom server, not a "pocket relay". */
     const val RELAY_STATUS = "relay.status"
     const val RELAY_ADDRESS = "relay.address"
     const val RELAY_ACTIVITY = "relay.activity"
 
     val pocketRelay = listOf(
         TutorialStep(
-            RELAY_STATUS, "Your pocket relay",
-            "This is a real Nostr relay, running on this phone. It keeps a full copy of your notes and media.",
+            RELAY_STATUS, "Your vault, in your pocket",
+            "Your vault is a personal Nostr relay and a Blossom media server, running on this phone. It keeps a full copy of your notes and media.",
         ),
         TutorialStep(
             RELAY_ACTIVITY, "It sends your posts out",
-            "When you post, your relay keeps a copy and passes it on to the public relays you picked. Watch it happen here.",
+            "When you post, your vault keeps a copy and sends it on to the public relays you picked. Watch it happen here.",
         ),
         TutorialStep(
-            RELAY_ADDRESS, "Pocket vs public",
-            "This address only works on this phone, so nobody else can connect to it. For a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional.",
+            RELAY_ADDRESS, "Personal vs public",
+            "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional.",
         ),
     )
 
@@ -158,16 +161,16 @@ object TutorialContent {
             "Your notes sit on relays you don't own, and any of those relays can delete them. Importing saves your own copy on this device.",
         ),
         TutorialStep(
-            null, "A relay in your pocket",
-            "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it.",
+            null, "A vault in your pocket",
+            "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it.",
         ),
         TutorialStep(
-            null, "Public relays vs yours",
-            "Public relays are shared servers that everyone posts to. Yours belongs to you alone. You post to it, and it sends your post out to the public relays.",
+            null, "Personal vs public relays",
+            "Public relays are shared servers that everyone posts to. Your vault is personal and belongs to you alone. You post to it, and it sends your posts out to the public relays.",
         ),
         TutorialStep(
             null, "Want a public address?",
-            "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your pocket relay works fine on its own.",
+            "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your vault works fine on its own.",
         ),
         TutorialStep(
             null, "Your feed, your rules",

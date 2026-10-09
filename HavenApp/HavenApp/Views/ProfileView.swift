@@ -552,12 +552,12 @@ struct ProfileView: View {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
         }
-        // Your Vault's last card hands over to Wallet Connect, whose cards
-        // are on the wallet. On appear too: the Profile tab may only now be
+        // Vault in Your Pocket's last card hands over to Wallet Connect, whose
+        // cards are on the wallet. On appear too: the Profile tab may only now be
         // showing.
         .onChange(of: tutorialCenter.active) { _, active in
             if active == .walletConnect && isOwnerProfile { showingLightning = true }
-            // Its last card hands over to Pocket Relay, on the Relay tab.
+            // A replay of Vault in Your Pocket: its cards are on the Vault tab.
             if active == .pocketRelay { showingLightning = false }
         }
         .onAppear {

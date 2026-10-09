@@ -18,7 +18,7 @@ extension TutorialID {
         case .feeds: return "Your Feeds"
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
-        case .pocketRelay: return "Pocket Relay vs Public Relay"
+        case .pocketRelay: return "Vault in Your Pocket"
         case .importTour: return "How Your Vault Works"
         }
     }
@@ -29,7 +29,7 @@ extension TutorialID {
         case .feeds: return "What each feed shows and how to pick yours."
         case .vault: return "Everything you've posted, kept on this device."
         case .walletConnect: return "Link a wallet so you can send zaps."
-        case .pocketRelay: return "Who can reach the relay in your pocket."
+        case .pocketRelay: return "A personal relay and media server, and how it differs from public relays."
         case .importTour: return "Your own copy, your relay, and public relays."
         }
     }
@@ -71,7 +71,7 @@ extension TutorialID {
             return []
             #endif
         case .pocketRelay:
-            // Its anchors are on the iPhone/iPad relay dashboard sheet.
+            // Its anchors are on the iPhone/iPad Vault Dashboard sheet.
             #if os(iOS)
             return TutorialContent.pocketRelay
             #else
@@ -93,9 +93,10 @@ extension TutorialID {
     /// The tutorial a "Next" button on this one's last card starts: the
     /// first available page tutorial after it. Nil when none is built yet,
     /// so the last card just says Done. Fill your feed's last card hands
-    /// over to Feeds.
+    /// over to Feeds, and Your Vault's to Vault in Your Pocket: its last
+    /// card points at the Vault button that opens the dashboard.
     var next: TutorialID? {
-        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .walletConnect, .pocketRelay]
+        let order: [TutorialID] = [.fillYourVault, .feeds, .vault, .pocketRelay, .walletConnect]
         guard let index = order.firstIndex(of: self) else { return nil }
         return order[(index + 1)...].first { $0.isAvailable }
     }
@@ -139,7 +140,7 @@ enum TutorialContent {
     /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "2. Your vault".
     /// Two cards since the Vault tab (Tod's copy, Nostr-Vault Marketing
     /// 2026-10-09): the pill is a dropdown now, and the button hands off to
-    /// Pocket Relay on the dashboard.
+    /// Vault in Your Pocket on the dashboard.
     static let vault: [TutorialStep] = [
         TutorialStep(
             anchor: vaultModes,
@@ -177,30 +178,31 @@ enum TutorialContent {
         ),
     ]
 
-    /// The relay dashboard's status card, the address in it, and the
+    /// The Vault Dashboard's status card, the address in it, and the
     /// activity card under it.
     static let relayStatus = "relay.status"
     static let relayAddress = "relay.address"
     static let relayActivity = "relay.activity"
 
     /// Plan: PLANS/NOSTR_VAULT_REPLAYABLE_TUTORIALS.md, "4. Pocket relay vs
-    /// public relay", kept short like the others. Wording matches
-    /// website/index.html "Two ways to run it".
+    /// public relay", kept short like the others. Wording is Tod's "vault
+    /// in your pocket" copy (nostr-vault Tutorial thread 2026-10-09): a
+    /// personal relay and Blossom server, not a "pocket relay".
     static let pocketRelay: [TutorialStep] = [
         TutorialStep(
             anchor: relayStatus,
-            title: "Your pocket relay",
-            body: "This is a real Nostr relay, running on this phone. It keeps a full copy of your notes and media."
+            title: "Your vault, in your pocket",
+            body: "Your vault is a personal Nostr relay and a Blossom media server, running on this phone. It keeps a full copy of your notes and media."
         ),
         TutorialStep(
             anchor: relayActivity,
             title: "It sends your posts out",
-            body: "When you post, your relay keeps a copy and passes it on to the public relays you picked. Watch it happen here."
+            body: "When you post, your vault keeps a copy and sends it on to the public relays you picked. Watch it happen here."
         ),
         TutorialStep(
             anchor: relayAddress,
-            title: "Pocket vs public",
-            body: "This address only works on this phone, so nobody else can connect to it. For a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
+            title: "Personal vs public",
+            body: "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
         ),
     ]
 
@@ -208,7 +210,7 @@ enum TutorialContent {
     /// thread 2026-10-07). No anchors: in setup they're the screen's own
     /// cards, and a replay from Settings shows them low and centred. The
     /// last "Ready" card with real counts belongs to the setup screen only.
-    /// Wording matches website/index.html "Two ways to run it".
+    /// Vault wording as in `pocketRelay` above.
     static let importTour: [TutorialStep] = [
         TutorialStep(
             anchor: nil,
@@ -217,18 +219,18 @@ enum TutorialContent {
         ),
         TutorialStep(
             anchor: nil,
-            title: "A relay in your pocket",
-            body: "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it."
+            title: "A vault in your pocket",
+            body: "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it."
         ),
         TutorialStep(
             anchor: nil,
-            title: "Public relays vs yours",
-            body: "Public relays are shared servers that everyone posts to. Yours belongs to you alone. You post to it, and it sends your post out to the public relays."
+            title: "Personal vs public relays",
+            body: "Public relays are shared servers that everyone posts to. Your vault is personal and belongs to you alone. You post to it, and it sends your posts out to the public relays."
         ),
         TutorialStep(
             anchor: nil,
             title: "Want a public address?",
-            body: "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your pocket relay works fine on its own."
+            body: "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your vault works fine on its own."
         ),
         TutorialStep(
             anchor: nil,

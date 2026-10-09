@@ -125,7 +125,7 @@ fun VaultTabScreen(
         TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
     }
 
-    // Pocket Relay's cards are on the dashboard: open it for them, on
+    // Vault in Your Pocket's cards are on the dashboard: open it for them, on
     // whichever half you're on (Your Vault's "Next", or a replay).
     val activeTutorial by TutorialCenter.active.collectAsState()
     LaunchedEffect(activeTutorial) {
