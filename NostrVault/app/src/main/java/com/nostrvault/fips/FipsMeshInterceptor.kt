@@ -29,7 +29,9 @@ class FipsMeshInterceptor : Interceptor {
         val author = request.tag(MeshAuthor::class.java)?.pubkey ?: return chain.proceed(request)
         if (!FipsMediaRouter.mayDial(author)) return chain.proceed(request)
         val sha = FipsMediaRouter.sha256In(request.url.toString()) ?: return chain.proceed(request)
-        val npub = FipsMediaRouter.meshNpubFor(author) ?: return chain.proceed(request)
+        val npub = FipsMediaRouter.meshNpubInHost(request.url.host)
+            ?: FipsMediaRouter.meshNpubFor(author)
+            ?: return chain.proceed(request)
         val base = FipsMediaRouter.ingressBase(npub) ?: return chain.proceed(request)
 
         try {

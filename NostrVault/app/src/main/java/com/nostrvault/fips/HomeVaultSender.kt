@@ -159,16 +159,23 @@ class HomeVaultSender @Inject constructor(
             return false
         }
         return try {
-            run {
-                val base = FipsMediaRouter.ingressBase(npub) ?: return@run false
-                val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
-                if (item != null) {
-                    val outcome = sendBlob(base, item, ensureClient)
-                    record(item, outcome, npub, System.currentTimeMillis())
-                    return@run outcome == HomeVaultSend.SENT
+            // Right after launch or a network change the mesh link to the
+            // vault is still coming up and the first tries are reset: keep
+            // trying for a while rather than fall back on the first one.
+            val deadline = System.currentTimeMillis() + ENSURE_LINK_WAIT_MS
+            var confirmed: Boolean? = null
+            while (confirmed == null) {
+                confirmed = try {
+                    confirmOnce(npub, sha256)
+                } catch (e: IOException) {
+                    FipsMediaRouter.forget(npub)
+                    if (System.currentTimeMillis() + ENSURE_RETRY_MS > deadline) throw e
+                    Log.i(TAG, "home vault: ${sha256.take(8)} not confirmed yet (${e.message}); retrying")
+                    delay(ENSURE_RETRY_MS)
+                    null
                 }
-                ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
             }
+            confirmed
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -178,6 +185,17 @@ class HomeVaultSender @Inject constructor(
             drainLock.unlock()
             publish()
         }
+    }
+
+    private suspend fun confirmOnce(npub: String, sha256: String): Boolean {
+        val base = FipsMediaRouter.ingressBase(npub) ?: return false
+        val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
+        if (item != null) {
+            val outcome = sendBlob(base, item, ensureClient)
+            record(item, outcome, npub, System.currentTimeMillis())
+            return outcome == HomeVaultSend.SENT
+        }
+        return ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
     }
 
     /**
@@ -570,5 +588,7 @@ class HomeVaultSender @Inject constructor(
         const val EVENT_OK_TIMEOUT_MS = 15_000L
         const val ENSURE_CALL_TIMEOUT_S = 45L
         const val ENSURE_LOCK_WAIT_MS = 10_000L
+        const val ENSURE_LINK_WAIT_MS = 30_000L
+        const val ENSURE_RETRY_MS = 3_000L
     }
 }
