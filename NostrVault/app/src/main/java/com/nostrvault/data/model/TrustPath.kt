@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -69,6 +70,8 @@ data class TrustPath(
      * would mean downloading every follow list.
      */
     val hasMore: Boolean,
+    /** Every bridge known, sorted by key: the globe traces all of them. [bridges] is its first [SHOWN_BRIDGES]. */
+    val all: List<String> = emptyList(),
 ) {
     enum class Reach {
         /** The author is you. */
@@ -113,8 +116,16 @@ data class TrustPath(
             contactLists: List<ContactList>,
         ): TrustPath {
             if (author == me) return TrustPath(Reach.YOU, emptyList(), false)
+            return resolve(author, follows, trustGraph, allBridges(author, me, follows, contactLists))
+        }
 
-            val sorted = allBridges(author, me, follows, contactLists)
+        /** The path from bridges already known, e.g. from [TrustLinks], sorted by key. */
+        fun resolve(
+            author: String,
+            follows: Set<String>,
+            trustGraph: Set<String>,
+            sorted: List<String>,
+        ): TrustPath {
             val shown = sorted.take(SHOWN_BRIDGES)
             val reach = when {
                 author in follows -> Reach.FOLLOW
@@ -123,7 +134,7 @@ data class TrustPath(
                 author in trustGraph -> Reach.WEB
                 else -> Reach.OUTSIDE
             }
-            return TrustPath(reach, shown, sorted.size > SHOWN_BRIDGES)
+            return TrustPath(reach, shown, sorted.size > SHOWN_BRIDGES, sorted)
         }
 
         /**
@@ -158,6 +169,51 @@ data class TrustPath(
             follows.filter { it != author }.chunked(chunkSize).map {
                 FollowListFilter(authors = it, tagged = listOf(author), limit = LISTS_PER_FILTER)
             }
+    }
+}
+
+/**
+ * Who follows whom inside your web, from the relay's `wot_links.json`. The
+ * relay's WoT rebuild downloads every follow's list anyway and saves, for
+ * everyone in the web, which of your follows follow them, as indexes into its
+ * sorted follows: `{"follows":[…],"links":{"<pubkey>":[0,7,…],…}}`. Reading
+ * that answers a bridge with no relay round trip and no cap.
+ *
+ * Port of iOS TrustLinks in Models/TrustPath.swift.
+ */
+object TrustLinks {
+    const val FILE_NAME = "wot_links.json"
+
+    /**
+     * The people in [current] who follow [author], sorted by key. null when
+     * the file has no entry for them, so the caller can still ask relays.
+     * Someone unfollowed since the rebuild is left out.
+     *
+     * A large web is several MB and only one entry is ever needed, so this
+     * finds it in the text instead of parsing the whole file. Keys are hex
+     * pubkeys and the relay writes compact JSON, so `"<author>":[` is exact.
+     */
+    fun bridges(text: String, author: String, me: String, current: Set<String>): List<String>? {
+        if (author.isEmpty() || !author.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
+        val followsJson = slice(text, "\"follows\":[", 0) ?: return null
+        val follows = (runCatching { Json.parseToJsonElement(followsJson) }.getOrNull() as? JsonArray)
+            ?.map { (it as? JsonPrimitive)?.contentOrNull } ?: return null
+        val links = text.indexOf("\"links\":{")
+        if (links < 0) return null
+        val entry = slice(text, "\"$author\":[", links) ?: return null
+        val found = entry.removePrefix("[").removeSuffix("]").split(',')
+            .mapNotNull { it.trim().toIntOrNull()?.let(follows::getOrNull) }
+            .filter { it != author && it != me && it in current }
+        return found.toSortedSet().toList().ifEmpty { null }
+    }
+
+    /** From the `[` that ends [key] through the next `]`. */
+    private fun slice(text: String, key: String, from: Int): String? {
+        val start = text.indexOf(key, from)
+        if (start < 0) return null
+        val open = start + key.length - 1
+        val end = text.indexOf(']', open)
+        return if (end < 0) null else text.substring(open, end + 1)
     }
 }
 

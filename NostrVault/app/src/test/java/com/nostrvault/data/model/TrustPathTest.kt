@@ -91,4 +91,25 @@ class TrustPathTest {
             TrustPathText.label(TrustPath(TrustPath.Reach.BRIDGED, listOf("a", "b", "c"), false), name))
         assertEquals("Tracing how they reach you…", TrustPathText.label(null, name))
     }
+
+    @Test fun `all keeps every bridge past the card`() {
+        val path = TrustPath.resolve(author, setOf("a", "b", "c", "d", "e", "f"), setOf("x"),
+            listOf("a", "b", "c", "d", "e", "f"))
+        assertEquals(listOf("a", "b", "c", "d", "e"), path.bridges)
+        assertEquals(listOf("a", "b", "c", "d", "e", "f"), path.all)
+        assertTrue(path.hasMore)
+    }
+
+    /** The relay's links file: indexes into its follows, as of the rebuild. */
+    @Test fun `links name current follows sorted`() {
+        val json = """{"follows":["a","b","c","d"],"links":{"ab":[1],"author":[3,0,2,9],"bb":[0,3]},"timestamp":1}"""
+        // c was unfollowed since the rebuild; 9 is out of range.
+        assertEquals(listOf("a", "d"), TrustLinks.bridges(json, "bb", me, setOf("a", "b", "d")))
+        assertNull(TrustLinks.bridges(json, "ab", me, setOf("a")))
+        assertNull(TrustLinks.bridges(json, "cc", me, setOf("a", "b")))
+        // Not hex: never searched for, so it can't match part of a key.
+        assertNull(TrustLinks.bridges(json, author, me, setOf("a", "d")))
+        assertNull(TrustLinks.bridges(json, "b", me, setOf("a", "d")))
+        assertNull(TrustLinks.bridges("{}", "ab", me, setOf("b")))
+    }
 }

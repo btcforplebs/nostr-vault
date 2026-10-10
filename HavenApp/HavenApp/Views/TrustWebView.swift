@@ -273,7 +273,7 @@ struct TrustWebView: View {
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
                              focus: isWOTTab ? card : nil,
-                             focusBridges: isWOTTab ? cardPath?.bridges ?? [] : [],
+                             focusBridges: isWOTTab ? cardPath?.all ?? [] : [],
                              onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {

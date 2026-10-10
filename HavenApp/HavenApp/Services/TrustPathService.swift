@@ -24,6 +24,12 @@ final class TrustPathService {
     func path(for author: String, from center: String, follows: [String],
               trustGraph: Set<String> = []) async -> TrustPath {
         let me = ConfigService.shared.activeAccountHexPubkey
+        // Seen from you, the relay's WoT rebuild already knows who bridges to
+        // anyone in your web: no relays to ask.
+        if center == me, author != me,
+           let bridges = await linkedBridges(to: author, me: me, follows: Set(follows)) {
+            return TrustPath.resolve(author: author, follows: Set(follows), trustGraph: trustGraph, bridges: bridges)
+        }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         let key = "\(me)|\(center)|\(author)|\(Set(follows).hashValue)|\(trustGraph.isEmpty)"
@@ -64,6 +70,19 @@ final class TrustPathService {
             cache[key] = result
         }
         return result
+    }
+
+    // MARK: - Links
+
+    /// Bridges to `author` from the relay's `wot_links.json`, read off the
+    /// main thread. nil when there is no file (depth below 3, no rebuild yet)
+    /// or no entry for them.
+    private func linkedBridges(to author: String, me: String, follows: Set<String>) async -> [String]? {
+        let url = ConfigService.shared.relayDataDir.appendingPathComponent(TrustLinks.fileName)
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+            return TrustLinks.bridges(in: data, of: author, me: me, current: follows)
+        }.value
     }
 
     // MARK: - Map

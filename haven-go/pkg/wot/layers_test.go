@@ -119,6 +119,50 @@ func TestRebuildSavesLayersAndStreamsNewcomers(t *testing.T) {
 		t.Error("pubkeys disagree with the bar of 3")
 	}
 
+	// Who follows whom, for the lines the apps draw on tap: only people in
+	// the web, never the owner, as indexes into the sorted follows.
+	data, err = os.ReadFile(filepath.Join(filepath.Dir(path), linksFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved2 wotLinks
+	if err := json.Unmarshal(data, &saved2); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(saved2.Follows, follows) {
+		t.Errorf("links follows %v, want the owner's 4", saved2.Follows)
+	}
+	named := func(pk string) []string {
+		var who []string
+		for _, i := range saved2.Links[pk] {
+			who = append(who, follows[i])
+		}
+		return who
+	}
+	sorted := func(keys ...testKey) []string {
+		var pks []string
+		for _, k := range keys {
+			pks = append(pks, k.pk)
+		}
+		slices.Sort(pks)
+		return pks
+	}
+	if got := named(x.pk); !slices.Equal(got, sorted(a, b, c)) {
+		t.Errorf("x followed by %v, want a, b, c", got)
+	}
+	if got := named(z.pk); !slices.Equal(got, sorted(a, b, c, d)) {
+		t.Errorf("z followed by %v, want a, b, c, d", got)
+	}
+	if got := named(b.pk); !slices.Equal(got, sorted(a)) {
+		t.Errorf("b followed by %v, want a", got)
+	}
+	if _, ok := saved2.Links[y.pk]; ok {
+		t.Error("y is under the bar but has links")
+	}
+	if _, ok := saved2.Links[owner.pk]; ok || len(saved2.Links) != 3 {
+		t.Errorf("links %v, want x, z and b only", saved2.Links)
+	}
+
 	reloaded := NewSimpleInMemory(nil, nil, nil, 3, 3, 5, path, 60)
 	if ok, _ := reloaded.LoadFromCache(); !ok {
 		t.Fatal("saved graph does not load")

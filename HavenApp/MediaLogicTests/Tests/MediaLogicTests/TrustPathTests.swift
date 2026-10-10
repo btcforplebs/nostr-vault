@@ -30,6 +30,29 @@ final class TrustPathTests: XCTestCase {
         XCTAssertTrue(path.hasMore)
     }
 
+    func testAllKeepsEveryBridgePastTheCard() {
+        let follows: Set<String> = ["f", "e", "d", "c", "b", "a"]
+        let path = TrustPath.resolve(author: author, follows: follows, trustGraph: ["x"],
+                                     bridges: ["a", "b", "c", "d", "e", "f"])
+        XCTAssertEqual(path.bridges, ["a", "b", "c", "d", "e"])
+        XCTAssertEqual(path.all, ["a", "b", "c", "d", "e", "f"])
+        XCTAssertTrue(path.hasMore)
+    }
+
+    /// The relay's links file: indexes into its follows, as of the rebuild.
+    func testLinksNameCurrentFollowsSorted() {
+        let json = #"{"follows":["a","b","c","d"],"links":{"ab":[1],"author":[3,0,2,9],"bb":[0,3]},"timestamp":1}"#
+        let data = Data(json.utf8)
+        // c was unfollowed since the rebuild; 9 is out of range.
+        XCTAssertEqual(TrustLinks.bridges(in: data, of: "bb", me: me, current: ["a", "b", "d"]), ["a", "d"])
+        XCTAssertEqual(TrustLinks.bridges(in: data, of: "ab", me: me, current: ["a"]), nil)
+        XCTAssertEqual(TrustLinks.bridges(in: data, of: "cc", me: me, current: ["a", "b"]), nil)
+        // Not hex: never searched for, so it can't match part of a key.
+        XCTAssertEqual(TrustLinks.bridges(in: data, of: author, me: me, current: ["a", "d"]), nil)
+        XCTAssertEqual(TrustLinks.bridges(in: data, of: "b", me: me, current: ["a", "d"]), nil)
+        XCTAssertNil(TrustLinks.bridges(in: Data("{}".utf8), of: "ab", me: me, current: ["b"]))
+    }
+
     func testIgnoresStrangersListsWithoutAuthorAndWrongKind() {
         var wrongKind = list("b", tags: [author]); wrongKind["kind"] = 1
         let lists = [list("stranger", tags: [author]), list("a", tags: ["other"]), wrongKind]

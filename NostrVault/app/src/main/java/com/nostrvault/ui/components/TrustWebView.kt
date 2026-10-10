@@ -925,7 +925,7 @@ private fun TrustWebContent(
                 onTap = ::tapped,
                 // A tap on open space also puts the keyboard away.
                 focus = if (isWOTTab) card else null,
-                focusBridges = if (isWOTTab) cardPath?.bridges.orEmpty() else emptyList(),
+                focusBridges = if (isWOTTab) cardPath?.all.orEmpty() else emptyList(),
                 onEmptyTap = { peek = null; closeCard(); if (searchFocused) focusManager.clearFocus() },
             )
             // The WoT tutorial's first card points at the middle of the
