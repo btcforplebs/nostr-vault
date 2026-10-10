@@ -1155,7 +1155,18 @@ struct ProfileView: View {
     }
 
     private var trustWebButton: some View {
-        actionIcon("point.3.connected.trianglepath.dotted") { showingTrustWeb = true }
+        Button { showingTrustWeb = true } label: {
+            // The WoT tab's globe, so the button and the tab read as one place.
+            Image("WoTTab")
+                .resizable()
+                .frame(width: 15, height: 15)
+                .foregroundColor(.havenPurple)
+                .frame(width: Self.actionHeight + 4, height: Self.actionHeight)
+                .background(Color.havenPurple.opacity(0.12))
+                .cornerRadius(6)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
             .accessibilityLabel("Web of Trust")
             .accessibilityHint(isOwnProfile ? "Shows your web of trust" : "Shows how you're connected to them")
     }
