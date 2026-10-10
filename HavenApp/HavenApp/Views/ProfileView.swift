@@ -803,6 +803,13 @@ struct ProfileView: View {
         #else
         .overlay(fullScreenOverlay)
         #endif
+        // "Delete file and post" from a Media tile takes the post down; drop
+        // it here too, or its tile stays up showing a missing file.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOwnEventsDeleted)) { note in
+            guard isOwnProfile, let ids = note.object as? Set<String> else { return }
+            profileNotes.removeAll { ids.contains($0.id) }
+            rebucket()
+        }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
                 if let lud16 = lightningAddress {
@@ -1641,7 +1648,14 @@ struct ProfileView: View {
         return VStack(spacing: 0) {
             LazyVGrid(columns: columns, spacing: gridSpacing) {
                 ForEach(items) { mediaItem in
-                    MediaGridItem(item: mediaItem) {
+                    // Your own files get the Vault grid's Delete menu; only a
+                    // Blossom file (named by its hash) can be deleted.
+                    let hash = isOwnProfile ? MediaCacheService.blossomHash(in: mediaItem.url) : nil
+                    MediaGridItem(
+                        item: mediaItem,
+                        onDeleteFromMirrors: hash.map { hash in { _ in deleteFromMirrors(hash: hash) } },
+                        onDeleteEverywhere: hash.map { hash in { _ in deleteEverywhere(hash: hash) } }
+                    ) {
                         withAnimation(Motion.fade) {
                             selectedMedia = mediaItem
                         }
@@ -1666,6 +1680,20 @@ struct ProfileView: View {
                         .padding(.vertical, 16)
                 }
             }
+        }
+    }
+
+    private func deleteFromMirrors(hash: String) {
+        Task {
+            await MediaBackupActions.deleteFromMirrors(hash: hash, configService: configService, nostrService: nostrService)
+        }
+    }
+
+    /// The tile stays: it belongs to a post, and the post is still up unless
+    /// "Delete file and post" was chosen (see `.havenOwnEventsDeleted`).
+    private func deleteEverywhere(hash: String) {
+        Task {
+            await MediaBackupActions.deleteEverywhere(hash: hash, configService: configService, nostrService: nostrService)
         }
     }
 

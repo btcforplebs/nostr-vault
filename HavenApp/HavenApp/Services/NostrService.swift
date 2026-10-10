@@ -2031,6 +2031,7 @@ class NostrService: ObservableObject {
         events.removeAll { ids.contains($0.id) }
         noteMedia.removeAll { $0.pubkey == activeHexPubkey && $0.url.absoluteString.lowercased().contains(hash) }
         eventUpdateSubject.send()
+        NotificationCenter.default.post(name: .havenOwnEventsDeleted, object: ids)
         return targets.count
     }
 

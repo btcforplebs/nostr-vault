@@ -168,6 +168,45 @@ enum MediaBackupActions {
         }
     }
 
+    /// Deletes a file from your Blossom servers, re-checks the badges and
+    /// says which servers still have it.
+    static func deleteFromMirrors(hash: String, configService: ConfigService, nostrService: NostrService) async {
+        let service = BlossomService(configService: configService, nostrService: nostrService)
+        let report = await service.deleteFromMirrorsReport(sha256: hash)
+        // The cloud badges cache each server's answer for the session;
+        // ask again so they stop showing the pre-delete count.
+        await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
+        if report.allDeleted {
+            ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+        } else if report.failed.isEmpty {
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", color: .red.opacity(0.85))
+        } else {
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                           message: "Still on " + ListFormatter.localizedString(byJoining: report.failedHosts),
+                                           color: .red.opacity(0.85), seconds: 6)
+        }
+    }
+
+    /// Deletes a file from this phone and every Blossom server, re-checks
+    /// the badges and says what is left.
+    /// - Returns: whether the copy on this phone is gone.
+    @discardableResult
+    static func deleteEverywhere(hash: String, configService: ConfigService, nostrService: NostrService) async -> Bool {
+        let service = BlossomService(configService: configService, nostrService: nostrService)
+        async let local = service.deleteFromLocal(sha256: hash)
+        async let mirrors = service.deleteFromMirrorsReport(sha256: hash)
+        let (localOk, report) = await (local, mirrors)
+        let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localOk, mirrors: report)
+        await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
+        if let leftover {
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: leftover,
+                                           color: .orange.opacity(0.85), seconds: 6)
+        } else {
+            ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+        }
+        return localOk
+    }
+
     static func announceMirror(_ ok: Bool) {
         if ok {
             ActionToastManager.shared.show(icon: "icloud.and.arrow.up.fill", message: String(localized: "media.push.succeeded"), color: Color.havenVerified)
