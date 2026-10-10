@@ -3293,7 +3293,9 @@ private final class BannerImageCache: @unchecked Sendable {
     /// nil when the avatar isn't on disk; `.some(nil)` when it has no real color.
     func averageColor(ofCachedImageAt url: URL) async -> Color?? {
         if let box = tints.object(forKey: url as NSURL) { return box.color }
-        guard let data = MediaCacheService.shared.loadFromCache(url: url),
+        // Avatars keep only their small copy on disk; an older install may
+        // still hold the original.
+        guard let data = AvatarImageCache.shared.smallCopyData(of: url) ?? MediaCacheService.shared.loadFromCache(url: url),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
