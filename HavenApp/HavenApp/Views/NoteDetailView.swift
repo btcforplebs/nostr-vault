@@ -280,6 +280,10 @@ struct NoteDetailView: View {
                 .scrollTargetLayout()
                 .padding(.top, 16)
                 .padding(.bottom, 90)
+                // iPad: a note's text runs to a readable measure down the
+                // middle of the pane rather than the full 13in. The scroll
+                // view and its background stay full width.
+                .readableWidthCap()
                 .opacity(isSettled ? 1 : 0)
             }
             .scrollPosition(id: $pinnedScrollId, anchor: Self.landingAnchor)

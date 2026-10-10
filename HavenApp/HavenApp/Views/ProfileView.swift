@@ -822,6 +822,7 @@ struct ProfileView: View {
             }
             #if os(iOS)
             .presentationDetents([.height(380), .medium])
+            .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif
@@ -1654,8 +1655,12 @@ struct ProfileView: View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
         let gridSpacing: CGFloat = 8
         #else
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+        // Three across on a phone; a wider pane (iPad, either orientation)
+        // gets more tiles rather than three stretched ones. 16 is the grid's
+        // own horizontal padding, below.
         let gridSpacing: CGFloat = 6
+        let columns = AdaptiveLayout.columns(width: viewportWidth - 16, ideal: 180,
+                                             spacing: gridSpacing, minimum: 3, maximum: 6)
         #endif
 
         let items = displayMedia

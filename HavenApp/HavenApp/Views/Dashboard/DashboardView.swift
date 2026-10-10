@@ -202,6 +202,10 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
+                // iPad: two cards and a log console stretched across 13in read
+                // as a blown-up phone. The column holds its measure and sits in
+                // the middle of the pane instead.
+                .readableWidthCap(820)
                 .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
             }
             .refreshable {

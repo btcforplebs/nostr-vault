@@ -2155,7 +2155,12 @@ struct BlossomMediaPickerSheet: View {
     #if os(macOS)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
     #else
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+    /// Width of the grid, which on iPad is the form sheet's width rather than
+    /// the window's. Zero until measured, which reads as the phone count.
+    @State private var gridWidth: CGFloat = 0
+    private var columns: [GridItem] {
+        AdaptiveLayout.columns(width: gridWidth, ideal: 150, spacing: 6, minimum: 3, maximum: 6)
+    }
     #endif
 
     /// Every item here is on the relay by construction, so "On relay first"
@@ -2233,6 +2238,9 @@ struct BlossomMediaPickerSheet: View {
                                 }
                             }
                         }
+                        #if os(iOS)
+                        .measureWidth { gridWidth = $0 }
+                        #endif
                         .padding(.horizontal, 8)
                         .padding(.bottom, 8)
                     }
