@@ -398,4 +398,33 @@ final class TrustMapTests: XCTestCase {
         let sideways = CGSize(width: 852, height: 393)
         XCTAssertEqual(GlobeCamera.unit(for: sideways, phone: true), 393 * 0.40 * 4.2 * 0.92, accuracy: 1e-9)
     }
+
+    // MARK: Filters
+
+    func testNoFilterOnLightsEveryone() {
+        XCTAssertNil(TrustMap.lit(by: [], matches: [.talk: ["a"]]))
+    }
+
+    func testTwoFiltersNarrowToWhoMatchesBoth() {
+        let matches: [TrustMap.Filter: Set<String>] = [.talk: ["a", "b", "c"], .followsBack: ["b", "c", "d"], .new: ["c"]]
+        XCTAssertEqual(TrustMap.lit(by: [.talk], matches: matches), ["a", "b", "c"])
+        XCTAssertEqual(TrustMap.lit(by: [.talk, .followsBack], matches: matches), ["b", "c"])
+        XCTAssertEqual(TrustMap.lit(by: [.talk, .followsBack, .new], matches: matches), ["c"])
+        XCTAssertEqual(TrustMap.lit(by: [.new], matches: [:]), [])
+    }
+
+    func testNewcomersAreWhoJoinedSinceYouLooked() {
+        XCTAssertEqual(TrustMap.newcomers(web: ["a", "b", "c"], seen: ["a"]), ["b", "c"])
+        XCTAssertEqual(TrustMap.newcomers(web: ["a"], seen: nil), [])
+    }
+
+    func testFilterCountsReadAsSentences() {
+        XCTAssertEqual(TrustMap.Filter.talk.count(214), "214 talk with you")
+        XCTAssertEqual(TrustMap.Filter.followsBack.count(1), "1 follows you back")
+    }
+
+    func testNoTwoIconsInTheBarOrTheLayerMenuMatch() {
+        let icons = TrustMap.Filter.allCases.map(\.symbolName) + TrustMap.Layer.allCases.map(\.symbolName)
+        XCTAssertEqual(Set(icons).count, icons.count)
+    }
 }
