@@ -107,7 +107,7 @@ object TutorialContent {
     val wot = listOf(
         TutorialStep(
             WOT_GLOBE, "Your web of trust",
-            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then follow, message or open their profile from the card.",
+            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then tap Their web to turn the globe to the people they follow.",
         ),
         TutorialStep(
             WOT_SEARCH, "Find someone",
@@ -129,7 +129,7 @@ object TutorialContent {
     val vault = listOf(
         TutorialStep(
             VAULT_MODES, "Your vault",
-            "Everything you post, like, zap and save, kept right here on your phone. Tap to pick what you see: notes, articles, media and more.",
+            "Everything you post, like, zap and save, kept right here on your phone. Tap here to choose what you see.",
         ),
         TutorialStep(
             VAULT_RELAY, "Your relay",
