@@ -30,7 +30,8 @@ struct TrustWebView: View {
         /// means "unknown", not "follows no one".
         let listFound: Bool
         let path: TrustPath
-        /// Every bridge found so far, sorted; starts as the card's 5.
+        /// Every bridge found so far, sorted: everyone when the saved web
+        /// knew them, else the card's 5 until "Show everyone".
         var bridges: [String]
         /// Signers whose lists already came back, so a batch skips them.
         var seen: Set<String>
@@ -44,11 +45,11 @@ struct TrustWebView: View {
             self.ring = ring
             self.listFound = listFound
             self.path = path
-            bridges = path.bridges
-            seen = Set(path.bridges)
+            bridges = path.lit
+            seen = Set(bridges)
             // The card asks for one more list than it shows: no extra means
             // it already has everyone.
-            exhausted = !path.hasMore
+            exhausted = path.complete || !path.hasMore
         }
     }
 
@@ -184,7 +185,8 @@ struct TrustWebView: View {
             let follows = FeedService.shared.followedPubkeys
             myFollows = Set(follows)
             frames[me] = Frame(center: me, ring: follows, path: path)
-            nostrService.fetchMissingProfiles(for: [me, author] + path.bridges)
+            nostrService.fetchMissingProfiles(
+                for: [me, author] + TrustMap.spread(frames[me]?.bridges ?? [], count: TrustGlobeCanvas.maxFaces))
             prepareFaces(me)
             recomputeHaze()
             Task { await loadEngagement() }
