@@ -58,6 +58,10 @@ struct CondensedNoteLine: View {
     var onTap: (() -> Void)? = nil
 
     @EnvironmentObject private var configService: ConfigService
+    /// The profile picture's quick menu, as on a full post.
+    @State private var showingUserMenu = false
+    @State private var menuExpanded = false
+    @State private var showingTrustWeb = false
 
     private var isOLED: Bool { configService.config.useOLED }
     private var isRoot: Bool { depth == 0 }
@@ -132,10 +136,25 @@ struct CondensedNoteLine: View {
             }
 
             HStack(alignment: .top, spacing: 8) {
-                AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
-                    .contentShape(Circle())
-                    .onTapGesture { onProfile?(authorPubkey) }
-                    .accessibilityLabel(Text("Profile of \(displayName)"))
+                VStack(spacing: 6) {
+                    AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
+                        .contentShape(Circle())
+                        .onTapGesture { toggleUserMenu() }
+                        .accessibilityLabel(Text("Profile of \(displayName)"))
+                    if showingUserMenu {
+                        AuthorQuickMenu(
+                            pubkey: authorPubkey,
+                            displayName: displayName,
+                            isFollowed: FeedService.shared.followedPubkeys.contains(authorPubkey),
+                            expanded: menuExpanded,
+                            onWebOfTrust: { showingTrustWeb = true },
+                            dismiss: dismissUserMenu
+                        )
+                    }
+                }
+                // The menu is wider than a condensed photo. Pinning the column
+                // to the photo keeps the text from shifting when it opens.
+                .frame(width: avatarSize)
 
                 VStack(alignment: .leading, spacing: 2) {
                     headerRow
@@ -166,6 +185,33 @@ struct CondensedNoteLine: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityAddTraits(onTap == nil ? [] : .isButton)
+        .onDisappear { showingUserMenu = false; menuExpanded = false }
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: authorPubkey)
+    }
+
+    // MARK: - Quick menu
+
+    /// The photo opens the quick menu, as on a full post. Your own photo, and
+    /// any photo while Fill your vault is counting, opens the profile instead.
+    private func toggleUserMenu() {
+        if showingUserMenu {
+            dismissUserMenu()
+        } else if FillYourVaultCoordinator.shared.meterShowing
+                    || authorPubkey == configService.activeAccountHexPubkey {
+            onProfile?(authorPubkey)
+        } else {
+            withAnimation(Motion.panel) {
+                showingUserMenu = true
+                menuExpanded = true
+            }
+        }
+    }
+
+    private func dismissUserMenu() {
+        withAnimation(Motion.panel) {
+            menuExpanded = false
+            showingUserMenu = false
+        }
     }
 
     // MARK: - Pieces
@@ -181,6 +227,9 @@ struct CondensedNoteLine: View {
                 .font(.appSystem(size: nameSize, weight: .semibold))
                 .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.92 : 0.95)))
                 .lineLimit(1)
+                // The name opens the profile, as on a full post; the photo
+                // opens the quick menu.
+                .onTapGesture { onProfile?(authorPubkey) }
 
             if let nip05 = profile?.nip05, !nip05.isEmpty {
                 Image(systemName: "checkmark.seal.fill")

@@ -3360,43 +3360,6 @@ struct FeedView: View {
     }
 }
 
-private struct LiquidGlassVerticalModifier: ViewModifier {
-    private let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-
-    func body(content: Content) -> some View {
-        if #available(iOS 26, macOS 26, *) {
-            content.glassEffect(.regular, in: .rect(cornerRadius: 14))
-        } else {
-            content
-                .background {
-                    ZStack {
-                        shape.fill(.ultraThinMaterial)
-                        shape.fill(Color.havenPurple.opacity(0.06))
-                        shape
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.12), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .center
-                                )
-                            )
-                    }
-                }
-                .overlay(
-                    shape
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.25), Color.white.opacity(0.08)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.5
-                        )
-                )
-        }
-    }
-}
-
 // MARK: - FeedNoteRow
 
 struct FeedNoteRow: View {
@@ -4397,64 +4360,17 @@ struct FeedNoteRow: View {
         #endif
     }
 
-    @ViewBuilder
     private func glassToolbar(pubkey: String, displayName: String, isFollowed: Bool, expanded: Bool, dismiss: @escaping () -> Void) -> some View {
-        VStack(spacing: 2) {
-            glassIcon(isFollowed ? "person.badge.minus.fill" : "person.badge.plus",
-                      tint: isFollowed ? .yellow : .green, expanded: expanded, index: 0) {
-                if isFollowed { actions.unfollowUser(pubkey) }
-                else { actions.followUser(pubkey) }
-                dismiss()
-            }
-            // The post footer's old WoT button, next to the person it's about.
-            glassIcon("WoTTab", asset: true, tint: .havenPurple, expanded: expanded, index: 1) {
+        AuthorQuickMenu(
+            pubkey: pubkey,
+            displayName: displayName,
+            isFollowed: isFollowed,
+            expanded: expanded,
+            onWebOfTrust: {
                 trustWebPubkey = pubkey
                 showingTrustWeb = true
-                dismiss()
-            }
-            .accessibilityLabel("Web of Trust")
-            .accessibilityHint("Shows how you're connected to \(displayName)")
-            // Block last and set apart, so it's never a slip from the globe.
-            Divider().frame(width: 20).padding(.vertical, 2)
-                .scaleEffect(expanded ? 1 : 0.01)
-                .opacity(expanded ? 1 : 0)
-            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 2) {
-                actions.blockUser(pubkey)
-                ActionToastManager.shared.show(
-                    icon: "hand.raised.fill",
-                    message: "Blocked \(displayName)",
-                    color: .red
-                )
-                dismiss()
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .modifier(LiquidGlassVerticalModifier())
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-    }
-
-    private func glassIcon(_ icon: String, asset: Bool = false, tint: Color = .white, expanded: Bool, index: Int,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if asset {
-                    // A template image doesn't follow the font like an SF Symbol does.
-                    Image(icon).resizable().frame(width: 17, height: 17)
-                } else {
-                    Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                }
-            }
-            .foregroundStyle(tint.opacity(0.85))
-            .frame(width: 32, height: 32)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(expanded ? 1 : 0.01)
-        .opacity(expanded ? 1 : 0)
-        .animation(
-            Motion.staggered(Motion.pop, index: index, step: 0.06),
-            value: expanded
+            },
+            dismiss: dismiss
         )
     }
 
