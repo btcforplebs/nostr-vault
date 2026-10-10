@@ -71,9 +71,10 @@ class LogStore @Inject constructor() {
                     if (!message.isNullOrBlank()) {
                         // Light the red dot only for inbound events from OTHERS. The
                         // relay logs these phrases exclusively in its inbox/chat import
-                        // handler; your own posts/blasts never produce them.
+                        // handler; your own posts/blasts never produce them. The kind
+                        // on the line says which Vault list the dot is for.
                         if (message.contains("in your inbox") || message.contains("in your chat relay")) {
-                            RelayForegroundService.markInboxActivity()
+                            RelayForegroundService.markInboxActivity(RelayLogParser.inboxActivityKind(message))
                         }
                         val entry = RelayLogParser.LogEntry.parse(message)
                         addEntry(entry)

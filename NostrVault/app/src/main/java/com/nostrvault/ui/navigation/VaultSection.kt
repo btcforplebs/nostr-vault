@@ -20,6 +20,18 @@ object VaultSection {
     private val _showsMedia = MutableStateFlow(false)
     val showsMedia: StateFlow<Boolean> = _showsMedia
 
+    private val _opensNewActivity = MutableStateFlow(false)
+    /**
+     * Set when you tap into the Vault tab while its red dot shows: the tab
+     * then opens the list the dot is for, instead of whichever one you left
+     * it on (iOS VaultSection.opensNewActivity, #476).
+     */
+    val opensNewActivity: StateFlow<Boolean> = _opensNewActivity
+
+    fun requestOpenNewActivity() { _opensNewActivity.value = true }
+
+    fun openedNewActivity() { _opensNewActivity.value = false }
+
     /** Something chose a half in this process; a restored copy is older than it. */
     @Volatile private var chosen = false
 
@@ -42,5 +54,6 @@ object VaultSection {
     internal fun resetForTest() {
         chosen = false
         _showsMedia.value = false
+        _opensNewActivity.value = false
     }
 }

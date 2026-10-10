@@ -87,6 +87,35 @@ class VaultTabTest {
         }
     }
 
+    // ── The Vault tab's red dot (iOS #476) ────────────────────────
+
+    @Test fun `an inbound kind lights the list it shows up in`() {
+        assertEquals(VaultMode.LIKES, VaultMode.listing(7))
+        assertEquals(VaultMode.ZAPS, VaultMode.listing(9735))
+        assertEquals(VaultMode.ARTICLES, VaultMode.listing(30023))
+        assertEquals(VaultMode.HIGHLIGHTS, VaultMode.listing(9802))
+        for (kind in listOf(1, 6, 1111, 1068)) assertEquals(VaultMode.NOTES, VaultMode.listing(kind))
+        // DMs are the Profile tab's; unknown kinds have no list.
+        assertNull(VaultMode.listing(4))
+        assertNull(VaultMode.listing(1059))
+        assertNull(VaultMode.listing(30402))
+    }
+
+    @Test fun `the relay tab kinds match the lists'`() {
+        assertEquals(all, VaultMode.RELAY_TAB_NOTE_KINDS)
+    }
+
+    @Test fun `tapping in opens the first list in menu order with news`() {
+        val news = setOf(VaultMode.ZAPS, VaultMode.ARTICLES)
+        assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.FOLLOWERS))
+        assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.MEDIA))
+    }
+
+    @Test fun `tapping in stays on a list that has news too`() {
+        assertNull(VaultMode.opening(setOf(VaultMode.NOTES, VaultMode.ZAPS), VaultMode.ZAPS))
+        assertNull(VaultMode.opening(emptySet(), VaultMode.NOTES))
+    }
+
     // ── New-activity dots ─────────────────────────────────────────
 
     @Test fun `the dot shows only for news in another mode`() {

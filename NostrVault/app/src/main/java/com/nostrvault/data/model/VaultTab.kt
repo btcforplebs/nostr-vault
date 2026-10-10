@@ -84,6 +84,38 @@ enum class VaultMode(val displayName: String) {
         }
 
     companion object {
+        /**
+         * The kinds the Vault's post lists show (DashboardScreen's
+         * RELAY_TAB_NOTE_KINDS; iOS NostrService.relayTabNoteKinds).
+         */
+        val RELAY_TAB_NOTE_KINDS: Set<Int> = setOf(
+            1, 6, VaultNoteScope.ARTICLE_KIND, NIP10Thread.COMMENT_KIND, VaultNoteScope.HIGHLIGHT_KIND, NIP88Poll.KIND,
+        )
+
+        /**
+         * Where an inbound event of [kind] from someone else shows up. Null for
+         * DMs, which the Profile tab's dot covers, and for kinds no list shows.
+         * Port of iOS VaultMode.listing(inboxKind:) (#476).
+         */
+        fun listing(kind: Int): VaultMode? = when (kind) {
+            7 -> LIKES
+            9735 -> ZAPS
+            VaultNoteScope.ARTICLE_KIND -> ARTICLES
+            VaultNoteScope.HIGHLIGHT_KIND -> HIGHLIGHTS
+            in RELAY_TAB_NOTE_KINDS -> NOTES
+            else -> null
+        }
+
+        /**
+         * Tapped into the Vault tab while it had a red dot ([news]): the list
+         * to open, the first in menu order the dot is for. Null (stay put)
+         * when the list [showing] has news too, or nothing is new.
+         */
+        fun opening(news: Set<VaultMode>, showing: VaultMode): VaultMode? {
+            if (showing in news) return null
+            return entries.firstOrNull { it in news }
+        }
+
         /** The menu's modes. Zaps Only hides Likes, as it hides the Likes list. */
         fun menu(zapsOnly: Boolean): List<VaultMode> = entries.filter { !(zapsOnly && it == LIKES) }
 

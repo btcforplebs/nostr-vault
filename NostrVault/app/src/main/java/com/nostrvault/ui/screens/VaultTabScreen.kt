@@ -115,6 +115,26 @@ fun VaultTabScreen(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.pollFollowers() }
     }
 
+    // The Vault tab's red dot (iOS #476): tapping in while it shows opens the
+    // list it's for, and a list stops counting as new once it's on screen
+    // with this tab in front. Nothing is marked while a tap in is still on
+    // its way to the new list, so the list it left keeps its dot.
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    val opensNewActivity by VaultSection.opensNewActivity.collectAsState()
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val noteScope by viewModel.noteScope.collectAsState()
+    val showing = VaultMode.of(showsMedia, viewMode, noteScope)
+    LaunchedEffect(opensNewActivity) {
+        if (!opensNewActivity) return@LaunchedEffect
+        VaultMode.opening(RelayForegroundService.newActivityModes.value, showing)?.let(viewModel::selectMode)
+        VaultSection.openedNewActivity()
+    }
+    val modeInSight = showing.takeIf { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !opensNewActivity }
+    LaunchedEffect(modeInSight, relayNews) {
+        modeInSight?.let(RelayForegroundService::markRelayViewed)
+    }
+
     // The folded bar's corner button opens the Vault Dashboard (iOS parity).
     LaunchedEffect(Unit) { feedService.relayDashboardRequest.collect { openDashboard() } }
     // Your Vault starts the first time the Vault tab shows, on either half
@@ -215,7 +235,10 @@ internal fun VaultModePill(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val newElsewhere = VaultDots.hasNewElsewhere(newModes, mode)
+    // The lists' own dots, and what others sent that lit the Vault tab's dot.
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val allNew = newModes + relayNews.filterNot { zapsOnly && it == VaultMode.LIKES }
+    val newElsewhere = VaultDots.hasNewElsewhere(allNew, mode)
     Box(modifier) {
         GlassPill(
             horizontalArrangement = Arrangement.Start,
@@ -254,7 +277,7 @@ internal fun VaultModePill(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(m.displayName, fontWeight = if (m == mode) FontWeight.SemiBold else FontWeight.Normal)
-                            if (m in newModes) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            if (m in allNew) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     },
                     leadingIcon = { Icon(m.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },

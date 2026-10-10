@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.nostrvault.MainActivity
 import com.nostrvault.R
+import com.nostrvault.data.model.VaultMode
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -147,12 +148,25 @@ class RelayForegroundService : Service() {
 
         // ── Relay activity badge ────────────────────────────────
         // The red dot reflects ONLY inbound events from other people (replies,
-        // reactions, zaps, reposts, DMs that tag you). It is driven by the live
-        // log poller (see LogStore) detecting "in your inbox" / "in your chat
-        // relay" lines -- NOT by the total stored-event count, which also grows
-        // from your own posts, blasts, and private/outbox writes.
+        // reactions, zaps, reposts that tag you). It is driven by the live log
+        // poller (see LogStore) reading the kind off "in your inbox" lines --
+        // NOT by the total stored-event count, which also grows from your own
+        // posts, blasts, and private/outbox writes.
+        //
+        // It keeps the SET of Vault lists that got something, so tapping in can
+        // open the list the dot is for and the mode pill can mark each one (iOS
+        // RelayProcessManager.newActivityModes, #476). DMs live under Profile,
+        // whose own dot covers them.
+        private val _newActivityModes = MutableStateFlow<Set<VaultMode>>(emptySet())
+        val newActivityModes: StateFlow<Set<VaultMode>> = _newActivityModes.asStateFlow()
+
         private val _hasNewRelayActivity = MutableStateFlow(false)
+        /** The Vault tab's red dot: some Vault list got something. */
         val hasNewRelayActivity: StateFlow<Boolean> = _hasNewRelayActivity.asStateFlow()
+
+        /** Zaps Only hides the Likes list, so a like has no list to light. Set from the config. */
+        @Volatile
+        private var zapsOnlyMode = false
 
         // Monotonic counter alongside the red-dot latch: the relay's importer
         // writes inbound events straight to its DBs without notifying open REQ
@@ -161,13 +175,36 @@ class RelayForegroundService : Service() {
         private val _inboxActivityTick = MutableStateFlow(0L)
         val inboxActivityTick: StateFlow<Long> = _inboxActivityTick.asStateFlow()
 
-        fun markRelayViewed() {
-            _hasNewRelayActivity.value = false
+        private fun setNewActivityModes(modes: Set<VaultMode>) {
+            _newActivityModes.value = modes
+            _hasNewRelayActivity.value = modes.isNotEmpty()
         }
 
-        /** Light the red dot for an event that arrived from someone else. */
-        fun markInboxActivity() {
-            _hasNewRelayActivity.value = true
+        /** [mode] is on screen, so what came into it has been seen. */
+        @Synchronized
+        fun markRelayViewed(mode: VaultMode) {
+            val modes = _newActivityModes.value
+            if (mode in modes) setNewActivityModes(modes - mode)
+        }
+
+        /** Follows the Zaps Only setting; turning it on drops a Likes dot already lit. */
+        @Synchronized
+        fun setZapsOnlyMode(on: Boolean) {
+            zapsOnlyMode = on
+            if (on) markRelayViewed(VaultMode.LIKES)
+        }
+
+        /**
+         * An event of [kind] arrived from someone else (null: the import line
+         * named no kind). Lights the dot on the list it lands in, if any, and
+         * ticks the live re-subscribe either way.
+         */
+        @Synchronized
+        fun markInboxActivity(kind: Int?) {
+            val landed = kind?.let(VaultMode::listing)?.takeUnless { zapsOnlyMode && it == VaultMode.LIKES }
+            if (landed != null && landed !in _newActivityModes.value) {
+                setNewActivityModes(_newActivityModes.value + landed)
+            }
             _inboxActivityTick.value += 1
         }
 

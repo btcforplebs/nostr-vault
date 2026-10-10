@@ -136,6 +136,8 @@ fun NostrVaultNavHost(
     val isOwner = config.activeAccountNpub.isNullOrBlank()
     val unreadDMs by dmUnreadCount.collectAsState()
     val relayActivity by hasNewRelayActivity.collectAsState()
+    // Zaps Only hides Likes: a like then lights no Vault list.
+    LaunchedEffect(config.zapsOnlyMode) { RelayForegroundService.setZapsOnlyMode(config.zapsOnlyMode) }
 
     // A tutorial whose cards are on another page goes there: a last card's
     // "Next", or Replay in Settings. WoT is the WoT tab, Your Vault and Vault
@@ -193,7 +195,6 @@ fun NostrVaultNavHost(
         // loaded events are reused — and drop anything stacked on it (an open
         // thread), so the list the tab scrolls is the one on screen.
         RelayFocus.request(focus)
-        RelayForegroundService.markRelayViewed()
         navController.navigate(Screen.Dashboard.route) {
             popUpTo(Screen.Feed.route) { saveState = true }
             launchSingleTop = true
@@ -327,7 +328,6 @@ fun NostrVaultNavHost(
                                     RelayFocus.request(RelayFocusRequest(NotificationTarget.FOLLOWERS, ""))
                                 com.nostrvault.ui.screens.feed.VaultTarget.VAULT -> Unit
                             }
-                            RelayForegroundService.markRelayViewed()
                             navController.navigate(Screen.Dashboard.route) {
                                 popUpTo(Screen.Feed.route) { saveState = true }
                                 launchSingleTop = true
@@ -844,8 +844,10 @@ fun NostrVaultNavHost(
                     hasUnreadDMs = unreadDMs > 0,
                     hasNewRelayActivity = relayActivity,
                     onNavigate = { screen ->
-                        if (screen == Screen.Dashboard) {
-                            RelayForegroundService.markRelayViewed()
+                        // The dot goes to where the news is, not to the list
+                        // you left. The list clears once it is on screen.
+                        if (screen == Screen.Dashboard && relayActivity) {
+                            VaultSection.requestOpenNewActivity()
                         }
                         val route = if (screen == Screen.Profile) {
                             Screen.Profile.createRoute(activeHex)
@@ -864,10 +866,6 @@ fun NostrVaultNavHost(
                             // The Vault tab's half on screen scrolls to the top;
                             // the WOT globe goes back to you.
                             Screen.Dashboard, Screen.WOT -> {
-                                // The relay half's lists in sight again: its activity is seen (iOS).
-                                if (screen == Screen.Dashboard && !VaultSection.showsMedia.value) {
-                                    RelayForegroundService.markRelayViewed()
-                                }
                                 TabReselect.request(screen)
                             }
                             else -> {
