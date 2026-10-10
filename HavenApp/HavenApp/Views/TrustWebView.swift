@@ -67,6 +67,9 @@ struct TrustWebView: View {
     @State private var deeperFailed: Set<String> = []
     @State private var profilePubkey: String?
     @State private var showingList = false
+    /// The WOT tab's list: the lit layer's people, taken when it opens.
+    @State private var listed: (following: [String], web: [String]) = ([], [])
+    @State private var listQuery = ""
     /// Per person whose own globe is showing: the follows worth a profile
     /// fetch, so their faces can be pictures (`TrustMap.faceCandidates`).
     @State private var faceCandidates: [String: [String]] = [:]
@@ -223,6 +226,11 @@ struct TrustWebView: View {
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }
+        // The WOT tour points into the globe; a sheet over it hides what the card points at.
+        .onChange(of: wotSheetOpen) { _, open in
+            if isWOTTab { TutorialCenter.shared.setCovered("wot", open) }
+        }
+        .onDisappear { if isWOTTab { TutorialCenter.shared.setCovered("wot", false) } }
         .sheet(item: Binding<IdentifiableString?>(
             get: { messagePubkey.map { IdentifiableString(id: $0) } },
             set: { messagePubkey = $0?.id }
@@ -1325,7 +1333,13 @@ struct TrustWebView: View {
 
     // MARK: - People list (VoiceOver, and anyone who'd rather read)
 
-    private var peopleList: some View {
+    private var wotSheetOpen: Bool { showingList || profilePubkey != nil || messagePubkey != nil }
+
+    @ViewBuilder private var peopleList: some View {
+        if isWOTTab { wotList } else { pathList }
+    }
+
+    private var pathList: some View {
         NavigationStack {
             List {
                 if let frame {
@@ -1355,6 +1369,106 @@ struct TrustWebView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
             }
         }
+    }
+
+    /// The WOT tab's list: with a card open, everyone linking you to them;
+    /// otherwise everyone in the lit layer, searchable. A row opens its card.
+    private var wotList: some View {
+        NavigationStack {
+            Group {
+                if let card { cardLinksList(card) } else { layerList }
+            }
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
+            }
+        }
+        .onAppear {
+            listQuery = ""
+            listed = TrustMap.layerPeople(layer, me: me, follows: myFollows, web: web, vouches: vouches)
+        }
+    }
+
+    private var layerList: some View {
+        let following = listed.following.filter(listMatches)
+        let rest = listed.web.filter(listMatches)
+        return List {
+            if !following.isEmpty {
+                Section("You follow · \(following.count.formatted())") {
+                    ForEach(following, id: \.self) { wotRow($0) }
+                }
+            }
+            if !rest.isEmpty {
+                Section("In your web · \(rest.count.formatted())") {
+                    ForEach(rest, id: \.self) { wotRow($0) }
+                }
+            }
+            if following.isEmpty && rest.isEmpty {
+                Text(listQuery.isEmpty ? "No one here yet." : "No one called \u{201C}\(listQuery)\u{201D} on your globe.")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .searchable(text: $listQuery, prompt: "Find someone")
+        .navigationTitle(layer == .everyone ? "Your web" : layer.title)
+    }
+
+    private func cardLinksList(_ pubkey: String) -> some View {
+        List {
+            if myFollows.contains(pubkey) {
+                Section { Text("You follow \(name(pubkey)).").foregroundColor(.secondary) }
+            }
+            if let cardPath {
+                if cardPath.all.isEmpty {
+                    Text("None of the people you follow follow \(name(pubkey)).").foregroundColor(.secondary)
+                } else {
+                    Section("People you follow who follow \(name(pubkey)) · \(cardPath.all.count.formatted())") {
+                        ForEach(cardPath.all, id: \.self) { wotRow($0) }
+                    }
+                }
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Finding who links you…").foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle(name(pubkey))
+    }
+
+    private func listMatches(_ pubkey: String) -> Bool {
+        let text = listQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !text.isEmpty else { return true }
+        if pubkey.hasPrefix(text) { return true }
+        guard let profile = nostrService.profiles[pubkey] else { return false }
+        return [profile.displayName, profile.name, profile.nip05].contains { $0?.lowercased().contains(text) == true }
+    }
+
+    private func wotRow(_ pubkey: String) -> some View {
+        let linked = vouches?[pubkey] ?? 0
+        return Button { showingList = false; openCard(pubkey) } label: {
+            HStack(spacing: 12) {
+                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name(pubkey)).font(.appSystem(size: 15, weight: .semibold)).foregroundColor(.primary).lineLimit(1)
+                    if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
+                        Text(nip05).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 6)
+                if linked > 0 {
+                    Text("\(linked.formatted()) you follow")
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel(Text("Followed by \(linked) people you follow"))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear { nostrService.fetchMissingProfiles(for: [pubkey]) }
+        .accessibilityHint(Text("Opens their trust card"))
     }
 
     private func personRow(_ pubkey: String) -> some View {

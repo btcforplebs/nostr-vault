@@ -1162,7 +1162,16 @@ private fun TrustWebContent(
         }
     }
 
-    if (showingList && frame != null) {
+    if (showingList && isWOTTab) {
+        val listed = remember(layer, myFollows, web, vouches) { TrustMap.layerPeople(layer, me, myFollows, web, vouches) }
+        WotPeopleList(
+            card = card, cardPath = cardPath, layer = layer, listed = listed, myFollows = myFollows,
+            vouches = vouches, profiles = profiles, accent = accent, name = ::name,
+            onSeen = { nostrService.fetchMissingProfiles(listOf(it)) },
+            onOpen = { pubkey -> showingList = false; openCard(pubkey) },
+            onDismiss = { showingList = false },
+        )
+    } else if (showingList && frame != null) {
         PeopleList(
             frame = frame, me = me, author = author, profiles = profiles, name = ::name,
             onOpen = onProfileClick?.let { { pubkey: String -> openProfile(pubkey) } },
@@ -1956,6 +1965,106 @@ private fun PeopleList(
                 item {
                     Text("No one on this globe follows ${name(author)} yet.", color = SecondaryText, fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The WOT tab's list: with a card open, everyone linking you to them;
+ * otherwise everyone in the lit layer, searchable. A row opens its card.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WotPeopleList(
+    card: String?,
+    cardPath: TrustPath?,
+    layer: TrustMap.Layer,
+    listed: TrustMap.LayerPeople,
+    myFollows: Set<String>,
+    vouches: Map<String, Int>?,
+    profiles: Map<String, FeedProfile>,
+    accent: Color,
+    name: (String) -> String,
+    onSeen: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    fun matches(pubkey: String): Boolean {
+        val text = query.trim().lowercase()
+        if (text.isEmpty() || pubkey.startsWith(text)) return true
+        val profile = profiles[pubkey] ?: return false
+        return listOf(profile.displayName, profile.name, profile.nip05).any { it?.lowercase()?.contains(text) == true }
+    }
+    @Composable
+    fun row(pubkey: String) {
+        val profile = profiles[pubkey]
+        val linked = vouches?.get(pubkey) ?: 0
+        LaunchedEffect(pubkey) { onSeen(pubkey) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Open their trust card") { onOpen(pubkey) }
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 32.dp, displayName = profile?.bestName)
+            Column(Modifier.weight(1f)) {
+                Text(name(pubkey), color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val nip05 = profile?.nip05
+                if (!nip05.isNullOrEmpty()) {
+                    Text(nip05, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (linked > 0) Text("$linked you follow", color = SecondaryText, fontSize = 12.sp)
+        }
+    }
+    @Composable
+    fun note(text: String) {
+        Text(text, color = SecondaryText, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Surface1,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = SecondaryText) },
+    ) {
+        val title = if (card != null) name(card) else if (layer == TrustMap.Layer.EVERYONE) "Your web" else layer.title
+        Text(title, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        if (card == null) {
+            SearchField(query = query, onQueryChange = { query = it }, onFocusChange = {}, onSearch = {},
+                onClear = { query = "" }, accent = accent)
+        }
+        LazyColumn(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            if (card != null) {
+                if (card in myFollows) item { note("You follow ${name(card)}.") }
+                when {
+                    cardPath == null -> item { note("Finding who links you…") }
+                    cardPath.all.isEmpty() -> item { note("None of the people you follow follow ${name(card)}.") }
+                    else -> {
+                        item { ListHeader("People you follow who follow ${name(card)} · ${cardPath.all.size}") }
+                        items(cardPath.all, key = { it }) { row(it) }
+                    }
+                }
+            } else {
+                val following = listed.following.filter(::matches)
+                val rest = listed.web.filter(::matches)
+                if (following.isNotEmpty()) {
+                    item { ListHeader("You follow · ${following.size}") }
+                    items(following, key = { "f$it" }) { row(it) }
+                }
+                if (rest.isNotEmpty()) {
+                    item { ListHeader("In your web · ${rest.size}") }
+                    items(rest, key = { "w$it" }) { row(it) }
+                }
+                if (following.isEmpty() && rest.isEmpty()) {
+                    item { note(if (query.isBlank()) "No one here yet." else "No one called \u201C${query.trim()}\u201D on your globe.") }
                 }
             }
         }

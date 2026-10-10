@@ -409,6 +409,32 @@ class TrustMapTest {
     }
 
     @Test
+    fun layerPeopleListWhatTheCountsCount() {
+        val follows = setOf(me, key(1), key(2))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
+        val vouches = mapOf(key(1) to 4, key(2) to 30, key(3) to 12, key(4) to 2, key(5) to 10)
+        val everyone = TrustMap.layerPeople(TrustMap.Layer.EVERYONE, me, follows, web, vouches)
+        // Most vouched first; you are never listed.
+        assertEquals(listOf(key(2), key(1)), everyone.following)
+        assertEquals(listOf(key(3), key(5), key(4)), everyone.web)
+        val following = TrustMap.layerPeople(TrustMap.Layer.FOLLOWING, me, follows, web, vouches)
+        assertEquals(listOf(key(2), key(1)), following.following)
+        assertEquals(emptyList<String>(), following.web)
+        val close = TrustMap.layerPeople(TrustMap.Layer.CLOSE, me, follows, web, vouches)
+        assertEquals(emptyList<String>(), close.following)
+        assertEquals(listOf(key(3), key(5)), close.web)
+        assertEquals(listOf(key(4)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web, vouches).web)
+        // Same people as the counts, layer by layer.
+        val counts = TrustMap.layerCounts(me, follows, web, vouches)
+        for (layer in TrustMap.Layer.entries) {
+            val people = TrustMap.layerPeople(layer, me, follows, web, vouches)
+            assertEquals("$layer", counts[layer], people.following.size + people.web.size)
+        }
+        // An old cache has no vouches: Further out is everyone past your follows, by key.
+        assertEquals(listOf(key(3), key(4), key(5)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web).web)
+    }
+
+    @Test
     fun vouchesComeFromTheCacheAndAreNullOnAnOldOne() {
         assertEquals(mapOf("a" to 12, "c" to 3),
             TrustMap.vouches("""{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"""))

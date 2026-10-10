@@ -323,6 +323,31 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.layers(hasVouches: true), [.everyone, .following, .close, .furtherOut])
     }
 
+    func testLayerPeopleListWhatTheCountsCount() {
+        let follows: Set<String> = [me, key(1), key(2)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5)]
+        let vouches = [key(1): 4, key(2): 30, key(3): 12, key(4): 2, key(5): 10]
+        let everyone = TrustMap.layerPeople(.everyone, me: me, follows: follows, web: web, vouches: vouches)
+        // Most vouched first; you are never listed.
+        XCTAssertEqual(everyone.following, [key(2), key(1)])
+        XCTAssertEqual(everyone.web, [key(3), key(5), key(4)])
+        let following = TrustMap.layerPeople(.following, me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(following.following, [key(2), key(1)])
+        XCTAssertEqual(following.web, [])
+        let close = TrustMap.layerPeople(.close, me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(close.following, [])
+        XCTAssertEqual(close.web, [key(3), key(5)])
+        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web, vouches: vouches).web, [key(4)])
+        // Same people as the counts, layer by layer.
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
+        for layer in TrustMap.Layer.allCases {
+            let people = TrustMap.layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches)
+            XCTAssertEqual(people.following.count + people.web.count, counts[layer], "\(layer)")
+        }
+        // An old cache has no vouches: Further out is everyone past your follows, by key.
+        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web).web, [key(3), key(4), key(5)])
+    }
+
     func testVouchesComeFromTheCacheAndAreNilOnAnOldOne() throws {
         let new = Data(#"{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"#.utf8)
         XCTAssertEqual(TrustMap.vouches(fromCache: new), ["a": 12, "c": 3])

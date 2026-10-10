@@ -363,6 +363,29 @@ enum TrustMap {
         }
         return counts
     }
+
+    /// The people `layerCounts` counts, for the WOT tab's list: your follows,
+    /// then the rest of the web. Each part puts the most-vouched first, then
+    /// sorts by key so the order holds still between rebuilds.
+    static func layerPeople(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
+                            vouches: [String: Int]? = nil) -> (following: [String], web: [String]) {
+        let ranked: (Set<String>) -> [String] = { people in
+            people.sorted {
+                let a = vouches?[$0] ?? 0, b = vouches?[$1] ?? 0
+                return a != b ? a > b : $0 < $1
+            }
+        }
+        let following = layer == .everyone || layer == .following ? ranked(follows.subtracting([me])) : []
+        var past = web.subtracting(follows).subtracting([me])
+        switch layer {
+        case .everyone: break
+        case .following: past = []
+        case .close: past = past.filter { (vouches?[$0] ?? 0) >= closeVouches }
+        case .furtherOut:
+            if let vouches { past = past.filter { (vouches[$0] ?? 0) < closeVouches } }
+        }
+        return (following, ranked(past))
+    }
 }
 
 /// The globe's camera and how it moves. Every step is scaled by the real time
