@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2 (21) — macOS / iOS / Android] - 2026-10-10
+
+> **The Web of Trust and first-launch release.** A new WOT tab shows your network as a globe you can explore, a new front door gets new and returning people into a full feed, Media and Relay merge into one Vault tab, and the iPad gets a real sidebar, two-pane DMs and keyboard shortcuts. Built from `release/2.7.2-b21`; FIPS mesh work is not in this build.
+
+### Security
+- **LAN Relay Certificates Are Pinned**: The apps checked only the host name when talking to your Mac relay over the local network. They now pin its certificate, on iOS, macOS and Android (#423, #427).
+- **Following Backup Keeps Only Your Own Signed List (iOS)**: A backup scan could pick up a kind 3 that wasn't yours. Only the owner's signed list is kept now, matching the Android fix in #483 (#489).
+- **naddr Links Open Only the Event They Name (iOS)**: A `d` tag with bad UTF-8, or one that only matched by Unicode equivalence, could open a different event. It now matches on bytes, and a bad tag opens nothing (#479, #487).
+- **Relay: Upstream Haven Fixes**: The `.onion`, bad-npub and owner-delete fixes from bitvora/haven (#452).
+
+### Added
+- **WOT Tab**: Your Web of Trust as a spinning globe, with faces, search, layers you can pick, trust lines to the person on the card, a live "↑ N new people" count, and a refresh that really rebuilds your web. "See their web" rearranges the globe around someone else. A lighter globe runs on Android phones with 4 GB or less (#426, #436, #450, #451, #467–470, #474, #493, #494, #497, #498, #503, #505, #507–511, #513, #518).
+- **Web of Trust Everywhere**: A Trust Path card in Event Info, and Web of Trust in the avatar menu on every post (#387, #388, #391, #394, #405, #411, #502, #504).
+- **One Vault Tab**: Media and Relay become one Vault tab with one Vault Dashboard. The tab bar reads Feed · Search · Profile · WOT · Vault. Dashboard v2 is one page that says whether your vault is OK, and the Vault tab opens on everything new, with a red dot per list (#443, #446, #476, #478, #482, #492, #522).
+- **A New Front Door**: First launch fits on one screen. "New to Nostr" walks through keys, a password and what relays and Blossom are, and gives new accounts a name, photo, relay list and real follows. "I use Nostr" takes an npub, nsec or signer, checks your relays and runs an import tour (#382, #384, #389, #390, #395, #396, #399, #400, #409).
+- **Tutorials**: Replayable from Settings → Tutorials, with pointer cards that chain from page to page. Fill your feed guides you to 5 follows on Discover (#386, #410, #414, #429, #432, #455, #515, #521).
+- **Feed Dashboard**: Your network's last 24 hours, from the feed menu. Feed settings now live only in Settings → Feed (#407, #420).
+- **Relay Grid**: One relay store every feature reads from, a grid with a Search column, and Recommended and Never connect (#385, #398, #403).
+- **Polls Feed**: A Polls feed with a post-a-poll button, and polls show pictures and link cards (#359, #369, #434).
+- **Profiles**: Each post shows its likes, reposts, replies, quotes and zap sats. Followers and Following open as lists, your own follower count comes from your relay's ledger, and others' from Vertex. Pull down to edit and swipe away to save. Replies' media show in Media and reposts get their own tab. On iOS, hold a photo in Media to delete it (#366, #368, #374, #383, #413, #430, #456, #466, #499, #500, #501).
+- **iPad**: The sidebar shows in both orientations, content screens lay out from their width, DMs are two-pane, ⌘R and ⌘F work, and photos can be dropped or pasted (#517, #519, #520, #523, #524, #526).
+- **Send Delay**: Settings chooses Off, 5 seconds or 10 seconds for the post countdown (#381).
+- **Post Zaps Are Opt-In on iOS**: Settings → Post buttons adds ⚡ to the post bar, following Nostur's approach for App Store review (#354).
+- **New Follower Notifications**, without re-announcing people who unfollow and refollow (#393).
+- **Android**: nostr:naddr1 links open from other apps, the Settings screen matches iOS, compact feed rows, a 50K zap preset and the wallet's Lightning address, an external relay off the phone, drafts from the relay, and Reposts and Replies switches that survive a restart (#352, #401, #404, #406, #412, #437, #439, #463, #464, #480, #481, #483, #488, #525, #528).
+
+### Changed
+- **Avatars Download at 256 px** and only the small copy stays on disk (#495, #496, #516).
+- **Slow Down Is Removed**, and the profile action row is one line (#431).
+- **The Green Status Dot Is Gone** from the Feed and Vault pills (#454).
+- **New Default Relays**, and imports use only seed relays that passed the startup check (#353, #390).
+- **Quieter Release Builds**: Hot-path prints and debug logs are out of Release builds, and unused code is removed (#415–419, #421, #422, #424, #425).
+- **Soft Scroll Edge** at the top of every iOS screen (#355).
+- **Topic Feeds Screen Out Bots and Farms**, show engaged posts first, and start Threaded on new installs (#435, #441).
+- **The Nostr Vault Badge** shows on posts in the Relay tab (#392).
+
+### Fixed
+- **Notification Taps Open the Post Instantly** (#364).
+- **Quotes and Article Comments Reach Your Notifications**, and previews show names instead of `nostr:npub` (#358, #428).
+- **Profiles Jumped While Loading**: They load on open, hold their space, and counts say what has loaded, with a + while more can load (#361, #367, #373, #375–378, #380).
+- **Note Page**: Replies show instantly and stay live, and posting no longer removes your last post (#379).
+- **New Accounts Couldn't DM Without a Relaunch** (iOS/macOS) (#400).
+- **The Remote Signer Was Asked Things It Had Already Answered** (#402), and keepalive misses no longer flood the log (#360).
+- **Live Streams Stopped When the App Went to the Background**, and the streamer shows instead of zap.stream (#365, #438).
+- **Relay Readiness**: Waits for restarts, does a real HTTP check and rechecks when the app returns (#357).
+- **Zap Sats Read the Invoice** when the request has no amount (iOS) (#356).
+- **Delete Everywhere Reports Each Server**, and failures stay on screen (#458, #462, #477).
+- **Starter Packs Pointed Names at the Wrong People** (#382).
+- **Backup Export's Share Sheet Never Appeared** (iOS) (#433).
+- **The Import Log Parser Could Crash** on an early " to" (iOS) (#442).
+- **New Posts Counted Posts the Feed Wouldn't Show** (iOS) (#408).
+- **Smaller Fixes**: the setup import step keeps the screen awake, Settings has a Media Servers row, the Dashboard's Done button stops pulsing, Vault Articles and Highlights open on their newest page, the photo opens the quick menu in Compact and Threaded views, and the DM thread header opens the profile. On Android, the WOT footer buttons stay on screen, the profile Block button follows your block list, Save to Vault mirrors only hash-named URLs, and old GIF cache copies are deleted (#351, #440, #447, #449, #453, #457, #459, #484, #485, #486, #512).
+
+## [2.7.2 (20) — macOS / iOS / Android] - 2026-10-06
+
+> **Android catches up with the iPhone.** Same tabs, wording, feed, thread view and Relay tab. Android release notes: `NostrVault/RELEASE_NOTES.md`.
+
+### Added
+- **Share → Nostr Vault (iOS)**: Share photos and videos from any app into a Blossom upload queue. Magic Paste takes video too (#335).
+- **Polls (NIP-88)**: See and vote on polls in the feed and in a note (#337, #344).
+- **Hashtags Feed**: Follow hashtags (kind 10015) and get a feed of them, with chips and suggestions. The hashtag sheet shows people you follow first (#340, #342, #345).
+- **Reactions**: Tap to react, hold for a tapback bar, and removing a reaction deletes it on relays (#322, #332).
+- **Profile Banners**, and a Banner URL field in Edit Profile (#321, #339, #341).
+- **Note ⋯ Menu (iOS)**: Share, Copy, Broadcast, Report and Block, with a 5-button action bar (#320).
+- **Zap to Unlock** gated (Fanfares) articles (#350).
+- **Dashboard Console**: Relay activity in plain language, with safe Copy and Export (#334).
+- **iPad Sidebar**: Each feed is its own row (#349).
+- **Android Parity**: Feed, thread view, wording, tab bar, colours, live chat, Relay tab Likes and Zaps Given, profile media viewer, Noise Filtering, text selection, a notification sound picker, and Threaded Global and Popular (#309–311, #313–316, #319, #346–348).
+
+### Changed
+- **Location Is Removed** from photos and videos before upload (#335, #343).
+- **The "Approve in Your Signer" Banner Is Gone** (#336).
+- **Confirmations** before destructive actions (#317).
+- **Media Cache**: 3-day default, a 500 MB cap on iOS, and the off switch works (#330).
+- **Multi-Image Posts** show a thin position bar instead of dots (#331).
+
+### Fixed
+- **Reposts** open, like, zap, reply and count as the note they repost (#326, #328).
+- **Zap Notifications** are no longer dropped by the Web of Trust filter, and they name the zapper (#312).
+- **Thread View**: Swipe back from the edge works again, and reaction pills stop shuffling (#323, #324).
+- **Profile** holds the note you are reading while notes load (#329).
+- **Media Viewer**: Swipe to close lands in one motion, on the photo you're on (#333).
+- **Thread Stats** label shows on iPhone (#325).
+- **Xcode Cloud** installs Go and writes `Secrets.xcconfig` after clone (#308).
+
 ## [2.7.2 (19) — macOS / iOS / Android] - 2026-10-04
 
 > Release notes: `HavenApp/RELEASE_NOTES.md`. Later fixes (DM inbox list, blocked people in feeds, Setup npub checks, Zaps Given, repost times) are in those notes but not itemized here.
@@ -41,6 +126,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A Stale Android Relay Core Could Ship Silently**: The native `libhaven.so` is gitignored and rebuilt by the release script, so an APK built without that rebuild step would silently carry an old Go core missing recent fixes. The release build now fails loudly instead if the shipped library predates a known-required native function.
 - **The Feed Picker Menu Stuttered While Scrolling (iOS)**: It was built inline in the view that observes every feed update, so each arriving note re-rendered the open menu and stalled its scroll. It's now its own view that only rebuilds when what it actually shows changes.
 - **iOS: Highlights Had No Cost Bound and Could Be Forged or Flooded**: Each highlight's position in the article was recomputed on every profile update instead of once, a 1,000+ character "highlight" could flood the list, and nothing checked that a highlight's signature or timestamp was real — fifty highlights dated in 2099 would have pushed every genuine one off the list. Placement is now computed once off the main thread, passages are length-capped, and every highlight is signature-checked and refused if dated more than 10 minutes in the future.
+
+### Also in Build 19 (after these notes were written)
+- **Translate**: Posts in another language get a Translate button. Translation runs on the device (#297, #298).
+- **Notifications Come From Your Web of Trust** (#285).
+- **Feed Picker: Edit Feeds** to show, hide and reorder feeds (#303).
+- **Live Streams** pop out from the mini player with a moving picture, and live chat picks pictures from your Blossom servers (#301, #305, #307).
+- **Relay Tab**: Likes Given and Zaps Given load, with zap receipts imported into your inbox (#294–296, #299).
+- **Feed and Thread**: Text sits under the avatar in expanded posts, reply parents show as soon as they arrive, and a thread zooms open from the tapped post (#286, #302, #304, #306).
+- **Profiles**: Saving keeps your banner and other fields, and switching tabs no longer jumps (#292, #293, #300).
+- **Parity**: nostr: links open in the app and DM photos show on iOS. Android gets the thread view, profile tabs, widgets and app icons, and Relay tab load-more (#287–291).
 
 ## [2.7.2 (17 → 18) — macOS / iOS / Android] - 2026-10-02
 
