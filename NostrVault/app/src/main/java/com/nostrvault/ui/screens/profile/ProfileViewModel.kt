@@ -319,14 +319,18 @@ class ProfileViewModel @Inject constructor(
             if (own) {
                 _followingCount.value = feedService.followedPubkeys.value.count { it != pk }
                 // Your followers come from the relay's ledger, which is complete
-                // (spam left out); relay samples would cap at a page.
+                // (spam left out); relay samples would cap at a page. It beats
+                // Vertex here so the header matches the list it opens and the
+                // Vault's Followers tab.
                 launch {
                     val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
                     }
-                    if (ledger != null && _pubkey.value == pk) {
-                        ownLedgerLoaded = true
-                        if (vertexFollowerCount == null) _followersCount.value = ledger.current.size
+                    synchronized(this@ProfileViewModel) {
+                        if (ledger != null && _pubkey.value == pk) {
+                            ownLedgerLoaded = true
+                            _followersCount.value = ledger.current.size
+                        }
                     }
                 }
             }
@@ -365,8 +369,9 @@ class ProfileViewModel @Inject constructor(
 
     /**
      * Vertex counts follow lists from across Nostr, once per follower, so
-     * its answer replaces the ledger, relay COUNTs and streamed sample, on
-     * your profile too. Port of iOS ProfileView.displayedFollowersCount.
+     * its answer replaces the relay COUNTs and streamed sample. On your own
+     * profile the ledger wins instead. Port of iOS
+     * ProfileView.displayedFollowersCount.
      */
     private fun fetchVertexFollowerCount(pk: String) {
         viewModelScope.launch {
@@ -374,7 +379,7 @@ class ProfileViewModel @Inject constructor(
             synchronized(this@ProfileViewModel) {
                 if (_pubkey.value != pk) return@launch
                 vertexFollowerCount = count
-                _followersCount.value = count
+                if (!ownLedgerLoaded) _followersCount.value = count
             }
         }
     }
