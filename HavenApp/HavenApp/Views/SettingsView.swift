@@ -3862,7 +3862,7 @@ struct BlossomSettingsView: View {
             } header: {
                 Text("FIPS Mesh")
             } footer: {
-                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
+                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app pauses kiosk mode, and it turns on again when you come back. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
             }
 
             HomeVaultSection()

@@ -2,6 +2,7 @@
 import Foundation
 import UIKit
 import Security
+import UserNotifications
 
 /// The FIPS mesh on iPhone: libnvfips (nvfips.h), the same engine as Android.
 ///
@@ -58,6 +59,45 @@ final class FipsMeshService: ObservableObject {
 
     private init() {}
 
+    /// Kiosk mode was on when the app last left the screen. Leaving the app
+    /// stops it (iOS would suspend the mesh), and coming back starts it again.
+    private static let kioskWantedKey = "fipsMesh.kioskWanted"
+    private static let pausedNoteID = "fipsmesh-kiosk-paused"
+    private var activeObserver: NSObjectProtocol?
+
+    /// Called once at launch: turns kiosk mode back on each time the app comes
+    /// on screen, if it was on when the app left.
+    func resumeWhenActive() {
+        guard activeObserver == nil else { return }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resumeIfWanted() }
+        }
+    }
+
+    private func resumeIfWanted() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.pausedNoteID])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.pausedNoteID])
+        guard UserDefaults.standard.bool(forKey: Self.kioskWantedKey), !kioskActive, !starting else { return }
+        print("FipsMesh: app back on screen, turning kiosk mode on again")
+        startKiosk()
+    }
+
+    /// Kiosk mode stopped because the app left the screen: a tap on this
+    /// opens the app, which turns it on again.
+    private func notifyPaused() {
+        let content = UNMutableNotificationContent()
+        content.title = "Kiosk mode paused"
+        content.body = "Your vault stopped sharing on the mesh when Nostr Vault left the screen. Tap to share again."
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: Self.pausedNoteID, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { print("FipsMesh: kiosk paused notification failed: \(error)") }
+        }
+    }
+
     /// This phone's mesh npub, remembered from the last time the engine ran,
     /// so a 10063 published while it is off can drop this phone's old entry.
     var ownMeshNpub: String? { status?.npub ?? UserDefaults.standard.string(forKey: Self.ownNpubKey) }
@@ -104,7 +144,10 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    func stopKiosk() {
+    /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
+    /// Otherwise the owner turned it off.
+    func stopKiosk(leavingApp: Bool = false) {
+        if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
@@ -123,6 +166,7 @@ final class FipsMeshService: ObservableObject {
         stopEngine()
         status = nil
         publishServerListInBackgroundTask()
+        if leavingApp { notifyPaused() }
     }
 
     private func stopEngine() {
@@ -168,6 +212,7 @@ final class FipsMeshService: ObservableObject {
                 return
             }
             kioskActive = true
+            UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
             // print reaches relay.log (stdout), the file pulled off a device.
             print("FipsMesh: kiosk live, serve limit \(Self.serveLimit) bytes")
@@ -176,7 +221,7 @@ final class FipsMeshService: ObservableObject {
             resignObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.stopKiosk() }
+                MainActor.assumeIsolated { self?.stopKiosk(leavingApp: true) }
             }
             pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
