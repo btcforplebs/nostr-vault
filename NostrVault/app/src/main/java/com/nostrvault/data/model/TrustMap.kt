@@ -347,8 +347,8 @@ object TrustMap {
     }
 
     /**
-     * The WOT tab's layer picker. Picking one only changes what is lit: the
-     * globe keeps every star, so switching never reloads the web. iOS
+     * The WOT tab's layer picker. Picking one shows only that part of your
+     * web, with its faces; switching never reloads the web. iOS
      * `TrustMap.Layer`.
      */
     enum class Layer(val title: String) {
@@ -386,11 +386,38 @@ object TrustMap {
     /** How brightly [layer] draws your follows, the Close part of the outer shell, and the rest of it. */
     data class Weights(val follows: Double, val close: Double, val further: Double)
 
+    /**
+     * The others go out, so picking a layer visibly empties the globe; the
+     * shell's stars are faint, so they are lit brighter when they are all
+     * that's left. iOS `layerWeights`.
+     */
     fun layerWeights(layer: Layer): Weights = when (layer) {
         Layer.EVERYONE -> Weights(1.0, 1.0, 1.0)
-        Layer.FOLLOWING -> Weights(1.0, 0.18, 0.18)
-        Layer.CLOSE -> Weights(0.22, 1.6, 0.18)
-        Layer.FURTHER_OUT -> Weights(0.22, 0.18, 1.6)
+        Layer.FOLLOWING -> Weights(1.0, 0.0, 0.0)
+        Layer.CLOSE -> Weights(0.0, 1.6, 0.0)
+        Layer.FURTHER_OUT -> Weights(0.0, 0.0, 1.6)
+    }
+
+    /** People past your follows worth a profile fetch for a layer's faces. Many further out have no profile, so the pool is wide. */
+    const val LAYER_FACE_CANDIDATES = 400
+    /** Faces on the outer shell when Close or Further out is picked; faces that would cover another stay stars ([seatFaces]). */
+    const val LAYER_FACES = 100
+
+    /**
+     * The people past your follows [layer] shows as faces, most vouched first
+     * ([layerPeople]'s order). Everyone and Following show your follows'
+     * faces instead. iOS `layerFaceCandidates`.
+     */
+    fun layerFaceCandidates(
+        layer: Layer,
+        me: String,
+        follows: Set<String>,
+        web: Set<String>,
+        vouches: Map<String, Int>? = null,
+        count: Int = LAYER_FACE_CANDIDATES,
+    ): List<String> {
+        if (layer != Layer.CLOSE && layer != Layer.FURTHER_OUT) return emptyList()
+        return layerPeople(layer, me, follows, web, vouches).web.take(count)
     }
 
     /**

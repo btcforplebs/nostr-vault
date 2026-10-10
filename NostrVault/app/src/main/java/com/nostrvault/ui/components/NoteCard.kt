@@ -1777,6 +1777,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
                 when (scope) {
                     DeleteScope.MIRRORS -> {
                         val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(sha) }
+                        refreshCloudBadges(sha)
                         onMessage(
                             when {
                                 report.allDeleted -> "Deleted from mirrors"
@@ -1797,6 +1798,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
                             val mirrors = async { blossomService.deleteFromMirrors(sha) }
                             local.await() to mirrors.await()
                         }
+                        refreshCloudBadges(sha)
                         val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
                         onMessage(leftover ?: "Deleted everywhere")
                         if (leftover == null) onAllGone()
@@ -1807,6 +1809,15 @@ class FeedMediaMirrorViewModel @Inject constructor(
                 _deleting.value = false
             }
         }
+    }
+
+    /**
+     * The cloud badges cache each server's answer for the session; ask again
+     * after a delete so they stop showing the pre-delete count. iOS
+     * FeedMediaViewer does the same through BlossomBackupStore.refresh.
+     */
+    private suspend fun refreshCloudBadges(sha: String) {
+        blossomService.checkMirrorPresence(sha, force = true)
     }
 
     /** Extract a 64-hex sha256 from a Blossom-style URL, or null. Mirrors iOS extractSHA256FromURL(). */

@@ -169,6 +169,7 @@ import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.Surface1
 import com.nostrvault.ui.theme.Surface2
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -397,6 +398,11 @@ private fun TrustWebContent(
      */
     var vouches by remember { mutableStateOf<Map<String, Int>?>(null) }
     var closeHaze by remember { mutableStateOf(emptySet<String>()) }
+    /**
+     * The WOT tab's Close and Further out faces: the people past your
+     * follows worth a profile fetch ([TrustMap.layerFaceCandidates]).
+     */
+    var layerCandidates by remember { mutableStateOf(emptyMap<TrustMap.Layer, List<String>>()) }
     // An empty follow list means "not in yet" until a load has finished.
     val loadingFollows by trust.isLoadingFollows.collectAsState()
     val followsAttempted by trust.followsAttempted.collectAsState()
@@ -456,6 +462,14 @@ private fun TrustWebContent(
         val inner = myFollows + me + author
         val counts = trust.myVouches()
         val shell = withContext(Dispatchers.Default) { TrustMap.haze(graph - inner, cap = if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP) }
+        if (isWOTTab) {
+            val follows = myFollows
+            layerCandidates = withContext(Dispatchers.Default) {
+                listOf(TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
+                    TrustMap.layerFaceCandidates(it, me, follows, graph, counts)
+                }
+            }
+        }
         closeHaze = counts?.let { v -> shell.filterTo(HashSet()) { (v[it] ?: 0) >= TrustMap.CLOSE_VOUCHES } }.orEmpty()
         haze = shell
         web = graph
@@ -543,11 +557,11 @@ private fun TrustWebContent(
     // Only pictures that loaded become faces ("pubkey url" keys), taken in
     // once a second so the globe settles a few times, not sixteen.
     var renderedPictures by remember { mutableStateOf(emptySet<String>()) }
-    LaunchedEffect(ringCandidates) {
+    suspend fun loadPictures(candidates: List<String>) = coroutineScope {
         val asked = HashSet<String>()
         val loaded = java.util.Collections.synchronizedSet(HashSet<String>())
         repeat(PICTURE_WAIT_TICKS) {
-            for (pubkey in ringCandidates) {
+            for (pubkey in candidates) {
                 val url = nostrService.profiles.value[pubkey]?.pictureURL?.takeIf { it.isNotBlank() } ?: continue
                 val key = "$pubkey $url"
                 if (key in renderedPictures || !asked.add(key)) continue
@@ -558,10 +572,25 @@ private fun TrustWebContent(
             if (batch.isNotEmpty()) renderedPictures = renderedPictures + batch
         }
     }
+    LaunchedEffect(ringCandidates) { loadPictures(ringCandidates) }
+    fun pictureRenders(pubkey: String): Boolean =
+        profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
     val ringFaces = remember(ringCandidates, renderedPictures) {
-        TrustMap.pickFaces(ringCandidates, { pubkey ->
-            profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
-        }, if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
+        TrustMap.pickFaces(ringCandidates, ::pictureRenders, if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
+    }
+    // The picked layer's faces (Close or Further out), fetched on each pick:
+    // the picture loader stops after a while and profiles can arrive late.
+    val pickedLayerCandidates = layerCandidates[layer].orEmpty()
+    LaunchedEffect(layer, pickedLayerCandidates) {
+        if (pickedLayerCandidates.isEmpty()) return@LaunchedEffect
+        nostrService.fetchMissingProfiles(pickedLayerCandidates)
+        loadPictures(pickedLayerCandidates)
+    }
+    /** Pictures on the outer shell for the picked layer, most vouched first; only ones that loaded. */
+    val layerFaces = remember(isWOTTab, centerKey, pickedLayerCandidates, renderedPictures) {
+        if (!isWOTTab || centerKey != me) emptyList()
+        else TrustMap.pickFaces(pickedLayerCandidates, ::pictureRenders,
+            if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES)
     }
 
     fun jump(index: Int) {
@@ -790,12 +819,16 @@ private fun TrustWebContent(
                 }
 
                 refreshState = RefreshState(1f, "Rebuilding your web…")
+                // Whether the relay saved a new web: the bar ends on "Up to
+                // date" only then, else on why not (iOS rebuildWeb).
+                var saved = false
                 // False when the relay isn't up; throws on a library from before the call existed.
                 val started = withContext(Dispatchers.IO) { runCatching { HavenBridge.refreshWot() }.getOrDefault(false) }
                 if (!started) {
                     refreshState = RefreshState(1f, "Relay isn't running. Showing your last saved web.")
                     delay(RELAY_DOWN_HOLD_MS)
                 } else {
+                    var finished = false
                     val rebuildStart = System.nanoTime()
                     // The creep restarts at each new phase and each finished
                     // batch, so the bar never sits on the next batch's mark.
@@ -816,11 +849,19 @@ private fun TrustWebContent(
                                 1f + progress.fraction(seconds(phaseStarted)).toFloat(),
                                 progress.caption(seconds(rebuildStart).toLong()),
                             )
-                            if (!progress.running) break
+                            if (!progress.running) {
+                                saved = progress.phase == "saved"
+                                finished = true
+                                break
+                            }
                         }
                         delay(WOT_POLL_MS)
                     }
+                    if (!finished) {
+                        refreshState = RefreshState(1f, "The rebuild is taking too long. Showing your last saved web.")
+                    }
                 }
+                val outcome = refreshState?.caption.orEmpty()
                 // The rebuild saved a new graph: read it in, and the haze
                 // follows through trustGraphUpdates. Give it a moment to land.
                 trust.reloadTrustGraph()
@@ -830,8 +871,9 @@ private fun TrustWebContent(
                 val scores = trust.engagement()
                 engagement = scores
                 nostrService.fetchMissingProfiles(listOf(me) + TrustMap.faceCandidates(trust.myFollows(), scores), force = true)
-                refreshState = RefreshState(REFRESH_STEPS.toFloat(), "Up to date")
-                delay(REFRESH_DONE_HOLD_MS)
+                refreshState = RefreshState(REFRESH_STEPS.toFloat(), if (saved) "Up to date" else outcome, failed = !saved)
+                // A failure stays up long enough to read.
+                delay(if (saved) REFRESH_DONE_HOLD_MS else REFRESH_FAILED_HOLD_MS)
             } finally {
                 refreshState = null
             }
@@ -925,6 +967,7 @@ private fun TrustWebContent(
                 closeHaze = closeHaze,
                 lite = lite,
                 ringFaces = ringFaces,
+                layerFaces = layerFaces,
                 running = !showingList,
                 layer = if (isWOTTab && centerKey == me) layer else TrustMap.Layer.EVERYONE,
                 summary = summary(frame, me, author, centerKey, ::name),
@@ -1072,10 +1115,13 @@ private fun TrustWebContent(
                 if (crumbs.size > 1) crumbRow(Modifier.fillMaxWidth())
                 WotLivePill(
                     caption = when {
-                        refreshState != null || liveRebuild -> "Rebuilding your web"
+                        // The Rebuild button's steps, then how it ended (iOS).
+                        refreshState != null -> refreshState?.caption
+                        liveRebuild -> "Rebuilding your web"
                         mappingWeb -> "Mapping your web"
                         else -> null
                     },
+                    outcome = refreshState?.takeIf { it.done }?.let { if (it.failed) WotPillOutcome.Failed else WotPillOutcome.Saved },
                     newPeople = newPeople,
                     onClick = {
                         if (liveRebuild) arrivalsDismissed += newPeople
@@ -1213,6 +1259,8 @@ private const val REFRESH_STEPS = 3
 private const val TRUST_GRAPH_WAIT_MS = 1_500L
 /** The full bar holds this long before it fades, so the end reads as done. */
 private const val REFRESH_DONE_HOLD_MS = 700L
+/** A refresh that didn't save a new web holds its reason this long. */
+private const val REFRESH_FAILED_HOLD_MS = 3_500L
 /** "Relay isn't running" stays up this long before refresh goes on. */
 private const val RELAY_DOWN_HOLD_MS = 1_500L
 /** The relay's rebuild is polled this often, at most [MAX_WOT_POLLS] times (6 minutes). */
@@ -1223,8 +1271,13 @@ private const val MAX_WOT_POLLS = 720
 private const val LIVE_POLL_MS = 1_000L
 private const val IDLE_POLL_MS = 5_000L
 
-/** Where a refresh is: [fill] out of [REFRESH_STEPS], and what it's doing. */
-private data class RefreshState(val fill: Float, val caption: String)
+/**
+ * Where a refresh is: [fill] out of [REFRESH_STEPS], and what it's doing.
+ * [failed] once a finished run didn't save a new web.
+ */
+private data class RefreshState(val fill: Float, val caption: String, val failed: Boolean = false) {
+    val done: Boolean get() = fill >= REFRESH_STEPS
+}
 
 /**
  * "47", or "at least 5" while relays may hold more: the count is only the
@@ -1487,7 +1540,7 @@ private fun WotTopBar(
  * neither.
  */
 @Composable
-private fun WotLivePill(caption: String?, newPeople: Int, onClick: () -> Unit) {
+private fun WotLivePill(caption: String?, outcome: WotPillOutcome? = null, newPeople: Int, onClick: () -> Unit) {
     val accent = LocalNostrVaultColors.current.primary
     val shape = RoundedCornerShape(50)
     AnimatedVisibility(
@@ -1505,7 +1558,16 @@ private fun WotLivePill(caption: String?, newPeople: Int, onClick: () -> Unit) {
                 .padding(vertical = 10.dp, horizontal = 20.dp)
                 .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         ) {
-            if (newPeople > 0) {
+            if (outcome != null) {
+                // How the Rebuild button's run ended, over any count.
+                Icon(
+                    if (outcome == WotPillOutcome.Failed) NostrVaultIcons.ErrorCircle else NostrVaultIcons.CheckCircle,
+                    contentDescription = null, tint = PrimaryText, modifier = Modifier.size(13.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(caption.orEmpty(), color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
+            } else if (newPeople > 0) {
                 Icon(NostrVaultIcons.ArrowUp, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("${NumberFormat.getIntegerInstance().format(newPeople)} new people",
@@ -1513,11 +1575,15 @@ private fun WotLivePill(caption: String?, newPeople: Int, onClick: () -> Unit) {
             } else {
                 CircularProgressIndicator(color = PrimaryText, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(caption.orEmpty(), color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(caption.orEmpty(), color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
             }
         }
     }
 }
+
+/** How a finished Rebuild ended, as [WotLivePill] marks it. */
+private enum class WotPillOutcome { Saved, Failed }
 
 /**
  * What the globe is waiting on, said in words over it: a spinner, the person
@@ -2143,6 +2209,8 @@ private data class LoadKey(
     val hazeHash: Int,
     /** The ring's faces when the core is the author; they change as pictures stream in. */
     val faces: List<String>,
+    /** The picked layer's faces on the outer shell. */
+    val layerFaces: List<String>,
 )
 
 /** Spinning and turning to a person both take about this long; a new person's globe settles in after it. */
@@ -2173,6 +2241,8 @@ private fun TrustGlobe(
      * show: without these the only face is the core ([TrustMap.pickFaces]).
      */
     ringFaces: List<String>,
+    /** Pictures on the outer shell for the picked layer (Close or Further out), on your own globe. */
+    layerFaces: List<String> = emptyList(),
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
     /** Which part of the web is lit (the WOT tab's layer picker). */
@@ -2197,6 +2267,8 @@ private fun TrustGlobe(
     val currentHaze by rememberUpdatedState(haze)
     val currentCloseHaze by rememberUpdatedState(closeHaze)
     val currentRingFaces by rememberUpdatedState(ringFaces)
+    val currentLayerFaces by rememberUpdatedState(layerFaces)
+    val currentLayer by rememberUpdatedState(layer)
     val currentFollows by rememberUpdatedState(myFollows)
     val currentName by rememberUpdatedState(name)
     val currentOnTap by rememberUpdatedState(onTap)
@@ -2231,14 +2303,16 @@ private fun TrustGlobe(
 
     val loadKey = frame?.let {
         LoadKey(it.center, it.ring.size, it.bridges.size, it.chains?.size ?: -1, haze.size, closeHaze.size,
-            myFollows.size, it.ring.hashCode(), haze.hashCode(), if (it.center == author) ringFaces else emptyList())
+            myFollows.size, it.ring.hashCode(), haze.hashCode(), if (it.center == author) ringFaces else emptyList(),
+            layerFaces)
     }
     LaunchedEffect(loadKey) {
         val first = currentFrame ?: return@LaunchedEffect
         // Turn to the new person first, then let the globe re-settle around them.
         if (scene.hasLoaded && first.center != scene.center && !Motion.isReduced) delay(TURN_DELAY_MS)
         val latest = currentFrame ?: return@LaunchedEffect
-        scene.load(latest, me, author, currentFollows, currentHaze, currentCloseHaze, currentRingFaces)
+        scene.load(latest, me, author, currentFollows, currentHaze, currentCloseHaze, currentRingFaces,
+            currentLayerFaces, currentLayer)
     }
 
     val faceKeys = scene.faceKeys
@@ -2436,6 +2510,8 @@ private class GlobeScene(
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
+    /** Faces on the outer shell for the picked layer: drawn in the shell's colour. */
+    private var layerFaceSet: Set<String> = emptySet()
     /**
      * How brightly your follows, the Close shell and the rest of the shell
      * are drawn, easing toward the picked layer's ([TrustMap.layerWeights]).
@@ -2454,6 +2530,8 @@ private class GlobeScene(
     var traceTarget by mutableStateOf<String?>(null)
         private set
     private var traceBridges: List<String> = emptyList()
+    /** The traced person and their bridges: lit whatever layer is picked. */
+    private var traced: Set<String> = emptySet()
     /** A traced person who had no star of their own (found by search). */
     private var tracedStar: String? = null
 
@@ -2475,6 +2553,8 @@ private class GlobeScene(
         haze: List<String>,
         closeHaze: Set<String> = emptySet(),
         ringFaces: List<String> = emptyList(),
+        layerFaces: List<String> = emptyList(),
+        layer: TrustMap.Layer = TrustMap.Layer.EVERYONE,
     ) {
         val now = nowSeconds()
         reduceMotion = Motion.isReduced
@@ -2506,6 +2586,11 @@ private class GlobeScene(
         want[author] = Kind.BRIDGE to TrustMap.AUTHOR_RADIUS
         want[frame.center] = Kind.RING to 0.0
         tracedStar?.let { if (it !in want) want[it] = Kind.BRIDGE to TrustMap.OUTER_RADIUS }
+        // A layer's face may be past the shell's cap: it still gets its star.
+        if (frame.center == me) {
+            val kind = if (layer == TrustMap.Layer.CLOSE) Kind.CLOSE_HAZE else Kind.HAZE
+            for (key in layerFaces) if (key !in want) want[key] = kind to TrustMap.OUTER_RADIUS
+        }
 
         for (star in stars) {
             if (star.key !in want) {
@@ -2540,6 +2625,9 @@ private class GlobeScene(
         for (chain in chains.take(TrustMap.SHOWN_CHAINS)) {
             for (key in listOf(chain.bridge, chain.via)) if (taken.add(key)) shown += key
         }
+        val layerShown = HashSet<String>()
+        if (frame.center == me) for (key in layerFaces) if (taken.add(key)) { shown += key; layerShown += key }
+        layerFaceSet = layerShown
         faces = shown
         seatFaces()
 
@@ -2601,6 +2689,7 @@ private class GlobeScene(
         }
         traceTarget = target
         traceBridges = through
+        traced = if (target == null) emptySet() else (listOf(target) + through).toHashSet()
         seatFaces()
         threadsBorn = now
         threadProgress = if (reduceMotion) 1.0 else 0.0
@@ -2631,7 +2720,17 @@ private class GlobeScene(
         wake()
     }
 
-    /** Lights one layer and dims the rest. Nothing is reloaded. */
+    /** How brightly [star] is drawn for the picked layer. The core, the author and a traced path are always lit. */
+    private fun weight(star: Star): Double {
+        if (star.key == center || star.key == author || star.key in traced) return 1.0
+        return when (star.kind) {
+            Kind.HAZE -> weights.further
+            Kind.CLOSE_HAZE -> weights.close
+            else -> weights.follows
+        }
+    }
+
+    /** Lights one layer and hides the rest. Nothing is reloaded. */
     fun focus(layer: TrustMap.Layer) {
         weightTarget = TrustMap.layerWeights(layer)
         if (Motion.isReduced) weights = weightTarget
@@ -2731,7 +2830,7 @@ private class GlobeScene(
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
         fun consider(star: Star, reach: Double) {
-            if (star.alpha <= 0.5) return
+            if (star.alpha * min(1.0, weight(star)) <= 0.5) return
             val p = project.of(star) ?: return
             if (p.depth <= -0.15) return
             val d = hypot(p.x - at.x, p.y - at.y)
@@ -2844,11 +2943,7 @@ private class GlobeScene(
 
         for (star in stars) {
             if (star.isFace) continue
-            val a = star.alpha * when (star.kind) {
-                Kind.HAZE -> weights.further
-                Kind.CLOSE_HAZE -> weights.close
-                else -> weights.follows
-            }
+            val a = star.alpha * weight(star)
             if (a <= 0.02) continue
             val p = project.of(star) ?: continue
             if (p.x < -pad || p.y < -pad || p.x > w + pad || p.y > h + pad) continue
@@ -2920,9 +3015,15 @@ private class GlobeScene(
         val drawn = ArrayList<Drawn>()
         for (key in faces) {
             val p = index[key]?.let { project.of(it) } ?: continue
-            drawn += Drawn(key, p, if (center == author && traceTarget == null) RingColor else GlobeAccent, 15.0)
+            drawn += when {
+                traceTarget == null && key in layerFaceSet -> Drawn(key, p, HazeColor, 14.0)
+                center == author && traceTarget == null -> Drawn(key, p, RingColor, 15.0)
+                else -> Drawn(key, p, GlobeAccent, 15.0)
+            }
         }
         if (authorP != null) drawn += Drawn(author, authorP, AuthorTint, 24.0)
+        // Faces the picked layer hides take no seat, so the lit ones get the room.
+        drawn.retainAll { face -> index[face.key]?.let { it.alpha * weight(it) > 0.02 } ?: true }
         drawn.sortBy { it.p.depth }
 
         // Seats: a face only where it covers no other face and not the core;
@@ -2960,7 +3061,7 @@ private class GlobeScene(
         }
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
-            val a = (index[face.key] ?: coreStar).alpha * (if (face.key == author) 1.0 else weights.follows)
+            val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
             val dim = (0.35 + 0.65 * face.p.front) * a
             val behind = face.p.depth < -0.1 && face.key != author
             // No room for its picture here: a bright star in its colour.
