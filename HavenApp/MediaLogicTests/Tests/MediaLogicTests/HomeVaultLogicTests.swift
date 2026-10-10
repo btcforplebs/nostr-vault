@@ -77,6 +77,7 @@ final class ServerListMergeTests: XCTestCase {
     private let kiosk = "npub1" + String(repeating: "q", count: 58)
     private let me = "npub1" + String(repeating: "p", count: 58)
     private let third = "npub1" + String(repeating: "z", count: 58)
+    private let fourth = "npub1" + String(repeating: "r", count: 58)
     private func mesh(_ n: String) -> String { "fipsmesh://\(n)/" }
 
     func testPublicServersComeBeforeMeshEntries() {
@@ -117,6 +118,32 @@ final class ServerListMergeTests: XCTestCase {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"], previouslyManaged: [],
                                                  ownMeshNpub: me, shareOwnMesh: false)
         XCTAssertEqual(out, ["https://a.example/"])
+    }
+
+    func testASenderListsItsHomeVaultAfterOtherMeshEntries() {
+        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", mesh(third)],
+                                                 current: ["https://a.example/", mesh(kiosk)], previouslyManaged: [],
+                                                 ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
+    }
+
+    func testAChangedHomeVaultDropsTheOldOneOnly() {
+        // This phone listed kiosk before; now third. Another phone's other entry stays.
+        let existing = ["https://a.example/", mesh(kiosk), mesh(fourth)]
+        let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/", mesh(third)],
+                                                 previouslyManaged: ["https://a.example/", mesh(kiosk)],
+                                                 ownMeshNpub: me, shareOwnMesh: false)
+        XCTAssertEqual(out, ["https://a.example/", mesh(fourth), mesh(third)])
+    }
+
+    func testPastedAndScannedMeshAddresses() {
+        XCTAssertEqual(HomeVaultLogic.meshNpub(fromInput: kiosk), kiosk)
+        XCTAssertEqual(HomeVaultLogic.meshNpub(fromInput: " nostr:\(kiosk)\n"), kiosk)
+        XCTAssertEqual(HomeVaultLogic.meshNpub(fromInput: "fipsmesh://\(kiosk)/"), kiosk)
+        XCTAssertEqual(HomeVaultLogic.meshNpub(fromInput: "fipsmesh://\(kiosk)"), kiosk)
+        XCTAssertNil(HomeVaultLogic.meshNpub(fromInput: "https://\(kiosk)/"))
+        XCTAssertNil(HomeVaultLogic.meshNpub(fromInput: "npub1short"))
+        XCTAssertNil(HomeVaultLogic.meshNpub(fromInput: ""))
     }
 
     func testAMeshOnlyListIsNeverPublished() {

@@ -1,6 +1,7 @@
 package com.nostrvault.fips
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -108,6 +109,32 @@ class HomeVaultQueueTest {
         )
         // Nothing published yet.
         assertEquals(listOf("https://a.example"), HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example")))
+    }
+
+    @Test
+    fun `a sender lists its home vault and drops the one it replaced`() {
+        val other = "npub1" + "z".repeat(58)
+        val newest = listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/")
+        assertEquals(
+            listOf("https://a.example", "fipsmesh://$self/", "fipsmesh://$other/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = other, dropMesh = kiosk),
+        )
+        // Already listed: once.
+        assertEquals(
+            listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = kiosk),
+        )
+    }
+
+    @Test
+    fun `a pasted or scanned mesh address`() {
+        assertEquals(kiosk, HomeVaultRules.meshNpubFromInput(kiosk))
+        assertEquals(kiosk, HomeVaultRules.meshNpubFromInput(" nostr:$kiosk\n"))
+        assertEquals(kiosk, HomeVaultRules.meshNpubFromInput("fipsmesh://$kiosk/"))
+        assertEquals(kiosk, HomeVaultRules.meshNpubFromInput("fipsmesh://$kiosk"))
+        assertNull(HomeVaultRules.meshNpubFromInput("https://$kiosk/"))
+        assertNull(HomeVaultRules.meshNpubFromInput("npub1short"))
+        assertNull(HomeVaultRules.meshNpubFromInput(""))
     }
 
     @Test
@@ -253,5 +280,12 @@ class HomeVaultQueueTest {
         assertEquals(listOf("https://a.example", "https://b.example"), q.items().map { it.server })
         assertEquals(listOf(sha, sha), q.items().map { HomeVaultQueue.shaOf(it.key) })
     }
-}
 
+    @Test
+    fun `a mesh-only URL names the vault and a hash readers route by`() {
+        val npub = "npub1" + "q".repeat(58)
+        val url = HomeVaultRules.meshOnlyUrl(npub, sha)
+        assertEquals("http://$npub.fips/$sha", url)
+        assertEquals(sha, FipsMediaRouter.sha256In(url))
+    }
+}
