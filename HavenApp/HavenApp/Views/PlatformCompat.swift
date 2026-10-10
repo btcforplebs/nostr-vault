@@ -463,9 +463,12 @@ enum DroppedMedia {
     /// doesn't win over a clip that also offers a poster image.
     static let acceptedTypes: [UTType] = [.movie, .image]
 
-    static func load(_ provider: NSItemProvider) async -> DroppedMedia? {
+    /// `acceptingVideo: false` reads a Live Photo or a clip with a poster as
+    /// its still, so a caller that only takes images never receives a video
+    /// copy it would have to clean up.
+    static func load(_ provider: NSItemProvider, acceptingVideo: Bool) async -> DroppedMedia? {
         let types = provider.registeredContentTypes
-        if let movieType = types.first(where: { $0.conforms(to: .movie) }) {
+        if acceptingVideo, let movieType = types.first(where: { $0.conforms(to: .movie) }) {
             return await withCheckedContinuation { continuation in
                 _ = provider.loadFileRepresentation(for: movieType, openInPlace: false) { url, _, _ in
                     guard let url else { return continuation.resume(returning: nil) }
@@ -530,6 +533,21 @@ struct PastesClipboardImage: ViewModifier {
             .onAppear(perform: refresh)
             .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in refresh() }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in refresh() }
+            // A copy made in another app arrives with no notification: in Split
+            // View this app stays active, so neither one above fires. The change
+            // count is a plain integer read, so watching it costs nothing and
+            // raises no paste prompt.
+            .task {
+                var seen = UIPasteboard.general.changeCount
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    let count = UIPasteboard.general.changeCount
+                    if count != seen {
+                        seen = count
+                        refresh()
+                    }
+                }
+            }
     }
 
     /// The `has` checks read the clipboard's types, not its contents, so they

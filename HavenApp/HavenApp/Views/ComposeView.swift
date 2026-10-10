@@ -1107,10 +1107,11 @@ struct ComposeView: View {
 
     /// Attaches dragged-in media in the order it was dropped, as far as the
     /// note has room; the rest meets the attachment limit's message.
+    @MainActor
     private func attachDropped(_ providers: [NSItemProvider]) async {
         var loaded: [DroppedMedia] = []
         for provider in providers.prefix(remainingAttachmentSlots + 1) {
-            if let media = await DroppedMedia.load(provider) { loaded.append(media) }
+            if let media = await DroppedMedia.load(provider, acceptingVideo: true) { loaded.append(media) }
         }
         guard !loaded.isEmpty else {
             error = "Couldn't read what was dropped."

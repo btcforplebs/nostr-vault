@@ -452,10 +452,14 @@ struct SearchView: View {
         .hashtagLinks()
         // ⌘F on an iPad keyboard switched to this tab; the field takes the keys.
         .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
-            searchFieldFocused = true
+            if SearchFocusRequest.take() { searchFieldFocused = true }
         }
         .onAppear {
             refreshDiscovery(force: true)
+            if SearchFocusRequest.take() {
+                // Focus set during the appear pass is dropped; the next turn holds.
+                DispatchQueue.main.async { searchFieldFocused = true }
+            }
             #if os(macOS)
             // No tap-to-focus convention on the desktop: the field a window opens
             // on should already be taking keystrokes.
