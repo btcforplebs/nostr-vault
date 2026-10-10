@@ -286,7 +286,7 @@ struct TrustWebView: View {
                              myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
                              layerFaces: layerFaces,
                              running: profilePubkey == nil && !showingList,
-                             layer: isWOTTab ? layer : .everyone,
+                             layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
                              focus: isWOTTab ? card : nil,
@@ -1334,9 +1334,18 @@ struct TrustWebView: View {
                            filled: !following) {
                     FollowActions.toggle(pubkey, name: name(pubkey), isFollowing: following)
                 }
-                cardButton("Message", icon: "message.fill", filled: false) { messagePubkey = pubkey }
                 cardButton("Profile", icon: "person.crop.circle", filled: false) { profilePubkey = pubkey }
+                // Already in the middle: there's no further web to move to.
+                if pubkey != centerKey {
+                    cardButton("See their web", short: "Their web", icon: "WoTTab", asset: true, filled: false) {
+                        closeCard()
+                        center(on: pubkey)
+                    }
+                    .accessibilityHint(Text("Puts \(name(pubkey)) in the middle, with the people they follow around them"))
+                }
                 Menu {
+                    Button { messagePubkey = pubkey } label: { Label("Message", systemImage: "message") }
+                    Divider()
                     Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
                         Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
                     }
@@ -1364,12 +1373,26 @@ struct TrustWebView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func cardButton(_ title: String, icon: String, filled: Bool, action: @escaping () -> Void) -> some View {
+    /// `short` stands in for `title` when a narrow phone has no room for it.
+    private func cardButton(_ title: String, short: String? = nil, icon: String, asset: Bool = false, filled: Bool,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.appSystem(size: 12, weight: .semibold))
-                Text(title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
+                if asset {
+                    // A template image doesn't follow the font like an SF Symbol does.
+                    Image(icon).resizable().frame(width: 13, height: 13)
+                } else {
+                    Image(systemName: icon).font(.appSystem(size: 12, weight: .semibold))
+                }
+                ViewThatFits(in: .horizontal) {
+                    Text(title)
+                    if let short { Text(short) }
+                }
+                .font(.appSystem(size: 14, weight: .semibold))
+                .lineLimit(1)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(title))
             .foregroundColor(filled ? .white : .havenPurple)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
@@ -1542,7 +1565,8 @@ struct TrustWebView: View {
     // MARK: - Actions
 
     private func tapped(_ pubkey: String) {
-        // The WOT tab answers "can I trust them?" in a card and stays on you.
+        // The WOT tab answers "can I trust them?" in a card; only the card's
+        // "See their web" moves the globe.
         if isWOTTab { return pubkey == me || pubkey == card ? closeCard() : openCard(pubkey) }
         if peek != nil { peek = nil; return }
         // The one in the middle: say who they are rather than go nowhere.
@@ -1550,6 +1574,12 @@ struct TrustWebView: View {
             if pubkey != me { peek = pubkey }
             return
         }
+        center(on: pubkey)
+    }
+
+    /// Puts `pubkey` in the middle with everyone they follow around them,
+    /// one step further along the trail.
+    private func center(on pubkey: String) {
         if let index = crumbs.firstIndex(of: pubkey) { return jump(to: index) }
         crumbs.append(pubkey)
         guard frames[pubkey] == nil else { return }
