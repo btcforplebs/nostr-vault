@@ -992,12 +992,16 @@ fun NostrVaultNavHost(
 
 /** The page a tutorial's cards are on. Your Vault's are on the Vault tab's relay half;
  *  WoT's on the WoT tab's globe (iOS 993f42e1: replay and "Next" open it). */
-private fun tutorialRoute(id: com.nostrvault.tutorials.TutorialID): String = when (id) {
+internal fun tutorialRoute(id: com.nostrvault.tutorials.TutorialID): String = when (id) {
     com.nostrvault.tutorials.TutorialID.WOT -> Screen.WOT.route
     com.nostrvault.tutorials.TutorialID.VAULT,
     com.nostrvault.tutorials.TutorialID.POCKET_RELAY -> Screen.Dashboard.route
     com.nostrvault.tutorials.TutorialID.WALLET_CONNECT -> Screen.Wallet.route
-    else -> Screen.Feed.route
+    // Listed, not `else`: a new tutorial must pick its tab or this fails to
+    // compile. WOT once fell through to Feed and drew its cards arrowless.
+    com.nostrvault.tutorials.TutorialID.FILL_YOUR_VAULT,
+    com.nostrvault.tutorials.TutorialID.FEEDS,
+    com.nostrvault.tutorials.TutorialID.IMPORT_TOUR -> Screen.Feed.route
 }
 
 /** Tabs open as the bottom bar opens them, then drop anything their saved
