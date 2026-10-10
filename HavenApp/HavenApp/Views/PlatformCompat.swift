@@ -516,6 +516,6 @@ extension View {
 
     /// The view's own width, reported whenever it changes.
     func measureWidth(_ action: @escaping (CGFloat) -> Void) -> some View {
-        onGeometryChange(for: CGFloat.self) { $0.size.width } action: action
+        onGeometryChange(for: CGFloat.self) { $0.size.width } action: { action($0) }
     }
 }

@@ -404,13 +404,15 @@ struct SettingsView: View {
             Divider()
                 .background(Color.platformSeparator)
 
-            // Its own stack, so a page that pushes (Relays -> a relay, Logs ->
-            // a file) pushes inside the right-hand column.
-            NavigationStack {
-                destinationFor(selectedTab)
-            }
-            .id(selectedTab)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No stack of its own: both hosts (the sidebar's Settings row and
+            // the Profile gear sheet) already wrap SettingsView in a
+            // NavigationStack, and SwiftUI does not support a stack nested in
+            // a stack -- pushes from here (Relays -> a relay, Logs -> a file)
+            // would land in the outer stack or do nothing. The page pushes
+            // through that outer stack instead.
+            destinationFor(selectedTab)
+                .id(selectedTab)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.platformWindowBackground)
     }
