@@ -16,6 +16,7 @@ extension VaultView {
     /// The Vault tab's menu entry for what this view is showing.
     var vaultMode: VaultMode {
         switch viewMode {
+        case .activity: return .activity
         case .likes: return .likes
         case .zaps: return .zaps
         case .followers: return .followers

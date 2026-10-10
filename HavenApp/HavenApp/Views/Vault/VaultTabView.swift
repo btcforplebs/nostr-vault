@@ -68,12 +68,16 @@ enum VaultDashboard {
 
 /// The Vault tab's modes, in menu order.
 enum VaultMode: String, CaseIterable {
+    /// "Vault": everything that came in, in one list, like a notifications
+    /// page. The tab opens on it.
+    case activity
     case notes, articles, highlights, media, likes, zaps, followers
 
-    var title: String { rawValue.capitalized }
+    var title: String { self == .activity ? "Vault" : rawValue.capitalized }
 
     var symbol: String {
         switch self {
+        case .activity: return "tray.full.fill"
         case .notes: return "doc.text"
         case .articles: return "doc.richtext"
         case .highlights: return "highlighter"
@@ -98,6 +102,7 @@ enum VaultMode: String, CaseIterable {
 
     func select() {
         switch self {
+        case .activity: NotificationCenter.default.post(name: .havenOpenRelayActivity, object: nil)
         case .notes: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.notes)
         case .articles: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.articles)
         case .highlights: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.highlights)
@@ -184,6 +189,6 @@ struct VaultModePill: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Vault: \(mode.title)")
         .accessibilityValue(hasNewElsewhere ? "New activity" : "")
-        .accessibilityHint("Switch between notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
+        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
     }
 }

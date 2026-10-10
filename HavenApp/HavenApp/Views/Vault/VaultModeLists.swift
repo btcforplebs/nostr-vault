@@ -13,6 +13,8 @@ extension VaultView {
                 Group {
                     if searchScope == .profiles && !committedSearch.isEmpty {
                         profileSearchResults
+                    } else if viewMode == .activity {
+                        activityList
                     } else if viewMode == .notes {
                         notesList
                     } else if viewMode == .likes {
