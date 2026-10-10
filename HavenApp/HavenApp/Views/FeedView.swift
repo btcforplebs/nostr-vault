@@ -3192,6 +3192,11 @@ struct FeedView: View {
                 guard (note.object as? Int) == 0 else { return }
                 openComposer()
             }
+            // ⌘R on an iPad keyboard: the same as pulling down.
+            .modifier(RefreshesOnTabCommand(tab: 0, isActive: { !feedService.isLoadingFeed }) {
+                if !feedService.pendingNotes.isEmpty { feedService.applyPendingNotes() }
+                feedService.refresh()
+            })
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)

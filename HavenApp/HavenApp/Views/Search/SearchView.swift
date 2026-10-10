@@ -450,6 +450,10 @@ struct SearchView: View {
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .hashtagLinks()
+        // ⌘F on an iPad keyboard switched to this tab; the field takes the keys.
+        .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
+            searchFieldFocused = true
+        }
         .onAppear {
             refreshDiscovery(force: true)
             #if os(macOS)

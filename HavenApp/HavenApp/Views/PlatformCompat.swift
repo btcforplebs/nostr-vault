@@ -429,3 +429,114 @@ extension View {
         modifier(FloatingActionBottomPadding())
     }
 }
+
+// MARK: - ⌘R
+
+/// Answers ⌘R (`havenRefreshTab`) for one tab, while `isActive` says this view
+/// is the one showing. A modifier rather than an inline receiver keeps the big
+/// views' modifier chains inside the type checker's budget.
+struct RefreshesOnTabCommand: ViewModifier {
+    let tab: Int
+    var isActive: () -> Bool = { true }
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .havenRefreshTab)) { note in
+            guard (note.object as? Int) == tab, isActive() else { return }
+            action()
+        }
+    }
+}
+
+// MARK: - Dropped Media
+
+/// A photo or video dragged in from another app (Photos, Files, Safari) or
+/// from elsewhere in this one, read off its item provider.
+enum DroppedMedia {
+    /// The image's own bytes, so a GIF still moves; the caller re-encodes.
+    case image(Data, UTType)
+    /// A copy in the temporary directory, which the caller then owns: the
+    /// provider deletes its own file as soon as the load returns.
+    case video(URL, UTType)
+
+    /// What a drop target accepts. Videos first, so a Live Photo's still
+    /// doesn't win over a clip that also offers a poster image.
+    static let acceptedTypes: [UTType] = [.movie, .image]
+
+    static func load(_ provider: NSItemProvider) async -> DroppedMedia? {
+        let types = provider.registeredContentTypes
+        if let movieType = types.first(where: { $0.conforms(to: .movie) }) {
+            return await withCheckedContinuation { continuation in
+                _ = provider.loadFileRepresentation(for: movieType, openInPlace: false) { url, _, _ in
+                    guard let url else { return continuation.resume(returning: nil) }
+                    let ext = url.pathExtension.isEmpty ? (movieType.preferredFilenameExtension ?? "mov") : url.pathExtension
+                    let dest = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("haven-upload-\(UUID().uuidString)")
+                        .appendingPathExtension(ext)
+                    do {
+                        try FileManager.default.copyItem(at: url, to: dest)
+                        continuation.resume(returning: .video(dest, UTType(filenameExtension: ext) ?? movieType))
+                    } catch {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+        if let imageType = types.first(where: { $0.conforms(to: .image) }) {
+            return await withCheckedContinuation { continuation in
+                _ = provider.loadDataRepresentation(for: imageType) { data, _ in
+                    continuation.resume(returning: data.map { .image($0, imageType) })
+                }
+            }
+        }
+        return nil
+    }
+}
+
+extension View {
+    /// The outline a drop target draws while something is dragged over it.
+    func dropTargetHighlight(_ isTargeted: Bool, cornerRadius: CGFloat = 12) -> some View {
+        overlay {
+            if isTargeted {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.havenPurple, style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
+                    .background(Color.havenPurple.opacity(0.06), in: RoundedRectangle(cornerRadius: cornerRadius))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+#if os(iOS)
+/// ⌘V on an iPad keyboard attaches the image on the clipboard. The focused
+/// text field owns ⌘V for text, so the key is bound only while the clipboard
+/// holds an image and no text or link: pasting words into the field is never
+/// taken away from it.
+struct PastesClipboardImage: ViewModifier {
+    let action: () -> Void
+    @State private var clipboardHoldsOnlyImage = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if clipboardHoldsOnlyImage {
+                    Button("Paste Photo", action: action)
+                        .keyboardShortcut("v", modifiers: .command)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                }
+            }
+            .onAppear(perform: refresh)
+            .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in refresh() }
+    }
+
+    /// The `has` checks read the clipboard's types, not its contents, so they
+    /// don't raise the paste-permission prompt.
+    private func refresh() {
+        let board = UIPasteboard.general
+        clipboardHoldsOnlyImage = board.hasImages && !board.hasStrings && !board.hasURLs
+    }
+}
+#endif

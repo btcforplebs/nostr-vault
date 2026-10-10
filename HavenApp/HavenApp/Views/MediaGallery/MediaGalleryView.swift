@@ -169,6 +169,10 @@ struct MediaGalleryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
+        // ⌘R on an iPad keyboard, while the Vault tab shows its Media half.
+        .modifier(RefreshesOnTabCommand(tab: 4, isActive: { inVaultTab && VaultSection.shared.showsMedia }) {
+            refreshAll()
+        })
         #else
         viewContent
         #endif

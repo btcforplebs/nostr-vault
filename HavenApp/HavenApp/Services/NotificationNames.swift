@@ -49,6 +49,12 @@ extension Notification.Name {
     /// Widget deep links. Search and Media had no existing route because
     /// nothing else needed to open them programmatically.
     static let havenOpenSearch = Notification.Name("com.haven.openSearch")
+    /// ⌘F on an iPad keyboard: the Search tab's field takes the keystrokes.
+    /// Posted after the switch to the Search tab.
+    static let havenFocusSearch = Notification.Name("com.haven.focusSearch")
+    /// ⌘R on an iPad keyboard: refresh what the tab is showing. `object` is
+    /// the tab's index (Int), so only the showing tab's view acts on it.
+    static let havenRefreshTab = Notification.Name("com.haven.refreshTab")
     static let havenOpenMedia = Notification.Name("com.haven.openMedia")
     /// The WOT tab was tapped while showing: its globe goes back to you.
     static let wotTabReselected = Notification.Name("com.haven.wotTabReselected")
