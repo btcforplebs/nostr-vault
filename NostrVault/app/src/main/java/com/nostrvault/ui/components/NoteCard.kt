@@ -1771,7 +1771,12 @@ class FeedMediaMirrorViewModel @Inject constructor(
                         )
                     }
                     DeleteScope.EVERYWHERE -> {
-                        if (deletePosts) nostrService.deleteOwnEvents(referencingBlob = sha)
+                        // Posts first: if they can't be deleted (signing failed),
+                        // keep the file too rather than leave them broken.
+                        if (deletePosts && nostrService.deleteOwnEvents(referencingBlob = sha) == 0) {
+                            onMessage("Couldn't delete the post, so the file was kept. Try again.")
+                            return@launch
+                        }
                         val (localOk, report) = withContext(Dispatchers.IO) {
                             val local = async { blossomService.deleteFromLocal(sha) }
                             val mirrors = async { blossomService.deleteFromMirrors(sha) }

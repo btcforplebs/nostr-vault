@@ -273,7 +273,13 @@ class MediaViewerViewModel @Inject constructor(
         }
         _deleteLeftover.value = null
         viewModelScope.launch {
-            if (deletePosts) nostrService.deleteOwnEvents(referencingBlob = item.sha256)
+            // Posts first: if they can't be deleted (signing failed), keep the
+            // file too rather than leave them showing a broken image.
+            if (deletePosts && nostrService.deleteOwnEvents(referencingBlob = item.sha256) == 0) {
+                notificationManager.showError("Couldn't delete the post, so the file was kept. Try again.")
+                onDone(false)
+                return@launch
+            }
             val (localOk, report) = withContext(Dispatchers.IO) {
                 val local = async { blossomService.deleteFromLocal(item.sha256) }
                 val mirrors = async { blossomService.deleteFromMirrors(item.sha256) }
@@ -886,9 +892,11 @@ internal fun deleteBlobWithPostsLabel(postCount: Int): String =
 /** Appended to the Delete everywhere message when your posts use the blob (iOS wording). */
 internal fun deleteBlobPostsNote(postCount: Int): String =
     if (postCount == 1) {
-        " One of your posts uses it and will show a broken image unless you delete that post too."
+        " One of your posts uses it and will show a broken image unless you delete that post too." +
+            " Deleting the post removes all of it: its text and any other photos in it."
     } else {
-        " $postCount of your posts use it and will show a broken image unless you delete them too."
+        " $postCount of your posts use it and will show a broken image unless you delete them too." +
+            " Deleting a post removes all of it: its text and any other photos in it."
     }
 
 @OptIn(ExperimentalMaterial3Api::class)
