@@ -139,7 +139,7 @@ fun HavenRelaySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Haven Relay") },
+                title = { Text("Sync with Mac") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -164,14 +164,16 @@ fun HavenRelaySettingsScreen(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            Text(
-                text = "SYNC RELAY",
-                color = SecondaryText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                Text(
+                    text = "YOUR MAC'S ADDRESS",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                )
+                InfoButton(SettingsHelp.RELAY_SYNC)
+            }
 
             OutlinedTextField(
                 value = urlInput,

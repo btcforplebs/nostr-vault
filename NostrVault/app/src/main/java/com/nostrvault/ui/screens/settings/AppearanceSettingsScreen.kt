@@ -215,12 +215,7 @@ fun AppearanceSettingsScreen(
             // appearance (OLED black with the orange accent).
 
             // Text size
-            Text(
-                text = "Text Size",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            SettingHeading("Text Size", SettingsHelp.DISPLAY_TEXT_SIZE)
             Spacer(Modifier.height(8.dp))
 
             Row(
@@ -256,20 +251,10 @@ fun AppearanceSettingsScreen(
             // OLED toggle removed — OLED black is the only appearance now.
 
             // Feed text: lines per post in the condensed layouts
-            Text(
-                text = "Feed Text",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "Lines of text each post shows before it is cut off. In Threaded View, replies show one line fewer.",
-                color = SecondaryText,
-                fontSize = 13.sp,
-            )
+            SettingHeading("Feed Text")
             Spacer(Modifier.height(8.dp))
-            LineCountRow("Compact View", compactLines, viewModel::setCompactLines)
-            LineCountRow("Threaded View", threadedLines, viewModel::setThreadedLines)
+            LineCountRow("Compact View", compactLines, SettingsHelp.DISPLAY_COMPACT_LINES, viewModel::setCompactLines)
+            LineCountRow("Threaded View", threadedLines, SettingsHelp.DISPLAY_THREADED_LINES, viewModel::setThreadedLines)
 
             Spacer(Modifier.height(32.dp))
 
@@ -289,19 +274,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "New Posts Pill",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = SettingsHelp.DISPLAY_NEW_POSTS_PILL.text,
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("New Posts Pill", SettingsHelp.DISPLAY_NEW_POSTS_PILL, Modifier.weight(1f))
                 Switch(
                     checked = showNewPostsPill,
                     onCheckedChange = viewModel::setShowNewPostsPill,
@@ -315,21 +288,7 @@ fun AppearanceSettingsScreen(
             Spacer(Modifier.height(32.dp))
 
             // Send delay: the undo window before a post goes out
-            Text(
-                text = "Send Delay",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = if (sendDelaySeconds == 0) {
-                    "Posts go out as soon as you tap. There's no undo."
-                } else {
-                    "Posts wait $sendDelaySeconds seconds before going out, so you can undo or edit them."
-                },
-                color = SecondaryText,
-                fontSize = 13.sp,
-            )
+            SettingHeading("Send Delay", SettingsHelp.POST_SEND_DELAY)
             Spacer(Modifier.height(12.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -374,19 +333,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Keep Tab Bar Full Size",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Keep the bottom tab bar fully expanded at all times. When off, it shrinks and hides as you scroll.",
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("Keep Tab Bar Full Size", SettingsHelp.DISPLAY_TAB_BAR_ANIMATION, Modifier.weight(1f))
                 Switch(
                     checked = disableTabBarAnimation,
                     onCheckedChange = viewModel::toggleTabBarAnimation,
@@ -404,19 +351,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Zaps Only",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Remove likes and reactions entirely. Zaps become the only way to engage and the primary source of relay notifications.",
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("Zaps Only", SettingsHelp.DISPLAY_ZAPS_ONLY, Modifier.weight(1f))
                 Switch(
                     checked = zapsOnly,
                     onCheckedChange = viewModel::toggleZapsOnly,
@@ -431,17 +366,7 @@ fun AppearanceSettingsScreen(
                 Spacer(Modifier.height(32.dp))
 
                 // Default reaction emoji
-                Text(
-                    text = "Default Reaction",
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Used for quick-react on notes",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                )
+                SettingHeading("Default Reaction", SettingsHelp.DISPLAY_DEFAULT_REACTION)
                 Spacer(Modifier.height(12.dp))
 
                 val emojiOptions = listOf(
@@ -494,12 +419,15 @@ fun AppearanceSettingsScreen(
 
 /** One feed layout's line count with minus/plus buttons, clamped to [FeedLineLimits.RANGE]. */
 @Composable
-private fun LineCountRow(title: String, lines: Int, onChange: (Int) -> Unit) {
+private fun LineCountRow(title: String, lines: Int, help: SettingsHelp, onChange: (Int) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
-        Text(title, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Text(title, color = PrimaryText, fontSize = 15.sp)
+            InfoButton(help)
+        }
         LineCountButton("−", "Fewer lines", enabled = lines > FeedLineLimits.RANGE.first) { onChange(lines - 1) }
         Text(
             text = if (lines == 1) "1 line" else "$lines lines",
@@ -608,5 +536,19 @@ private fun TranslationSection(
                 }
             }
         }
+    }
+}
+
+/** A setting's title with its (i), in place of a grey caption under it. */
+@Composable
+private fun SettingHeading(title: String, help: SettingsHelp? = null, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        Text(
+            text = title,
+            color = PrimaryText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (help != null) InfoButton(help)
     }
 }

@@ -129,9 +129,9 @@ fun NotificationSettingsScreen(
         ) {
             // Master toggle
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable Push Notifications", color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Receive notifications when the app is closed", color = SecondaryText, fontSize = 13.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text("Notifications", color = PrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    InfoButton(SettingsHelp.NOTIFY_ENABLE)
                 }
                 Switch(
                     checked = enabled,
@@ -147,10 +147,11 @@ fun NotificationSettingsScreen(
                 Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
                     NotificationToggle(
                         "New Notes in Your Feed",
-                        SettingsHelp.NOTIFY_FEED_NOTES.text,
+                        null,
                         config.enableFeedNotifications,
                         enabled,
-                        viewModel::setFeedNotifications,
+                        help = SettingsHelp.NOTIFY_FEED_NOTES,
+                        onToggle = viewModel::setFeedNotifications,
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -176,6 +177,7 @@ fun NotificationSettingsScreen(
                     AvatarImage(url = viewModel.profileFor(npub)?.pictureURL, pubkey = viewModel.hexFor(npub), size = 28.dp, displayName = name)
                     Spacer(Modifier.width(8.dp))
                     Text(name, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    InfoButton(SettingsHelp.NOTIFY_PER_ACCOUNT)
                 }
                 val prefs = config.pushPrefsFor(npub)
                 Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
@@ -262,9 +264,10 @@ private fun Divider() = HorizontalDivider(color = TertiaryGroupedBg, thickness =
 @Composable
 private fun NotificationToggle(
     title: String,
-    subtitle: String,
+    subtitle: String?,
     checked: Boolean,
     enabled: Boolean,
+    help: SettingsHelp? = null,
     onToggle: (Boolean) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -272,11 +275,14 @@ private fun NotificationToggle(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = if (subtitle == null) 6.dp else 10.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = PrimaryText, fontSize = 15.sp)
-            Text(subtitle, color = SecondaryText, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = PrimaryText, fontSize = 15.sp)
+                if (help != null) InfoButton(help)
+            }
+            if (subtitle != null) Text(subtitle, color = SecondaryText, fontSize = 12.sp)
         }
         Switch(
             checked = checked,

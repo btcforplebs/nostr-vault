@@ -77,6 +77,7 @@ fun PowSettingsScreen(
             PowSection(
                 title = "Notes",
                 subtitle = "Kind 1 text notes and reposts",
+                help = SettingsHelp.ADV_POW,
                 enabled = noteEnabled,
                 difficulty = noteDifficulty,
                 onToggle = prefs::setNoteEnabled,
@@ -116,18 +117,22 @@ private fun PowSection(
     difficulty: Int,
     onToggle: (Boolean) -> Unit,
     onDifficultyChange: (Int) -> Unit,
+    help: SettingsHelp? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    color = PrimaryText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (help != null) InfoButton(help)
+            }
             Text(
                 text = subtitle,
                 color = SecondaryText,

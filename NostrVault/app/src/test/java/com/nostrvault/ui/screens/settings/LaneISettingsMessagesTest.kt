@@ -19,6 +19,14 @@ class LaneISettingsMessagesTest {
     }
 
     @Test
+    fun `factory reset says the app restarts, not quits`() {
+        assertEquals(
+            "This action cannot be undone. All your relay data will be lost and the app will restart.",
+            FACTORY_RESET_MESSAGE,
+        )
+    }
+
+    @Test
     fun `restore message gives both counts and the source`() {
         assertEquals(
             "This will replace your current 1018 follows with 990 follows from this snapshot and publish the updated list to your relays.",

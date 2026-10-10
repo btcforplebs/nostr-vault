@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens.settings
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import com.nostrvault.data.model.FollowingSnapshot
+import com.nostrvault.data.model.FollowingSnapshotStore
 import com.nostrvault.data.model.Kind3Event
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.FollowingBackupService
@@ -151,10 +152,35 @@ class FollowingBackupViewModel @Inject constructor(
         return followingBackupService.addedSince(snapshot, currentFollowedPubkeys)
     }
 
+    /** People in [list] you no longer follow, in the list's order (iOS removedPubkeys). */
+    fun removedSince(list: List<String>): List<String> {
+        val current = currentFollowedPubkeys.toSet()
+        return list.filter { it !in current }
+    }
+
+    /** People you follow now who are not in [list], in your order (iOS addedPubkeys). */
+    fun addedSince(list: List<String>): List<String> {
+        val old = list.toSet()
+        return currentFollowedPubkeys.filter { it !in old }
+    }
+
     fun deleteSnapshot(id: String) {
         followingBackupService.deleteSnapshot(id, _selectedNpub.value)
     }
 }
+
+/**
+ * One list someone opened: a relay copy ("Contact List Backup") or a local
+ * snapshot ("Snapshot Backup"). The same page serves both, as on iOS.
+ */
+private data class OpenBackup(
+    val title: String,
+    val source: String,
+    val at: Long,
+    val pubkeys: List<String>,
+    val pTags: List<List<String>>,
+    val content: String,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,18 +189,32 @@ fun FollowingBackupScreen(
     viewModel: FollowingBackupViewModel = hiltViewModel(),
 ) {
     val snapshots by viewModel.snapshots.collectAsState()
-    var expandedId by remember { mutableStateOf<String?>(null) }
-    /** The list a Restore button picked, waiting for the confirm (iOS showRestoreAlert). */
-    var pendingRestore by remember { mutableStateOf<PendingRestore?>(null) }
+    val scannedEvents by viewModel.scannedEvents.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val selectedNpub by viewModel.selectedNpub.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
     val followed by viewModel.followedPubkeys.collectAsState()
-    val followedSet = remember(followed) { followed.toSet() }
-    // Who changed since the open snapshot. Taken once per open, so someone
-    // re-followed stays on the list with a checkmark, as on iOS.
-    val expandedSnapshot = snapshots.firstOrNull { it.id == expandedId }
-    val removed = remember(expandedSnapshot) { expandedSnapshot?.let(viewModel::removedSince).orEmpty() }
-    val added = remember(expandedSnapshot) { expandedSnapshot?.let(viewModel::addedSince).orEmpty() }
-    LaunchedEffect(removed, added) { viewModel.fetchProfiles(removed + added) }
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
+    val accounts = viewModel.accounts
+    // From the collected value, so this scope recomposes on a pick.
+    val isActive = viewModel.isActive(selectedNpub)
+    /** The list whose page is open; null shows the lists. */
+    var open by remember { mutableStateOf<OpenBackup?>(null) }
+    LaunchedEffect(Unit) { viewModel.ensureProfiles() }
+    LaunchedEffect(selectedNpub) { open = null }
+
+    val opened = open
+    if (opened != null) {
+        BackHandler { open = null }
+        BackupDetailPage(
+            backup = opened,
+            isActive = isActive,
+            followed = followed,
+            profiles = profiles,
+            viewModel = viewModel,
+            onBack = { open = null },
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -194,14 +234,8 @@ fun FollowingBackupScreen(
         },
         containerColor = WindowBackground,
     ) { padding ->
-        val scannedEvents by viewModel.scannedEvents.collectAsState()
-        val isScanning by viewModel.isScanning.collectAsState()
-        val selectedNpub by viewModel.selectedNpub.collectAsState()
-        val profiles by viewModel.profiles.collectAsState()
-        val accounts = viewModel.accounts
-        // From the collected value, so this scope recomposes on a pick.
-        val isActive = viewModel.isActive(selectedNpub)
-        LaunchedEffect(Unit) { viewModel.ensureProfiles() }
+        val currentCount = followed.size
+        val followedSet = remember(followed) { followed.toSet() }
 
         LazyColumn(
             contentPadding = PaddingValues(
@@ -215,10 +249,7 @@ fun FollowingBackupScreen(
         ) {
             // ── Account picker (iOS: shown with more than one account) ──
             if (accounts.size > 1) {
-                item {
-                    Text("ACCOUNT", color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-                }
+                item { BackupSectionHeader("Account") }
                 items(accounts, key = { "acct-$it" }) { npub ->
                     val isOwner = npub == viewModel.ownerNpub
                     val profile = profiles[HavenBridge.decodeNpub(npub) ?: ""]
@@ -249,220 +280,292 @@ fun FollowingBackupScreen(
                 }
             }
 
-            // ── Relay recovery section ──────────────────────────────
-            item {
-                Column {
-                    Button(
-                        onClick = { viewModel.scanRelays() },
-                        enabled = !isScanning,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (isScanning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.White,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("Scanning relays…")
-                        } else {
-                            Text(if (scannedEvents.isEmpty()) "Scan Relays for Backups" else "Rescan Relays")
-                        }
+            // ── Recover Following List (relay copies) ───────────────
+            item { BackupSectionHeader("Recover Following List", SettingsHelp.ACCOUNT_FOLLOWING_BACKUP) }
+
+            if (isScanning) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = SecondaryText)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Querying relays…", color = SecondaryText, fontSize = 14.sp)
                     }
+                }
+            }
+            if (scannedEvents.isEmpty() && !isScanning) {
+                item {
                     Text(
-                        "Search your relays for historical contact lists you can restore.",
-                        color = TertiaryText,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                        "Tap \"Scan Relays\" to search for historical contact lists.",
+                        color = SecondaryText,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(vertical = 4.dp),
                     )
                 }
             }
 
             items(scannedEvents, key = { it.id }) { event ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = SecondaryGroupedBg,
-                    modifier = Modifier.fillMaxWidth(),
+                BackupListRow(
+                    at = event.createdAt * 1000,
+                    followCount = event.followCount,
+                    trailing = {
+                        if (isActive) {
+                            if (event.pubkeys.toSet() == followedSet) {
+                                DeltaPill("Current", SuccessGreen)
+                            } else {
+                                FollowingDeltaPill(event.followCount, currentCount)
+                            }
+                        }
+                    },
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(16.dp),
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = dateFormat.format(Date(event.createdAt * 1000)),
-                                color = PrimaryText,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                            Text(
-                                text = "${event.followCount} following (from relay)",
-                                color = SecondaryText,
-                                fontSize = 13.sp,
-                            )
-                        }
-                        if (isActive) TextButton(onClick = {
-                            pendingRestore = PendingRestore(event.pTags, event.content, event.followCount, "backup")
-                        }) {
-                            Text("Restore")
-                        }
-                    }
+                    open = OpenBackup("Contact List Backup", "backup", event.createdAt * 1000, event.pubkeys, event.pTags, event.content)
                 }
             }
 
-            // The comparisons below are against the active account's follows (iOS hides them too).
-            if (isActive) item {
-                Text(
-                    text = "Current: ${viewModel.currentFollowingCount} following",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-                )
+            item {
+                Button(
+                    onClick = { viewModel.scanRelays() },
+                    enabled = !isScanning,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (scannedEvents.isEmpty()) "Scan Relays" else "Rescan Relays")
+                }
             }
 
-            if (snapshots.isEmpty()) {
+            // ── Automatic Backups (local snapshots) ─────────────────
+            if (snapshots.isNotEmpty()) {
+                item { BackupSectionHeader("Automatic Backups") }
+                items(snapshots.reversed(), key = { it.id }) { snapshot ->
+                    BackupListRow(
+                        at = snapshot.capturedAt,
+                        followCount = snapshot.followCount,
+                        trailing = {
+                            if (isActive) FollowingDeltaPill(snapshot.followCount, currentCount)
+                            IconButton(
+                                onClick = { viewModel.deleteSnapshot(snapshot.id) },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = NostrVaultIcons.Delete,
+                                    contentDescription = "Delete",
+                                    tint = SecondaryText,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        },
+                    ) {
+                        open = OpenBackup("Snapshot Backup", "snapshot", snapshot.capturedAt, snapshot.pubkeys, snapshot.pTags, snapshot.contactListContent)
+                    }
+                }
                 item {
                     Text(
-                        "No local snapshots yet. Snapshots are created automatically when your contact list loads.",
+                        "Snapshots are saved automatically when your following list changes. Up to ${FollowingSnapshotStore.MAX_SNAPSHOTS} are kept.",
                         color = TertiaryText,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
+        }
+    }
+}
 
-            snapshots.forEach { snapshot ->
-                item(key = snapshot.id) {
-                    val isExpanded = expandedId == snapshot.id
+/** The page behind a list row: Summary, Restore, No Longer Following, Added Since (iOS *DetailView). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BackupDetailPage(
+    backup: OpenBackup,
+    isActive: Boolean,
+    followed: List<String>,
+    profiles: Map<String, FeedProfile>,
+    viewModel: FollowingBackupViewModel,
+    onBack: () -> Unit,
+) {
+    var showRestore by remember { mutableStateOf(false) }
+    val followedSet = remember(followed) { followed.toSet() }
+    // Who changed, taken once per open, so someone re-followed stays on the
+    // list with a checkmark, as on iOS.
+    val removed = remember(backup) { if (isActive) viewModel.removedSince(backup.pubkeys) else emptyList() }
+    val added = remember(backup) { if (isActive) viewModel.addedSince(backup.pubkeys) else emptyList() }
+    LaunchedEffect(removed, added) { viewModel.fetchProfiles(removed + added) }
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
 
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = SecondaryGroupedBg,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .clickable {
-                                    expandedId = if (isExpanded) null else snapshot.id
-                                }
-                                .padding(16.dp),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = dateFormat.format(Date(snapshot.capturedAt)),
-                                        color = PrimaryText,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                    Text(
-                                        text = "${snapshot.followCount} following",
-                                        color = SecondaryText,
-                                        fontSize = 13.sp,
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.deleteSnapshot(snapshot.id) },
-                                    modifier = Modifier.size(32.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = NostrVaultIcons.Delete,
-                                        contentDescription = "Delete",
-                                        tint = SecondaryText,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-
-                            AnimatedVisibility(visible = isExpanded && isActive) {
-                                Column(modifier = Modifier.padding(top = 12.dp)) {
-                                    if (removed.isEmpty() && added.isEmpty()) {
-                                        Text(
-                                            text = "No changes since this snapshot",
-                                            color = TertiaryText,
-                                            fontSize = 13.sp,
-                                        )
-                                        Spacer(Modifier.height(12.dp))
-                                    }
-                                    // iOS only offers Restore when it would change something.
-                                    if (snapshot.followCount > 0 && (removed.isNotEmpty() || added.isNotEmpty())) {
-                                        Button(
-                                            onClick = {
-                                                pendingRestore = PendingRestore(
-                                                    snapshot.pTags, snapshot.contactListContent, snapshot.followCount, "snapshot",
-                                                )
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        ) { Text("Restore This List") }
-                                    }
-                                }
-                            }
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(backup.title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(NostrVaultIcons.Back, contentDescription = "Back")
                     }
-                }
-                // Everyone who changed, as rows of their own so a long list stays lazy.
-                if (snapshot.id == expandedId && isActive) {
-                    if (removed.isNotEmpty()) {
-                        item(key = "${snapshot.id}-removed") {
-                            DiffHeader("No Longer Following (${removed.size})", "People in this snapshot that you no longer follow.")
-                        }
-                        items(removed, key = { "${snapshot.id}-r-$it" }) { pk ->
-                            BackupPersonRow(pk, profiles[pk]) {
-                                if (pk in followedSet) {
-                                    Icon(NostrVaultIcons.CheckCircle, contentDescription = "Following", tint = SuccessGreen, modifier = Modifier.size(22.dp))
-                                } else {
-                                    OutlinedButton(
-                                        onClick = { viewModel.refollow(pk) },
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(30.dp),
-                                    ) { Text("Re-follow", fontSize = 12.sp) }
-                                }
-                            }
-                        }
-                    }
-                    if (added.isNotEmpty()) {
-                        item(key = "${snapshot.id}-added") {
-                            DiffHeader("Added Since (${added.size})", "People you follow now that were not in this snapshot.")
-                        }
-                        items(added, key = { "${snapshot.id}-a-$it" }) { pk ->
-                            BackupPersonRow(pk, profiles[pk]) {
-                                Text(
-                                    "New",
-                                    color = SuccessGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier
-                                        .background(SuccessGreen.copy(alpha = 0.12f), RoundedCornerShape(50))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                        }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = WindowBackground,
+                    titleContentColor = PrimaryText,
+                    navigationIconContentColor = PrimaryText,
+                ),
+            )
+        },
+        containerColor = WindowBackground,
+    ) { padding ->
+        LazyColumn(
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+                start = 16.dp,
+                end = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item { BackupSectionHeader("Summary") }
+            item {
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        SummaryRow("Date", dateFormat.format(Date(backup.at)))
+                        SummaryRow("Following", backup.pubkeys.size.toString())
+                        if (isActive) SummaryRow("Current", followed.size.toString())
                     }
                 }
             }
+
+            // iOS only offers Restore when it would change something.
+            if (isActive && backup.pubkeys.isNotEmpty() && backup.pubkeys.toSet() != followedSet) {
+                item {
+                    Button(onClick = { showRestore = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Restore This List", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            if (removed.isNotEmpty()) {
+                item { DiffHeader("No Longer Following (${removed.size})") }
+                items(removed, key = { "r-$it" }) { pk ->
+                    BackupPersonRow(pk, profiles[pk]) {
+                        if (pk in followedSet) {
+                            Icon(NostrVaultIcons.CheckCircle, contentDescription = "Following", tint = SuccessGreen, modifier = Modifier.size(22.dp))
+                        } else {
+                            OutlinedButton(
+                                onClick = { viewModel.refollow(pk) },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier.height(30.dp),
+                            ) { Text("Re-follow", fontSize = 12.sp) }
+                        }
+                    }
+                }
+                item { DiffFooter("People in this backup that you no longer follow.") }
+            }
+
+            if (added.isNotEmpty()) {
+                item { DiffHeader("Added Since (${added.size})") }
+                items(added, key = { "a-$it" }) { pk ->
+                    BackupPersonRow(pk, profiles[pk]) { DeltaPill("New", SuccessGreen) }
+                }
+                item { DiffFooter("People you follow now that were not in this backup.") }
             }
         }
+    }
 
-    pendingRestore?.let { restore ->
-        // Same title, message and buttons as iOS ContactListBackupDetailView.
+    if (showRestore) {
+        // Same title, message and buttons as iOS.
         AlertDialog(
-            onDismissRequest = { pendingRestore = null },
+            onDismissRequest = { showRestore = false },
             title = { Text("Restore Contact List?") },
-            text = { Text(restoreMessage(viewModel.currentFollowingCount, restore.followCount, restore.source)) },
+            text = { Text(restoreMessage(followed.size, backup.pubkeys.size, backup.source)) },
             confirmButton = {
                 TextButton(onClick = {
-                    pendingRestore = null
-                    viewModel.restoreList(restore.pTags, restore.content)
+                    showRestore = false
+                    viewModel.restoreList(backup.pTags, backup.content)
                 }) { Text("Restore", color = ErrorRed) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRestore = null }) { Text("Cancel") }
+                TextButton(onClick = { showRestore = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/** A list in the lists: date, "time · N following", and the pill (iOS kind3Row / snapshotRow). */
+@Composable
+private fun BackupListRow(
+    at: Long,
+    followCount: Int,
+    trailing: @Composable RowScope.() -> Unit,
+    onClick: () -> Unit,
+) {
+    val dayFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = SecondaryGroupedBg,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(dayFormat.format(Date(at)), color = PrimaryText, fontSize = 15.sp)
+                Text(
+                    "${timeFormat.format(Date(at))} \u00b7 $followCount following",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                )
+            }
+            trailing()
+            Icon(NostrVaultIcons.Navigate, contentDescription = null, tint = TertiaryText, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+/**
+ * How the live list compares with a backup: "+N" in green when you follow
+ * more people now, "-N" in red when fewer, nothing when the same (iOS
+ * deltaLabel). Null means no pill.
+ */
+internal fun followingDeltaLabel(snapshotCount: Int, currentCount: Int): String? {
+    val diff = currentCount - snapshotCount
+    return when {
+        diff > 0 -> "+$diff"
+        diff < 0 -> "$diff"
+        else -> null
+    }
+}
+
+@Composable
+private fun FollowingDeltaPill(snapshotCount: Int, currentCount: Int) {
+    val label = followingDeltaLabel(snapshotCount, currentCount) ?: return
+    DeltaPill(label, if (label.startsWith("+")) SuccessGreen else ErrorRed)
+}
+
+@Composable
+private fun DeltaPill(text: String, color: Color) {
+    Text(
+        text,
+        color = color,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(50))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun SummaryRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Text(label, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(value, color = SecondaryText, fontSize = 15.sp)
+    }
+}
+
+@Composable
+private fun BackupSectionHeader(title: String, help: SettingsHelp? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+        Text(title.uppercase(), color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+        if (help != null) InfoButton(help)
     }
 }
 
@@ -479,11 +582,20 @@ internal fun restoreMessage(currentCount: Int, restoreCount: Int, source: String
         "and publish the updated list to your relays."
 
 @Composable
-private fun DiffHeader(title: String, caption: String) {
-    Column(modifier = Modifier.padding(top = 8.dp, start = 4.dp)) {
-        Text(title, color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Text(caption, color = TertiaryText, fontSize = 12.sp)
-    }
+private fun DiffHeader(title: String) {
+    Text(
+        title.uppercase(),
+        color = SecondaryText,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(top = 12.dp),
+    )
+}
+
+@Composable
+private fun DiffFooter(text: String) {
+    Text(text, color = TertiaryText, fontSize = 12.sp)
 }
 
 /** Avatar, name and NIP-05 for one person in a snapshot diff (iOS profileRow). */

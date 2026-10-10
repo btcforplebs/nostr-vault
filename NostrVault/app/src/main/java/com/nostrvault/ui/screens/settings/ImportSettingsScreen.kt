@@ -73,7 +73,7 @@ fun ImportSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            SectionLabel("Import Configuration")
+            SectionLabel("Import Configuration", SettingsHelp.RELAY_IMPORT)
             // Commits on Done / focus loss / leaving: the start date is part of
             // the relay's start config, so saving it restarts the relay.
             CommitOnEndTextField(
@@ -140,14 +140,3 @@ fun ImportSettingsScreen(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}
