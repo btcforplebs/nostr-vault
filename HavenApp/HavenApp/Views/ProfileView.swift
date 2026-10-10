@@ -89,6 +89,10 @@ struct ProfileView: View {
     @State private var followListTab: FollowListTab?
     /// The viewer's follower ledger, read when the page opens.
     @State private var viewerLedger: FollowerSnapshot?
+    /// Your own followers on your relay's ledger, spam left out: the list the
+    /// FOLLOWERS button opens and the Vault's Followers tab, so the header
+    /// shows the same number. Only set on your own profile.
+    @State private var ownLedgerCount: Int?
     /// Older followers, a page at a time, as the Followers list scrolls.
     @State private var followerPageSubId: String?
     @State private var followerPageToken = 0
@@ -1929,11 +1933,13 @@ struct ProfileView: View {
 
     // MARK: - Follower count
 
-    /// Vertex counts follow lists from across Nostr, once per follower, so
-    /// its answer wins. Without it: the streamed kind-3 events stop at 100
+    /// Your own profile shows your relay's ledger, so the header matches the
+    /// list it opens and the Vault. Anyone else: Vertex counts follow lists
+    /// from across Nostr, once per follower, so its answer wins. Without it: the streamed kind-3 events stop at 100
     /// per relay, so they undercount anyone with more followers. Relays that
     /// answer NIP-45 COUNT give the full number; show whichever is larger.
     private var displayedFollowersCount: Int? {
+        if isOwnProfile, let ownLedgerCount { return ownLedgerCount }
         if let vertexFollowerCount { return vertexFollowerCount }
         switch (relayFollowerCount, followersCount) {
         case let (relay?, streamed?): return max(relay, streamed)
@@ -1957,6 +1963,13 @@ struct ProfileView: View {
         let filter: [String: Any] = ["kinds": [3], "#p": [pubkey]]
 
         let target = pubkey
+        if isOwnProfile {
+            Task.detached(priority: .userInitiated) {
+                guard let ledger = FollowerSnapshot.load(owner: target) else { return }
+                let count = ledger.current.count
+                await MainActor.run { if target == pubkey { ownLedgerCount = count } }
+            }
+        }
         Task {
             guard let count = await nostrService.fetchVertexFollowerCount(target: target) else { return }
             await MainActor.run { vertexFollowerCount = count }
