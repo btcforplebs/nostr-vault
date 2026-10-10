@@ -826,7 +826,7 @@ struct TrustWebView: View {
     /// people you interact with most; on anyone else's, a spread of their
     /// follows. Only pictures that have loaded.
     private var ringFaces: [String] {
-        guard let frame, frame.center != me, let candidates = faceCandidates[frame.center] else { return [] }
+        guard let frame, let candidates = faceCandidates[frame.center] else { return [] }
         return TrustMap.pickFaces(candidates) { pictureRenders($0) }
     }
 
@@ -1797,14 +1797,13 @@ final class GlobeScene: ObservableObject {
         for chain in chains.prefix(TrustMap.shownChains) {
             for key in [chain.bridge, chain.via] where taken.insert(key).inserted { shown.append(key) }
         }
-        // Their follows get the faces left over from the paths.
+        // Whoever is in the middle, their follows get the faces left over
+        // from the paths, so the globe opens with pictures.
         let ringSet = Set(frame.ring)
         ringFaceSet = []
-        if frame.center != me {
-            for key in ringFaces where ringSet.contains(key) && taken.insert(key).inserted {
-                shown.append(key)
-                ringFaceSet.insert(key)
-            }
+        for key in ringFaces where ringSet.contains(key) && taken.insert(key).inserted {
+            shown.append(key)
+            ringFaceSet.insert(key)
         }
         layerFaceSet = []
         if frame.center == me {
