@@ -56,6 +56,11 @@ enum class VaultNoteScope {
 
 /** The Vault tab's modes, in menu order. */
 enum class VaultMode(val displayName: String) {
+    /**
+     * "Vault": everything that came in, in one list, like a notifications
+     * page. The tab opens on it (iOS #506).
+     */
+    ACTIVITY("Vault"),
     NOTES("Notes"),
     ARTICLES("Articles"),
     HIGHLIGHTS("Highlights"),
@@ -73,17 +78,50 @@ enum class VaultMode(val displayName: String) {
             else -> null
         }
 
-    /** The relay half's list this mode shows; null for Media. */
+    /** The relay half's list this mode shows; null for Media and Vault. */
     val viewMode: VaultViewMode?
         get() = when (this) {
             NOTES, ARTICLES, HIGHLIGHTS -> VaultViewMode.NOTES
             LIKES -> VaultViewMode.LIKES
             ZAPS -> VaultViewMode.ZAPS
             FOLLOWERS -> VaultViewMode.FOLLOWERS
-            MEDIA -> null
+            MEDIA, ACTIVITY -> null
         }
 
     companion object {
+        /**
+         * The kinds the Vault's post lists show (DashboardScreen's
+         * RELAY_TAB_NOTE_KINDS; iOS NostrService.relayTabNoteKinds).
+         */
+        val RELAY_TAB_NOTE_KINDS: Set<Int> = setOf(
+            1, 6, VaultNoteScope.ARTICLE_KIND, NIP10Thread.COMMENT_KIND, VaultNoteScope.HIGHLIGHT_KIND, NIP88Poll.KIND,
+        )
+
+        /**
+         * Where an inbound event of [kind] from someone else shows up. Null for
+         * DMs, which the Profile tab's dot covers, and for kinds no list shows.
+         * Port of iOS VaultMode.listing(inboxKind:) (#476).
+         */
+        fun listing(kind: Int): VaultMode? = when (kind) {
+            7 -> LIKES
+            9735 -> ZAPS
+            VaultNoteScope.ARTICLE_KIND -> ARTICLES
+            VaultNoteScope.HIGHLIGHT_KIND -> HIGHLIGHTS
+            in RELAY_TAB_NOTE_KINDS -> NOTES
+            else -> null
+        }
+
+        /**
+         * Tapped into the Vault tab while it had a red dot ([news]): the list
+         * to open, the first in menu order the dot is for. Null (stay put)
+         * when the list [showing] has news too, is "Vault", or nothing is new.
+         */
+        fun opening(news: Set<VaultMode>, showing: VaultMode): VaultMode? {
+            // "Vault" lists everything, so whatever lit the dot is already on it.
+            if (showing == ACTIVITY || showing in news) return null
+            return entries.firstOrNull { it in news }
+        }
+
         /** The menu's modes. Zaps Only hides Likes, as it hides the Likes list. */
         fun menu(zapsOnly: Boolean): List<VaultMode> = entries.filter { !(zapsOnly && it == LIKES) }
 

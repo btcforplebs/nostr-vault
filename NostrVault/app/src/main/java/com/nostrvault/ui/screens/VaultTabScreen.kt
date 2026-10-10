@@ -47,7 +47,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.nostrvault.data.model.VaultDots
+import com.nostrvault.data.model.VaultActivity
 import com.nostrvault.data.model.VaultMode
+import com.nostrvault.data.model.VaultNoteScope
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
@@ -86,16 +88,21 @@ fun VaultTabScreen(
     logStore: LogStore,
     feedService: FeedService,
     viewModel: DashboardViewModel = hiltViewModel(),
+    activity: VaultActivityViewModel = hiltViewModel(),
 ) {
-    // The half survives Android killing the app (the photo picker opened
-    // from Media is the usual case): restored before anything reads it, so
-    // Media composes first and its picker gets the result. A route that
-    // picked a half in this process wins; see VaultSection.restore.
+    // The part on show survives Android killing the app (the photo picker
+    // opened from Media is the usual case): restored before anything reads
+    // it, so Media composes first and its picker gets the result. A route
+    // that picked one in this process wins; see VaultSection.restore.
     var restored = true
-    val savedHalf = rememberSaveable { restored = false; mutableStateOf(VaultSection.showsMedia.value) }
-    if (restored) remember { VaultSection.restore(media = savedHalf.value) }
+    val savedHalf = rememberSaveable {
+        restored = false
+        mutableStateOf(savedPart(VaultSection.showsMedia.value, VaultSection.showsActivity.value))
+    }
+    if (restored) remember { VaultSection.restore(media = savedHalf.value == MEDIA_PART, activity = savedHalf.value == ACTIVITY_PART) }
     val showsMedia by VaultSection.showsMedia.collectAsState()
-    SideEffect { savedHalf.value = showsMedia }
+    val showsActivity by VaultSection.showsActivity.collectAsState()
+    SideEffect { savedHalf.value = savedPart(showsMedia, showsActivity) }
     val halves = rememberSaveableStateHolder()
     var showDashboard by remember { mutableStateOf(false) }
     val openDashboard: () -> Unit = {
@@ -106,13 +113,55 @@ fun VaultTabScreen(
     // The relay half's connection and follower ledger serve both halves (the
     // pill's dot shows on Media too), so they follow the tab, not the half:
     // flipping halves doesn't re-send subscriptions or restart the poll.
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResume()
+        activity.refresh()
+    }
     // Save a snapshot when the app goes to background so the next cold launch is instant.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.persistSnapshot() }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         // Every minute while the tab is on screen and the app is in front.
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.pollFollowers() }
+    }
+
+    // The Vault tab's red dot (iOS #476): tapping in while it shows opens the
+    // list it's for, and a list stops counting as new once it's on screen
+    // with this tab in front. Nothing is marked while a tap in is still on
+    // its way to the new list, so the list it left keeps its dot.
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    val opensNewActivity by VaultSection.opensNewActivity.collectAsState()
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val noteScope by viewModel.noteScope.collectAsState()
+    val showing = if (!showsMedia && showsActivity) VaultMode.ACTIVITY else VaultMode.of(showsMedia, viewMode, noteScope)
+    LaunchedEffect(opensNewActivity) {
+        if (!opensNewActivity) return@LaunchedEffect
+        VaultMode.opening(RelayForegroundService.newActivityModes.value, showing)?.let(viewModel::selectMode)
+        VaultSection.openedNewActivity()
+    }
+    val modeInSight = showing.takeIf { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !opensNewActivity }
+    LaunchedEffect(modeInSight, relayNews) {
+        modeInSight?.let(RelayForegroundService::markRelayViewed)
+    }
+
+    // The "Vault" list (iOS #506): new follows from the follower ledger join
+    // it; while it is on screen it clears every list's dot, Followers' too;
+    // arriving and leaving move its since-last-visit mark.
+    val followerSnapshot by viewModel.followerSnapshot.collectAsState()
+    LaunchedEffect(followerSnapshot) { activity.setFollowers(followerSnapshot) }
+    val activityInSight = modeInSight == VaultMode.ACTIVITY
+    val listDots by viewModel.newModes.collectAsState()
+    LaunchedEffect(activityInSight, followerSnapshot, listDots) {
+        if (!activityInSight) return@LaunchedEffect
+        activity.markFollowersSeen()
+        viewModel.markAllListsViewed()
+        viewModel.refreshFollowers()
+    }
+    var activityWasInSight by remember { mutableStateOf(false) }
+    LaunchedEffect(activityInSight) {
+        if (activityInSight) activity.visit(arriving = true) else if (activityWasInSight) activity.visit(arriving = false)
+        activityWasInSight = activityInSight
     }
 
     // The folded bar's corner button opens the Vault Dashboard (iOS parity).
@@ -132,7 +181,30 @@ fun VaultTabScreen(
         if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboard) openDashboard()
     }
 
-    if (showsMedia) {
+    if (!showsMedia && showsActivity) {
+        halves.SaveableStateProvider("activity") {
+            val connectionColor by viewModel.connectionColor.collectAsState()
+            VaultActivityScreen(
+                activity = activity,
+                zapsOnly = com.nostrvault.ui.theme.LocalZapsOnlyMode.current,
+                // Seeing "Vault" sees every list, so it marks none of them new.
+                newModes = emptySet(),
+                dashboardColor = connectionDotColor(connectionColor),
+                onSelect = viewModel::selectMode,
+                onOpenDashboard = openDashboard,
+                onOpenLine = { line ->
+                    val id = line.openId
+                    when {
+                        id != null && activity.kindOf(id) == VaultNoteScope.ARTICLE_KIND -> onArticleClick(id)
+                        id != null -> onNoteClick(id)
+                        // Several followed you that day: the Followers list.
+                        line.kind == VaultActivity.Kind.FOLLOW && line.actors.size > 1 -> viewModel.selectMode(VaultMode.FOLLOWERS)
+                        else -> line.actors.firstOrNull()?.let(onProfileClick)
+                    }
+                },
+            )
+        }
+    } else if (showsMedia) {
         halves.SaveableStateProvider("media") {
             // The same health colour the relay half shows, from the same connection.
             val connectionColor by viewModel.connectionColor.collectAsState()
@@ -187,8 +259,20 @@ fun relayStatusColor(status: RelayForegroundService.RelayStatus): Color = when (
     RelayForegroundService.RelayStatus.OFFLINE -> ErrorRed
 }
 
+private const val ACTIVITY_PART = "activity"
+private const val RELAY_PART = "relay"
+private const val MEDIA_PART = "media"
+
+/** The part of the tab on show, as saved across Android killing the app. */
+private fun savedPart(showsMedia: Boolean, showsActivity: Boolean): String = when {
+    showsMedia -> MEDIA_PART
+    showsActivity -> ACTIVITY_PART
+    else -> RELAY_PART
+}
+
 private val VaultMode.icon: ImageVector
     get() = when (this) {
+        VaultMode.ACTIVITY -> NostrVaultIcons.Activity
         VaultMode.NOTES -> NostrVaultIcons.Document
         VaultMode.ARTICLES -> NostrVaultIcons.Articles
         VaultMode.HIGHLIGHTS -> NostrVaultIcons.Highlights
@@ -215,7 +299,10 @@ internal fun VaultModePill(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val newElsewhere = VaultDots.hasNewElsewhere(newModes, mode)
+    // The lists' own dots, and what others sent that lit the Vault tab's dot.
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val allNew = newModes + relayNews.filterNot { zapsOnly && it == VaultMode.LIKES }
+    val newElsewhere = VaultDots.hasNewElsewhere(allNew, mode)
     Box(modifier) {
         GlassPill(
             horizontalArrangement = Arrangement.Start,
@@ -254,7 +341,7 @@ internal fun VaultModePill(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(m.displayName, fontWeight = if (m == mode) FontWeight.SemiBold else FontWeight.Normal)
-                            if (m in newModes) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            if (m in allNew) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     },
                     leadingIcon = { Icon(m.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -263,7 +350,9 @@ internal fun VaultModePill(
                     } else null,
                     onClick = {
                         expanded = false
-                        onSelect(m)
+                        // "Vault" is the tab's own list, not one of the relay
+                        // half's; every other pick leaves it.
+                        if (m == VaultMode.ACTIVITY) VaultSection.showActivity() else onSelect(m)
                     },
                 )
             }

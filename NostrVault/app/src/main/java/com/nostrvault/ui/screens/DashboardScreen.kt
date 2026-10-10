@@ -138,6 +138,8 @@ class DashboardViewModel @Inject constructor(
     private val feedService: com.nostrvault.service.FeedService,
     private val nwcService: NWCService,
     private val zapHistoryService: ZapHistoryService,
+    /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
     /** The list on show, kept across Android killing the app; see [restoreSavedMode]. */
     private val savedState: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
@@ -220,6 +222,27 @@ class DashboardViewModel @Inject constructor(
 
     private val _exportUri = MutableStateFlow<android.net.Uri?>(null)
     val exportUri = _exportUri.asStateFlow()
+
+    /** The last export's outcome in words, for the Vault Dashboard (iOS VaultExporter.statusMessage). */
+    private val _exportStatus = MutableStateFlow("")
+    val exportStatus = _exportStatus.asStateFlow()
+
+    private val _exportStatusIsError = MutableStateFlow(false)
+    val exportStatusIsError = _exportStatusIsError.asStateFlow()
+    private var exportStatusClear: Job? = null
+
+    private fun setExportStatus(message: String, isError: Boolean = false, clearLater: Boolean = false) {
+        exportStatusClear?.cancel()
+        _exportStatus.value = message
+        _exportStatusIsError.value = isError
+        if (clearLater) {
+            exportStatusClear = viewModelScope.launch {
+                delay(3_000)
+                _exportStatus.value = ""
+                _exportStatusIsError.value = false
+            }
+        }
+    }
 
     // ── EOSE tracking per relay ──────────────────────────────────
     private val relayEoseReceived = ConcurrentHashMap<String, Boolean>()
@@ -692,6 +715,7 @@ class DashboardViewModel @Inject constructor(
                 _importProgress.value = 1f
                 _importStatusMessage.value = "Import Complete!"
                 _importCompleted.value = true
+                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_IMPORT)
             } catch (e: Exception) {
                 _importStatusMessage.value = "Import failed: ${e.message}"
                 _importCompleted.value = true
@@ -704,8 +728,9 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun exportJsonl(context: android.content.Context) {
-        if (_isExportingJsonl.value) return
+        if (_isExportingJsonl.value || _isExportingMedia.value) return
         _isExportingJsonl.value = true
+        setExportStatus("Preparing notes backup…")
 
         viewModelScope.launch {
             try {
@@ -718,6 +743,7 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 if (result == 0 && outputFile.exists()) {
+                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_BACKUP)
                     val uri = androidx.core.content.FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
@@ -729,9 +755,13 @@ class DashboardViewModel @Inject constructor(
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(android.content.Intent.createChooser(intent, "Export Database"))
+                    setExportStatus("Ready to share", clearLater = true)
+                } else {
+                    setExportStatus("Notes backup failed", isError = true, clearLater = true)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "JSONL export failed: ${e.message}")
+                setExportStatus("Notes backup failed", isError = true, clearLater = true)
             } finally {
                 _isExportingJsonl.value = false
             }
@@ -739,8 +769,9 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun exportMedia(context: android.content.Context) {
-        if (_isExportingMedia.value) return
+        if (_isExportingMedia.value || _isExportingJsonl.value) return
         _isExportingMedia.value = true
+        setExportStatus("Preparing media backup…")
 
         viewModelScope.launch {
             try {
@@ -748,6 +779,7 @@ class DashboardViewModel @Inject constructor(
                 val blossomDir = config.relayDataDir?.let { "$it/${config.blossomPath}" }
                 if (blossomDir == null) {
                     _isExportingMedia.value = false
+                    setExportStatus("Media backup failed", isError = true, clearLater = true)
                     return@launch
                 }
 
@@ -760,6 +792,7 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 if (result == 0 && outputFile.exists()) {
+                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP)
                     val uri = androidx.core.content.FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
@@ -771,9 +804,13 @@ class DashboardViewModel @Inject constructor(
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(android.content.Intent.createChooser(intent, "Export Media"))
+                    setExportStatus("Ready to share", clearLater = true)
+                } else {
+                    setExportStatus("Media backup failed", isError = true, clearLater = true)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Media export failed: ${e.message}")
+                setExportStatus("Media backup failed", isError = true, clearLater = true)
             } finally {
                 _isExportingMedia.value = false
             }
@@ -1164,6 +1201,11 @@ class DashboardViewModel @Inject constructor(
     private fun refreshDots(newest: Map<VaultViewMode, Long>) {
         val lit = VaultDots.lit(newest, dotSeenAt, watchedMode(), configStore.config.value.zapsOnlyMode)
         if (!_newActivity.value.containsAll(lit)) _newActivity.value = _newActivity.value + lit
+    }
+
+    /** The "Vault" list is on screen: every list's own dot clears (iOS #506). */
+    fun markAllListsViewed() {
+        VaultDots.eventLists.forEach(::markListViewed)
     }
 
     /** Clears [list]'s dot and moves its seen mark up to what it holds now. */
@@ -2906,12 +2948,15 @@ internal fun connectionDotColor(connectionColor: String): androidx.compose.ui.gr
 // Vault Dashboard sheet
 // ═══════════════════════════════════════════════════════════════════
 
+/** The Vault Dashboard sheet's pages: the dashboard, and the two Advanced pages inside it. */
+private enum class VaultDashboardPage { MAIN, RELAY_DETAILS, MEDIA_DETAILS }
+
 /**
- * The Vault Dashboard: the relay's dashboard with Blossom's sections under
- * it, one sheet for everything the Vault tab stores (iOS
- * `DashboardView(includesBlossom:)`). The Vault tab presents it over either
- * half: the pill's last entry, the floating Vault button and the folded
- * bar's corner button all open it.
+ * The Vault Dashboard (v2, iOS `VaultDashboardView`): one page that says
+ * whether your vault is OK. The Vault tab presents it over either half: the
+ * pill's last entry, the floating Vault button and the folded bar's corner
+ * button all open it. The old relay dashboard and Blossom's sections live on
+ * under Advanced (Relay details, Media server details).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2921,15 +2966,9 @@ internal fun VaultDashboardSheet(
     onNavigate: (Screen) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val totalEvents by viewModel.totalEvents.collectAsState()
-    val storageUsed by viewModel.storageUsed.collectAsState()
-    val noteCount by viewModel.noteCount.collectAsState()
-    val dmCount by viewModel.dmCount.collectAsState()
-    val mediaCount by viewModel.mediaCount.collectAsState()
-    val mediaSize by viewModel.mediaSize.collectAsState()
-    val statsLoading by viewModel.statsLoading.collectAsState()
     val tutorialRevision by TutorialCenter.revision.collectAsState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(VaultDashboardPage.MAIN) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2951,72 +2990,53 @@ internal fun VaultDashboardSheet(
             }
         },
     ) {
-        val currentRelayStatus by RelayForegroundService.relayStatus.collectAsState()
-        val currentIsLocked by RelayForegroundService.isLocked.collectAsState()
-        val currentIsPortConflict by RelayForegroundService.isPortConflict.collectAsState()
-        val currentLogs by logStore.logs.collectAsState()
-        val currentConfig by viewModel.configStore.config.collectAsState()
-        val context = LocalContext.current
-
         // The Vault in Your Pocket tutorial starts the first time the dashboard
         // opens. The sheet is its own window, so it draws its own cards.
         LaunchedEffect(tutorialRevision) {
             TutorialCenter.startIfEligible(TutorialID.POCKET_RELAY, viewModel.nostrService.activeHexPubkey)
         }
+        // Back from an Advanced page returns to the dashboard, not out of the sheet.
+        androidx.activity.compose.BackHandler(enabled = page != VaultDashboardPage.MAIN) {
+            page = VaultDashboardPage.MAIN
+        }
         CompositionLocalProvider(LocalTutorialLayer provides RELAY_DASHBOARD_TUTORIAL_LAYER) {
         Box {
-        DashboardSheetContent(
-            totalEvents = totalEvents,
-            storageUsed = storageUsed,
-            noteCount = noteCount,
-            dmCount = dmCount,
-            mediaCount = mediaCount,
-            mediaSize = mediaSize,
-            isLoading = statsLoading,
-            relayStatus = currentRelayStatus,
-            relayAddress = currentConfig.nostrURL,
-            isExternalRelay = currentConfig.useExternalRelay,
-            isLocked = currentIsLocked,
-            isPortConflict = currentIsPortConflict,
-            onRefresh = viewModel::loadStats,
-            blossomSection = {
+        when (page) {
+            VaultDashboardPage.MAIN -> com.nostrvault.ui.screens.dashboard.VaultDashboardContent(
+                vaultViewModel = viewModel,
+                logStore = logStore,
+                onOpenScreen = { screen ->
+                    onDismiss()
+                    onNavigate(screen)
+                },
+                onOpenMode = { mode ->
+                    onDismiss()
+                    viewModel.selectMode(mode)
+                },
+                onOpenRelayDetails = { page = VaultDashboardPage.RELAY_DETAILS },
+                onOpenMediaDetails = { page = VaultDashboardPage.MEDIA_DETAILS },
+            )
+            VaultDashboardPage.RELAY_DETAILS -> RelayDetailsPage(
+                viewModel = viewModel,
+                logStore = logStore,
+                onNavigate = onNavigate,
+                onDismiss = onDismiss,
+                onBack = { page = VaultDashboardPage.MAIN },
+            )
+            VaultDashboardPage.MEDIA_DETAILS -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+            ) {
+                SheetPageHeader(title = "Media server details", onBack = { page = VaultDashboardPage.MAIN })
                 BlossomDashboardSections(onOpenSettings = {
                     onDismiss()
                     onNavigate(Screen.BlossomSettings)
                 })
-            },
-            onStartRelay = { RelayForegroundService.start(context) },
-            onStopRelay = { RelayForegroundService.stop(context) },
-            onRestartRelay = {
-                RelayForegroundService.stop(context)
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    RelayForegroundService.start(context)
-                }, 1500)
-            },
-            onForceRestart = { RelayForegroundService.forceRestart(context) },
-            onClearLocks = { RelayForegroundService.clearLocksPublic(context) },
-            logs = currentLogs,
-            onViewAllLogs = {
-                onDismiss()
-                onNavigate(Screen.RelayActivity)
-            },
-            statsService = viewModel.statsService,
-            ownerPubkey = viewModel.nostrService.ownerHexPubkey,
-            cacheDir = currentConfig.appSupportDir?.let { "$it/media_cache" },
-            cacheTTLDays = currentConfig.cacheTTLDays,
-            isImporting = viewModel.isImporting.collectAsState().value,
-            importProgress = viewModel.importProgress.collectAsState().value,
-            importStatusMessage = viewModel.importStatusMessage.collectAsState().value,
-            importCompleted = viewModel.importCompleted.collectAsState().value,
-            isExportingJsonl = viewModel.isExportingJsonl.collectAsState().value,
-            isExportingMedia = viewModel.isExportingMedia.collectAsState().value,
-            isImportingBlossom = viewModel.blossomMirrorRun.collectAsState().value.running,
-            onImportNotes = { viewModel.importNotes(context) },
-            onImportBlossom = viewModel::importBlossom,
-            onExportJsonl = { viewModel.exportJsonl(context) },
-            onExportMedia = { viewModel.exportMedia(context) },
-            onDismissImport = viewModel::dismissImport,
-        )
+            }
+        }
         TutorialStage(
             account = { viewModel.nostrService.activeHexPubkey },
             modifier = Modifier.matchParentSize(),
@@ -3025,6 +3045,99 @@ internal fun VaultDashboardSheet(
         }
         }
     }
+}
+
+/** An Advanced page's title row, with the way back to the dashboard. */
+@Composable
+private fun SheetPageHeader(title: String, onBack: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp),
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+            Icon(NostrVaultIcons.Back, "Back to Vault Dashboard", tint = LocalNostrVaultColors.current.primary, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(text = title, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Advanced › Relay details: the relay dashboard the Vault Dashboard replaced (iOS DashboardView). */
+@Composable
+private fun RelayDetailsPage(
+    viewModel: DashboardViewModel,
+    logStore: com.nostrvault.relay.LogStore,
+    onNavigate: (Screen) -> Unit,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val totalEvents by viewModel.totalEvents.collectAsState()
+    val storageUsed by viewModel.storageUsed.collectAsState()
+    val noteCount by viewModel.noteCount.collectAsState()
+    val dmCount by viewModel.dmCount.collectAsState()
+    val mediaCount by viewModel.mediaCount.collectAsState()
+    val mediaSize by viewModel.mediaSize.collectAsState()
+    val statsLoading by viewModel.statsLoading.collectAsState()
+    val currentRelayStatus by RelayForegroundService.relayStatus.collectAsState()
+    val currentIsLocked by RelayForegroundService.isLocked.collectAsState()
+    val currentIsPortConflict by RelayForegroundService.isPortConflict.collectAsState()
+    val currentLogs by logStore.logs.collectAsState()
+    val currentConfig by viewModel.configStore.config.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) { viewModel.loadStats() }
+
+    DashboardSheetContent(
+        title = "Relay details",
+        onBack = onBack,
+        totalEvents = totalEvents,
+        storageUsed = storageUsed,
+        noteCount = noteCount,
+        dmCount = dmCount,
+        mediaCount = mediaCount,
+        mediaSize = mediaSize,
+        isLoading = statsLoading,
+        relayStatus = currentRelayStatus,
+        relayAddress = currentConfig.nostrURL,
+        isExternalRelay = currentConfig.useExternalRelay,
+        isLocked = currentIsLocked,
+        isPortConflict = currentIsPortConflict,
+        onRefresh = viewModel::loadStats,
+        blossomSection = null,
+        onStartRelay = { RelayForegroundService.start(context) },
+        onStopRelay = { RelayForegroundService.stop(context) },
+        onRestartRelay = {
+            RelayForegroundService.stop(context)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                RelayForegroundService.start(context)
+            }, 1500)
+        },
+        onForceRestart = { RelayForegroundService.forceRestart(context) },
+        onClearLocks = { RelayForegroundService.clearLocksPublic(context) },
+        logs = currentLogs,
+        onViewAllLogs = {
+            onDismiss()
+            onNavigate(Screen.RelayActivity)
+        },
+        statsService = viewModel.statsService,
+        ownerPubkey = viewModel.nostrService.ownerHexPubkey,
+        cacheDir = currentConfig.appSupportDir?.let { "$it/media_cache" },
+        cacheTTLDays = currentConfig.cacheTTLDays,
+        isImporting = viewModel.isImporting.collectAsState().value,
+        importProgress = viewModel.importProgress.collectAsState().value,
+        importStatusMessage = viewModel.importStatusMessage.collectAsState().value,
+        importCompleted = viewModel.importCompleted.collectAsState().value,
+        isExportingJsonl = viewModel.isExportingJsonl.collectAsState().value,
+        isExportingMedia = viewModel.isExportingMedia.collectAsState().value,
+        isImportingBlossom = viewModel.blossomMirrorRun.collectAsState().value.running,
+        onImportNotes = { viewModel.importNotes(context) },
+        onImportBlossom = viewModel::importBlossom,
+        onExportJsonl = { viewModel.exportJsonl(context) },
+        onExportMedia = { viewModel.exportMedia(context) },
+        onDismissImport = viewModel::dismissImport,
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3581,6 +3694,9 @@ private fun ZappedByRow(
 
 @Composable
 private fun DashboardSheetContent(
+    /** The page title; the back arrow shows when [onBack] is set. */
+    title: String,
+    onBack: (() -> Unit)?,
     totalEvents: Int,
     storageUsed: String,
     noteCount: Int,
@@ -3594,8 +3710,8 @@ private fun DashboardSheetContent(
     isLocked: Boolean,
     isPortConflict: Boolean,
     onRefresh: () -> Unit,
-    /** Blossom's dashboard sections, under the relay's (the Vault Dashboard). */
-    blossomSection: @Composable () -> Unit,
+    /** Blossom's dashboard sections under the relay's; null to leave them out. */
+    blossomSection: (@Composable () -> Unit)?,
     onStartRelay: () -> Unit,
     onStopRelay: () -> Unit,
     onRestartRelay: () -> Unit,
@@ -3636,15 +3752,21 @@ private fun DashboardSheetContent(
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
         ) {
-            Icon(
-                imageVector = NostrVaultIcons.TabVault,
-                contentDescription = null,
-                tint = colors.primary,
-                modifier = Modifier.size(20.dp),
-            )
+            if (onBack != null) {
+                IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
+                    Icon(NostrVaultIcons.Back, "Back to Vault Dashboard", tint = colors.primary, modifier = Modifier.size(20.dp))
+                }
+            } else {
+                Icon(
+                    imageVector = NostrVaultIcons.TabVault,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Vault Dashboard",
+                text = title,
                 color = PrimaryText,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
@@ -3819,8 +3941,10 @@ private fun DashboardSheetContent(
             Spacer(Modifier.height(24.dp))
 
             // Blossom's sections, under the relay's (iOS BlossomDashboardView(embedded:)).
-            HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
-            blossomSection()
+            if (blossomSection != null) {
+                HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
+                blossomSection()
+            }
         }
     }
 }

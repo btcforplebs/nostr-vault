@@ -35,6 +35,8 @@ class BackupSettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val relayImportService: RelayImportService,
+    /** Exports here count as the Vault Dashboard's backups too (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
 ) : ViewModel() {
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
@@ -49,7 +51,10 @@ class BackupSettingsViewModel @Inject constructor(
     // in-process. They must run with the relay stopped (withRelayStopped), then it
     // restarts. Media export/import only zip the blossom directory — no relay stop.
 
-    fun exportNotes(dest: Uri) = run("Exporting notes…", "Notes exported", dest = dest, stopRelay = true) { tmp ->
+    fun exportNotes(dest: Uri) = run(
+        "Exporting notes…", "Notes exported", dest = dest, stopRelay = true,
+        onSuccess = { vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_BACKUP) },
+    ) { tmp ->
         HavenBridge.backupDatabase(tmp.absolutePath)
     }
 
@@ -57,7 +62,9 @@ class BackupSettingsViewModel @Inject constructor(
         HavenBridge.restoreDatabase(tmp.absolutePath)
     }
 
-    fun exportMedia(dest: Uri) = run("Exporting media…", "Media exported", dest = dest) { tmp ->
+    fun exportMedia(
+        dest: Uri,
+    ) = run("Exporting media…", "Media exported", dest = dest, onSuccess = { vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP) }) { tmp ->
         HavenBridge.zipDirectory(blossomDir, tmp.absolutePath)
     }
 
@@ -77,6 +84,7 @@ class BackupSettingsViewModel @Inject constructor(
         dest: Uri? = null,
         src: Uri? = null,
         stopRelay: Boolean = false,
+        onSuccess: () -> Unit = {},
         op: (File) -> Int,
     ) {
         if (_busy.value) return
@@ -112,6 +120,7 @@ class BackupSettingsViewModel @Inject constructor(
                 } finally {
                     withContext(Dispatchers.IO) { tmp.delete() }
                 }
+                onSuccess()
                 _status.value = done
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"

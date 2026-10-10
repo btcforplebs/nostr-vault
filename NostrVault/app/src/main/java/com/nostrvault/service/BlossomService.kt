@@ -36,6 +36,8 @@ class BlossomService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val mediaCacheService: MediaCacheService,
+    /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
 ) {
     companion object {
         private const val TAG = "BlossomService"
@@ -94,6 +96,7 @@ class BlossomService @Inject constructor(
                         onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                         onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
                     )
+                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
                     if (count > 0) "Mirrored $count files" else "All media already mirrored"
                 }
             } catch (e: Exception) {
