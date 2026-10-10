@@ -286,8 +286,8 @@ enum TrustMap {
             .map(\.key)
     }
 
-    /// The WOT tab's layer picker. Picking one only changes what is lit:
-    /// the globe keeps every star, so switching never reloads the web.
+    /// The WOT tab's layer picker. Picking one shows only that part of your
+    /// web, with its faces; switching never reloads the web.
     enum Layer: String, CaseIterable {
         case everyone, following, close, furtherOut
 
@@ -335,15 +335,33 @@ enum TrustMap {
     }
 
     /// How brightly `layer` draws your follows (x), the Close part of the
-    /// outer shell (y) and the rest of it (z). The others stay faintly there,
-    /// so the globe keeps its shape.
+    /// outer shell (y) and the rest of it (z). The others go out, so picking
+    /// a layer visibly empties the globe; the shell's stars are faint, so
+    /// they are lit brighter when they are all that's left.
     static func layerWeights(_ layer: Layer) -> SIMD3<Double> {
         switch layer {
         case .everyone: SIMD3(1, 1, 1)
-        case .following: SIMD3(1, 0.18, 0.18)
-        case .close: SIMD3(0.22, 1.6, 0.18)
-        case .furtherOut: SIMD3(0.22, 0.18, 1.6)
+        case .following: SIMD3(1, 0, 0)
+        case .close: SIMD3(0, 1.6, 0)
+        case .furtherOut: SIMD3(0, 0, 1.6)
         }
+    }
+
+    /// People past your follows worth a profile fetch for a layer's faces.
+    /// Many further out have no profile at all, so the pool is wide.
+    static let layerFaceCandidateCount = 400
+    /// Faces on the outer shell when Close or Further out is picked; faces
+    /// that would cover another stay stars (`seatFaces`).
+    static let layerFaceCount = 100
+
+    /// The people past your follows a layer shows as faces, most vouched
+    /// first (`layerPeople`'s order). Everyone and Following show your
+    /// follows' faces instead.
+    static func layerFaceCandidates(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
+                                    vouches: [String: Int]? = nil,
+                                    count: Int = layerFaceCandidateCount) -> [String] {
+        guard layer == .close || layer == .furtherOut else { return [] }
+        return Array(layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web.prefix(count))
     }
 
     /// People in each layer, never counting you. `web` is the relay's whole
