@@ -97,6 +97,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
             // in the iOS target; this file is.)
             FillYourVaultCoordinator.shared.start()
+            // Kiosk mode comes back on when the app does, if it was on.
+            FipsMeshService.shared.resumeWhenActive()
         }
 
         // Only request local notification permission if the user has already
