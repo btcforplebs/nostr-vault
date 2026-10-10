@@ -443,6 +443,10 @@ struct iPadSidebarView: View {
                         NoteDetailView(note: note)
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
+                    // ⌘F with a note pushed: pop so SearchView appears and takes the request.
+                    if !searchPath.isEmpty { searchPath = NavigationPath() }
+                }
                 .modifier(MiniPlayerInset())
             case 2:
                 NavigationStack(path: $profilePath) {
@@ -629,6 +633,10 @@ struct iPhoneTabView: View {
                 .navigationDestination(for: FeedNote.self) { note in
                     NoteDetailView(note: note)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
+                // ⌘F with a note pushed: pop so SearchView appears and takes the request.
+                if !searchPath.isEmpty { searchPath = NavigationPath() }
             }
             .toolbar(.hidden, for: .tabBar)
             .tag(1)
@@ -1570,9 +1578,11 @@ private struct IPadCommandKeys: ViewModifier {
                     }
                     .keyboardShortcut("r", modifiers: .command)
                     Button("Search") {
-                        // Search already showing hears the notification; any
-                        // other Search tab, built or not, reads the request
-                        // when this switch makes it appear.
+                        // Search already showing hears the notification. A
+                        // Search tab not on screen (another tab, or a note
+                        // pushed over it) reads the request when it appears:
+                        // the switch shows it, and each layout pops its
+                        // Search stack on this notification.
                         SearchFocusRequest.request()
                         selectedTab = 1
                         NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
