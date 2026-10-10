@@ -82,6 +82,8 @@ sealed class Screen(val route: String) {
     data object BlossomSettings : Screen("settings/blossom")
     data object PowSettings : Screen("settings/pow")
     data object AdvancedSettings : Screen("settings/advanced")
+    data object MediaSettings : Screen("settings/media")
+    data object RelayAccessSettings : Screen("settings/relay_access")
     data object ImportSettings : Screen("settings/import")
     data object BackupSettings : Screen("settings/backup")
     data object FollowingBackup : Screen("settings/following_backup")

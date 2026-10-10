@@ -1,17 +1,13 @@
 package com.nostrvault.ui.screens.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -31,16 +27,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
-
-/** Cache TTL options: value (days) -> label. 0 = Never. */
-private val CACHE_TTL_OPTIONS = listOf(
-    1 to "1 day", 3 to "3 days", 7 to "7 days", 14 to "14 days", 30 to "30 days", 0 to "Never",
-)
-
-/** WoT refresh options: stored value -> label. */
-private val WOT_REFRESH_OPTIONS = listOf(
-    "1h" to "1 Hour", "12h" to "12 Hours", "24h" to "24 Hours", "168h" to "7 Days",
-)
 
 @HiltViewModel
 class AdvancedSettingsViewModel @Inject constructor(
@@ -129,6 +115,11 @@ class AdvancedSettingsViewModel @Inject constructor(
     private fun save(transform: (HavenConfig) -> HavenConfig) = configStore.update(transform)
 }
 
+/**
+ * Database & Reset: the relay's storage engine, the external-relay switch and
+ * Factory Reset (iOS AdvancedSettingsView). Media settings live in Media &
+ * Cache and the inbox gates in Who Can Reach You, as on iPhone.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdvancedSettingsScreen(
@@ -136,18 +127,13 @@ fun AdvancedSettingsScreen(
     viewModel: AdvancedSettingsViewModel = hiltViewModel(),
 ) {
     val config by viewModel.config.collectAsState()
-    val isRestartingRelay by viewModel.isRestartingRelay.collectAsState()
-    val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     var showResetDialog by remember { mutableStateOf(false) }
-    var confirmClearCache by remember { mutableStateOf(false) }
-    val cacheBytes by viewModel.cacheBytes.collectAsState()
-    LaunchedEffect(Unit) { viewModel.measureCache() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Advanced") },
+                title = { Text("Database & Reset") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -169,64 +155,13 @@ fun AdvancedSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            // ── Performance & Limits ──────────────────────────────
-            SectionLabel("Performance & Limits")
-            StepperRow("Max Events / min", config.outboxMaxEventsPerMinute, 10..1000, 10) {
-                viewModel.setMaxEvents(it)
-            }
-            StepperRow("Max Connections / min", config.outboxMaxConnectionsPerMinute, 1..100, 1) {
-                viewModel.setMaxConnections(it)
-            }
-            Caption("Protects your relay from spam and abuse. Changes restart the relay automatically.")
-            if (isRestartingRelay) Caption("Restarting relay…")
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Database ──────────────────────────────────────────
             SectionLabel("Database")
-            ReadOnlyRow("Engine", if (config.dbEngine == "lmdb") "LMDB" else "BadgerDB")
+            ReadOnlyRow("Engine", if (config.dbEngine == "lmdb") "LMDB" else "BadgerDB", SettingsHelp.ADV_DATABASE)
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Media ─────────────────────────────────────────────
-            SectionLabel("Media")
-            ToggleRow("Autoplay Videos", config.autoplayVideos, viewModel::setAutoplay)
-            ToggleRow("Disable Media Cache", config.disableMediaCache, viewModel::setDisableMediaCache)
-            ToggleRow("Prefetch Profile Pictures", config.prefetchAvatars, viewModel::setPrefetch)
-            ToggleRow("Use Local Blossom Cache", config.useLocalBlossomCache, viewModel::setUseLocalBlossomCache)
-            Caption(
-                "Loads media through a Blossom cache app on this phone, such as Morganite " +
-                    "(127.0.0.1:24242), when it is running. Media you have seen once then loads " +
-                    "from the phone, offline too. Uploads never go through it."
-            )
-            PickerRow("Cache TTL", CACHE_TTL_OPTIONS, config.cacheTTLDays) { viewModel.setCacheTTL(it) }
-            TextButton(onClick = { confirmClearCache = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Clear Media Cache", color = ErrorRed, modifier = Modifier.weight(1f))
-                cacheBytes?.let { Text(formatSize(it), color = SecondaryText) }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Global Web of Trust ───────────────────────────────
-            SectionLabel("Global Web of Trust")
-            StepperRow("Depth", config.chatRelayWotDepth, 1..5, 1) { viewModel.setWotDepth(it) }
-            StepperRow("Minimum Followers", config.chatRelayMinFollowers, 0..100, 1) {
-                viewModel.setWotMinFollowers(it)
-            }
-            PickerRow("Refresh Interval", WOT_REFRESH_OPTIONS, config.wotRefreshInterval) {
-                viewModel.setWotRefresh(it)
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Startup ───────────────────────────────────────────
-            SectionLabel("Startup")
-            ToggleRow("Auto-start Relay", config.autoStartRelay, viewModel::setAutoStartRelay)
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── External Relay ────────────────────────────────────
-            SectionLabel("External Relay")
+            // Android only: another app's relay instead of the built-in one.
+            SectionLabel("External Relay", SettingsHelp.RELAY_EXTERNAL)
             ExternalRelaySection(config) { enabled, relayURL, blossomURL ->
                 RelayForegroundService.stop(context)
                 viewModel.applyExternalRelay(enabled, relayURL, blossomURL) { relaunchApp(context) }
@@ -234,44 +169,24 @@ fun AdvancedSettingsScreen(
 
             Spacer(Modifier.height(28.dp))
 
-            // ── Danger Zone ───────────────────────────────────────
-            SectionLabel("Danger Zone")
+            SectionLabel("Danger Zone", SettingsHelp.ADV_FACTORY_RESET)
             Button(
                 onClick = { showResetDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Factory Reset") }
-            Caption("Deletes your configuration and returns the app to first-run setup.")
 
             Spacer(Modifier.height(32.dp))
         }
     }
 
-    if (confirmClearCache) {
-        // Same title, message and buttons as the iOS Media & Cache screen.
-        AlertDialog(
-            onDismissRequest = { confirmClearCache = false },
-            title = { Text("Clear Media Cache?") },
-            text = {
-                Text(AdvancedSettingsViewModel.clearMessage(cacheBytes))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmClearCache = false
-                    viewModel.clearMediaCache()
-                }) { Text("Clear", color = ErrorRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClearCache = false }) { Text("Cancel") }
-            },
-        )
-    }
-
     if (showResetDialog) {
+        // iOS AdvancedSettingsView's alert; Android restarts into setup
+        // rather than quitting.
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Factory Reset?") },
-            text = { Text("This deletes your configuration and cannot be undone.") },
+            title = { Text("Are you sure?") },
+            text = { Text(FACTORY_RESET_MESSAGE) },
             confirmButton = {
                 TextButton(onClick = {
                     showResetDialog = false
@@ -286,6 +201,9 @@ fun AdvancedSettingsScreen(
     }
 }
 
+internal const val FACTORY_RESET_MESSAGE =
+    "This action cannot be undone. All your relay data will be lost and the app will restart."
+
 /** Relaunch the app from its launcher entry point in a fresh process. */
 private fun relaunchApp(context: android.content.Context) {
     val intent = context.packageManager
@@ -294,98 +212,4 @@ private fun relaunchApp(context: android.content.Context) {
             android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
     context.startActivity(intent)
     Runtime.getRuntime().exit(0)
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}
-
-@Composable
-private fun Caption(text: String) {
-    Text(text = text, color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-}
-
-@Composable
-private fun ReadOnlyRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, color = PrimaryText, fontSize = 15.sp)
-        Text(value, color = SecondaryText, fontSize = 15.sp)
-    }
-}
-
-@Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    val colors = LocalNostrVaultColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Text(label, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Switch(
-            checked = checked,
-            onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
-                checkedTrackColor = colors.primary,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun StepperRow(label: String, value: Int, range: IntRange, step: Int, onChange: (Int) -> Unit) {
-    val colors = LocalNostrVaultColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Text("$label: $value", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        IconButton(
-            onClick = { onChange((value - step).coerceAtLeast(range.first)) },
-            enabled = value > range.first,
-        ) { Text("−", color = colors.primary, fontSize = 20.sp) }
-        IconButton(
-            onClick = { onChange((value + step).coerceAtMost(range.last)) },
-            enabled = value < range.last,
-        ) { Text("+", color = colors.primary, fontSize = 20.sp) }
-    }
-}
-
-@Composable
-private fun <T> PickerRow(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected.toString()
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Text(label, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Box {
-            Text(
-                text = selectedLabel,
-                color = LocalNostrVaultColors.current.primary,
-                fontSize = 15.sp,
-                modifier = Modifier.clickable { expanded = true }.padding(8.dp),
-            )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { (value, text) ->
-                    DropdownMenuItem(
-                        text = { Text(text) },
-                        onClick = { onSelect(value); expanded = false },
-                    )
-                }
-            }
-        }
-    }
 }

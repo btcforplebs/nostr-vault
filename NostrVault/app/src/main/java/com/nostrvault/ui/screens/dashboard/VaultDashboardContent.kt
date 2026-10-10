@@ -285,7 +285,7 @@ internal fun VaultDashboardContent(
                 title = VaultDashboardModel.trustTitle(wot.size),
                 detail = VaultDashboardModel.trustDetail(cfg.chatRelayWotDepth),
                 state = RowState.INFO,
-                onClick = { onOpenScreen(Screen.AdvancedSettings) },
+                onClick = { onOpenScreen(Screen.RelayAccessSettings) },
             )
             DashDivider()
             DashRowLink(
@@ -434,7 +434,7 @@ internal fun VaultDashboardContent(
             }
             DashDivider()
             SettingLink(Icons.Filled.VerifiedUser, "Who Can Reach You", VaultDashboardModel.hops(cfg.chatRelayWotDepth)) {
-                onOpenScreen(Screen.AdvancedSettings)
+                onOpenScreen(Screen.RelayAccessSettings)
             }
             DashDivider()
             SettingLink(Icons.Filled.Dns, "Media Servers", "${cfg.blossomMirrors.size}") {

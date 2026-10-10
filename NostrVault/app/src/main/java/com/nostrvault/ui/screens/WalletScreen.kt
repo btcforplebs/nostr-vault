@@ -38,6 +38,8 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.util.ZapDetail
 import kotlinx.coroutines.CancellationException
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
+import com.nostrvault.ui.screens.settings.InfoButton
+import com.nostrvault.ui.screens.settings.SettingsHelp
 import com.nostrvault.ui.theme.*
 import com.nostrvault.util.Bolt11
 import com.nostrvault.util.WalletTransaction
@@ -397,7 +399,7 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        WalletSectionLabel("Nostr Wallet Connect (NWC)")
+        WalletSectionLabel("Nostr Wallet Connect (NWC)", SettingsHelp.WALLET_NWC)
         OutlinedTextField(
             value = config.nwcURI ?: "",
             onValueChange = viewModel::setNwcUri,
@@ -415,6 +417,7 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
                 value = zapText,
                 onValueChange = { t -> zapText = t.filter { it.isDigit() }; zapText.toIntOrNull()?.let(viewModel::setDefaultZap) },
                 label = { Text("Default Zap Amount (sats)") },
+                trailingIcon = { InfoButton(SettingsHelp.WALLET_DEFAULT_ZAP) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
@@ -427,7 +430,10 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
         WalletSectionLabel("Bitcoin")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Bitcoin Address", color = PrimaryText, fontSize = 15.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Bitcoin Address", color = PrimaryText, fontSize = 15.sp)
+                    InfoButton(SettingsHelp.WALLET_BITCOIN)
+                }
                 Text("Derive a taproot address from your Nostr key (BIP-341)", color = SecondaryText, fontSize = 12.sp)
             }
             Switch(
@@ -478,15 +484,17 @@ internal fun WalletQr(content: String) {
 }
 
 @Composable
-internal fun WalletSectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
+internal fun WalletSectionLabel(text: String, help: SettingsHelp? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+        Text(
+            text = text.uppercase(),
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+        )
+        if (help != null) InfoButton(help)
+    }
 }
 
 @Composable

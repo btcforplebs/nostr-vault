@@ -243,14 +243,19 @@ fun BlossomSettingsScreen(
             }
 
             // Section header
-            Text(
-                text = "ADDITIONAL BLOSSOM SERVERS",
-                color = SecondaryText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
-            )
+            ) {
+                Text(
+                    text = "ADDITIONAL BLOSSOM SERVERS",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                )
+                InfoButton(SettingsHelp.SHARE_MEDIA_SERVERS)
+            }
 
             // Add mirror input
             Row(
@@ -342,14 +347,16 @@ private fun FipsSection() {
         }
     }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            text = "FIPS",
-            color = SecondaryText,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.sp,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
+            Text(
+                text = "FIPS",
+                color = SecondaryText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            )
+            InfoButton(SettingsHelp.SHARE_FIPS)
+        }
         Surface(color = SecondaryGroupedBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

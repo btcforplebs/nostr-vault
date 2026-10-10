@@ -178,7 +178,7 @@ fun BackupSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            SectionLabel("Notes (JSONL)")
+            SectionLabel("Notes (JSONL)", SettingsHelp.RELAY_BACKUP)
             BackupRow(
                 title = "Export Notes",
                 subtitle = "Save all notes and metadata as a JSONL backup (.zip)",
@@ -252,14 +252,3 @@ private fun BackupRow(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}

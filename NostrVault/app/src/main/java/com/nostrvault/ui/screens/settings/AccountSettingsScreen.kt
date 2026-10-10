@@ -97,6 +97,22 @@ class AccountSettingsViewModel @Inject constructor(
     /** Import a signing account from an nsec. Returns the resulting npub or null. */
     fun importKey(nsec: String): String? {
         val hex = HavenBridge.decodeNsec(nsec.trim()) ?: return null
+        return importKeyHex(hex)
+    }
+
+    /**
+     * Import a signing account from a NIP-49 ncryptsec and the password it was
+     * made with. Returns the resulting npub, or null when the password doesn't
+     * unlock it.
+     */
+    suspend fun importEncryptedKey(ncryptsec: String, password: String): String? {
+        val hex = withContext(Dispatchers.IO) {
+            runCatching { NIP49Service.decrypt(ncryptsec.trim(), password) }.getOrNull()
+        } ?: return null
+        return importKeyHex(hex)
+    }
+
+    private fun importKeyHex(hex: String): String? {
         val pub = HavenBridge.getPublicKey(hex) ?: return null
         val npub = HavenBridge.encodeNpub(pub) ?: return null
         credentialStore.storeCredentialHexKey(hex, npub)
@@ -315,6 +331,10 @@ fun AccountSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("ACCOUNTS", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+                InfoButton(SettingsHelp.ACCOUNT_ACCOUNTS)
+            }
             accounts.forEach { npub ->
                 val isOwner = npub == config.ownerNpub
                 val isActive = npub == activeNpub
@@ -521,7 +541,9 @@ private fun AccountDetail(
         // Signing-method picker when both local key and bunker exist.
         if (hasLocalKey && hasBunker) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                Text("Signing", color = SecondaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("Signing", color = SecondaryText, fontSize = 13.sp)
+                InfoButton(SettingsHelp.ACCOUNT_SIGNING)
+                Spacer(Modifier.weight(1f))
                 FilterChip(
                     selected = cfg.signingMode(npub) == "local",
                     onClick = { viewModel.setSigningMode(npub, "local") },
@@ -546,7 +568,10 @@ private fun AccountDetail(
                     } else {
                         revealed = viewModel.revealNsec(npub)
                     }
-                }) { Text("Reveal Private Key", color = colors.primary) }
+                }) {
+                    Text("Reveal Private Key", color = colors.primary)
+                    InfoButton(SettingsHelp.ACCOUNT_REVEAL_KEY)
+                }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                     Text(
@@ -584,7 +609,9 @@ private fun AccountDetail(
 
         // NIP-65 publish toggle
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-            Text("Publish Relay List (NIP-65)", color = PrimaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("Publish Relay List (NIP-65)", color = PrimaryText, fontSize = 13.sp)
+            InfoButton(SettingsHelp.ACCOUNT_PUBLISH_INBOX)
+            Spacer(Modifier.weight(1f))
             Switch(
                 checked = cfg.publishRelayListPerAccount[npub] ?: false,
                 onCheckedChange = { viewModel.togglePublishRelayList(npub, it) },
@@ -701,9 +728,13 @@ private fun ImportKeyDialog(
 private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
     val colors = LocalNostrVaultColors.current
     var expanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var keyInput by remember { mutableStateOf("") }
+    var keyPassword by remember { mutableStateOf("") }
     var bunkerInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val addInput = IdentityInput.parse(keyInput)
+    val needsPassword = addInput is IdentityInput.EncryptedSecretKey
 
     // Remote signers hand out their bunker string as a QR code. Typing one by
     // hand on a phone is the difference between the feature being usable and
@@ -732,7 +763,7 @@ private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
     OutlinedTextField(
         value = keyInput,
         onValueChange = { keyInput = it; error = null },
-        placeholder = { Text("npub1… or nsec1…") },
+        placeholder = { Text("npub1…, nsec1… or ncryptsec1…") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors(
@@ -740,20 +771,40 @@ private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
             cursorColor = colors.primary, focusedBorderColor = colors.primary,
         ),
     )
+    if (needsPassword) {
+        // A NIP-49 key opens with the password it was made with.
+        OutlinedTextField(
+            value = keyPassword,
+            onValueChange = { keyPassword = it; error = null },
+            placeholder = { Text("Password for this key") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = PrimaryText, unfocusedTextColor = PrimaryText,
+                cursorColor = colors.primary, focusedBorderColor = colors.primary,
+            ),
+        )
+    }
     Row(modifier = Modifier.padding(top = 8.dp)) {
         Button(
             onClick = {
-                val t = keyInput.trim()
-                when {
-                    t.startsWith("nsec1") -> {
-                        if (viewModel.importKey(t) == null) error = "Invalid nsec"
+                when (addInput) {
+                    is IdentityInput.SecretKey -> {
+                        if (viewModel.importKey(addInput.key) == null) error = "Invalid nsec"
                         else { keyInput = ""; expanded = false }
                     }
-                    t.startsWith("npub1") -> { viewModel.addViewOnly(t); keyInput = ""; expanded = false }
-                    else -> error = "Enter an npub or nsec"
+                    is IdentityInput.EncryptedSecretKey -> scope.launch {
+                        if (viewModel.importEncryptedKey(addInput.key, keyPassword) == null) {
+                            error = "That password didn't unlock the key."
+                        } else { keyInput = ""; keyPassword = ""; expanded = false }
+                    }
+                    is IdentityInput.PublicKey -> { viewModel.addViewOnly(addInput.key); keyInput = ""; expanded = false }
+                    else -> error = addAccountProblem(addInput)
                 }
             },
-            enabled = keyInput.isNotBlank(),
+            enabled = keyInput.isNotBlank() && (!needsPassword || keyPassword.isNotEmpty()),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
         ) { Text("Add") }
         Spacer(Modifier.width(8.dp))
@@ -822,6 +873,13 @@ private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
         Spacer(Modifier.height(8.dp))
         Text(it, color = ErrorRed, fontSize = 12.sp)
     }
+}
+
+/** Why Add Account can't take [input]: iOS AddAccountSheetView's "Must be an npub", widened to keys. */
+internal fun addAccountProblem(input: IdentityInput): String? = when (input) {
+    is IdentityInput.PublicKey, is IdentityInput.SecretKey, is IdentityInput.EncryptedSecretKey -> null
+    is IdentityInput.HexKey -> "Paste the npub or nsec version of this key."
+    else -> "Enter an npub, nsec or ncryptsec."
 }
 
 @Composable
