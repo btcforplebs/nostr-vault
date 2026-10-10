@@ -336,8 +336,9 @@ struct DMThreadView: View {
         prepareAttachment(data, isGIF: item.supportedContentTypes.contains(where: { $0.conforms(to: .gif) }))
     }
 
+    @MainActor
     private func attachDropped(_ provider: NSItemProvider) async {
-        guard case .image(let data, let type)? = await DroppedMedia.load(provider) else {
+        guard case .image(let data, let type)? = await DroppedMedia.load(provider, acceptingVideo: false) else {
             sendError = "Couldn't read that photo."
             return
         }

@@ -1437,12 +1437,11 @@ private struct IPadCommandKeys: ViewModifier {
                     }
                     .keyboardShortcut("r", modifiers: .command)
                     Button("Search") {
+                        // A warm Search tab hears the notification; one built by
+                        // this switch reads the request when it appears.
+                        SearchFocusRequest.isPending = true
                         selectedTab = 1
-                        // The tab may be built by this switch; give it a beat to
-                        // exist before its field is asked to take focus.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
-                        }
+                        NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
                     }
                     .keyboardShortcut("f", modifiers: .command)
                 }
