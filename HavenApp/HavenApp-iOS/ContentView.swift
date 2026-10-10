@@ -76,6 +76,10 @@ struct ContentView: View {
                 AppDelegate.dispatchAction(action)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in
+            // Only the iPad sidebar has a Settings tab; the phone opens its sheet.
+            if horizontalSizeClass == .regular { selectedTab = 5 }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
             selectedTab = 4 // Vault tab, relay half
             VaultSection.shared.showsMedia = false

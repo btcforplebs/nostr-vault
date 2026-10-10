@@ -60,6 +60,11 @@ struct ProfileView: View {
 
     // Settings (iOS — accessed from toolbar)
     @State private var showingSettings = false
+    #if os(iOS)
+    /// iPad (regular width) has one Settings: the sidebar's. The gear selects
+    /// it instead of opening a second copy in a sheet.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     // Message composer
     @State private var showingMessageComposer = false
@@ -633,7 +638,13 @@ struct ProfileView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button(action: { showingSettings = true }) {
+                        Button(action: {
+                            if horizontalSizeClass == .regular {
+                                NotificationCenter.default.post(name: .havenOpenSettings, object: nil)
+                            } else {
+                                showingSettings = true
+                            }
+                        }) {
                             Image(systemName: "gearshape.fill")
                                 .font(.appSystem(size: 16, weight: .semibold))
                                 .foregroundColor(.secondary)
