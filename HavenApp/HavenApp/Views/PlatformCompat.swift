@@ -640,7 +640,9 @@ struct PastesClipboardImage: ViewModifier {
                 guard appIsActive, UIDevice.current.userInterfaceIdiom == .pad else { return }
                 var seen = UIPasteboard.general.changeCount
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
+                    // A cancelled sleep ends the loop: no read or state write
+                    // for a view that is going away.
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
                     let count = UIPasteboard.general.changeCount
                     if count != seen {
                         seen = count

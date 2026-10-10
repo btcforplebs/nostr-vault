@@ -77,14 +77,15 @@ extension Notification.Name {
 /// first clears it. A request left behind by a switch that never showed
 /// Search goes stale rather than popping the keyboard on a later visit.
 enum SearchFocusRequest {
-    @MainActor private static var requestedAt: Date?
+    /// Monotonic, so a wall-clock step can't age a request early or late.
+    @MainActor private static var requestedAt: ContinuousClock.Instant?
 
-    @MainActor static func request() { requestedAt = Date() }
+    @MainActor static func request() { requestedAt = .now }
 
     /// True once per request, and only while it is fresh.
     @MainActor static func take() -> Bool {
         defer { requestedAt = nil }
         guard let requestedAt else { return false }
-        return Date().timeIntervalSince(requestedAt) < 3
+        return requestedAt.duration(to: .now) < .seconds(3)
     }
 }
