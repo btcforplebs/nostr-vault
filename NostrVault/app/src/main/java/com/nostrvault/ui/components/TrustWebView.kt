@@ -129,6 +129,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -588,15 +589,8 @@ private fun TrustWebContent(
         cardPath = null
     }
 
-    fun tapped(pubkey: String) {
-        // The WOT tab answers "can I trust them?" in a card and stays on you.
-        if (isWOTTab) return if (pubkey == me || pubkey == card) closeCard() else openCard(pubkey)
-        if (peek != null) { peek = null; return }
-        // The one in the middle: say who they are rather than go nowhere.
-        if (pubkey == crumbs.last()) {
-            if (pubkey != me) peek = pubkey
-            return
-        }
+    /** [pubkey] in the middle with everyone they follow around them, one step further along the trail. */
+    fun center(pubkey: String) {
         val index = crumbs.indexOf(pubkey)
         if (index >= 0) return jump(index)
         crumbs = crumbs + pubkey
@@ -608,6 +602,19 @@ private fun TrustWebContent(
             frames = frames + (pubkey to TrustFrame(pubkey, ring, list != null, found))
             nostrService.fetchMissingProfiles(listOf(pubkey) + found.bridges)
         }
+    }
+
+    fun tapped(pubkey: String) {
+        // The WOT tab answers "can I trust them?" in a card; only the card's
+        // "See their web" moves the globe.
+        if (isWOTTab) return if (pubkey == me || pubkey == card) closeCard() else openCard(pubkey)
+        if (peek != null) { peek = null; return }
+        // The one in the middle: say who they are rather than go nowhere.
+        if (pubkey == crumbs.last()) {
+            if (pubkey != me) peek = pubkey
+            return
+        }
+        center(pubkey)
     }
 
     /**
@@ -919,7 +926,7 @@ private fun TrustWebContent(
                 lite = lite,
                 ringFaces = ringFaces,
                 running = !showingList,
-                layer = if (isWOTTab) layer else TrustMap.Layer.EVERYONE,
+                layer = if (isWOTTab && centerKey == me) layer else TrustMap.Layer.EVERYONE,
                 summary = summary(frame, me, author, centerKey, ::name),
                 profiles = profiles, name = ::name,
                 onTap = ::tapped,
@@ -990,6 +997,8 @@ private fun TrustWebContent(
                     onFollow = { if (following) feedService.unfollowPubkey(shown) else feedService.followPubkey(shown) },
                     onMessage = onMessage?.let { { it(shown) } },
                     onProfile = onProfileClick?.let { { openProfile(shown) } },
+                    // Already in the middle: there's no further web to move to.
+                    onSeeWeb = if (shown == centerKey) null else { { closeCard(); center(shown) } },
                     onBlock = {
                         if (blocked) feedService.unblockUser(shown) else { feedService.blockUser(shown); closeCard() }
                         blocked = !blocked
@@ -1770,6 +1779,7 @@ private fun TrustCard(
     onFollow: () -> Unit,
     onMessage: (() -> Unit)?,
     onProfile: (() -> Unit)?,
+    onSeeWeb: (() -> Unit)?,
     onBlock: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1827,8 +1837,11 @@ private fun TrustCard(
             // The profile page's words: Unfollow says what the tap does.
             CardButton(if (following) "Unfollow" else "Follow", filled = !following, accent = accent,
                 onClick = onFollow, modifier = Modifier.weight(1f))
-            if (onMessage != null) CardButton("Message", filled = false, accent = accent, onClick = onMessage, modifier = Modifier.weight(1f))
             if (onProfile != null) CardButton("Profile", filled = false, accent = accent, onClick = onProfile, modifier = Modifier.weight(1f))
+            if (onSeeWeb != null) {
+                CardButton("See their web", short = "Their web", icon = NostrVaultIcons.WebOfTrust, filled = false,
+                    accent = accent, onClick = onSeeWeb, modifier = Modifier.weight(1.3f))
+            }
             Box {
                 IconButton(onClick = { moreOpen = true }, modifier = Modifier.size(40.dp)) {
                     Box(
@@ -1839,6 +1852,16 @@ private fun TrustCard(
                     }
                 }
                 DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                    if (onMessage != null) {
+                        DropdownMenuItem(
+                            text = { Text("Message", color = PrimaryText) },
+                            onClick = {
+                                moreOpen = false
+                                onMessage()
+                            },
+                        )
+                        HorizontalDivider()
+                    }
                     DropdownMenuItem(
                         text = { Text(if (blocked) "Unblock" else "Block", color = if (blocked) PrimaryText else ErrorRed) },
                         onClick = {
@@ -1853,16 +1876,33 @@ private fun TrustCard(
 }
 
 @Composable
-private fun CardButton(title: String, filled: Boolean, accent: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
+private fun CardButton(
+    title: String,
+    filled: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** Stands in for [title] when a narrow phone has no room for it. */
+    short: String? = null,
+    icon: ImageVector? = null,
+) {
+    val tint = if (filled) Color.White else accent
+    BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .height(38.dp)
             .clip(RoundedCornerShape(50))
             .background(if (filled) accent else Color.White.copy(alpha = 0.08f))
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(role = Role.Button, onClickLabel = title, onClick = onClick)
+            .clearAndSetSemantics { contentDescription = title; role = Role.Button },
     ) {
-        Text(title, color = if (filled) Color.White else accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        // Roughly 8.5dp a character at 14sp semibold, plus the icon.
+        val room = maxWidth - (if (icon != null) 23.dp else 0.dp) - 12.dp
+        val label = if (short != null && room < (title.length * 8.5f).dp) short else title
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (icon != null) Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Text(label, color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
     }
 }
 

@@ -90,8 +90,8 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * What tapping an avatar offers in the feed: Follow/Unfollow and Block,
- * the iOS FeedView avatar toolbar. Without it
+ * What tapping an avatar offers in the feed: Follow/Unfollow, Web of Trust
+ * (where the screen offers it) and Block, the iOS FeedView avatar toolbar. Without it
  * an avatar tap opens the profile, as on screens that pass none.
  */
 @Stable
@@ -128,6 +128,8 @@ private fun AvatarWithMenu(
     displayName: String,
     menu: AvatarMenuActions?,
     onProfileClick: (String) -> Unit,
+    /** Opens the globe on [pubkey]: the post footer's old WoT button. */
+    onTrustWeb: ((String) -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
     if (menu == null || menu.isOwn(pubkey)) {
@@ -154,6 +156,18 @@ private fun AvatarWithMenu(
                     if (followed) menu.onUnfollow(pubkey) else menu.onFollow(pubkey)
                 },
             )
+            if (onTrustWeb != null) {
+                DropdownMenuItem(
+                    text = { Text("Web of Trust", color = PrimaryText) },
+                    leadingIcon = { Icon(NostrVaultIcons.WebOfTrust, contentDescription = null, tint = LocalNostrVaultColors.current.primary) },
+                    onClick = {
+                        expanded = false
+                        onTrustWeb(pubkey)
+                    },
+                )
+            }
+            // Block last and set apart, so it's never a slip from the globe.
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Block", color = ErrorRed) },
                 leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
@@ -399,6 +413,7 @@ fun NoteCard(
                         profiles = profiles,
                         avatarMenu = avatarMenu,
                         onProfileClick = onProfileClick,
+                        onTrustWeb = onTrustWeb,
                     )
                 } else {
                     // Skeleton for 12 s, then a failure line with Retry (iOS
@@ -463,6 +478,7 @@ fun NoteCard(
                     displayName = authorName,
                     menu = avatarMenu,
                     onProfileClick = onProfileClick,
+                    onTrustWeb = onTrustWeb,
                 ) { avatarModifier ->
                     AvatarImage(
                         url = profile?.pictureURL,
@@ -673,7 +689,6 @@ fun NoteCard(
                 onLongPressZap = onLongPressZap,
                 zapDimmed = zapDimmed,
                 engagement = engagement,
-                onTrustWeb = onTrustWeb?.let { open -> { open(note.effectiveAuthor) } },
             )
         }
         } // Box (focused tint overlay)
@@ -2104,6 +2119,7 @@ private fun ParentNotePreview(
     profiles: Map<String, FeedProfile> = emptyMap(),
     avatarMenu: AvatarMenuActions? = null,
     onProfileClick: (String) -> Unit = {},
+    onTrustWeb: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -2127,6 +2143,7 @@ private fun ParentNotePreview(
                     displayName = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
                     menu = avatarMenu,
                     onProfileClick = onProfileClick,
+                    onTrustWeb = onTrustWeb,
                 ) { avatarModifier ->
                     AvatarImage(
                         url = parentProfile?.pictureURL,

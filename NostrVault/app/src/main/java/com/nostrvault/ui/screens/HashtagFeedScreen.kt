@@ -1040,7 +1040,8 @@ internal fun HashtagNote(
     onQuote: (String) -> Unit,
 ) {
     // Held per note: the map covers the screen, so nothing scrolls it away.
-    var showingTrustWeb by remember { mutableStateOf(false) }
+    // Whose web: the author's, or the parent's from the reply header's avatar.
+    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
     val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
         note.quotedEventIds.mapNotNull { qid ->
             viewModel.quotedNoteFor(qid)?.let { qid to it }
@@ -1062,15 +1063,15 @@ internal fun HashtagNote(
         onReply = onReply,
         onQuote = onQuote,
         onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
-        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ _: String -> showingTrustWeb = true }),
+        onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
     )
     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
-    if (showingTrustWeb) {
+    trustWebAuthor?.let { author ->
         TrustWebDialog(
-            author = note.effectiveAuthor,
+            author = author,
             initialPath = null,
             onProfileClick = onProfileClick,
-            onDismiss = { showingTrustWeb = false },
+            onDismiss = { trustWebAuthor = null },
         )
     }
 }
