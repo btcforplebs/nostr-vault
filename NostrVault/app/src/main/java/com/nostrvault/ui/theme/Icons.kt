@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Person
@@ -267,6 +268,7 @@ object NostrVaultIcons {
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
     val OutsideNetwork: ImageVector = Icons.Filled.PersonSearch  // person.crop.circle.badge.questionmark
     val Received: ImageVector = Icons.Filled.MoveToInbox         // tray.and.arrow.down.fill
+    val Activity: ImageVector = Icons.Filled.Inbox               // tray.full.fill (the Vault tab's "Vault" list)
     val Given: ImageVector = Icons.Filled.Outbox                 // tray.and.arrow.up.fill
 
     // Wallet

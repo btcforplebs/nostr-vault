@@ -56,6 +56,11 @@ enum class VaultNoteScope {
 
 /** The Vault tab's modes, in menu order. */
 enum class VaultMode(val displayName: String) {
+    /**
+     * "Vault": everything that came in, in one list, like a notifications
+     * page. The tab opens on it (iOS #506).
+     */
+    ACTIVITY("Vault"),
     NOTES("Notes"),
     ARTICLES("Articles"),
     HIGHLIGHTS("Highlights"),
@@ -73,14 +78,14 @@ enum class VaultMode(val displayName: String) {
             else -> null
         }
 
-    /** The relay half's list this mode shows; null for Media. */
+    /** The relay half's list this mode shows; null for Media and Vault. */
     val viewMode: VaultViewMode?
         get() = when (this) {
             NOTES, ARTICLES, HIGHLIGHTS -> VaultViewMode.NOTES
             LIKES -> VaultViewMode.LIKES
             ZAPS -> VaultViewMode.ZAPS
             FOLLOWERS -> VaultViewMode.FOLLOWERS
-            MEDIA -> null
+            MEDIA, ACTIVITY -> null
         }
 
     companion object {
@@ -109,10 +114,11 @@ enum class VaultMode(val displayName: String) {
         /**
          * Tapped into the Vault tab while it had a red dot ([news]): the list
          * to open, the first in menu order the dot is for. Null (stay put)
-         * when the list [showing] has news too, or nothing is new.
+         * when the list [showing] has news too, is "Vault", or nothing is new.
          */
         fun opening(news: Set<VaultMode>, showing: VaultMode): VaultMode? {
-            if (showing in news) return null
+            // "Vault" lists everything, so whatever lit the dot is already on it.
+            if (showing == ACTIVITY || showing in news) return null
             return entries.firstOrNull { it in news }
         }
 

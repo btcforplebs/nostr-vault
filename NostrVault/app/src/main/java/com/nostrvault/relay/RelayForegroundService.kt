@@ -183,6 +183,11 @@ class RelayForegroundService : Service() {
         /** [mode] is on screen, so what came into it has been seen. */
         @Synchronized
         fun markRelayViewed(mode: VaultMode) {
+            // The Vault list shows everything, so seeing it sees every list.
+            if (mode == VaultMode.ACTIVITY) {
+                if (_newActivityModes.value.isNotEmpty()) setNewActivityModes(emptySet())
+                return
+            }
             val modes = _newActivityModes.value
             if (mode in modes) setNewActivityModes(modes - mode)
         }

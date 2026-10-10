@@ -166,8 +166,13 @@ fun NostrVaultNavHost(
             ?.let { configStore.switchActiveAccount(it) }
         if (target.mediaPaste) PendingMediaPaste.request()
         // The Vault tab opens on the half the link names: Media for the
-        // gallery and Magic Paste, the relay's lists for everything else.
-        if (target.route == Screen.Dashboard.route) VaultSection.show(media = target.vaultMedia)
+        // gallery and Magic Paste, the relay's lists for a post. A tap naming
+        // no list (a widget's Relay) keeps the list the tab had, "Vault" or
+        // another.
+        if (target.route == Screen.Dashboard.route) {
+            if (target.vaultMedia || target.relayFocus != null) VaultSection.show(media = target.vaultMedia)
+            else VaultSection.leaveMedia()
+        }
         // A notification's post goes in the note cache first, so the note
         // screen finds it there and shows it at once instead of fetching.
         target.seedNote?.let {
@@ -320,7 +325,11 @@ fun NostrVaultNavHost(
                         onOpenVault = { target ->
                             // As a notification tap does: park the list for the
                             // Vault tab's relay half, then switch to that tab.
-                            VaultSection.show(media = false)
+                            if (target == com.nostrvault.ui.screens.feed.VaultTarget.VAULT) {
+                                VaultSection.leaveMedia()
+                            } else {
+                                VaultSection.show(media = false)
+                            }
                             when (target) {
                                 com.nostrvault.ui.screens.feed.VaultTarget.ZAPS ->
                                     RelayFocus.request(RelayFocusRequest("zap", ""))

@@ -58,13 +58,13 @@ class VaultTabTest {
 
     // ── Modes ─────────────────────────────────────────────────────
 
-    @Test fun `the menu lists the modes in order and zaps only hides likes`() {
+    @Test fun `the menu lists the modes in order, Vault first, and zaps only hides likes`() {
         assertEquals(
-            listOf("Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Followers"),
+            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Followers"),
             VaultMode.menu(zapsOnly = false).map { it.displayName },
         )
         assertFalse(VaultMode.LIKES in VaultMode.menu(zapsOnly = true))
-        assertEquals(6, VaultMode.menu(zapsOnly = true).size)
+        assertEquals(7, VaultMode.menu(zapsOnly = true).size)
     }
 
     @Test fun `the pill names what the tab shows`() {
@@ -78,7 +78,7 @@ class VaultTabTest {
 
     @Test fun `each mode maps back to its list and scope`() {
         for (mode in VaultMode.entries) {
-            if (mode == VaultMode.MEDIA) {
+            if (mode == VaultMode.MEDIA || mode == VaultMode.ACTIVITY) {
                 assertNull(mode.viewMode)
                 continue
             }
@@ -109,6 +109,10 @@ class VaultTabTest {
         val news = setOf(VaultMode.ZAPS, VaultMode.ARTICLES)
         assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.FOLLOWERS))
         assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.MEDIA))
+    }
+
+    @Test fun `tapping in stays on Vault, which lists everything`() {
+        assertNull(VaultMode.opening(setOf(VaultMode.ZAPS), VaultMode.ACTIVITY))
     }
 
     @Test fun `tapping in stays on a list that has news too`() {
