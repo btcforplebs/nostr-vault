@@ -3438,6 +3438,9 @@ struct FeedNoteRow: View {
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
     @State private var showingTrustWeb = false
+    /// Whose web the globe opens on: the post's author or, from the reply
+    /// header's avatar, the parent's.
+    @State private var trustWebPubkey = ""
     @State private var showingReportSheet = false
     @State private var showingBlockConfirm = false
     @State private var showingNoteIdInRow: String?
@@ -4107,13 +4110,6 @@ struct FeedNoteRow: View {
             actionButton(icon: "antenna.radiowaves.left.and.right", action: { showingBroadcastSheet = true })
                 .accessibilityLabel("Event Info")
 
-            // Your own posts have no path to show.
-            if zapRecipient != ConfigService.shared.activeAccountHexPubkey {
-                actionButton(icon: "point.3.connected.trianglepath.dotted", action: { showingTrustWeb = true })
-                    .accessibilityLabel("Web of Trust")
-                    .accessibilityHint("Shows how you're connected to the author")
-            }
-
             Spacer()
         }
         .padding(.top, 4)
@@ -4219,7 +4215,7 @@ struct FeedNoteRow: View {
         .sheet(isPresented: $showingBroadcastSheet) {
             EventBroadcastSheet(note: note)
         }
-        .trustWebPresentation(isPresented: $showingTrustWeb, author: zapRecipient)
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: trustWebPubkey)
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteIdInRow.map { IdentifiableString(id: $0) } },
             set: { showingNoteIdInRow = $0?.id }
@@ -4410,7 +4406,19 @@ struct FeedNoteRow: View {
                 else { actions.followUser(pubkey) }
                 dismiss()
             }
-            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 1) {
+            // The post footer's old WoT button, next to the person it's about.
+            glassIcon("WoTTab", asset: true, tint: .havenPurple, expanded: expanded, index: 1) {
+                trustWebPubkey = pubkey
+                showingTrustWeb = true
+                dismiss()
+            }
+            .accessibilityLabel("Web of Trust")
+            .accessibilityHint("Shows how you're connected to \(displayName)")
+            // Block last and set apart, so it's never a slip from the globe.
+            Divider().frame(width: 20).padding(.vertical, 2)
+                .scaleEffect(expanded ? 1 : 0.01)
+                .opacity(expanded ? 1 : 0)
+            glassIcon("hand.raised.fill", tint: .red, expanded: expanded, index: 2) {
                 actions.blockUser(pubkey)
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",
@@ -4426,13 +4434,20 @@ struct FeedNoteRow: View {
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
     }
 
-    private func glassIcon(_ icon: String, tint: Color = .white, expanded: Bool, index: Int, action: @escaping () -> Void) -> some View {
+    private func glassIcon(_ icon: String, asset: Bool = false, tint: Color = .white, expanded: Bool, index: Int,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(tint.opacity(0.85))
-                .frame(width: 32, height: 32)
-                .contentShape(Circle())
+            Group {
+                if asset {
+                    // A template image doesn't follow the font like an SF Symbol does.
+                    Image(icon).resizable().frame(width: 17, height: 17)
+                } else {
+                    Image(systemName: icon).font(.system(size: 14, weight: .semibold))
+                }
+            }
+            .foregroundStyle(tint.opacity(0.85))
+            .frame(width: 32, height: 32)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .scaleEffect(expanded ? 1 : 0.01)
