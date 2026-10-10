@@ -825,6 +825,8 @@ struct TrustWebView: View {
         let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:])
         faceCandidates[key] = candidates
         nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
+        // Faces whose profiles are cached still get a daily look for a new picture.
+        if key == me { nostrService.refreshChangedProfiles(candidates, scope: "wot-faces") }
         loadPictures(candidates)
     }
 

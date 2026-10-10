@@ -943,6 +943,25 @@ class FeedService: ObservableObject {
             .sink { [weak self] _ in self?.reconcileFeedSubscriptions() }
             .store(in: &configCancellables)
 
+        // Profiles are cached for good, so a follow who changed their picture
+        // kept the old one. Once a day (on launch, when the follows load, and
+        // on coming back to the app) ask for just the follows' profiles that
+        // changed; see `NostrService.refreshChangedProfiles`.
+        $followedPubkeys
+            .filter { !$0.isEmpty }
+            .debounce(for: .seconds(10), scheduler: DispatchQueue.main)
+            .sink { follows in
+                NostrService.shared.refreshChangedProfiles(Array(follows), scope: "follows")
+            }
+            .store(in: &configCancellables)
+        NotificationCenter.default.publisher(for: AppActivity.didBecomeActive)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, !self.followedPubkeys.isEmpty else { return }
+                NostrService.shared.refreshChangedProfiles(Array(self.followedPubkeys), scope: "follows")
+            }
+            .store(in: &configCancellables)
+
         // Blocking someone (here, or a mute list synced from another client)
         // must drop their posts now. Nothing listened for this before, so a
         // blocked author stayed on screen until some unrelated note arrived.
