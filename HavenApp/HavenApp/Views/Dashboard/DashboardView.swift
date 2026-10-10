@@ -8,17 +8,13 @@ struct DashboardView: View {
     @EnvironmentObject var statsService: StatsService
     @ObservedObject private var mirrorService = MirrorService.shared
 
-    @State private var isExporting = false
-    @State private var isBackingUpBlossom = false
     @State private var isPreparingImport = false
-    @State private var exportStatusMessage = ""
-    @State private var exportStatusIsError = false
     @State private var statusAnimate = false
     @State private var didCopyAddress = false
     @State private var showingKindBreakdown = false
     @State private var showingStorageBreakdown = false
     @State private var showingFullLogs = false
-    @State private var shareSheetURL: URL?
+    @StateObject private var exporter = VaultExporter()
     @State private var showingShareSheet = false
 
     var isSidebar: Bool = false
@@ -51,8 +47,9 @@ struct DashboardView: View {
             }
         }
         #if os(iOS)
-        .sheet(isPresented: $showingShareSheet) {
-            if let url = shareSheetURL {
+        .onChange(of: exporter.shareURL) { _, url in showingShareSheet = url != nil }
+        .sheet(isPresented: $showingShareSheet, onDismiss: { exporter.shareURL = nil }) {
+            if let url = exporter.shareURL {
                 ShareSheet(activityItems: [url])
             }
         }
@@ -282,15 +279,15 @@ struct DashboardView: View {
                 }
                 .disabled(mirrorService.state == .mirroring)
 
-                ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting, emphasis: .secondary) {
-                    exportBackup()
+                ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: exporter.running == .notes, emphasis: .secondary) {
+                    exporter.export(.notes, relayManager: relayManager, config: configService.config)
                 }
-                .disabled(isExporting || isBackingUpBlossom)
+                .disabled(exporter.isBusy)
 
-                ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom, emphasis: .secondary) {
-                    exportBlossom()
+                ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: exporter.running == .media, emphasis: .secondary) {
+                    exporter.export(.media, relayManager: relayManager, config: configService.config)
                 }
-                .disabled(isExporting || isBackingUpBlossom)
+                .disabled(exporter.isBusy)
 
                 #if os(macOS)
                 ActionButton(icon: "safari", title: "Open Browser", emphasis: .secondary) {
@@ -320,14 +317,14 @@ struct DashboardView: View {
     /// export on a wide macOS window produced no feedback at all.
     @ViewBuilder
     private var exportStatusView: some View {
-        if !exportStatusMessage.isEmpty {
+        if !exporter.statusMessage.isEmpty {
             HStack(alignment: .top, spacing: 6) {
-                Image(systemName: exportStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                Image(systemName: exporter.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .font(.appSystem(size: 11))
-                    .foregroundColor(exportStatusIsError ? .orange : .havenOnline)
-                Text(exportStatusMessage)
+                    .foregroundColor(exporter.statusIsError ? .orange : .havenOnline)
+                Text(exporter.statusMessage)
                     .font(.appCaption)
-                    .foregroundColor(exportStatusIsError ? .primary : .secondary)
+                    .foregroundColor(exporter.statusIsError ? .primary : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -351,122 +348,6 @@ struct DashboardView: View {
         return height
     }
     
-    private func setExportStatus(_ message: String, isError: Bool = false) {
-        withAnimation(Motion.fade) {
-            exportStatusMessage = message
-            exportStatusIsError = isError
-        }
-    }
-
-    private func exportBackup() {
-        isExporting = true
-        setExportStatus("Preparing export...")
-
-        let tempDir = NSTemporaryDirectory()
-        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
-
-        relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
-            Task { @MainActor in
-                isExporting = false
-
-                guard success else {
-                    setExportStatus("Export failed", isError: true)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        setExportStatus("")
-                    }
-                    return
-                }
-
-                #if os(macOS)
-                let panel = NSSavePanel()
-                panel.title = "Save JSONL Backup"
-                panel.nameFieldStringValue = "haven-backup.zip"
-                panel.allowedContentTypes = [.zip]
-                panel.canCreateDirectories = true
-                
-                if panel.runModal() == .OK, let destURL = panel.url {
-                    let srcURL = URL(fileURLWithPath: tempPath)
-                    do {
-                        if FileManager.default.fileExists(atPath: destURL.path) {
-                            try FileManager.default.removeItem(at: destURL)
-                        }
-                        try FileManager.default.moveItem(at: srcURL, to: destURL)
-                        setExportStatus("Saved to \(destURL.lastPathComponent)")
-                    } catch {
-                        setExportStatus("Failed to save: \(error.localizedDescription)", isError: true)
-                    }
-                } else {
-                    // User cancelled the save panel
-                    setExportStatus("Export cancelled")
-                    try? FileManager.default.removeItem(atPath: tempPath)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    setExportStatus("")
-                }
-                #else
-                // iOS: Share the file
-                shareSheetURL = URL(fileURLWithPath: tempPath)
-                showingShareSheet = true
-                setExportStatus("Ready to share")
-                #endif
-            }
-        }
-    }
-    
-    private func exportBlossom() {
-        isBackingUpBlossom = true
-        setExportStatus("Preparing Blossom export...")
-
-        let tempDir = NSTemporaryDirectory()
-        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
-
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
-            Task { @MainActor in
-                isBackingUpBlossom = false
-
-                guard success else {
-                    setExportStatus("Blossom export failed", isError: true)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        setExportStatus("")
-                    }
-                    return
-                }
-
-                #if os(macOS)
-                let panel = NSSavePanel()
-                panel.title = "Save Blossom Backup"
-                panel.nameFieldStringValue = "blossom-backup.zip"
-                panel.allowedContentTypes = [.zip]
-                panel.canCreateDirectories = true
-                
-                if panel.runModal() == .OK, let destURL = panel.url {
-                    let srcURL = URL(fileURLWithPath: tempPath)
-                    do {
-                        if FileManager.default.fileExists(atPath: destURL.path) {
-                            try FileManager.default.removeItem(at: destURL)
-                        }
-                        try FileManager.default.moveItem(at: srcURL, to: destURL)
-                        setExportStatus("Saved to \(destURL.lastPathComponent)")
-                    } catch {
-                        setExportStatus("Failed to save: \(error.localizedDescription)", isError: true)
-                    }
-                } else {
-                    setExportStatus("Export cancelled")
-                    try? FileManager.default.removeItem(atPath: tempPath)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    setExportStatus("")
-                }
-                #else
-                // iOS: Share the file
-                shareSheetURL = URL(fileURLWithPath: tempPath)
-                showingShareSheet = true
-                setExportStatus("Ready to share")
-                #endif
-            }
-        }
-    }
-
     private var importProgressSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {

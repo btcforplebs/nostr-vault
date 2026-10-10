@@ -425,7 +425,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView(includesBlossom: vaultTabHostsMedia)
+                relayDashboardContent
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -448,6 +448,17 @@ struct VaultView: View {
                         }
                     }
             }
+        }
+    }
+
+    /// The Vault tab's dashboard is the Vault Dashboard; the relay-only
+    /// layout (macOS keeps notes and media apart) is the relay dashboard.
+    @ViewBuilder
+    private var relayDashboardContent: some View {
+        if vaultTabHostsMedia {
+            VaultDashboardView()
+        } else {
+            DashboardView()
         }
     }
 
@@ -892,7 +903,7 @@ struct VaultView: View {
         #if os(iOS)
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView(includesBlossom: vaultTabHostsMedia)
+                relayDashboardContent
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)

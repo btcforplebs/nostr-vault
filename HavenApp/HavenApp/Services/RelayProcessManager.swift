@@ -42,7 +42,9 @@ class RelayProcessManager: ObservableObject {
     /// an always-on Mac sat on "Syncing" for good (2026-10-03).
     private var inboxSubscribed = false
     @Published var isImporting = false
-    @Published var importCompleted = false
+    @Published var importCompleted = false {
+        didSet { if importCompleted && !oldValue { VaultHistory.lastNotesImport = Date() } }
+    }
     @Published var isLocked = false
     @Published var isPortConflict = false
     @Published var bootStatusMessage: String = ""
