@@ -3804,7 +3804,7 @@ struct BlossomSettingsView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                Picker("Stop after", selection: $meshServeLimit) {
+                Picker("Pause after", selection: $meshServeLimit) {
                     ForEach(FipsMeshService.serveLimitChoices, id: \.self) { bytes in
                         Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).tag(Int(bytes))
                     }
@@ -3813,11 +3813,16 @@ struct BlossomSettingsView: View {
                 if mesh.kioskActive, let status = mesh.status {
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(status.running ? Color.havenOnline : Color.gray)
+                            .fill(!status.running ? Color.gray : mesh.pausedUntil == nil ? Color.havenOnline : Color.orange)
                             .frame(width: 8, height: 8)
-                        Text(status.running ? "Sharing on the mesh" : "Mesh stopped")
+                        Text(!status.running ? "Mesh stopped" : mesh.pausedUntil == nil ? "Sharing on the mesh" : "Sharing paused")
                             .font(.appCaption)
                             .foregroundColor(.secondary)
+                    }
+                    if let until = mesh.pausedUntil {
+                        Text("Paused: the mesh downloaded your limit for one session. Sharing starts again at \(until.formatted(date: .omitted, time: .shortened)).")
+                            .font(.appCaption)
+                            .foregroundColor(.orange)
                     }
                     if let counters = status.counters {
                         Text("Served \(counters.served_total) requests, \(ByteCountFormatter.string(fromByteCount: Int64(counters.served_tx), countStyle: .file))")
@@ -3857,7 +3862,7 @@ struct BlossomSettingsView: View {
             } header: {
                 Text("FIPS Mesh")
             } footer: {
-                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Sharing stops once the mesh has downloaded the amount you pick, and one visitor gets at most 256 MB of it. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
+                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Sharing pauses for an hour once the mesh has downloaded the amount you pick, then starts again by itself. One visitor gets at most 256 MB of it. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
             }
 
             HomeVaultSection()

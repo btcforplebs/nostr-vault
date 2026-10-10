@@ -34,6 +34,11 @@ final class FipsMeshService: ObservableObject {
     @Published private(set) var starting = false
     @Published private(set) var status: Status?
     @Published private(set) var lastError: String?
+    /// The mesh used up the serve limit; kiosk mode stays on and shares
+    /// again at this time (KioskCapPause).
+    @Published private(set) var pausedUntil: Date?
+    /// A share-again call is in flight.
+    private var resuming = false
 
     private var pollTimer: Timer?
     private var resignObserver: NSObjectProtocol?
@@ -103,6 +108,8 @@ final class FipsMeshService: ObservableObject {
         }
         guard kioskActive else { return }
         kioskActive = false
+        pausedUntil = nil
+        resuming = false
         UIApplication.shared.isIdleTimerDisabled = false
         pollTimer?.invalidate()
         pollTimer = nil
@@ -242,12 +249,48 @@ final class FipsMeshService: ObservableObject {
         defer { NvFipsFreeString(raw) }
         status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
         if let npub = status?.npub { UserDefaults.standard.set(npub, forKey: Self.ownNpubKey) }
-        // The engine already stopped sharing; end kiosk so the mesh entry is withdrawn too.
-        if kioskActive, status?.cap_reached == true {
+        guard kioskActive else { return }
+        // At the limit the engine stops serving by itself. Kiosk mode stays on
+        // and shares again after the cool-down: turning it off would let anyone
+        // who uses up the limit keep the kiosk off until the owner came back.
+        switch KioskCapPause.step(capReached: status?.cap_reached == true, pausedUntil: pausedUntil, resuming: resuming, now: Date()) {
+        case .none:
+            break
+        case .pause(let until):
             let limit = ByteCountFormatter.string(fromByteCount: Int64(status?.max_serve_bytes ?? 0), countStyle: .file)
-            print("FipsMesh: kiosk off, serve limit \(limit) reached")
-            stopKiosk()
-            lastError = "Kiosk mode turned off: the mesh downloaded \(limit) from this phone, your limit for one session. Turn it on again to share more."
+            print("FipsMesh: kiosk paused, serve limit \(limit) reached")
+            pausedUntil = until
+        case .resume:
+            resumeSharing()
+        }
+    }
+
+    /// Starts a new sharing session on the running engine: a new count, so
+    /// the full limit applies again.
+    private func resumeSharing() {
+        resuming = true
+        let gen = startGen
+        let port = UInt16(exactly: ConfigService.shared.config.meshPlainPort) ?? 0
+        let previous = engineOp
+        let op = Task.detached(priority: .userInitiated) { () -> Int32 in
+            await previous?.value
+            return NvFipsExport(port)
+        }
+        engineOp = Task { _ = await op.value }
+        Task { @MainActor in
+            let rc = await op.value
+            // Kiosk mode was turned off (or on again) while this ran.
+            guard resuming, gen == startGen, kioskActive else { return }
+            resuming = false
+            if rc == 0 {
+                print("FipsMesh: kiosk sharing again after the cool-down")
+                pausedUntil = nil
+                refresh()
+            } else {
+                print("FipsMesh: share again failed (\(rc))")
+                stopKiosk()
+                lastError = "Kiosk mode turned off: it could not share again after the pause (\(rc))."
+            }
         }
     }
 
