@@ -50,7 +50,7 @@ extension Notification.Name {
     /// nothing else needed to open them programmatically.
     static let havenOpenSearch = Notification.Name("com.haven.openSearch")
     /// ⌘F on an iPad keyboard: the Search tab's field takes the keystrokes.
-    /// Posted with `SearchFocusRequest.isPending` set, for a tab already built.
+    /// Posted with a `SearchFocusRequest` made, for a Search tab already showing.
     static let havenFocusSearch = Notification.Name("com.haven.focusSearch")
     /// ⌘R on an iPad keyboard: refresh what the tab is showing. `object` is
     /// the tab's index (Int), so only the showing tab's view acts on it.
@@ -72,15 +72,19 @@ extension Notification.Name {
     static let havenOpenNote = Notification.Name("com.haven.openNote")
 }
 
-/// ⌘F asked for the search field. A Search tab built by that same switch
-/// isn't listening yet when the notification goes out, so it also reads this
-/// when it appears; whichever side runs first clears it.
+/// ⌘F asked for the search field. A Search tab that isn't on screen when
+/// the notification goes out reads this when it appears; whichever side runs
+/// first clears it. A request left behind by a switch that never showed
+/// Search goes stale rather than popping the keyboard on a later visit.
 enum SearchFocusRequest {
-    @MainActor static var isPending = false
+    @MainActor private static var requestedAt: Date?
 
-    /// True once per request.
+    @MainActor static func request() { requestedAt = Date() }
+
+    /// True once per request, and only while it is fresh.
     @MainActor static func take() -> Bool {
-        defer { isPending = false }
-        return isPending
+        defer { requestedAt = nil }
+        guard let requestedAt else { return false }
+        return Date().timeIntervalSince(requestedAt) < 3
     }
 }

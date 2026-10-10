@@ -36,6 +36,10 @@ struct SearchView: View {
     /// results already shown) must survive the round trip.
     @StateObject private var globalSearchLifetime = GlobalSearchLifetime()
     @FocusState private var searchFieldFocused: Bool
+    /// On screen now. A TabView keeps a visited tab alive, so a Search tab
+    /// sitting behind Feed still hears ⌘F's notification; only the one
+    /// showing may take the request, or it is spent off screen.
+    @State private var isShowing = false
 
     enum SearchMode: CaseIterable {
         case relay, global
@@ -450,11 +454,14 @@ struct SearchView: View {
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .hashtagLinks()
-        // ⌘F on an iPad keyboard switched to this tab; the field takes the keys.
+        // ⌘F on an iPad keyboard while Search is already showing; otherwise
+        // the switch makes it appear and onAppear takes the request.
         .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
-            if SearchFocusRequest.take() { searchFieldFocused = true }
+            if isShowing, SearchFocusRequest.take() { searchFieldFocused = true }
         }
+        .onDisappear { isShowing = false }
         .onAppear {
+            isShowing = true
             refreshDiscovery(force: true)
             if SearchFocusRequest.take() {
                 // Focus set during the appear pass is dropped; the next turn holds.
