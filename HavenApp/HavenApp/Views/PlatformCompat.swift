@@ -608,6 +608,9 @@ extension View {
 struct PastesClipboardImage: ViewModifier {
     let action: () -> Void
     @State private var clipboardHoldsOnlyImage = false
+    /// From the app notifications, not `scenePhase`: under this app's UIKit
+    /// scene delegate `scenePhase` never reads `.active`.
+    @State private var appIsActive = true
 
     func body(content: Content) -> some View {
         content
@@ -622,12 +625,19 @@ struct PastesClipboardImage: ViewModifier {
             }
             .onAppear(perform: refresh)
             .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in refresh() }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                appIsActive = true
+                refresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+                appIsActive = false
+            }
             // A copy made in another app arrives with no notification: in Split
             // View this app stays active, so neither one above fires. The change
-            // count is a plain integer read, so watching it costs nothing and
-            // raises no paste prompt.
-            .task {
+            // count is a plain integer read and raises no paste prompt. iPad
+            // only (the iPhone has no Split View) and only while active.
+            .task(id: appIsActive) {
+                guard appIsActive, UIDevice.current.userInterfaceIdiom == .pad else { return }
                 var seen = UIPasteboard.general.changeCount
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(1))

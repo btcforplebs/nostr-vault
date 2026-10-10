@@ -1437,9 +1437,10 @@ private struct IPadCommandKeys: ViewModifier {
                     }
                     .keyboardShortcut("r", modifiers: .command)
                     Button("Search") {
-                        // A warm Search tab hears the notification; one built by
-                        // this switch reads the request when it appears.
-                        SearchFocusRequest.isPending = true
+                        // Search already showing hears the notification; any
+                        // other Search tab, built or not, reads the request
+                        // when this switch makes it appear.
+                        SearchFocusRequest.request()
                         selectedTab = 1
                         NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
                     }
