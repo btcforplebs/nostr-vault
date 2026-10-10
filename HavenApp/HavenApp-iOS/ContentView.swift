@@ -16,7 +16,6 @@ struct ContentView: View {
     @State private var dmInboxConversation: String?
     @State private var pendingMentionNoteId: IdentifiableString?
     @State private var pendingProfilePubkey: IdentifiableString?
-    @State private var isLandscapeLayout = UIScreen.main.bounds.width >= UIScreen.main.bounds.height
 
     init() {
         let appearance = UINavigationBarAppearance()
@@ -36,36 +35,13 @@ struct ContentView: View {
                 }
             } else {
                 if horizontalSizeClass == .regular {
-                    // iPad: persistent sidebar in landscape, bottom tab bar in
-                    // portrait (where the sidebar collapses and would otherwise
-                    // leave no visible navigation).
-                    //
-                    // The orientation is measured by a keyboard-immune background
-                    // reader, NOT by wrapping the content in a GeometryReader:
-                    // the on-screen keyboard shrinks a keyboard-avoiding reader's
-                    // height, which in full-screen portrait flips width >= height
-                    // to true and swaps the entire layout branch — destroying the
-                    // @State of whichever view is presenting the compose sheet,
-                    // so the sheet dismisses itself the moment its editor focuses.
-                    ZStack {
-                        if isLandscapeLayout {
-                            iPadSidebarView(selectedTab: $selectedTab)
-                        } else {
-                            iPhoneTabView(selectedTab: $selectedTab)
-                        }
-                    }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear {
-                                    isLandscapeLayout = geo.size.width >= geo.size.height
-                                }
-                                .onChange(of: geo.size) { _, size in
-                                    isLandscapeLayout = size.width >= size.height
-                                }
-                        }
-                        .ignoresSafeArea(.keyboard)
-                    )
+                    // iPad: the sidebar in both orientations. Portrait used to
+                    // fall back to the phone's floating tab bar, stretched
+                    // across the whole width; the sidebar now stays pinned
+                    // there too (iPadSidebarView keeps every column visible).
+                    // One branch per size class, so rotating or raising the
+                    // keyboard never swaps the layout and drops a sheet.
+                    iPadSidebarView(selectedTab: $selectedTab)
                 } else {
                     iPhoneTabView(selectedTab: $selectedTab)
                 }
@@ -99,6 +75,10 @@ struct ContentView: View {
             if running, let action = AppDelegate.pendingAction {
                 AppDelegate.dispatchAction(action)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in
+            // Only the iPad sidebar has a Settings tab; the phone opens its sheet.
+            if horizontalSizeClass == .regular { selectedTab = 5 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
             selectedTab = 4 // Vault tab, relay half
@@ -187,8 +167,49 @@ struct iPadSidebarView: View {
     @State private var showingAccountSwitcher = false
     @State private var searchPath = NavigationPath()
     @State private var profilePath = NavigationPath()
+    /// Every column, in portrait too: the default there slides the sidebar
+    /// away and leaves no visible navigation. The reader can still fold it
+    /// with the toolbar button or ⌃⌘S.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// ⌘N or New Post on a tab with no composer of its own (WoT, Vault,
+    /// Settings). Feed, Search and Profile answer `.composeFromTabBar` themselves.
+    @State private var showingCompose = false
 
     private var activeHex: String { configService.activeAccountHexPubkey }
+
+    private var relayStatusColor: Color {
+        if relayManager.isBooting {
+            return .yellow
+        } else if relayManager.isRunning && relayManager.isWotSyncing {
+            return .orange
+        } else if relayManager.isRunning {
+            return .green
+        } else {
+            return .red
+        }
+    }
+
+    private var relayStatusText: String {
+        if relayManager.isBooting {
+            return "Starting"
+        } else if relayManager.isRunning && relayManager.isWotSyncing {
+            return "Syncing"
+        } else if relayManager.isRunning {
+            return "Running"
+        } else {
+            return "Stopped"
+        }
+    }
+
+    private func composeNewPost() {
+        NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
+    }
+
+    private func toggleSidebar() {
+        withAnimation {
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        }
+    }
 
     private var isOwner: Bool {
         configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -233,7 +254,7 @@ struct iPadSidebarView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: sidebarSelection) {
                 // Account switcher section
                 Section {
@@ -277,6 +298,37 @@ struct iPadSidebarView: View {
                         }
                     }
                     .buttonStyle(.plain)
+
+                    // The phone's floating Post button, which this layout has
+                    // no bar for. Same path as ⌘N.
+                    Button(action: composeNewPost) {
+                        Label("New Post", systemImage: "square.and.pencil")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.havenPurple)
+                    }
+                    .accessibilityHint("Write a new post")
+
+                    // On the phone the inbox opens from Profile; here it gets
+                    // its own row, with the unread count the phone shows on
+                    // the Profile tab.
+                    Button {
+                        NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
+                    } label: {
+                        HStack {
+                            Label("Messages", systemImage: "envelope")
+                                .foregroundStyle(Color.primary)
+                            Spacer()
+                            if dmService.totalUnreadCount > 0 {
+                                Text("\(dmService.totalUnreadCount)")
+                                    .font(.appSystem(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(.red))
+                                    .accessibilityLabel("\(dmService.totalUnreadCount) unread")
+                            }
+                        }
+                    }
                 }
 
                 // Each feed is its own row, in the reader's feed-menu order,
@@ -333,6 +385,38 @@ struct iPadSidebarView: View {
                         Label("Settings", systemImage: "gearshape")
                     }
                 }
+
+                // The Mac sidebar's footer: is your relay up, and a restart
+                // without a trip to the Vault dashboard.
+                Section("Relay") {
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(relayStatusColor)
+                            .frame(width: 8, height: 8)
+                        Text(relayStatusText)
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Relay \(relayStatusText)")
+
+                    Button {
+                        if relayManager.isRunning {
+                            relayManager.stopRelay {
+                                relayManager.startRelay(config: configService.config)
+                            }
+                        } else {
+                            relayManager.startRelay(config: configService.config)
+                        }
+                    } label: {
+                        Label(
+                            relayManager.isRunning ? "Restart Relay" : "Start Relay",
+                            systemImage: relayManager.isRunning ? "arrow.clockwise.circle" : "play.circle"
+                        )
+                        .foregroundStyle(relayManager.isRunning ? Color.orange : Color.green)
+                    }
+                    .disabled(relayManager.isBooting)
+                }
             }
             .navigationTitle("Nostr Vault")
         } detail: {
@@ -359,6 +443,7 @@ struct iPadSidebarView: View {
                         NoteDetailView(note: note)
                     }
                 }
+                .modifier(MiniPlayerInset())
             case 2:
                 NavigationStack(path: $profilePath) {
                     NoteSplitPane(
@@ -375,8 +460,10 @@ struct iPadSidebarView: View {
                     }
                 }
                 .id(activeHex)
+                .modifier(MiniPlayerInset())
             case 3:
                 WOTTabView()
+                    .modifier(MiniPlayerInset())
             case 4:
                 VaultTabView {
                     NoteSplitPane(
@@ -386,12 +473,14 @@ struct iPadSidebarView: View {
                         VaultView()
                     }
                 }
+                .modifier(MiniPlayerInset())
             case 5:
                 NavigationStack {
                     SettingsView(isEmbedded: true)
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.hidden, for: .navigationBar)
                 }
+                .modifier(MiniPlayerInset())
             default:
                 NoteSplitPane(
                     emptyTitle: "No Note Selected",
@@ -407,6 +496,9 @@ struct iPadSidebarView: View {
         // named in Info.plist -- so every sidebar row drew in iOS blue while the
         // rest of the app was Sunset Orange.
         .tint(.havenPurple)
+        // Side by side in portrait as well; the automatic style there lays
+        // the sidebar over the content.
+        .navigationSplitViewStyle(.balanced)
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
@@ -421,31 +513,42 @@ struct iPadSidebarView: View {
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
+            // 0-2 are Feed, Search and Profile, which open their own composer.
+            guard let tab = note.object as? Int, tab >= 3 else { return }
+            showingCompose = true
+        }
+        .sheet(isPresented: $showingCompose) {
+            ComposeView(onDismiss: { showingCompose = false })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
         // MARK: - Keyboard Shortcuts
         // Mirrors the Mac app's bindings (MenuBarView.swift) so a Magic Keyboard
         // drives the iPad the same way it drives the desktop. Tab indices here
         // are the sidebar's, which differ from the Mac's tab enum ordering.
+        // Titled, so holding ⌘ lists them by name.
         .background {
             Group {
-                Button("") { selectedTab = 0 }
+                Button("Feed") { selectedTab = 0 }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("") { selectedTab = 1 }
+                Button("Search") { selectedTab = 1 }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("") { selectedTab = 2 }
+                Button("Profile") { selectedTab = 2 }
                     .keyboardShortcut("3", modifiers: .command)
                 // ⌘4 Vault, ⌘5 WOT: the sidebar's order, not the tags'.
-                Button("") { selectedTab = 4 }
+                Button("Vault") { selectedTab = 4 }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("") { selectedTab = 3 }
+                Button("WoT") { selectedTab = 3 }
                     .keyboardShortcut("5", modifiers: .command)
-                Button("") { selectedTab = 5 }
+                Button("Settings") { selectedTab = 5 }
                     .keyboardShortcut("6", modifiers: .command)
-                Button("") { selectedTab = 5 }
+                Button("Settings") { selectedTab = 5 }
                     .keyboardShortcut(",", modifiers: .command)
-                Button("") {
-                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
-                }
+                Button("New Post", action: composeNewPost)
                     .keyboardShortcut("n", modifiers: .command)
+                Button("Toggle Sidebar", action: toggleSidebar)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
             }
             .frame(width: 0, height: 0)
             .opacity(0)
@@ -1235,6 +1338,9 @@ private enum NoteSplitMetrics {
     /// width at which a note's text stops wrapping into a readable measure.
     static let minList: Double = 280
     static let minDetail: Double = 360
+    /// Narrower than this (portrait with the sidebar showing), the pane shows
+    /// one column: the list, with a note opening over it.
+    static let minSplit: Double = minList + minDetail + 14
 }
 
 /// iPad two-pane note layout: the scrolling list on the left, the selected note
@@ -1283,19 +1389,27 @@ struct NoteSplitPane<Content: View>: View {
             let maxListWidth = max(NoteSplitMetrics.minList, geo.size.width - NoteSplitMetrics.minDetail)
             let width = min(max(listWidth, NoteSplitMetrics.minList), maxListWidth)
 
+            // Too narrow for two columns (portrait with the sidebar showing):
+            // the list fills the pane and a selected note covers it, with
+            // Back to return, the way the phone pushes one. The list keeps
+            // its place in the hierarchy either way, so crossing the width
+            // keeps its scroll position and the open note.
+            let singleColumn = geo.size.width < NoteSplitMetrics.minSplit
+            let showsDetailColumn = !singleColumn && !detailHidden
+
             HStack(spacing: 0) {
                 content()
-                    .frame(width: detailHidden ? geo.size.width : width)
+                    .frame(width: showsDetailColumn ? width : geo.size.width)
                     .environment(\.noteDetailSelection, selection)
 
-                if !detailHidden {
+                if showsDetailColumn {
                     resizeHandle(maxListWidth: maxListWidth)
                         // The fold tab is wider than the handle; keep the
                         // detail column from drawing over (and taking taps
                         // from) the half that overhangs it.
                         .zIndex(1)
 
-                    detailColumn
+                    detailColumn(showsBack: false)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .transition(.move(edge: .trailing))
                 }
@@ -1305,10 +1419,18 @@ struct NoteSplitPane<Content: View>: View {
             // handle has nothing to span.
             .frame(width: geo.size.width, height: geo.size.height)
             .overlay(alignment: .trailing) {
-                if detailHidden {
+                if !singleColumn && detailHidden {
                     detailToggle
                 }
             }
+            .overlay {
+                if singleColumn && !selection.isEmpty {
+                    detailColumn(showsBack: true)
+                        .background(Color.platformWindowBackground)
+                        .transition(.move(edge: .trailing))
+                }
+            }
+            .animation(singleColumn ? .easeInOut(duration: 0.25) : nil, value: selection.isEmpty)
             .clipped()
         }
         .onChange(of: selection.note?.id) { _, id in
@@ -1381,25 +1503,36 @@ struct NoteSplitPane<Content: View>: View {
     private var isHandleActive: Bool { isHandleHovered || dragStartWidth != nil }
 
     @ViewBuilder
-    private var detailColumn: some View {
+    private func detailColumn(showsBack: Bool) -> some View {
         if let note = selection.note {
             // No selection injected here on purpose: links inside the detail
             // column push onto its own stack rather than replacing the note the
             // reader is looking at.
             NavigationStack {
-                // A long-form event opens in the reader, not as a note. This is
-                // what makes tapping an Articles card do something on iPad.
-                if note.kind == 30023 {
-                    ArticleReaderView(note: note)
-                        .environmentObject(NostrService.shared)
+                Group {
+                    // A long-form event opens in the reader, not as a note. This is
+                    // what makes tapping an Articles card do something on iPad.
+                    if note.kind == 30023 {
+                        ArticleReaderView(note: note)
+                            .environmentObject(NostrService.shared)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                    } else {
+                        NoteDetailView(note: note)
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.hidden, for: .navigationBar)
-                } else {
-                    NoteDetailView(note: note)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { pushed in
-                        NoteDetailView(note: pushed)
+                        .navigationDestination(for: FeedNote.self) { pushed in
+                            NoteDetailView(note: pushed)
+                        }
+                    }
+                }
+                .toolbar {
+                    if showsBack {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { selection.clear() } label: {
+                                Label("Back", systemImage: "chevron.left")
+                            }
+                        }
                     }
                 }
             }

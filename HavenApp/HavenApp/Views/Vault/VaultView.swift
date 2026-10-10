@@ -721,7 +721,11 @@ struct VaultView: View {
                 }
 
                 searchToggleButton
+                #if os(macOS)
+                // iOS rows are always full (`rowLayoutMode`), so on a wide
+                // iPad this button switched nothing. iPhone has no switch.
                 compactToggleButton
+                #endif
             }
 
             searchBar
