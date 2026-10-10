@@ -1980,6 +1980,14 @@ final class GlobeScene: ObservableObject {
 
     /// Pictures are drawn from a symbol this size, scaled to each face.
     static let pictureSize: CGFloat = 64
+    /// Upright on a phone the globe fills the width; iPad and Mac keep their framing.
+    static let isPhone: Bool = {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }()
     /// A new globe fades and glides in over this long, then holds still.
     private static let settleTime: TimeInterval = 1.8
 
@@ -2297,8 +2305,8 @@ final class GlobeScene: ObservableObject {
 
         init(_ camera: GlobeCamera, size: CGSize) {
             turn = simd_double3x3(camera.orientation)
-            cameraZ = 4.2 / camera.zoom
-            unit = Double(min(size.width, size.height)) * 0.40 * 4.2 * 0.92
+            cameraZ = GlobeCamera.distance / camera.zoom
+            unit = GlobeCamera.unit(for: size, phone: GlobeScene.isPhone)
             mid = CGPoint(x: size.width / 2, y: size.height / 2)
         }
 
