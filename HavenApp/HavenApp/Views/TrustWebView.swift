@@ -824,7 +824,7 @@ struct TrustWebView: View {
     /// people you interact with most; on anyone else's, a spread of their
     /// follows. Only pictures that have loaded.
     private var ringFaces: [String] {
-        guard let frame, frame.center == author, let candidates = faceCandidates[frame.center] else { return [] }
+        guard let frame, frame.center != me, let candidates = faceCandidates[frame.center] else { return [] }
         return TrustMap.pickFaces(candidates) { pictureRenders($0) }
     }
 
@@ -1724,11 +1724,16 @@ final class GlobeScene: ObservableObject {
         self.author = author
         center = frame.center
 
-        // Every star's shell and look for this core.
+        // Every star's shell and look for this core. Whoever is in the middle,
+        // the globe is still yours: your haze stays, and on someone else's
+        // globe your follows they don't follow drift out to it. Each star keeps
+        // its direction, so re-centering only glides people in or out.
         let bridgeSet = Set(frame.bridges)
         var want: [String: (Kind, Double)] = [:]
-        if frame.center == me {
-            for key in haze { want[key] = (closeHaze.contains(key) ? .closeHaze : .haze, TrustMap.outerRadius) }
+        for key in haze { want[key] = (closeHaze.contains(key) ? .closeHaze : .haze, TrustMap.outerRadius) }
+        if frame.center != me {
+            for key in myFollows { want[key] = (.haze, TrustMap.outerRadius) }
+            want[me] = (.bridge, TrustMap.outerRadius)
         }
         for key in frame.ring {
             let kind: Kind = bridgeSet.contains(key) ? .bridge
@@ -1778,16 +1783,18 @@ final class GlobeScene: ObservableObject {
         chains = frame.chains ?? []
         var shown: [String] = []
         var taken: Set<String> = [frame.center, author]
+        // On someone else's globe you're one of the stars: keep your face.
+        if frame.center != me, taken.insert(me).inserted { shown.append(me) }
         for key in TrustMap.spread(bridges, count: TrustGlobeCanvas.maxFaces) where taken.insert(key).inserted {
             shown.append(key)
         }
         for chain in chains.prefix(TrustMap.shownChains) {
             for key in [chain.bridge, chain.via] where taken.insert(key).inserted { shown.append(key) }
         }
-        // Someone's own globe has no paths to draw: their follows get the faces.
+        // Their follows get the faces left over from the paths.
         let ringSet = Set(frame.ring)
         ringFaceSet = []
-        if frame.center == author {
+        if frame.center != me {
             for key in ringFaces where ringSet.contains(key) && taken.insert(key).inserted {
                 shown.append(key)
                 ringFaceSet.insert(key)
