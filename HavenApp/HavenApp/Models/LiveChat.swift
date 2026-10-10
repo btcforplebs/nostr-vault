@@ -213,14 +213,14 @@ enum LiveChat {
 
     // MARK: - Private
 
-    private struct ZapRequest {
+    struct ZapRequest {
         let pubkey: String
         let content: String
         let tags: [[String]]
     }
 
     /// The zap request lives as JSON inside the receipt's `description` tag.
-    private static func zapRequest(from receiptTags: [[String]]) -> ZapRequest? {
+    static func zapRequest(from receiptTags: [[String]]) -> ZapRequest? {
         guard let description = receiptTags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
               !description.isEmpty else { return nil }
 

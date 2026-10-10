@@ -19,7 +19,13 @@ struct VaultView: View {
     @State var isSearchActive = false
     @State var searchQueryDraft = ""
     @State var displayProfileResults: [FeedProfile] = []
+    /// The phone and iPad open the Vault tab on "Vault", everything new in
+    /// one list. The Mac's relay page has no such list.
+    #if os(iOS)
+    @State var viewMode: ViewMode = .activity
+    #else
     @State var viewMode: ViewMode = .notes
+    #endif
 
     @State var initialLoad = false
     @State var isLoadingMore = false
@@ -40,6 +46,11 @@ struct VaultView: View {
 
     // Cached display data (computed in background)
     @State var displayNotes: [NostrEvent] = []
+    /// The "Vault" list's lines, newest first.
+    @State var displayActivity: [VaultActivity] = []
+    @State var activityHasLoadedOnce = false
+    /// Lines newer than this (unix seconds) are new since your last visit.
+    @State var activityUnreadSince: Int64 = .max
     @State var displayLikedNotes: [NostrEvent] = []
     /// Maps note ID -> list of (reactor pubkey, reaction emoji) tuples
     @State var reactionMap: [String: [(pubkey: String, emoji: String)]] = [:]
@@ -163,6 +174,8 @@ struct VaultView: View {
 
     var currentPageTitle: String {
         switch viewMode {
+        case .activity:
+            return ""
         case .notes:
             switch contentFilter {
             case .all: return ""
@@ -289,8 +302,9 @@ struct VaultView: View {
         .onChange(of: vaultSection.opensNewActivity, initial: true) { _, opens in
             if opens { openNewActivity() }
         }
-        .onChange(of: modeInSight, initial: true) { _, mode in
+        .onChange(of: modeInSight, initial: true) { old, mode in
             if let mode { relayManager.markRelayViewed(mode) }
+            if mode == .activity { activityVisit(arriving: true) } else if old == .activity { activityVisit(arriving: false) }
         }
         .onChange(of: relayManager.newActivityModes) { _, _ in
             if let modeInSight { relayManager.markRelayViewed(modeInSight) }
@@ -323,6 +337,10 @@ struct VaultView: View {
             onViewModeChange: { newMode in
                 updateDisplayData()
                 markTabViewed(newMode)
+                if newMode == .activity {
+                    fetchMoreZapReceipts()
+                    refreshFollowers()
+                }
                 if newMode == .likes {
                     fetchMissingLikedNotes()
                     updateLikesSettleState()
@@ -366,6 +384,7 @@ struct VaultView: View {
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
+            activityHasLoadedOnce = false
             noOlderPages = []
             likesHasLoadedOnce = false
             likesInitialSettled = false
@@ -408,6 +427,9 @@ struct VaultView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             withAnimation(Motion.toggle) { viewMode = .followers }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayActivity)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .activity }
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },

@@ -4,6 +4,8 @@ import SwiftUI
 // Extracted from ViewerView for the Vault/Notes tab split.
 
 enum ViewMode {
+    /// The Vault tab's first list: everything that came in, newest first.
+    case activity
     case notes
     case media
     case likes

@@ -68,10 +68,12 @@ extension VaultView {
         defer { vaultSection.opensNewActivity = false }
         let news = relayManager.newActivityModes
         let showing: VaultMode = vaultShowsMedia ? .media : vaultMode
-        guard !news.contains(showing),
+        // "Vault" lists everything, so whatever lit the dot is already on it.
+        guard showing != .activity, !news.contains(showing),
               let target = VaultMode.allCases.first(where: news.contains) else { return }
         withAnimation(Motion.toggle) {
             switch target {
+            case .activity: viewMode = .activity
             case .notes, .articles, .highlights:
                 viewMode = .notes
                 noteScope = target == .articles ? .articles : target == .highlights ? .highlights : .notes
@@ -97,6 +99,9 @@ extension VaultView {
 
         // Notes: the kinds the Notes list shows (the Vault tab lists articles
         // and highlights apart, and they get no dot).
+        // "Vault" shows every list's news as it arrives.
+        if watchedMode == .activity { return }
+
         let noteKinds = notesListKinds
         let noteCount = noteKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
         let baselineNotes = noteKinds.reduce(0) { $0 + (notificationBaseline[$1] ?? 0) }
@@ -120,6 +125,8 @@ extension VaultView {
     func markTabViewed(_ mode: ViewMode) {
         let events = nostrService.events
         switch mode {
+        case .activity:
+            for listed in [ViewMode.notes, .likes, .zaps, .followers] { markTabViewed(listed) }
         case .notes:
             if hasNewNotes {
                 withAnimation(Motion.fade) { hasNewNotes = false }
@@ -254,9 +261,33 @@ extension VaultView {
         let locallyZapped = FeedService.shared.zappedEventIds
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
+        let follows = currentMode == .activity
+            ? (followerSnapshot?.current.filter(\.isNews).map { (pubkey: $0.pubkey, at: $0.followedAt) } ?? [])
+            : []
 
         Task.detached(priority: .userInitiated) {
-            if currentMode == .likes {
+            if currentMode == .activity {
+                // MARK: - Vault (everything that came in)
+                let lines = VaultActivity.build(
+                    events: currentEvents.map {
+                        VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
+                                            createdAt: $0.created_at, content: $0.content, tags: $0.tags)
+                    },
+                    owner: owner,
+                    noteKinds: Set(NostrService.relayTabNoteKinds),
+                    follows: follows,
+                    isBlocked: { blacklist.contains($0) },
+                    isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
+                )
+                let shown = Array(lines.prefix(currentMaxDisplayed))
+                let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
+                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                await MainActor.run {
+                    if self.displayActivity != shown { self.displayActivity = shown }
+                    self.activityHasLoadedOnce = true
+                    self.nostrService.fetchMissingProfiles(for: missingProfiles)
+                }
+            } else if currentMode == .likes {
                 // MARK: - Likes Mode
                 let noteKinds = NostrService.relayTabNoteKinds
 
@@ -626,6 +657,7 @@ extension VaultView {
 
     var viewModeTitle: String {
         switch viewMode {
+        case .activity: return "Vault"
         case .notes: return "Notes"
         case .media: return "Media"
         case .likes: return "Likes"

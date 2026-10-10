@@ -171,6 +171,11 @@ class RelayProcessManager: ObservableObject {
     
     /// `mode` is on screen, so what came into it has been seen.
     func markRelayViewed(_ mode: VaultMode) {
+        // The Vault list shows everything, so seeing it sees every list.
+        if mode == .activity {
+            if !newActivityModes.isEmpty { newActivityModes = [] }
+            return
+        }
         if newActivityModes.contains(mode) { newActivityModes.remove(mode) }
     }
 
