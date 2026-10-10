@@ -141,12 +141,14 @@ struct ContentView: View {
             selectedTab = 2 // Profile tab
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
+        .modifier(IPadCommandKeys(selectedTab: $selectedTab))
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
                 DMInboxView(openConversation: dmInboxConversation)
                     .environmentObject(NostrService.shared)
                     .environmentObject(ConfigService.shared)
             }
+            .dmInboxSheetSizing()
         }
         .sheet(item: $pendingMentionNoteId) { noteId in
             NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { pendingMentionNoteId = nil })
@@ -1262,6 +1264,11 @@ struct NoteSplitPane<Content: View>: View {
     /// translation from its start, not a delta since the last callback).
     @State private var dragStartWidth: Double?
 
+    /// A trackpad or mouse pointer is over the divider. iPadOS has no resize
+    /// cursor (`PointerStyle.columnResize` is macOS-only), so the divider
+    /// itself answers: it thickens and takes the accent while it can be dragged.
+    @State private var isHandleHovered = false
+
     /// The reader folded the note column away to give the list the whole
     /// pane. Remembered across launches; opening a note brings the column back.
     @AppStorage("ipad.noteSplit.detailHidden") private var detailHidden = false
@@ -1346,14 +1353,16 @@ struct NoteSplitPane<Content: View>: View {
         ZStack {
             Color.clear
             Rectangle()
-                .fill(Color(uiColor: .separator))
-                .frame(width: 1)
+                .fill(isHandleActive ? Color.havenPurple : Color(uiColor: .separator))
+                .frame(width: isHandleActive ? 3 : 1)
+                .animation(.easeOut(duration: 0.12), value: isHandleActive)
             // The fold tab doubles as the drag grip's centre mark.
             detailToggle
         }
         .frame(width: 14)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
+        .onHover { isHandleHovered = $0 }
         .gesture(
             DragGesture(minimumDistance: 1)
                 .onChanged { value in
@@ -1367,6 +1376,9 @@ struct NoteSplitPane<Content: View>: View {
         .accessibilityLabel("Resize note list")
         .accessibilityHint("Drag to change the width of the list. Double tap to reset.")
     }
+
+    /// Hovered by the pointer, or being dragged.
+    private var isHandleActive: Bool { isHandleHovered || dragStartWidth != nil }
 
     @ViewBuilder
     private var detailColumn: some View {
@@ -1403,6 +1415,40 @@ struct NoteSplitPane<Content: View>: View {
                 systemImage: "text.bubble",
                 description: Text(emptyMessage)
             )
+        }
+    }
+}
+
+/// ⌘R and ⌘F from an iPad's hardware keyboard, in both iPad layouts. ⌘R
+/// refreshes whatever the showing tab lists (each tab's view answers for
+/// itself, keyed by its index); ⌘F goes to Search with the field focused.
+/// The Mac binds ⌘R per screen in its toolbars; iOS has no toolbar button
+/// to hang it on, so one binding here asks the showing tab instead.
+private struct IPadCommandKeys: ViewModifier {
+    @Binding var selectedTab: Int
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    func body(content: Content) -> some View {
+        content.background {
+            if horizontalSizeClass == .regular {
+                Group {
+                    Button("Refresh") {
+                        NotificationCenter.default.post(name: .havenRefreshTab, object: selectedTab)
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                    Button("Search") {
+                        // A warm Search tab hears the notification; one built by
+                        // this switch reads the request when it appears.
+                        SearchFocusRequest.isPending = true
+                        selectedTab = 1
+                        NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+                }
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+            }
         }
     }
 }

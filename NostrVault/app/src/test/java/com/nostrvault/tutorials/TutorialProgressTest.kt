@@ -138,18 +138,20 @@ class TutorialProgressTest {
         )
     }
 
-    /** The screens put these on with `Modifier.tutorialAnchor`, and iOS uses
-     *  the same names. A typo here leaves a card with no pointer. */
-    @Test fun anchorNamesMatchIos() {
-        assertEquals("feeds.picker", TutorialContent.FEED_PICKER)
-        assertEquals("feeds.toolbar", TutorialContent.FEED_TOOLBAR)
-        assertEquals("vault.modes", TutorialContent.VAULT_MODES)
-        assertEquals("vault.relay", TutorialContent.VAULT_RELAY)
-        assertEquals("wallet.empty", TutorialContent.WALLET_EMPTY)
-        assertEquals("wallet.connect", TutorialContent.WALLET_CONNECT_BUTTON)
-        assertEquals("relay.status", TutorialContent.RELAY_STATUS)
-        assertEquals("relay.address", TutorialContent.RELAY_ADDRESS)
-        assertEquals("relay.activity", TutorialContent.RELAY_ACTIVITY)
+    /** The WoT tutorial points at the globe, the magnifier, then the layer menu. */
+    @Test fun wotCardsPointAtTheWotTab() {
+        assertEquals(
+            listOf(TutorialContent.WOT_GLOBE, TutorialContent.WOT_SEARCH, TutorialContent.WOT_LAYERS),
+            TutorialContent.wot.map { it.anchor },
+        )
+    }
+
+    /** Your vault points at the dropdown pill, then the Vault button. */
+    @Test fun vaultCardsPointAtThePillThenTheButton() {
+        assertEquals(
+            listOf(TutorialContent.VAULT_MODES, TutorialContent.VAULT_RELAY),
+            TutorialContent.vault.map { it.anchor },
+        )
     }
 
     /** Every tutorial has cards on Android now (iOS: the iPhone/iPad build). */

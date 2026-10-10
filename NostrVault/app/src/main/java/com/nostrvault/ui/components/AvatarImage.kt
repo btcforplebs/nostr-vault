@@ -112,9 +112,12 @@ fun AvatarImage(
 
 private fun avatarRequest(context: Context, url: String): ImageRequest =
     ImageRequest.Builder(context)
-        .data(url)
+        // Download the 256 px copy, but cache it under the original URL so
+        // pictures already on disk keep loading without a refetch.
+        .data(AvatarThumbnail.url(url))
         .size(128)
         .memoryCacheKey(url)
+        .diskCacheKey(url)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .diskCachePolicy(CachePolicy.ENABLED)
         .allowHardware(true)

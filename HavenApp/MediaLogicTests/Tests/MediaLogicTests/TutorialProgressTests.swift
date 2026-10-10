@@ -160,6 +160,13 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertEqual(TutorialProgress.key(.wot, account: alice), "tutorial.wot")
     }
 
+    /// Your vault points at the dropdown pill, then the Vault button.
+    func testVaultCardsPointAtThePillThenTheButton() {
+        XCTAssertEqual(TutorialContent.vault.map(\.anchor), [
+            TutorialContent.vaultModes, TutorialContent.vaultRelay,
+        ])
+    }
+
     /// Vault in Your Pocket points at the relay card, its activity, then its
     /// address.
     func testPocketRelayCardsPointAtTheDashboard() {

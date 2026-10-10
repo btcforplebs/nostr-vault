@@ -661,6 +661,7 @@ struct ProfileView: View {
                     .environmentObject(nostrService)
                     .environmentObject(configService)
             }
+            .dmInboxSheetSizing()
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
@@ -799,6 +800,11 @@ struct ProfileView: View {
             guard (note.object as? Int) == 2 else { return }
             showingCompose = true
         }
+        // ⌘R on an iPad keyboard. The Mac binds it to its refresh button; on
+        // iOS pulling down opens the editor, so the key is the refresh.
+        .modifier(RefreshesOnTabCommand(tab: 2, isActive: { isOwnProfile }) {
+            Task { await refreshProfile() }
+        })
         .fullScreenCover(isPresented: isPresentingViewer) {
             if let item = selectedMedia {
                 mediaViewerContent(for: item)

@@ -208,6 +208,21 @@ struct VaultView: View {
 
     var body: some View {
         #if os(iOS)
+        iOSBody
+            // ⌘R on an iPad keyboard, while the Vault tab shows the relay half.
+            // Here rather than on iOSContent, whose chain is at the type
+            // checker's limit.
+            .modifier(RefreshesOnTabCommand(tab: 4, isActive: { !VaultSection.shared.showsMedia }) {
+                refreshAll(.incremental)
+            })
+        #else
+        viewContent
+        #endif
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var iOSBody: some View {
         if noteDetailSelection != nil {
             // iPad two-pane layout: the enclosing NoteSplitPane owns the detail
             // column, so the vault list must not wrap itself in a stack.
@@ -226,10 +241,8 @@ struct VaultView: View {
                     }
             }
         }
-        #else
-        viewContent
-        #endif
     }
+    #endif
 
     // MARK: - iOS Root Content
     /// Flat content view matching FeedView's rootContent pattern:
