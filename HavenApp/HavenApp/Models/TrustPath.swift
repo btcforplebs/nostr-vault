@@ -32,6 +32,13 @@ struct TrustPath: Equatable {
     /// Every bridge known, sorted by key: the globe traces all of them.
     /// `bridges` is its first `shownBridges`.
     var all: [String] = []
+    /// `all` is everyone: it came from the relay's saved web, not from the
+    /// few follow lists a relay sent back.
+    var complete = false
+
+    /// Who the globe lights at first: everyone when that's known, else the
+    /// card's few until "Show everyone" asks relays for the rest.
+    var lit: [String] { complete ? all : bridges }
 
     /// Avatars that fit on the card.
     static let shownBridges = 5
@@ -56,7 +63,7 @@ struct TrustPath: Equatable {
 
     /// The path from bridges already known, e.g. from `TrustLinks`, sorted by key.
     static func resolve(author: String, follows: Set<String>, trustGraph: Set<String>,
-                        bridges sorted: [String]) -> TrustPath {
+                        bridges sorted: [String], complete: Bool = false) -> TrustPath {
         let shown = Array(sorted.prefix(shownBridges))
         let more = sorted.count > shownBridges
 
@@ -70,7 +77,7 @@ struct TrustPath: Equatable {
         } else {
             reach = trustGraph.contains(author) ? .web : .outside
         }
-        return TrustPath(reach: reach, bridges: shown, hasMore: more, all: sorted)
+        return TrustPath(reach: reach, bridges: shown, hasMore: more, all: sorted, complete: complete)
     }
 
     /// Every bridge in `contactLists`, sorted by key, by the same rules as

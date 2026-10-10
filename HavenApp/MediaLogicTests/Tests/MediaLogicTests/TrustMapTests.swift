@@ -366,4 +366,36 @@ final class TrustMapTests: XCTestCase {
         XCTAssertNil(TrustMap.vouches(fromCache: old))
         XCTAssertNil(TrustMap.vouches(fromCache: Data("not json".utf8)))
     }
+
+    // MARK: Globe framing
+
+    /// Width on screen of a shell's outline, at zoom 1.
+    private func outline(_ r: Double, unit: Double) -> Double {
+        let d = GlobeCamera.distance
+        return 2 * unit * r / (d * d - r * r).squareRoot()
+    }
+
+    func testOnAnUprightPhoneTheInnerGlobeSpansTheWidth() {
+        for size in [CGSize(width: 393, height: 852), CGSize(width: 440, height: 956)] {
+            let unit = GlobeCamera.unit(for: size, phone: true)
+            let span = outline(TrustMap.ringRadius, unit: unit) / Double(size.width)
+            XCTAssert((0.94...0.98).contains(span), "\(size.width) pt: inner globe spans \(span) of the width")
+        }
+    }
+
+    func testThePhoneScaleKeepsTheShellsInProportion() {
+        let size = CGSize(width: 393, height: 852)
+        let old = GlobeCamera.unit(for: size, phone: false)
+        let new = GlobeCamera.unit(for: size, phone: true)
+        XCTAssertGreaterThan(new, old)
+        let ratio = { (u: Double) in self.outline(TrustMap.outerRadius, unit: u) / self.outline(TrustMap.ringRadius, unit: u) }
+        XCTAssertEqual(ratio(new), ratio(old), accuracy: 1e-9)
+    }
+
+    func testIPadMacAndASidewaysPhoneKeepTheirFraming() {
+        let iPad = CGSize(width: 820, height: 1180)
+        XCTAssertEqual(GlobeCamera.unit(for: iPad, phone: false), 820 * 0.40 * 4.2 * 0.92, accuracy: 1e-9)
+        let sideways = CGSize(width: 852, height: 393)
+        XCTAssertEqual(GlobeCamera.unit(for: sideways, phone: true), 393 * 0.40 * 4.2 * 0.92, accuracy: 1e-9)
+    }
 }

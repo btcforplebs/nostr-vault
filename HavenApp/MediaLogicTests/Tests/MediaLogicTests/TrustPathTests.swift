@@ -39,6 +39,19 @@ final class TrustPathTests: XCTestCase {
         XCTAssertTrue(path.hasMore)
     }
 
+    /// From the saved web the globe lights everyone at once; from a relay's
+    /// few lists only the card's five, until "Show everyone".
+    func testTheGlobeLightsEveryoneOnlyWhenTheSavedWebKnewThem() {
+        let follows: Set<String> = ["f", "e", "d", "c", "b", "a"]
+        let saved = TrustPath.resolve(author: author, follows: follows, trustGraph: ["x"],
+                                      bridges: ["a", "b", "c", "d", "e", "f"], complete: true)
+        XCTAssertEqual(saved.lit, ["a", "b", "c", "d", "e", "f"])
+        let lists = follows.map { list($0, tags: [author]) }
+        let fetched = TrustPath.resolve(author: author, me: me, follows: follows, trustGraph: ["x"], contactLists: lists)
+        XCTAssertFalse(fetched.complete)
+        XCTAssertEqual(fetched.lit, ["a", "b", "c", "d", "e"])
+    }
+
     /// The relay's links file: indexes into its follows, as of the rebuild.
     func testLinksNameCurrentFollowsSorted() {
         let json = #"{"follows":["a","b","c","d"],"links":{"ab":[1],"author":[3,0,2,9],"bb":[0,3]},"timestamp":1}"#

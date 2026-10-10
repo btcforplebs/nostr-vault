@@ -422,6 +422,24 @@ struct GlobeCamera {
     var lastTouch: TimeInterval = 0
 
     static let zoomRange = 0.8...2.4
+    /// How far the camera sits from the middle at zoom 1.
+    static let distance = 4.2
+    /// On a phone held upright, the inner globe is this wide against the
+    /// screen: just inside both edges, with the haze running off them, so
+    /// it reads as being inside the web rather than looking at a model of it.
+    static let phoneFill = 0.96
+
+    /// Screen points per unit of world, at zoom 1. Upright on a phone the
+    /// whole scene scales so the inner globe's outline spans `phoneFill` of
+    /// the width; everywhere else it keeps its framing inside the shorter side.
+    static func unit(for size: CGSize, phone: Bool) -> Double {
+        let w = Double(size.width), h = Double(size.height)
+        guard phone, w <= h else { return min(w, h) * 0.40 * distance * 0.92 }
+        // A sphere of radius r seen from d away has an outline of
+        // r / √(d² − r²) in projected units.
+        let r = TrustMap.ringRadius, d = distance
+        return w * phoneFill / 2 * (d * d - r * r).squareRoot() / r
+    }
     /// Idle this long and the globe starts drifting, so it reads as alive.
     static let driftAfter: TimeInterval = 3
     /// Idle this long and it stops: the frame clock can sleep.

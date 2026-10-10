@@ -28,7 +28,8 @@ final class TrustPathService {
         // anyone in your web: no relays to ask.
         if center == me, author != me,
            let bridges = await linkedBridges(to: author, me: me, follows: Set(follows)) {
-            return TrustPath.resolve(author: author, follows: Set(follows), trustGraph: trustGraph, bridges: bridges)
+            return TrustPath.resolve(author: author, follows: Set(follows), trustGraph: trustGraph, bridges: bridges,
+                                     complete: true)
         }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
