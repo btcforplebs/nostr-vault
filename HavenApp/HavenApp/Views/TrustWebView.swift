@@ -80,6 +80,10 @@ struct TrustWebView: View {
     /// or a broken image. Keyed by pubkey and picture URL.
     @State private var renderedPictures: Set<String> = []
     @State private var pictureLoader: Task<Void, Never>?
+    /// The WOT tab's Close and Further out faces: the people past your
+    /// follows worth a profile fetch (`TrustMap.layerFaceCandidates`).
+    @State private var layerCandidates: [TrustMap.Layer: [String]] = [:]
+    @State private var layerPictureLoader: Task<Void, Never>?
     /// Your wider web, for the search's "In your web" tag.
     @State private var web: Set<String> = []
     /// How many of your follows follow each person past them (the relay's
@@ -200,6 +204,7 @@ struct TrustWebView: View {
             contactsLoading = $0 || !$1
         }
         .onChange(of: query) { _, text in searchRelays(text) }
+        .onChange(of: layer) { _, _ in prepareLayerFaces() }
         .onReceive(FeedService.shared.$followedPubkeys.dropFirst()) { follows in
             // In place, so you stay wherever you'd gone on the globe.
             guard isWOTTab, Set(follows) != myFollows else { return }
@@ -276,6 +281,7 @@ struct TrustWebView: View {
         ZStack(alignment: .bottomLeading) {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
                              myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
+                             layerFaces: layerFaces,
                              running: profilePubkey == nil && !showingList,
                              layer: isWOTTab ? layer : .everyone,
                              summary: summary,
@@ -821,6 +827,22 @@ struct TrustWebView: View {
         return TrustMap.pickFaces(candidates) { pictureRenders($0) }
     }
 
+    /// Pictures on the outer shell for the picked layer (Close or Further
+    /// out), most vouched first. Only pictures that have loaded.
+    private var layerFaces: [String] {
+        guard isWOTTab, frame?.center == me, let candidates = layerCandidates[layer] else { return [] }
+        return TrustMap.pickFaces(candidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
+    }
+
+    /// Fetches the picked layer's faces. Run on each pick, since the
+    /// picture loader stops after a while and profiles can arrive late.
+    private func prepareLayerFaces() {
+        guard let candidates = layerCandidates[layer], !candidates.isEmpty else { return }
+        nostrService.fetchMissingProfiles(for: candidates)
+        layerPictureLoader?.cancel()
+        layerPictureLoader = loadPictures(candidates)
+    }
+
     private func pictureKey(_ pubkey: String) -> String? {
         nostrService.profiles[pubkey]?.pictureURL.map { pubkey + " " + $0.absoluteString }
     }
@@ -834,15 +856,15 @@ struct TrustWebView: View {
         let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:])
         faceCandidates[key] = candidates
         nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
-        loadPictures(candidates)
+        pictureLoader?.cancel()
+        pictureLoader = loadPictures(candidates)
     }
 
     /// Loads the candidates' pictures as their profiles arrive, and lets the
     /// globe take the ones that loaded once a second rather than one by one,
     /// so it settles a few times, not sixteen.
-    private func loadPictures(_ candidates: [String]) {
-        pictureLoader?.cancel()
-        pictureLoader = Task {
+    private func loadPictures(_ candidates: [String]) -> Task<Void, Never> {
+        Task {
             var asked: Set<String> = []
             var loaded: Set<String> = []
             for _ in 0..<20 {
@@ -895,10 +917,22 @@ struct TrustWebView: View {
         let graph = FeedService.shared.relayTabTrustedPubkeys().union(arrivals)
         let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
+        let follows = myFollows, me = me, wot = isWOTTab
         Task.detached(priority: .userInitiated) {
             let shell = TrustMap.haze(graph.subtracting(inner))
             let close = counts.map { v in Set(shell.filter { (v[$0] ?? 0) >= TrustMap.closeVouches }) } ?? []
+            var layerFaces: [TrustMap.Layer: [String]] = [:]
+            if wot {
+                for layer in [TrustMap.Layer.close, .furtherOut] {
+                    layerFaces[layer] = TrustMap.layerFaceCandidates(layer, me: me, follows: follows,
+                                                                     web: graph, vouches: counts)
+                }
+            }
             await MainActor.run {
+                if layerFaces != layerCandidates {
+                    layerCandidates = layerFaces
+                    prepareLayerFaces()
+                }
                 haze = shell
                 closeHaze = close
                 web = graph
@@ -1697,6 +1731,9 @@ struct TrustGlobeCanvas: View {
     /// Follows drawn as faces when the core is the person everyone is
     /// measured against (your own globe on the WOT tab).
     let ringFaces: [String]
+    /// Pictures on the outer shell for the picked layer (Close or Further
+    /// out), on your own globe.
+    var layerFaces: [String] = []
     /// False while a sheet covers the globe: the clock stops.
     let running: Bool
     /// Which part of the web is lit (the WOT tab's layer picker).
@@ -1743,13 +1780,15 @@ struct TrustGlobeCanvas: View {
         /// at the margin and the count stays put.
         let hazeHash: Int
         let faces: [String]
+        let layerFaces: [String]
     }
 
     private var loadKey: LoadKey? {
         frame.map {
             LoadKey(center: $0.center, ring: $0.ring.count, bridges: $0.bridges.count,
                     chains: $0.chains?.count ?? -1, haze: haze.count, close: closeHaze.count, mine: myFollows.count,
-                    ringHash: $0.ring.hashValue, hazeHash: haze.hashValue, faces: ringFaces)
+                    ringHash: $0.ring.hashValue, hazeHash: haze.hashValue, faces: ringFaces,
+                    layerFaces: layerFaces)
         }
     }
 
@@ -1821,7 +1860,7 @@ struct TrustGlobeCanvas: View {
                 guard !Task.isCancelled else { return }
             }
             scene.load(frame, me: me, author: author, myFollows: myFollows, haze: haze, closeHaze: closeHaze,
-                       ringFaces: ringFaces)
+                       ringFaces: ringFaces, layerFaces: layerFaces, layer: layer)
         }
     }
 
@@ -1901,6 +1940,8 @@ final class GlobeScene: ObservableObject {
     private var faces: [String] = []
     /// Faces that are follows on someone's own globe: drawn in the ring's colour.
     private var ringFaceSet: Set<String> = []
+    /// Faces on the outer shell for the picked layer: drawn in the shell's colour.
+    private var layerFaceSet: Set<String> = []
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
@@ -1910,6 +1951,8 @@ final class GlobeScene: ObservableObject {
     /// take the author's place: threads run from you through `traceBridges`.
     private var traceTarget: String?
     private var traceBridges: [String] = []
+    /// The traced person and their bridges: lit whatever layer is picked.
+    private var traced: Set<String> = []
     /// A traced person who had no star of their own (found by search).
     private var tracedStar: String?
     /// How brightly your follows (x), the Close shell (y) and the rest of the
@@ -1938,7 +1981,8 @@ final class GlobeScene: ObservableObject {
     // MARK: Data
 
     func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String],
-              closeHaze: Set<String> = [], ringFaces: [String] = []) {
+              closeHaze: Set<String> = [], ringFaces: [String] = [], layerFaces: [String] = [],
+              layer: TrustMap.Layer = .everyone) {
         let now = Date.timeIntervalSinceReferenceDate
         let newCenter = !hasLoaded || frame.center != center
         self.me = me
@@ -1965,6 +2009,11 @@ final class GlobeScene: ObservableObject {
         want[author] = (.bridge, TrustMap.authorRadius)
         want[frame.center] = (.ring, 0)
         if let tracedStar, want[tracedStar] == nil { want[tracedStar] = (.bridge, TrustMap.outerRadius) }
+        // A layer's face may be past the shell's cap: it still gets its star.
+        if frame.center == me {
+            let kind: Kind = layer == .close ? .closeHaze : .haze
+            for key in layerFaces where want[key] == nil { want[key] = (kind, TrustMap.outerRadius) }
+        }
 
         for i in keys.indices where want[keys[i]] == nil {
             radiusTarget[i] = 2.4      // drifts out and fades
@@ -2007,6 +2056,13 @@ final class GlobeScene: ObservableObject {
             for key in ringFaces where ringSet.contains(key) && taken.insert(key).inserted {
                 shown.append(key)
                 ringFaceSet.insert(key)
+            }
+        }
+        layerFaceSet = []
+        if frame.center == me {
+            for key in layerFaces where taken.insert(key).inserted {
+                shown.append(key)
+                layerFaceSet.insert(key)
             }
         }
         faces = shown
@@ -2067,6 +2123,7 @@ final class GlobeScene: ObservableObject {
         }
         traceTarget = target
         traceBridges = through
+        traced = target.map { Set([$0] + through) } ?? []
         seatFaces()
         threadsBorn = now
         threadProgress = reduceMotion ? 1 : 0
@@ -2088,7 +2145,18 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// Lights one layer and dims the rest. Nothing is reloaded.
+    /// How brightly star `i` is drawn for the picked layer. The core, the
+    /// author and a traced path are always lit.
+    private func weight(_ i: Int) -> Double {
+        if keys[i] == center || keys[i] == author || traced.contains(keys[i]) { return 1 }
+        switch kinds[i] {
+        case .haze: return weights.z
+        case .closeHaze: return weights.y
+        default: return weights.x
+        }
+    }
+
+    /// Lights one layer and hides the rest. Nothing is reloaded.
     func focus(_ layer: TrustMap.Layer) {
         weightTarget = TrustMap.layerWeights(layer)
         if reduceMotion { weights = weightTarget }
@@ -2202,7 +2270,7 @@ final class GlobeScene: ObservableObject {
         let project = Projector(camera, size: size)
         var best: (key: String, distance: CGFloat)?
         func consider(_ i: Int, reach: CGFloat) {
-            guard alpha[i] > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
+            guard alpha[i] * min(1, weight(i)) > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
             let d = hypot(p.point.x - point.x, p.point.y - point.y)
             if d < reach, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
         }
@@ -2252,7 +2320,7 @@ final class GlobeScene: ObservableObject {
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
         let namesOut = zoom > 2.2
         for i in keys.indices where !isFace[i] {
-            let a = alpha[i] * (kinds[i] == .haze ? weights.z : kinds[i] == .closeHaze ? weights.y : weights.x)
+            let a = alpha[i] * weight(i)
             guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
             let front = p.front
             let slot: Slot, base: Double, size: Double
@@ -2360,11 +2428,15 @@ final class GlobeScene: ObservableObject {
             guard let p = position(key, project) else { continue }
             if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14))
+            } else if traceTarget == nil, layerFaceSet.contains(key) {
+                drawn.append((key, p, Self.hazeColor, 14))
             } else {
                 drawn.append((key, p, accent, 15))
             }
         }
         if let authorP { drawn.append((author, authorP, .yellow, 24)) }
+        // Faces the picked layer hides take no seat, so the lit ones get the room.
+        drawn = drawn.filter { face in index[face.key].map { alpha[$0] * weight($0) > 0.02 } ?? true }
         drawn.sort { $0.p.depth < $1.p.depth }
 
         // Seats: a face only where it covers no other face and not the core;
@@ -2392,7 +2464,7 @@ final class GlobeScene: ObservableObject {
             }
         }
         for face in drawn {
-            let a = alpha[index[face.key] ?? centerIndex] * (face.key == author ? 1 : weights.x)
+            let a = min(1, alpha[index[face.key] ?? centerIndex] * weight(index[face.key] ?? centerIndex))
             let dim = (0.35 + 0.65 * face.p.front) * a
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             if face.p.depth < -0.1 && face.key != author {

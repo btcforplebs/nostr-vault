@@ -292,19 +292,30 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.layerCounts(me: me, follows: [key(9)], web: [])[.everyone], 1)
     }
 
-    func testPickingALayerDimsTheOtherOneWithoutHidingIt() {
+    func testPickingALayerHidesTheOthers() {
         XCTAssertEqual(TrustMap.layerWeights(.everyone), SIMD3(1, 1, 1))
-        for layer in [TrustMap.Layer.following, .close, .furtherOut] {
-            let w = TrustMap.layerWeights(layer)
-            // Every part stays faintly there; only the picked one is bright.
-            XCTAssertGreaterThan(simd_reduce_min(w), 0, "\(layer)")
-        }
-        XCTAssertEqual(TrustMap.layerWeights(.following).x, 1)
-        XCTAssertLessThan(TrustMap.layerWeights(.following).y, 0.5)
+        XCTAssertEqual(TrustMap.layerWeights(.following), SIMD3(1, 0, 0))
+        XCTAssertEqual(TrustMap.layerWeights(.close).x, 0)
         XCTAssertGreaterThan(TrustMap.layerWeights(.close).y, 1)
-        XCTAssertLessThan(TrustMap.layerWeights(.close).z, 0.5)
+        XCTAssertEqual(TrustMap.layerWeights(.close).z, 0)
+        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).x, 0)
+        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).y, 0)
         XCTAssertGreaterThan(TrustMap.layerWeights(.furtherOut).z, 1)
-        XCTAssertLessThan(TrustMap.layerWeights(.furtherOut).y, 0.5)
+    }
+
+    func testLayerFacesAreTheMostVouchedOfThatLayer() {
+        let follows: Set<String> = [key(1)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5), key(6)]
+        let vouches = [key(2): 30, key(3): 12, key(4): 2, key(5): 10, key(6): 7]
+        func faces(_ layer: TrustMap.Layer, count: Int = 160) -> [String] {
+            TrustMap.layerFaceCandidates(layer, me: me, follows: follows, web: web, vouches: vouches, count: count)
+        }
+        XCTAssertEqual(faces(.close), [key(2), key(3), key(5)])
+        XCTAssertEqual(faces(.close, count: 2), [key(2), key(3)])
+        XCTAssertEqual(faces(.furtherOut), [key(6), key(4)])
+        // Everyone and Following keep your follows' faces.
+        XCTAssertEqual(faces(.everyone), [])
+        XCTAssertEqual(faces(.following), [])
     }
 
     func testCloseSplitsTheWebAtTenVouches() {
