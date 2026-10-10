@@ -225,6 +225,14 @@ object HomeVaultRules {
     fun publicServerFor(mirrors: List<String>, isPrivate: (String) -> Boolean): String? =
         mirrors.firstOrNull { it.startsWith("https://") && !isPrivate(it) }?.trimEnd('/')
 
+    /**
+     * The URL a note carries when the home vault is the only host: no public
+     * server at all. Readers find the blob by its hash on the author's mesh
+     * vault (NIP-F1); the `.fips` name is the vault's mesh address, which
+     * FIPS resolvers can open directly. Apps without FIPS can't load it.
+     */
+    fun meshOnlyUrl(vaultNpub: String, sha256: String): String = "http://$vaultNpub.fips/$sha256"
+
     fun candidates(ownerServerList: List<String>, ownMeshNpub: String?): List<String> =
         ownerServerList.mapNotNull { FipsMediaRouter.meshNpubIn(it) }
             .filter { it != ownMeshNpub }

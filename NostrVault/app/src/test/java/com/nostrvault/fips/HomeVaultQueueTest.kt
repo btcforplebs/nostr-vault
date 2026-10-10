@@ -280,5 +280,12 @@ class HomeVaultQueueTest {
         assertEquals(listOf("https://a.example", "https://b.example"), q.items().map { it.server })
         assertEquals(listOf(sha, sha), q.items().map { HomeVaultQueue.shaOf(it.key) })
     }
-}
 
+    @Test
+    fun `a mesh-only URL names the vault and a hash readers route by`() {
+        val npub = "npub1" + "q".repeat(58)
+        val url = HomeVaultRules.meshOnlyUrl(npub, sha)
+        assertEquals("http://$npub.fips/$sha", url)
+        assertEquals(sha, FipsMediaRouter.sha256In(url))
+    }
+}

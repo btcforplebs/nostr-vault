@@ -1813,7 +1813,8 @@ class NostrService @Inject constructor(
     /** [dropMesh]: the home vault this phone listed before, when it changed. */
     fun publishServerList(dropMesh: String? = null) {
         val mirrors = configStore.config.value.activeBlossomMirrors
-        if (mirrors.isEmpty()) return
+        // A home vault alone is a list worth publishing: it may be the only host.
+        if (mirrors.isEmpty() && configStore.config.value.homeVaultNpub == null && dropMesh == null) return
         scope.launch(Dispatchers.IO) {
             // Merge into the newest signed list, so a kiosk's fipsmesh:// entry
             // survives this phone editing its own servers. The cache only when
