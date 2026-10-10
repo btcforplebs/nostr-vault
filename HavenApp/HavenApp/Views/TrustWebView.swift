@@ -277,7 +277,9 @@ struct TrustWebView: View {
                              focusBridges: cardPath?.all ?? [],
                              onEmptyTap: { closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
-            if frame == nil {
+            // Moving onto someone keeps the globe up: the trail's chip spins
+            // instead. Only the very first globe has nothing to show.
+            if frame == nil, centerKey == me {
                 statusPill("Loading \(name(centerKey))'s follows…", face: centerKey)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if loadingMyFollows {
@@ -976,6 +978,10 @@ struct TrustWebView: View {
             Text(name(pubkey))
                 .font(.appSystem(size: 13))
                 .lineLimit(1)
+            if !destination, pubkey != me, frames[pubkey] == nil {
+                ProgressView().controlSize(.mini).tint(.white)
+                    .accessibilityLabel(Text("Loading \(name(pubkey))'s follows"))
+            }
         }
         .padding(.leading, 3)
         .padding(.trailing, 10)
@@ -1813,8 +1819,12 @@ final class GlobeScene: ObservableObject {
         born = now
         settling = true
         if newCenter {
-            threadsBorn = now
-            threadProgress = reduceMotion ? 1 : 0
+            // Only a new globe draws its threads in. Moving onto someone keeps
+            // them: they ride along with the stars as those glide.
+            if !hasLoaded {
+                threadsBorn = now
+                threadProgress = reduceMotion ? 1 : 0
+            }
             let target = GlobeCamera.facing(TrustMap.direction(of: frame.center == author ? frame.center : author))
             if hasLoaded {
                 camera.fly(to: target, at: now)
@@ -1867,8 +1877,11 @@ final class GlobeScene: ObservableObject {
         traceBridges = through
         traced = target.map { Set([$0] + through) } ?? []
         seatFaces()
-        threadsBorn = now
-        threadProgress = reduceMotion ? 1 : 0
+        // A new path draws in; closing one leaves the rest as they were.
+        if target != nil {
+            threadsBorn = now
+            threadProgress = reduceMotion ? 1 : 0
+        }
         born = now
         settling = true
         if reduceMotion { settle() }
