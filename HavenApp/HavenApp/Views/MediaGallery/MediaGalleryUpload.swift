@@ -447,22 +447,7 @@ extension MediaGalleryView {
         let sha256 = extractViewerSHA256(from: item.url)
         guard !sha256.isEmpty else { return }
         Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let report = await service.deleteFromMirrorsReport(sha256: sha256)
-            // The cloud badges cache each server's answer for the session;
-            // ask again so they stop showing the pre-delete count.
-            await BlossomBackupStore.shared.refresh(hash: sha256, service: service, force: true)
-            await MainActor.run {
-                if report.allDeleted {
-                    ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
-                } else if report.failed.isEmpty {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", color: .red.opacity(0.85))
-                } else {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                                   message: "Still on " + ListFormatter.localizedString(byJoining: report.failedHosts),
-                                                   color: .red.opacity(0.85), seconds: 6)
-                }
-            }
+            await MediaBackupActions.deleteFromMirrors(hash: sha256, configService: configService, nostrService: nostrService)
         }
     }
 
@@ -470,38 +455,21 @@ extension MediaGalleryView {
         let sha256 = extractViewerSHA256(from: item.url)
         guard !sha256.isEmpty else { return }
         Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            async let local = service.deleteFromLocal(sha256: sha256)
-            async let mirrors = service.deleteFromMirrorsReport(sha256: sha256)
-            let (localOk, report) = await (local, mirrors)
-            let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localOk, mirrors: report)
-            // The cloud badges cache each server's answer for the session;
-            // ask again so they stop showing the pre-delete count.
-            await BlossomBackupStore.shared.refresh(hash: sha256, service: service, force: true)
-            await MainActor.run {
-                // Only drop the tile once the device copy is really gone.
-                if localOk {
-                    // Instantly clean up local state
-                    self.blossomCache.items.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
-                    self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+            let localOk = await MediaBackupActions.deleteEverywhere(hash: sha256, configService: configService, nostrService: nostrService)
+            // Only drop the tile once the device copy is really gone.
+            guard localOk else { return }
+            // Instantly clean up local state
+            self.blossomCache.items.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+            self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
 
-                    if selectedMedia?.url == item.url {
-                        withAnimation(Motion.fade) {
-                            selectedMedia = nil
-                            dragOffset = .zero
-                        }
-                    }
-
-                    scheduleUpdateDisplayData()
-                }
-
-                if let leftover {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: leftover,
-                                                   color: .orange.opacity(0.85), seconds: 6)
-                } else {
-                    ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+            if selectedMedia?.url == item.url {
+                withAnimation(Motion.fade) {
+                    selectedMedia = nil
+                    dragOffset = .zero
                 }
             }
+
+            scheduleUpdateDisplayData()
         }
     }
 

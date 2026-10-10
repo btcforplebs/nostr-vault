@@ -3,6 +3,9 @@ import Foundation
 extension Notification.Name {
     /// Posted after the media cache is cleared, so open views re-read where each file lives.
     static let havenMediaCacheCleared = Notification.Name("com.haven.mediaCacheCleared")
+    /// Posted after a delete request for your own posts; `object` is the
+    /// set of event ids, so views holding their own copy of a post drop it.
+    static let havenOwnEventsDeleted = Notification.Name("com.haven.ownEventsDeleted")
     /// Posted when the user taps a push notification about a relay event — navigates to Viewer tab.
     static let havenOpenViewer = Notification.Name("com.haven.openViewer")
     /// Posted when the user taps a push notification about a following feed note — navigates to Feed tab.
