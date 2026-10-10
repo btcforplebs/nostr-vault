@@ -376,19 +376,32 @@ class TrustMapTest {
     }
 
     @Test
-    fun pickingALayerDimsTheOtherOneWithoutHidingIt() {
+    fun pickingALayerHidesTheOthers() {
         assertEquals(TrustMap.Weights(1.0, 1.0, 1.0), TrustMap.layerWeights(TrustMap.Layer.EVERYONE))
-        for (layer in listOf(TrustMap.Layer.FOLLOWING, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT)) {
-            val w = TrustMap.layerWeights(layer)
-            // Every part stays faintly there; only the picked one is bright.
-            assertTrue("$layer", w.follows > 0 && w.close > 0 && w.further > 0)
-        }
-        assertEquals(1.0, TrustMap.layerWeights(TrustMap.Layer.FOLLOWING).follows, 0.0)
-        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FOLLOWING).close < 0.5)
-        assertTrue(TrustMap.layerWeights(TrustMap.Layer.CLOSE).close > 1)
-        assertTrue(TrustMap.layerWeights(TrustMap.Layer.CLOSE).further < 0.5)
-        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT).further > 1)
-        assertTrue(TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT).close < 0.5)
+        assertEquals(TrustMap.Weights(1.0, 0.0, 0.0), TrustMap.layerWeights(TrustMap.Layer.FOLLOWING))
+        val close = TrustMap.layerWeights(TrustMap.Layer.CLOSE)
+        assertEquals(0.0, close.follows, 0.0)
+        assertTrue(close.close > 1)
+        assertEquals(0.0, close.further, 0.0)
+        val further = TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT)
+        assertEquals(0.0, further.follows, 0.0)
+        assertEquals(0.0, further.close, 0.0)
+        assertTrue(further.further > 1)
+    }
+
+    @Test
+    fun layerFacesAreTheMostVouchedOfThatLayer() {
+        val follows = setOf(key(1))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5), key(6))
+        val vouches = mapOf(key(2) to 30, key(3) to 12, key(4) to 2, key(5) to 10, key(6) to 7)
+        fun faces(layer: TrustMap.Layer, count: Int = 160) =
+            TrustMap.layerFaceCandidates(layer, me, follows, web, vouches, count)
+        assertEquals(listOf(key(2), key(3), key(5)), faces(TrustMap.Layer.CLOSE))
+        assertEquals(listOf(key(2), key(3)), faces(TrustMap.Layer.CLOSE, count = 2))
+        assertEquals(listOf(key(6), key(4)), faces(TrustMap.Layer.FURTHER_OUT))
+        // Everyone and Following keep your follows' faces.
+        assertEquals(emptyList<String>(), faces(TrustMap.Layer.EVERYONE))
+        assertEquals(emptyList<String>(), faces(TrustMap.Layer.FOLLOWING))
     }
 
     @Test
