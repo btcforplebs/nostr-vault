@@ -55,17 +55,9 @@ struct TrustWebView: View {
 
     @State private var crumbs: [String] = []
     @State private var frames: [String: Frame] = [:]
-    @State private var peek: String?
     @State private var myFollows: Set<String> = []
     /// The faint outer shell around you: your web of trust past your follows.
     @State private var haze: [String] = []
-    /// Per person, so re-centering mid-load neither blocks nor mislabels the
-    /// next person's globe.
-    @State private var loadingMore: Set<String> = []
-    @State private var lookingDeeper: Set<String> = []
-    /// No relay answered: offer a retry instead of a final answer.
-    @State private var failed: Set<String> = []
-    @State private var deeperFailed: Set<String> = []
     @State private var profilePubkey: String?
     @State private var showingList = false
     /// The WOT tab's list: the lit layer's people, taken when it opens.
@@ -135,31 +127,21 @@ struct TrustWebView: View {
     private var centerKey: String { crumbs.last ?? me }
     private var frame: Frame? { frames[centerKey] }
 
-    /// Past this width (iPad, Mac) the globe takes the screen and the words
-    /// move to a side panel.
-    private static let wideWidth: CGFloat = 760
-
     var body: some View {
         GeometryReader { geo in
-            if geo.size.width >= Self.wideWidth, !isWOTTab {
-                HStack(spacing: 0) {
-                    globeArea.overlay(alignment: .topLeading) {
-                        topRows.frame(maxWidth: 460, alignment: .leading).padding(.top, 12)
-                    }
-                    sidePanel.frame(width: 360)
-                }
-            } else if isWOTTab {
+            if isWOTTab {
                 // Full bleed, like the feed: space runs under the status bar
                 // and the floating tab bar, and the bar's glass sits over it.
-                // On every width: the explainer side panel went with the footer.
+                // On every width: the trust card does the explaining.
                 globeArea.overlay { globeTutorialAnchor }.overlay(alignment: .top) {
                     wotTopRows(height: geo.size.height).frame(maxWidth: 560)
                 }
             } else {
+                // A post's globe: the WOT tab's card does the explaining, so it
+                // reads and moves like the tab.
                 VStack(spacing: 0) {
                     topRows.padding(.top, 8)
                     globeArea
-                    footer
                 }
             }
         }
@@ -185,6 +167,7 @@ struct TrustWebView: View {
             let follows = FeedService.shared.followedPubkeys
             myFollows = Set(follows)
             frames[me] = Frame(center: me, ring: follows, path: path)
+            if !isWOTTab, author != me { openCard(author) }
             nostrService.fetchMissingProfiles(
                 for: [me, author] + TrustMap.spread(frames[me]?.bridges ?? [], count: TrustGlobeCanvas.maxFaces))
             prepareFaces(me)
@@ -229,7 +212,6 @@ struct TrustWebView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .wotTabReselected)) { _ in
             guard isWOTTab else { return }
-            peek = nil
             clearSearch()
             searchOpen = false
             closeCard()
@@ -291,9 +273,9 @@ struct TrustWebView: View {
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
-                             focus: isWOTTab ? card : nil,
-                             focusBridges: isWOTTab ? cardPath?.all ?? [] : [],
-                             onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
+                             focus: card,
+                             focusBridges: cardPath?.all ?? [],
+                             onEmptyTap: { closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {
                 statusPill("Loading \(name(centerKey))'s follows…", face: centerKey)
@@ -301,13 +283,12 @@ struct TrustWebView: View {
             } else if loadingMyFollows {
                 statusPill("Loading your follows…", face: me)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if mappingWeb, peek == nil, !isWOTTab {
+            } else if mappingWeb, card == nil, !isWOTTab {
                 statusPill("Mapping your wider web…")
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
-            if let peek { peekCard(peek) }
-            if isWOTTab, let card { trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if let card { trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity)) }
             if !isWOTTab, !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 GeometryReader { geo in
                     // With the keyboard up the floating tab bar rides on it,
@@ -463,7 +444,6 @@ struct TrustWebView: View {
             clearSearch()
             withAnimation(Motion.fade) { searchOpen = false }
         } else {
-            peek = nil
             closeCard()
             withAnimation(Motion.fade) { searchOpen = true }
             searchFocused = true
@@ -827,13 +807,8 @@ struct TrustWebView: View {
 
     private func pick(_ pubkey: String) {
         clearSearch()
-        if isWOTTab {
-            withAnimation(Motion.fade) { searchOpen = false }
-            return pubkey == me ? closeCard() : openCard(pubkey)
-        }
-        peek = nil
-        if crumbs.count > 1 { crumbs = [me] }
-        if pubkey != me { tapped(pubkey) }
+        if isWOTTab { withAnimation(Motion.fade) { searchOpen = false } }
+        pubkey == me ? closeCard() : openCard(pubkey)
     }
 
     private func clearSearch() {
@@ -1018,57 +993,6 @@ struct TrustWebView: View {
         frame.exhausted ? "\(frame.bridges.count)" : "at least \(frame.bridges.count)"
     }
 
-    @ViewBuilder private var explainer: some View {
-        if let frame {
-            let them = name(author)
-            let center = frame.center == me ? nil : name(frame.center)
-            let count = Text(countText(frame)).foregroundColor(.havenPurple).bold()
-            let direct = frame.ring.contains(author)
-            if !frame.listFound {
-                Text("No relay checked had \(name(frame.center))'s follow list, so their globe can't be drawn.")
-            } else if lookingDeeper.contains(frame.center) {
-                Text("Looking two steps further out. This downloads a few MB of follow lists.")
-            } else if deeperFailed.contains(frame.center) {
-                Text("Couldn't reach the relays to look further out.")
-            } else if frame.center == author && author == me && frame.ring.isEmpty {
-                Text(loadingMyFollows ? "Loading your follows…"
-                     : "No follow list found yet. Follow people and they'll appear here.")
-            } else if frame.center == author && author == me {
-                // The WOT tab, before anyone is picked.
-                Text("Everyone you follow, and your web around them. Tap a face or search to see how someone reaches you.")
-            } else if frame.center == author {
-                Text("Everyone \(them) follows. Tap a face to see their path.")
-            } else if !frame.bridges.isEmpty {
-                if let center {
-                    let mutual = Text("\(mutualCount(frame))").foregroundColor(.primary).bold()
-                    Text("\(center) reaches \(them) through \(count) of their follows. \(mutual) of \(center)'s follows are people you follow too (bright stars).")
-                } else if direct {
-                    Text("You follow \(them), and so do \(count) people you follow.")
-                } else {
-                    Text("Followed by \(count) people you follow.")
-                }
-            } else if direct {
-                Text("\(center ?? "You") \(center == nil ? "follow" : "follows") \(them) directly.")
-            } else if let chains = frame.chains, !chains.isEmpty {
-                let via = Text("\(Set(chains.map(\.via)).count)").foregroundColor(.havenPurple).bold()
-                Text("\(via) people who follow \(them) are followed by \(center.map { "people \($0) follows" } ?? "people you follow").")
-            } else if frame.chains != nil {
-                Text("No longer route turned up in the follow lists checked.")
-            } else {
-                switch frame.path.reach {
-                case .web: Text("In your Web of Trust through people further out. Look deeper to see who.")
-                case .outside: Text("Not in your web. No one you follow follows them, in the lists checked.")
-                case .unknown where center != nil:
-                    Text("None of \(center ?? "")'s follows that were checked follow \(them).")
-                case .unknown: Text("Your trust graph hasn't loaded yet.")
-                default: Text("Tap a face to follow their path.")
-                }
-            }
-        } else {
-            Text("Loading who \(name(centerKey)) follows…")
-        }
-    }
-
     /// The globe's words for VoiceOver, which reads the picture as one element.
     private var summary: String {
         guard let frame else { return "Loading who \(name(centerKey)) follows." }
@@ -1084,187 +1008,9 @@ struct TrustWebView: View {
         return "\(them) is followed by \(countText(frame)) people \(who), including \(named)."
     }
 
-    private var gestureHint: some View {
-        Text("Drag to spin · pinch to zoom · tap a face to follow their path · double-tap to reset")
-            .font(.appSystem(size: 11))
-            .foregroundColor(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder private var legend: some View {
-        if let frame, frame.listFound {
-            HStack(spacing: 6) {
-                legendDot(Color(red: 0.72, green: 0.82, blue: 1))
-                Text("\(frame.ring.count.formatted()) \(frame.center == me ? "you follow" : "\(name(frame.center)) follows")")
-                Spacer(minLength: 8)
-                if !frame.bridges.isEmpty {
-                    legendDot(.orange)
-                    Text("\(countText(frame)) follow \(name(author))")
-                        .foregroundColor(.havenPurple)
-                }
-            }
-            .font(.appSystem(size: 12))
-            .foregroundColor(.secondary)
-            .lineLimit(1)
-        }
-    }
-
-    // MARK: - Footer (phone) and side panel (iPad, Mac)
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            explainer
-                .font(.appSystem(size: 14))
-                .foregroundColor(.primary.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
-            legend
-            actions
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-    }
-
-    private var sidePanel: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                AvatarView(url: nostrService.profiles[author]?.pictureURL, pubkey: author, size: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name(author)).font(.appSystem(size: 19, weight: .semibold)).lineLimit(1)
-                    Text(centerKey == me ? "How you're connected" : "How \(name(centerKey)) is connected")
-                        .font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
-                }
-            }
-            explainer
-                .font(.appSystem(size: 15))
-                .foregroundColor(.primary.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
-            legend
-            actions
-            Divider().overlay(Color.white.opacity(0.12))
-            if let frame, !frame.bridges.isEmpty {
-                Text("FOLLOWED BY")
-                    .font(.appSystem(size: 12, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundColor(.secondary)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(frame.bridges, id: \.self) { pubkey in
-                            Button { tapped(pubkey) } label: {
-                                HStack(spacing: 12) {
-                                    AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
-                                    Text(name(pubkey)).foregroundColor(.primary).lineLimit(1)
-                                    Spacer(minLength: 4)
-                                    Image(systemName: "scope").foregroundColor(.secondary)
-                                }
-                                .padding(.vertical, 5)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Text("\(name(pubkey)), follows \(name(author))"))
-                            .accessibilityHint(Text("Moves them to the middle of the globe"))
-                        }
-                    }
-                }
-            } else {
-                Spacer()
-            }
-            gestureHint
-        }
-        .padding(24)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.black.opacity(0.35))
-        .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1) }
-    }
-
-    @ViewBuilder private var actions: some View {
-        if let frame, frame.listFound {
-            if deeperFailed.contains(frame.center) {
-                secondaryButton("Try again", action: lookDeeper)
-            } else if lookingDeeper.contains(frame.center) {
-                secondaryButton("Looking further out…", loading: true, action: {})
-                    .disabled(true)
-            } else if canLookDeeper(frame) {
-                secondaryButton("Look deeper", action: lookDeeper)
-            } else if canLoadMore(frame) {
-                let loading = loadingMore.contains(frame.center)
-                secondaryButton(loading ? "Finding more… \(frame.bridges.count) so far"
-                                : failed.contains(frame.center) ? "Couldn't reach the relays. Try again"
-                                : "Show everyone who follows \(name(author))",
-                                loading: loading, action: showEveryone)
-                    .disabled(loading)
-            }
-        }
-        if centerKey != me {
-            Button { profilePubkey = centerKey } label: {
-                Text("View \(name(centerKey))'s profile")
-                    .lineLimit(1)
-                    .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.havenPurple)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func secondaryButton(_ title: String, loading: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if loading { ProgressView().controlSize(.small) }
-                Text(title).lineLimit(1)
-            }
-            .font(.appSystem(size: 15, weight: .semibold))
-            .foregroundColor(.havenPurple)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func legendDot(_ color: Color) -> some View {
-        Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
-    }
-
-    // MARK: - Peek
-
-    private func peekCard(_ pubkey: String) -> some View {
-        let follows = myFollows
-        let followsAuthor = frame?.bridges.contains(pubkey) == true
-            || frame?.chains?.contains { $0.via == pubkey } == true
-        let line = [
-            pubkey == me ? "You" : follows.contains(pubkey) ? "You follow" : "Not someone you follow",
-            pubkey == author ? nil : followsAuthor ? "follows \(name(author))" : "not seen following \(name(author))",
-        ].compactMap { $0 }.joined(separator: " · ")
-        return HStack(spacing: 10) {
-            AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name(pubkey)).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
-                Text(line).font(.appSystem(size: 11)).foregroundColor(.secondary).lineLimit(2)
-            }
-            Spacer(minLength: 4)
-            Button("Profile") { profilePubkey = pubkey; peek = nil }
-                .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.havenPurple)
-                .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.ultraThinMaterial))
-        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
-        .padding(12)
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: - Trust card (WOT tab)
+    // MARK: - Trust card
 
     private func openCard(_ pubkey: String) {
-        peek = nil
         withAnimation(Motion.fade) {
             card = pubkey
             cardPath = nil
@@ -1567,16 +1313,9 @@ struct TrustWebView: View {
     // MARK: - Actions
 
     private func tapped(_ pubkey: String) {
-        // The WOT tab answers "can I trust them?" in a card; only the card's
-        // "See their web" moves the globe.
-        if isWOTTab { return pubkey == me || pubkey == card ? closeCard() : openCard(pubkey) }
-        if peek != nil { peek = nil; return }
-        // The one in the middle: say who they are rather than go nowhere.
-        if pubkey == centerKey {
-            if pubkey != me { peek = pubkey }
-            return
-        }
-        center(on: pubkey)
+        // The globe answers "can I trust them?" in a card, in the WOT tab and
+        // the popup alike; only the card's "See their web" moves the globe.
+        pubkey == me || pubkey == card ? closeCard() : openCard(pubkey)
     }
 
     /// Puts `pubkey` in the middle with everyone they follow around them,
@@ -1598,78 +1337,10 @@ struct TrustWebView: View {
 
     private func jump(to index: Int) {
         guard index < crumbs.count - 1 else { return }
-        peek = nil
         crumbs = Array(crumbs.prefix(index + 1))
     }
 
-    /// "Show everyone": batches of 20 lists until no relay has more, lighting
-    /// stars as each batch lands. Stops at `TrustMap.maxBatchedLists` a tap.
-    private func showEveryone() {
-        guard let start = frame, !loadingMore.contains(start.center) else { return }
-        let key = start.center
-        loadingMore.insert(key)
-        failed.remove(key)
-        Task {
-            var fetched = 0
-            while let current = frames[key], !current.exhausted, fetched < TrustMap.maxBatchedLists {
-                guard let lists = await TrustPathService.shared.moreBridgeLists(
-                    author: author, follows: current.ring, seen: current.seen) else {
-                    failed.insert(key)
-                    break
-                }
-                guard var updated = frames[key] else { break }
-                fetched += lists.count
-                let fresh = TrustPath.allBridges(author: author, me: key, follows: Set(current.ring),
-                                                 contactLists: lists)
-                updated.seen.formUnion(lists.compactMap { $0["pubkey"] as? String })
-                updated.bridges = Array(Set(updated.bridges).union(fresh)).sorted()
-                if lists.isEmpty { updated.exhausted = true }
-                frames[key] = updated
-            }
-            if let lit = frames[key]?.bridges {
-                nostrService.fetchMissingProfiles(for: TrustMap.spread(lit, count: TrustGlobeCanvas.maxFaces))
-            }
-            loadingMore.remove(key)
-        }
-    }
-
-    private func lookDeeper() {
-        guard let start = frame, !lookingDeeper.contains(start.center) else { return }
-        let key = start.center
-        lookingDeeper.insert(key)
-        deeperFailed.remove(key)
-        Task {
-            let graph = key == me ? FeedService.shared.relayTabTrustedPubkeys() : []
-            let chains = await TrustPathService.shared.deeperChains(author: author, center: key,
-                                                                    follows: start.ring, trustGraph: graph)
-            if let chains {
-                frames[key]?.chains = chains
-                nostrService.fetchMissingProfiles(
-                    for: chains.prefix(TrustMap.shownChains).flatMap { [$0.bridge, $0.via] })
-            } else {
-                deeperFailed.insert(key)
-            }
-            lookingDeeper.remove(key)
-        }
-    }
-
     // MARK: - Helpers
-
-    private func canLoadMore(_ frame: Frame) -> Bool {
-        !frame.exhausted && !frame.bridges.isEmpty
-            && (frame.path.hasMore || frame.bridges.count > TrustPath.shownBridges)
-    }
-
-    /// No one at the core's follows follows the author: offer the two-step
-    /// search further out, which costs a few MB, so only on a tap.
-    private func canLookDeeper(_ frame: Frame) -> Bool {
-        frame.bridges.isEmpty && frame.chains == nil && frame.center != author
-            && !frame.ring.contains(author)
-    }
-
-    private func mutualCount(_ frame: Frame) -> Int {
-        frame.ring.filter(myFollows.contains).count
-    }
 
     private func avatar(_ pubkey: String, _ size: CGFloat) -> AnyView {
         AnyView(AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: size))
@@ -1802,7 +1473,7 @@ struct TrustGlobeCanvas: View {
     var focus: String? = nil
     /// The people you follow who follow `focus`: its threads run through them.
     var focusBridges: [String] = []
-    /// A tap that lands on no one, e.g. to close the peek card.
+    /// A tap that lands on no one, e.g. to close the trust card.
     var onEmptyTap: () -> Void = {}
 
     /// Bridges drawn as faces; the rest stay bright stars.
