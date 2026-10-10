@@ -14,8 +14,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -192,28 +200,9 @@ fun DMInboxScreen(
                     .padding(padding),
             ) {
                 if (conversations.isEmpty()) {
-                    // Scrollable empty state so the pull-to-refresh gesture works.
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        Spacer(Modifier.height(120.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.DMs,
-                            contentDescription = null,
-                            tint = TertiaryText,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "No messages yet",
-                            color = SecondaryText,
-                            fontSize = 16.sp,
-                        )
-                    }
+                    DMInboxEmptyState()
                 } else {
+                    // iOS: one grouped surface, no separators between rows.
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -226,17 +215,77 @@ fun DMInboxScreen(
                                 profile = viewModel.profileFor(conversation.id),
                                 onClick = { onConversationClick(conversation.id) },
                             )
-                            HorizontalDivider(
-                                color = SeparatorColor,
-                                thickness = 0.5.dp,
-                                modifier = Modifier.padding(start = 72.dp),
-                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * iOS DMInboxView's empty state: the two-bubble glyph on soft rings, centred,
+ * and where to start one. Scrollable so pull-to-refresh still works.
+ */
+@Composable
+private fun DMInboxEmptyState() {
+    val colors = LocalNostrVaultColors.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .padding(horizontal = 24.dp)
+                .semantics(mergeDescendants = true) {},
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(130.dp)) {
+                Box(Modifier.size(130.dp).background(colors.primary.copy(alpha = 0.05f), CircleShape))
+                Box(Modifier.size(100.dp).background(colors.primary.copy(alpha = 0.08f), CircleShape))
+                Icon(
+                    imageVector = NostrVaultIcons.DMs,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.linearGradient(listOf(colors.primary, colors.primaryLight)),
+                                blendMode = BlendMode.SrcIn,
+                            )
+                        },
+                )
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "No Messages Yet",
+                    color = PrimaryText,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Start an encrypted conversation\nwith the compose button above",
+                    color = SecondaryText,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+/** The row's last-message line: iOS cuts it at 60 characters and names an empty one. */
+internal fun dmPreviewText(content: String?): String {
+    val message = content.orEmpty()
+    if (message.isEmpty()) return "No message content"
+    return message.take(60).trim() + if (message.length > 60) "\u2026" else ""
 }
 
 @Composable
@@ -247,15 +296,17 @@ private fun ConversationRow(
 ) {
     val colors = LocalNostrVaultColors.current
     val hasUnread = conversation.unreadCount > 0
+    // iOS DMInboxView row: on the grouped surface, 52pt avatar with the unread
+    // dot punched into its top-right corner, the count capsule beside the
+    // preview only past one unread.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .background(SecondaryGroupedBg)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
     ) {
-        // iOS DMInboxView row: 52pt avatar with the unread dot punched into
-        // its top-right corner; count capsule only past one unread.
         Box {
             AvatarImage(
                 url = profile?.pictureURL,
@@ -267,15 +318,16 @@ private fun ConversationRow(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-1).dp)
                         .size(14.dp)
-                        .background(WindowBackground, CircleShape)
+                        .background(SecondaryGroupedBg, CircleShape)
                         .padding(2.dp)
                         .background(colors.primary, CircleShape),
                 )
             }
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Row(
@@ -283,7 +335,7 @@ private fun ConversationRow(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = profile?.bestName ?: conversation.id.take(8) + "...",
+                    text = profile?.bestName ?: (conversation.id.take(8) + "\u2026"),
                     color = PrimaryText,
                     fontSize = 15.sp,
                     fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.SemiBold,
@@ -291,36 +343,38 @@ private fun ConversationRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = formatRelativeTime((conversation.lastMessage?.timestamp ?: 0L) * 1000),
-                    color = if (hasUnread) colors.primary else TertiaryText,
+                    color = if (hasUnread) colors.primary else SecondaryText,
                     fontSize = 12.sp,
                 )
             }
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(5.dp))
 
-            Text(
-                text = conversation.lastMessage?.content ?: "",
-                color = SecondaryText,
-                fontSize = 13.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // Unread count capsule (only when more than one unread, like iOS)
-        if (conversation.unreadCount > 1) {
-            Spacer(Modifier.width(8.dp))
-            Badge(
-                containerColor = colors.primary,
-                contentColor = PrimaryText,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (conversation.unreadCount > 99) "99+"
-                    else conversation.unreadCount.toString(),
-                    fontSize = 11.sp,
+                    text = dmPreviewText(conversation.lastMessage?.content),
+                    color = if (hasUnread) PrimaryText.copy(alpha = 0.8f) else SecondaryText,
+                    fontSize = 13.sp,
+                    fontWeight = if (hasUnread) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
+                if (conversation.unreadCount > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(colors.primary, CircleShape)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
         }
     }

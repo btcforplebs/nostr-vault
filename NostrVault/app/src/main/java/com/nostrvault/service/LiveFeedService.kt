@@ -65,6 +65,10 @@ class LiveFeedService @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    /** No relay connected during the last load, so an empty grid is not "nothing live". */
+    private val _loadFailed = MutableStateFlow(false)
+    val loadFailed: StateFlow<Boolean> = _loadFailed.asStateFlow()
+
     /** Following by default, as on iPhone; Global follows the shield. */
     private val _scope = MutableStateFlow(ReelsScope.FOLLOWING)
     val liveScope: StateFlow<ReelsScope> = _scope.asStateFlow()
@@ -85,10 +89,12 @@ class LiveFeedService @Inject constructor(
         // The block list is read fresh below, so an unblocked host can come back.
         removedHosts.clear()
         _isLoading.value = true
+        _loadFailed.value = false
 
         val relays = configStore.config.value.activeFeedRelays
         if (relays.isEmpty()) {
             _isLoading.value = false
+            _loadFailed.value = true
             return
         }
 
@@ -121,6 +127,8 @@ class LiveFeedService @Inject constructor(
         // snapshot copy is what keeps the iteration off the live map.
         val newest = mutableMapOf<String, LiveStream>()
         val newestLock = Mutex()
+        // Any relay that connected answered the question, even with nothing.
+        val reached = java.util.concurrent.atomic.AtomicBoolean(false)
 
         job = scope.launch {
             for (url in relays) {
@@ -146,6 +154,7 @@ class LiveFeedService @Inject constructor(
                 launch {
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                            reached.set(true)
                             client.send("""["REQ","$subId",$filters]""")
                         }
                     }
@@ -155,6 +164,7 @@ class LiveFeedService @Inject constructor(
 
             delay(COLLECT_WINDOW_MS)
             _isLoading.value = false
+            _loadFailed.value = !reached.get() && _streams.value.isEmpty()
             // These connections exist to answer one question; holding them open
             // would keep five sockets alive behind a screen nobody is on.
             disconnect()

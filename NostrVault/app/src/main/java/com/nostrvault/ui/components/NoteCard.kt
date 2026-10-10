@@ -75,6 +75,7 @@ import com.nostrvault.ui.screens.DeleteScope
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -123,7 +124,7 @@ fun avatarMenuActions(feedService: com.nostrvault.service.FeedService, isOwn: (S
  * the profile when there is no menu or the avatar is your own.
  */
 @Composable
-private fun AvatarWithMenu(
+internal fun AvatarWithMenu(
     pubkey: String,
     displayName: String,
     menu: AvatarMenuActions?,
@@ -909,6 +910,13 @@ internal fun EngagementBar(
                 count = engagement?.let { label(it.zapSats) },
                 countDescription = engagement?.let { spoken(it.zapSats, "sats zapped") },
             )
+        } else if (engagement != null && engagement.zapSats > 0) {
+            // No wallet to zap from, but the sats others sent still show
+            // (iOS FeedNoteRow: a filled bolt and the total, not a button).
+            ReadOnlyZapTotal(
+                count = label(engagement.zapSats) ?: "",
+                description = spoken(engagement.zapSats, "sats zapped") ?: "",
+            )
         }
 
         // Web of Trust: how you reach the author. Opens a map, publishes
@@ -927,6 +935,46 @@ internal fun EngagementBar(
         // buttons — see the arrangement note above. A scrolling row has no
         // slack to hold.
         if (!counted) Spacer(Modifier.weight(1f))
+    }
+}
+
+/**
+ * The zap total on a note you cannot zap (no wallet): [EngagementButton]'s
+ * capsule and spacing, with nothing to tap. iOS draws it with the bolt at 85%.
+ */
+@Composable
+private fun ReadOnlyZapTotal(count: String, description: String) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(48.dp)
+            .padding(horizontal = 4.dp)
+            .clearAndSetSemantics { contentDescription = description },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .height(32.dp)
+                .widthIn(min = 32.dp)
+                .clip(CircleShape)
+                .background(SecondaryText.copy(alpha = 0.10f))
+                .padding(horizontal = 9.dp),
+        ) {
+            Icon(
+                imageVector = NostrVaultIcons.Zap,
+                contentDescription = null,
+                tint = ZapOrange.copy(alpha = 0.85f),
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = count,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = SecondaryText,
+                maxLines = 1,
+            )
+        }
     }
 }
 

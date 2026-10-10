@@ -114,6 +114,10 @@ fun CondensedNoteLine(
     /** A Translate button under the text for posts in another language. */
     showsTranslate: Boolean = false,
     onProfileClick: (String) -> Unit = {},
+    /** The avatar opens this quick menu, as a full note's does; without it, the profile. */
+    avatarMenu: AvatarMenuActions? = null,
+    /** The menu's Web of Trust item, where the screen offers it. */
+    onTrustWeb: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
     themeColor: Color = LocalNostrVaultColors.current.primary,
     modifier: Modifier = Modifier,
@@ -171,13 +175,21 @@ fun CondensedNoteLine(
                     vertical = if (style == CondensedLineStyle.CARD) 8.dp else 6.dp,
                 ),
         ) {
-            AvatarImage(
-                url = profile?.pictureURL,
+            AvatarWithMenu(
                 pubkey = authorPubkey,
-                size = avatarSize,
-                displayName = profile?.bestName,
-                modifier = Modifier.clickable { onProfileClick(authorPubkey) },
-            )
+                displayName = displayName,
+                menu = avatarMenu,
+                onProfileClick = onProfileClick,
+                onTrustWeb = onTrustWeb,
+            ) { avatarModifier ->
+                AvatarImage(
+                    url = profile?.pictureURL,
+                    pubkey = authorPubkey,
+                    size = avatarSize,
+                    displayName = profile?.bestName,
+                    modifier = avatarModifier,
+                )
+            }
 
             Spacer(Modifier.width(8.dp))
 

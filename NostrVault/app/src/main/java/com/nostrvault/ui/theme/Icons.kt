@@ -111,6 +111,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -173,6 +174,8 @@ object NostrVaultIcons {
     val Back: ImageVector = Icons.AutoMirrored.Filled.ArrowBack // chevron.left
     val Dismiss: ImageVector = Icons.Filled.Close          // xmark
     val Alert: ImageVector = Icons.Filled.Warning          // exclamationmark.triangle.fill
+    /** No relay answered: the feeds that need a connection. */
+    val NoConnection: ImageVector = Icons.Filled.WifiOff   // wifi.slash
     val Flag: ImageVector = Icons.Filled.Flag             // flag.fill
     val Create: ImageVector = Icons.Filled.Add             // plus
     /** Write a post: the Post button, the folded bar's compose action. */

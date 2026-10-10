@@ -53,11 +53,26 @@ class FeedViewModel @Inject constructor(
     private val reelsFeedService: ReelsFeedService,
     private val interestListService: com.nostrvault.service.InterestListService,
     relayImportService: com.nostrvault.service.RelayImportService,
+    logStore: com.nostrvault.relay.LogStore,
 ) : ViewModel() {
 
     /** The relay is importing; an empty feed says so rather than "no notes". */
     val isRelayImporting: StateFlow<Boolean> = relayImportService.isImporting
     val relayImportStatus: StateFlow<String> = relayImportService.importStatusMessage
+
+    /** The relay is booting: an empty Following feed says so (iOS emptyStateView). */
+    val isRelayBooting: StateFlow<Boolean> = com.nostrvault.relay.RelayForegroundService.relayStatus
+        .map { it == com.nostrvault.relay.RelayForegroundService.RelayStatus.BOOTING }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            // The real value from the first frame, so a cold launch never
+            // flashes "No Following Feed" before "Relay Starting...".
+            com.nostrvault.relay.RelayForegroundService.relayStatus.value ==
+                com.nostrvault.relay.RelayForegroundService.RelayStatus.BOOTING,
+        )
+    val relayBootStatus: StateFlow<String> = logStore.bootStatusMessage
 
     private companion object {
         /** Relays answer metadata in bursts; three UI passes a second is plenty. */
@@ -78,6 +93,8 @@ class FeedViewModel @Inject constructor(
      */
     val liveStreams = liveFeedService.streams
     val liveLoading = liveFeedService.isLoading
+    /** No relay answered the last Live load: "Could not reach any relay". */
+    val liveLoadFailed = liveFeedService.loadFailed
 
     fun refreshLive() = liveFeedService.refresh()
 
@@ -86,6 +103,7 @@ class FeedViewModel @Inject constructor(
     val marketCategory = marketplaceFeedService.selectedCategory
     val marketScope = marketplaceFeedService.listingScope
     val marketFollowSetIsEmpty = marketplaceFeedService.followSetIsEmpty
+    val marketLoadFailed = marketplaceFeedService.loadFailed
     fun setMarketScope(scope: com.nostrvault.data.model.ReelsScope) = marketplaceFeedService.setScope(scope)
     fun refreshMarketplace() = marketplaceFeedService.refresh()
     fun loadMarketplaceIfNeeded() = marketplaceFeedService.loadIfNeeded()
@@ -107,6 +125,10 @@ class FeedViewModel @Inject constructor(
     val reelsScope: StateFlow<ReelsScope> = reelsFeedService.reelsScope
     val reelsMuted: StateFlow<Boolean> = reelsFeedService.isMuted
     val isLoadingContacts: StateFlow<Boolean> = feedService.isLoadingContacts
+    /** A contact load has finished for this account: what "you follow nobody" needs behind it. */
+    val hasAttemptedContactLoad: StateFlow<Boolean> = feedService.hasAttemptedContactLoad
+    val isLoadingFeed: StateFlow<Boolean> = feedService.isLoadingFeed
+    val isLoadingPopular: StateFlow<Boolean> = feedService.isLoadingPopular
 
     fun loadReelsIfNeeded() = reelsFeedService.loadIfNeeded()
     fun refreshReels() = reelsFeedService.refresh()
@@ -131,6 +153,24 @@ class FeedViewModel @Inject constructor(
     // ── Feed state ───────────────────────────────────────────────
 
     val notes: StateFlow<List<FeedNote>> = feedService.notes
+
+    /**
+     * Anything in the note list at all, before the mode's filter: the feed's
+     * loading and empty screens give way to it (iOS reads `feedService.notes`).
+     */
+    val hasNotes: StateFlow<Boolean> = feedService.notes
+        .map { it.isNotEmpty() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.notes.value.isNotEmpty())
+
+    /**
+     * The feed's relays are all up and not one has connected: Recipes, which
+     * only relays answer, says so. Paused or disconnected is not a failure.
+     */
+    val feedRelaysUnreachable: StateFlow<Boolean> = feedService.connectionStatus
+        .map { it == "Connecting..." }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /**
      * Profiles as Compose state rather than a `StateFlow` the screen collects.

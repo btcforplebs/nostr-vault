@@ -195,6 +195,16 @@ fun FeedScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
+    val isLoadingPopular by viewModel.isLoadingPopular.collectAsState()
+    val isLoadingFeed by viewModel.isLoadingFeed.collectAsState()
+    val isLoadingContacts by viewModel.isLoadingContacts.collectAsState()
+    val hasAttemptedContactLoad by viewModel.hasAttemptedContactLoad.collectAsState()
+    val hasAnyNotes by viewModel.hasNotes.collectAsState()
+    val isRelayBooting by viewModel.isRelayBooting.collectAsState()
+    val relayBootStatus by viewModel.relayBootStatus.collectAsState()
+    val feedRelaysUnreachable by viewModel.feedRelaysUnreachable.collectAsState()
+    val liveLoadFailed by viewModel.liveLoadFailed.collectAsState()
+    val marketLoadFailed by viewModel.marketLoadFailed.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
     val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
@@ -320,6 +330,8 @@ fun FeedScreen(
     var broadcastNoteId by remember { mutableStateOf<String?>(null) }
     // The post bar's Web of Trust button: the author whose map is open.
     var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    // Compact and threaded lines open the same avatar menu as a full note.
+    val feedAvatarMenu = rememberFeedAvatarMenu(viewModel)
     var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
     var listingInfoNote by remember { mutableStateOf<FeedNote?>(null) }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -537,6 +549,18 @@ fun FeedScreen(
         FeedMode.REELS -> reelsScope == ReelsScope.GLOBAL
         else -> false
     }
+    // iOS FeedView.rootContentBase: a feed asked of your follow set has nothing
+    // to show until that set is known, and "you follow nobody" needs a
+    // finished contact load behind it (FollowingFeedState).
+    val isFollowSetFeed = feedMode == FeedMode.FOLLOWING ||
+        (!scopeGlobal && feedMode in setOf(FeedMode.ARTICLES, FeedMode.POLLS, FeedMode.MEDIA))
+    val followPlaceholder = followingFeedPlaceholder(
+        followCount = followedPubkeys.size,
+        hasAttemptedContactLoad = hasAttemptedContactLoad,
+        isLoadingContacts = isLoadingContacts,
+        isLoadingFeed = isLoadingFeed,
+        hasNotes = hasAnyNotes,
+    )
     val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop) &&
         feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
     val loadNewPosts: () -> Unit = {
@@ -718,6 +742,7 @@ fun FeedScreen(
                     onNeedProfiles = viewModel::fetchMissingProfiles,
                     onAppear = viewModel::loadMarketplaceIfNeeded,
                     followSetIsEmpty = marketFollowSetIsEmpty,
+                    loadFailed = marketLoadFailed,
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(FeedMode.MARKETPLACE, global = true) },
                 )
@@ -733,9 +758,35 @@ fun FeedScreen(
                     // to play. LiveStreamHost draws the player over the app.
                     onStreamClick = { com.nostrvault.ui.components.LiveStreamRouter.open(it) },
                     onRefresh = viewModel::refreshLive,
+                    loadFailed = liveLoadFailed,
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(FeedMode.LIVE, global = true) },
                 )
+            } else if (!hasAnyNotes && isRelayImporting) {
+                // The relay is busy importing ("Keep it running"), so nothing
+                // loads until it's back. iOS FeedView.importingFeedView.
+                ImportingFeedPlaceholder(relayImportStatus)
+            } else if (isFollowSetFeed && followPlaceholder == FollowingFeedPlaceholder.LOADING) {
+                // iOS loadingContactsView.
+                FeedLoadingPlaceholder("Synchronizing", "fetching your follows", "This may take a moment")
+            } else if (feedMode == FeedMode.DISCOVERY && isLoadingExtendedNetwork && notes.isEmpty()) {
+                // iOS loadingExtendedNetworkView.
+                FeedLoadingPlaceholder("Analyzing Network", "finding mutual connections", "This may take a moment")
+            } else if (feedMode == FeedMode.POPULAR && isLoadingPopular && notes.isEmpty()) {
+                // iOS loadingPopularView.
+                FeedLoadingPlaceholder(
+                    "Finding Popular Notes",
+                    "scoring engagement across relays",
+                    "Analyzing reactions, reposts, and zaps",
+                )
+            } else if (isFollowSetFeed && followPlaceholder == FollowingFeedPlaceholder.EMPTY) {
+                // iOS emptyStateView: while the relay boots, say that rather
+                // than asking someone to follow people.
+                if (isRelayBooting) {
+                    RelayStartingPlaceholder(relayBootStatus)
+                } else {
+                    EmptyFeedPlaceholder(FeedMode.FOLLOWING, onRefresh = viewModel::refresh)
+                }
             } else if (feedMode == FeedMode.ARTICLES || feedMode == FeedMode.RECIPES) {
                 ArticleList(
                     mode = feedMode,
@@ -747,20 +798,18 @@ fun FeedScreen(
                     onRefresh = viewModel::refresh,
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(feedMode, global = true) },
+                    loadFailed = feedMode == FeedMode.RECIPES && feedRelaysUnreachable && !isLoadingFeed,
                 )
             } else if (feedMode == FeedMode.MEDIA) {
                 MediaFeedGrid(
                     notes = mediaNotes,
+                    scopeFollowing = !scopeGlobal,
                     isRefreshing = isRefreshing,
                     isLoadingMore = isLoadingMore,
                     contentPadding = padding,
                     onNoteClick = onNoteClick,
                     onLoadMore = viewModel::loadMore,
                 )
-            } else if (notes.isEmpty() && isRelayImporting) {
-                // The relay is busy importing ("Keep it running"), so nothing
-                // loads until it's back. iOS FeedView.importingFeedView.
-                ImportingFeedPlaceholder(relayImportStatus)
             } else if (notes.isEmpty() && isRefreshing) {
                 // Shimmer skeleton loading
                 SkeletonFeed(count = 5)
@@ -779,6 +828,9 @@ fun FeedScreen(
                     else "Polls from people you follow show up here",
                     actionLabel = "Post a poll",
                 )
+            } else if (notes.isEmpty() && feedMode == FeedMode.DISCOVERY && isRelayBooting) {
+                // iOS emptyDiscoveryStateView while the relay boots.
+                RelayStartingPlaceholder(relayBootStatus)
             } else if (notes.isEmpty()) {
                 // "Analyzing your extended network..." is only true while it is
                 // actually analyzing. Once it has finished and come back with
@@ -791,7 +843,7 @@ fun FeedScreen(
                     onRefresh = viewModel::refresh,
                     subtitleOverride = if (feedMode == FeedMode.DISCOVERY && !isLoadingExtendedNetwork) {
                         if (followedPubkeys.isEmpty()) {
-                            "Follow npubs on Nostr to build your extended network"
+                            "Follow more people on Nostr to build your extended network"
                         } else {
                             "No follow lists came back from your relays \u2014 try refreshing"
                         }
@@ -834,6 +886,8 @@ fun FeedScreen(
                                 isExpanded = threadFolds[thread.rootId] ?: false,
                                 onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
                                 onProfileClick = openProfile,
+                                avatarMenu = feedAvatarMenu,
+                                onTrustWeb = { author -> trustWebAuthor = author },
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
@@ -927,6 +981,8 @@ fun FeedScreen(
                                     expandedNoteId = id
                                 },
                                 onProfileClick = openProfile,
+                                avatarMenu = feedAvatarMenu,
+                                onTrustWeb = { author -> trustWebAuthor = author },
                                 // iOS: 8pt sides for a compact row, 12pt between rows.
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             )
@@ -1208,9 +1264,11 @@ private fun ArticleList(
     onRefresh: () -> Unit,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
+    /** Recipes: no relay answered, so the empty grid says so. */
+    loadFailed: Boolean = false,
 ) {
     if (notes.isEmpty()) {
-        if (!isRefreshing) ScopedEmptyPlaceholder(mode, scopeFollowing, onRefresh, onShowGlobal)
+        if (!isRefreshing) ScopedEmptyPlaceholder(mode, scopeFollowing, onRefresh, onShowGlobal, loadFailed = loadFailed)
         return
     }
 
@@ -1418,6 +1476,8 @@ private fun LiveGrid(
     contentPadding: PaddingValues,
     onStreamClick: (LiveStream) -> Unit,
     onRefresh: () -> Unit,
+    /** No relay answered the last load. */
+    loadFailed: Boolean = false,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
 ) {
@@ -1427,7 +1487,7 @@ private fun LiveGrid(
             if (isLoading) {
                 CircularProgressIndicator(color = colors.primary)
             } else {
-                ScopedEmptyPlaceholder(FeedMode.LIVE, scopeFollowing, onRefresh, onShowGlobal)
+                ScopedEmptyPlaceholder(FeedMode.LIVE, scopeFollowing, onRefresh, onShowGlobal, loadFailed = loadFailed)
             }
         }
         return
@@ -1477,6 +1537,8 @@ private fun LiveGrid(
 @Composable
 private fun MediaFeedGrid(
     notes: List<FeedNote>,
+    /** Which side of Following / Global came back empty, for the empty text. */
+    scopeFollowing: Boolean,
     isRefreshing: Boolean,
     isLoadingMore: Boolean,
     contentPadding: PaddingValues,
@@ -1484,7 +1546,7 @@ private fun MediaFeedGrid(
     onLoadMore: () -> Unit,
 ) {
     if (notes.isEmpty()) {
-        if (!isRefreshing) EmptyFeedPlaceholder(FeedMode.MEDIA)
+        if (!isRefreshing) ScopedEmptyPlaceholder(FeedMode.MEDIA, scopeFollowing, onRefresh = {}, onShowGlobal = {})
         return
     }
 
@@ -1808,25 +1870,35 @@ private fun FeedFullNoteRowContent(
         onLongPressLike = onLongPressLike,
         onRetryParent = viewModel::retryMissingNote,
         autoplayVideos = autoplayVideos,
-        // Fill your feed: the photo opens the profile card like the name,
-        // rather than a quick Follow that skips looking first.
-        avatarMenu = if (com.nostrvault.vaultguide.FillYourFeedGuide.opensProfileCard(
-                com.nostrvault.vaultguide.FillYourFeedGuide.showsMeter(
-                    com.nostrvault.vaultguide.FillYourVaultCoordinator.phase.collectAsState().value,
-                    com.nostrvault.vaultguide.FillYourVaultCoordinator.meterOn.collectAsState().value,
-                ),
-            )
-        ) null else remember(viewModel) {
-            AvatarMenuActions(
-                isOwn = viewModel::isOwnNote,
-                isFollowed = viewModel::isFollowing,
-                onFollow = viewModel::followUser,
-                onUnfollow = viewModel::unfollowUser,
-                onBlock = viewModel::blockUser,
-            )
-        },
+        avatarMenu = rememberFeedAvatarMenu(viewModel),
         modifier = modifier,
     )
+}
+
+/**
+ * The avatar quick menu for the feed's rows, full, compact and threaded alike
+ * (iOS AuthorQuickMenu on FeedNoteRow and CondensedNoteLine). While Fill your
+ * feed is on, the photo opens the profile card like the name instead, rather
+ * than a quick Follow that skips looking first.
+ */
+@Composable
+private fun rememberFeedAvatarMenu(viewModel: FeedViewModel): AvatarMenuActions? {
+    val opensProfileCard = com.nostrvault.vaultguide.FillYourFeedGuide.opensProfileCard(
+        com.nostrvault.vaultguide.FillYourFeedGuide.showsMeter(
+            com.nostrvault.vaultguide.FillYourVaultCoordinator.phase.collectAsState().value,
+            com.nostrvault.vaultguide.FillYourVaultCoordinator.meterOn.collectAsState().value,
+        ),
+    )
+    val menu = remember(viewModel) {
+        AvatarMenuActions(
+            isOwn = viewModel::isOwnNote,
+            isFollowed = viewModel::isFollowing,
+            onFollow = viewModel::followUser,
+            onUnfollow = viewModel::unfollowUser,
+            onBlock = viewModel::blockUser,
+        )
+    }
+    return if (opensProfileCard) null else menu
 }
 
 // ── Top bar ──────────────────────────────────────────────────────
@@ -2275,34 +2347,74 @@ private fun LanguageFilterButton(selected: List<String>, onChange: (List<String>
 // iOS FeedView empty state: thin gradient icon, bold title, monospaced
 // subtitle, and a full-width gradient "Refresh Feed" button.
 /**
- * iOS's empty states for the feeds with a Following / Global choice (Recipes,
- * Marketplace, Live): from your follows, with a Show Global button; otherwise
- * what came back, with Try again. iOS also says "Could not reach any relay"
- * when every relay failed; these Android feeds do not track that yet.
+ * iOS's empty states for the feeds with a Following / Global choice. Recipes,
+ * Marketplace and Live: from your follows, with a Show Global button;
+ * otherwise what came back, with Try again; and "Could not reach any relay"
+ * when no relay answered ([loadFailed]). Articles and Media just say which
+ * side came back empty, with no button.
  */
-internal data class ScopedEmptyText(val title: String, val subtitle: String, val action: String, val showsGlobal: Boolean)
+internal data class ScopedEmptyText(
+    val title: String,
+    val subtitle: String,
+    /** The button's label, or null for none. */
+    val action: String?,
+    val showsGlobal: Boolean,
+    /** Draw the no-connection icon rather than the feed's own. */
+    val noConnection: Boolean = false,
+)
 
-internal fun scopedEmptyText(mode: FeedMode, scopeFollowing: Boolean): ScopedEmptyText? = when (mode) {
-    FeedMode.RECIPES -> if (scopeFollowing) ScopedEmptyText(
-        "No recipes from your follows",
-        "Nobody you follow has posted a recipe. Switch to Global to see everyone's.",
-        "Show Global recipes", true,
-    ) else ScopedEmptyText("No recipes found", "Nothing tagged zapcooking or nostrcooking came back.", "Try again", false)
-    FeedMode.MARKETPLACE -> if (scopeFollowing) ScopedEmptyText(
-        "No listings from your follows",
-        "Nobody you follow is selling anything. Switch to Global to see every listing.",
-        "Show Global listings", true,
-    ) else ScopedEmptyText("No listings found", "No products, auctions or classifieds with a photo came back.", "Try again", false)
-    FeedMode.LIVE -> if (scopeFollowing) ScopedEmptyText(
-        "Nobody you follow is live",
-        "Switch to Global to see everyone who is streaming.",
-        "Show Global streams", true,
-    ) else ScopedEmptyText(
-        "Nothing live right now",
-        "Most stream announcements on Nostr are for streams that already ended. Only running ones show here.",
-        "Try again", false,
-    )
-    else -> null
+internal fun scopedEmptyText(mode: FeedMode, scopeFollowing: Boolean, loadFailed: Boolean = false): ScopedEmptyText? {
+    // These feeds come from other people's relays; with none answering, an
+    // empty grid is not "nothing posted" (iOS RecipeFeedService.loadFailed).
+    val needsConnection = when (mode) {
+        FeedMode.RECIPES -> "Recipes"
+        FeedMode.MARKETPLACE -> "Listings"
+        FeedMode.LIVE -> "Live streams"
+        else -> null
+    }
+    if (loadFailed && needsConnection != null) {
+        return ScopedEmptyText(
+            "Could not reach any relay",
+            "$needsConnection come from other people's relays, so this one needs a connection.",
+            "Try again", false, noConnection = true,
+        )
+    }
+    return when (mode) {
+        FeedMode.RECIPES -> if (scopeFollowing) ScopedEmptyText(
+            "No recipes from your follows",
+            "Nobody you follow has posted a recipe. Switch to Global to see everyone's.",
+            "Show Global recipes", true,
+        ) else ScopedEmptyText("No recipes found", "Nothing tagged zapcooking or nostrcooking came back.", "Try again", false)
+        FeedMode.MARKETPLACE -> if (scopeFollowing) ScopedEmptyText(
+            "No listings from your follows",
+            "Nobody you follow is selling anything. Switch to Global to see every listing.",
+            "Show Global listings", true,
+        ) else ScopedEmptyText("No listings found", "No products, auctions or classifieds with a photo came back.", "Try again", false)
+        FeedMode.LIVE -> if (scopeFollowing) ScopedEmptyText(
+            "Nobody you follow is live",
+            "Switch to Global to see everyone who is streaming.",
+            "Show Global streams", true,
+        ) else ScopedEmptyText(
+            "Nothing live right now",
+            "Most stream announcements on Nostr are for streams that already ended. Only running ones show here.",
+            "Try again", false,
+        )
+        // iOS FeedView.emptyArticlesStateView.
+        FeedMode.ARTICLES -> ScopedEmptyText(
+            "No articles yet",
+            if (scopeFollowing) "Long-form posts from people you follow show up here. Nothing to read yet."
+            else "Long-form posts from across Nostr show up here. Nothing to read yet.",
+            null, false,
+        )
+        // iOS FeedView.mediaGridView (feed.media.empty.*).
+        FeedMode.MEDIA -> ScopedEmptyText(
+            "No Media Found",
+            if (scopeFollowing) "Your followers haven't shared any media yet."
+            else "No global media found on connected relays.",
+            null, false,
+        )
+        else -> null
+    }
 }
 
 @Composable
@@ -2312,19 +2424,109 @@ internal fun ScopedEmptyPlaceholder(
     onRefresh: () -> Unit,
     onShowGlobal: () -> Unit,
     subtitleOverride: String? = null,
+    loadFailed: Boolean = false,
 ) {
-    val text = scopedEmptyText(mode, scopeFollowing)
+    val text = scopedEmptyText(mode, scopeFollowing, loadFailed)
     if (text == null) {
         EmptyFeedPlaceholder(mode, onRefresh = onRefresh, subtitleOverride = subtitleOverride)
         return
     }
     EmptyFeedPlaceholder(
         mode,
-        onRefresh = if (text.showsGlobal) onShowGlobal else onRefresh,
-        subtitleOverride = subtitleOverride ?: text.subtitle,
+        onRefresh = when {
+            text.action == null -> null
+            text.showsGlobal -> onShowGlobal
+            else -> onRefresh
+        },
+        // A failed load says why, whatever the caller would have said.
+        subtitleOverride = if (text.noConnection) text.subtitle else subtitleOverride ?: text.subtitle,
         titleOverride = text.title,
-        actionLabel = text.action,
+        actionLabel = text.action ?: "",
+        iconOverride = if (text.noConnection) NostrVaultIcons.NoConnection else null,
     )
+}
+
+/**
+ * iOS FeedView's loading screens (loadingContactsView, loadingExtendedNetworkView,
+ * loadingPopularView): a large spinner, a bold title, a monospaced line of
+ * what it is doing, and a faint footer.
+ */
+@Composable
+private fun FeedLoadingPlaceholder(title: String, detail: String, footer: String) {
+    val colors = LocalNostrVaultColors.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        CircularProgressIndicator(color = colors.primary)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = title,
+            color = PrimaryText,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.3.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = detail,
+            color = SecondaryText,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(32.dp))
+        Text(
+            text = footer,
+            color = SecondaryText.copy(alpha = SecondaryText.alpha * 0.6f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.5.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * iOS emptyStateView while the relay boots: a spinner, "Relay Starting...",
+ * and what the relay is doing right now, else "Initializing relay".
+ */
+@Composable
+private fun RelayStartingPlaceholder(bootStatus: String) {
+    val colors = LocalNostrVaultColors.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        CircularProgressIndicator(color = colors.primary)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Relay Starting...",
+            color = PrimaryText,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.2.sp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = bootStatus.ifEmpty { "Initializing relay" },
+            color = SecondaryText,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.3.sp,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable
@@ -2366,6 +2568,8 @@ internal fun EmptyFeedPlaceholder(
     titleOverride: String? = null,
     /** What the button under the text says; it runs [onRefresh]. */
     actionLabel: String = "Refresh Feed",
+    /** Replaces the feed's own icon: "Could not reach any relay" draws no-connection. */
+    iconOverride: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val gradient = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
@@ -2377,7 +2581,7 @@ internal fun EmptyFeedPlaceholder(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                imageVector = when (mode) {
+                imageVector = iconOverride ?: when (mode) {
                     FeedMode.FOLLOWING -> NostrVaultIcons.PersonAdd
                     FeedMode.DISCOVERY -> NostrVaultIcons.GlobeOutline
                     FeedMode.GLOBAL -> NostrVaultIcons.Globe
@@ -2400,9 +2604,9 @@ internal fun EmptyFeedPlaceholder(
             Text(
                 text = titleOverride ?: when (mode) {
                     FeedMode.FOLLOWING -> "No Following Feed"
-                    FeedMode.DISCOVERY -> "Discovering Notes"
+                    FeedMode.DISCOVERY -> "No Discovery Feed"
                     FeedMode.GLOBAL -> "No Global Notes Yet"
-                    FeedMode.POPULAR -> "No Popular Notes Yet"
+                    FeedMode.POPULAR -> "No Popular Notes Found"
                     FeedMode.MEDIA -> "No Media Found"
                     FeedMode.ARTICLES -> "No Articles Yet"
                     FeedMode.RECIPES -> "No Recipes Yet"
@@ -2422,9 +2626,9 @@ internal fun EmptyFeedPlaceholder(
             Text(
                 text = subtitleOverride ?: when (mode) {
                     FeedMode.FOLLOWING -> "Follow npubs on Nostr to see their posts here"
-                    FeedMode.DISCOVERY -> "Analyzing your extended network..."
+                    FeedMode.DISCOVERY -> "Follow more people on Nostr to build your extended network"
                     FeedMode.GLOBAL -> "Waiting for notes from your feed relays"
-                    FeedMode.POPULAR -> "Waiting for engagement data to arrive"
+                    FeedMode.POPULAR -> "Not enough engagement data from relays.\nCheck back later or try refreshing."
                     FeedMode.MEDIA -> "Photos and videos from your feed show up here"
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
