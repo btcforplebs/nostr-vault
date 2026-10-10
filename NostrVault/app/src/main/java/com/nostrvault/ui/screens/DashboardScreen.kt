@@ -1203,6 +1203,11 @@ class DashboardViewModel @Inject constructor(
         if (!_newActivity.value.containsAll(lit)) _newActivity.value = _newActivity.value + lit
     }
 
+    /** The "Vault" list is on screen: every list's own dot clears (iOS #506). */
+    fun markAllListsViewed() {
+        VaultDots.eventLists.forEach(::markListViewed)
+    }
+
     /** Clears [list]'s dot and moves its seen mark up to what it holds now. */
     private fun markListViewed(list: VaultViewMode) {
         if (list == VaultViewMode.FOLLOWERS) {

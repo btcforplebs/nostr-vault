@@ -151,9 +151,11 @@ fun VaultTabScreen(
     val followerSnapshot by viewModel.followerSnapshot.collectAsState()
     LaunchedEffect(followerSnapshot) { activity.setFollowers(followerSnapshot) }
     val activityInSight = modeInSight == VaultMode.ACTIVITY
-    LaunchedEffect(activityInSight, followerSnapshot) {
+    val listDots by viewModel.newModes.collectAsState()
+    LaunchedEffect(activityInSight, followerSnapshot, listDots) {
         if (!activityInSight) return@LaunchedEffect
         activity.markFollowersSeen()
+        viewModel.markAllListsViewed()
         viewModel.refreshFollowers()
     }
     var activityWasInSight by remember { mutableStateOf(false) }
