@@ -190,15 +190,6 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 		slog.Info("⏰ WoT cache expired", "age_minutes", age, "ttl_minutes", wt.CacheTTLMinutes)
 		return false, 0
 	}
-	// A depth-3 graph built before the links file existed: rebuild once so
-	// the apps can draw lines without asking relays.
-	if wt.WotDepth >= 3 {
-		if _, err := os.Stat(wt.linksPath()); err != nil {
-			slog.Info("🔁 WoT cache has no links file, rebuilding")
-			return false, 0
-		}
-	}
-
 	wt.pubkeys.Store(&cache.Pubkeys)
 	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
@@ -242,6 +233,18 @@ func (wt *SimpleInMemory) SaveCache() {
 
 func (wt *SimpleInMemory) linksPath() string {
 	return filepath.Join(filepath.Dir(wt.CachePath), linksFile)
+}
+
+// MissingLinks reports a depth-3 graph whose links file is absent: a cache
+// from before the file existed, or one whose links write failed. The graph
+// itself is still good, so callers serve the cache and refresh in the
+// background; until then the apps fall back to asking relays for the lines.
+func (wt *SimpleInMemory) MissingLinks() bool {
+	if wt.WotDepth < 3 || wt.CachePath == "" {
+		return false
+	}
+	_, err := os.Stat(wt.linksPath())
+	return err != nil
 }
 
 // saveLinks writes the links file, or removes it when links is nil (depths

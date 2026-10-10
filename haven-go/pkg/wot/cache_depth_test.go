@@ -164,8 +164,9 @@ func TestNamesOnlyOwners(t *testing.T) {
 	}
 }
 
-// A depth-3 cache from before the links file existed is rebuilt once, so the
-// apps get their lines; a depth-2 build drops a links file it can't refresh.
+// A depth-3 cache from before the links file existed is still served, but
+// flagged so startup refreshes it in the background; a depth-2 build drops a
+// links file it can't refresh.
 func TestLinksFileFollowsTheDepth(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "wot_cache.json")
@@ -173,12 +174,18 @@ func TestLinksFileFollowsTheDepth(t *testing.T) {
 	wt := NewSimpleInMemory(nil, map[string]struct{}{"owner": {}}, nil, 3, 1, 1, path, 60)
 	wt.pubkeys.Store(&map[string]bool{"owner": true})
 	wt.SaveCache()
-	if ok, _ := wt.LoadFromCache(); ok {
-		t.Fatal("a depth-3 cache without a links file was served")
+	if ok, _ := wt.LoadFromCache(); !ok {
+		t.Fatal("a depth-3 cache without a links file was thrown away")
+	}
+	if !wt.MissingLinks() {
+		t.Fatal("a depth-3 cache without a links file was not flagged for a refresh")
 	}
 	wt.saveLinks([]string{"a"}, map[string][]int{"b": {0}})
 	if ok, _ := wt.LoadFromCache(); !ok {
 		t.Fatal("a depth-3 cache with its links file was not served")
+	}
+	if wt.MissingLinks() {
+		t.Fatal("a depth-3 cache with its links file was flagged for a refresh")
 	}
 	if _, err := os.Stat(links + ".tmp"); !os.IsNotExist(err) {
 		t.Error("the temporary links file was left behind")
