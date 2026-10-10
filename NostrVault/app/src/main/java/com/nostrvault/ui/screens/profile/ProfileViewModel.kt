@@ -545,6 +545,9 @@ class ProfileViewModel @Inject constructor(
             needsMirror = inVault && sha != null && blossomService.backupSummary(sha, presence)?.needsMirror == true,
             is404 = mediaCacheService.isKnown404(url),
             moderationTarget = mediaModerationTarget(author),
+            // iOS ProfileView.mediaGrid: your own files, and only a Blossom
+            // file (named by its hash) can be deleted.
+            canDelete = sha != null && _isOwnProfile.value && isOwnNote(author),
         )
     }
 

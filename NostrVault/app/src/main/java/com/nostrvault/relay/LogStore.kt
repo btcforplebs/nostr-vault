@@ -30,6 +30,14 @@ class LogStore @Inject constructor() {
     private val _logs = MutableStateFlow<List<RelayLogParser.LogEntry>>(emptyList())
     val logs: StateFlow<List<RelayLogParser.LogEntry>> = _logs.asStateFlow()
 
+    /**
+     * What the relay is doing while it boots ("Building trust network…"), for
+     * the feed's Relay Starting screen; empty once it is listening. iOS
+     * RelayProcessManager.bootStatusMessage.
+     */
+    private val _bootStatusMessage = MutableStateFlow("")
+    val bootStatusMessage: StateFlow<String> = _bootStatusMessage.asStateFlow()
+
     private var pollingJob: Job? = null
 
     /**
@@ -77,6 +85,12 @@ class LogStore @Inject constructor() {
                         }
                         val entry = RelayLogParser.LogEntry.parse(message)
                         addEntry(entry)
+                        val boot = RelayLogParser.BatchedStateUpdate()
+                        RelayLogParser.collectStateChanges(message, boot)
+                        when {
+                            boot.stopBooting -> _bootStatusMessage.value = ""
+                            boot.bootStatusMessage != null -> _bootStatusMessage.value = boot.bootStatusMessage!!
+                        }
                     }
 
                     // Drain the dedicated, non-lossy notification queue and forward

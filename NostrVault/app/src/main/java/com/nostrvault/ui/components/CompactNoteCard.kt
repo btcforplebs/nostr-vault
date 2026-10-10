@@ -32,6 +32,9 @@ fun CompactNoteCard(
     engagement: CondensedEngagement = CondensedEngagement.NONE,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** The avatar opens this quick menu, as a full note's does. */
+    avatarMenu: AvatarMenuActions? = null,
+    onTrustWeb: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isArticle = (repostedOriginal ?: note).kind == ArticleMeta.KIND
@@ -47,6 +50,8 @@ fun CompactNoteCard(
         // An article's line is its title; there is nothing there to translate.
         showsTranslate = !isArticle && repostPlaceholder == null,
         onProfileClick = onProfileClick,
+        avatarMenu = avatarMenu,
+        onTrustWeb = onTrustWeb,
         onTap = { onNoteClick(note.id) },
         modifier = modifier.fillMaxWidth(),
     )

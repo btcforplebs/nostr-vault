@@ -508,7 +508,10 @@ internal fun HashtagsFeed(
                         Icon(NostrVaultIcons.TagIcon, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(28.dp))
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            text = selected?.let { "No posts tagged #$it yet" } ?: "No posts in your hashtags yet",
+                            // iOS HashtagsFeedSection.noPostsState names the scope it looked in.
+                            text = selected?.let { "No posts tagged #$it yet" }
+                                ?: if (everyone) "No posts in your hashtags yet"
+                                else "No posts in your hashtags from people you follow or your network yet",
                             color = SecondaryText,
                             fontSize = 15.sp,
                             textAlign = TextAlign.Center,

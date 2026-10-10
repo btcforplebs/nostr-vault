@@ -86,6 +86,8 @@ internal fun MarketplaceGrid(
     onNeedProfiles: (List<String>) -> Unit,
     onAppear: () -> Unit,
     followSetIsEmpty: Boolean = false,
+    /** No relay answered the last load. */
+    loadFailed: Boolean = false,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
 ) {
@@ -104,6 +106,7 @@ internal fun MarketplaceGrid(
                     onRefresh = onRefresh,
                     onShowGlobal = onShowGlobal,
                     subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Switch to Global to see every listing." else null,
+                    loadFailed = loadFailed,
                 )
             }
         }

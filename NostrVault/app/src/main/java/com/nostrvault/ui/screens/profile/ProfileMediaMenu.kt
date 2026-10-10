@@ -4,13 +4,16 @@ import com.nostrvault.service.MediaSaveService
 
 /**
  * What a profile Media grid tile's long-press offers, in iOS
- * `MediaGridItem` order. The profile grid never offers Delete or Open Note.
+ * `MediaGridItem` order. Delete is for your own Blossom files only (the hash
+ * names the blob); the profile grid never offers Open Note.
  */
 enum class ProfileMediaAction {
     COPY_LINK,
     SAVE_TO_PHOTOS,
     SAVE_TO_VAULT,
     MIRROR_TO_BLOSSOM,
+    DELETE_FROM_MIRRORS,
+    DELETE_EVERYWHERE,
     MARK_404,
     UNMARK_404,
     REPORT,
@@ -22,7 +25,8 @@ enum class ProfileMediaAction {
  * (known by extension, as iOS types the tile); a
  * file already in the vault offers Mirror to Blossom instead of Save to
  * Vault, and only once a server is known to lack it. Report and Block
- * appear only on someone else's media ([moderationTarget] non-null).
+ * appear only on someone else's media ([moderationTarget] non-null); the two
+ * deletes only on your own file that a Blossom hash names ([canDelete]).
  */
 internal fun profileMediaMenu(
     url: String,
@@ -30,11 +34,16 @@ internal fun profileMediaMenu(
     needsMirror: Boolean,
     is404: Boolean,
     moderationTarget: String?,
+    canDelete: Boolean = false,
 ): List<ProfileMediaAction> = buildList {
     add(ProfileMediaAction.COPY_LINK)
     if (MediaSaveService.mimeTypeForExtension(url) != null) add(ProfileMediaAction.SAVE_TO_PHOTOS)
     if (!inVault) add(ProfileMediaAction.SAVE_TO_VAULT)
     else if (needsMirror) add(ProfileMediaAction.MIRROR_TO_BLOSSOM)
+    if (canDelete) {
+        add(ProfileMediaAction.DELETE_FROM_MIRRORS)
+        add(ProfileMediaAction.DELETE_EVERYWHERE)
+    }
     add(if (is404) ProfileMediaAction.UNMARK_404 else ProfileMediaAction.MARK_404)
     if (moderationTarget != null) {
         add(ProfileMediaAction.REPORT)

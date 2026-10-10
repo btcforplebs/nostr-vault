@@ -72,6 +72,8 @@ fun ProfileScreen(
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
     editViewModel: ProfileEditViewModel = hiltViewModel(),
+    /** Deletes your own Blossom files from the Media grid, as the Vault grid does. */
+    mediaActions: com.nostrvault.ui.screens.MediaViewerViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(pubkey) {
         if (viewModel.pubkey.isEmpty() || viewModel.pubkey != pubkey) {
@@ -167,6 +169,8 @@ fun ProfileScreen(
     // Report Media / Block User from a Media grid tile's long-press menu.
     var gridReportTarget by remember { mutableStateOf<String?>(null) }
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
+    // Delete from mirrors / everywhere on one of your own files: (blob hash, scope).
+    var gridDelete by remember { mutableStateOf<Pair<String, com.nostrvault.ui.screens.DeleteScope>?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
     var zapSheetOpen by remember { mutableStateOf(false) }
     // Edit Profile, over this page; swiping it away saves. Not saveable: the
@@ -506,6 +510,7 @@ fun ProfileScreen(
                                     },
                                     onReport = { gridReportTarget = it },
                                     onBlock = { gridBlockTarget = it },
+                                    onDelete = { hash, scope -> gridDelete = hash to scope },
                                 )
                             }
                         }
@@ -629,6 +634,34 @@ fun ProfileScreen(
         )
     }
 
+    // Same confirmation as the Vault grid. The tile stays, as on iOS: it
+    // belongs to a post, and the post is still up unless that was chosen too.
+    gridDelete?.let { (hash, scope) ->
+        val postCount = remember(hash, scope) {
+            if (scope == com.nostrvault.ui.screens.DeleteScope.EVERYWHERE) mediaActions.postsUsing(hash) else 0
+        }
+        fun confirm(deletePosts: Boolean) {
+            gridDelete = null
+            // The delete calls only read the hash.
+            val item = com.nostrvault.ui.screens.BlossomMediaItem(
+                sha256 = hash, displayUrl = "", localFile = null, mimeType = null,
+                size = null, uploaded = null, lastModified = null, isLocal = false,
+            )
+            when (scope) {
+                com.nostrvault.ui.screens.DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item)
+                com.nostrvault.ui.screens.DeleteScope.EVERYWHERE ->
+                    mediaActions.deleteEverywhere(item, deletePosts = deletePosts) {}
+            }
+        }
+        com.nostrvault.ui.screens.DeleteBlobConfirmDialog(
+            scope = scope,
+            postCount = postCount,
+            onConfirm = { confirm(deletePosts = false) },
+            onConfirmWithPosts = { confirm(deletePosts = true) },
+            onDismiss = { gridDelete = null },
+        )
+    }
+
     if (zapSheetOpen) {
         com.nostrvault.ui.components.CustomZapSheet(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -662,6 +695,8 @@ private fun ProfileMediaTile(
     onOpen: () -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
+    /** Asks to delete this tile's blob (by hash); only offered on your own Blossom files. */
+    onDelete: (String, com.nostrvault.ui.screens.DeleteScope) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     val clipboard = LocalClipboardManager.current
@@ -722,6 +757,20 @@ private fun ProfileMediaTile(
                         enabled = !busy,
                         leadingIcon = { Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         onClick = { close(); viewModel.mirrorMediaToBlossom(url) },
+                    )
+                    // Order and wording as the Vault grid's menu; each asks first.
+                    ProfileMediaAction.DELETE_FROM_MIRRORS -> {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Delete from mirrors", color = ErrorRed) },
+                            leadingIcon = { Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                            onClick = { close(); blossomHashOf(url)?.let { onDelete(it, com.nostrvault.ui.screens.DeleteScope.MIRRORS) } },
+                        )
+                    }
+                    ProfileMediaAction.DELETE_EVERYWHERE -> DropdownMenuItem(
+                        text = { Text("Delete everywhere", color = ErrorRed) },
+                        leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                        onClick = { close(); blossomHashOf(url)?.let { onDelete(it, com.nostrvault.ui.screens.DeleteScope.EVERYWHERE) } },
                     )
                     ProfileMediaAction.MARK_404, ProfileMediaAction.UNMARK_404 -> {
                         HorizontalDivider()

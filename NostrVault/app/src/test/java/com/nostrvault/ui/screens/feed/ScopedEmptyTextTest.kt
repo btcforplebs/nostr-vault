@@ -7,7 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** iOS's Recipes / Marketplace / Live empty states, on Android. */
+/** iOS's scoped empty states (Recipes, Marketplace, Live, Articles, Media), on Android. */
 class ScopedEmptyTextTest {
     @Test
     fun followingOffersGlobal() {
@@ -33,8 +33,41 @@ class ScopedEmptyTextTest {
     }
 
     @Test
+    fun noRelayAnsweringSaysSoInEitherScope() {
+        for ((mode, noun) in listOf(
+            FeedMode.RECIPES to "Recipes",
+            FeedMode.MARKETPLACE to "Listings",
+            FeedMode.LIVE to "Live streams",
+        )) {
+            for (following in listOf(true, false)) {
+                val text = scopedEmptyText(mode, following, loadFailed = true)!!
+                assertEquals("Could not reach any relay", text.title)
+                assertEquals("$noun come from other people's relays, so this one needs a connection.", text.subtitle)
+                assertEquals("Try again", text.action)
+                assertTrue(text.noConnection)
+            }
+        }
+    }
+
+    @Test
+    fun articlesAndMediaNameTheScopeWithNoButton() {
+        val following = scopedEmptyText(FeedMode.ARTICLES, true)!!
+        assertEquals("No articles yet", following.title)
+        assertEquals("Long-form posts from people you follow show up here. Nothing to read yet.", following.subtitle)
+        assertNull(following.action)
+        assertEquals(
+            "Long-form posts from across Nostr show up here. Nothing to read yet.",
+            scopedEmptyText(FeedMode.ARTICLES, false)!!.subtitle,
+        )
+        assertEquals("No global media found on connected relays.", scopedEmptyText(FeedMode.MEDIA, false)!!.subtitle)
+        assertNull(scopedEmptyText(FeedMode.MEDIA, true)!!.action)
+        // Articles come from your own relay too, so a failed load is not theirs to report.
+        assertFalse(scopedEmptyText(FeedMode.ARTICLES, false, loadFailed = true)!!.noConnection)
+    }
+
+    @Test
     fun otherFeedsKeepTheirOwnPlaceholder() {
         assertNull(scopedEmptyText(FeedMode.FOLLOWING, true))
-        assertNull(scopedEmptyText(FeedMode.ARTICLES, true))
+        assertNull(scopedEmptyText(FeedMode.POPULAR, false))
     }
 }

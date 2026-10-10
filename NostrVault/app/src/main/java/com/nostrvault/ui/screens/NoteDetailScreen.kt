@@ -914,6 +914,7 @@ fun NoteDetailScreen(
                                         viewModel = viewModel,
                                         profiles = profiles,
                                         onProfileClick = onProfileClick,
+                                        onTrustWeb = openTrustWeb,
                                         onTap = { scrollToNote(parent.id) },
                                     )
                                 }
@@ -1056,6 +1057,7 @@ fun NoteDetailScreen(
                                         viewModel = viewModel,
                                         profiles = profiles,
                                         onProfileClick = onProfileClick,
+                                        onTrustWeb = openTrustWeb,
                                         onTap = { scrollToNote(entry.note.id) },
                                     )
                                 }
@@ -1321,6 +1323,8 @@ private fun ThreadCondensedLine(
     viewModel: NoteDetailViewModel,
     profiles: Map<String, FeedProfile>,
     onProfileClick: (String) -> Unit,
+    /** The avatar's quick menu item for the Web of Trust map. */
+    onTrustWeb: (String) -> Unit,
     onTap: () -> Unit,
 ) {
     val original = note.repostedEventId?.takeIf { note.isBareRepost }
@@ -1340,6 +1344,9 @@ private fun ThreadCondensedLine(
             reposts = stats?.reposts ?: 0,
         ),
         onProfileClick = onProfileClick,
+        // The quick menu, as on this screen's full notes (iOS CondensedNoteLine).
+        avatarMenu = viewModel.avatarMenu,
+        onTrustWeb = onTrustWeb,
         onTap = onTap,
     )
 }

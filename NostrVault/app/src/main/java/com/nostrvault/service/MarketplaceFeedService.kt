@@ -71,6 +71,10 @@ class MarketplaceFeedService @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    /** No relay connected during the last load, so an empty grid is not "nothing for sale". */
+    private val _loadFailed = MutableStateFlow(false)
+    val loadFailed: StateFlow<Boolean> = _loadFailed.asStateFlow()
+
     /** Selected category chip, or null for "All". */
     private val _selectedCategory = MutableStateFlow<MarketCategory?>(null)
     val selectedCategory: StateFlow<MarketCategory?> = _selectedCategory.asStateFlow()
@@ -115,6 +119,7 @@ class MarketplaceFeedService @Inject constructor(
         disconnect()
         _isLoading.value = true
         _followSetIsEmpty.value = false
+        _loadFailed.value = false
 
         // An `authors: []` REQ matches nothing and would look like a dead
         // feed, so say what is actually true instead.
@@ -141,6 +146,8 @@ class MarketplaceFeedService @Inject constructor(
         // LiveFeedService, for the same ConcurrentModificationException.
         val book = MarketListingBook()
         val bookLock = Mutex()
+        // Any relay that connected answered the question, even with nothing.
+        val reached = java.util.concurrent.atomic.AtomicBoolean(false)
 
         job = scope.launch {
             for (url in RELAYS) {
@@ -160,6 +167,7 @@ class MarketplaceFeedService @Inject constructor(
                 launch {
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                            reached.set(true)
                             client.send("""["REQ","$subId",{"kinds":[$kinds]$authorsJson,"limit":$LIMIT}]""")
                         }
                     }
@@ -169,6 +177,7 @@ class MarketplaceFeedService @Inject constructor(
 
             delay(COLLECT_WINDOW_MS)
             _isLoading.value = false
+            _loadFailed.value = !reached.get() && _listings.value.isEmpty()
             disconnect()
         }
     }
