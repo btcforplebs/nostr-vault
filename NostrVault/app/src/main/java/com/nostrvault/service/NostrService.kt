@@ -114,7 +114,7 @@ class NostrService @Inject constructor(
         // nostr.mom unreachable, primal ~11%) had 115 profiles; adding these
         // reached 193. Re-measure with `.scratch/profprobe/probe.py` in the
         // Buzz nest before changing it.
-        private val PROFILE_RELAYS = listOf(
+        val PROFILE_RELAYS = listOf(
             "wss://offchain.pub",
             "wss://relay.damus.io",
             "wss://user.kindpag.es",

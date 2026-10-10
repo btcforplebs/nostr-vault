@@ -108,12 +108,21 @@ class TrustPathService @Inject constructor(
         if (pubkey == me) return myFollows()
         followLists[pubkey]?.let { return it }
         val filter = FollowListFilter(authors = listOf(pubkey), tagged = null, limit = 1)
-        for (url in publicRelays().take(MAX_RELAYS)) {
-            val follows = TrustMap.follows(pubkey, query(listOf(filter), url, 5_000L)) ?: continue
-            followLists[pubkey] = follows
-            return follows
-        }
-        return null
+        val follows = TrustMap.follows(pubkey, query(listOf(filter), listRelays(pubkey), 5_000L)) ?: return null
+        followLists[pubkey] = follows
+        return follows
+    }
+
+    /**
+     * Where one person's follow list is asked for, all at once: the first
+     * feed relays, the index relays, and the relays they publish to. The
+     * feed relays alone missed lists the profile page found: by default
+     * they are primal, nos.lol and nostr.mom, and the last two were down
+     * (2026-10-10), while purplepag.es and the person's own relays had it.
+     */
+    private fun listRelays(pubkey: String): List<String> {
+        val outbox = nostrService.outboxRelays.value[pubkey].orEmpty().take(3)
+        return (publicRelays().take(MAX_RELAYS) + NostrService.PROFILE_RELAYS + outbox).distinctBy(::relayKey)
     }
 
     /**
@@ -163,10 +172,17 @@ class TrustPathService @Inject constructor(
         url: String,
         timeoutMs: Long,
         answered: AtomicBoolean? = null,
+    ): List<ContactList> = query(filters, listOf(url), timeoutMs, answered)
+
+    private suspend fun query(
+        filters: List<FollowListFilter>,
+        urls: List<String>,
+        timeoutMs: Long,
+        answered: AtomicBoolean? = null,
     ): List<ContactList> {
         val events = nostrService.queryRawEvents(
             filters.map { it.toJson() },
-            listOf(url),
+            urls,
             timeoutMs,
             onAnswered = answered?.let { flag -> { flag.set(true) } },
         )
