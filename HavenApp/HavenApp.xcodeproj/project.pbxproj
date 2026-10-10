@@ -47,6 +47,7 @@
 		14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
 		14FE82E63F5A97838F91AAE6 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A73E431CE524CF64925E0D /* CredentialStore.swift */; };
 		15393DD23237B42966817286 /* DMThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0D442B3835900C7663D934 /* DMThreadView.swift */; };
+		153EC819D98E2D7B186CF648 /* AdaptiveGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */; };
 		1597A09CA45445BBDE879AFC /* StarterPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */; };
 		15D25B08DF9BA8B3C49F13CC /* DashboardRelayRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 090FAA33204672CD9F7F6431 /* DashboardRelayRow.swift */; };
 		15E18906049F1D9CBE68ACEF /* ArticleEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */; };
@@ -319,6 +320,7 @@
 		88FB85A8406DE6D5CB0F0113 /* BlossomDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41AFE9F84C0F2592990C1224 /* BlossomDashboardModels.swift */; };
 		89218707D6852D10879EE010 /* PollStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FB94CB9CC1F47E43D8AB15 /* PollStore.swift */; };
 		8986B473114DB9BD028A9EAD /* Bolt11.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC971B12438093F727E8967F /* Bolt11.swift */; };
+		89E68678D241ADE8DCCE1C00 /* AdaptiveGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */; };
 		8A8A672CB3CA7E14FE8B7D6B /* NVWidgetKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */; };
 		8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB15AE080BDC0999543399A /* WebSocketClient.swift */; };
 		8B334441FF49DC33B053C484 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */; };
@@ -789,6 +791,7 @@
 		7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
 		7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSound.swift; sourceTree = "<group>"; };
+		7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGridLayout.swift; sourceTree = "<group>"; };
 		803F7E83A0267F02449FA666 /* BlossomService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomService.swift; sourceTree = "<group>"; };
 		81AB8C04FD43E0DE0F8BA520 /* SourceIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceIndicatorView.swift; sourceTree = "<group>"; };
 		8274D5B92BF5C6640FBDBD5F /* DivineComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DivineComposeView.swift; sourceTree = "<group>"; };
@@ -1275,6 +1278,7 @@
 		D2F039631F5DCD9EAE61B656 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */,
 				17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */,
 				0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */,
 				EC971B12438093F727E8967F /* Bolt11.swift */,
@@ -1714,6 +1718,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D36E4D6CF073E04B95CB5934 /* ActionButton.swift in Sources */,
+				89E68678D241ADE8DCCE1C00 /* AdaptiveGridLayout.swift in Sources */,
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
 				2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */,
 				15E18906049F1D9CBE68ACEF /* ArticleEngagement.swift in Sources */,
@@ -2020,6 +2025,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3A895A7B25C2229F1B389A2D /* ActionButton.swift in Sources */,
+				153EC819D98E2D7B186CF648 /* AdaptiveGridLayout.swift in Sources */,
 				0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */,
 				639693F76606BDA634926A35 /* AppDelegate.swift in Sources */,
 				0B52F47C4995554C676125BB /* ArticleEngagement.swift in Sources */,

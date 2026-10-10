@@ -3249,6 +3249,10 @@ struct FeedView: View {
         }
     }
 
+    /// Width of the media grid itself, which sets how many tiles fit across.
+    /// Zero until measured; the grid reads that as the phone count.
+    @State private var mediaGridWidth: CGFloat = 0
+
     private var mediaGridView: some View {
         Group {
             let filteredNotes = feedService.filteredMediaNotes
@@ -3276,11 +3280,10 @@ struct FeedView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 400)
             } else {
-                let columns = [
-                    GridItem(.flexible(), spacing: 2),
-                    GridItem(.flexible(), spacing: 2),
-                    GridItem(.flexible(), spacing: 2)
-                ]
+                // Three across on a phone; the iPad's wider pane gets more
+                // tiles instead of three blown-up ones.
+                let columns = AdaptiveLayout.columns(width: mediaGridWidth, ideal: 180,
+                                                     spacing: 2, minimum: 3, maximum: 7)
 
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(filteredNotes) { note in
@@ -3298,6 +3301,7 @@ struct FeedView: View {
                         }
                     }
                 }
+                .measureWidth { mediaGridWidth = $0 }
                 .padding(.horizontal, 2)
                 
                 // Show "Show earlier" button for pagination
@@ -4155,6 +4159,7 @@ struct FeedNoteRow: View {
             }
             #if os(iOS)
             .presentationDetents([.height(380), .medium])
+            .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif

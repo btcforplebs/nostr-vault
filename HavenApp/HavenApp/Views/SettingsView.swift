@@ -18,6 +18,16 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .accounts
     @State private var saveTask: Task<Void, Never>?
     @State private var showingSetupWizard = false
+    #if os(iOS)
+    /// Width of the Settings pane. iPad Split View and the iPad sidebar layout
+    /// both hand this screen less than a whole window, and under about 700pt
+    /// two columns leave neither one usable, so it falls back to the phone's
+    /// single list.
+    @State private var paneWidth: CGFloat = 0
+
+    /// iPad, with room for a list and a page side by side.
+    private var usesTwoPane: Bool { AdaptiveLayout.usesWidth && paneWidth >= 700 }
+    #endif
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
@@ -131,11 +141,18 @@ struct SettingsView: View {
     var body: some View {
         Group {
             #if os(iOS)
-            iOSBody
+            if usesTwoPane {
+                padBody
+            } else {
+                iOSBody
+            }
             #else
             macOSBody
             #endif
         }
+        #if os(iOS)
+        .measureWidth { paneWidth = $0 }
+        #endif
         .onChange(of: configService.config) { _, _ in
             saveTask?.cancel()
             saveTask = Task {
@@ -373,6 +390,33 @@ struct SettingsView: View {
     }
     
     #if os(iOS)
+    /// iPad: the Mac's two-pane shape, with the iPhone's own list as the left
+    /// column. Reusing the list rather than the Mac sidebar keeps every row,
+    /// every word and the inline switches the Mac has no page for (Start Relay
+    /// Automatically, the relay status card, Setup Incomplete) exactly as the
+    /// phone has them. A tap selects the page beside the list instead of
+    /// pushing it over the top of it.
+    private var padBody: some View {
+        HStack(spacing: 0) {
+            iOSBody
+                .frame(width: 340)
+
+            Divider()
+                .background(Color.platformSeparator)
+
+            // No stack of its own: both hosts (the sidebar's Settings row and
+            // the Profile gear sheet) already wrap SettingsView in a
+            // NavigationStack, and SwiftUI does not support a stack nested in
+            // a stack -- pushes from here (Relays -> a relay, Logs -> a file)
+            // would land in the outer stack or do nothing. The page pushes
+            // through that outer stack instead.
+            destinationFor(selectedTab)
+                .id(selectedTab)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.platformWindowBackground)
+    }
+
     private var iOSBody: some View {
         List {
             if !configService.config.hasCompletedSetup {
@@ -504,14 +548,36 @@ struct SettingsView: View {
     }
     #endif
 
+    @ViewBuilder
     private func tabLink(_ tab: SettingsTab) -> some View {
-        NavigationLink(destination: destinationFor(tab)) {
-            Label {
-                Text(tab.title)
-                    .font(.appBody)
-            } icon: {
-                settingsIcon(tab.icon, color: iconBackgroundColor(for: tab))
+        #if os(iOS)
+        if usesTwoPane {
+            Button {
+                selectedTab = tab
+            } label: {
+                HStack(spacing: 0) {
+                    tabLabel(tab)
+                    Spacer(minLength: 8)
+                }
+                // A label alone does not hit-test its empty trailing half.
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .listRowBackground(selectedTab == tab ? Color.havenPurple.opacity(0.18) : nil)
+        } else {
+            NavigationLink(destination: destinationFor(tab)) { tabLabel(tab) }
+        }
+        #else
+        NavigationLink(destination: destinationFor(tab)) { tabLabel(tab) }
+        #endif
+    }
+
+    private func tabLabel(_ tab: SettingsTab) -> some View {
+        Label {
+            Text(tab.title)
+                .font(.appBody)
+        } icon: {
+            settingsIcon(tab.icon, color: iconBackgroundColor(for: tab))
         }
     }
 

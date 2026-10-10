@@ -318,6 +318,7 @@ struct LiveStreamPlayerView: View {
             }
             #if os(iOS)
             .presentationDetents([.height(380), .medium])
+            .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif

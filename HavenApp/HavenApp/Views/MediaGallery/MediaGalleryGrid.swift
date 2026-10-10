@@ -102,7 +102,10 @@ extension MediaGalleryView {
                 #if os(macOS)
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
                 #else
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+                // Three across on a phone; the iPad's wider pane gets more
+                // tiles instead of three stretched ones.
+                let columns = AdaptiveLayout.columns(width: gridWidth, ideal: 180,
+                                                     spacing: 6, minimum: 3, maximum: 6)
                 #endif
 
                 LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
@@ -128,6 +131,9 @@ extension MediaGalleryView {
                         }
                     }
                 }
+                #if os(iOS)
+                .measureWidth { gridWidth = $0 }
+                #endif
                 .padding(.horizontal, 8)
             } else {
                 LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {

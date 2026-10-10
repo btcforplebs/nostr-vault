@@ -430,6 +430,96 @@ extension View {
     }
 }
 
+// MARK: - Width-driven layout
+
+/// How a screen lays itself out from the room it actually has, rather than from
+/// which device it is on. A phone-width column inside the iPad split is
+/// phone-width, and a sheet is narrower than the window it opens over, so the
+/// pane's own width is the only thing worth asking.
+enum AdaptiveLayout {
+    /// A line of text stops being readable much past this measure. A wide pane
+    /// centres its content inside it instead of running a note across 13in.
+    static let readableWidth: CGFloat = 700
+
+    /// Width a wide pane gives a docked side panel: the trust card beside the
+    /// Web of Trust globe.
+    static let sidePanelWidth: CGFloat = 360
+
+    /// `AdaptiveGridLayout.columnCount` as a `LazyVGrid`'s columns, for the
+    /// width this platform lays out from. `width` is the grid's own width with
+    /// its insets already taken off.
+    static func columns(width: CGFloat, ideal: CGFloat, spacing: CGFloat,
+                        minimum: Int, maximum: Int) -> [GridItem] {
+        let count = AdaptiveGridLayout.columnCount(forWidth: Double(layoutWidth(width)),
+                                                   ideal: Double(ideal), spacing: Double(spacing),
+                                                   minimum: minimum, maximum: maximum)
+        return Array(repeating: GridItem(.flexible(), spacing: spacing), count: count)
+    }
+
+    /// Only the iPad lays itself out from its width here. A large iPhone in
+    /// landscape is wide too, and b21's parity work is not allowed to move the
+    /// phone; the Mac already has its own counts and its own two-pane layouts.
+    static var usesWidth: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    /// The width a screen should lay out from: its own on iPad, and 0 — "no
+    /// measurement, keep the phone's layout" — everywhere else.
+    static func layoutWidth(_ width: CGFloat) -> CGFloat {
+        usesWidth ? width : 0
+    }
+}
+
+private struct ReadableWidthCap: ViewModifier {
+    let maxWidth: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if AdaptiveLayout.usesWidth {
+            content
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Holds content to a readable measure and centres it in whatever room is
+    /// left over. A no-op wherever there is no room to spare, which is every
+    /// phone width.
+    func readableWidthCap(_ maxWidth: CGFloat = AdaptiveLayout.readableWidth) -> some View {
+        modifier(ReadableWidthCap(maxWidth: maxWidth))
+    }
+
+    /// A small sheet stays small on iPad. `presentationDetents` is a phone-only
+    /// API: the iPad ignores it and opens the standard form sheet, so a 380pt
+    /// zap keypad arrived as a half-empty page. Sizing to the content is the
+    /// same intent the detents express on the phone.
+    @ViewBuilder
+    func smallSheetSizing() -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *), AdaptiveLayout.usesWidth {
+            self.presentationSizing(.fitted)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// The view's own width, reported whenever it changes.
+    func measureWidth(_ action: @escaping (CGFloat) -> Void) -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.size.width } action: { action($0) }
+    }
+}
+
 // MARK: - ⌘R
 
 /// Answers ⌘R (`havenRefreshTab`) for one tab, while `isActive` says this view

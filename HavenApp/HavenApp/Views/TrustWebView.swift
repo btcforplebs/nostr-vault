@@ -135,6 +135,15 @@ struct TrustWebView: View {
     /// view doesn't redraw on every feed change).
     @State private var contactsLoading = true
 
+    /// Width of the globe's own pane. The trust card becomes a side panel once
+    /// there is room for one beside the globe instead of across its bottom.
+    @State private var paneWidth: CGFloat = 0
+
+    /// Wide enough for a 360pt panel and a globe that is still the subject.
+    private var cardIsSidePanel: Bool {
+        isWOTTab && AdaptiveLayout.usesWidth && paneWidth >= 900
+    }
+
     private var me: String { ConfigService.shared.activeAccountHexPubkey }
     private var centerKey: String { crumbs.last ?? me }
     private var frame: Frame? { frames[centerKey] }
@@ -146,7 +155,11 @@ struct TrustWebView: View {
                 // and the floating tab bar, and the bar's glass sits over it.
                 // On every width: the trust card does the explaining.
                 globeArea.overlay { globeTutorialAnchor }.overlay(alignment: .top) {
-                    wotTopRows(height: geo.size.height).frame(maxWidth: 560)
+                    wotTopRows(height: geo.size.height)
+                        .frame(maxWidth: 560)
+                        // The side-panel card owns the trailing edge; the rows
+                        // centre in what is left rather than running under it.
+                        .padding(.trailing, cardIsSidePanel ? AdaptiveLayout.sidePanelWidth : 0)
                 }
             } else {
                 // A post's globe: the WOT tab's card does the explaining, so it
@@ -157,6 +170,7 @@ struct TrustWebView: View {
                 }
             }
         }
+        .measureWidth { paneWidth = $0 }
         .background(GlobeSpace())
         // Space is dark whatever the app's appearance; sheets opened from here
         // keep the app's own.
@@ -312,7 +326,18 @@ struct TrustWebView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
-            if let card { trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if let card {
+                if cardIsSidePanel {
+                    // iPad, wide: the card docks down the trailing side, where
+                    // it does not sit on the globe it is explaining.
+                    trustCard(card)
+                        .frame(width: AdaptiveLayout.sidePanelWidth)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    trustCard(card).transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             if !isWOTTab, !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 GeometryReader { geo in
                     // With the keyboard up the floating tab bar rides on it,

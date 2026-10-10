@@ -33,6 +33,9 @@ struct MediaGalleryView: View {
     @State var mediaSourceFilter: MediaSourceFilter = .all
     @State var mediaLocationFilter: MediaLocationFilter = .all
     @State var contentFilter: ContentFilter = .all
+    /// Width of the media grid itself, which sets how many tiles fit across.
+    /// Zero until it is measured; the grid reads that as the phone count.
+    @State var gridWidth: CGFloat = 0
 
     // Type filter, layout and sort survive leaving the tab and relaunching.
     // Stored as raw strings because AppStorage cannot hold a Set or a bare enum.
