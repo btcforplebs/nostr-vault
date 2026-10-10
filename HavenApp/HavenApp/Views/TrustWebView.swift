@@ -121,6 +121,9 @@ struct TrustWebView: View {
     /// The bar's fill, 0 to 3 (one per step), and what it is doing now.
     @State private var refreshValue = 0.0
     @State private var refreshCaption = ""
+    /// The last rebuild didn't save a new web (relay off, offline, stopped):
+    /// the bar ends on why instead of "Up to date".
+    @State private var refreshFailed = false
     /// Long enough on screen that an empty web means no graph, not a slow one.
     @State private var webWaitedOut = false
     /// Your follow list is still on its way (FeedService, mirrored so this
@@ -493,19 +496,33 @@ struct TrustWebView: View {
                 withAnimation(Motion.fade) { newPeople = 0 }
             } label: {
                 HStack(spacing: 8) {
-                    if newPeople > 0 {
+                    if refreshStep != nil, refreshValue >= 3 {
+                        // How the Rebuild button's run ended, over any count.
+                        Image(systemName: refreshFailed ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                            .font(.appSystem(size: 13, weight: .bold))
+                        Text(refreshCaption)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    } else if newPeople > 0 {
                         Image(systemName: "arrow.up").font(.appSystem(size: 12, weight: .bold))
                         Text("\(newPeople.formatted()) new people")
                             .monospacedDigit()
                             .contentTransition(.numericText(value: Double(newPeople)))
+                    } else if refreshStep != nil {
+                        // The Rebuild button's steps.
+                        ProgressView().controlSize(.mini).tint(.white)
+                        Text(refreshCaption)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
                     } else {
                         ProgressView().controlSize(.mini).tint(.white)
-                        Text(refreshStep == nil ? "Mapping your web" : "Rebuilding your web")
+                        Text("Mapping your web")
                     }
                 }
                 .font(.appSystem(size: 13, weight: .bold))
                 .padding(.vertical, 10)
                 .padding(.horizontal, 20)
+                .frame(maxWidth: 340)
                 .background(
                     Capsule()
                         .fill(Color.havenPurple)
@@ -515,7 +532,8 @@ struct TrustWebView: View {
             }
             .buttonStyle(.plain)
             .disabled(newPeople == 0)
-            .accessibilityLabel(newPeople > 0 ? "\(newPeople) new people in your web" : "Your web is updating")
+            .accessibilityLabel(refreshStep != nil && (refreshValue >= 3 || newPeople == 0) ? refreshCaption
+                                : newPeople > 0 ? "\(newPeople) new people in your web" : "Your web is updating")
             .animation(Motion.fade, value: newPeople)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
@@ -614,13 +632,15 @@ struct TrustWebView: View {
             refreshStep = 0
             refreshValue = 0.05
             refreshCaption = "Updating your follows…"
+            refreshFailed = false
         }
         Task {
             await FeedService.shared.refreshContactList()
             refreshStep = 1
             refreshValue = 1
             refreshCaption = "Rebuilding your web…"
-            await rebuildWeb()
+            let saved = await rebuildWeb()
+            let outcome = refreshCaption
             FeedService.shared.loadWotPubkeys()
             recomputeHaze()
             refreshStep = 2
@@ -629,20 +649,22 @@ struct TrustWebView: View {
             await loadEngagement(force: true)
             try? await Task.sleep(for: .milliseconds(900))
             refreshValue = 3
-            refreshCaption = "Up to date"
-            try? await Task.sleep(for: .milliseconds(700))
+            refreshFailed = !saved
+            refreshCaption = saved ? "Up to date" : outcome
+            try? await Task.sleep(for: .milliseconds(saved ? 700 : 3500))
             withAnimation { refreshStep = nil }
         }
     }
 
     /// Asks the relay to rebuild the graph now and follows its progress until
     /// it is saved. A relay that isn't running leaves the graph as it is.
-    private func rebuildWeb() async {
+    /// - Returns: whether the relay saved a new web.
+    private func rebuildWeb() async -> Bool {
         let started = await Task.detached { RefreshWotC() == 1 }.value
         guard started else {
             refreshCaption = "Relay isn't running. Showing your last saved web."
             try? await Task.sleep(for: .seconds(1.5))
-            return
+            return false
         }
         // The relay gives up on a slow fetch itself; this only stops a
         // hung poll from holding the bar forever.
@@ -659,8 +681,10 @@ struct TrustWebView: View {
             refreshCaption = progress.running
                 ? "\(progress.caption) · \(Int(Date().timeIntervalSince(start)))s"
                 : progress.caption
-            if !progress.running { return }
+            if !progress.running { return progress.phase == "saved" }
         }
+        refreshCaption = "The rebuild is taking too long. Showing your last saved web."
+        return false
     }
 
     // MARK: - Search

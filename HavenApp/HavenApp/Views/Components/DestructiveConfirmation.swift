@@ -180,7 +180,13 @@ private struct MediaDeleteConfirmation: ViewModifier {
             if pending == .everywhere, posts > 0, let hash {
                 Button(posts == 1 ? "Delete file and post" : "Delete file and \(posts) posts", role: .destructive) {
                     Task {
-                        await NostrService.shared.deleteOwnEvents(referencingBlob: hash)
+                        // Posts first: if they can't be deleted (signing
+                        // failed), keep the file too rather than leave them
+                        // showing a broken image.
+                        guard await NostrService.shared.deleteOwnEvents(referencingBlob: hash) > 0 else {
+                            ErrorNotificationManager.shared.show("Couldn't delete the post, so the file was kept. Try again.")
+                            return
+                        }
                         action(pending)
                     }
                 }
@@ -191,8 +197,8 @@ private struct MediaDeleteConfirmation: ViewModifier {
         } message: { pending in
             if pending == .everywhere, posts > 0 {
                 Text(pending.message + (posts == 1
-                    ? " One of your posts uses it and will show a broken image unless you delete that post too."
-                    : " \(posts) of your posts use it and will show a broken image unless you delete them too."))
+                    ? " One of your posts uses it and will show a broken image unless you delete that post too. Deleting the post removes all of it: its text and any other photos in it."
+                    : " \(posts) of your posts use it and will show a broken image unless you delete them too. Deleting a post removes all of it: its text and any other photos in it."))
             } else {
                 Text(pending.message)
             }

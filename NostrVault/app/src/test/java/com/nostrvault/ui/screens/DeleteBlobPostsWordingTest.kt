@@ -12,13 +12,15 @@ class DeleteBlobPostsWordingTest {
     }
 
     @Test
-    fun `message says the post will show a broken image`() {
+    fun `message says the post will show a broken image and goes whole`() {
         assertEquals(
-            " One of your posts uses it and will show a broken image unless you delete that post too.",
+            " One of your posts uses it and will show a broken image unless you delete that post too." +
+                " Deleting the post removes all of it: its text and any other photos in it.",
             deleteBlobPostsNote(1),
         )
         assertEquals(
-            " 2 of your posts use it and will show a broken image unless you delete them too.",
+            " 2 of your posts use it and will show a broken image unless you delete them too." +
+                " Deleting a post removes all of it: its text and any other photos in it.",
             deleteBlobPostsNote(2),
         )
     }

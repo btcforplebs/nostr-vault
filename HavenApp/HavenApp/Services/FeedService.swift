@@ -335,6 +335,11 @@ class FeedService: ObservableObject {
     /// if it named nobody. Separates "the relay has not built a graph yet"
     /// from "the graph is built and empty because you follow nobody".
     @Published private(set) var wotCacheRead = false
+    /// The wot_cache.json last read (path and modification date), so callers
+    /// that find the graph empty only re-read it once the relay has written a
+    /// new one. Re-reading on every call re-filtered the whole feed each time
+    /// and froze the app on an account with an empty graph.
+    private var wotCacheStamp: (path: String, modified: Date?)?
 
     /// Popularity scores returned by the local DVM, keyed by note ID.
     /// Used to sort the Popular feed by engagement rank.
@@ -528,6 +533,7 @@ class FeedService: ObservableObject {
     /// filtered by minimum follower count) and persists it to disk.
     func loadWotPubkeys() {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        wotCacheStamp = (cacheURL.path, Self.modificationDate(of: cacheURL))
         // nil = could not read the cache; keep whatever graph we already have.
         // Empty = read fine, but the graph names nobody but the owner (a new
         // account with no follows). That is no trust data, and the Global feed
@@ -557,12 +563,26 @@ class FeedService: ObservableObject {
         }
     }
 
+    /// `loadWotPubkeys()`, unless the cache file is the one already read.
+    private func loadWotPubkeysIfChanged() {
+        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        if let stamp = wotCacheStamp, stamp.path == cacheURL.path,
+           stamp.modified == Self.modificationDate(of: cacheURL) {
+            return
+        }
+        loadWotPubkeys()
+    }
+
+    private static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
     /// Who counts as inside your network in the Relay tab: the relay's trust
     /// graph plus your current follows. The graph is rebuilt about once a day,
     /// so without the follows someone you just followed stayed "outside".
     /// Empty while the graph isn't loaded, which counts nobody as outside.
     func relayTabTrustedPubkeys() -> Set<String> {
-        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
         guard !wotPubkeys.isEmpty else { return [] }
         return wotPubkeys.union(followedPubkeys)
     }
@@ -573,7 +593,7 @@ class FeedService: ObservableObject {
     /// Fails closed like the Global feed: with no graph yet, nobody passes.
     func globalTrustSet() -> Set<String>? {
         guard !ConfigService.shared.config.globalShowsEveryone else { return nil }
-        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
         return wotPubkeys
     }
 
@@ -655,7 +675,7 @@ class FeedService: ObservableObject {
                     self.curatedGraphPollTimer = nil
                     return
                 }
-                self.loadWotPubkeys()
+                self.loadWotPubkeysIfChanged()
                 if self.curatedGraphReady {
                     timer.invalidate()
                     self.curatedGraphPollTimer = nil
