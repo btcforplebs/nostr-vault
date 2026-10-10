@@ -96,14 +96,24 @@ final class TrustPathService {
         if pubkey == ConfigService.shared.activeAccountHexPubkey { return FeedService.shared.followedPubkeys }
         if let cached = followLists[pubkey] { return cached }
         let filter: [String: Any] = ["kinds": [3], "authors": [pubkey], "limit": 1]
-        for url in Self.publicRelays().prefix(Self.maxRelays) {
-            let found = await ZapHistoryService.query(filters: [filter], relays: [url], timeout: 5)
-            if let follows = TrustMap.follows(of: pubkey, in: found) {
-                followLists[pubkey] = follows
-                return follows
-            }
+        let found = await ZapHistoryService.query(filters: [filter], relays: Self.listRelays(for: pubkey), timeout: 5)
+        guard let follows = TrustMap.follows(of: pubkey, in: found) else { return nil }
+        followLists[pubkey] = follows
+        return follows
+    }
+
+    /// Where one person's follow list is asked for, all at once: the first
+    /// feed relays, the index relays, and the relays they publish to. The
+    /// feed relays alone missed lists the profile page found: by default
+    /// they are primal, nos.lol and nostr.mom, and the last two were down
+    /// (2026-10-10), while purplepag.es and the person's own relays had it.
+    private static func listRelays(for pubkey: String) -> [URL] {
+        let outbox = NostrService.shared.outboxRelays[pubkey] ?? []
+        var urls = Array(publicRelays().prefix(maxRelays))
+        for relay in NostrService.profileIndexRelays + outbox.prefix(3) {
+            if let url = URL(string: relay), !urls.contains(url) { urls.append(url) }
         }
-        return nil
+        return urls
     }
 
     /// One "show everyone" batch: more lists from `follows` that tag the
