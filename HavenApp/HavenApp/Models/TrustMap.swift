@@ -425,9 +425,9 @@ struct GlobeCamera {
     /// How far the camera sits from the middle at zoom 1.
     static let distance = 4.2
     /// On a phone held upright, the inner globe is this wide against the
-    /// screen: a little past both edges, with the haze running off them, so
+    /// screen: just inside both edges, with the haze running off them, so
     /// it reads as being inside the web rather than looking at a model of it.
-    static let phoneFill = 1.04
+    static let phoneFill = 0.96
 
     /// Screen points per unit of world, at zoom 1. Upright on a phone the
     /// whole scene scales so the inner globe's outline spans `phoneFill` of

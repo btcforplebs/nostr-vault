@@ -379,7 +379,7 @@ final class TrustMapTests: XCTestCase {
         for size in [CGSize(width: 393, height: 852), CGSize(width: 440, height: 956)] {
             let unit = GlobeCamera.unit(for: size, phone: true)
             let span = outline(TrustMap.ringRadius, unit: unit) / Double(size.width)
-            XCTAssert((1.0...1.05).contains(span), "\(size.width) pt: inner globe spans \(span) of the width")
+            XCTAssert((0.94...0.98).contains(span), "\(size.width) pt: inner globe spans \(span) of the width")
         }
     }
 
