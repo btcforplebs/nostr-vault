@@ -105,7 +105,7 @@ class BlossomDeleteReportTest {
             id = "e".repeat(64), pubkey = "p".repeat(64), createdAt = 1_700_000_000L,
             kind = 24242, tags = listOf(listOf("t", "delete")), content = "Blossom delete", sig = "s".repeat(128),
         )
-        return BlossomService(configStore, signer, mockk(relaxed = true))
+        return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true))
     }
 
     private fun dataDir(withBlob: Boolean): File {
