@@ -107,6 +107,16 @@ func (wt *SimpleInMemory) Size() int {
 // NamesOnlyOwners reports whether a built graph holds nobody but the
 // whitelisted owners: the owner follows no one yet. Depths 0 and 1 never hold
 // anyone else, so they never count as waiting for follows.
+// hasPeople reports whether graph names anyone besides the owners.
+func hasPeople(graph map[string]bool, owners map[string]struct{}) bool {
+	for pk := range graph {
+		if _, owner := owners[pk]; !owner {
+			return true
+		}
+	}
+	return false
+}
+
 func (wt *SimpleInMemory) NamesOnlyOwners() bool {
 	if wt.WotDepth < 2 {
 		return false
@@ -205,8 +215,16 @@ func (wt *SimpleInMemory) SaveCache() {
 		return
 	}
 
-	if err := os.WriteFile(wt.CachePath, data, 0644); err != nil {
+	// Write a temp file and rename it over the cache, so a crash or a reader
+	// mid-write never sees half a file.
+	tmp := wt.CachePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
 		slog.Error("🚫 Failed to write WoT cache", "error", err)
+		return
+	}
+	if err := os.Rename(tmp, wt.CachePath); err != nil {
+		slog.Error("🚫 Failed to write WoT cache", "error", err)
+		_ = os.Remove(tmp)
 		return
 	}
 
@@ -313,6 +331,14 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	}
 	follows := slices.Sorted(maps.Keys(oneHopNetwork))
 
+	// No follow list came back (offline, or every seed relay timed out), or
+	// the relay is stopping: saving now would replace a real web with one
+	// of just the owner. Keep the web we have; a first build still saves.
+	if ctx.Err() != nil || (eventsAnalysed.Load() == 0 && hasPeople(previous, wt.WhitelistedPubKeys)) {
+		slog.Warn("🚫 WoT rebuild got no follow lists; keeping the saved web")
+		return
+	}
+
 	if wt.WotDepth == 2 {
 		wt.layers.Store(&layers{follows: follows})
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
@@ -328,6 +354,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	// Split analysis into batches of listBatchSize pubkeys and process them sequentially
 	// Process sequentially with yielding to avoid blocking the host app's UI/Events
 	keys := follows
+	ownerLists := eventsAnalysed.Load()
 	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
 	bar := max(int64(wt.MinFollowers), 1)
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
@@ -375,6 +402,14 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 			// Yield to the OS scheduler and other goroutines to keep the host app responsive
 			time.Sleep(100 * time.Millisecond)
 		}
+	}
+
+	// Same rule for the follows' lists: a pass that was cut short, or that
+	// fetched none of them and would leave a smaller web, keeps the web we
+	// have. (Follows with no lists anywhere still grow it, so they save.)
+	if ctx.Err() != nil || (len(keys) > 0 && eventsAnalysed.Load() == ownerLists && len(newWot) < len(previous)) {
+		slog.Warn("🚫 WoT rebuild got none of the follows' lists; keeping the saved web")
+		return
 	}
 
 	slog.Info("📈 community size", "total_keys", pubkeyFollowers.Size())
