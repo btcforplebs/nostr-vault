@@ -59,10 +59,6 @@ struct TrustWebView: View {
     /// The faint outer shell around you: your web of trust past your follows.
     @State private var haze: [String] = []
     @State private var profilePubkey: String?
-    @State private var showingList = false
-    /// The WOT tab's list: the lit layer's people, taken when it opens.
-    @State private var listed: (following: [String], web: [String]) = ([], [])
-    @State private var listQuery = ""
     /// Per person whose own globe is showing: the follows worth a profile
     /// fetch, so their faces can be pictures (`TrustMap.faceCandidates`).
     @State private var faceCandidates: [String: [String]] = [:]
@@ -89,6 +85,22 @@ struct TrustWebView: View {
     @State private var relaySearch: Task<Void, Never>?
     /// The WOT tab's layer picker: which part of your web is lit.
     @State private var layer: TrustMap.Layer = .everyone
+    /// The WOT tab's filter icons that are on, and who they leave lit (nil:
+    /// none on, nothing dims). Reset when you leave the tab.
+    @State private var filters: Set<TrustMap.Filter> = []
+    @State private var filterLit: Set<String>?
+    /// Matching people worth a picture, most interacted with first.
+    @State private var filterCandidates: [String] = []
+    @State private var filterPictureLoader: Task<Void, Never>?
+    /// Your follows who follow you, from the relay's follower ledger.
+    @State private var followsBack: Set<String> = []
+    /// The ledger was read (nil before, or false when the relay had none).
+    @State private var followsBackLoaded: Bool?
+    /// Your web as of your last look, for ✨ New; nil before a first look.
+    @State private var seenWeb: Set<String>?
+    /// The line under the bar after a filter tap: its name and count.
+    @State private var filterNote: (icon: String, text: String)?
+    @State private var filterNoteFade: Task<Void, Never>?
     /// The WOT tab's search field is open under the bar.
     @State private var searchOpen = false
     /// People who joined your web since you last looked, for the
@@ -217,12 +229,21 @@ struct TrustWebView: View {
             closeCard()
             jump(to: 0)
         }
-        .sheet(isPresented: $showingList) { peopleList }
         // The WOT tour points into the globe; a sheet over it hides what the card points at.
         .onChange(of: wotSheetOpen) { _, open in
             if isWOTTab { TutorialCenter.shared.setCovered("wot", open) }
         }
-        .onDisappear { if isWOTTab { TutorialCenter.shared.setCovered("wot", false) } }
+        .onDisappear {
+            guard isWOTTab else { return }
+            TutorialCenter.shared.setCovered("wot", false)
+            saveSeenWeb()
+            filters = []
+            applyFilters()
+        }
+        .onAppear { if isWOTTab { loadSeenWeb() } }
+        .onChange(of: web) { _, _ in if !filters.isEmpty { applyFilters() } }
+        .onChange(of: engagement) { _, _ in if !filters.isEmpty { applyFilters() } }
+        .onChange(of: arrivals) { _, _ in if filters.contains(.new) { applyFilters() } }
         .sheet(item: Binding<IdentifiableString?>(
             get: { messagePubkey.map { IdentifiableString(id: $0) } },
             set: { messagePubkey = $0?.id }
@@ -269,7 +290,8 @@ struct TrustWebView: View {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
                              myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
                              layerFaces: layerFaces,
-                             running: profilePubkey == nil && !showingList,
+                             filterLit: filterLit,
+                             running: profilePubkey == nil,
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
@@ -353,18 +375,13 @@ struct TrustWebView: View {
                                          isSelected: searchOpen, color: .havenPurple) { toggleSearch() }
                             .tutorialAnchor(TutorialContent.wotSearch)
                         Divider().frame(height: 20).padding(.horizontal, 4)
-                        IconFilterButton(icon: "globe", tooltip: "Globe",
-                                         isSelected: !showingList, color: .havenPurple) { showingList = false }
-                        IconFilterButton(icon: "list.bullet", tooltip: "List",
-                                         isSelected: showingList, color: .havenPurple) { showingList = true }
+                        ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) }
                     }
                     .padding(.horizontal, 3)
                     .padding(.vertical, 4)
                 }
             }
             .hidingSharedToolbarBackground()
-        } else {
-            listToolbarItem
         }
         #else
         if isWOTTab {
@@ -373,16 +390,11 @@ struct TrustWebView: View {
                     .disabled(refreshStep != nil)
                     .accessibilityLabel(Text("Update your Web of Trust"))
             }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 2) { ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) } }
+            }
         }
-        listToolbarItem
         #endif
-    }
-
-    private var listToolbarItem: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button { showingList = true } label: { Image(systemName: "list.bullet") }
-                .accessibilityLabel(Text("People on this globe"))
-        }
     }
 
     private var layerCounts: [TrustMap.Layer: Int] {
@@ -465,6 +477,7 @@ struct TrustWebView: View {
             }
             if crumbs.count > 1 { crumbRow }
             livePill
+            if filterNote != nil { filterNoteView }
         }
         .padding(.top, 8)
         .transition(.opacity)
@@ -478,6 +491,8 @@ struct TrustWebView: View {
             Button {
                 if liveRebuild { arrivalsDismissed += newPeople }
                 withAnimation(Motion.fade) { newPeople = 0 }
+                // Who they are, not just how many.
+                if !filters.contains(.new) { toggle(.new) }
             } label: {
                 HStack(spacing: 8) {
                     if refreshStep != nil, refreshValue >= 3 {
@@ -827,14 +842,159 @@ struct TrustWebView: View {
     /// follows. Only pictures that have loaded.
     private var ringFaces: [String] {
         guard let frame, let candidates = faceCandidates[frame.center] else { return [] }
-        return TrustMap.pickFaces(candidates) { pictureRenders($0) }
+        // With a filter on, only people it lights get a face.
+        return TrustMap.pickFaces(candidates) { filterLit?.contains($0) != false && pictureRenders($0) }
     }
 
     /// Pictures on the outer shell for the picked layer (Close or Further
     /// out), most vouched first. Only pictures that have loaded.
     private var layerFaces: [String] {
-        guard isWOTTab, frame?.center == me, let candidates = layerCandidates[layer] else { return [] }
+        guard isWOTTab, frame?.center == me else { return [] }
+        // A filter's people take the outer faces first, as long as the layer lights them.
+        if filterLit != nil {
+            return TrustMap.pickFaces(filterCandidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
+        }
+        guard let candidates = layerCandidates[layer] else { return [] }
         return TrustMap.pickFaces(candidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
+    }
+
+    // MARK: - Filters
+
+    private var filterMatches: [TrustMap.Filter: Set<String>] {
+        let onGlobe = myFollows.union(web)
+        return [
+            .talk: Set(engagement.keys).intersection(onGlobe),
+            .followsBack: followsBack.intersection(myFollows),
+            .new: TrustMap.newcomers(web: web, seen: seenWeb).union(arrivals),
+        ]
+    }
+
+    private func toggle(_ filter: TrustMap.Filter) {
+        if filters.contains(filter) { filters.remove(filter) } else { filters.insert(filter) }
+        if filter == .followsBack, filters.contains(filter), followsBackLoaded != true { loadFollowsBack() }
+        applyFilters(note: filter)
+    }
+
+    /// Re-lights the globe for the filters that are on and fetches pictures
+    /// for who they leave. `note` shows the tapped filter's line.
+    private func applyFilters(note tapped: TrustMap.Filter? = nil) {
+        let matches = filterMatches
+        // Until the follower ledger is read, Follow you back doesn't dim
+        // anyone; nor does New before there's a last look to compare with.
+        var ready = filters
+        if followsBackLoaded != true { ready.remove(.followsBack) }
+        if seenWeb == nil, arrivals.isEmpty { ready.remove(.new) }
+        let lit = TrustMap.lit(by: ready, matches: matches)
+        if lit != filterLit { filterLit = lit }
+        if let tapped { showFilterNote(tapped, lit: lit, matches: matches) }
+        guard let lit else { filterCandidates = []; return }
+        let ranked = lit.subtracting(myFollows).sorted {
+            let (a, b) = (engagement[$0] ?? 0, engagement[$1] ?? 0)
+            if a != b { return a > b }
+            let (va, vb) = (vouches?[$0] ?? 0, vouches?[$1] ?? 0)
+            return va != vb ? va > vb : $0 < $1
+        }
+        let candidates = Array(ranked.prefix(TrustMap.layerFaceCount * 3))
+        guard candidates != filterCandidates else { return }
+        filterCandidates = candidates
+        nostrService.fetchMissingProfiles(for: candidates)
+        filterPictureLoader?.cancel()
+        filterPictureLoader = loadPictures(candidates)
+    }
+
+    /// "214 talk with you" for one filter on; with more, how many match them all.
+    private func showFilterNote(_ tapped: TrustMap.Filter, lit: Set<String>?, matches: [TrustMap.Filter: Set<String>]) {
+        let on = filters.contains(tapped)
+        let text: String
+        if on, tapped == .followsBack, followsBackLoaded == false {
+            text = "Your relay has no follower list yet"
+        } else if on, tapped == .followsBack, followsBackLoaded == nil {
+            text = "Checking who follows you back…"
+        } else if filters.count <= 1, on, tapped == .new, seenWeb == nil, arrivals.isEmpty {
+            // Nothing to compare with yet: the first look sets the baseline.
+            text = "New people show from your next visit"
+        } else if filters.count <= 1, on {
+            text = tapped.count(matches[tapped]?.count ?? 0)
+        } else if let lit {
+            let n = lit.count
+            text = "\(n.formatted()) \(n == 1 ? "matches" : "match") \(filters.count == 2 ? "both" : "all \(filters.count)")"
+        } else {
+            text = "\(tapped.title) off"
+        }
+        withAnimation(Motion.fade) { filterNote = (on ? tapped.symbolName : "circle.slash", text) }
+        filterNoteFade?.cancel()
+        filterNoteFade = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.fade) { filterNote = nil }
+        }
+    }
+
+    private func loadFollowsBack() {
+        let owner = me
+        Task {
+            let followers = await Task.detached(priority: .userInitiated) {
+                FollowerSnapshot.load(owner: owner).map { Set($0.current.map(\.pubkey)) }
+            }.value
+            guard owner == me else { return }
+            followsBack = followers ?? []
+            followsBackLoaded = followers != nil
+            applyFilters(note: filters.contains(.followsBack) && filterNote != nil ? .followsBack : nil)
+        }
+    }
+
+    /// Where your web as of your last look is kept, per account.
+    private var seenWebURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("wot_seen_\(me).json")
+    }
+
+    private func loadSeenWeb() {
+        let url = seenWebURL
+        Task {
+            let seen = await Task.detached(priority: .utility) {
+                (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String].self, from: $0) }.map(Set.init)
+            }.value
+            seenWeb = seen
+            applyFilters()
+        }
+    }
+
+    /// Leaving the tab: what's here now is what the next look compares with.
+    private func saveSeenWeb() {
+        let url = seenWebURL, current = Array(web)
+        guard !current.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            try? JSONEncoder().encode(current).write(to: url, options: .atomic)
+        }
+    }
+
+    private var filterNoteView: some View {
+        HStack(spacing: 7) {
+            if let filterNote {
+                Image(systemName: filterNote.icon).font(.appSystem(size: 12, weight: .bold))
+                    .foregroundColor(.havenPurple)
+                Text(filterNote.text).monospacedDigit()
+            }
+        }
+        .font(.appSystem(size: 13, weight: .semibold))
+        .padding(.vertical, 7)
+        .padding(.horizontal, 14)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// One icon per filter, a toggle each.
+    private func filterButton(_ filter: TrustMap.Filter) -> some View {
+        IconFilterButton(icon: filter.symbolName, tooltip: filter.title,
+                         isSelected: filters.contains(filter), color: .havenPurple) { toggle(filter) }
+            .accessibilityLabel(Text(filter.title))
+            .accessibilityValue(Text(filters.contains(filter) ? "On" : "Off"))
+            .accessibilityAddTraits(filters.contains(filter) ? .isSelected : [])
     }
 
     /// Fetches the picked layer's faces. Run on each pick, since the
@@ -1166,155 +1326,7 @@ struct TrustWebView: View {
         }
     }
 
-    // MARK: - People list (VoiceOver, and anyone who'd rather read)
-
-    private var wotSheetOpen: Bool { showingList || profilePubkey != nil || messagePubkey != nil }
-
-    @ViewBuilder private var peopleList: some View {
-        if isWOTTab { wotList } else { pathList }
-    }
-
-    private var pathList: some View {
-        NavigationStack {
-            List {
-                if let frame {
-                    if !frame.bridges.isEmpty {
-                        Section(frame.center == me ? "People you follow who follow \(name(author))"
-                                                   : "\(name(frame.center))'s follows who follow \(name(author))") {
-                            ForEach(frame.bridges, id: \.self) { personRow($0) }
-                        }
-                    }
-                    if let chains = frame.chains, !chains.isEmpty {
-                        Section("Further out") {
-                            ForEach(Array(chains.prefix(50).enumerated()), id: \.offset) { _, chain in
-                                Button { showingList = false; profilePubkey = chain.via } label: {
-                                    Text("\(name(chain.bridge)) → \(name(chain.via)) → \(name(author))")
-                                        .foregroundColor(.primary)
-                                }
-                            }
-                        }
-                    }
-                    if frame.bridges.isEmpty && (frame.chains ?? []).isEmpty {
-                        Text("No one on this globe follows \(name(author)) yet.").foregroundColor(.secondary)
-                    }
-                }
-            }
-            .navigationTitle(name(centerKey))
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
-            }
-        }
-    }
-
-    /// The WOT tab's list: with a card open, everyone linking you to them;
-    /// otherwise everyone in the lit layer, searchable. A row opens its card.
-    private var wotList: some View {
-        NavigationStack {
-            Group {
-                if let card { cardLinksList(card) } else { layerList }
-            }
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
-            }
-        }
-        .onAppear {
-            listQuery = ""
-            listed = TrustMap.layerPeople(layer, me: me, follows: myFollows, web: web, vouches: vouches)
-        }
-    }
-
-    private var layerList: some View {
-        let following = listed.following.filter(listMatches)
-        let rest = listed.web.filter(listMatches)
-        return List {
-            if !following.isEmpty {
-                Section("You follow · \(following.count.formatted())") {
-                    ForEach(following, id: \.self) { wotRow($0) }
-                }
-            }
-            if !rest.isEmpty {
-                Section("In your web · \(rest.count.formatted())") {
-                    ForEach(rest, id: \.self) { wotRow($0) }
-                }
-            }
-            if following.isEmpty && rest.isEmpty {
-                Text(listQuery.isEmpty ? "No one here yet." : "No one called \u{201C}\(listQuery)\u{201D} on your globe.")
-                    .foregroundColor(.secondary)
-            }
-        }
-        .searchable(text: $listQuery, prompt: "Find someone")
-        .navigationTitle(layer == .everyone ? "Your web" : layer.title)
-    }
-
-    private func cardLinksList(_ pubkey: String) -> some View {
-        List {
-            if myFollows.contains(pubkey) {
-                Section { Text("You follow \(name(pubkey)).").foregroundColor(.secondary) }
-            }
-            if let cardPath {
-                if cardPath.all.isEmpty {
-                    Text("None of the people you follow follow \(name(pubkey)).").foregroundColor(.secondary)
-                } else {
-                    Section("People you follow who follow \(name(pubkey)) · \(cardPath.all.count.formatted())") {
-                        ForEach(cardPath.all, id: \.self) { wotRow($0) }
-                    }
-                }
-            } else {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Finding who links you…").foregroundColor(.secondary)
-                }
-            }
-        }
-        .navigationTitle(name(pubkey))
-    }
-
-    private func listMatches(_ pubkey: String) -> Bool {
-        let text = listQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !text.isEmpty else { return true }
-        if pubkey.hasPrefix(text) { return true }
-        guard let profile = nostrService.profiles[pubkey] else { return false }
-        return [profile.displayName, profile.name, profile.nip05].contains { $0?.lowercased().contains(text) == true }
-    }
-
-    private func wotRow(_ pubkey: String) -> some View {
-        let linked = vouches?[pubkey] ?? 0
-        return Button { showingList = false; openCard(pubkey) } label: {
-            HStack(spacing: 12) {
-                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name(pubkey)).font(.appSystem(size: 15, weight: .semibold)).foregroundColor(.primary).lineLimit(1)
-                    if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
-                        Text(nip05).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 6)
-                if linked > 0 {
-                    Text("\(linked.formatted()) you follow")
-                        .font(.appSystem(size: 12))
-                        .foregroundColor(.secondary)
-                        .accessibilityLabel(Text("Followed by \(linked) people you follow"))
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onAppear { nostrService.fetchMissingProfiles(for: [pubkey]) }
-        .accessibilityHint(Text("Opens their trust card"))
-    }
-
-    private func personRow(_ pubkey: String) -> some View {
-        Button { showingList = false; profilePubkey = pubkey } label: {
-            HStack(spacing: 12) {
-                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 28)
-                Text(name(pubkey)).foregroundColor(.primary).lineLimit(1)
-            }
-        }
-        .accessibilityHint(Text("Opens their profile"))
-    }
+    private var wotSheetOpen: Bool { profilePubkey != nil || messagePubkey != nil }
 
     // MARK: - Actions
 
@@ -1467,6 +1479,8 @@ struct TrustGlobeCanvas: View {
     /// Pictures on the outer shell for the picked layer (Close or Further
     /// out), on your own globe.
     var layerFaces: [String] = []
+    /// Who the filter icons leave lit; nil when none is on.
+    var filterLit: Set<String>? = nil
     /// False while a sheet covers the globe: the clock stops.
     let running: Bool
     /// Which part of the web is lit (the WOT tab's layer picker).
@@ -1561,8 +1575,10 @@ struct TrustGlobeCanvas: View {
         .onAppear {
             scene.reduceMotion = reduceMotion
             scene.focus(layer)
+            scene.filter(filterLit)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
             scene.trace(to: key, through: focusBridges)
@@ -1701,6 +1717,14 @@ final class GlobeScene: ObservableObject {
     /// (`TrustMap.layerWeights`).
     private var weights = SIMD3<Double>(1, 1, 1)
     private var weightTarget = SIMD3<Double>(1, 1, 1)
+    /// Who the filter icons light, easing from `filterFrom` to `filterTo`
+    /// as `filterMix` runs 0 to 1. nil lights everyone.
+    private var filterFrom: Set<String>?
+    private var filterTo: Set<String>?
+    private var filterMix = 1.0
+    /// How bright someone a filter leaves out stays: still there, just back.
+    private static let filteredOut = 0.08
+    private static let filterFade: TimeInterval = 0.35
 
     private var keys: [String] = []
     private var dirs: [SIMD3<Double>] = []
@@ -1903,11 +1927,29 @@ final class GlobeScene: ObservableObject {
     /// author and a traced path are always lit.
     private func weight(_ i: Int) -> Double {
         if keys[i] == center || keys[i] == author || traced.contains(keys[i]) { return 1 }
+        let lit = filterWeight(keys[i])
         switch kinds[i] {
-        case .haze: return weights.z
-        case .closeHaze: return weights.y
-        default: return weights.x
+        case .haze: return weights.z * lit
+        case .closeHaze: return weights.y * lit
+        default: return weights.x * lit
         }
+    }
+
+    private func filterWeight(_ key: String) -> Double {
+        func level(_ lit: Set<String>?) -> Double { lit.map { $0.contains(key) ? 1 : Self.filteredOut } ?? 1 }
+        let to = level(filterTo)
+        guard filterMix < 1 else { return to }
+        let from = level(filterFrom)
+        return from + (to - from) * filterMix
+    }
+
+    /// Lights who the filters match and sets the rest back. Nothing is reloaded.
+    func filter(_ lit: Set<String>?) {
+        guard lit != filterTo else { return }
+        filterFrom = filterTo
+        filterTo = lit
+        filterMix = reduceMotion ? 1 : 0
+        wake()
     }
 
     /// Lights one layer and hides the rest. Nothing is reloaded.
@@ -1931,8 +1973,12 @@ final class GlobeScene: ObservableObject {
         let dt = lastTick.map { min(GlobeCamera.maxStep, max(0, now - $0)) } ?? 0
         lastTick = now
         camera.step(dt: dt, now: now, reduceMotion: reduceMotion)
-        let fading = weights != weightTarget
-        if fading {
+        if filterMix < 1 {
+            filterMix = min(1, filterMix + dt / Self.filterFade)
+            if filterMix >= 1 { filterFrom = nil }
+        }
+        let fading = weights != weightTarget || filterMix < 1
+        if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
         }
