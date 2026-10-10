@@ -411,6 +411,28 @@ object TrustMap {
         }
         return counts
     }
+
+    /** Who's in [layer] for the WOT tab's list: your follows, then the rest of the web. */
+    data class LayerPeople(val following: List<String>, val web: List<String>)
+
+    /**
+     * The people [layerCounts] counts. Each part puts the most-vouched first,
+     * then sorts by key so the order holds still between rebuilds.
+     */
+    fun layerPeople(layer: Layer, me: String, follows: Set<String>, web: Set<String>, vouches: Map<String, Int>? = null): LayerPeople {
+        val ranked = { people: Set<String> ->
+            people.sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { it })
+        }
+        val following = if (layer == Layer.EVERYONE || layer == Layer.FOLLOWING) ranked(follows - me) else emptyList()
+        var past = web - follows - me
+        when (layer) {
+            Layer.EVERYONE -> {}
+            Layer.FOLLOWING -> past = emptySet()
+            Layer.CLOSE -> past = past.filter { (vouches?.get(it) ?: 0) >= CLOSE_VOUCHES }.toSet()
+            Layer.FURTHER_OUT -> if (vouches != null) past = past.filter { (vouches[it] ?: 0) < CLOSE_VOUCHES }.toSet()
+        }
+        return LayerPeople(following, ranked(past))
+    }
 }
 
 /** A point or direction in globe space: x right, y up, z toward the viewer. */

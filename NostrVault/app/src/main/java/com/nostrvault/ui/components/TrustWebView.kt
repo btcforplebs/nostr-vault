@@ -925,6 +925,7 @@ private fun TrustWebContent(
                 onTap = ::tapped,
                 // A tap on open space also puts the keyboard away.
                 focus = if (isWOTTab) card else null,
+                focusBridges = if (isWOTTab) cardPath?.all.orEmpty() else emptyList(),
                 onEmptyTap = { peek = null; closeCard(); if (searchFocused) focusManager.clearFocus() },
             )
             // The WoT tutorial's first card points at the middle of the
@@ -1161,7 +1162,16 @@ private fun TrustWebContent(
         }
     }
 
-    if (showingList && frame != null) {
+    if (showingList && isWOTTab) {
+        val listed = remember(layer, myFollows, web, vouches) { TrustMap.layerPeople(layer, me, myFollows, web, vouches) }
+        WotPeopleList(
+            card = card, cardPath = cardPath, layer = layer, listed = listed, myFollows = myFollows,
+            vouches = vouches, profiles = profiles, accent = accent, name = ::name,
+            onSeen = { nostrService.fetchMissingProfiles(listOf(it)) },
+            onOpen = { pubkey -> showingList = false; openCard(pubkey) },
+            onDismiss = { showingList = false },
+        )
+    } else if (showingList && frame != null) {
         PeopleList(
             frame = frame, me = me, author = author, profiles = profiles, name = ::name,
             onOpen = onProfileClick?.let { { pubkey: String -> openProfile(pubkey) } },
@@ -1961,6 +1971,106 @@ private fun PeopleList(
     }
 }
 
+/**
+ * The WOT tab's list: with a card open, everyone linking you to them;
+ * otherwise everyone in the lit layer, searchable. A row opens its card.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WotPeopleList(
+    card: String?,
+    cardPath: TrustPath?,
+    layer: TrustMap.Layer,
+    listed: TrustMap.LayerPeople,
+    myFollows: Set<String>,
+    vouches: Map<String, Int>?,
+    profiles: Map<String, FeedProfile>,
+    accent: Color,
+    name: (String) -> String,
+    onSeen: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    fun matches(pubkey: String): Boolean {
+        val text = query.trim().lowercase()
+        if (text.isEmpty() || pubkey.startsWith(text)) return true
+        val profile = profiles[pubkey] ?: return false
+        return listOf(profile.displayName, profile.name, profile.nip05).any { it?.lowercase()?.contains(text) == true }
+    }
+    @Composable
+    fun row(pubkey: String) {
+        val profile = profiles[pubkey]
+        val linked = vouches?.get(pubkey) ?: 0
+        LaunchedEffect(pubkey) { onSeen(pubkey) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Open their trust card") { onOpen(pubkey) }
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 32.dp, displayName = profile?.bestName)
+            Column(Modifier.weight(1f)) {
+                Text(name(pubkey), color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val nip05 = profile?.nip05
+                if (!nip05.isNullOrEmpty()) {
+                    Text(nip05, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (linked > 0) Text("$linked you follow", color = SecondaryText, fontSize = 12.sp)
+        }
+    }
+    @Composable
+    fun note(text: String) {
+        Text(text, color = SecondaryText, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Surface1,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = SecondaryText) },
+    ) {
+        val title = if (card != null) name(card) else if (layer == TrustMap.Layer.EVERYONE) "Your web" else layer.title
+        Text(title, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        if (card == null) {
+            SearchField(query = query, onQueryChange = { query = it }, onFocusChange = {}, onSearch = {},
+                onClear = { query = "" }, accent = accent)
+        }
+        LazyColumn(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            if (card != null) {
+                if (card in myFollows) item { note("You follow ${name(card)}.") }
+                when {
+                    cardPath == null -> item { note("Finding who links you…") }
+                    cardPath.all.isEmpty() -> item { note("None of the people you follow follow ${name(card)}.") }
+                    else -> {
+                        item { ListHeader("People you follow who follow ${name(card)} · ${cardPath.all.size}") }
+                        items(cardPath.all, key = { it }) { row(it) }
+                    }
+                }
+            } else {
+                val following = listed.following.filter(::matches)
+                val rest = listed.web.filter(::matches)
+                if (following.isNotEmpty()) {
+                    item { ListHeader("You follow · ${following.size}") }
+                    items(following, key = { "f$it" }) { row(it) }
+                }
+                if (rest.isNotEmpty()) {
+                    item { ListHeader("In your web · ${rest.size}") }
+                    items(rest, key = { "w$it" }) { row(it) }
+                }
+                if (following.isEmpty() && rest.isEmpty()) {
+                    item { note(if (query.isBlank()) "No one here yet." else "No one called \u201C${query.trim()}\u201D on your globe.") }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ListHeader(text: String) {
     Text(
@@ -2029,6 +2139,8 @@ private fun TrustGlobe(
     layer: TrustMap.Layer = TrustMap.Layer.EVERYONE,
     /** The person the trust card is about: the globe turns to face them. */
     focus: String? = null,
+    /** The people you follow who follow [focus]: its threads run through them. */
+    focusBridges: List<String> = emptyList(),
     summary: String,
     profiles: Map<String, FeedProfile>,
     name: (String) -> String,
@@ -2069,6 +2181,8 @@ private fun TrustGlobe(
     LaunchedEffect(layer) { scene.focus(layer) }
 
     LaunchedEffect(focus) { focus?.let { scene.turn(it) } }
+
+    LaunchedEffect(focus, focusBridges) { scene.trace(focus, focusBridges) }
 
     // Reduce Motion turned off while the clock sleeps: nothing else wakes it.
     LaunchedEffect(scene) {
@@ -2176,9 +2290,9 @@ private fun TrustGlobe(
                         val tint = when {
                             key == center && key == me -> accent
                             key == center -> Color.White
-                            key == author -> AuthorTint
+                            key == (scene.traceTarget ?: author) -> AuthorTint
                             // The core is the author: these are their follows.
-                            center == author -> RingColor
+                            center == author && scene.traceTarget == null -> RingColor
                             else -> accent
                         }
                         val profile = profiles[key]
@@ -2291,6 +2405,17 @@ private class GlobeScene(
     /** Faces drawn with a picture last frame, so they keep their seat. */
     private var seated: Set<String> = emptySet()
     private var direct = false
+    /** Who the core follows, for a direct thread to the traced person. */
+    private var ring: Set<String> = emptySet()
+    /**
+     * The trust card's person on the WOT tab. The globe stays on you, so they
+     * take the author's place: threads run from you through [traceBridges].
+     */
+    var traceTarget by mutableStateOf<String?>(null)
+        private set
+    private var traceBridges: List<String> = emptyList()
+    /** A traced person who had no star of their own (found by search). */
+    private var tracedStar: String? = null
 
     private var stars = ArrayList<Star>()
     private var index = HashMap<String, Star>()
@@ -2340,6 +2465,7 @@ private class GlobeScene(
         for (key in frame.bridges) if (key !in want) want[key] = Kind.BRIDGE to TrustMap.RING_RADIUS
         want[author] = Kind.BRIDGE to TrustMap.AUTHOR_RADIUS
         want[frame.center] = Kind.RING to 0.0
+        tracedStar?.let { if (it !in want) want[it] = Kind.BRIDGE to TrustMap.OUTER_RADIUS }
 
         for (star in stars) {
             if (star.key !in want) {
@@ -2362,6 +2488,7 @@ private class GlobeScene(
         }
 
         direct = frame.center != author && author in frame.ringSet
+        ring = frame.ringSet
         bridges = if (frame.center == author) emptyList() else frame.bridges
         chains = frame.chains.orEmpty()
         val shown = ArrayList<String>()
@@ -2374,10 +2501,7 @@ private class GlobeScene(
             for (key in listOf(chain.bridge, chain.via)) if (taken.add(key)) shown += key
         }
         faces = shown
-        val pictured = shown.toHashSet().apply { add(frame.center); add(author) }
-        for (star in stars) star.isFace = star.key in pictured
-        val symbols = (if (frame.center == author) listOf(author) else listOf(frame.center, author)) + shown
-        if (faceKeys != symbols) faceKeys = symbols
+        seatFaces()
 
         born = now
         settling = true
@@ -2394,6 +2518,54 @@ private class GlobeScene(
             }
         }
         hasLoaded = true
+        if (reduceMotion) settle()
+        version.intValue++
+        wake()
+    }
+
+    /**
+     * Who is drawn with a picture. While a person is traced only they and their
+     * bridges are; the rest keep their symbols for when the card closes.
+     */
+    private fun seatFaces() {
+        val symbols = ArrayList((if (center == author) listOf(author) else listOf(center, author)) + faces)
+        val target = traceTarget
+        val traced = if (target == null) emptyList() else listOf(target) + traceBridges
+        for (key in traced) if (key !in symbols) symbols += key
+        val pictured = (if (target == null) listOf(author) + faces else traced).toHashSet().apply { add(center) }
+        for (star in stars) star.isFace = star.key in pictured
+        if (faceKeys != symbols) faceKeys = symbols
+    }
+
+    /**
+     * Draws the threads from the core to [key] through [bridges], or drops
+     * them for null. The core and the author stay where they are.
+     */
+    fun trace(key: String?, bridges: List<String>) {
+        if (!hasLoaded) return
+        val target = if (key == center) null else key
+        val through = if (target == null) emptyList() else bridges.filter { it != center && it != target }
+        if (target == traceTarget && through == traceBridges) return
+        val now = nowSeconds()
+        tracedStar?.let { old ->
+            if (old != target) {
+                index[old]?.alphaTarget = 0.0
+                tracedStar = null
+            }
+        }
+        if (target != null && target !in index) {
+            val fresh = Star(target, TrustMap.direction(target), Kind.BRIDGE, TrustMap.OUTER_RADIUS)
+            stars.add(fresh)
+            index[target] = fresh
+            tracedStar = target
+        }
+        traceTarget = target
+        traceBridges = through
+        seatFaces()
+        threadsBorn = now
+        threadProgress = if (reduceMotion) 1.0 else 0.0
+        born = now
+        settling = true
         if (reduceMotion) settle()
         version.intValue++
         wake()
@@ -2611,6 +2783,12 @@ private class GlobeScene(
 
         val coreStar = index[center]
         if (!hasLoaded || coreStar == null) return
+        // The trust card's person, if any, takes the author's place.
+        val author = traceTarget ?: this.author
+        val bridges = if (traceTarget == null) this.bridges else traceBridges
+        val chains = if (traceTarget == null) this.chains else emptyList()
+        val faces = if (traceTarget == null) this.faces else traceBridges
+        val direct = traceTarget?.let { it in ring } ?: this.direct
         val project = Projector(camera, w, h)
         val zoom = camera.zoom
         val k = min(1.0, min(w, h) / density / 620.0)
@@ -2702,7 +2880,7 @@ private class GlobeScene(
         val drawn = ArrayList<Drawn>()
         for (key in faces) {
             val p = index[key]?.let { project.of(it) } ?: continue
-            drawn += Drawn(key, p, if (center == author) RingColor else GlobeAccent, 15.0)
+            drawn += Drawn(key, p, if (center == author && traceTarget == null) RingColor else GlobeAccent, 15.0)
         }
         if (authorP != null) drawn += Drawn(author, authorP, AuthorTint, 24.0)
         drawn.sortBy { it.p.depth }
@@ -2872,7 +3050,7 @@ private class GlobeScene(
         }
         for (spot in spots) {
             if (spot.core || spot.ember || !spot.label) continue
-            val isAuthor = spot.key == author
+            val isAuthor = spot.key == (traceTarget ?: author)
             label(name(spot.key), spot.x, spot.y + spot.r + 10 * dp, if (isAuthor) 14f else 11f, FontWeight.SemiBold,
                 (0.9 * spot.alpha).toFloat())
         }

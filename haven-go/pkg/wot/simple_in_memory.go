@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"sync/atomic"
@@ -41,6 +42,24 @@ type wotCache struct {
 	// follows follow them. Depth 3 only: depth 2 has no second layer.
 	Vouches map[string]int `json:"vouches,omitempty"`
 }
+
+// wotLinks is who follows whom inside the web, saved next to the cache as
+// linksFile. The depth-3 pass downloads every follow's list anyway; keeping
+// the "who" and not just the count lets the apps draw the lines from you,
+// through your follows, to anyone in the web the moment they tap them,
+// instead of asking public relays for the same lists again. It is its own
+// file so the apps' frequent wot_cache.json reloads stay small.
+type wotLinks struct {
+	Timestamp int64 `json:"timestamp"`
+	// Follows are the owners' follows, sorted: the same list as wotCache's.
+	Follows []string `json:"follows"`
+	// Links names, for everyone in the web but the owners, which follows
+	// follow them, as sorted indexes into Follows. Only as complete as the
+	// lists the seed relays returned.
+	Links map[string][]int `json:"links"`
+}
+
+const linksFile = "wot_links.json"
 
 // wotCacheVersion 2: the depth-3 pass no longer drops every contact list a
 // batch had collected when one seed relay was slow to send EOSE.
@@ -171,7 +190,6 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 		slog.Info("⏰ WoT cache expired", "age_minutes", age, "ttl_minutes", wt.CacheTTLMinutes)
 		return false, 0
 	}
-
 	wt.pubkeys.Store(&cache.Pubkeys)
 	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
@@ -211,6 +229,51 @@ func (wt *SimpleInMemory) SaveCache() {
 	}
 
 	slog.Debug("💾 Saved WoT cache", "pubkeys", len(*m))
+}
+
+func (wt *SimpleInMemory) linksPath() string {
+	return filepath.Join(filepath.Dir(wt.CachePath), linksFile)
+}
+
+// MissingLinks reports a depth-3 graph whose links file is absent: a cache
+// from before the file existed, or one whose links write failed. The graph
+// itself is still good, so callers serve the cache and refresh in the
+// background; until then the apps fall back to asking relays for the lines.
+func (wt *SimpleInMemory) MissingLinks() bool {
+	if wt.WotDepth < 3 || wt.CachePath == "" {
+		return false
+	}
+	_, err := os.Stat(wt.linksPath())
+	return err != nil
+}
+
+// saveLinks writes the links file, or removes it when links is nil (depths
+// below 3 never see the follows' lists). The file is swapped in whole, so an
+// app reading it never sees half a write.
+func (wt *SimpleInMemory) saveLinks(follows []string, links map[string][]int) {
+	if wt.CachePath == "" {
+		return
+	}
+	path := wt.linksPath()
+	if links == nil {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			slog.Error("🚫 Failed to remove WoT links", "error", err)
+		}
+		return
+	}
+	data, err := json.Marshal(wotLinks{Timestamp: time.Now().Unix(), Follows: follows, Links: links})
+	if err != nil {
+		slog.Error("🚫 Failed to marshal WoT links", "error", err)
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		slog.Error("🚫 Failed to write WoT links", "error", err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		slog.Error("🚫 Failed to save WoT links", "error", err)
+	}
 }
 
 func (wt *SimpleInMemory) Init(ctx context.Context) {
@@ -282,6 +345,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.layers.Store(&layers{})
 		wt.pubkeys.Store(&newWot)
 		wt.SaveCache()
+		wt.saveLinks(nil, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -319,6 +383,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
 		wt.SaveCache()
+		wt.saveLinks(nil, nil)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -330,6 +395,11 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	keys := follows
 	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
 	bar := max(int64(wt.MinFollowers), 1)
+	followIndex := make(map[string]int, len(follows))
+	for i, pk := range follows {
+		followIndex[pk] = i
+	}
+	links := make(map[string][]int)
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 	updateProgress(func(p *Progress) {
 		p.Phase = "lists"
@@ -351,8 +421,14 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 			events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
 			for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
+				from, isFollow := followIndex[ev.PubKey]
 				for contact := range ev.Tags.FindAll("p") {
 					if len(contact) > 1 {
+						// One list's tags arrive together, so a repeated tag
+						// is always the last index added.
+						if l := links[contact[1]]; isFollow && contact[1] != ev.PubKey && (len(l) == 0 || l[len(l)-1] != from) {
+							links[contact[1]] = append(l, from)
+						}
 						followers, _ := pubkeyFollowers.LoadOrStore(contact[1], &atomic.Int64{})
 						// Report the moment someone clears the bar, so the
 						// apps can show the web filling in instead of waiting
@@ -440,9 +516,18 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🫥 pruned pubkeys without minimum common followers", "🚧minimum", minimumFollowers, "🫂kept", len(newWot), "🗑️eliminated", pubkeyFollowers.Size()-len(newWot))
 
+	for pk, from := range links {
+		if _, owner := wt.WhitelistedPubKeys[pk]; owner || !newWot[pk] {
+			delete(links, pk)
+			continue
+		}
+		slices.Sort(from)
+	}
+
 	wt.layers.Store(&layers{follows: follows, vouches: vouches})
 	wt.pubkeys.Store(&newWot)
 	wt.SaveCache()
+	wt.saveLinks(follows, links)
 	phase, size = "saved", len(newWot)
 	debug.FreeOSMemory()
 }

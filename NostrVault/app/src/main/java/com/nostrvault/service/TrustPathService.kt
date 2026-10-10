@@ -4,6 +4,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ContactList
 import com.nostrvault.data.model.FollowListFilter
 import com.nostrvault.data.model.TrustMap
+import com.nostrvault.data.model.TrustLinks
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -86,6 +88,13 @@ class TrustPathService @Inject constructor(
         trustGraph: Set<String> = emptySet(),
     ): TrustPath {
         val me = this.me
+        // Seen from you, the relay's WoT rebuild already knows who bridges to
+        // anyone in your web: no relays to ask.
+        if (center == me && author != me) {
+            linkedBridges(author, me, follows.toSet())?.let {
+                return TrustPath.resolve(author, follows.toSet(), trustGraph, it)
+            }
+        }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         val key = "$me|$center|$author|${follows.toSet().hashCode()}|${trustGraph.isEmpty()}"
@@ -117,6 +126,18 @@ class TrustPathService @Inject constructor(
         }
         return result
     }
+
+    /**
+     * Bridges to [author] from the relay's `wot_links.json`. null when there
+     * is no file (depth below 3, no rebuild yet) or no entry for them.
+     */
+    private suspend fun linkedBridges(author: String, me: String, follows: Set<String>): List<String>? =
+        withContext(Dispatchers.IO) {
+            val dir = configStore.config.value.relayDataDir ?: return@withContext null
+            val text = runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
+                ?: return@withContext null
+            TrustLinks.bridges(text, author, me, follows)
+        }
 
     // ── Map ──────────────────────────────────────────────────────────
 

@@ -155,6 +155,16 @@ final class TutorialCenter: ObservableObject {
         guard anchors[name] != frame else { return }
         anchors[name] = frame
     }
+
+    /// Pages whose anchors a sheet is hiding. The stage draws over sheets,
+    /// so a page whose card points under one says so here, and the card
+    /// waits until the sheet goes.
+    @Published private(set) var covered: Set<String> = []
+
+    func setCovered(_ page: String, _ isCovered: Bool) {
+        guard covered.contains(page) != isCovered else { return }
+        if isCovered { covered.insert(page) } else { covered.remove(page) }
+    }
 }
 
 extension View {

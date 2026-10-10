@@ -19,7 +19,7 @@ struct TutorialStage: View {
                 // A card that points at something waits until that thing is
                 // on screen: replayed from Settings, the feed is still
                 // sliding back into view.
-                if let id = center.active, let step = center.currentStep,
+                if let id = center.active, let step = center.currentStep, center.covered.isEmpty,
                    step.anchor == nil || step.anchor.flatMap({ center.anchors[$0] }) != nil {
                     let anchor = step.anchor
                         .flatMap { center.anchors[$0] }
@@ -47,7 +47,7 @@ struct TutorialStage: View {
     }
 
     private var isShowingCard: Bool {
-        guard let step = center.currentStep else { return false }
+        guard let step = center.currentStep, center.covered.isEmpty else { return false }
         return step.anchor == nil || step.anchor.flatMap({ center.anchors[$0] }) != nil
     }
 

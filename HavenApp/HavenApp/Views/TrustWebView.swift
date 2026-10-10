@@ -67,6 +67,9 @@ struct TrustWebView: View {
     @State private var deeperFailed: Set<String> = []
     @State private var profilePubkey: String?
     @State private var showingList = false
+    /// The WOT tab's list: the lit layer's people, taken when it opens.
+    @State private var listed: (following: [String], web: [String]) = ([], [])
+    @State private var listQuery = ""
     /// Per person whose own globe is showing: the follows worth a profile
     /// fetch, so their faces can be pictures (`TrustMap.faceCandidates`).
     @State private var faceCandidates: [String: [String]] = [:]
@@ -223,6 +226,11 @@ struct TrustWebView: View {
             jump(to: 0)
         }
         .sheet(isPresented: $showingList) { peopleList }
+        // The WOT tour points into the globe; a sheet over it hides what the card points at.
+        .onChange(of: wotSheetOpen) { _, open in
+            if isWOTTab { TutorialCenter.shared.setCovered("wot", open) }
+        }
+        .onDisappear { if isWOTTab { TutorialCenter.shared.setCovered("wot", false) } }
         .sheet(item: Binding<IdentifiableString?>(
             get: { messagePubkey.map { IdentifiableString(id: $0) } },
             set: { messagePubkey = $0?.id }
@@ -273,6 +281,7 @@ struct TrustWebView: View {
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
                              focus: isWOTTab ? card : nil,
+                             focusBridges: isWOTTab ? cardPath?.all ?? [] : [],
                              onEmptyTap: { peek = nil; closeCard(); searchFocused = false })
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             if frame == nil {
@@ -1324,7 +1333,13 @@ struct TrustWebView: View {
 
     // MARK: - People list (VoiceOver, and anyone who'd rather read)
 
-    private var peopleList: some View {
+    private var wotSheetOpen: Bool { showingList || profilePubkey != nil || messagePubkey != nil }
+
+    @ViewBuilder private var peopleList: some View {
+        if isWOTTab { wotList } else { pathList }
+    }
+
+    private var pathList: some View {
         NavigationStack {
             List {
                 if let frame {
@@ -1354,6 +1369,106 @@ struct TrustWebView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
             }
         }
+    }
+
+    /// The WOT tab's list: with a card open, everyone linking you to them;
+    /// otherwise everyone in the lit layer, searchable. A row opens its card.
+    private var wotList: some View {
+        NavigationStack {
+            Group {
+                if let card { cardLinksList(card) } else { layerList }
+            }
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { showingList = false } }
+            }
+        }
+        .onAppear {
+            listQuery = ""
+            listed = TrustMap.layerPeople(layer, me: me, follows: myFollows, web: web, vouches: vouches)
+        }
+    }
+
+    private var layerList: some View {
+        let following = listed.following.filter(listMatches)
+        let rest = listed.web.filter(listMatches)
+        return List {
+            if !following.isEmpty {
+                Section("You follow · \(following.count.formatted())") {
+                    ForEach(following, id: \.self) { wotRow($0) }
+                }
+            }
+            if !rest.isEmpty {
+                Section("In your web · \(rest.count.formatted())") {
+                    ForEach(rest, id: \.self) { wotRow($0) }
+                }
+            }
+            if following.isEmpty && rest.isEmpty {
+                Text(listQuery.isEmpty ? "No one here yet." : "No one called \u{201C}\(listQuery)\u{201D} on your globe.")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .searchable(text: $listQuery, prompt: "Find someone")
+        .navigationTitle(layer == .everyone ? "Your web" : layer.title)
+    }
+
+    private func cardLinksList(_ pubkey: String) -> some View {
+        List {
+            if myFollows.contains(pubkey) {
+                Section { Text("You follow \(name(pubkey)).").foregroundColor(.secondary) }
+            }
+            if let cardPath {
+                if cardPath.all.isEmpty {
+                    Text("None of the people you follow follow \(name(pubkey)).").foregroundColor(.secondary)
+                } else {
+                    Section("People you follow who follow \(name(pubkey)) · \(cardPath.all.count.formatted())") {
+                        ForEach(cardPath.all, id: \.self) { wotRow($0) }
+                    }
+                }
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Finding who links you…").foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle(name(pubkey))
+    }
+
+    private func listMatches(_ pubkey: String) -> Bool {
+        let text = listQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !text.isEmpty else { return true }
+        if pubkey.hasPrefix(text) { return true }
+        guard let profile = nostrService.profiles[pubkey] else { return false }
+        return [profile.displayName, profile.name, profile.nip05].contains { $0?.lowercased().contains(text) == true }
+    }
+
+    private func wotRow(_ pubkey: String) -> some View {
+        let linked = vouches?[pubkey] ?? 0
+        return Button { showingList = false; openCard(pubkey) } label: {
+            HStack(spacing: 12) {
+                AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name(pubkey)).font(.appSystem(size: 15, weight: .semibold)).foregroundColor(.primary).lineLimit(1)
+                    if let nip05 = nostrService.profiles[pubkey]?.nip05, !nip05.isEmpty {
+                        Text(nip05).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 6)
+                if linked > 0 {
+                    Text("\(linked.formatted()) you follow")
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel(Text("Followed by \(linked) people you follow"))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear { nostrService.fetchMissingProfiles(for: [pubkey]) }
+        .accessibilityHint(Text("Opens their trust card"))
     }
 
     private func personRow(_ pubkey: String) -> some View {
@@ -1592,6 +1707,8 @@ struct TrustGlobeCanvas: View {
     let onTap: (String) -> Void
     /// The person the trust card is about: the globe turns to face them.
     var focus: String? = nil
+    /// The people you follow who follow `focus`: its threads run through them.
+    var focusBridges: [String] = []
     /// A tap that lands on no one, e.g. to close the peek card.
     var onEmptyTap: () -> Void = {}
 
@@ -1674,7 +1791,11 @@ struct TrustGlobeCanvas: View {
             scene.focus(layer)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .onChange(of: focus) { _, key in if let key { scene.turn(to: key) } }
+        .onChange(of: focus) { _, key in
+            if let key { scene.turn(to: key) }
+            scene.trace(to: key, through: focusBridges)
+        }
+        .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -1783,6 +1904,14 @@ final class GlobeScene: ObservableObject {
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
+    /// Who the core follows, for a direct thread to the traced person.
+    private var ring: Set<String> = []
+    /// The trust card's person on the WOT tab. The globe stays on you, so they
+    /// take the author's place: threads run from you through `traceBridges`.
+    private var traceTarget: String?
+    private var traceBridges: [String] = []
+    /// A traced person who had no star of their own (found by search).
+    private var tracedStar: String?
     /// How brightly your follows (x), the Close shell (y) and the rest of the
     /// shell (z) are drawn, easing toward the picked layer's
     /// (`TrustMap.layerWeights`).
@@ -1835,6 +1964,7 @@ final class GlobeScene: ObservableObject {
         for key in frame.bridges where want[key] == nil { want[key] = (.bridge, TrustMap.ringRadius) }
         want[author] = (.bridge, TrustMap.authorRadius)
         want[frame.center] = (.ring, 0)
+        if let tracedStar, want[tracedStar] == nil { want[tracedStar] = (.bridge, TrustMap.outerRadius) }
 
         for i in keys.indices where want[keys[i]] == nil {
             radiusTarget[i] = 2.4      // drifts out and fades
@@ -1859,6 +1989,7 @@ final class GlobeScene: ObservableObject {
         }
 
         direct = frame.center != author && frame.ring.contains(author)
+        ring = Set(frame.ring)
         bridges = frame.center == author ? [] : frame.bridges
         chains = frame.chains ?? []
         var shown: [String] = []
@@ -1879,10 +2010,7 @@ final class GlobeScene: ObservableObject {
             }
         }
         faces = shown
-        let pictured = Set(shown).union([frame.center, author])
-        for i in keys.indices { isFace[i] = pictured.contains(keys[i]) }
-        let symbols = (frame.center == author ? [author] : [frame.center, author]) + shown
-        if faceKeys != symbols { faceKeys = symbols }
+        seatFaces()
 
         born = now
         settling = true
@@ -1899,6 +2027,51 @@ final class GlobeScene: ObservableObject {
             }
         }
         hasLoaded = true
+        if reduceMotion { settle() }
+        wake()
+    }
+
+    /// Who is drawn with a picture. While a person is traced only they and
+    /// their bridges are; the rest keep their symbols for when the card closes.
+    private func seatFaces() {
+        var symbols = (center == author ? [author] : [center, author]) + faces
+        let traced = traceTarget.map { [$0] + traceBridges } ?? []
+        for key in traced where !symbols.contains(key) { symbols.append(key) }
+        let pictured = Set([center] + (traceTarget == nil ? [author] + faces : traced))
+        for i in keys.indices { isFace[i] = pictured.contains(keys[i]) }
+        if faceKeys != symbols { faceKeys = symbols }
+    }
+
+    /// Draws the threads from the core to `key` through `bridges`, or drops
+    /// them for nil. The core and the author stay where they are.
+    func trace(to key: String?, through bridges: [String]) {
+        let target = key == center ? nil : key
+        let through = target == nil ? [] : bridges.filter { $0 != center && $0 != target }
+        guard target != traceTarget || through != traceBridges else { return }
+        let now = Date.timeIntervalSinceReferenceDate
+        if let old = tracedStar, old != target, let i = index[old] {
+            alphaTarget[i] = 0
+            tracedStar = nil
+        }
+        if let target, index[target] == nil {
+            index[target] = keys.count
+            keys.append(target)
+            dirs.append(TrustMap.direction(of: target))
+            kinds.append(.bridge)
+            isFace.append(false)
+            radius.append(TrustMap.outerRadius)
+            radiusTarget.append(TrustMap.outerRadius)
+            alpha.append(0)
+            alphaTarget.append(1)
+            tracedStar = target
+        }
+        traceTarget = target
+        traceBridges = through
+        seatFaces()
+        threadsBorn = now
+        threadProgress = reduceMotion ? 1 : 0
+        born = now
+        settling = true
         if reduceMotion { settle() }
         wake()
     }
@@ -2058,6 +2231,12 @@ final class GlobeScene: ObservableObject {
         let k = min(1, min(size.width, size.height) / 620)
         let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
         guard let core = project(dirs[centerIndex] * radius[centerIndex]) else { return }
+        // The trust card's person, if any, takes the author's place.
+        let author = traceTarget ?? self.author
+        let bridges = traceTarget == nil ? self.bridges : traceBridges
+        let chains = traceTarget == nil ? self.chains : []
+        let faces = traceTarget == nil ? self.faces : traceBridges
+        let direct = traceTarget.map { ring.contains($0) } ?? self.direct
         let origin = project(.zero) ?? core
         let coreR = 22 * k * core.scale * min(zoom, 1.8)
 
@@ -2179,7 +2358,7 @@ final class GlobeScene: ObservableObject {
         var drawn: [(key: String, p: Projected, tint: Color, size: Double)] = []
         for key in faces {
             guard let p = position(key, project) else { continue }
-            if ringFaceSet.contains(key) {
+            if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14))
             } else {
                 drawn.append((key, p, accent, 15))

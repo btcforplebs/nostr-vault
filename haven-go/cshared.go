@@ -285,7 +285,7 @@ func StartRelayC(importMode bool) {
 				// while the follow list was briefly clobbered by an unrelated bug
 				// would otherwise keep silently rejecting real replies/reactions
 				// as "not in WoT" until the TTL fully expired.
-				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval {
+				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
 					log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 					cycle.spawn("wot.Refresh.stale", func() { wotModel.Refresh(cycle.ctx) })
 				}

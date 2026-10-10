@@ -110,7 +110,7 @@ func main() {
 
 			// See the identical check in cshared.go for why this is needed in
 			// addition to the wot.PeriodicRefresh ticker spawned below.
-			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval {
+			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
 				log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 				runsafe.Go("wot.Refresh.stale", func() { wotModel.Refresh(mainCtx) })
 			}
