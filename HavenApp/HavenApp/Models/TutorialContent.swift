@@ -155,7 +155,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: wotGlobe,
             title: "Your web of trust",
-            body: "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you. From their card, follow them or tap See their web to turn the globe to the people they follow."
+            body: "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then tap Their web to turn the globe to the people they follow."
         ),
         TutorialStep(
             anchor: wotSearch,

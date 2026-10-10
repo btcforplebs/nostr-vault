@@ -107,7 +107,7 @@ object TutorialContent {
     val wot = listOf(
         TutorialStep(
             WOT_GLOBE, "Your web of trust",
-            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you. From their card, follow them or tap See their web to turn the globe to the people they follow.",
+            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then tap Their web to turn the globe to the people they follow.",
         ),
         TutorialStep(
             WOT_SEARCH, "Find someone",
