@@ -4800,7 +4800,7 @@ final class AvatarImageCache {
             }
 
             // Network
-            URLSession.shared.dataTask(with: url) { data, response, _ in
+            URLSession.shared.dataTask(with: AvatarThumbnail.url(for: url)) { data, response, _ in
                 guard let data = data,
                       let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),
