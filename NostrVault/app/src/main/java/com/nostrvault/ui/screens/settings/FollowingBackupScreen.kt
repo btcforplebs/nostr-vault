@@ -334,7 +334,7 @@ fun FollowingBackupScreen(
             // ── Automatic Backups (local snapshots) ─────────────────
             if (snapshots.isNotEmpty()) {
                 item { BackupSectionHeader("Automatic Backups") }
-                items(snapshots.reversed(), key = { it.id }) { snapshot ->
+                items(snapshots, key = { it.id }) { snapshot ->
                     BackupListRow(
                         at = snapshot.capturedAt,
                         followCount = snapshot.followCount,
