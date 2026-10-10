@@ -921,6 +921,29 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return thumbnailDirectory.appendingPathComponent("\(key).jpg")
     }
 
+    // MARK: - Avatar Thumbnails
+
+    /// Where the small copy of a profile picture lives. Avatars keep only this
+    /// copy on disk, not the original (often several MB for a picture drawn
+    /// a few dozen points wide). Its own name, so it is never mistaken for
+    /// the original or for a video thumbnail of the same URL.
+    private func avatarThumbnailPath(for url: URL, maxPixel: Int) -> URL {
+        thumbnailDirectory.appendingPathComponent("avatar-\(maxPixel)-\(hash(url: url))")
+    }
+
+    func avatarThumbnailData(for url: URL, maxPixel: Int) -> Data? {
+        try? Data(contentsOf: avatarThumbnailPath(for: url, maxPixel: maxPixel))
+    }
+
+    func hasAvatarThumbnail(for url: URL, maxPixel: Int) -> Bool {
+        FileManager.default.fileExists(atPath: avatarThumbnailPath(for: url, maxPixel: maxPixel).path)
+    }
+
+    func saveAvatarThumbnail(_ data: Data, for url: URL, maxPixel: Int) {
+        guard !isDiskCacheDisabled else { return }
+        try? data.write(to: avatarThumbnailPath(for: url, maxPixel: maxPixel), options: .atomic)
+    }
+
     private func saveThumbnailToDisk(_ image: PlatformImage, key: String) {
         let path = thumbnailDiskPath(for: key)
         #if os(macOS)

@@ -1,5 +1,6 @@
 import SwiftUI
 import ImageIO
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -4791,15 +4792,26 @@ final class AvatarImageCache {
 
         MediaCacheService.shared.downloadQueue.addOperation { [weak self] in
             guard let self = self else { return }
+            let cache = MediaCacheService.shared
+            let size = Int(Self.targetPixelSize)
 
-            // Disk cache
-            if let data = MediaCacheService.shared.loadFromCache(url: url),
+            // The small copy on disk
+            if let data = cache.avatarThumbnailData(for: url, maxPixel: size),
                let img = Self.downsample(data: data) {
-                self.finish(url: url, image: img)
+                self.finish(url: url, image: Self.platformImage(img))
                 return
             }
 
-            // Network
+            // An original already on disk (saved by an older build, or by a
+            // view that keeps full-size pictures): shrink it once, keep that.
+            if let data = cache.loadFromCache(url: url),
+               let img = Self.downsample(data: data) {
+                Self.keepSmallCopy(img, for: url)
+                self.finish(url: url, image: Self.platformImage(img))
+                return
+            }
+
+            // Network. Only the small copy is kept; the original is dropped.
             URLSession.shared.dataTask(with: AvatarThumbnail.url(for: url)) { data, response, _ in
                 guard let data = data,
                       let http = response as? HTTPURLResponse,
@@ -4808,10 +4820,47 @@ final class AvatarImageCache {
                     self.finish(url: url, image: nil)
                     return
                 }
-                MediaCacheService.shared.saveToCache(url: url, data: data)
-                self.finish(url: url, image: img)
+                Self.keepSmallCopy(img, for: url)
+                self.finish(url: url, image: Self.platformImage(img))
             }.resume()
         }
+    }
+
+    /// Async form of `load`, for callers that only want the picture on disk.
+    func load(url: URL) async -> PlatformImage? {
+        await withCheckedContinuation { continuation in
+            load(url: url) { continuation.resume(returning: $0) }
+        }
+    }
+
+    func hasSmallCopy(of url: URL) -> Bool {
+        MediaCacheService.shared.hasAvatarThumbnail(for: url, maxPixel: Int(Self.targetPixelSize))
+    }
+
+    /// The small copy's bytes, for readers that only need a rough look at
+    /// the picture (the profile tint).
+    func smallCopyData(of url: URL) -> Data? {
+        MediaCacheService.shared.avatarThumbnailData(for: url, maxPixel: Int(Self.targetPixelSize))
+    }
+
+    /// JPEG, or PNG when the picture has transparency (JPEG would fill it black).
+    private static func keepSmallCopy(_ image: CGImage, for url: URL) {
+        let alpha = image.alphaInfo
+        let opaque = alpha == .none || alpha == .noneSkipFirst || alpha == .noneSkipLast
+        let type = (opaque ? UTType.jpeg : UTType.png).identifier as CFString
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, type, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, image, opaque ? [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary : nil)
+        guard CGImageDestinationFinalize(dest) else { return }
+        MediaCacheService.shared.saveAvatarThumbnail(data as Data, for: url, maxPixel: Int(targetPixelSize))
+    }
+
+    private static func platformImage(_ cgImage: CGImage) -> PlatformImage {
+        #if canImport(AppKit)
+        return NSImage(cgImage: cgImage, size: .zero)
+        #else
+        return UIImage(cgImage: cgImage)
+        #endif
     }
 
     private func finish(url: URL, image: PlatformImage?) {
@@ -4826,22 +4875,15 @@ final class AvatarImageCache {
         }
     }
 
-    private static func downsample(data: Data) -> PlatformImage? {
+    private static func downsample(data: Data) -> CGImage? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: targetPixelSize
         ]
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return nil
-        }
-        #if canImport(AppKit)
-        return NSImage(cgImage: cgImage, size: .zero)
-        #else
-        return UIImage(cgImage: cgImage)
-        #endif
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
 
