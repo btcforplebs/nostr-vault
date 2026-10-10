@@ -3494,7 +3494,7 @@ struct BlossomSettingsView: View {
     #else
     @State private var isVPNActive = false
     @ObservedObject private var mesh = FipsMeshService.shared
-    @AppStorage(FipsMeshService.serveLimitKey) private var meshServeLimit = Int(1 << 30)
+    @AppStorage(FipsMeshService.serveLimitKey) private var meshServeLimit = 0
     #endif
     
     var body: some View {
@@ -3806,7 +3806,7 @@ struct BlossomSettingsView: View {
                 }
                 Picker("Pause after", selection: $meshServeLimit) {
                     ForEach(FipsMeshService.serveLimitChoices, id: \.self) { bytes in
-                        Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).tag(Int(bytes))
+                        Text(bytes == 0 ? "No limit" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).tag(Int(bytes))
                     }
                 }
                 .disabled(mesh.kioskActive || mesh.starting)
@@ -3862,7 +3862,7 @@ struct BlossomSettingsView: View {
             } header: {
                 Text("FIPS Mesh")
             } footer: {
-                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. Sharing pauses for an hour once the mesh has downloaded the amount you pick, then starts again by itself. One visitor gets at most 256 MB of it. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
+                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app turns kiosk mode off. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
             }
 
             HomeVaultSection()

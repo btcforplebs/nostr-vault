@@ -12,7 +12,7 @@ final class KioskCapPauseTests: XCTestCase {
     func testTheLimitPausesForTheCoolDownInsteadOfTurningKioskOff() {
         XCTAssertEqual(
             KioskCapPause.step(capReached: true, pausedUntil: nil, resuming: false, now: now),
-            .pause(until: now.addingTimeInterval(60 * 60))
+            .pause(until: now.addingTimeInterval(3 * 60))
         )
     }
 
@@ -35,5 +35,10 @@ final class KioskCapPauseTests: XCTestCase {
         // Until the share-again call lands the engine still reports the limit.
         XCTAssertEqual(KioskCapPause.step(capReached: true, pausedUntil: nil, resuming: true, now: now), .none)
         XCTAssertEqual(KioskCapPause.step(capReached: true, pausedUntil: now, resuming: true, now: now), .none)
+    }
+
+    func testNoLimitIsNeverSentAsZeroBecauseTheEngineReadsZeroAsOneGigabyte() {
+        XCTAssertEqual(KioskCapPause.engineServeLimit(0), .max)
+        XCTAssertEqual(KioskCapPause.engineServeLimit(250 << 20), 250 << 20)
     }
 }

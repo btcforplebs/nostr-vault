@@ -39,6 +39,9 @@ final class FipsMeshService: ObservableObject {
     @Published private(set) var pausedUntil: Date?
     /// A share-again call is in flight.
     private var resuming = false
+    /// The relay port kiosk mode shares, kept from the start so a share-again
+    /// call reuses the port that was checked and working.
+    private var kioskPort: UInt16?
 
     private var pollTimer: Timer?
     private var resignObserver: NSObjectProtocol?
@@ -60,12 +63,13 @@ final class FipsMeshService: ObservableObject {
     var ownMeshNpub: String? { status?.npub ?? UserDefaults.standard.string(forKey: Self.ownNpubKey) }
     private static let ownNpubKey = "fipsMesh.ownNpub"
 
-    /// What one kiosk session may send to the mesh before sharing stops.
+    /// What one kiosk session may send to the mesh before sharing pauses.
+    /// 0 is no limit, the default: a kiosk is meant for home Wi-Fi.
     static let serveLimitKey = "fipsMeshServeLimitBytes"
-    static let serveLimitChoices: [Int64] = [250 << 20, 1 << 30, 5 << 30]
+    static let serveLimitChoices: [Int64] = [0, 250 << 20, 1 << 30, 5 << 30]
     static var serveLimit: Int64 {
         let v = Int64(UserDefaults.standard.integer(forKey: serveLimitKey))
-        return serveLimitChoices.contains(v) ? v : 1 << 30
+        return serveLimitChoices.contains(v) ? v : 0
     }
 
     /// The 10063 entry for this phone's vault while kiosk mode is on.
@@ -90,6 +94,7 @@ final class FipsMeshService: ObservableObject {
         lastError = nil
         // The relay's mesh port: plain HTTP, blob reads only.
         let port = ConfigService.shared.config.meshPlainPort
+        kioskPort = UInt16(exactly: port)
         let limit = Self.serveLimit
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
@@ -268,9 +273,10 @@ final class FipsMeshService: ObservableObject {
     /// Starts a new sharing session on the running engine: a new count, so
     /// the full limit applies again.
     private func resumeSharing() {
-        resuming = true
         let gen = startGen
-        let port = UInt16(exactly: ConfigService.shared.config.meshPlainPort) ?? 0
+        // startAndShare refused a port that does not fit, so kiosk mode is not live without one.
+        guard let port = kioskPort else { return }
+        resuming = true
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> Int32 in
             await previous?.value
@@ -285,11 +291,14 @@ final class FipsMeshService: ObservableObject {
             if rc == 0 {
                 print("FipsMesh: kiosk sharing again after the cool-down")
                 pausedUntil = nil
+                lastError = nil
                 refresh()
             } else {
-                print("FipsMesh: share again failed (\(rc))")
-                stopKiosk()
-                lastError = "Kiosk mode turned off: it could not share again after the pause (\(rc))."
+                // Kiosk mode stays on and tries again after another cool-down:
+                // turning it off here would let a stranger keep it off again.
+                print("FipsMesh: share again failed (\(rc)), trying again after the cool-down")
+                pausedUntil = Date().addingTimeInterval(KioskCapPause.coolDown)
+                lastError = "Could not start sharing again (\(rc)). Trying again in a few minutes."
             }
         }
     }
@@ -309,7 +318,7 @@ final class FipsMeshService: ObservableObject {
         }
         // No start-time peers: anyone can reach this vault, and reading
         // another vault adds its npub on demand.
-        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(limit)}")
+        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(KioskCapPause.engineServeLimit(limit))}")
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         // The relay's mesh port listens only while sharing.
         SetMeshServingC(1)

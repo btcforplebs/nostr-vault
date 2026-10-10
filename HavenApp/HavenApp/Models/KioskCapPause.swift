@@ -6,7 +6,11 @@ import Foundation
 /// limit with throwaway mesh keys cannot keep the kiosk off. Kept free of
 /// UIKit so MediaLogicTests can check it.
 enum KioskCapPause {
-    static let coolDown: TimeInterval = 60 * 60
+    static let coolDown: TimeInterval = 3 * 60
+
+    /// The serve limit sent to the engine. The picker's 0 means no limit, but
+    /// the engine reads 0 as its 1 GB default, so no limit goes as the largest value.
+    static func engineServeLimit(_ limit: Int64) -> Int64 { limit == 0 ? .max : limit }
 
     enum Step: Equatable {
         case none
