@@ -168,92 +168,84 @@ struct ComposeView: View {
             header
             #endif
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        if let parent = effectiveReplyTo {
-                            replyHeader(parent: parent)
-                        }
+            ScrollView {
+                VStack(spacing: 16) {
+                    if let parent = effectiveReplyTo {
+                        replyHeader(parent: parent)
+                    }
 
-                        HStack(alignment: .top, spacing: 12) {
-                            AvatarView(
-                                url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
-                                pubkey: configService.activeAccountHexPubkey,
-                                size: 36
-                            )
-                            .contextMenu {
-                                if configService.allAccountNpubs.count > 1 {
-                                    ForEach(configService.allAccountNpubs, id: \.self) { npub in
-                                        let isOwner = npub == configService.config.ownerNpub
-                                        let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
-                                        let hex = Bech32.decode(npub)?.hexString ?? ""
-                                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+                    HStack(alignment: .top, spacing: 12) {
+                        AvatarView(
+                            url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
+                            pubkey: configService.activeAccountHexPubkey,
+                            size: 36
+                        )
+                        .contextMenu {
+                            if configService.allAccountNpubs.count > 1 {
+                                ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                                    let isOwner = npub == configService.config.ownerNpub
+                                    let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
+                                    let hex = Bech32.decode(npub)?.hexString ?? ""
+                                    let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
 
-                                        Button {
-                                            configService.switchActiveAccount(to: npub)
-                                        } label: {
-                                            if isActive {
-                                                Label(name, systemImage: "checkmark")
-                                            } else {
-                                                Text(name)
-                                            }
+                                    Button {
+                                        configService.switchActiveAccount(to: npub)
+                                    } label: {
+                                        if isActive {
+                                            Label(name, systemImage: "checkmark")
+                                        } else {
+                                            Text(name)
                                         }
                                     }
-                                } else {
-                                    Text("No other accounts")
                                 }
-                            }
-
-                            ZStack(alignment: .topLeading) {
-                                if content.isEmpty {
-                                    Text("What's happening?")
-                                        .foregroundColor(.secondary.opacity(0.6))
-                                        .padding(.top, 10)
-                                        .padding(.leading, 4)
-                                }
-
-                                TextEditor(text: $content)
-                                    .focused($isTextEditorFocused)
-                                    .font(.appSystem(size: 16))
-                                    .frame(minHeight: 200)
-                                    .scrollContentBackground(.hidden)
-                                    .accessibilityLabel("Post content")
-                                    #if os(iOS)
-                                    .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)"))
-                                    #endif
-                                    .onChange(of: content) { oldValue, newValue in
-                                        updateMentionQuery(old: oldValue, new: newValue)
-                                        scheduleAutoSave(newValue)
-                                    }
+                            } else {
+                                Text("No other accounts")
                             }
                         }
 
-                        if !attachments.isEmpty {
-                            attachmentGrid
-                                .id("attachmentGrid")
-                        }
+                        ZStack(alignment: .topLeading) {
+                            if content.isEmpty {
+                                Text("What's happening?")
+                                    .foregroundColor(.secondary.opacity(0.6))
+                                    .padding(.top, 10)
+                                    .padding(.leading, 4)
+                            }
 
-                        if let quoted = effectiveQuoteTo {
-                            QuotedNoteView(note: quoted)
-                                .environmentObject(nostrService)
+                            TextEditor(text: $content)
+                                .focused($isTextEditorFocused)
+                                .font(.appSystem(size: 16))
+                                .frame(minHeight: 200)
+                                .scrollContentBackground(.hidden)
+                                .accessibilityLabel("Post content")
+                                #if os(iOS)
+                                .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)|\(attachments.count)"))
+                                #endif
+                                .onChange(of: content) { oldValue, newValue in
+                                    updateMentionQuery(old: oldValue, new: newValue)
+                                    scheduleAutoSave(newValue)
+                                }
                         }
                     }
-                    .padding(20)
-                }
-                .onChange(of: attachments.count) { oldCount, newCount in
-                    // Scroll to show attachments when a new one is added
-                    if newCount > oldCount && newCount > 0 {
-                        withAnimation {
-                            proxy.scrollTo("attachmentGrid", anchor: .bottom)
-                        }
+
+                    if let quoted = effectiveQuoteTo {
+                        QuotedNoteView(note: quoted)
+                            .environmentObject(nostrService)
                     }
                 }
+                .padding(20)
             }
 
             // @mention popup — inline above footer so it stays visible above the keyboard
             if let _ = mentionQuery, !mentionResults.isEmpty {
                 mentionPopup
+            }
+
+            // Attachments dock above the footer rather than sitting under the
+            // text: below a 200pt editor they landed under the keyboard, so a
+            // just-added photo needed a scroll to see and ate typing room.
+            if !attachments.isEmpty {
+                attachmentGrid
             }
 
             footer
@@ -871,7 +863,8 @@ struct ComposeView: View {
     }
     
     private var attachmentGrid: some View {
-        ScrollView(.horizontal) {
+        let side: CGFloat = 72
+        return ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
                     ZStack(alignment: .topTrailing) {
@@ -880,17 +873,17 @@ struct ComposeView: View {
                                 Image(platformImage: thumbnail)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: 100, height: 100)
+                                    .frame(width: side, height: side)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else if let data = attachment.data, let img = PlatformImage(data: data) {
                                 Image(platformImage: img)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: 100, height: 100)
+                                    .frame(width: side, height: side)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else if let url = attachment.url, attachment.data == nil, attachment.fileURL == nil {
                                 relayMediaThumbnail(url: url, type: attachment.type)
-                                    .frame(width: 100, height: 100)
+                                    .frame(width: side, height: side)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else {
                                 ZStack {
@@ -899,7 +892,7 @@ struct ComposeView: View {
                                         .font(.appTitle)
                                         .foregroundColor(Color.havenPurple.opacity(0.8))
                                 }
-                                .frame(width: 100, height: 100)
+                                .frame(width: side, height: side)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
@@ -944,9 +937,11 @@ struct ComposeView: View {
                     .accessibilityElement(children: .contain)
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .frame(height: 120)
+        .frame(height: side + 16)
+        .overlay(alignment: .top) { Divider() }
     }
 
     /// Preview for media picked from the relay: it is already hosted, so it
