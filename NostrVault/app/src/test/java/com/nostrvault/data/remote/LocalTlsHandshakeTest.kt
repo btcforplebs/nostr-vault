@@ -48,8 +48,12 @@ class LocalTlsHandshakeTest {
 
     private val client = OkHttpClient.Builder().localTrust().build()
 
-    private fun get(server: MockWebServer, host: String? = null, http: OkHttpClient = client): String {
-        val url = server.url("/").let { if (host == null) it else it.newBuilder().host(host).build() }
+    /**
+     * Always names [host]: server.url() uses the address's reverse-DNS name
+     * (e.g. Mac.lan on a home router), which LocalTls treats as public.
+     */
+    private fun get(server: MockWebServer, host: String, http: OkHttpClient = client): String {
+        val url = server.url("/").newBuilder().host(host).build()
         return http.newCall(Request.Builder().url(url).build()).execute().use { it.body!!.string() }
     }
 
@@ -64,17 +68,17 @@ class LocalTlsHandshakeTest {
         val address = requireLan()
         val first = serve(address, 0)
         val port = first.port
-        assertEquals("ok", get(first))
+        assertEquals("ok", get(first, address.hostAddress))
 
         first.shutdown(); servers.remove(first)
         val second = serve(address, port)
-        val refused = runCatching { get(second) }.exceptionOrNull()
+        val refused = runCatching { get(second, address.hostAddress) }.exceptionOrNull()
         assertTrue("expected a TLS refusal, got $refused", refused is SSLHandshakeException)
         assertEquals(listOf("${address.hostAddress}:$port"), LocalTls.refused.value)
 
         LocalTls.forget("${address.hostAddress}:$port")
         second.enqueue(MockResponse().setBody("ok"))
-        assertEquals("ok", get(second))
+        assertEquals("ok", get(second, address.hostAddress))
     }
 
     /**
