@@ -74,7 +74,7 @@ Haven is a **macOS/iOS app** that embeds a **Go Nostr relay** as a C-shared stat
 | `Views/MenuBarView.swift` | Main menu bar UI |
 | `Views/SettingsView.swift` | All configuration tabs |
 | `Views/SetupWizardView.swift` | First-run setup flow |
-| `Views/FeedView.swift` | Note feed display |
+| `Views/Feed/FeedView.swift` | Note feed display (split into `Views/Feed/`) |
 | `Views/ComposeView.swift` | New note composition |
 
 ### Project Root
