@@ -330,6 +330,19 @@ func isBlacklisted(pubkey string) bool {
 	return ok
 }
 
+// blacklistedPubkeys is the live blacklist (see isBlacklisted) as a list.
+func blacklistedPubkeys() []string {
+	m := config.BlacklistedPubKeys
+	if o := blacklistOverride.Load(); o != nil {
+		m = *o
+	}
+	out := make([]string, 0, len(m))
+	for pk := range m {
+		out = append(out, pk)
+	}
+	return out
+}
+
 // UpdateBlacklist atomically replaces the live blacklist. Called whenever the
 // client blocks/unblocks a pubkey, on any account — takes effect on the very
 // next event processed, no relay restart required.
