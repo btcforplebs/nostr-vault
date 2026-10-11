@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NIP10Thread
 import kotlinx.coroutines.*
@@ -89,6 +90,8 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
         onRawEvent: ((String, String) -> Unit)? = null,
         /** Kinds to keep; null keeps every kind. */
         acceptKinds: Set<Int>? = setOf(1, NIP10Thread.COMMENT_KIND),
+        /** Keep only events whose id and signature check out. */
+        verifySignatures: Boolean = false,
         onEose: (List<FeedNote>) -> Unit,
     ) {
         val config = configStore.config.value
@@ -129,7 +132,9 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
                                     ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
                                 } catch (_: Exception) { emptyList() }
 
-                                if (acceptKinds == null || kind in acceptKinds) {
+                                if ((acceptKinds == null || kind in acceptKinds) &&
+                                    (!verifySignatures || HavenBridge.verifyEvent(ev.toString()))
+                                ) {
                                     collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
                                     onRawEvent?.invoke(id, ev.toString())
                                 }
@@ -142,4 +147,78 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
                 } catch (_: Exception) {}
             }
         }
+    }
+
+    /**
+     * Fetch a whole thread for the note-detail view. Queries the entire subtree
+     * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
+     * mid-thread reply is opened, not just direct replies to the opened note),
+     * the [focusedId]'s own direct replies, and fetches the root plus any
+     * [ancestorIds] by id so missing parents are filled in from the network.
+     * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
+     */
+    internal fun NostrService.threadQuery(
+        rootId: String,
+        focusedId: String,
+        ancestorIds: List<String>,
+        rootCoordinate: String? = null,
+        onRawEvent: ((String, String) -> Unit)? = null,
+        onResult: (List<FeedNote>) -> Unit,
+    ) {
+        fun jsonArr(values: List<String>) =
+            values.distinct().joinToString(",") { "\"$it\"" }
+        // #e by root + focused note + all ancestors so legacy replies that only
+        // tag their direct parent (not the thread root) are still fetched.
+        val eIds = (listOf(rootId, focusedId) + ancestorIds).distinct()
+        // NIP-22 comments (1111) tag their direct parent in lowercase e too.
+        val eFilter = """{"kinds":[1,${NIP10Thread.COMMENT_KIND}],"#e":[${jsonArr(eIds)}],"limit":200}"""
+        // NIP-22 comments name the thread root in uppercase E, so one filter
+        // reaches them at any depth (iOS NoteDetailView commentsFilter).
+        val commentsFilter = """{"kinds":[${NIP10Thread.COMMENT_KIND}],"#E":[${jsonArr(listOf(rootId))}],"limit":150}"""
+        // Root note itself + ancestors are not replies, so fetch by id. An
+        // ancestor of a comment is usually itself a comment.
+        // No kinds: a picture, video, article or poll can root a thread, and
+        // an id names one event whatever its kind (iOS fetchParents).
+        val idValues = (listOf(rootId) + ancestorIds).distinct()
+        val idFilter = """{"ids":[${jsonArr(idValues)}]}"""
+        // Comments on an addressable or replaceable root name it by A; an
+        // edited article has a new event id, so #E alone misses them.
+        val filters = mutableListOf(eFilter, commentsFilter, idFilter)
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[${NIP10Thread.COMMENT_KIND}],"#A":[${jsonArr(listOf(rootCoordinate))}],"limit":150}""")
+        }
+        // Replies are notes and comments; the root and parents asked for by
+        // id are whatever kind they are.
+        val byId = idValues.toSet()
+        queryDetailRelays(filters, onRawEvent, acceptKinds = null) { notes ->
+            onResult(notes.filter { it.kind == 1 || it.kind == NIP10Thread.COMMENT_KIND || it.id in byId })
+        }
+    }
+
+    /**
+     * Responses to [rootId] that aren't thread rows (spec "below the fold"):
+     * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
+     * The caller decides which of these are quotes rather than replies.
+     *
+     * [rootCoordinate] is the root's address when it is addressable: an
+     * article's highlights name it by its `a` coordinate, not by this
+     * version's id, so `#e` alone never finds them (iOS #189).
+     */
+    internal fun NostrService.otherResponsesQuery(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) {
+        val filters = mutableListOf(
+            """{"#q":["$rootId"],"limit":50}""",
+            """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
+        )
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[9802,1244],"#a":[${JsonPrimitive(rootCoordinate)}],"limit":50}""")
+        }
+        // Shown as "<name> highlighted this": it must really be theirs, so a
+        // relay can't put words in someone's mouth (iOS handleReplyMessage).
+        queryDetailRelays(
+            filters,
+            onRawEvent = null,
+            onEose = onResult,
+            acceptKinds = null,
+            verifySignatures = true,
+        )
     }

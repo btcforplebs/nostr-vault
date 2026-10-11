@@ -489,6 +489,7 @@ class FeedViewModel @Inject constructor(
     // Declared after _feedMode, which the reload reads.
     init {
         reloadOnTrustScopeChange()
+        followServiceMode()
     }
 
     /** The shield is one app-wide setting; [reloadOnTrustScopeChange] follows every flip. */
@@ -551,7 +552,27 @@ class FeedViewModel @Inject constructor(
 
     // ── Actions ──────────────────────────────────────────────────
 
+    /**
+     * The service holds the feed mode; this screen follows it. The Dashboard,
+     * the Live tile and the Fill-your-vault guide switch the service directly,
+     * and the screen used to read it once and stay on the old feed.
+     */
+    private fun followServiceMode() {
+        viewModelScope.launch {
+            feedService.feedMode.collect { mode ->
+                if (mode != _feedMode.value) showFeed(mode)
+            }
+        }
+    }
+
     fun setFeedMode(mode: FeedMode) {
+        showFeed(mode)
+        // A no-op when the service is already there (a switch it announced).
+        feedService.switchFeedMode(mode)
+    }
+
+    /** Points the screen at [mode] and wakes the service that feeds it. */
+    private fun showFeed(mode: FeedMode) {
         val previous = _feedMode.value
         _feedMode.value = mode
         if (previous == FeedMode.REELS && mode != FeedMode.REELS) {
@@ -565,23 +586,11 @@ class FeedViewModel @Inject constructor(
             feedService.setFeedScrollingDown(false)
             reelsFeedService.loadIfNeeded()
         }
-        if (mode == FeedMode.MARKETPLACE) {
-            // Same as Live: the listings come from their own service.
-            marketplaceFeedService.loadIfNeeded()
-            return
-        }
-        if (mode == FeedMode.LIVE) {
-            // Nothing to switch on the note subscription — Live has its own.
-            liveFeedService.refresh()
-            return
-        }
-        // Music is Wavlake; the note subscription has nothing to switch.
-        if (mode == FeedMode.MUSIC) return
-        // Hashtags runs its own #t REQ (HashtagsFeedViewModel); same as Music.
-        if (mode == FeedMode.HASHTAGS) return
-        viewModelScope.launch {
-            feedService.switchFeedMode(mode)
-        }
+        // Live and Marketplace load from their own services. Music (Wavlake)
+        // and Hashtags (HashtagsFeedViewModel's #t REQ) need nothing here;
+        // the service idles the note timeline for all of them.
+        if (mode == FeedMode.MARKETPLACE) marketplaceFeedService.loadIfNeeded()
+        if (mode == FeedMode.LIVE) liveFeedService.refresh()
     }
 
     fun refresh() {
@@ -590,9 +599,14 @@ class FeedViewModel @Inject constructor(
         // DMs, and notifications. Non-blocking, coalesced in Go, safe when the
         // relay isn't running.
         runCatching { com.nostrvault.relay.HavenBridge.requestRelaySync() }
-        if (_feedMode.value == FeedMode.REELS) {
-            reelsFeedService.refresh()
-            return
+        // Feeds with their own service refresh it; the note timeline has no
+        // REQ for them, so its refresh would hold the spinner to the timeout.
+        when (_feedMode.value) {
+            FeedMode.REELS -> { reelsFeedService.refresh(); return }
+            FeedMode.LIVE -> { liveFeedService.refresh(); return }
+            FeedMode.MARKETPLACE -> { marketplaceFeedService.refresh(); return }
+            FeedMode.MUSIC, FeedMode.HASHTAGS -> return
+            else -> Unit
         }
         // Refreshing takes in the posts waiting behind the New Posts pill, the
         // only way to reach them with the pill switched off (iOS #276).

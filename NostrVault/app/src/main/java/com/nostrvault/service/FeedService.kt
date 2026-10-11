@@ -714,7 +714,12 @@ class FeedService @Inject constructor(
                 if (longFormScope() == MediaFeedMode.GLOBAL) loadWotPubkeys()
                 subscribeToAllRelays()
             }
-            FeedMode.REELS -> closePrimaryFeedSubscription(previousSubId)
+            // These feeds run their own queries (Reels, Live, Marketplace,
+            // Hashtags) or read Wavlake (Music). The timeline REQ idles; left
+            // to subscribeToAllRelays, Live/Marketplace/Music sent a REQ with
+            // no author or tag filter, the whole network.
+            FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE,
+            FeedMode.MUSIC, FeedMode.HASHTAGS -> closePrimaryFeedSubscription(previousSubId)
             else -> subscribeToAllRelays()
         }
         recomputeFilteredNotes()
@@ -1469,170 +1474,13 @@ class FeedService @Inject constructor(
         }
     }
 
-    /** Fetch detailed engagement data (who reacted, zapped, reposted) for a single note. */
-    fun fetchEngagementDetails(noteId: String, callback: (EngagementDetails) -> Unit) {
-        scope.launch(Dispatchers.IO) {
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.localInboxURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it.take(1)) }
-            }.distinct()
+    /** Who reacted, zapped and reposted one note. See FeedServiceEngagementDetails.kt. */
+    fun fetchEngagementDetails(noteId: String, callback: (EngagementDetails) -> Unit) =
+        loadEngagementDetails(noteId, callback)
 
-            val seenIds = mutableSetOf<String>()
-            val reactions = mutableListOf<ReactionDetail>()
-            val zaps = mutableListOf<ZapDetail>()
-            val reposts = mutableListOf<RepostDetail>()
-
-            for (relayUrl in relayUrls) {
-                val subId = "eng-${UUID.randomUUID().toString().take(8)}"
-                val filter = """{"kinds":[6,7,9735],"#e":["$noteId"]}"""
-                lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                    try {
-                        val parsed = json.parseToJsonElement(msg).jsonArray
-                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                            val eventObj = parsed[2].jsonObject
-                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            if (!seenIds.add(id)) return@query
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val tags = eventObj["tags"]?.jsonArray?.map { t ->
-                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                            } ?: emptyList()
-
-                            when (kind) {
-                                7 -> {
-                                    val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                    synchronized(reactions) { reactions.add(ReactionDetail(id, pubkey, emoji)) }
-                                }
-                                9735 -> {
-                                    val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-                                    var zapperPubkey = pubkey
-                                    var comment = ""
-                                    if (descTag != null) {
-                                        try {
-                                            val zapReq = json.parseToJsonElement(descTag).jsonObject
-                                            zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
-                                            comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                        } catch (_: Exception) {}
-                                    }
-                                    // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
-                                    val amountSats = ZapAmount.sats(tags)
-                                    synchronized(zaps) { zaps.add(ZapDetail(id, zapperPubkey, amountSats, comment)) }
-                                }
-                                6 -> {
-                                    synchronized(reposts) { reposts.add(RepostDetail(id, pubkey)) }
-                                }
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-
-            val allPubkeys = (reactions.map { it.pubkey } + zaps.map { it.zapperPubkey } + reposts.map { it.pubkey }).distinct()
-            if (allPubkeys.isNotEmpty()) {
-                nostrService.fetchMissingProfiles(allPubkeys)
-            }
-
-            val result = EngagementDetails(
-                reactions = reactions.toList(),
-                zaps = zaps.sortedByDescending { it.amountSats },
-                reposts = reposts.distinctBy { it.pubkey },
-            )
-            withContext(Dispatchers.Main.immediate) { callback(result) }
-        }
-    }
-
-    /** Fetch engagement details for multiple notes at once (thread-wide stats). */
-    /**
-     * Reactions, zaps and reposts for every note in a thread (Thread Stats).
-     * The thread is split into batches of [ThreadEngagementQuery.BATCH_SIZE]
-     * notes, each its own REQ with its own limit, sent one after another on
-     * each relay, so one busy note can't use up the budget of the others
-     * (iOS #325). Relays are asked side by side.
-     */
-    fun fetchThreadEngagement(noteIds: List<String>, callback: (Map<String, EngagementDetails>) -> Unit) {
-        if (noteIds.isEmpty()) { callback(emptyMap()); return }
-        scope.launch(Dispatchers.IO) {
-            val config = configStore.config.value
-            // The account's relay and the feed relays, as iOS asks.
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                addAll(config.readRelays)
-            }.distinctBy { LookupSocketPool.relayKey(it) }
-
-            val seenIds = ConcurrentHashMap.newKeySet<String>()
-            val noteIdSet = noteIds.toSet()
-            val perNote = ConcurrentHashMap<String, MutableList<Any>>()
-            val requests = ThreadEngagementQuery.requests(
-                noteIdSet, "thr-${UUID.randomUUID().toString().take(6)}",
-            )
-
-            withTimeoutOrNull(ThreadEngagementQuery.timeoutMs(requests.size)) {
-                relayUrls.map { relayUrl ->
-                    async {
-                        for (request in requests) {
-                            val outcome = lookupPool.query(relayUrl, request.subscriptionId, listOf(request.filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                                try {
-                                    val parsed = json.parseToJsonElement(msg).jsonArray
-                                    if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                        val eventObj = parsed[2].jsonObject
-                                        val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                                        if (!seenIds.add(id)) return@query
-                                        val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-                                        val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
-                                        val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                        val tags = eventObj["tags"]?.jsonArray?.map { t ->
-                                            t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                        } ?: emptyList()
-
-                                        val targetNoteId = ThreadEngagementQuery.targetNoteId(tags, noteIdSet) ?: return@query
-
-                                        val detail: Any = when (kind) {
-                                            7 -> {
-                                                val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                                ReactionDetail(id, pubkey, emoji)
-                                            }
-                                            9735 -> {
-                                                val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-                                                var zapperPubkey = pubkey
-                                                var comment = ""
-                                                if (descTag != null) {
-                                                    try {
-                                                        val zapReq = json.parseToJsonElement(descTag).jsonObject
-                                                        zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
-                                                        comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                                    } catch (_: Exception) {}
-                                                }
-                                                // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
-                                                val amountSats = ZapAmount.sats(tags)
-                                                ZapDetail(id, zapperPubkey, amountSats, comment)
-                                            }
-                                            6 -> RepostDetail(id, pubkey)
-                                            else -> return@query
-                                        }
-                                        perNote.computeIfAbsent(targetNoteId) { java.util.Collections.synchronizedList(mutableListOf()) }.add(detail)
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                            // A relay that refuses the socket refuses every batch.
-                            if (outcome == LookupSocketPool.Outcome.SKIPPED || outcome == LookupSocketPool.Outcome.FAILED) break
-                        }
-                    }
-                }.awaitAll()
-            }
-
-            val result = perNote.mapValues { (_, details) ->
-                EngagementDetails(
-                    reactions = details.filterIsInstance<ReactionDetail>(),
-                    zaps = details.filterIsInstance<ZapDetail>().sortedByDescending { it.amountSats },
-                    reposts = details.filterIsInstance<RepostDetail>().distinctBy { it.pubkey },
-                )
-            }
-            withContext(Dispatchers.Main.immediate) { callback(result) }
-        }
-    }
+    /** Thread Stats: the same for every note in a thread. See FeedServiceEngagementDetails.kt. */
+    fun fetchThreadEngagement(noteIds: List<String>, callback: (Map<String, EngagementDetails>) -> Unit) =
+        loadThreadEngagement(noteIds, callback)
 
     // ══════════════════════════════════════════════════════════════════
     // Cache management

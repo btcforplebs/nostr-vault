@@ -15,8 +15,19 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
     fun FeedService.loadMore() {
         // In-flight guard: scroll-triggered, so without this it re-fires on every
         // bottom-reach and leaks a client + collector per relay each time.
+        // Popular is a fixed ranked set: an older page would add unscored
+        // notes under it. Feeds with their own service have no timeline page.
+        val mode = _feedMode.value
+        if (mode == FeedMode.POPULAR || mode in OWN_SERVICE_MODES) return
+        // An author-scoped feed with no authors would page the whole network
+        // (the filter just omits `authors`). Same guards as the live REQ.
+        if (mode == FeedMode.DISCOVERY && _extendedNetworkPubkeys.value.isEmpty()) return
+        if (mode == FeedMode.FOLLOWING && _followedPubkeys.value.isEmpty()) return
         if (!isLoadingMore.compareAndSet(false, true)) return
-        val oldest = _notes.value.lastOrNull()?.createdAt ?: run {
+        // The note list outlives a mode switch: Polls pages from its oldest
+        // poll, as the live REQ does, or another feed's notes would skip polls.
+        val last = if (mode == FeedMode.POLLS) _notes.value.lastOrNull { it.kind == NIP88Poll.KIND } else _notes.value.lastOrNull()
+        val oldest = last?.createdAt ?: run {
             isLoadingMore.set(false)
             return
         }
@@ -40,6 +51,9 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
             val collectors = mutableListOf<Job>()
             try {
                 for (relayUrl in relayUrls) {
+                    // The live REQ's own scope (authors, topics), so a page
+                    // brings this feed's notes, not every feed's.
+                    val pageFilter = pageScope(mode, relayUrl) ?: continue
                     val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
                     clients.add(client)
 
@@ -59,13 +73,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
 
                     val filter = buildString {
                         append("{\"kinds\":[${primaryFeedKinds()}]")
-                        if (_feedMode.value == FeedMode.FOLLOWING) {
-                            // Full follow list (matches the live feed; iOS uncapped).
-                            val authors = _followedPubkeys.value
-                            if (authors.isNotEmpty()) {
-                                append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                            }
-                        }
+                        append(pageFilter)
                         append(",\"until\":${oldest.time / 1000 - 1}")
                         append(",\"limit\":100}")
                     }
@@ -79,9 +87,11 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                 // relay that refused it alone for a while. No socket per page.
                 for ((relayUrl, authors) in outboxPlan) {
                     if (authors.isEmpty() || relayUrl in relayUrls) continue
+                    // The plan's follows for this relay (followAuthors).
+                    val pageFilter = pageScope(mode, relayUrl) ?: continue
                     val filter = buildString {
                         append("{\"kinds\":[${primaryFeedKinds()}]")
-                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+                        append(pageFilter)
                         append(",\"until\":${oldest.time / 1000 - 1}")
                         append(",\"limit\":100}")
                     }
@@ -107,4 +117,20 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                 isLoadingMore.set(false)
             }
         }
+    }
+
+    /**
+     * The page's scope, or null when it must not be asked: the feed changed
+     * while the page was starting, or an author-scoped feed has no authors,
+     * which would page the whole network. Only Global, Recipes (its topics)
+     * and the shield's Everyone go out without authors.
+     */
+    private fun FeedService.pageScope(mode: FeedMode, relayUrl: String): String? {
+        if (_feedMode.value != mode) return null
+        val sb = StringBuilder()
+        if (!appendPrimaryScope(sb, relayUrl)) return null
+        val everyone = configStore.config.value.globalShowsEveryone &&
+            (if (mode == FeedMode.MEDIA) _mediaFeedMode.value else longFormScope()) == MediaFeedMode.GLOBAL
+        val unscopedOk = mode == FeedMode.GLOBAL || mode == FeedMode.RECIPES || everyone
+        return sb.toString().takeIf { unscopedOk || "\"authors\"" in it }
     }

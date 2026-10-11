@@ -275,72 +275,80 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         else -> "1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}"
     }
 
+    /**
+     * The part of a timeline filter that makes it this feed: authors, topics.
+     * Shared by the live REQ and older pages, so a page asks for the same
+     * feed the screen shows. False when the feed has no timeline REQ.
+     */
+    internal fun FeedService.appendPrimaryScope(sb: StringBuilder, relayUrl: String): Boolean {
+        when (_feedMode.value) {
+            FeedMode.FOLLOWING -> {
+                // Send the full follow list (iOS does not cap); capping at
+                // 500 silently hid notes from any follows beyond that.
+                val authors = followAuthors(relayUrl)
+                if (authors.isNotEmpty()) {
+                    sb.append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+                }
+            }
+            FeedMode.DISCOVERY -> {
+                val authors = _extendedNetworkPubkeys.value.take(500)
+                if (authors.isNotEmpty()) {
+                    sb.append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+                }
+            }
+            FeedMode.GLOBAL -> {
+                // No author restriction
+            }
+            FeedMode.ARTICLES, FeedMode.POLLS -> appendLongFormAuthors(sb, relayUrl)
+            // Their own services (Marketplace, Live, Hashtags' #t REQ,
+            // Reels) or Wavlake (Music): no timeline REQ.
+            FeedMode.MARKETPLACE, FeedMode.LIVE, FeedMode.MUSIC,
+            FeedMode.HASHTAGS, FeedMode.REELS -> return false
+            FeedMode.RECIPES -> {
+                // Ask the relays for the topic rather than pulling every
+                // long-form event and throwing most of it away. Only the
+                // base topics go on the wire — a "#t" filter matches exact
+                // values, so zapcooking-<category> tags cannot be asked for
+                // here; RecipeTopics.matches still accepts them locally for
+                // recipes that arrive through another subscription.
+                sb.append(",\"#t\":[${RecipeTopics.BASE.joinToString(",") { "\"$it\"" }}]")
+                appendLongFormAuthors(sb, relayUrl)
+            }
+            FeedMode.MEDIA -> {
+                val authors = when (_mediaFeedMode.value) {
+                    MediaFeedMode.FOLLOWING -> followAuthors(relayUrl).take(500)
+                    // "Everyone" lifts the Web of Trust scope, like Global notes.
+                    MediaFeedMode.GLOBAL ->
+                        if (configStore.config.value.globalShowsEveryone) emptyList()
+                        else _wotPubkeys.value.take(500).toList()
+                }
+                if (authors.isNotEmpty()) {
+                    sb.append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+                }
+            }
+            FeedMode.POPULAR -> return false // Handled separately
+        }
+        return true
+    }
+
     internal fun FeedService.sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
-        // Reels runs its own queries (ReelsFeedService). The feed connections
-        // stay up for mentions, but the note timeline idles underneath the
-        // videos rather than streaming a list nobody sees.
-        if (_feedMode.value == FeedMode.REELS) return
+        // Reels, Live, Marketplace, Music and Hashtags run their own queries.
+        // The feed connections stay up for mentions, but the note timeline
+        // idles underneath rather than streaming a list nobody sees.
+        if (_feedMode.value in OWN_SERVICE_MODES) {
+            // No REQ means no EOSE, which is what sends the follows'
+            // reactions and zaps subscriptions: send them now instead.
+            if (feedClients[relayUrl] != null && relayUrl !in outboxPlan && auxSubsSent.add(relayUrl)) {
+                sendAuxiliarySubscriptions(relayUrl)
+            }
+            return
+        }
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
 
         val filter = buildString {
             append("{\"kinds\":[${primaryFeedKinds()}]")
-            when (_feedMode.value) {
-                FeedMode.FOLLOWING -> {
-                    // Send the full follow list (iOS does not cap); capping at
-                    // 500 silently hid notes from any follows beyond that.
-                    val authors = followAuthors(relayUrl)
-                    if (authors.isNotEmpty()) {
-                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                    }
-                }
-                FeedMode.DISCOVERY -> {
-                    val authors = _extendedNetworkPubkeys.value.take(500)
-                    if (authors.isNotEmpty()) {
-                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                    }
-                }
-                FeedMode.GLOBAL -> {
-                    // No author restriction
-                }
-                FeedMode.ARTICLES, FeedMode.POLLS -> appendLongFormAuthors(this, relayUrl)
-                FeedMode.MARKETPLACE -> {
-                    // Handled entirely by MarketplaceFeedService.
-                }
-                FeedMode.LIVE -> {
-                    // Handled entirely by LiveFeedService; this subscription
-                    // never runs for it.
-                }
-                FeedMode.MUSIC -> {
-                    // Wavlake, not relays: MusicScreen loads its own catalogue.
-                }
-                // HashtagsFeedViewModel runs its own #t REQ.
-                FeedMode.HASHTAGS -> return
-                FeedMode.REELS -> return // Returned above; ReelsFeedService owns it
-                FeedMode.RECIPES -> {
-                    // Ask the relays for the topic rather than pulling every
-                    // long-form event and throwing most of it away. Only the
-                    // base topics go on the wire — a "#t" filter matches exact
-                    // values, so zapcooking-<category> tags cannot be asked for
-                    // here; RecipeTopics.matches still accepts them locally for
-                    // recipes that arrive through another subscription.
-                    append(",\"#t\":[${RecipeTopics.BASE.joinToString(",") { "\"$it\"" }}]")
-                    appendLongFormAuthors(this, relayUrl)
-                }
-                FeedMode.MEDIA -> {
-                    val authors = when (_mediaFeedMode.value) {
-                        MediaFeedMode.FOLLOWING -> followAuthors(relayUrl).take(500)
-                        // "Everyone" lifts the Web of Trust scope, like Global notes.
-                        MediaFeedMode.GLOBAL ->
-                            if (configStore.config.value.globalShowsEveryone) emptyList()
-                            else _wotPubkeys.value.take(500).toList()
-                    }
-                    if (authors.isNotEmpty()) {
-                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                    }
-                }
-                FeedMode.POPULAR -> return // Handled separately
-            }
+            if (!appendPrimaryScope(this, relayUrl)) return
 
             // Since timestamp. The note list outlives a mode switch, so Polls
             // counts only polls: another mode's notes would cut older polls off.
@@ -438,3 +446,8 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         val zapOutFilter = """{"kinds":[9734],"authors":["$ownerHex"],"limit":50}"""
         client.send("[\"REQ\",\"feed-zaps-out\",$zapOutFilter]")
     }
+
+/** Feeds whose content comes from their own service, never the timeline REQ. */
+internal val OWN_SERVICE_MODES = setOf(
+    FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS,
+)
