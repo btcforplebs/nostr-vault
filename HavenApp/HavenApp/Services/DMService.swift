@@ -1480,28 +1480,43 @@ class DMService: ObservableObject {
             print("Failed to unwrap gift wrap: \(error)")
             #endif
             guard self.switchGeneration == generation else { return }
-            waitForSigner(event)
+            waitForSigner(event, autoRetry: Self.signerMayAnswerLater(error))
+        }
+    }
+
+    /// No answer (offline, not connected, timed out) is worth asking again on
+    /// a timer. A refusal or a signer error is not: asking again unasked
+    /// would put the same request in front of the person every few minutes.
+    /// Those wait for Retry, a refresh or the next foreground.
+    static func signerMayAnswerLater(_ error: Error) -> Bool {
+        switch error as? NIP46Error {
+        case .timeout?, .offline?, .notConnected?: return true
+        default: return false
         }
     }
 
     // MARK: - Messages waiting for the signer
 
-    private func waitForSigner(_ event: NostrEvent) {
+    private func waitForSigner(_ event: NostrEvent, autoRetry: Bool) {
         // Out of the dedup set, so the relay's copy (on a refresh) or a retry
         // can bring it back in.
         seenGiftWrapIds.remove(event.id)
         signerWaiting[event.id] = event
         waitingForSignerCount = signerWaiting.count
-        scheduleSignerRetry()
+        if autoRetry { scheduleSignerRetry() }
     }
 
-    /// 10 s, 30 s, 1.5 min, then every 3 min while any are waiting.
+    /// 10 s, 30 s, 1.5 min, then every 3 min, at most `maxSignerRetries`
+    /// rounds (about 20 minutes). After that, Retry, a refresh or the next
+    /// foreground asks again.
     static func signerRetryDelay(attempt: Int) -> TimeInterval {
         [10, 30, 90, 180][min(attempt, 3)]
     }
+    static let maxSignerRetries = 8
 
     private func scheduleSignerRetry() {
-        guard signerRetryTask == nil, !signerWaiting.isEmpty else { return }
+        guard signerRetryTask == nil, !signerWaiting.isEmpty,
+              signerRetryAttempt < Self.maxSignerRetries else { return }
         let delay = Self.signerRetryDelay(attempt: signerRetryAttempt)
         signerRetryAttempt += 1
         signerRetryTask = Task { @MainActor [weak self] in
@@ -1516,6 +1531,9 @@ class DMService: ObservableObject {
     /// it; a failure puts it back in `signerWaiting` and schedules the next try.
     func retryWaitingForSigner() {
         guard !signerWaiting.isEmpty else { return }
+        // Asked for (Retry, refresh): once the automatic rounds are used up,
+        // this allows one more, so a signer that comes back still gets asked.
+        if signerRetryTask == nil { signerRetryAttempt = min(signerRetryAttempt, Self.maxSignerRetries - 1) }
         let waiting = Array(signerWaiting.values)
         signerWaiting.removeAll()
         waitingForSignerCount = 0
