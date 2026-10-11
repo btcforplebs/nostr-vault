@@ -99,8 +99,7 @@ struct TrustWebView: View {
     /// Your web as of your last look, for ✨ New; nil before a first look.
     @State private var seenWeb: Set<String>?
     /// The line under the bar after a filter tap: its name and count.
-    @State private var filterNote: (icon: String, text: String)?
-    @State private var filterNoteFade: Task<Void, Never>?
+    @StateObject private var filterNote = FilterNoteModel()
     /// The WOT tab's search field is open under the bar.
     @State private var searchOpen = false
     /// People who joined your web since you last looked, for the
@@ -502,7 +501,7 @@ struct TrustWebView: View {
             }
             if crumbs.count > 1 { crumbRow }
             livePill
-            if filterNote != nil { filterNoteView }
+            FilterNoteView(model: filterNote)
         }
         .padding(.top, 8)
         .transition(.opacity)
@@ -946,13 +945,7 @@ struct TrustWebView: View {
         } else {
             text = "\(tapped.title) off"
         }
-        withAnimation(Motion.fade) { filterNote = (on ? tapped.symbolName : "circle.slash", text) }
-        filterNoteFade?.cancel()
-        filterNoteFade = Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            withAnimation(Motion.fade) { filterNote = nil }
-        }
+        filterNote.show(FilterNote(icon: on ? tapped.symbolName : "circle.slash", text: text))
     }
 
     private func loadFollowsBack() {
@@ -964,7 +957,7 @@ struct TrustWebView: View {
             guard owner == me else { return }
             followsBack = followers ?? []
             followsBackLoaded = followers != nil
-            applyFilters(note: filters.contains(.followsBack) && filterNote != nil ? .followsBack : nil)
+            applyFilters(note: filters.contains(.followsBack) && filterNote.note != nil ? .followsBack : nil)
         }
     }
 
@@ -992,25 +985,6 @@ struct TrustWebView: View {
         Task.detached(priority: .utility) {
             try? JSONEncoder().encode(current).write(to: url, options: .atomic)
         }
-    }
-
-    private var filterNoteView: some View {
-        HStack(spacing: 7) {
-            if let filterNote {
-                Image(systemName: filterNote.icon).font(.appSystem(size: 12, weight: .bold))
-                    .foregroundColor(.havenPurple)
-                Text(filterNote.text).monospacedDigit()
-            }
-        }
-        .font(.appSystem(size: 13, weight: .semibold))
-        .padding(.vertical, 7)
-        .padding(.horizontal, 14)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-        .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .combine)
-        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     /// One icon per filter, a toggle each.
@@ -1639,7 +1613,7 @@ struct TrustGlobeCanvas: View {
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate

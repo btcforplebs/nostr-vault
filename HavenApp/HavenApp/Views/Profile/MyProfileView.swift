@@ -87,7 +87,9 @@ struct MyProfileView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        #if os(macOS)
         .sheet(isPresented: $showingDMInbox) { dmInboxSheet }
+        #endif
         #if os(iOS)
         .sheet(isPresented: $showingSettings) { settingsSheet }
         .overlay(alignment: .bottomTrailing) { postButton }
@@ -234,22 +236,14 @@ struct MyProfileView: View {
         #endif
     }
 
-    @ViewBuilder
+    #if os(macOS)
     private var dmInboxSheet: some View {
-        #if os(iOS)
-        NavigationStack {
-            DMInboxView()
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-        }
-        .dmInboxSheetSizing()
-        #else
         DMInboxView()
             .environmentObject(nostrService)
             .environmentObject(configService)
             .frame(minWidth: 480, minHeight: 500)
-        #endif
     }
+    #endif
 
     #if os(iOS)
     private var settingsSheet: some View {
@@ -351,9 +345,10 @@ private struct MyProfileScrollDecoration: ViewModifier {
     }
 }
 
-/// Wallet (owner only) on the left; messages and settings on the right. The
-/// Mac has no settings button here (it has its own Settings) and gets a
-/// refresh button, since nothing there pulls to refresh.
+/// Wallet (owner only) on the left; settings on the right (messages live in
+/// the Vault tab's right pill). The Mac has no settings button here (it has
+/// its own Settings) and gets messages and a refresh button, since nothing
+/// there pulls to refresh.
 private struct MyProfileToolbar: ViewModifier {
     let isOwner: Bool
     let hasUnreadDMs: Bool
@@ -377,31 +372,14 @@ private struct MyProfileToolbar: ViewModifier {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 16) {
-                    Button(action: onMessages) {
-                        Image(systemName: "bubble.right.fill")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.havenPurple)
-                            .overlay(alignment: .topTrailing) {
-                                if hasUnreadDMs {
-                                    Circle()
-                                        .fill(.red)
-                                        .frame(width: 8, height: 8)
-                                        .offset(x: 3, y: -3)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Messages")
-
-                    Button(action: onSettings) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Settings")
+                // Messages moved to the Vault tab's right pill.
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.appSystem(size: 16, weight: .semibold))
+                        .foregroundColor(.secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
         }
         #else

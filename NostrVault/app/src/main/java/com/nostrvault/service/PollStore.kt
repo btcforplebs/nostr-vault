@@ -12,6 +12,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -37,6 +40,19 @@ class PollStore @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val models = ConcurrentHashMap<String, PollModel>()
+
+    init {
+        // Blocking someone takes their vote off every poll held this session
+        // at once, rather than on each poll's next fetch. One watcher for all
+        // of them, since a session can hold hundreds.
+        scope.launch {
+            configStore.config
+                .map { it.blockedForActiveAccount() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { models.values.forEach { model -> model.retally() } }
+        }
+    }
 
     fun model(poll: NIP88Poll.Poll): PollModel =
         models.getOrPut(poll.id) { PollModel(poll, nostrService, configStore, scope) }
@@ -64,6 +80,11 @@ class PollModel internal constructor(
 
     private val responses = ConcurrentHashMap<String, NIP88Poll.Response>()
     @Volatile private var lastLoadMs = 0L
+
+    /** The active account's blocks, as hex pubkeys. */
+    private fun blockedHex(): Set<String> =
+        configStore.config.value.blockedForActiveAccount()
+            .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
     /**
      * The relays a poll's votes are read from and sent to: its own, this
@@ -101,7 +122,15 @@ class PollModel internal constructor(
 
     private fun merge(found: List<NIP88Poll.Response>) {
         for (r in found) responses[r.id] = r
-        val next = NIP88Poll.tally(responses.values.toList(), poll)
+        retally()
+    }
+
+    /**
+     * Recounts what is held, leaving out people the active account blocks.
+     * Their vote stays in [responses], so an unblock counts it again.
+     */
+    internal fun retally() {
+        val next = NIP88Poll.tally(responses.values.toList(), poll, blocked = blockedHex())
         _state.update { if (it.tally == next) it else it.copy(tally = next) }
         val known = nostrService.profiles.value
         val missing = next.voters.filter { it !in known }

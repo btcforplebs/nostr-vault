@@ -435,6 +435,32 @@ func (l *Ledger) Snapshot(owner string, trusted func(string) bool) Snapshot {
 	return snap
 }
 
+// Without returns the snapshot minus the followers hidden reports, with the
+// counts taken down to match. Blocking someone only stops the ledger taking
+// in their new lists; their record stays so an unblock brings them back, and
+// this is what keeps them off the list in the meantime.
+func (s Snapshot) Without(hidden func(string) bool) Snapshot {
+	kept := make([]Entry, 0, len(s.Followers))
+	for _, e := range s.Followers {
+		if !hidden(e.Pubkey) {
+			kept = append(kept, e)
+			continue
+		}
+		switch {
+		case !e.Following:
+			s.Counts.Unfollowed--
+		case e.Tier == TierTrusted:
+			s.Counts.Trusted--
+		case e.Tier == TierOther:
+			s.Counts.Others--
+		case e.Tier == TierSpam:
+			s.Counts.Spam--
+		}
+	}
+	s.Followers = kept
+	return s
+}
+
 // Flush writes the ledger if anything changed since the last flush.
 func (l *Ledger) Flush() error {
 	l.mu.Lock()

@@ -272,7 +272,8 @@ private fun ExpandedNavRow(
                     activeAccountPubkey = activeAccountPubkey,
                     activeAvatarUrl = activeAvatarUrl,
                     activeDisplayName = activeDisplayName,
-                    showBadge = hasUnreadDMs,
+                    // Messages live in the Vault tab now; its dot carries them.
+                    showBadge = false,
                     onClick = {
                         if (selected) {
                             onReselect(Screen.Profile)
@@ -296,7 +297,7 @@ private fun ExpandedNavRow(
                     label = item.label,
                     selected = selected,
                     selectedColor = primaryColor,
-                    showBadge = item.screen == Screen.Dashboard && hasNewRelayActivity,
+                    showBadge = item.screen == Screen.Dashboard && (hasNewRelayActivity || hasUnreadDMs),
                     onClick = onTabClick,
                     holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
                     modifier = Modifier.weight(1f),

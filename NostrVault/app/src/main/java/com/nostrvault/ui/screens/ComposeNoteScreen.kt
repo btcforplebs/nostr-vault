@@ -19,6 +19,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1427,12 +1428,21 @@ fun ComposeNoteScreen(
         },
         containerColor = WindowBackground,
     ) { padding ->
+        // The editor fills what the keyboard leaves; the name chips, attached
+        // media and toolbar dock on the keyboard edge so none of them hides
+        // behind it or pushes the line being typed out of sight (iOS #532).
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .consumeWindowInsets(padding)
+                .imePadding(),
+        ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp),
         ) {
             // Posting-as account avatar + quick switch (mirrors iOS ComposeView:
             // long-press the avatar to switch the posting account)
@@ -1483,12 +1493,65 @@ fun ComposeNoteScreen(
             }
 
             // Quoted note preview
+            // Capped so a long quote can't squeeze the editor shut.
             quotedNote?.let { qNote ->
                 QuotedNoteCard(
                     note = qNote,
                     profile = quotedProfile,
                     onClick = { /* non-interactive in compose */ },
-                    modifier = Modifier.padding(bottom = 12.dp),
+                    modifier = Modifier
+                        .padding(bottom = 12.dp)
+                        .heightIn(max = 140.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+            }
+
+            // Text input
+            OutlinedTextField(
+                value = textFieldValue,
+                onValueChange = { newValue ->
+                    textFieldValue = newValue
+                    viewModel.onContentChanged(newValue.text, newValue.selection.start)
+                },
+                placeholder = {
+                    Text(
+                        when {
+                            viewModel.isReply -> "Write your reply..."
+                            viewModel.isQuote -> "Add your thoughts..."
+                            else -> "What's happening?"
+                        },
+                        color = PlaceholderText,
+                    )
+                },
+                // Fills the space left and scrolls itself, which keeps the
+                // caret in view while typing.
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = colors.primary,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
+        }
+
+        // Docked above the keyboard.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+        ) {
+            // @mention suggestions
+            if (mentionResults.isNotEmpty()) {
+                MentionSuggestions(
+                    results = mentionResults,
+                    onSelect = { profile ->
+                        viewModel.insertMention(profile)?.let { (newText, caret) ->
+                            textFieldValue = TextFieldValue(newText, TextRange(caret))
+                        }
+                    },
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
             }
 
@@ -1498,7 +1561,7 @@ fun ComposeNoteScreen(
                     attachments = attachments,
                     onRemove = { viewModel.removeAttachment(it) },
                     onEditAlt = { altEditorTarget = it },
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
 
@@ -1541,49 +1604,8 @@ fun ComposeNoteScreen(
                         modifier = Modifier.padding(12.dp),
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             }
-
-            // Text input
-            OutlinedTextField(
-                value = textFieldValue,
-                onValueChange = { newValue ->
-                    textFieldValue = newValue
-                    viewModel.onContentChanged(newValue.text, newValue.selection.start)
-                },
-                placeholder = {
-                    Text(
-                        when {
-                            viewModel.isReply -> "Write your reply..."
-                            viewModel.isQuote -> "Add your thoughts..."
-                            else -> "What's happening?"
-                        },
-                        color = PlaceholderText,
-                    )
-                },
-                minLines = 8,
-                maxLines = 20,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    cursorColor = colors.primary,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            // @mention suggestions
-            if (mentionResults.isNotEmpty()) {
-                MentionSuggestions(
-                    results = mentionResults,
-                    onSelect = { profile ->
-                        viewModel.insertMention(profile)?.let { (newText, caret) ->
-                            textFieldValue = TextFieldValue(newText, TextRange(caret))
-                        }
-                    },
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
 
             // Media buttons footer
             Row(
@@ -1682,7 +1704,7 @@ fun ComposeNoteScreen(
                     )
                 }
             }
-
+        }
         }
     }
 
@@ -1720,41 +1742,46 @@ fun ComposeNoteScreen(
     }
 }
 
-/** Dropdown list of profiles matching the active `@query`, shown under the editor. */
+/**
+ * One row of name chips for the active `@query`, docked just above the
+ * toolbar like keyboard suggestions; swipe sideways for more. A tall list
+ * here covered the line being typed (iOS ComposeView mention strip).
+ */
 @Composable
 private fun MentionSuggestions(
     results: List<FeedProfile>,
     onSelect: (FeedProfile) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        color = Color(0xFF22222A),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp)
-            .heightIn(max = 264.dp),
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-            results.forEach { profile ->
+        items(results) { profile ->
+            Surface(
+                onClick = { onSelect(profile) },
+                color = Color(0xFF22222A),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier
+                    .height(44.dp)
+                    .widthIn(max = 220.dp),
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(profile) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(start = 6.dp, end = 14.dp),
                 ) {
                     AvatarImage(
                         url = profile.pictureURL,
                         pubkey = profile.pubkey,
-                        size = 36.dp,
+                        size = 30.dp,
                         displayName = profile.bestName,
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                    Spacer(Modifier.width(8.dp))
+                    Column {
                         Text(
                             text = profile.bestName,
                             color = PrimaryText,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1763,7 +1790,7 @@ private fun MentionSuggestions(
                             Text(
                                 text = nip05.removePrefix("_@"),
                                 color = TertiaryText,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1791,8 +1818,8 @@ private fun AttachmentGrid(
         attachments.forEach { attachment ->
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(10.dp))
             ) {
                 // Image/video preview; audio has no picture, so iOS's waveform tile.
                 if (attachment.mimeType.startsWith("audio/")) {

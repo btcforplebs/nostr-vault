@@ -150,4 +150,25 @@ final class NIP88PollTests: XCTestCase {
         // This device's own relay stays; the stranger's private ones go.
         XCTAssertEqual(r, ["wss://poll.relay", "ws://127.0.0.1:4869", "wss://outbox.relay"])
     }
+
+    // MARK: Blocked voters
+
+    func testBlockedVotersAreLeftOutOfTheCountAndTheVoterList() {
+        let p = poll()
+        let blocked = String(repeating: "c", count: 64)
+        let votes = [vote("a", ["yes"]), vote("c", ["yes"]), vote("d", ["no"])]
+        let shown = NIP88Poll.tally(votes, poll: p, now: now, blocked: [blocked])
+        XCTAssertEqual(shown.count("yes"), 1)
+        XCTAssertEqual(shown.voters, [String(repeating: "a", count: 64), String(repeating: "d", count: 64)])
+        XCTAssertNil(shown.picksByVoter[blocked])
+        XCTAssertEqual(shown.votersByOption["yes"], [String(repeating: "a", count: 64)])
+        XCTAssertEqual(shown.share("yes"), 0.5)
+
+        // The control: unblocked, the same votes all count. A vote is hidden,
+        // never dropped, so an unblock counts it again.
+        let all = NIP88Poll.tally(votes, poll: p, now: now)
+        XCTAssertEqual(all.count("yes"), 2)
+        XCTAssertEqual(all.voters.count, 3)
+        XCTAssertEqual(all.picksByVoter[blocked], ["yes"])
+    }
 }

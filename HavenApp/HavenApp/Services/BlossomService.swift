@@ -1310,6 +1310,12 @@ class BlossomService: @unchecked Sendable {
         }
     }
 
+    /// Whether one server holds `sha256`: the per-server check behind
+    /// `checkMirrorPresence`, for testing a single server.
+    func checkPresence(mirror: String, sha256: String) async -> BlobPresence {
+        await checkBlobExists(mirror: mirror, sha256: sha256)
+    }
+
     /// Check if a specific blob exists on a mirror server.
     /// A 2xx alone is not enough: some servers answer 200 with an HTML page
     /// for any path, which used to read as "Available" for every file.

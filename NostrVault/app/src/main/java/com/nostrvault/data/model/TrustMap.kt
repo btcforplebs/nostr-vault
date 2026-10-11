@@ -404,9 +404,12 @@ object TrustMap {
     const val LAYER_FACES = 100
 
     /**
-     * The people past your follows [layer] shows as faces, most vouched first
-     * ([layerPeople]'s order). Everyone and Following show your follows'
-     * faces instead. iOS `layerFaceCandidates`.
+     * The people past your follows [layer] shows as faces, most vouched first.
+     * Everyone and Following show your follows' faces instead. Ties don't go
+     * in key order as in [layerPeople]: a key's leading digits are its
+     * longitude, so taking the first few hundred of thousands tied at the
+     * same count would put every face on one side of the globe. iOS
+     * `layerFaceCandidates`.
      */
     fun layerFaceCandidates(
         layer: Layer,
@@ -417,7 +420,9 @@ object TrustMap {
         count: Int = LAYER_FACE_CANDIDATES,
     ): List<String> {
         if (layer != Layer.CLOSE && layer != Layer.FURTHER_OUT) return emptyList()
-        return layerPeople(layer, me, follows, web, vouches).web.take(count)
+        return layerPeople(layer, me, follows, web, vouches).web
+            .sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { fraction(it, 16) }.thenBy { it })
+            .take(count)
     }
 
     /**
@@ -574,7 +579,15 @@ class GlobeCamera {
         const val SLEEP_AFTER = 20.0
         const val DRIFT_SPEED = 0.05
         /** How fast a flick dies away, per second. */
-        const val SPIN_DECAY = 1.6
+        const val SPIN_DECAY = 2.4
+        /** Radians the globe turns per dp a finger moves. */
+        const val DRAG_TURN = 0.005
+        /** Spin per dp-a-second of release speed. */
+        const val FLICK_TURN = 0.003
+        /** Slower than this at release is letting go, not a flick: no spin. */
+        const val FLICK_FLOOR = 350.0
+        /** A flick never spins faster than this, radians a second. */
+        const val MAX_SPIN = 2.5
         /** A frame slower than this counts as this long, so a hitch can't fling it. */
         const val MAX_STEP = 1.0 / 20
 
@@ -593,7 +606,7 @@ class GlobeCamera {
 
     /** One finger moved by [dx], [dy] dp: turn under it. */
     fun drag(dx: Double, dy: Double, now: Double) {
-        val k = 0.009
+        val k = DRAG_TURN
         val turn = Quat.angle(dx * k, Y_AXIS) * Quat.angle(dy * k, X_AXIS)
         orientation = (turn * orientation).normalized()
         flyTarget = null
@@ -603,8 +616,14 @@ class GlobeCamera {
 
     /** Let go at [vx], [vy] dp a second: keep turning that way. */
     fun flick(vx: Double, vy: Double, now: Double, reduceMotion: Boolean) {
-        val k = 0.006
-        spin = if (reduceMotion) Vec3.ZERO else Vec3(vy * k, vx * k, 0.0)
+        val speed = sqrt(vx * vx + vy * vy)
+        spin = if (reduceMotion || speed <= FLICK_FLOOR) {
+            Vec3.ZERO
+        } else {
+            val rate = speed * FLICK_TURN
+            val scale = FLICK_TURN * min(1.0, MAX_SPIN / rate)
+            Vec3(vy * scale, vx * scale, 0.0)
+        }
         touch(now)
     }
 

@@ -111,6 +111,10 @@ func startHaven(t *testing.T) *havenUnderTest {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	prevConfig, prevFs := config, fs
+	// initRelays points the store globals at this test's databases; put the
+	// previous ones back after closing them, or a later test that runs in the
+	// same binary queries a closed store and blocks forever.
+	prevDBs := [...]DBBackend{privateDB, chatDB, outboxDB, inboxDB, feedDB, blossomDB}
 	config = Config{
 		DBEngine:           "badger",
 		RelayPort:          port,
@@ -134,6 +138,7 @@ func startHaven(t *testing.T) *havenUnderTest {
 		cancel()
 		CloseDBs()
 		config, fs = prevConfig, prevFs
+		privateDB, chatDB, outboxDB, inboxDB, feedDB, blossomDB = prevDBs[0], prevDBs[1], prevDBs[2], prevDBs[3], prevDBs[4], prevDBs[5]
 	})
 	return &havenUnderTest{base: fmt.Sprintf("ws://127.0.0.1:%d", port), ownerSK: ownerSK, owner: owner}
 }

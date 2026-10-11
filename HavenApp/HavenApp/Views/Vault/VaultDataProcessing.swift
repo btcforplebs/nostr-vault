@@ -253,6 +253,8 @@ extension VaultView {
         print("updateDisplayData: events=\(currentEvents.count) filter=\(currentFilter)")
         #endif
         let currentMode = viewMode
+        let currentActivityFilter = activityFilter
+        let zapsOnly = configService.config.zapsOnlyMode
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
         let walletGiven = walletGivenNotes
@@ -279,12 +281,17 @@ extension VaultView {
                     isBlocked: { blacklist.contains($0) },
                     isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
                 )
-                let shown = Array(lines.prefix(currentMaxDisplayed))
+                // Filtered before the page cap, so a page of likes doesn't
+                // hide the mentions behind it.
+                let shown = Array(lines.lazy
+                    .filter { currentActivityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
+                    .prefix(currentMaxDisplayed))
                 let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
                     self.activityHasLoadedOnce = true
+                    self.displayPass &+= 1
                     self.nostrService.fetchMissingProfiles(for: missingProfiles)
                 }
             } else if currentMode == .likes {
@@ -317,6 +324,7 @@ extension VaultView {
                         }
                         if !self.reactionMap.isEmpty { self.reactionMap = [:] }
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming reactions: determine target note set based on filter
@@ -369,6 +377,7 @@ extension VaultView {
                         self.reactionMap = finalRxMap
                         self.latestReactionDates = finalReactionDates
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .zaps {
@@ -456,6 +465,7 @@ extension VaultView {
                         }
                         self.zapMap = finalGivenMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming zaps: determine target note set based on filter
@@ -468,15 +478,13 @@ extension VaultView {
                     }
 
                     let excludeSelf = (currentZapsFilter == .onMyNotes)
-                    var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
-                    var lastZapAt: [String: Int64] = [:]
-                    for item in parsedReceipts {
-                        guard let targetId = item.parsed.targetNoteId,
-                              targetNoteIds.contains(targetId) else { continue }
-                        if excludeSelf && item.parsed.senderPubkey == owner { continue }
-                        zMap[targetId, default: []].append((pubkey: item.parsed.senderPubkey, amount: item.parsed.amountSats))
-                        lastZapAt[targetId] = max(lastZapAt[targetId] ?? 0, receiptTimes[item.receiptId] ?? 0)
-                    }
+                    let (zMap, lastZapAt) = VaultActivity.zapsOnPosts(
+                        parsedReceipts.map {
+                            VaultActivity.Zap(sender: $0.parsed.senderPubkey, target: $0.parsed.targetNoteId,
+                                              sats: $0.parsed.amountSats, at: receiptTimes[$0.receiptId] ?? 0)
+                        },
+                        targets: targetNoteIds, owner: owner, excludeOwner: excludeSelf,
+                        isBlocked: { blacklist.contains($0) })
 
                     let zappedNoteIds = Set(zMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
@@ -496,6 +504,7 @@ extension VaultView {
                         }
                         self.zapMap = finalZMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .notes {
@@ -562,7 +571,7 @@ extension VaultView {
                     }
                 }
 
-                var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                var noteZaps: [VaultActivity.Zap] = []
                 if !displayedIds.isEmpty {
                     let zapReceipts = currentEvents.filter { $0.kind == 9735 }
                     for receipt in zapReceipts {
@@ -575,9 +584,15 @@ extension VaultView {
                         // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
                         let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: receipt.tags,
                                                                          requestTags: zapReq["tags"] as? [[String]] ?? []))
-                        zMap[targetId, default: []].append((pubkey: senderPubkey, amount: amountSats))
+                        noteZaps.append(VaultActivity.Zap(sender: senderPubkey, target: targetId,
+                                                          sats: amountSats, at: receipt.created_at))
                     }
                 }
+                // A zap receipt is signed by the wallet server, so the relay's
+                // block list never catches it: the zapper is checked here.
+                let zMap = VaultActivity.zapsOnPosts(noteZaps, targets: displayedIds, owner: owner,
+                                                     excludeOwner: false,
+                                                     isBlocked: { blacklist.contains($0) }).zappers
 
                 // Repost map: noteId -> [reposter pubkeys]
                 var rpMap: [String: [String]] = [:]
@@ -616,6 +631,7 @@ extension VaultView {
                     self.repostMap = finalRpMap
                     self.quoteMap = finalQtMap
                     self.notesHasLoadedOnce = true
+                    self.displayPass &+= 1
                 }
             }
 

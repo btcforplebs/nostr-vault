@@ -220,6 +220,31 @@ func TestSnapshotTiersAndCounts(t *testing.T) {
 	}
 }
 
+// A blocked follower leaves the list and the counts, whatever their tier.
+func TestSnapshotWithoutHidden(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	l := openAt(t, afero.NewMemMapFs(), &now)
+	seeded := l.owners[owner].SeededAt
+	l.ObserveList(owner, "friend", seeded+1, true, 300)
+	l.ObserveList(owner, "newbie", seeded+2, true, 12)
+	l.ObserveList(owner, "followbot", seeded+3, true, SpamListSize)
+	l.ObserveList(owner, "leaver", seeded+4, true, 40)
+	l.ObserveList(owner, "leaver", seeded+5, false, 39)
+
+	full := l.Snapshot(owner, func(pk string) bool { return pk == "friend" })
+	blocked := map[string]bool{"friend": true, "followbot": true, "leaver": true}
+	snap := full.Without(func(pk string) bool { return blocked[pk] })
+	if want := (Counts{Others: 1}); snap.Counts != want {
+		t.Fatalf("counts = %+v want %+v", snap.Counts, want)
+	}
+	if len(snap.Followers) != 1 || snap.Followers[0].Pubkey != "newbie" {
+		t.Fatalf("followers = %+v", snap.Followers)
+	}
+	if len(full.Followers) != 4 {
+		t.Fatalf("Without changed the original: %d followers", len(full.Followers))
+	}
+}
+
 // An old follower whose clients disagree about the list (one drops the owner,
 // another puts them back) must stay old news, not resurface as a comeback.
 func TestFlapKeepsExistingFollowQuiet(t *testing.T) {

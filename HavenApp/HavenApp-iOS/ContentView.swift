@@ -96,7 +96,7 @@ struct ContentView: View {
             VaultSection.shared.showsMedia = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
-            selectedTab = 2 // Profile tab
+            selectedTab = 4 // Vault tab, whose Messages button opens the inbox
             dmInboxConversation = note.object as? String
             showingDMInbox = true
         }
@@ -171,6 +171,10 @@ struct iPadSidebarView: View {
     @StateObject private var nostrService = NostrService.shared
     @StateObject private var feedService = FeedService.shared
     @StateObject private var dmService = DMService.shared
+    /// The Vault row's dot: something came in, a new message included.
+    private var vaultHasNews: Bool {
+        relayManager.hasNewRelayActivity || dmService.totalUnreadCount > 0
+    }
     @State private var showingAccountSwitcher = false
     @State private var searchPath = NavigationPath()
     @State private var profilePath = NavigationPath()
@@ -315,9 +319,9 @@ struct iPadSidebarView: View {
                     }
                     .accessibilityHint("Write a new post")
 
-                    // On the phone the inbox opens from Profile; here it gets
-                    // its own row, with the unread count the phone shows on
-                    // the Profile tab.
+                    // On the phone the inbox opens from the Vault tab's
+                    // Messages button; here it also gets its own row, with
+                    // the unread count.
                     Button {
                         NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
                     } label: {
@@ -354,15 +358,7 @@ struct iPadSidebarView: View {
                         Label("Search", systemImage: "magnifyingglass")
                     }
                     NavigationLink(value: SidebarItem.tab(2)) {
-                        HStack {
-                            Label("Profile", systemImage: "person.crop.circle")
-                            Spacer()
-                            if dmService.totalUnreadCount > 0 {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 8, height: 8)
-                            }
-                        }
+                        Label("Profile", systemImage: "person.crop.circle")
                     }
                     NavigationLink(value: SidebarItem.tab(3)) {
                         Label {
@@ -381,7 +377,7 @@ struct iPadSidebarView: View {
                         HStack {
                             Label("Vault", systemImage: VaultDashboard.symbol)
                             Spacer()
-                            if relayManager.hasNewRelayActivity {
+                            if vaultHasNews {
                                 Circle()
                                     .fill(.red)
                                     .frame(width: 8, height: 8)
@@ -1098,7 +1094,7 @@ struct BottomTabBar: View {
             NotificationCenter.default.post(name: .wotTabReselected, object: nil)
         }
 
-        tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: relayManager.hasNewRelayActivity) {
+        tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews) {
             if VaultSection.shared.showsMedia {
                 if !mediaPath.isEmpty {
                     mediaPath = NavigationPath()
@@ -1114,6 +1110,11 @@ struct BottomTabBar: View {
             // The dot goes to where the news is, not to the list you left.
             if relayManager.hasNewRelayActivity { VaultSection.shared.opensNewActivity = true }
         }
+    }
+
+    /// The Vault tab's dot: something came in, a new message included.
+    private var vaultHasNews: Bool {
+        relayManager.hasNewRelayActivity || dmService.totalUnreadCount > 0
     }
 
     // MARK: - Collapsed Content
@@ -1251,14 +1252,6 @@ struct BottomTabBar: View {
                     )
                     .zapFlightOrigin()
                     .frame(height: 24)
-                    .overlay(alignment: .topTrailing) {
-                        if dmService.totalUnreadCount > 0 {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 8, height: 8)
-                                .offset(x: 4, y: -2)
-                        }
-                    }
                 Text("Profile")
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Color.havenPurple : .white)

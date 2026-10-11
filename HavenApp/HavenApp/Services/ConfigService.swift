@@ -660,9 +660,13 @@ class ConfigService: ObservableObject {
     /// Falls back to owner if active browsing account is empty.
     var activeAccountBlockedHexPubkeys: Set<String> {
         let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
+        return blockedHexPubkeys(forAccount: active.isEmpty ? config.ownerNpub : active)
+    }
+
+    /// The hex pubkeys one account has blocked.
+    func blockedHexPubkeys(forAccount targetNpub: String) -> Set<String> {
         let blockedNpubs = config.blockedNpubsPerAccount[targetNpub] ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
-        
+
         var hexKeys = Set<String>()
         for npub in blockedNpubs {
             let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)

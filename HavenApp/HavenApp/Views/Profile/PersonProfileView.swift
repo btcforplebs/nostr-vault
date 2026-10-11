@@ -53,6 +53,10 @@ struct PersonProfileView: View {
             shopHeader: { EmptyView() }
         )
         .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
+        // Blocking shuts their shop as you block, and unblocking fetches it
+        // again, rather than waiting for the next visit. ProfileContent
+        // reveals the shop section as its listings change.
+        .onChange(of: isBlocked) { _, _ in shop.load(pubkey: pubkey, force: true) }
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

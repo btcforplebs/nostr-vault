@@ -158,7 +158,12 @@ class ConfigStore @Inject constructor(
      * account that can't be decoded clears it.
      */
     private fun setConfig(new: HavenConfig) {
+        val oldBlocked = _config.value.allBlockedNpubsAcrossAccounts()
         _config.value = new
+        // Any block or unblock, on any account, from any path (Block button,
+        // a mute list synced from another device): the relay hears it now.
+        val blocked = new.allBlockedNpubsAcrossAccounts()
+        if (blocked != oldBlocked) HavenBridge.updateBlacklist(blocked)
         val npub = new.activeOrOwnerNpub()
         val hex = when {
             npub.startsWith("npub1") -> HavenBridge.decodeNpub(npub).orEmpty()

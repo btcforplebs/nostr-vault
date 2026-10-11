@@ -128,6 +128,19 @@ enum FollowListLogic {
             || person.nip05.localizedCaseInsensitiveContains(q)
     }
 
+    /// Everyone kept off both lists: the viewer's spam, plus everyone the
+    /// viewer blocks. Blocking hides, so neither list nor count drops the
+    /// person's record — an unblock brings them back.
+    static func dropped(spam: Set<String>, blocked: Set<String>) -> Set<String> {
+        spam.union(blocked)
+    }
+
+    /// How many of `people` the list actually shows, so the count beside the
+    /// switch matches the rows under it.
+    static func shownCount(_ people: [String], dropped: Set<String>) -> Int {
+        dropped.isEmpty ? people.count : people.filter { !dropped.contains($0) }.count
+    }
+
     /// A count that may be short of the real number reads "48+".
     static func countText(_ count: Int, more: Bool) -> String {
         let short: String

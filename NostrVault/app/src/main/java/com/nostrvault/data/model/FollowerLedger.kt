@@ -69,6 +69,29 @@ data class FollowerSnapshot(
     fun hasNewSince(seenAt: Long): Boolean =
         followers.orEmpty().any { it.isNews && it.followedAt > seenAt }
 
+    /**
+     * This snapshot minus [hidden] (hex pubkeys), counts taken down to match.
+     * The relay's ledger keeps a blocked follower's record (so an unblock
+     * brings them back), and on Android the relay never hears about blocks,
+     * so this is what keeps them off the list.
+     */
+    fun without(hidden: Set<String>): FollowerSnapshot {
+        if (hidden.isEmpty()) return this
+        val (gone, kept) = followers.orEmpty().partition { it.pubkey in hidden }
+        if (gone.isEmpty()) return this
+        var c = counts
+        for (e in gone) {
+            c = when {
+                !e.following -> c.copy(unfollowed = c.unfollowed - 1)
+                e.tier == "trusted" -> c.copy(trusted = c.trusted - 1)
+                e.tier == "other" -> c.copy(others = c.others - 1)
+                e.isSpam -> c.copy(spam = c.spam - 1)
+                else -> c
+            }
+        }
+        return FollowerSnapshot(counts = c, followers = kept)
+    }
+
     companion object {
         const val NEW_LIMIT = 100
 

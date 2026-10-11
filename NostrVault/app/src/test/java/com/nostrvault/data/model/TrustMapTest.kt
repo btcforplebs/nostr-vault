@@ -111,6 +111,16 @@ class TrustMapTest {
         assertTrue(camera.spin.isZero)
     }
 
+    @Test fun `a slow let go does not spin`() {
+        val camera = GlobeCamera().apply { flick(200.0, -150.0, 0.0, reduceMotion = false) }
+        assertTrue(camera.spin.isZero)
+    }
+
+    @Test fun `a hard flick is capped`() {
+        val camera = GlobeCamera().apply { flick(6000.0, 0.0, 0.0, reduceMotion = false) }
+        assertEquals(GlobeCamera.MAX_SPIN, camera.spin.length, 1e-9)
+    }
+
     @Test fun `fly to arrives and lets the clock sleep`() {
         val camera = GlobeCamera().apply { zoom = 2.0; zoomTarget = 2.0 }
         val target = GlobeCamera.facing(TrustMap.direction(randomKey(7)))
@@ -419,6 +429,22 @@ class TrustMapTest {
         assertEquals(3, old[TrustMap.Layer.FURTHER_OUT])
         assertEquals(listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.FOLLOWING, TrustMap.Layer.FURTHER_OUT), TrustMap.layers(false))
         assertEquals(TrustMap.Layer.entries, TrustMap.layers(true))
+    }
+
+    @Test
+    fun layerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        val random = java.util.Random(42)
+        val web = (0 until 4000).map { (0 until 4).joinToString("") { "%016x".format(random.nextLong()) } }.toSet()
+        // Most people further out are vouched for by the same one or two follows.
+        val vouches = web.associateWith { 1 }
+        val faces = TrustMap.layerFaceCandidates(TrustMap.Layer.FURTHER_OUT, me, emptySet(), web, vouches, TrustMap.LAYER_FACES)
+        assertEquals(TrustMap.LAYER_FACES, faces.size)
+        val octants = faces.map {
+            val d = TrustMap.direction(it)
+            ((kotlin.math.atan2(d.y, d.x) + Math.PI) / (2 * Math.PI) * 8).toInt() % 8
+        }.toSet()
+        assertEquals("faces bunched into ${octants.size} of 8 slices of the globe", 8, octants.size)
     }
 
     @Test

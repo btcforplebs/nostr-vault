@@ -24,6 +24,8 @@ import kotlinx.serialization.json.Json
 class SellerListingsLoader(
     private val scope: CoroutineScope,
     private val nostrService: NostrService,
+    /** True while the viewer blocks this seller. */
+    private val isBlocked: (String) -> Boolean = { false },
 ) {
     companion object {
         private const val WINDOW_MS = 10_000L
@@ -46,6 +48,13 @@ class SellerListingsLoader(
         cancel()
         loadedPubkey = pubkey
         _listings.value = emptyList()
+        // A blocked seller's shop stays shut: nothing is asked for and
+        // nothing shows, so the Shop tab drops off their profile. Their
+        // listings are untouched, so an unblock shows them again.
+        if (isBlocked(pubkey)) {
+            _isLoading.value = false
+            return
+        }
         _isLoading.value = true
 
         val relays = (MarketplaceFeedService.RELAYS + (nostrService.outboxRelays.value[pubkey] ?: emptyList())).distinct()

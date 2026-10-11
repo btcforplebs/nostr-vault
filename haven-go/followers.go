@@ -267,5 +267,6 @@ func followersSnapshot(ctx context.Context, owner string) (followers.Snapshot, b
 		return followers.Snapshot{}, false
 	}
 	model := wot.GetInstance()
-	return l.Snapshot(owner, func(pk string) bool { return model != nil && model.Has(ctx, pk) }), true
+	snap := l.Snapshot(owner, func(pk string) bool { return model != nil && model.Has(ctx, pk) })
+	return snap.Without(isBlacklisted), true
 }

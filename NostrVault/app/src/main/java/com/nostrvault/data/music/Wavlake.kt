@@ -237,3 +237,87 @@ object WavlakeLink {
         return "🎵 ${track.title} by $by\n\nhttps://wavlake.com/track/${track.id}"
     }
 }
+
+/**
+ * Music by someone the active account has blocked. Port of iOS
+ * `WavlakeBlockFilter` (Wavlake.swift).
+ *
+ * Wavlake only names an artist's Nostr key on the artist's own page, so a
+ * blocked artist is recognised two ways: by the key, when a song or a page
+ * carries one, and otherwise by their Wavlake artist id once any page seen
+ * this launch has named that key. Nothing is removed from Wavlake or from the
+ * saved artist list, so an unblock shows them again.
+ *
+ * The gap this leaves: an artist never opened, played or followed has no known
+ * key, so their songs can still rank in Trending until a page naming their key
+ * is read.
+ */
+object WavlakeBlockFilter {
+    /**
+     * The Wavlake ids of every known artist whose linked key is blocked.
+     * [hex] turns an npub into a hex pubkey, matching [blocked].
+     */
+    fun blockedArtistIds(known: List<WavlakeArtist>, blocked: Set<String>, hex: (String) -> String?): Set<String> {
+        if (blocked.isEmpty()) return emptySet()
+        val ids = HashSet<String>()
+        for (artist in known) {
+            val key = artist.npub?.let(hex) ?: continue
+            if (key in blocked) ids.add(artist.id)
+        }
+        return ids
+    }
+
+    fun isBlocked(
+        npub: String?,
+        artistId: String?,
+        blocked: Set<String>,
+        artistIds: Set<String>,
+        hex: (String) -> String?,
+    ): Boolean {
+        if (blocked.isEmpty() && artistIds.isEmpty()) return false
+        if (npub != null && hex(npub) in blocked) return true
+        return artistId != null && artistId in artistIds
+    }
+
+    fun tracks(
+        tracks: List<WavlakeTrack>,
+        blocked: Set<String>,
+        artistIds: Set<String>,
+        hex: (String) -> String?,
+    ): List<WavlakeTrack> {
+        if (blocked.isEmpty() && artistIds.isEmpty()) return tracks
+        return tracks.filter { !isBlocked(it.artistNpub, it.artistId, blocked, artistIds, hex) }
+    }
+
+    fun artists(
+        artists: List<WavlakeArtist>,
+        blocked: Set<String>,
+        artistIds: Set<String>,
+        hex: (String) -> String?,
+    ): List<WavlakeArtist> {
+        if (blocked.isEmpty() && artistIds.isEmpty()) return artists
+        return artists.filter { !isBlocked(it.npub, it.id, blocked, artistIds, hex) }
+    }
+
+    /**
+     * One row of a search: the track rows by their own key or artist id, the
+     * artist rows by id. Search carries no keys, so an artist row only drops
+     * once a page has named their key.
+     */
+    fun results(
+        results: List<WavlakeSearchResult>,
+        blocked: Set<String>,
+        artistIds: Set<String>,
+        hex: (String) -> String?,
+    ): List<WavlakeSearchResult> {
+        if (blocked.isEmpty() && artistIds.isEmpty()) return results
+        return results.filter { result ->
+            when (result) {
+                is WavlakeSearchResult.Track ->
+                    !isBlocked(result.track.artistNpub, result.track.artistId, blocked, artistIds, hex)
+                is WavlakeSearchResult.Artist -> result.id !in artistIds
+                is WavlakeSearchResult.Album -> true
+            }
+        }
+    }
+}
