@@ -50,7 +50,7 @@ class FeedService @Inject constructor(
     internal val configStore: ConfigStore,
     internal val nostrService: NostrService,
     internal val feedFilterEngine: FeedFilterEngine,
-    private val engagementTracker: EngagementTracker,
+    internal val engagementTracker: EngagementTracker,
     private val blobNoteIndexStore: BlobNoteIndexStore,
     internal val contactManager: ContactManager,
     internal val imageLoader: ImageLoader,
@@ -67,7 +67,7 @@ class FeedService @Inject constructor(
         internal const val MAX_FEED_NOTES = 10_000
         internal const val MAX_PENDING_NOTES = 200
         internal const val MAX_RAW_EVENT_CACHE = 1000
-        private const val MAX_INJECTED_IDS = 10_000
+        internal const val MAX_INJECTED_IDS = 10_000
         internal const val CONTACT_LOAD_TIMEOUT_MS = 15_000L
         // After the first kind-3 arrives, wait briefly for a newer version from
         // another relay before committing (kind-3 is replaceable → newest wins).
@@ -100,7 +100,7 @@ class FeedService @Inject constructor(
         )
         private const val SEARCH_TIMEOUT_MS = 10_000L
         private const val SEARCH_DEBOUNCE_MS = 400L
-        private const val INTERACTION_SAVE_THROTTLE_MS = 2_000L
+        internal const val INTERACTION_SAVE_THROTTLE_MS = 2_000L
         internal const val FLUSH_INTERVAL_STANDARD_MS = 800L
         internal const val FLUSH_INTERVAL_GLOBAL_MS = 50L
         // Longest a batch waits for a drag or fling to settle. Past this it
@@ -111,7 +111,7 @@ class FeedService @Inject constructor(
         private const val NOTE_BATCH_DELAY_MS = 150L
         internal const val STAGGER_RELAY_MS = 200L
         internal const val SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L // 7 days (matches iOS)
-        private const val SNAPSHOT_MAX_NOTES = 200
+        internal const val SNAPSHOT_MAX_NOTES = 200
         internal const val EXTENDED_NETWORK_CACHE_MS = 60 * 60 * 1000L // 1 hour
         // A tally missing a relay's answers is held briefly rather than for the
         // full hour — see loadExtendedNetwork.
@@ -119,7 +119,7 @@ class FeedService @Inject constructor(
         // Follows per kind-3 REQ. Matches iOS fetchExtendedNetworkInParallel.
         internal const val EXTENDED_NETWORK_CHUNK = 200
         internal const val MAX_SEEN_IDS = 10_000
-        private const val RECOMPUTE_DEBOUNCE_MS = 50L
+        internal const val RECOMPUTE_DEBOUNCE_MS = 50L
         /** Global's stream batches land every 50 ms; gather them into one reply fetch. */
         internal const val THREAD_REPLIES_SETTLE_MS = 500L
         internal const val AVATAR_PREWARM_COUNT = 80 // Warm cache for ~4 screens of visible notes
@@ -399,16 +399,16 @@ class FeedService @Inject constructor(
     internal val _noteStats = MutableStateFlow<Map<String, NoteStats>>(emptyMap())
     val noteStats: StateFlow<Map<String, NoteStats>> = _noteStats.asStateFlow()
 
-    private val _isSearchActive = MutableStateFlow(false)
+    internal val _isSearchActive = MutableStateFlow(false)
     val isSearchActive: StateFlow<Boolean> = _isSearchActive.asStateFlow()
 
-    private val _searchQuery = MutableStateFlow("")
+    internal val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<FeedNote>>(emptyList())
+    internal val _searchResults = MutableStateFlow<List<FeedNote>>(emptyList())
     val searchResults: StateFlow<List<FeedNote>> = _searchResults.asStateFlow()
 
-    private val _isSearching = MutableStateFlow(false)
+    internal val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     // Saved in the config so they survive a restart, as on iOS. Read from the
@@ -491,7 +491,7 @@ class FeedService @Inject constructor(
     internal val seenIds = LinkedHashSet<String>()
     internal val seenIdsLock = ReentrantLock()
     internal val rawEventCache = ConcurrentHashMap<String, String>()
-    private val injectedEventIds = ConcurrentHashMap.newKeySet<String>()
+    internal val injectedEventIds = ConcurrentHashMap.newKeySet<String>()
     internal val feedClients = ConcurrentHashMap<String, WebSocketClient>()
     // Collector Jobs per feed client (messages + connectionState). Tracked so they
     // can be cancelled on removal — client.messages is a SharedFlow that never
@@ -567,13 +567,13 @@ class FeedService @Inject constructor(
     private val accountSnapshots = ConcurrentHashMap<String, AccountFeedSnapshot>()
 
     // Interaction state persistence
-    private var lastInteractionSaveTime = 0L
-    private var interactionSaveJob: Job? = null
-    private var interactionSaveScheduled = false
+    internal var lastInteractionSaveTime = 0L
+    internal var interactionSaveJob: Job? = null
+    internal var interactionSaveScheduled = false
 
     // Scroll position tracking for snapshot persistence
-    private var _savedScrollIndex = 0
-    private var _savedScrollOffset = 0
+    internal var _savedScrollIndex = 0
+    internal var _savedScrollOffset = 0
 
     internal val _restoredScrollPosition = MutableStateFlow<ScrollPosition?>(null)
     val restoredScrollPosition: StateFlow<ScrollPosition?> = _restoredScrollPosition.asStateFlow()
@@ -602,17 +602,17 @@ class FeedService @Inject constructor(
     internal var extendedNetworkWasPartial = false
 
     // Guards loadMore() against re-entry from scroll-triggered re-fires
-    private val isLoadingMore = AtomicBoolean(false)
+    internal val isLoadingMore = AtomicBoolean(false)
 
     /** True while an older page is being fetched; the feed's spinner and retry key. */
-    private val _loadingOlder = MutableStateFlow(false)
+    internal val _loadingOlder = MutableStateFlow(false)
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
 
     // Search debounce
     private var searchDebounceJob: Job? = null
 
     // Filter recomputation coalescing
-    private var recomputeJob: Job? = null
+    internal var recomputeJob: Job? = null
 
     // ══════════════════════════════════════════════════════════════════
     // Lifecycle
@@ -802,12 +802,6 @@ class FeedService @Inject constructor(
         }
     }
 
-    fun disconnect() {
-        teardownAllFeedClients()
-        _connectionStatus.value = "Disconnected"
-        _connectionColor.value = "gray"
-    }
-
     // ══════════════════════════════════════════════════════════════════
     // Contact list management
     // ══════════════════════════════════════════════════════════════════
@@ -842,19 +836,6 @@ class FeedService @Inject constructor(
     ) { attempted, loading, confirmed ->
         contactManager.mayPublishFollowList(attempted, loading, confirmed)
     }.stateIn(scope, SharingStarted.Eagerly, false)
-
-    /**
-     * Fetch your follow list again, for the WOT tab's refresh button. Returns
-     * once the load has finished, found a list or not (it has its own
-     * timeout). One already running is waited on rather than started twice.
-     */
-    suspend fun refreshContactList() {
-        if (_isLoadingContacts.value) {
-            _isLoadingContacts.first { !it }
-            return
-        }
-        loadContactList()
-    }
 
     /**
      * Scan configured relays for the owner's historical kind-3 (contact list)
@@ -941,28 +922,6 @@ class FeedService @Inject constructor(
     /** Set by the feed list while a drag or fling is in progress. */
     fun setFeedScrolling(active: Boolean) {
         feedScrolling.value = active
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Filtering
-    // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Coalesced filter recomputation.
-     * Multiple rapid-fire calls (e.g. batch flush + engagement update + profile
-     * update all within 50 ms) are collapsed into a single computation.
-     */
-    fun recomputeFilteredNotes() {
-        recomputeJob?.cancel()
-        // Run the filter/sort on Default, NOT Main. doRecomputeFilteredNotes()
-        // filters + sorts the entire notes list (allocating new lists) and, under
-        // a relay-event flood, fires every debounce window — doing that on
-        // Main.immediate saturated the UI thread and was the main feed-slowness
-        // source. The reads (.value) and StateFlow writes here are thread-safe.
-        recomputeJob = scope.launch(Dispatchers.Default) {
-            delay(RECOMPUTE_DEBOUNCE_MS)
-            doRecomputeFilteredNotes()
-        }
     }
 
     /** The active account's blocked people, as hex pubkeys. */
@@ -1235,31 +1194,9 @@ class FeedService @Inject constructor(
         publishActiveMuteList()
     }
 
-    /** Same as Settings → Blocked: the active account's list, signed as it. */
-    private fun publishActiveMuteList() {
-        val cfg = configStore.config.value
-        val account = cfg.activeOrOwnerNpub()
-        val list = cfg.blockedForActiveAccount()
-        scope.launch(Dispatchers.IO) { nostrService.publishMuteList(account, list) }
-    }
-
     fun isBlocked(hexPubkey: String): Boolean {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return false
         return npub in configStore.config.value.blockedForActiveAccount()
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Note operations
-    // ══════════════════════════════════════════════════════════════════
-
-    fun addNote(note: FeedNote) {
-        // Register the id so the relay echo of this note is deduped — without
-        // this the optimistic insert + the echo produce a duplicate id, which
-        // crashes the LazyColumn (duplicate key) and, once snapshotted,
-        // crash-loops every launch.
-        seenIdsLock.withLock { seenIds.add(note.id) }
-        _notes.value = (listOf(note) + _notes.value).distinctBy { it.id }
-        recomputeFilteredNotes()
     }
 
     fun removeNote(id: String) {
@@ -1316,19 +1253,7 @@ class FeedService @Inject constructor(
     // scan of the whole feed per lookup kept the UI thread busy for seconds.
     // Rebuilt once per notes list; the first note matching by id or
     // effectiveEventId wins, as the scan did.
-    @Volatile private var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
-
-    internal fun noteIndex(): Map<String, FeedNote> {
-        val notes = _notes.value
-        noteIndex?.let { (list, map) -> if (list === notes) return map }
-        val map = HashMap<String, FeedNote>(notes.size * 2)
-        for (note in notes) {
-            map.putIfAbsent(note.id, note)
-            map.putIfAbsent(note.effectiveEventId, note)
-        }
-        noteIndex = notes to map
-        return map
-    }
+    @Volatile internal var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
 
     /**
      * Builds the note index for the current list, so the next lookup on Main
@@ -1376,107 +1301,6 @@ class FeedService @Inject constructor(
             updated = updated + (note.effectiveEventId to note)
         }
         _parentNotesCache.value = updated
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Pagination
-    // ══════════════════════════════════════════════════════════════════
-
-    fun loadMore() {
-        // In-flight guard: scroll-triggered, so without this it re-fires on every
-        // bottom-reach and leaks a client + collector per relay each time.
-        if (!isLoadingMore.compareAndSet(false, true)) return
-        val oldest = _notes.value.lastOrNull()?.createdAt ?: run {
-            isLoadingMore.set(false)
-            return
-        }
-        _loadingOlder.value = true
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            // Local feed cache first — pagination inside the sync window is
-            // served from disk without hitting the network.
-            config.localRelayURL("feed")?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-            // Match the live feed relay set so paginating older notes also
-            // reaches follows who publish to feed/blastr relays.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-        }.distinct()
-
-        scope.launch(Dispatchers.IO) {
-            val subId = "feed-hist-${UUID.randomUUID().toString().take(8)}"
-            val clients = mutableListOf<WebSocketClient>()
-            val collectors = mutableListOf<Job>()
-            try {
-                for (relayUrl in relayUrls) {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    clients.add(client)
-
-                    // Track the collector so it can be cancelled on cleanup —
-                    // WebSocketClient.messages is a SharedFlow that never completes,
-                    // so disconnect() alone leaves this coroutine (and the client)
-                    // pinned in memory forever.
-                    collectors.add(scope.launch(processingDispatcher) {
-                        client.messages.collect { msg ->
-                            launch(processingDispatcher) {
-                                processAccumulatorMessage(msg, relayUrl)
-                            }
-                        }
-                    })
-
-                    client.connect()
-
-                    val filter = buildString {
-                        append("{\"kinds\":[${primaryFeedKinds()}]")
-                        if (_feedMode.value == FeedMode.FOLLOWING) {
-                            // Full follow list (matches the live feed; iOS uncapped).
-                            val authors = _followedPubkeys.value
-                            if (authors.isNotEmpty()) {
-                                append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                            }
-                        }
-                        append(",\"until\":${oldest.time / 1000 - 1}")
-                        append(",\"limit\":100}")
-                    }
-
-                    client.send("[\"REQ\",\"$subId\",$filter]")
-                }
-
-                // The follows' own relays, each asked only for the follows it
-                // was picked for, on the socket it already has: its live feed
-                // socket, else the pooled lookup socket, which also leaves a
-                // relay that refused it alone for a while. No socket per page.
-                for ((relayUrl, authors) in outboxPlan) {
-                    if (authors.isEmpty() || relayUrl in relayUrls) continue
-                    val filter = buildString {
-                        append("{\"kinds\":[${primaryFeedKinds()}]")
-                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
-                        append(",\"until\":${oldest.time / 1000 - 1}")
-                        append(",\"limit\":100}")
-                    }
-                    val feedClient = feedClients[relayUrl]
-                        ?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
-                    collectors.add(scope.launch(Dispatchers.IO) {
-                        if (feedClient != null) {
-                            // Its own collector already hands every message to the accumulator.
-                            askOnFeedClient(feedClient, subId, listOf(filter)) {}
-                        } else {
-                            lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                                processAccumulatorMessage(msg, relayUrl)
-                            }
-                        }
-                    })
-                }
-
-                delay(NOTE_FETCH_TIMEOUT_MS)
-            } finally {
-                collectors.forEach { it.cancel() }
-                clients.forEach { it.disconnect() }
-                _loadingOlder.value = false
-                isLoadingMore.set(false)
-            }
-        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1642,66 +1466,6 @@ class FeedService @Inject constructor(
             if (threadRepliesPending.isEmpty() || threadRepliesJob != null) return
             val generation = threadRepliesGeneration
             threadRepliesJob = scope.launch(processingDispatcher) { drainThreadReplies(generation) }
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Search
-    // ══════════════════════════════════════════════════════════════════
-
-    fun performSearch(query: String) {
-        _isSearching.value = true
-        _isSearchActive.value = true
-
-        nostrService.globalSearch(query) { results ->
-            val feedNotes = results.notes
-            _searchResults.value = feedNotes
-            _isSearching.value = false
-        }
-    }
-
-    fun clearSearch() {
-        _isSearchActive.value = false
-        _searchQuery.value = ""
-        _searchResults.value = emptyList()
-        _isSearching.value = false
-        nostrService.cancelGlobalSearch()
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Engagement
-    // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Saves likes, zaps and reactions, at most once per 2 s. A save inside
-     * that window runs at its end instead of being dropped: dropping one lost
-     * the newest like (or removal) whenever two came close together (iOS #322).
-     */
-    fun saveInteractionState() {
-        val wait = INTERACTION_SAVE_THROTTLE_MS - (System.currentTimeMillis() - lastInteractionSaveTime)
-        if (wait > 0) {
-            if (interactionSaveScheduled) return
-            interactionSaveScheduled = true
-            scope.launch {
-                delay(wait + 50)
-                interactionSaveScheduled = false
-                saveInteractionState()
-            }
-            return
-        }
-        lastInteractionSaveTime = System.currentTimeMillis()
-
-        // Read on Main, with the key, so the state and the account match.
-        val key = currentSnapshotKey()
-        val state = EngagementTracker.InteractionState(
-            likedEventIds = _likedEventIds.value,
-            zappedEventIds = _zappedEventIds.value,
-            myReactions = _myReactions.value,
-            retractedReactionIds = retractedReactionIds,
-        )
-        interactionSaveJob?.cancel()
-        interactionSaveJob = scope.launch(Dispatchers.IO) {
-            engagementTracker.saveInteractionState(state, forKey = key)
         }
     }
 
@@ -1871,41 +1635,6 @@ class FeedService @Inject constructor(
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // Snapshots
-    // ══════════════════════════════════════════════════════════════════
-
-    fun currentSnapshotKey(): String {
-        return configStore.config.value.activeAccountNpub ?: "owner"
-    }
-
-    fun persistCurrentSnapshot() {
-        scope.launch(Dispatchers.IO) {
-            val key = currentSnapshotKey()
-            val newestTimestamp = _notes.value.firstOrNull()?.createdAt?.time?.div(1000) ?: 0L
-            val snapshot = DiskFeedSnapshot(
-                notes = _notes.value.take(SNAPSHOT_MAX_NOTES),
-                followedPubkeys = _followedPubkeys.value,
-                noteStats = _noteStats.value,
-                contactListContent = contactListContent,
-                likedEventIds = _likedEventIds.value,
-                zappedEventIds = _zappedEventIds.value,
-                savedAt = System.currentTimeMillis(),
-                lastEventTimestamp = newestTimestamp,
-                scrollIndex = _savedScrollIndex,
-                scrollOffset = _savedScrollOffset,
-            )
-
-            try {
-                val dir = configStore.config.value.appSupportDir ?: return@launch
-                val file = File(dir, "feed_snapshot_$key.json")
-                file.writeText(json.encodeToString(DiskFeedSnapshot.serializer(), snapshot))
-            } catch (e: Exception) {
-                Log.w(TAG, "Snapshot save failed: ${e.message}")
-            }
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
     // Cache management
     // ══════════════════════════════════════════════════════════════════
 
@@ -1943,14 +1672,6 @@ class FeedService @Inject constructor(
             is ReactionChoice.Change.React -> react(noteId, change.content, tags)
             ReactionChoice.Change.Remove -> removeReaction(noteId)
         }
-    }
-
-    /** Take a like back locally only (a reaction that was never signed). */
-    fun unlikeNote(noteId: String) {
-        _likedEventIds.value = _likedEventIds.value - noteId
-        _myReactions.value = _myReactions.value - noteId
-        bumpReactionCount(noteId, -1)
-        saveInteractionState()
     }
 
     /** Repost a note (kind 6 for kind-1 notes, kind 16 + k-tag otherwise, per NIP-18). */
@@ -2005,38 +1726,6 @@ class FeedService @Inject constructor(
         _noteStats.value = stats
     }
 
-    /** Zap a note (placeholder — full zap flow requires LNURL). */
-    fun zapNote(noteId: String, amount: Long) {
-        val existing = _zappedEventIds.value.toMutableMap()
-        existing[noteId] = (existing[noteId] ?: 0) + amount.toInt()
-        _zappedEventIds.value = existing
-
-        val stats = _noteStats.value.toMutableMap()
-        val existing2 = stats[noteId] ?: NoteStats()
-        stats[noteId] = existing2.copy(
-            zapCount = existing2.zapCount + 1,
-            zapAmountSats = existing2.zapAmountSats + amount,
-        )
-        _noteStats.value = stats
-    }
-
-    fun injectExternalEvent(eventJson: String, eventId: String) {
-        if (!injectedEventIds.add(eventId)) return
-        if (injectedEventIds.size > MAX_INJECTED_IDS) {
-            injectedEventIds.clear()
-        }
-
-        val config = configStore.config.value
-        val inboxUrl = config.localInboxURL ?: return
-
-        scope.launch(Dispatchers.IO) {
-            val client = WebSocketClient(url = inboxUrl, scope = scope, trustLocalhost = true)
-            client.connect()
-            client.send("[\"EVENT\",$eventJson]")
-            delay(300)
-            client.disconnect()
-        }
-    }
 }
 
 // AccumulatorBatch replaced by BackgroundAccumulator.Snapshot in FeedServiceTypes.kt
