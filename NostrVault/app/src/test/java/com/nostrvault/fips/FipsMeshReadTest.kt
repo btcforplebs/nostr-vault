@@ -50,6 +50,15 @@ class FipsMeshReadTest {
     }
 
     @Test
+    fun aMeshOnlyUrlNamesItsVault() {
+        assertEquals(npub, FipsMediaRouter.meshNpubInHost("$npub.fips"))
+        assertEquals(npub, FipsMediaRouter.meshNpubInHost("$npub.FIPS"))
+        for (bad in listOf("$npub.fips.evil.com", "x$npub.fips", "$npub", "logen.btcforplebs.com")) {
+            assertNull(bad, FipsMediaRouter.meshNpubInHost(bad))
+        }
+    }
+
+    @Test
     fun onlyFollowedAuthorsAreDialled() {
         val friend = "a".repeat(64)
         val stranger = "b".repeat(64)

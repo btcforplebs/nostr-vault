@@ -1,6 +1,17 @@
 package com.nostrvault.ui.screens.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.BarcodeEncoder
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -63,8 +74,15 @@ class MeshSettingsViewModel @Inject constructor(
     val homeVaultState = homeVault.state
 
     fun setHomeVault(npub: String?) {
+        val before = _homeVaultNpub.value
+        if (npub != null && npub == mesh.status.value.npub) return  // this phone itself
         _homeVaultNpub.value = npub
-        viewModelScope.launch { homeVault.setHomeVault(npub) }
+        viewModelScope.launch {
+            homeVault.setHomeVault(npub)
+            // This phone lists its home vault in the owner's 10063: the kiosk
+            // needs no key. A changed setting drops the old entry.
+            nostrService.publishServerList(dropMesh = before?.takeIf { it != npub })
+        }
     }
 
     fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
@@ -354,6 +372,24 @@ private fun AddressCard(status: FipsStatus, onCopy: (String) -> Unit) {
                 }
             }
 
+            status.npub?.let { npub ->
+                // Another phone scans this under Home vault.
+                val qr = remember(npub) {
+                    runCatching { BarcodeEncoder().encodeBitmap("fipsmesh://$npub/", BarcodeFormat.QR_CODE, 480, 480) }.getOrNull()
+                }
+                qr?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = "Mesh address QR code",
+                        modifier = Modifier
+                            .size(160.dp)
+                            .background(Color.White, RoundedCornerShape(6.dp))
+                            .padding(6.dp),
+                    )
+                }
+            }
+
             status.address?.let { address ->
                 Spacer(Modifier.height(10.dp))
                 Text("MESH IP", color = SecondaryText, fontSize = 11.sp, letterSpacing = 1.sp)
@@ -451,9 +487,9 @@ private fun PeopleCard(
 }
 
 /**
- * Pick which of the owner's own mesh vaults (a kiosk phone) also gets their
- * posts and media. Only vaults in the owner's 10063 are offered: it is the
- * list a vault puts itself on when it shares, and only the owner can sign it.
+ * Pick which mesh vault (a kiosk phone) also gets the owner's posts and
+ * media: one already in the owner's 10063, or a mesh address pasted or
+ * scanned from the kiosk. This phone then lists it, so the kiosk needs no key.
  */
 @Composable
 private fun HomeVaultCard(
@@ -464,6 +500,14 @@ private fun HomeVaultCard(
     onSelect: (String?) -> Unit,
     onSendNow: () -> Unit,
 ) {
+    var draft by remember { mutableStateOf("") }
+    val draftNpub = remember(draft) { HomeVaultRules.meshNpubFromInput(draft) }
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.trim()?.let { code ->
+            draft = code
+            HomeVaultRules.meshNpubFromInput(code)?.let { onSelect(it); draft = "" }
+        }
+    }
     Surface(
         color = CardBackground,
         shape = RoundedCornerShape(10.dp),
@@ -488,8 +532,8 @@ private fun HomeVaultCard(
             val options = (listOfNotNull(selected) + candidates).distinct()
             if (options.isEmpty()) {
                 Text(
-                    "None of your devices is on the mesh right now. Turn on kiosk " +
-                        "mode on the other device, then come back here.",
+                    "Turn on kiosk mode on the other device, then scan or paste " +
+                        "the mesh address it shows.",
                     color = SecondaryText,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -504,6 +548,48 @@ private fun HomeVaultCard(
                     enabled = enabled,
                 ) { onSelect(npub) }
             }
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                singleLine = true,
+                enabled = enabled,
+                placeholder = { Text("Paste a kiosk's mesh address", fontSize = 13.sp) },
+                isError = draft.isNotBlank() && draftNpub == null,
+                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                trailingIcon = {
+                    IconButton(onClick = {
+                        scanner.launch(
+                            ScanOptions().apply {
+                                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                setPrompt("Scan the kiosk's mesh address")
+                                setBeepEnabled(false)
+                                setOrientationLocked(true)
+                            },
+                        )
+                    }, enabled = enabled) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan the kiosk's QR code", tint = SecondaryText)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (draft.isNotBlank()) {
+                if (draftNpub == null) {
+                    Text("That isn't a mesh address. Copy it from the kiosk's mesh settings.", color = ErrorRed, fontSize = 12.sp)
+                } else {
+                    TextButton(onClick = { onSelect(draftNpub); draft = "" }, enabled = enabled) {
+                        Text("Use this address", fontSize = 13.sp)
+                    }
+                }
+            }
+            Text(
+                "Picking a home vault lists its mesh address in your Blossom server " +
+                    "list, in public. The kiosk must let your account write to its relay.",
+                color = SecondaryText,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
 
             if (selected != null) {
                 Spacer(Modifier.height(8.dp))

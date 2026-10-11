@@ -52,6 +52,7 @@ object FipsMediaRouter {
     private const val REQUEST_RETRY_MS = 5 * 60_000L
 
     private val meshEntryRegex = Regex("""fipsmesh://(npub1[02-9ac-hj-np-z]{58})/""")
+    private val meshHostRegex = Regex("""(npub1[02-9ac-hj-np-z]{58})\.fips""")
     private val shaRegex = Regex("""(?:^|/)([0-9a-f]{64})(?:\.[A-Za-z0-9]{1,8})?$""")
 
     /** The sha256 a Blossom-style URL names, if it names one. */
@@ -77,6 +78,14 @@ object FipsMediaRouter {
         }
         return list.firstNotNullOfOrNull { meshNpubIn(it) }
     }
+
+    /**
+     * The vault a mesh-only URL (`http://<npub>.fips/<sha>`) names, or null.
+     * That host is the one the author picked for this blob, so it wins over
+     * whichever vault comes first in their 10063.
+     */
+    fun meshNpubInHost(host: String): String? =
+        meshHostRegex.matchEntire(host.lowercase())?.groupValues?.get(1)
 
     /** `fipsmesh://<npub>/` exactly, or null: no port, user info, query or other path. */
     fun meshNpubIn(entry: String): String? =

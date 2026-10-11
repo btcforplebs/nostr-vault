@@ -116,16 +116,21 @@ class BlossomService @Inject constructor(
      * No public server took [sha256], but the owner's home vault has it:
      * publish under the first public server's https URL now, and keep
      * pushing the copy there. NIP-F1 readers find it on the vault by hash
-     * through the owner's 10063; other apps once the public copy lands. A
-     * mesh address never goes in a note. Null when there is no home vault,
-     * no public server, or the vault doesn't have it: the post waits.
+     * through the owner's 10063; other apps once the public copy lands.
+     * With no public server at all, the vault is the only host and the note
+     * names it ([HomeVaultRules.meshOnlyUrl]). Null when there is no home
+     * vault or the vault doesn't have it: the post waits.
      */
     private suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
-        if (homeVault.homeVaultNpub == null) return null
+        val vault = homeVault.homeVaultNpub ?: return null
         val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
             com.nostrvault.relay.isPrivateNetworkURL(it)
-        } ?: return null
+        }
         if (!homeVault.ensureOnVault(sha256)) return null
+        if (server == null) {
+            Log.i(TAG, "${sha256.take(8)}: no public server; hosted only on the home vault over the mesh")
+            return PostUploadOutcome.Hosted(com.nostrvault.fips.HomeVaultRules.meshOnlyUrl(vault, sha256))
+        }
         // No queued copy (queue full), no URL: the post waits instead.
         if (!homeVault.needsPublicCopy(sha256, contentType, server)) return null
         Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
@@ -265,6 +270,9 @@ class BlossomService @Inject constructor(
         // for one if the blob is actually on this device.
         fun notHosted(mirrors: List<String>): PostUploadOutcome = when {
             !localOk -> PostUploadOutcome.NotSavedOnDevice
+            // The home vault is a server to wait for.
+            mirrors.isEmpty() && toHomeVault && homeVault.homeVaultNpub != null ->
+                PostUploadOutcome.SavedOnDevice(listOf("fipsmesh://${homeVault.homeVaultNpub}/"))
             mirrors.isEmpty() -> PostUploadOutcome.NoOutsideServer
             else -> PostUploadOutcome.SavedOnDevice(mirrors)
         }
@@ -284,6 +292,9 @@ class BlossomService @Inject constructor(
         }
 
         if (mirrors.isEmpty()) {
+            if (localOk && toHomeVault && !skipOutsideServers) {
+                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
+            }
             Log.e(TAG, "No Blossom mirrors configured — refusing to embed a localhost media URL")
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
@@ -318,6 +329,14 @@ class BlossomService @Inject constructor(
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
     }
+
+    /**
+     * A waiting post's attachment: the outside servers, else the home vault
+     * (which may be the only host). What `MediaPostQueue` calls on a retry.
+     */
+    suspend fun hostWaitingBlob(sha256: String, contentType: String): String? =
+        hostLocalBlob(sha256, contentType)
+            ?: (hostedViaHomeVault(sha256, contentType, configStore.config.value.activeBlossomMirrors) as? PostUploadOutcome.Hosted)?.url
 
     /**
      * Send a blob that is already in this device's relay to the outside

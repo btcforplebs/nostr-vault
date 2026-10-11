@@ -168,7 +168,7 @@ class MediaPostQueue @Inject constructor(
         for ((index, item) in post.media.withIndex()) {
             if (item.url != null) continue
             val sha256 = item.sha256 ?: continue
-            val url = blossomService.hostLocalBlob(sha256, item.mimeType ?: "application/octet-stream")
+            val url = blossomService.hostWaitingBlob(sha256, item.mimeType ?: "application/octet-stream")
                 ?: return false
             post = post.copy(media = post.media.toMutableList().also { it[index] = item.copy(url = url) })
             // Persist each hosted URL at once, so a crash between two

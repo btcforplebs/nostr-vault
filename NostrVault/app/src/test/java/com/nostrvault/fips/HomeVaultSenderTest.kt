@@ -33,7 +33,9 @@ class HomeVaultSenderTest {
     @Test
     fun `a failure outside any item is reported, not thrown`() {
         val s = sender()
-        s.ownerServerList = { throw IllegalStateException("disk gone") }
+        // The offer itself passes; the drain that follows hits the failure.
+        var calls = 0
+        s.ownerIsActive = { if (calls++ == 0) true else throw IllegalStateException("disk gone") }
         // Queues on the sender's own scope, then drains there; the failure
         // must land on the card, not escape and kill the app.
         s.offerEvent("e1", "a".repeat(64), "{}")
