@@ -19,7 +19,7 @@ struct PersonProfileView: View {
     @Environment(\.dismiss) private var dismiss
     /// Owns the loaders without observing them: they publish while the page
     /// pages and counts followers, and only `ProfileContent` draws from them.
-    @StateObject private var models: Models
+    @StateObject private var models: ProfileLoaders
     private var loader: ProfileFeedLoader { models.loader }
     private var shop: SellerListingsLoader { models.shop }
     private var extras: ProfileExtrasLoader { models.extras }
@@ -36,19 +36,7 @@ struct PersonProfileView: View {
         self.pubkey = pubkey
         self.embeddedInNavigation = embeddedInNavigation
         self.onDismiss = onDismiss
-        _models = StateObject(wrappedValue: Models(pubkey: pubkey))
-    }
-
-    /// Never publishes, so holding it redraws nothing.
-    @MainActor
-    final class Models: ObservableObject {
-        let loader: ProfileFeedLoader
-        let shop = SellerListingsLoader()
-        let extras = ProfileExtrasLoader()
-
-        init(pubkey: String) {
-            loader = ProfileFeedLoader(pubkey: pubkey, usesOwnLedger: false)
-        }
+        _models = StateObject(wrappedValue: ProfileLoaders(pubkey: pubkey, usesOwnLedger: false))
     }
 
     /// Your own key, opened from somewhere other than the Profile tab.
@@ -67,7 +55,6 @@ struct PersonProfileView: View {
             shop: shop,
             extras: extras,
             dismissAction: embeddedInNavigation ? nil : performDismiss,
-            scrollDecoration: EmptyModifier(),
             badge: { badge },
             actions: { compact in actionButtons(compact: compact) },
             shopHeader: { EmptyView() }
