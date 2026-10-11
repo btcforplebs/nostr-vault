@@ -95,9 +95,8 @@ class PollModel internal constructor(
         val fallback = buildList {
             config.nostrURL?.let { add(it) }
             addAll(config.readRelays)
-            addAll(nostrService.outboxRelays.value[poll.pubkey].orEmpty())
         }
-        return NIP88Poll.relays(poll, fallback)
+        return NIP88Poll.relays(poll, fallback, outbox = nostrService.outboxRelays.value[poll.pubkey].orEmpty())
     }
 
     fun load(force: Boolean = false) {
@@ -142,7 +141,10 @@ class PollModel internal constructor(
         val current = _state.value
         if (current.isSending || optionIds.isEmpty() || poll.isClosed()) return
         _state.update { it.copy(isSending = true, sendError = null) }
-        val relayHint = poll.relays.firstOrNull() ?: configStore.config.value.nostrURL.orEmpty()
+        // Only the poll's public relays: the author wrote these, and a LAN or
+        // onion one is neither dialled nor handed on as a hint.
+        val pollRelays = poll.relays.map { it.trim() }.filter(NIP88Poll::isPublicRelay).distinct()
+        val relayHint = pollRelays.firstOrNull() ?: configStore.config.value.nostrURL.orEmpty()
         val tags = NIP88Poll.responseTags(poll, optionIds, relayHint)
         scope.launch {
             try {
@@ -151,7 +153,7 @@ class PollModel internal constructor(
                 nostrService.postEvent(event)
                 // postEvent reaches this device's relay, the author's inbox
                 // and Blastr; NIP-88 says votes go to the poll's own relays.
-                for (relay in poll.relays.filter { it.startsWith("wss://") || it.startsWith("ws://") }.distinct()) {
+                for (relay in pollRelays) {
                     launch { runCatching { nostrService.publishAwaitingOk(event, relay) } }
                 }
                 merge(listOf(NIP88Poll.Response(event.id, event.pubkey, event.kind, event.createdAt, event.tags)))

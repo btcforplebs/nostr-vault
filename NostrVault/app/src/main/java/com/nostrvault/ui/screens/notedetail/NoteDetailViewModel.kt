@@ -11,6 +11,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
@@ -45,6 +46,7 @@ class NoteDetailViewModel @Inject constructor(
     private val feedService: FeedService,
     private val configStore: ConfigStore,
     private val zapSendService: ZapSendService,
+    private val pendingPostManager: PendingPostManager,
 ) : ViewModel() {
 
     val noteId: String = savedStateHandle["noteId"] ?: ""
@@ -133,6 +135,11 @@ class NoteDetailViewModel @Inject constructor(
             feedService.optimisticNote.collect { note ->
                 mergeReplies(listOf(note))
             }
+        }
+        // ...and taken out again when the countdown banner's Cancel or Edit
+        // stops it, so no reply that was never sent stays in the thread.
+        viewModelScope.launch {
+            pendingPostManager.withdrawn.collect(::removeReply)
         }
     }
 
@@ -266,6 +273,10 @@ class NoteDetailViewModel @Inject constructor(
     }
 
     /** Idempotent merge — fetch callbacks fire once per relay EOSE. */
+    private fun removeReply(id: String) {
+        _allReplies.update { replies -> replies.filterNot { it.id == id } }
+    }
+
     private fun mergeReplies(incoming: List<FeedNote>) {
         if (incoming.isEmpty()) return
         _allReplies.value = (_allReplies.value + incoming)

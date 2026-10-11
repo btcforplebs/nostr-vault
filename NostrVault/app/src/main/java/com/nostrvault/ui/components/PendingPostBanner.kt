@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.ui.navigation.DeepLinkTarget
+import com.nostrvault.ui.navigation.PendingDeepLink
+import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -41,6 +44,15 @@ fun PendingPostBanner(
     pendingPostManager: PendingPostManager,
     modifier: Modifier = Modifier,
 ) {
+    // Edit reopens the composer on the post's draft, over whatever is open.
+    // The banner sits above the nav host, so it hands the route to the one
+    // place that navigates (iOS: SceneDelegate presents ComposeView).
+    LaunchedEffect(pendingPostManager) {
+        pendingPostManager.editRequest.collect { request ->
+            PendingDeepLink.post(DeepLinkTarget(route = composeRouteFor(request)))
+        }
+    }
+
     val isShowing by pendingPostManager.isShowing.collectAsState()
     val actionType by pendingPostManager.actionType.collectAsState()
     val timeRemaining by pendingPostManager.timeRemaining.collectAsState()
@@ -218,3 +230,15 @@ private fun PostConfirmationPill(confirmation: PendingPostManager.Confirmation) 
         )
     }
 }
+
+/**
+ * The composer route Edit reopens: the kept draft, with the note it replies
+ * to or quotes. Without a draft the text goes in as the prefill.
+ */
+internal fun composeRouteFor(request: PendingPostManager.EditRequest): String =
+    Screen.ComposeNote.createRoute(
+        replyToNoteId = request.replyToId,
+        quoteToNoteId = request.quoteToId,
+        draftId = request.draftId,
+        text = request.content.takeIf { request.draftId == null },
+    )

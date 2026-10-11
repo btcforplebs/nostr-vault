@@ -73,10 +73,20 @@ class PendingPostManager @Inject constructor(
         enum class State { SENDING, CONFIRMED, UNCONFIRMED }
     }
 
+    /**
+     * Edit on the banner: what the composer reopens with. [draftId] is the
+     * saved draft backing the post, so the reopened composer resumes it
+     * instead of starting a second one; [replyToId] and [quoteToId] are the
+     * composer's own route arguments, kept even when the note itself is not
+     * in memory.
+     */
     data class EditRequest(
         val content: String,
         val replyTo: FeedNote?,
         val quoteTo: FeedNote?,
+        val draftId: String? = null,
+        val replyToId: String? = null,
+        val quoteToId: String? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -97,28 +107,64 @@ class PendingPostManager @Inject constructor(
     private val _editRequest = MutableSharedFlow<EditRequest>(extraBufferCapacity = 1)
     val editRequest: SharedFlow<EditRequest> = _editRequest.asSharedFlow()
 
+    /**
+     * The id of a post taken back before it went out (Cancel, Edit, or a new
+     * action replacing it). The thread showed it optimistically, so it has
+     * to come out again; NoteDetailViewModel listens. iOS removes it from
+     * FeedService in cancel()/requestEdit()/clearPrevious().
+     */
+    private val _withdrawn = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val withdrawn: SharedFlow<String> = _withdrawn.asSharedFlow()
+
     private var countdownJob: Job? = null
     private var pendingContent: String = ""
     private var pendingReplyTo: FeedNote? = null
     private var pendingQuoteTo: FeedNote? = null
+    private var pendingDraftId: String? = null
+    private var pendingReplyToId: String? = null
+    private var pendingQuoteToId: String? = null
+    /** The signed post in the countdown; null once it is sent or dropped. */
+    private var pendingEventId: String? = null
+    /** Keeps the post's text as a draft when it is taken back. */
+    private var pendingOnWithdrawn: (() -> Unit)? = null
     private var pendingPublishAction: (() -> Unit)? = null
 
+    /**
+     * [draftId] is the draft backing this post. The caller deletes it only
+     * once the post goes out (inside [onPublish]), and [onWithdrawn] saves it
+     * when the post is taken back instead (Cancel, Edit, or a newer action
+     * replacing it), before Edit reopens the composer on it. So undoing a
+     * post never loses its text. [content] is the text Edit brings back.
+     */
     fun startPost(
         event: NostrEvent,
         content: String,
         replyTo: FeedNote?,
         quoteTo: FeedNote?,
+        draftId: String? = null,
+        replyToId: String? = replyTo?.id,
+        quoteToId: String? = quoteTo?.id,
+        onWithdrawn: () -> Unit = {},
         onPublish: (NostrEvent, onOutcome: (BroadcastTally.Outcome?) -> Unit) -> Unit,
     ) {
         val type = when {
-            quoteTo != null -> ActionType.QUOTE
-            replyTo != null -> ActionType.REPLY
+            quoteToId != null -> ActionType.QUOTE
+            replyToId != null -> ActionType.REPLY
             else -> ActionType.NEW_POST
         }
+        cancel()
         pendingContent = content
         pendingReplyTo = replyTo
         pendingQuoteTo = quoteTo
+        pendingDraftId = draftId
+        pendingReplyToId = replyToId
+        pendingQuoteToId = quoteToId
+        pendingEventId = event.id
+        pendingOnWithdrawn = onWithdrawn
         startCountdown(type) {
+            // Past the countdown the post is committed: no longer pending, so
+            // nothing after this takes it back out of the thread.
+            if (pendingEventId == event.id) pendingEventId = null
             // Shown once the countdown ends; the outcome swaps it for
             // "Posted" or the grey not-confirmed note.
             val id = beginConfirmation(type)
@@ -151,16 +197,12 @@ class PendingPostManager @Inject constructor(
     }
 
     fun startRepost(onPublish: () -> Unit) {
-        pendingContent = ""
-        pendingReplyTo = null
-        pendingQuoteTo = null
+        cancel()
         startCountdown(ActionType.REPOST, onPublish)
     }
 
     fun startDelete(onDelete: () -> Unit) {
-        pendingContent = ""
-        pendingReplyTo = null
-        pendingQuoteTo = null
+        cancel()
         startCountdown(ActionType.DELETE, onDelete)
     }
 
@@ -174,36 +216,53 @@ class PendingPostManager @Inject constructor(
         _isShowing.value = false
     }
 
+    /**
+     * Cancel on the banner (the undo): the action never runs. A post's draft
+     * is left alone (it is the user's text, still in Drafts), and the post
+     * shown in its thread ahead of time is taken out again.
+     */
     fun cancel() {
         countdownJob?.cancel()
         countdownJob = null
         pendingPublishAction = null
+        pendingEventId?.let { id ->
+            runCatching { pendingOnWithdrawn?.invoke() }
+                .onFailure { Log.e(TAG, "Keeping the draft failed", it) }
+            _withdrawn.tryEmit(id)
+        }
+        clearPendingPost()
         _isShowing.value = false
         _actionType.value = null
         _timeRemaining.value = 0f
     }
 
+    private fun clearPendingPost() {
+        pendingEventId = null
+        pendingOnWithdrawn = null
+        pendingContent = ""
+        pendingReplyTo = null
+        pendingQuoteTo = null
+        pendingDraftId = null
+        pendingReplyToId = null
+        pendingQuoteToId = null
+    }
+
     fun requestEdit() {
         val type = _actionType.value
         if (type?.canEdit != true) return
-
-        countdownJob?.cancel()
-        countdownJob = null
-        pendingPublishAction = null
-        _isShowing.value = false
-        _actionType.value = null
-
-        _editRequest.tryEmit(
-            EditRequest(
-                content = pendingContent,
-                replyTo = pendingReplyTo,
-                quoteTo = pendingQuoteTo,
-            ),
+        val request = EditRequest(
+            content = pendingContent,
+            replyTo = pendingReplyTo,
+            quoteTo = pendingQuoteTo,
+            draftId = pendingDraftId,
+            replyToId = pendingReplyToId,
+            quoteToId = pendingQuoteToId,
         )
+        cancel()
+        _editRequest.tryEmit(request)
     }
 
     private fun startCountdown(type: ActionType, onComplete: () -> Unit) {
-        cancel() // cancel any existing countdown
         _confirmation.value = null
         pendingPublishAction = onComplete
         val durationMs = _sendDelaySeconds.value * 1000L
@@ -233,6 +292,7 @@ class PendingPostManager @Inject constructor(
             _isShowing.value = false
             _actionType.value = null
             pendingPublishAction = null
+            clearPendingPost()
         }
     }
 }
