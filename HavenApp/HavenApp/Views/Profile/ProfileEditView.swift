@@ -1,0 +1,498 @@
+import SwiftUI
+import CryptoKit
+#if os(iOS)
+import PhotosUI
+#endif
+
+// MARK: - ProfileEditView
+
+struct ProfileEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
+    @EnvironmentObject var nostrService: NostrService
+
+    let existing: FeedProfile
+    /// Unsaved fields from an autosave that failed, by kind-0 key, laid over
+    /// `existing` when the form opens so nothing typed is lost.
+    var draft: [String: String]? = nil
+    let onSave: (FeedProfile) -> Void
+    /// iOS: called when the sheet goes away, swiped down or Done, with what
+    /// the form showed when opened and what it holds now (by kind-0 key). The
+    /// profile page publishes them; nil keeps the Cancel and Save buttons.
+    var onAutosave: ((_ initial: [String: String], _ edited: [String: String]) -> Void)? = nil
+    /// Discard was tapped: whatever `draft` held is thrown away too.
+    var onDiscard: (() -> Void)? = nil
+
+    @State private var displayName: String = ""
+    @State private var name: String = ""
+    @State private var about: String = ""
+    @State private var pictureURL: String = ""
+    @State private var bannerURL: String = ""
+    @State private var nip05: String = ""
+    @State private var lud16: String = ""
+    @State private var website: String = ""
+
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    /// What the form showed when opened, by kind-0 key: a save applies only fields changed from it.
+    @State private var initialFields: [String: String] = [:]
+    /// Set by Discard, so closing the sheet afterwards does not save.
+    @State private var discarded = false
+
+    private var hasChanges: Bool {
+        ProfileEditView.hasChanges(initial: initialFields, edited: formFields())
+    }
+
+    var body: some View {
+        platformContainer {
+            VStack(spacing: 0) {
+                editHeader
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        bannerBlock
+
+                        previewBlock
+
+                        divider
+
+                        fieldGroup(title: "IDENTITY") {
+                            field(label: "Display Name", text: $displayName, placeholder: "Satoshi Nakamoto")
+                            fieldDivider
+                            field(label: "Username", text: $name, placeholder: "satoshi")
+                            fieldDivider
+                            field(label: "NIP-05", text: $nip05, placeholder: "you@domain.com", keyboardKind: .emailLike)
+                        }
+
+                        divider
+
+                        fieldGroup(title: "BIO") {
+                            multilineField(label: "About", text: $about, placeholder: "Tell people about yourself…")
+                        }
+
+                        divider
+
+                        fieldGroup(title: "MEDIA") {
+                            field(label: "Picture URL", text: $pictureURL, placeholder: "https://…", keyboardKind: .urlLike)
+                            fieldDivider
+                            field(label: "Banner URL", text: $bannerURL, placeholder: "https://…", keyboardKind: .urlLike)
+                            fieldDivider
+                            field(label: "Website", text: $website, placeholder: "yourdomain.com", keyboardKind: .urlLike)
+                        }
+
+                        divider
+
+                        fieldGroup(title: "LIGHTNING") {
+                            field(label: "Address (lud16)", text: $lud16, placeholder: "you@walletofsatoshi.com", keyboardKind: .emailLike)
+                        }
+
+                        if let err = errorMessage {
+                            Text(err)
+                                .font(.appSystem(size: 12))
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Spacer(minLength: 32)
+                    }
+                }
+            }
+        }
+        .onAppear { loadFromExisting() }
+        .onDisappear {
+            guard let onAutosave, !discarded, hasChanges else { return }
+            onAutosave(initialFields, formFields())
+        }
+    }
+
+    @ViewBuilder
+    private func platformContainer<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        #if os(macOS)
+        content()
+            .frame(minWidth: 480, minHeight: 600)
+            .background(Color.platformWindowBackground)
+        #else
+        content()
+            .background(Color.platformWindowBackground.ignoresSafeArea())
+        #endif
+    }
+
+    @ViewBuilder
+    private var editHeader: some View {
+        if onAutosave != nil {
+            autosaveHeader
+        } else {
+            saveHeader
+        }
+    }
+
+    /// No Save button: swiping the sheet down, or Done, saves. Discard is the
+    /// way out without saving, and only does anything once a field changed.
+    private var autosaveHeader: some View {
+        HStack {
+            Button("Discard") {
+                discarded = true
+                onDiscard?()
+                performDismiss()
+            }
+            .foregroundColor(hasChanges ? .red : .secondary)
+            .disabled(!hasChanges)
+
+            Spacer()
+
+            VStack(spacing: 1) {
+                Text("Edit Profile")
+                    .font(.appSystem(size: 15, weight: .semibold))
+                Text(hasChanges ? "Swipe down to save" : "Swipe down to close")
+                    .font(.appSystem(size: 11))
+                    .foregroundColor(.secondary)
+                    .contentTransition(.opacity)
+            }
+
+            Spacer()
+
+            Button(action: performDismiss) {
+                Text("Done")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .background(Color.platformControlBackground)
+        .overlay(
+            Rectangle()
+                .fill(Color.platformSeparator.opacity(0.5))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
+    private var saveHeader: some View {
+        HStack {
+            Button("Cancel") { performDismiss() }
+                .foregroundColor(.secondary)
+                .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            Text("Edit Profile")
+                .font(.appSystem(size: 15, weight: .semibold))
+
+            Spacer()
+
+            Button(action: save) {
+                if isSaving {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(Color.havenPurple)
+                } else {
+                    Text("Save")
+                        .font(.appSystem(size: 13, weight: .semibold))
+                        .foregroundColor(.havenPurple)
+                }
+            }
+            .disabled(isSaving)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.platformControlBackground)
+        .overlay(
+            Rectangle()
+                .fill(Color.platformSeparator.opacity(0.5))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
+    /// The Banner URL, previewed at the 3:1 shape profiles draw it in.
+    /// Hidden until the field holds a URL.
+    @ViewBuilder
+    private var bannerBlock: some View {
+        if let url = URL(string: bannerURL.trimmingCharacters(in: .whitespaces)), url.scheme != nil {
+            // The image sits in an overlay so a wide photo can't widen the row.
+            Rectangle()
+                .fill(Color.havenPurple.opacity(0.12))
+                .aspectRatio(3, contentMode: .fit)
+                .overlay {
+                    CachedAsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(.havenPurple)
+                    }
+                }
+                .clipped()
+                .accessibilityLabel("Banner preview")
+        }
+    }
+
+    private var previewBlock: some View {
+        HStack(spacing: 14) {
+            AvatarView(url: URL(string: pictureURL), pubkey: existing.pubkey, size: 56)
+                .overlay(Circle().stroke(Color.havenPurple.opacity(0.35), lineWidth: 1.5))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName.isEmpty ? (name.isEmpty ? "Unnamed" : name) : displayName)
+                    .font(.appSystem(size: 17, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                if !nip05.isEmpty {
+                    Text(nip05)
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                if !about.isEmpty {
+                    Text(about)
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.primary.opacity(0.75))
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.platformSeparator.opacity(0.5))
+            .frame(height: 0.5)
+            .padding(.vertical, 8)
+    }
+
+    private var fieldDivider: some View {
+        Rectangle()
+            .fill(Color.platformSeparator.opacity(0.4))
+            .frame(height: 0.5)
+            .padding(.leading, 16)
+    }
+
+    private func fieldGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.appSystem(size: 10, weight: .heavy))
+                .tracking(0.7)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            content()
+        }
+    }
+
+    enum KeyboardKind { case `default`, urlLike, emailLike }
+
+    @ViewBuilder
+    private func field(label: String, text: Binding<String>, placeholder: String, keyboardKind: KeyboardKind = .default) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.appSystem(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .leading)
+
+            TextField(placeholder, text: text)
+                .font(.appSystem(size: 13))
+                .textFieldStyle(.plain)
+                .modifier(KeyboardModifier(kind: keyboardKind))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func multilineField(label: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.appSystem(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            ZStack(alignment: .topLeading) {
+                if text.wrappedValue.isEmpty {
+                    Text(placeholder)
+                        .font(.appSystem(size: 13))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .padding(.top, 8)
+                        .padding(.leading, 6)
+                }
+                #if os(iOS)
+                TextEditor(text: text)
+                    .font(.appSystem(size: 13))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 90)
+                #else
+                TextEditor(text: text)
+                    .font(.appSystem(size: 13))
+                    .frame(minHeight: 90)
+                #endif
+            }
+            .padding(6)
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(6)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func loadFromExisting() {
+        displayName = existing.displayName ?? ""
+        name = existing.name ?? ""
+        about = existing.about ?? ""
+        pictureURL = existing.pictureURL?.absoluteString ?? ""
+        bannerURL = existing.bannerURL?.absoluteString ?? ""
+        nip05 = existing.nip05 ?? ""
+        lud16 = existing.lud16 ?? ""
+        website = existing.website ?? ""
+        initialFields = formFields()
+        if let draft { applyFields(draft) }
+    }
+
+    private func applyFields(_ fields: [String: String]) {
+        for (key, value) in fields {
+            switch key {
+            case ProfileMetadataMerge.displayName: displayName = value
+            case ProfileMetadataMerge.name: name = value
+            case ProfileMetadataMerge.about: about = value
+            case ProfileMetadataMerge.picture: pictureURL = value
+            case ProfileMetadataMerge.banner: bannerURL = value
+            case ProfileMetadataMerge.nip05: nip05 = value
+            case ProfileMetadataMerge.lud16: lud16 = value
+            case ProfileMetadataMerge.website: website = value
+            default: break
+            }
+        }
+    }
+
+    private func formFields() -> [String: String] {
+        [
+            ProfileMetadataMerge.displayName: displayName,
+            ProfileMetadataMerge.name: name,
+            ProfileMetadataMerge.about: about,
+            ProfileMetadataMerge.picture: pictureURL,
+            ProfileMetadataMerge.banner: bannerURL,
+            ProfileMetadataMerge.nip05: nip05,
+            ProfileMetadataMerge.lud16: lud16,
+            ProfileMetadataMerge.website: website,
+        ]
+    }
+
+    private func save() {
+        errorMessage = nil
+        isSaving = true
+        let edited = formFields()
+        let initial = initialFields
+
+        Task {
+            switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
+                                                 initial: initial, edited: edited) {
+            case .success(let updated):
+                onSave(updated)
+                isSaving = false
+                performDismiss()
+            case .failure(let failure):
+                errorMessage = failure.message
+                isSaving = false
+            }
+        }
+    }
+
+    struct SaveFailure: Error { let message: String }
+
+    /// True when a field differs from what the form showed, ignoring the
+    /// spaces and newlines a save trims anyway.
+    static func hasChanges(initial: [String: String], edited: [String: String]) -> Bool {
+        edited.contains { key, value in
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+                != (initial[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// `existing` with the changed fields applied, for showing an edit before
+    /// the relays have it.
+    static func preview(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) -> FeedProfile {
+        let shown = initial.filter { !$0.value.isEmpty }.mapValues { $0 as Any }
+        return profile(existing, from: ProfileMetadataMerge.merge(base: shown, initial: initial, edited: edited))
+    }
+
+    /// Publishes the changed fields as a new kind 0 and returns the profile it
+    /// describes.
+    static func publish(nostrService: NostrService, existing: FeedProfile,
+                        initial: [String: String], edited: [String: String]) async -> Result<FeedProfile, SaveFailure> {
+        // A kind 0 replaces the whole profile. Start from the newest one on
+        // the relays so lud06 and every key this form doesn't show
+        // survive; if it can't be fetched, publishing would wipe them, so
+        // don't (same rule as the follow list).
+        let pubkey = nostrService.activeHexPubkey
+        let alsoAsk = (nostrService.outboxRelays[pubkey] ?? []) + (nostrService.relayLists[pubkey] ?? [])
+        let lookup = await nostrService.lookupNewestReplaceable(kind: 0, for: pubkey, alsoAsk: alsoAsk)
+        guard lookup.event != nil || lookup.confirmedNone else {
+            return .failure(SaveFailure(message: "Couldn't load your current profile from the relays. Nothing was changed; try again."))
+        }
+        let merged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
+                                                initial: initial, edited: edited)
+        guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
+            return .failure(SaveFailure(message: "Could not encode profile."))
+        }
+
+        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: []) else {
+            return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
+        }
+
+        nostrService.postEvent(signed)
+
+        var updated = profile(existing, from: merged)
+        updated.lud06 = merged["lud06"] as? String
+        updated.metadataCreatedAt = signed.created_at
+        return .success(updated)
+    }
+
+    private static func profile(_ existing: FeedProfile, from merged: [String: Any]) -> FeedProfile {
+        var updated = existing
+        updated.name = merged[ProfileMetadataMerge.name] as? String
+        updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
+        updated.about = merged[ProfileMetadataMerge.about] as? String
+        updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
+        updated.bannerURL = (merged[ProfileMetadataMerge.banner] as? String).flatMap { URL(string: $0) }
+        updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
+        updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
+        updated.website = merged[ProfileMetadataMerge.website] as? String
+        return updated
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+    }
+}
+
+private struct KeyboardModifier: ViewModifier {
+    let kind: ProfileEditView.KeyboardKind
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        switch kind {
+        case .urlLike:
+            content
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled(true)
+        case .emailLike:
+            content
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled(true)
+        case .default:
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
