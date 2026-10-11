@@ -12,9 +12,10 @@ name = "nvfips"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
-# headed upstream. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "cd0a39c8" }
+# Our fork: upstream maint (which now carries our dual-init offer re-send) plus
+# leaf-only mode, the leaf self-root fix and embedded add_peer. Back to a
+# jmcorgan/fips tag once one includes them.
+fips = { git = "https://github.com/btcforplebs/fips", rev = "d6f075b2" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
