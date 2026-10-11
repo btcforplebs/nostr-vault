@@ -555,6 +555,11 @@ class ComposeNoteViewModel @Inject constructor(
                     }
                 }
 
+                // What Edit on the countdown banner brings back: the text and
+                // the uploaded media's URLs (a draft keeps only text), but not
+                // the quote's nostr: line, which publish appends again.
+                val editableContent = finalContent
+
                 // 2. Build tags. A reply to a NIP-22 comment is itself a
                 // comment (kind 1111); everything else stays kind 1.
                 val (replyTags, eventKind) = buildReplyTags()
@@ -650,17 +655,32 @@ class ComposeNoteViewModel @Inject constructor(
                     )
                     val replyNote = replyToNoteId?.let { feedService.findNote(it) }
                     val quoteNote = quoteTarget()
+                    // The draft lives until the post goes out, so Cancel on
+                    // the banner keeps the text and Edit reopens it (iOS
+                    // PendingPostManager.startPost(draftId:)).
+                    autoSaveJob?.cancel()
+                    val keptDraft = Draft(
+                        id = draftId,
+                        content = editableContent,
+                        pubkey = event.pubkey,
+                        replyToId = replyToNoteId,
+                        quoteId = quotedId,
+                    )
                     pendingPostManager.startPost(
                         event = event,
-                        content = finalContent,
+                        content = editableContent,
                         replyTo = replyNote,
                         quoteTo = quoteNote,
+                        draftId = draftId,
+                        replyToId = replyToNoteId,
+                        quoteToId = quoteToNoteId,
+                        onWithdrawn = { draftService.saveDraft(keptDraft) },
                     ) { evt, onOutcome ->
                         nostrService.postEvent(evt, onBroadcastOutcome = onOutcome)
+                        // Out the door: its draft (an autosave, or one kept by
+                        // an earlier Cancel) has no further use.
+                        draftService.deleteDraft(keptDraft.id)
                     }
-                    // Delete draft on successful publish
-                    autoSaveJob?.cancel()
-                    draftService.deleteDraft(draftId)
                     // Posted or queued: the upload kept its own copy, so the GIF copies go.
                     deleteGifCopies(_attachments.value)
                     onPublished()
