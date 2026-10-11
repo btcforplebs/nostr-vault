@@ -69,6 +69,10 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
+import com.nostrvault.ui.screens.dashboard.DashboardScreen
+import com.nostrvault.ui.screens.dashboard.DashboardViewModel
+import com.nostrvault.ui.screens.dashboard.VaultDashboardSheet
+import com.nostrvault.ui.screens.dashboard.connectionDotColor
 
 /**
  * The Vault tab: what used to be the Media and Relay tabs, in one (iOS

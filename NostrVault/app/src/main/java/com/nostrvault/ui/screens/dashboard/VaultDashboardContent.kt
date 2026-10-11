@@ -88,7 +88,6 @@ import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.navigation.Screen
-import com.nostrvault.ui.screens.DashboardViewModel
 import com.nostrvault.ui.screens.dashboard.VaultDashboardModel.RunState
 import com.nostrvault.ui.theme.CardBorder
 import com.nostrvault.ui.theme.InfoBlue
