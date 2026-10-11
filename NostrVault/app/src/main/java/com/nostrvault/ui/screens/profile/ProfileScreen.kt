@@ -56,7 +56,6 @@ fun ProfileScreen(
     onProfileClick: (String) -> Unit,
     onReply: (String) -> Unit = {},
     onQuote: (String) -> Unit = {},
-    onNavigateToDMs: () -> Unit = {},
     onNavigateToDMThread: (String) -> Unit = {},
     /** Opens a DM with a pubkey, its box prefilled (Message seller). */
     onMessageUser: (pubkey: String, draft: String) -> Unit = { pk, _ -> onNavigateToDMThread(pk) },
@@ -88,7 +87,6 @@ fun ProfileScreen(
     val isFollowing by viewModel.isFollowing.collectAsState()
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
     val isOwnerAccount = remember(pubkey) { viewModel.isOwnerAccount(pubkey) }
-    val unreadDMs by viewModel.unreadDMCount.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -217,22 +215,8 @@ fun ProfileScreen(
                 Spacer(Modifier.weight(1f))
 
                 GlassPill {
+                    // Messages moved to the Vault tab's right pill.
                     if (isOwnProfile) {
-                        IconButton(onClick = onNavigateToDMs, modifier = Modifier.size(40.dp)) {
-                            BadgedBox(
-                                badge = {
-                                    // A plain dot, as on iOS: there is something to read.
-                                    if (unreadDMs > 0) androidx.compose.material3.Badge(containerColor = ErrorRed, modifier = Modifier.size(8.dp))
-                                },
-                            ) {
-                                Icon(
-                                    NostrVaultIcons.DMs,
-                                    if (unreadDMs > 0) "Messages, unread" else "Messages",
-                                    tint = PrimaryText,
-                                    modifier = Modifier.size(25.dp),
-                                )
-                            }
-                        }
                         IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Settings, "Settings", tint = PrimaryText, modifier = Modifier.size(25.dp))
                         }

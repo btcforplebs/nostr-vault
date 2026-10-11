@@ -12,6 +12,18 @@ enum class VaultViewMode(val displayName: String) {
 }
 
 /** Whitelisted notes already show in All, so it has no filter of its own (iOS #135). */
+/** The "Vault" list's filters: everything, or only what you might answer. iOS `ActivityFilter`. */
+enum class VaultActivityFilter {
+    ALL,
+    /** Replies, mentions and quotes. */
+    MENTIONS;
+
+    fun includes(kind: VaultActivity.Kind): Boolean = when (this) {
+        ALL -> true
+        MENTIONS -> kind == VaultActivity.Kind.REPLY || kind == VaultActivity.Kind.MENTION || kind == VaultActivity.Kind.QUOTE
+    }
+}
+
 enum class VaultContentFilter(val displayName: String) {
     ALL("All"),
     MINE("Mine"),

@@ -20,6 +20,20 @@ enum FollowersFilter {
     case all
 }
 
+/// The "Vault" list's filters: everything, or only what you might answer.
+enum ActivityFilter {
+    case all
+    /// Replies, mentions and quotes.
+    case mentions
+
+    func includes(_ kind: VaultActivity.Kind) -> Bool {
+        switch self {
+        case .all: return true
+        case .mentions: return kind == .reply || kind == .mention || kind == .quote
+        }
+    }
+}
+
 enum ContentFilter {
     case all
     case mine
@@ -81,4 +95,74 @@ struct ParsedZapReceipt {
     /// can publish a receipt naming you as the sender; only a signed request
     /// proves you made the zap.
     let requestIsSigned: Bool
+}
+
+/// One filter in the Vault tab's right pill, for the note its tap leaves.
+enum VaultFilterChoice: Equatable {
+    case activity(ActivityFilter)
+    case notes(ContentFilter)
+    case recipes
+    case likes(LikesFilter)
+    case zaps(ZapsFilter)
+    case followers(FollowersFilter)
+
+    var icon: String {
+        switch self {
+        case .activity(.all), .notes(.all), .notes(.whitelist): return "square.stack"
+        case .activity(.mentions), .notes(.tagged): return "at"
+        case .notes(.mine): return "person.fill"
+        case .notes(.outside): return "person.crop.circle.badge.questionmark"
+        case .recipes: return "fork.knife"
+        case .likes(.onMyNotes), .zaps(.onMyNotes): return "tray.and.arrow.down.fill"
+        case .likes(.myLikes), .zaps(.myZaps): return "tray.and.arrow.up.fill"
+        case .followers(.new): return "sparkles"
+        case .followers(.all): return "person.3.fill"
+        }
+    }
+
+    /// Notes, Likes and Zaps rebuild their list off the main thread after a
+    /// pick; the note waits for it so its count is the new list's.
+    var waitsForList: Bool {
+        switch self {
+        case .notes, .recipes, .likes, .zaps: return true
+        case .activity, .followers: return false
+        }
+    }
+
+    /// What the note calls the picked list: "Mentions", "Your articles".
+    func name(scope: VaultNoteScope) -> String {
+        let things = scope.rawValue
+        switch self {
+        case .activity(.all): return "Everything"
+        case .activity(.mentions), .notes(.tagged): return "Mentions"
+        case .notes(.all), .notes(.whitelist): return "All \(things)"
+        case .notes(.mine): return "Your \(things)"
+        case .notes(.outside): return "From outside your network"
+        case .recipes: return "Recipes"
+        case .likes(.onMyNotes): return "Likes received"
+        case .likes(.myLikes): return "Likes given"
+        case .zaps(.onMyNotes): return "Zaps received"
+        case .zaps(.myZaps): return "Zaps given"
+        case .followers(.new): return "Newest followers"
+        case .followers(.all): return "All followers"
+        }
+    }
+
+    /// The note for an empty list; never "· 0".
+    func emptyText(scope: VaultNoteScope) -> String {
+        let things = scope.rawValue
+        switch self {
+        case .activity(.all): return "Nothing new yet"
+        case .activity(.mentions), .notes(.tagged): return "No mentions yet"
+        case .notes(.all), .notes(.whitelist): return "No \(things) yet"
+        case .notes(.mine): return "None of your \(things) yet"
+        case .notes(.outside): return "No replies from outside"
+        case .recipes: return "No recipes yet"
+        case .likes(.onMyNotes): return "No likes yet"
+        case .likes(.myLikes): return "No likes given yet"
+        case .zaps(.onMyNotes): return "No zaps yet"
+        case .zaps(.myZaps): return "No zaps given yet"
+        case .followers(.new), .followers(.all): return "No followers yet"
+        }
+    }
 }

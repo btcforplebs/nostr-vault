@@ -415,9 +415,6 @@ fun NostrVaultNavHost(
                         onQuote = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
                         },
-                        onNavigateToDMs = {
-                            navController.navigate(Screen.DMInbox.route)
-                        },
                         onSell = {
                             navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
                         },
@@ -782,6 +779,7 @@ fun NostrVaultNavHost(
                         },
                         logStore = logStore,
                         feedService = feedService,
+                        unreadDMs = unreadDMs,
                     )
                 }
 

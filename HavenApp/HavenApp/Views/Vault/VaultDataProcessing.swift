@@ -285,6 +285,7 @@ extension VaultView {
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
                     self.activityHasLoadedOnce = true
+                    self.displayPass &+= 1
                     self.nostrService.fetchMissingProfiles(for: missingProfiles)
                 }
             } else if currentMode == .likes {
@@ -317,6 +318,7 @@ extension VaultView {
                         }
                         if !self.reactionMap.isEmpty { self.reactionMap = [:] }
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming reactions: determine target note set based on filter
@@ -369,6 +371,7 @@ extension VaultView {
                         self.reactionMap = finalRxMap
                         self.latestReactionDates = finalReactionDates
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .zaps {
@@ -456,6 +459,7 @@ extension VaultView {
                         }
                         self.zapMap = finalGivenMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming zaps: determine target note set based on filter
@@ -496,6 +500,7 @@ extension VaultView {
                         }
                         self.zapMap = finalZMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .notes {
@@ -616,6 +621,7 @@ extension VaultView {
                     self.repostMap = finalRpMap
                     self.quoteMap = finalQtMap
                     self.notesHasLoadedOnce = true
+                    self.displayPass &+= 1
                 }
             }
 

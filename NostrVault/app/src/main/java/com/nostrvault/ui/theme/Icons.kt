@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.CellTower
@@ -145,6 +146,7 @@ object NostrVaultIcons {
     val Key: ImageVector = Icons.Filled.Key                // key.fill
     val Blocked: ImageVector = Icons.Filled.PersonOff      // person.crop.circle.badge.xmark
     val FilterOff: ImageVector = Icons.Filled.Block        // circle.slash
+    val Messages: ImageVector = Icons.Outlined.Email       // envelope
     val Appearance: ImageVector = Icons.Filled.Palette     // paintpalette
     @Suppress("DEPRECATION")
     val Feed: ImageVector = Icons.Filled.Feed              // newspaper

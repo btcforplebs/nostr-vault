@@ -8,7 +8,7 @@ extension VaultView {
     /// follows from everyone, newest first, the way a notifications page reads.
     var activityList: some View {
         let zapsOnly = configService.config.zapsOnlyMode
-        let lines = zapsOnly ? displayActivity.filter { $0.kind != .reaction } : displayActivity
+        let lines = displayActivity.filter { activityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
         let isLoading = nostrService.isFetching || relayManager.isBooting || !activityHasLoadedOnce
         return Group {
             if lines.isEmpty && isLoading {
@@ -34,10 +34,10 @@ extension VaultView {
                             )
                         )
                     VStack(spacing: 8) {
-                        Text("Nothing new yet")
+                        Text(activityFilter == .mentions ? "No mentions yet" : "Nothing new yet")
                             .font(.appSystem(size: 18, weight: .bold, design: .default))
                             .tracking(0.2)
-                        Text("Replies, likes, zaps and new followers land here")
+                        Text(activityFilter == .mentions ? "Replies, mentions and quotes land here" : "Replies, likes, zaps and new followers land here")
                             .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.3)

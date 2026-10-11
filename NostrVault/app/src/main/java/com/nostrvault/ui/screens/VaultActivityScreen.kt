@@ -1,5 +1,13 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.rememberFilterNoteState
+import com.nostrvault.ui.components.countNote
+import com.nostrvault.ui.components.VaultRightPill
+import com.nostrvault.ui.components.FilterNotePill
+import com.nostrvault.data.model.VaultActivityFilter
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -376,9 +384,22 @@ internal fun VaultActivityScreen(
     val unreadSince by activity.unreadSince.collectAsState()
     val profiles by activity.profiles.collectAsState()
     val relayStatus by RelayForegroundService.relayStatus.collectAsState()
+    // All, or only replies, mentions and quotes (the right pill's @).
+    var filter by rememberSaveable { mutableStateOf(VaultActivityFilter.ALL) }
     // In Zaps Only mode, likes are hidden.
-    val lines = remember(all, shownCount, zapsOnly) {
-        (if (zapsOnly) all.filter { it.kind != VaultActivity.Kind.REACTION } else all).take(shownCount)
+    val lines = remember(all, shownCount, zapsOnly, filter) {
+        all.take(shownCount).filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+    }
+    val filterNote = rememberFilterNoteState()
+    fun pick(next: VaultActivityFilter) {
+        filter = next
+        val shown = all.take(shownCount)
+        val count = shown.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+        val capped = all.size > shownCount
+        filterNote.show(
+            if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
+            else countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet"),
+        )
     }
     val listState = rememberLazyListState()
 
@@ -401,21 +422,41 @@ internal fun VaultActivityScreen(
 
     GlassScaffold(
         toolbar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                VaultModePill(
-                    mode = VaultMode.ACTIVITY,
-                    zapsOnly = zapsOnly,
-                    newModes = newModes,
-                    onSelect = onSelect,
-                    onOpenDashboard = onOpenDashboard,
-                    modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
-                )
+            Box {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    VaultModePill(
+                        mode = VaultMode.ACTIVITY,
+                        zapsOnly = zapsOnly,
+                        newModes = newModes,
+                        onSelect = onSelect,
+                        onOpenDashboard = onOpenDashboard,
+                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    // Messages | All · @, as bare icons; the note says what a tap picked.
+                    VaultRightPill {
+                        IconFilterButton(
+                            icon = NostrVaultIcons.Layers,
+                            contentDescription = "All",
+                            isSelected = filter == VaultActivityFilter.ALL,
+                            onClick = { pick(VaultActivityFilter.ALL) },
+                        )
+                        IconFilterButton(
+                            icon = NostrVaultIcons.At,
+                            contentDescription = "Mentions",
+                            isSelected = filter == VaultActivityFilter.MENTIONS,
+                            onClick = { pick(VaultActivityFilter.MENTIONS) },
+                        )
+                    }
+                }
+                // Hangs below the bar without moving the list.
+                FilterNotePill(filterNote, Modifier.align(Alignment.BottomCenter).offset(y = 40.dp))
             }
         },
         floatingActionButton = {
@@ -473,10 +514,11 @@ internal fun VaultActivityScreen(
                 ) {
                     Icon(NostrVaultIcons.Activity, contentDescription = null, tint = colors.primary, modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(16.dp))
-                    Text("Nothing new yet", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(if (filter == VaultActivityFilter.MENTIONS) "No mentions yet" else "Nothing new yet", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Replies, likes, zaps and new followers land here",
+                        if (filter == VaultActivityFilter.MENTIONS) "Replies, mentions and quotes land here"
+                        else "Replies, likes, zaps and new followers land here",
                         color = SecondaryText, fontSize = 13.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,

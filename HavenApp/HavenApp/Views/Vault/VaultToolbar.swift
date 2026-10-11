@@ -121,43 +121,130 @@ extension VaultView {
     // to mean "my notes only" under Notes but "on my notes" under Likes and
     // Zaps. Whitelisted notes already show in All, and the phone has no
     // layout switch (`rowLayoutMode`).
-    /// Words first; when the bar can't fit them, the selected filter drops
-    /// its word, never the icons. (This used to fall back to a filter menu,
-    /// which hid every option behind one button.)
+    /// The right pill: Messages, a line, then this mode's filters as bare
+    /// icons. A filter tap says what it picked in the note under the bar.
+    /// On a narrow phone (an SE in Articles has ✉️ and five filters) the
+    /// buttons narrow before the bar would fold the pill into "•••".
     var trailingToolbarInline: some View {
         ViewThatFits(in: .horizontal) {
-            trailingFilters(labelled: true)
-            trailingFilters(labelled: false)
+            trailingPill(buttonWidth: 36, spacing: 4)
+            trailingPill(buttonWidth: 30, spacing: 0)
+            trailingPill(buttonWidth: 26, spacing: 0)
         }
     }
 
-    @ViewBuilder
-    func trailingFilters(labelled: Bool) -> some View {
-        HStack(spacing: 4) {
-            if viewMode == .notes {
-                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { contentFilter = .all }
-                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
-                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
-                IconFilterButton(icon: "person.crop.circle.badge.questionmark", tooltip: "Replies from outside your network", isSelected: contentFilter == .outside, color: .havenPurple, label: labelled ? "Outside" : nil) { contentFilter = .outside }
-                if vaultTabHostsMedia && noteScope == .articles {
-                    IconFilterButton(icon: "fork.knife", tooltip: "Recipes only", isSelected: recipesOnly, color: .havenPurple, label: labelled ? "Recipes" : nil) { recipesOnly.toggle() }
-                }
-            } else if viewMode == .likes {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
-            } else if viewMode == .zaps {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: labelled ? "Given" : nil) { zapsFilter = .myZaps }
-            } else if viewMode == .followers {
-                IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: labelled ? "New" : nil) { followersFilter = .new }
-                IconFilterButton(icon: "person.3.fill", tooltip: "All", isSelected: followersFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { followersFilter = .all }
+    private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            VaultMessagesButton()
+            if viewMode != .media {
+                Divider().frame(height: 20).padding(.horizontal, 2)
+                trailingFilters(spacing: spacing)
             }
         }
+        .environment(\.filterButtonWidth, buttonWidth)
+    }
+
+    @ViewBuilder
+    func trailingFilters(spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            switch viewMode {
+            case .activity:
+                filterButton(.activity(.all), "square.stack", "All", activityFilter == .all) { activityFilter = .all }
+                filterButton(.activity(.mentions), "at", "Mentions", activityFilter == .mentions) { activityFilter = .mentions }
+            case .notes:
+                filterButton(.notes(.all), "square.stack", "All", contentFilter == .all) { contentFilter = .all }
+                filterButton(.notes(.mine), "person.fill", "Mine", contentFilter == .mine) { contentFilter = .mine }
+                filterButton(.notes(.tagged), "at", "Mentions", contentFilter == .tagged) { contentFilter = .tagged }
+                filterButton(.notes(.outside), "person.crop.circle.badge.questionmark", "Replies from outside your network", contentFilter == .outside) { contentFilter = .outside }
+                if vaultTabHostsMedia && noteScope == .articles {
+                    filterButton(.recipes, "fork.knife", "Recipes only", recipesOnly) { recipesOnly.toggle() }
+                }
+            case .likes:
+                filterButton(.likes(.onMyNotes), "tray.and.arrow.down.fill", "Received", likesFilter == .onMyNotes) { likesFilter = .onMyNotes }
+                filterButton(.likes(.myLikes), "tray.and.arrow.up.fill", "Given", likesFilter == .myLikes) { likesFilter = .myLikes }
+            case .zaps:
+                filterButton(.zaps(.onMyNotes), "tray.and.arrow.down.fill", "Received", zapsFilter == .onMyNotes) { zapsFilter = .onMyNotes }
+                filterButton(.zaps(.myZaps), "tray.and.arrow.up.fill", "Given", zapsFilter == .myZaps) { zapsFilter = .myZaps }
+            case .followers:
+                filterButton(.followers(.new), "sparkles", "New", followersFilter == .new) { followersFilter = .new }
+                filterButton(.followers(.all), "person.3.fill", "All", followersFilter == .all) { followersFilter = .all }
+            case .media:
+                EmptyView()
+            }
+        }
+        .animation(Motion.toggle, value: activityFilter)
         .animation(Motion.toggle, value: contentFilter)
         .animation(Motion.toggle, value: recipesOnly)
         .animation(Motion.toggle, value: followersFilter)
         .animation(Motion.toggle, value: likesFilter)
         .animation(Motion.toggle, value: zapsFilter)
+    }
+
+    private func filterButton(_ choice: VaultFilterChoice, _ icon: String, _ tooltip: String,
+                              _ isSelected: Bool, _ pick: @escaping () -> Void) -> some View {
+        IconFilterButton(icon: icon, tooltip: tooltip, isSelected: isSelected, color: .havenPurple) {
+            pick()
+            noteFilterTap(choice, changed: !isSelected || choice == .recipes)
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Filter note
+
+    /// A filter tap's note. A list rebuilt off the main thread (Notes,
+    /// Likes, Zaps) is counted when it lands; "checking…" shows only if
+    /// that takes a moment.
+    func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
+        if choice == .recipes && !recipesOnly {
+            pendingFilterNote = nil
+            filterNote.show(.off("Recipes"))
+            return
+        }
+        guard changed, choice.waitsForList else {
+            pendingFilterNote = nil
+            filterNote.show(filterNoteText(choice))
+            return
+        }
+        pendingFilterNote = choice
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard pendingFilterNote == choice else { return }
+            filterNote.show(FilterNote(icon: choice.icon, text: "\(choice.name(scope: noteScope)) · checking…"))
+        }
+    }
+
+    /// A rebuilt list landed: the waiting note can count it now.
+    func filterListLanded() {
+        guard let choice = pendingFilterNote else { return }
+        pendingFilterNote = nil
+        filterNote.show(filterNoteText(choice))
+    }
+
+    /// "Mentions · 18", or "No mentions yet" rather than a 0. A list that
+    /// stopped at its page size says so with a "+".
+    func filterNoteText(_ choice: VaultFilterChoice) -> FilterNote {
+        let (count, capped) = filterCount(choice)
+        let text = count == 0
+            ? choice.emptyText(scope: noteScope)
+            : "\(choice.name(scope: noteScope)) · \(count.formatted())\(capped ? "+" : "")"
+        return FilterNote(icon: choice.icon, text: text)
+    }
+
+    private func filterCount(_ choice: VaultFilterChoice) -> (Int, Bool) {
+        switch choice {
+        case .activity(let filter):
+            let zapsOnly = configService.config.zapsOnlyMode
+            let n = displayActivity.filter { filter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }.count
+            return (n, displayActivity.count >= maxDisplayedItems)
+        case .notes, .recipes:
+            return (displayNotes.count, displayNotes.count >= maxDisplayedItems)
+        case .likes:
+            return (displayLikedNotes.count, displayLikedNotes.count >= maxDisplayedItems)
+        case .zaps:
+            return (displayZappedNotes.count, displayZappedNotes.count >= maxDisplayedItems)
+        case .followers(let filter):
+            return (followerSnapshot?.entries(for: filter).count ?? 0, false)
+        }
     }
 
     // MARK: - Mode / Filter Helper Views

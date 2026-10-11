@@ -20,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -58,6 +59,8 @@ import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.TutorialID
 import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.components.GlassPill
+import com.nostrvault.ui.components.LocalVaultMessages
+import com.nostrvault.ui.components.VaultMessages
 import com.nostrvault.ui.components.chromeFold
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.navigation.VaultSection
@@ -87,6 +90,8 @@ fun VaultTabScreen(
     onMediaClick: (Int) -> Unit,
     logStore: LogStore,
     feedService: FeedService,
+    /** Unread messages, for the ✉️ that leads each mode's right pill. */
+    unreadDMs: Int = 0,
     viewModel: DashboardViewModel = hiltViewModel(),
     activity: VaultActivityViewModel = hiltViewModel(),
 ) {
@@ -181,6 +186,8 @@ fun VaultTabScreen(
         if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboard) openDashboard()
     }
 
+    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
+    CompositionLocalProvider(LocalVaultMessages provides messages) {
     if (!showsMedia && showsActivity) {
         halves.SaveableStateProvider("activity") {
             val connectionColor by viewModel.connectionColor.collectAsState()
@@ -239,6 +246,7 @@ fun VaultTabScreen(
                 viewModel = viewModel,
             )
         }
+    }
     }
 
     if (showDashboard) {

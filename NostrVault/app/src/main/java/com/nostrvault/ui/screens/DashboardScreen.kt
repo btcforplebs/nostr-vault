@@ -37,6 +37,18 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import com.nostrvault.ui.components.rememberFilterNoteState
+import com.nostrvault.ui.components.countNote
+import com.nostrvault.ui.components.VaultRightPill
+import com.nostrvault.ui.components.FilterNotePill
+import com.nostrvault.ui.components.FilterNote
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -360,6 +372,10 @@ class DashboardViewModel @Inject constructor(
     private val _connectionColor = MutableStateFlow("yellow")
     val connectionColor: StateFlow<String> = _connectionColor.asStateFlow()
 
+    /** Bumped each time a rebuilt list lands, so a filter note can count it. */
+    private val _displayPass = MutableStateFlow(0)
+    val displayPass: StateFlow<Int> = _displayPass.asStateFlow()
+
     private val _notesHasLoadedOnce = MutableStateFlow(false)
     val notesHasLoadedOnce: StateFlow<Boolean> = _notesHasLoadedOnce.asStateFlow()
 
@@ -420,6 +436,9 @@ class DashboardViewModel @Inject constructor(
     private var updateJob: Job? = null
     private var updateGeneration = 0
     private var maxDisplayedItems = 50
+
+    /** How many rows a list shows before "load more"; a count this big is a cap. */
+    val pageSize: Int get() = maxDisplayedItems
     /** Notes that passed the Notes filter on the last rebuild, before the cap. */
     @Volatile private var notesFilteredCount = 0
 
@@ -1736,6 +1755,7 @@ class DashboardViewModel @Inject constructor(
             delay(debounceMs)
             if (gen != updateGeneration) return@launch
             updateDisplayData(gen)
+            if (gen == updateGeneration) _displayPass.value++
             // Likes and zaps that arrive later name more missing posts; ask
             // for those too (iOS re-asks on every events change). Ids already
             // asked for are skipped.
@@ -2414,18 +2434,16 @@ class DashboardViewModel @Inject constructor(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Icon toggle for the Relay tab's pills. With a [label], the selected button
- * also says its word (iOS #135), so a row of icons still tells you which
- * filter is on. [showDot] puts a red dot on its corner.
+ * Icon toggle for the Relay tab's pills; the note under the bar says what a
+ * tap picked. [showDot] puts a red dot on its corner.
  */
 @Composable
-private fun IconFilterButton(
+internal fun IconFilterButton(
     icon: ImageVector,
     contentDescription: String,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    label: String? = null,
     showDot: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -2435,45 +2453,17 @@ private fun IconFilterButton(
         label = "filterTint",
     )
     Box(modifier = modifier.defaultMinSize(minWidth = 36.dp, minHeight = 36.dp)) {
-        if (isSelected && label != null) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .height(32.dp)
-                    .clip(CircleShape)
-                    .background(colors.primary.copy(alpha = 0.16f))
-                    .clickable(onClickLabel = contentDescription, onClick = onClick)
-                    .padding(horizontal = 10.dp),
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = label,
-                    color = tint,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
-        } else {
-            IconButton(
-                onClick = onClick,
-                modifier = Modifier.size(36.dp).align(Alignment.Center),
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = contentDescription,
-                    tint = tint,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+        IconButton(
+            onClick = onClick,
+            // Bare icons: TalkBack hears which one is on.
+            modifier = Modifier.size(36.dp).align(Alignment.Center).semantics { selected = isSelected },
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(20.dp),
+            )
         }
         AnimatedVisibility(
             visible = showDot,
@@ -2488,12 +2478,22 @@ private fun IconFilterButton(
     }
 }
 
+/** One filter in the relay half's right pill, for the note its tap leaves. iOS `VaultFilterChoice`. */
+internal data class RelayFilterChoice(
+    val icon: ImageVector,
+    val name: String,
+    val empty: String,
+    /** Notes, Likes and Zaps rebuild their list after a pick; the note waits for it. */
+    val waitsForList: Boolean = true,
+)
+
 /**
- * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions · Outside.
- * Likes and Zaps: Received · Given. Followers: New · All.
+ * The trailing pill's filters for [viewMode], as bare icons. Notes: All · Mine ·
+ * Mentions · Outside. Likes and Zaps: Received · Given. Followers: New · All.
+ * [onPicked] gets each tap, and whether it changed the list.
  */
 @Composable
-private fun RelayFilterPill(
+private fun RowScope.RelayFilters(
     viewMode: VaultViewMode,
     contentFilter: VaultContentFilter,
     likesFilter: VaultLikesFilter,
@@ -2502,82 +2502,72 @@ private fun RelayFilterPill(
     noteScope: VaultNoteScope,
     recipesOnly: Boolean,
     viewModel: DashboardViewModel,
-    labelled: Boolean,
+    onPicked: (RelayFilterChoice, changed: Boolean) -> Unit,
 ) {
-    GlassPill {
-        @Composable
-        fun filter(icon: ImageVector, name: String, selected: Boolean, onClick: () -> Unit) =
-            IconFilterButton(
-                icon = icon,
-                contentDescription = name,
-                isSelected = selected,
-                onClick = onClick,
-                label = if (labelled) name else null,
-            )
-        when (viewMode) {
-            VaultViewMode.NOTES -> {
-                filter(NostrVaultIcons.Layers, VaultContentFilter.ALL.displayName, contentFilter == VaultContentFilter.ALL) {
-                    viewModel.setContentFilter(VaultContentFilter.ALL)
-                }
-                filter(NostrVaultIcons.Profile, VaultContentFilter.MINE.displayName, contentFilter == VaultContentFilter.MINE) {
-                    viewModel.setContentFilter(VaultContentFilter.MINE)
-                }
-                filter(NostrVaultIcons.At, VaultContentFilter.TAGGED.displayName, contentFilter == VaultContentFilter.TAGGED) {
-                    viewModel.setContentFilter(VaultContentFilter.TAGGED)
-                }
-                filter(NostrVaultIcons.OutsideNetwork, VaultContentFilter.OUTSIDE.displayName, contentFilter == VaultContentFilter.OUTSIDE) {
-                    viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
-                }
-                // Articles only: just the recipes (zapcooking / nostrcooking tags).
-                if (noteScope == VaultNoteScope.ARTICLES) {
-                    filter(NostrVaultIcons.Recipes, "Recipes", recipesOnly) { viewModel.toggleRecipesOnly() }
-                }
+    val things = noteScope.name.lowercase()
+    @Composable
+    fun filter(choice: RelayFilterChoice, tooltip: String, selected: Boolean, onClick: () -> Unit) =
+        IconFilterButton(
+            icon = choice.icon,
+            contentDescription = tooltip,
+            isSelected = selected,
+            onClick = {
+                onClick()
+                onPicked(choice, !selected)
+            },
+        )
+    when (viewMode) {
+        VaultViewMode.NOTES -> {
+            filter(RelayFilterChoice(NostrVaultIcons.Layers, "All $things", "No $things yet"), "All", contentFilter == VaultContentFilter.ALL) {
+                viewModel.setContentFilter(VaultContentFilter.ALL)
             }
-            VaultViewMode.LIKES -> {
-                filter(NostrVaultIcons.Received, VaultLikesFilter.ON_MY_NOTES.displayName, likesFilter == VaultLikesFilter.ON_MY_NOTES) {
-                    viewModel.setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
-                }
-                filter(NostrVaultIcons.Given, VaultLikesFilter.MY_LIKES.displayName, likesFilter == VaultLikesFilter.MY_LIKES) {
-                    viewModel.setLikesFilter(VaultLikesFilter.MY_LIKES)
-                }
+            filter(RelayFilterChoice(NostrVaultIcons.Profile, "Your $things", "None of your $things yet"), "Mine", contentFilter == VaultContentFilter.MINE) {
+                viewModel.setContentFilter(VaultContentFilter.MINE)
             }
-            VaultViewMode.ZAPS -> {
-                filter(NostrVaultIcons.Received, VaultZapsFilter.ON_MY_NOTES.displayName, zapsFilter == VaultZapsFilter.ON_MY_NOTES) {
-                    viewModel.setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
-                }
-                filter(NostrVaultIcons.Given, VaultZapsFilter.MY_ZAPS.displayName, zapsFilter == VaultZapsFilter.MY_ZAPS) {
-                    viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS)
-                }
+            filter(RelayFilterChoice(NostrVaultIcons.At, "Mentions", "No mentions yet"), "Mentions", contentFilter == VaultContentFilter.TAGGED) {
+                viewModel.setContentFilter(VaultContentFilter.TAGGED)
             }
-            VaultViewMode.FOLLOWERS -> {
-                filter(NostrVaultIcons.Discover, VaultFollowersFilter.NEW.displayName, followersFilter == VaultFollowersFilter.NEW) {
-                    viewModel.setFollowersFilter(VaultFollowersFilter.NEW)
-                }
-                filter(NostrVaultIcons.Groups, VaultFollowersFilter.ALL.displayName, followersFilter == VaultFollowersFilter.ALL) {
-                    viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
-                }
+            filter(RelayFilterChoice(NostrVaultIcons.OutsideNetwork, "From outside your network", "No replies from outside"), "Replies from outside your network", contentFilter == VaultContentFilter.OUTSIDE) {
+                viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
+            }
+            // Articles only: just the recipes (zapcooking / nostrcooking tags).
+            if (noteScope == VaultNoteScope.ARTICLES) {
+                val recipes = RelayFilterChoice(NostrVaultIcons.Recipes, "Recipes", "No recipes yet")
+                IconFilterButton(
+                    icon = recipes.icon,
+                    contentDescription = "Recipes only",
+                    isSelected = recipesOnly,
+                    onClick = {
+                        viewModel.toggleRecipesOnly()
+                        // Turning it off says so; turning it on counts.
+                        onPicked(if (recipesOnly) recipes.copy(waitsForList = false, name = "") else recipes, true)
+                    },
+                )
             }
         }
-    }
-}
-
-/**
- * Lays out the first of [variants] whose natural width fits, else the last —
- * SwiftUI's `ViewThatFits(in: .horizontal)`.
- */
-@Composable
-private fun FirstThatFits(modifier: Modifier = Modifier, vararg variants: @Composable () -> Unit) {
-    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
-        val loose = constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
-        var chosen: List<androidx.compose.ui.layout.Placeable> = emptyList()
-        for ((index, variant) in variants.withIndex()) {
-            chosen = subcompose(index, variant).map { it.measure(loose) }
-            if ((chosen.maxOfOrNull { it.width } ?: 0) <= constraints.maxWidth) break
+        VaultViewMode.LIKES -> {
+            filter(RelayFilterChoice(NostrVaultIcons.Received, "Likes received", "No likes yet"), "Received", likesFilter == VaultLikesFilter.ON_MY_NOTES) {
+                viewModel.setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
+            }
+            filter(RelayFilterChoice(NostrVaultIcons.Given, "Likes given", "No likes given yet"), "Given", likesFilter == VaultLikesFilter.MY_LIKES) {
+                viewModel.setLikesFilter(VaultLikesFilter.MY_LIKES)
+            }
         }
-        val width = (chosen.maxOfOrNull { it.width } ?: 0).coerceAtMost(constraints.maxWidth)
-        val height = chosen.maxOfOrNull { it.height } ?: 0
-        layout(width, height) {
-            chosen.forEach { it.placeRelative(0, 0) }
+        VaultViewMode.ZAPS -> {
+            filter(RelayFilterChoice(NostrVaultIcons.Received, "Zaps received", "No zaps yet"), "Received", zapsFilter == VaultZapsFilter.ON_MY_NOTES) {
+                viewModel.setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
+            }
+            filter(RelayFilterChoice(NostrVaultIcons.Given, "Zaps given", "No zaps given yet"), "Given", zapsFilter == VaultZapsFilter.MY_ZAPS) {
+                viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS)
+            }
+        }
+        VaultViewMode.FOLLOWERS -> {
+            filter(RelayFilterChoice(NostrVaultIcons.Discover, "Newest followers", "No followers yet", waitsForList = false), "New", followersFilter == VaultFollowersFilter.NEW) {
+                viewModel.setFollowersFilter(VaultFollowersFilter.NEW)
+            }
+            filter(RelayFilterChoice(NostrVaultIcons.Groups, "All followers", "No followers yet", waitsForList = false), "All", followersFilter == VaultFollowersFilter.ALL) {
+                viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
+            }
         }
     }
 }
@@ -2742,38 +2732,75 @@ fun DashboardScreen(
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
     }
 
+    // The line under the bar after a filter tap. A list rebuilt after the
+    // pick is counted when it lands; "checking…" shows only if that takes a
+    // moment.
+    val filterNote = rememberFilterNoteState()
+    val noteCoroutines = rememberCoroutineScope()
+    var pendingFilter by remember { mutableStateOf<RelayFilterChoice?>(null) }
+    fun showCount(choice: RelayFilterChoice) {
+        val (count, capped) = when (viewModel.viewMode.value) {
+            VaultViewMode.NOTES -> viewModel.displayNotes.value.size.let { it to (it >= viewModel.pageSize) }
+            VaultViewMode.LIKES -> viewModel.displayLikedNotes.value.size.let { it to (it >= viewModel.pageSize) }
+            VaultViewMode.ZAPS -> viewModel.displayZappedNotes.value.size.let { it to (it >= viewModel.pageSize) }
+            VaultViewMode.FOLLOWERS ->
+                (viewModel.followerSnapshot.value?.entries(viewModel.followersFilter.value)?.size ?: 0) to false
+        }
+        filterNote.show(countNote(choice.icon, choice.name, count, capped, choice.empty))
+    }
+    val displayPass by viewModel.displayPass.collectAsState()
+    LaunchedEffect(displayPass) {
+        pendingFilter?.let { pendingFilter = null; showCount(it) }
+    }
+    LaunchedEffect(viewMode) { pendingFilter = null }
+    val onFilterPicked: (RelayFilterChoice, Boolean) -> Unit = { choice, changed ->
+        when {
+            choice.name.isEmpty() -> { pendingFilter = null; filterNote.show(FilterNote.off("Recipes")) }
+            changed && choice.waitsForList -> {
+                pendingFilter = choice
+                noteCoroutines.launch {
+                    delay(400)
+                    if (pendingFilter == choice) filterNote.show(FilterNote(choice.icon, "${choice.name} · checking…"))
+                }
+            }
+            else -> { pendingFilter = null; showCount(choice) }
+        }
+    }
+
     GlassScaffold(
         toolbar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                // Leading: the Vault pill, the mode switcher (iOS VaultModePill).
-                VaultModePill(
-                    mode = VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope),
-                    zapsOnly = zapsOnly,
-                    newModes = newModes,
-                    onSelect = viewModel::selectMode,
-                    onOpenDashboard = onOpenDashboard,
-                    modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
-                )
-
-                Spacer(Modifier.width(8.dp))
-
-                // Trailing pill: the current mode's filters. Each icon means one
-                // thing in every mode (tray in = others gave you, tray out = you
-                // gave), and the selected one says its word. They never collapse
-                // into a menu: when the bar is tight the word goes, not the icons.
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    FirstThatFits(
-                        Modifier,
-                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = true) },
-                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, labelled = false) },
+            Box {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    // Leading: the Vault pill, the mode switcher (iOS VaultModePill).
+                    VaultModePill(
+                        mode = VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope),
+                        zapsOnly = zapsOnly,
+                        newModes = newModes,
+                        onSelect = viewModel::selectMode,
+                        onOpenDashboard = onOpenDashboard,
+                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
                     )
+
+                    Spacer(Modifier.width(8.dp))
+
+                    // Trailing pill: Messages, a line, then the current mode's
+                    // filters as bare icons. Each icon means one thing in every
+                    // mode (tray in = others gave you, tray out = you gave); a tap
+                    // says what it picked in the note under the bar.
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        VaultRightPill {
+                            RelayFilters(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, onPicked = onFilterPicked)
+                        }
+                    }
                 }
+                // Hangs below the bar without moving the list.
+                FilterNotePill(filterNote, Modifier.align(Alignment.BottomCenter).offset(y = 40.dp))
             }
         },
         floatingActionButton = {
