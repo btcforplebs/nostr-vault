@@ -69,6 +69,10 @@ fun ProfileScreen(
     /** Opens the Following / Followers lists on a tab, with the follower count shown here. */
     onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
     onBack: () -> Unit,
+    /** The Profile tab, as opposed to a profile pushed from a note or a list.
+     *  Only the tab goes without a back button; your own profile pushed from a
+     *  note gets one (iOS opens it as a sheet with a close button). */
+    isTab: Boolean = false,
     viewModel: ProfileViewModel = hiltViewModel(),
     editViewModel: ProfileEditViewModel = hiltViewModel(),
     /** Deletes your own Blossom files from the Media grid, as the Vault grid does. */
@@ -137,7 +141,9 @@ fun ProfileScreen(
     val clipboard = LocalClipboardManager.current
 
     // Derived from the collected `profile` so they recompose when it loads.
-    val npub = remember(pubkey) { viewModel.npub }
+    // From the argument, not the view model: the Profile tab's model has no
+    // pubkey until the effect above sets it.
+    val npub = remember(pubkey) { viewModel.npubOf(pubkey) }
     val lightningAddress = remember(profile) {
         profile?.let { p ->
             p.lud06?.takeIf { it.isNotBlank() }?.let { "lnurl:$it" }
@@ -163,6 +169,13 @@ fun ProfileScreen(
         } else emptyList()
     }
     val listState = rememberLazyListState()
+    // Re-tapping the Profile tab scrolls back to the top (iOS MyProfileView).
+    if (isTab) {
+        LaunchedEffect(Unit) {
+            com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.Profile)
+                .collect { listState.animateScrollToItem(0) }
+        }
+    }
     val density = androidx.compose.ui.platform.LocalDensity.current
     // Report Media / Block User from a Media grid tile's long-press menu.
     var gridReportTarget by remember { mutableStateOf<String?>(null) }
@@ -196,7 +209,7 @@ fun ProfileScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                if (!isOwnProfile) {
+                if (!isTab) {
                     GlassPill {
                         IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Back, "Back", tint = PrimaryText, modifier = Modifier.size(25.dp))

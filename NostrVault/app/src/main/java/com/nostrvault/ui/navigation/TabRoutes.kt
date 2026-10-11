@@ -1,5 +1,7 @@
 package com.nostrvault.ui.navigation
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -10,9 +12,17 @@ import com.nostrvault.ui.screens.dm.DMInboxScreen
 import com.nostrvault.ui.screens.feed.FeedScreen
 import com.nostrvault.ui.screens.profile.ProfileScreen
 
+/**
+ * The Profile tab. It always shows the active account, so it has its own route:
+ * [Screen.Profile] (`profile/{pubkey}`) is a profile pushed from somewhere,
+ * yours included, and keeps a back button.
+ */
+internal const val PROFILE_TAB_ROUTE = "profile_tab"
+
 /** Setup, the bottom-nav tabs and the profile pages, lifted from [NostrVaultNavHost]. */
 internal fun NavGraphBuilder.tabRoutes(
     navController: NavHostController,
+    activeHexState: State<String>,
 ) {
     // ── Setup ─────────────────────────────────────────────
     composable(Screen.SetupWizard.route) {
@@ -135,51 +145,17 @@ internal fun NavGraphBuilder.tabRoutes(
         )
     }
 
+    // Follows an account switch on its own: the pubkey is read, not pinned.
+    composable(PROFILE_TAB_ROUTE) {
+        ProfileRoute(navController, pubkey = activeHexState.value, isTab = true)
+    }
+
     composable(
         route = Screen.Profile.route,
         arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
     ) { entry ->
         val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
-        ProfileScreen(
-            pubkey = pubkey,
-            onNoteClick = { noteId ->
-                navController.navigate(Screen.NoteDetail.createRoute(noteId))
-            },
-            onArticleClick = { noteId ->
-                navController.navigate(Screen.ArticleReader.createRoute(noteId))
-            },
-            onProfileClick = { pk ->
-                navController.navigate(Screen.Profile.createRoute(pk))
-            },
-            onReply = { noteId ->
-                navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-            },
-            onQuote = { noteId ->
-                navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-            },
-            onSell = {
-                navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
-            },
-            onComposeText = { text ->
-                navController.navigate(Screen.ComposeNote.createRoute(text = text))
-            },
-            onNavigateToSettings = {
-                navController.navigate(Screen.Settings.route)
-            },
-            onOpenLightning = {
-                navController.navigate(Screen.Wallet.route)
-            },
-            onNavigateToDMThread = { pk ->
-                navController.navigate(Screen.DMThread.createRoute(pk))
-            },
-            onMessageUser = { pk, draft ->
-                navController.navigate(Screen.DMThread.createRoute(pk, draft))
-            },
-            onOpenFollowList = { tab, total ->
-                navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
-            },
-            onBack = { navController.popBackStack() },
-        )
+        ProfileRoute(navController, pubkey = pubkey, isTab = false)
     }
 
     composable(
@@ -195,4 +171,50 @@ internal fun NavGraphBuilder.tabRoutes(
             onBack = { navController.popBackStack() },
         )
     }
+}
+
+/** A profile page with the app's routes wired in: the tab or a pushed profile. */
+@Composable
+private fun ProfileRoute(navController: NavHostController, pubkey: String, isTab: Boolean) {
+    ProfileScreen(
+        pubkey = pubkey,
+        onNoteClick = { noteId ->
+            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+        },
+        onArticleClick = { noteId ->
+            navController.navigate(Screen.ArticleReader.createRoute(noteId))
+        },
+        onProfileClick = { pk ->
+            navController.navigate(Screen.Profile.createRoute(pk))
+        },
+        onReply = { noteId ->
+            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
+        },
+        onQuote = { noteId ->
+            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
+        },
+        onSell = {
+            navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
+        },
+        onComposeText = { text ->
+            navController.navigate(Screen.ComposeNote.createRoute(text = text))
+        },
+        onNavigateToSettings = {
+            navController.navigate(Screen.Settings.route)
+        },
+        onOpenLightning = {
+            navController.navigate(Screen.Wallet.route)
+        },
+        onNavigateToDMThread = { pk ->
+            navController.navigate(Screen.DMThread.createRoute(pk))
+        },
+        onMessageUser = { pk, draft ->
+            navController.navigate(Screen.DMThread.createRoute(pk, draft))
+        },
+        onOpenFollowList = { tab, total ->
+            navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
+        },
+        onBack = { navController.popBackStack() },
+        isTab = isTab,
+    )
 }

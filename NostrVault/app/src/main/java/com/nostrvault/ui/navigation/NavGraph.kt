@@ -54,7 +54,7 @@ internal fun <T> pushMotion(): FiniteAnimationSpec<T> = Motion.fade()
 private val TOP_LEVEL_ROUTES = setOf(
     Screen.Feed.route,
     Screen.Search.route,
-    Screen.Profile.route,
+    PROFILE_TAB_ROUTE,
     Screen.Dashboard.route,
     Screen.WOT.route,
 )
@@ -94,6 +94,9 @@ fun NostrVaultNavHost(
         Screen.Search.route,
         Screen.Dashboard.route,
         Screen.WOT.route,
+        PROFILE_TAB_ROUTE,
+        // A pushed profile keeps the bar, so the Profile tab can take you
+        // back to your own from someone else's.
         Screen.Profile.route,
     )
 
@@ -103,7 +106,8 @@ fun NostrVaultNavHost(
     var showAccountSwitcher by remember { mutableStateOf(false) }
     val configState = configStore.config.collectAsState()
     val config by configState
-    val activeHex by configStore.activeAccountHexPubkey.collectAsState()
+    val activeHexState = configStore.activeAccountHexPubkey.collectAsState()
+    val activeHex by activeHexState
     val profiles by nostrService.profiles.collectAsState()
     val activeProfile = profiles[activeHex]
     val isOwner = config.activeAccountNpub.isNullOrBlank()
@@ -189,7 +193,7 @@ fun NostrVaultNavHost(
                     else fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, animationSpec = pushMotion())
                 },
             ) {
-                tabRoutes(navController)
+                tabRoutes(navController, activeHexState)
                 detailRoutes(navController, feedService)
                 walletRoutes(navController)
                 settingsRoutes(navController, nostrService)
@@ -254,7 +258,7 @@ fun NostrVaultNavHost(
                             VaultSection.requestOpenNewActivity()
                         }
                         val route = if (screen == Screen.Profile) {
-                            Screen.Profile.createRoute(activeHex)
+                            PROFILE_TAB_ROUTE
                         } else {
                             screen.route
                         }
@@ -268,8 +272,9 @@ fun NostrVaultNavHost(
                         when (screen) {
                             Screen.Feed -> feedService.requestScrollToTop()
                             // The Vault tab's half on screen scrolls to the top;
-                            // the WOT globe goes back to you.
-                            Screen.Dashboard, Screen.WOT -> {
+                            // the WOT globe goes back to you; the Profile tab
+                            // scrolls to the top.
+                            Screen.Dashboard, Screen.WOT, Screen.Profile -> {
                                 TabReselect.request(screen)
                             }
                             else -> {
@@ -368,11 +373,10 @@ fun NostrVaultNavHost(
         AccountSwitcherSheet(
             accounts = accounts,
             onSelectAccount = { npub ->
-                // The open Profile screen is pinned to a pubkey nav arg, so unlike the
-                // other tabs (which observe the active account reactively) it won't
-                // follow an account switch on its own. If we're viewing our OWN profile,
-                // re-navigate it to the newly active account. Leave it untouched when
-                // viewing someone else's profile.
+                // The Profile tab follows the switch on its own. A pushed profile is
+                // pinned to a pubkey nav arg, so if it is our OWN, re-navigate it to
+                // the newly active account. Leave it untouched when viewing someone
+                // else's profile.
                 val previousHex = activeHex
                 val viewingOwnProfile = currentRoute == Screen.Profile.route &&
                     backStackEntry?.arguments?.getString("pubkey") == previousHex
