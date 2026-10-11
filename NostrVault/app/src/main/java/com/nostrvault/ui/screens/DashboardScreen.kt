@@ -558,7 +558,10 @@ class DashboardViewModel @Inject constructor(
                 .map { it.blockedForActiveAccount() }
                 .distinctUntilChanged()
                 .drop(1)
-                .collect { scheduleUpdateDisplayData() }
+                .collect {
+                    scheduleUpdateDisplayData()
+                    refreshFollowers()
+                }
         }
     }
 
@@ -1602,6 +1605,7 @@ class DashboardViewModel @Inject constructor(
         val owner = nostrService.activeHexPubkey
         val snapshot = withContext(Dispatchers.IO) {
             FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(owner))
+                ?.without(feedService.blockedHexForActiveAccount())
         } ?: return
         if (owner != nostrService.activeHexPubkey) return
         _followerSnapshot.value = snapshot

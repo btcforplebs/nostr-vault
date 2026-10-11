@@ -60,3 +60,43 @@ func TestFollowNotifyMarker(t *testing.T) {
 		t.Fatalf("got %d markers, want %q and the bot's first follow only:\n%s", markers, want, buf.String())
 	}
 }
+
+// Someone who followed and was blocked afterwards drops off the followers
+// list the app reads, and comes back on unblock: the ledger keeps the record.
+func TestFollowersSnapshotHidesBlocked(t *testing.T) {
+	owner := hexid('0')
+	setupSyncConfig(owner)
+	l, err := followers.Open(afero.NewMemMapFs(), "followers.json", []string{owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	followerLedger.Store(l)
+	t.Cleanup(func() { followerLedger.Store(nil) })
+	t.Cleanup(func() { blacklistOverride.Store(nil) })
+
+	now := nostr.Now()
+	for i, author := range []byte{'1', '2'} {
+		observeFollowList(&nostr.Event{ID: hexid(byte('a' + i)), PubKey: hexid(author),
+			Kind: nostr.KindFollowList, CreatedAt: now + 1, Tags: nostr.Tags{{"p", owner}}})
+	}
+	shown := func() []string {
+		snap, ok := followersSnapshot(t.Context(), owner)
+		if !ok {
+			t.Fatal("no snapshot")
+		}
+		var pks []string
+		for _, e := range snap.Followers {
+			pks = append(pks, e.Pubkey)
+		}
+		return pks
+	}
+
+	UpdateBlacklist(map[string]struct{}{hexid('2'): {}})
+	if got := shown(); len(got) != 1 || got[0] != hexid('1') {
+		t.Fatalf("blocked follower still listed: %v", got)
+	}
+	UpdateBlacklist(map[string]struct{}{})
+	if got := shown(); len(got) != 2 {
+		t.Fatalf("unblocked follower not back: %v", got)
+	}
+}

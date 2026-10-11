@@ -109,4 +109,23 @@ class FollowerSnapshotTest {
         assertNotNull(empty)
         assertTrue(empty!!.current.isEmpty())
     }
+
+    @Test
+    fun withoutDropsBlockedFollowersAndTheirCounts() {
+        val snap = FollowerSnapshot(
+            FollowerSnapshot.Counts(trusted = 1, others = 2, spam = 1, unfollowed = 1),
+            listOf(
+                entry("friend", tier = "trusted"),
+                entry("blocked", tier = "other", followedAt = 300),
+                entry("keep", tier = "other"),
+                entry("bot", tier = "spam"),
+                entry("gone", following = false),
+            ),
+        )
+        val shown = snap.without(setOf("blocked", "bot", "gone"))
+        assertEquals(FollowerSnapshot.Counts(trusted = 1, others = 1), shown.counts)
+        assertEquals(listOf("friend", "keep"), shown.current.map { it.pubkey })
+        assertFalse(shown.hasNewSince(200)) // a blocked follow no longer lights the dot
+        assertTrue(snap.hasNewSince(200))
+    }
 }
