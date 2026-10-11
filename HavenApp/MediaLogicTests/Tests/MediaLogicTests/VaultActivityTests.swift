@@ -102,6 +102,54 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertEqual(lines[2].preview, "zap me")
     }
 
+    func testZapsOnMyPostsLeaveOutBlockedSendersAndKeepTheRest() {
+        let zaps = [
+            VaultActivity.Zap(sender: ann, target: "p1", sats: 21, at: 110),
+            VaultActivity.Zap(sender: bob, target: "p1", sats: 500, at: 130),
+            VaultActivity.Zap(sender: bob, target: "p2", sats: 1000, at: 140),
+            VaultActivity.Zap(sender: me, target: "p1", sats: 9, at: 150),
+            VaultActivity.Zap(sender: cat, target: "elsewhere", sats: 5, at: 160),
+        ]
+        let shown = VaultActivity.zapsOnPosts(zaps, targets: ["p1", "p2"], owner: me, excludeOwner: true,
+                                              isBlocked: { $0 == self.bob })
+        // Bob is blocked: his zaps are gone, and p2, which only he zapped, drops off.
+        XCTAssertEqual(shown.zappers["p1"]?.map(\.pubkey), [ann])
+        XCTAssertNil(shown.zappers["p2"])
+        // The newest zap time comes from what is shown, not from Bob's later zap.
+        XCTAssertEqual(shown.lastZapAt["p1"], 110)
+        XCTAssertNil(shown.lastZapAt["p2"])
+
+        // Unblocked, the same receipts all come back.
+        let all = VaultActivity.zapsOnPosts(zaps, targets: ["p1", "p2"], owner: me, excludeOwner: true,
+                                            isBlocked: { _ in false })
+        XCTAssertEqual(all.zappers["p1"]?.map(\.pubkey), [ann, bob])
+        XCTAssertEqual(all.zappers["p2"]?.map(\.amount), [1000])
+        XCTAssertEqual(all.lastZapAt["p1"], 130)
+    }
+
+    func testAPostsZapRowKeepsYourOwnZapButHidesABlockedZapper() {
+        let zaps = [
+            VaultActivity.Zap(sender: me, target: "p1", sats: 9, at: 100),
+            VaultActivity.Zap(sender: ann, target: "p1", sats: 21, at: 110),
+            VaultActivity.Zap(sender: bob, target: "p1", sats: 500, at: 120),
+        ]
+        let row = VaultActivity.zapsOnPosts(zaps, targets: ["p1"], owner: me, excludeOwner: false,
+                                            isBlocked: { $0 == self.bob }).zappers["p1"]
+        XCTAssertEqual(row?.map(\.pubkey), [me, ann])
+    }
+
+    func testABlockedZapperIsLeftOutOfTheActivityList() {
+        let lines = build([
+            event("post", me, at: 100, content: "zap me"),
+            zapReceipt("z1", from: ann, on: "post", sats: 21, at: 110),
+            zapReceipt("z2", from: bob, on: "post", sats: 1000, at: 120),
+            zapReceipt("z3", from: bob, on: nil, sats: 50, at: 130, comment: "let me in"),
+        ], isBlocked: { $0 == self.bob })
+        XCTAssertEqual(lines.map(\.id), ["zap-post"])
+        XCTAssertEqual(lines[0].actors, [ann])
+        XCTAssertEqual(lines[0].sats, 21)
+    }
+
     func testRepostsOfYourPostFold() {
         let lines = build([
             event("post", me, at: 100, content: "share this"),

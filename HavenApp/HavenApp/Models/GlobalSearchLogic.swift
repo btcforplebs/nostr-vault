@@ -308,3 +308,30 @@ struct GlobalSearchMerge<Note, Profile> {
         return true
     }
 }
+
+/// Search never puts someone you blocked in front of you: not their profile,
+/// not a note that shows them, not the links and hashtags those notes carry,
+/// and not as a suggested profile. Blocked authors are dropped from what the
+/// relays returned rather than deleted anywhere, so unblocking brings them
+/// back on the next search.
+struct SearchBlockFilter {
+    let blocked: Set<String>
+
+    func profiles<P>(_ items: [P], pubkey: (P) -> String) -> [P] {
+        guard !blocked.isEmpty else { return items }
+        return items.filter { !blocked.contains(pubkey($0)) }
+    }
+
+    func pubkeys(_ keys: [String]) -> [String] {
+        guard !blocked.isEmpty else { return keys }
+        return keys.filter { !blocked.contains($0) }
+    }
+
+    /// - Parameter involvesBlocked: whether a note shows a blocked person
+    ///   (author, reposter, reposted author, parent). The app passes
+    ///   `FeedFilterEngine.involvesBlocked`, the same check the feed uses.
+    func notes<N>(_ items: [N], involvesBlocked: (N, Set<String>) -> Bool) -> [N] {
+        guard !blocked.isEmpty else { return items }
+        return items.filter { !involvesBlocked($0, blocked) }
+    }
+}

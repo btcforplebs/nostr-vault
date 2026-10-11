@@ -124,7 +124,7 @@ class FollowListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val nostrService: NostrService,
     private val feedService: FeedService,
-    configStore: ConfigStore,
+    private val configStore: ConfigStore,
 ) : ViewModel() {
 
     companion object {
@@ -179,6 +179,16 @@ class FollowListViewModel @Inject constructor(
     /** Spam from the viewer's ledger, hidden from both lists. */
     private val _hidden = MutableStateFlow<Set<String>>(emptySet())
     val hidden: StateFlow<Set<String>> = _hidden.asStateFlow()
+
+    /**
+     * Everyone the viewer blocks, as hex pubkeys. Dropped from both lists
+     * and from the counts beside the switch, live as you block: the relay
+     * never hears about blocks on Android, and anyone who followed before
+     * being blocked is already in the ledger either way.
+     */
+    val blocked: StateFlow<Set<String>> = configStore.config
+        .map { config -> config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     private val _webOfTrust = MutableStateFlow<Set<String>>(emptySet())
     val webOfTrust: StateFlow<Set<String>> = _webOfTrust.asStateFlow()
@@ -350,6 +360,7 @@ fun FollowListScreen(
     val followersTotal by viewModel.followersTotal.collectAsState()
     val followsViewer by viewModel.followsViewer.collectAsState()
     val hidden by viewModel.hidden.collectAsState()
+    val blocked by viewModel.blocked.collectAsState()
     val webOfTrust by viewModel.webOfTrust.collectAsState()
     val trustRank by viewModel.trustRank.collectAsState()
     val followedList by viewModel.followed.collectAsState()
@@ -370,13 +381,17 @@ fun FollowListScreen(
             FollowListTab.FOLLOWERS -> followers.map { (key, at) -> person(key, at, profiles[key]) }
         }
     }
-    val sections = remember(people, followed, webOfTrust, trustRank, hidden, sort, query) {
-        FollowListLogic.sections(people, followed, webOfTrust, trustRank, hidden, sort, query)
+    val dropped = remember(hidden, blocked) { FollowListLogic.dropped(hidden, blocked) }
+    val sections = remember(people, followed, webOfTrust, trustRank, dropped, sort, query) {
+        FollowListLogic.sections(people, followed, webOfTrust, trustRank, dropped, sort, query)
     }
     val subjectName = profiles[viewModel.subject]?.bestName ?: shortNpub(viewModel.subject)
-    val followersLabel = followersTotal?.takeIf { it > followers.size }
+    // The counts count what the lists show, so a blocked person is gone from
+    // both the rows and the number.
+    val followersShown = FollowListLogic.shownCount(followers.keys, dropped)
+    val followersLabel = followersTotal?.takeIf { it > followersShown }
         ?.let { FollowListLogic.countText(it, more = false) }
-        ?: FollowListLogic.countText(followers.size, more = haveMore)
+        ?: FollowListLogic.countText(followersShown, more = haveMore)
 
     Column(
         modifier = Modifier
@@ -414,7 +429,7 @@ fun FollowListScreen(
             Spacer(Modifier.height(10.dp))
             TabSwitch(
                 tab = tab,
-                followingLabel = "Following ${FollowListLogic.countText(following.size, more = false)}",
+                followingLabel = "Following ${FollowListLogic.countText(FollowListLogic.shownCount(following, dropped), more = false)}",
                 followersLabel = "Followers $followersLabel",
                 onSelect = { tab = it },
             )

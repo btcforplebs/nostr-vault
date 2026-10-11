@@ -119,10 +119,14 @@ class ProfileViewModel @Inject constructor(
     }
 
     /** The Shop tab: this person's marketplace listings. */
-    private val shop = com.nostrvault.service.SellerListingsLoader(viewModelScope, nostrService)
+    private val shop = com.nostrvault.service.SellerListingsLoader(
+        viewModelScope, nostrService, isBlocked = { feedService.isBlocked(it) },
+    )
     val shopListings = shop.listings
     val shopLoading = shop.isLoading
-    fun reloadShop() = shop.load(_pubkey.value, force = true)
+    fun reloadShop() {
+        if (_pubkey.value.isNotEmpty()) shop.load(_pubkey.value, force = true)
+    }
 
     /** This person's articles, diVines and music, each a tab when they have any. */
     private val extras = ProfileExtrasLoader(viewModelScope, nostrService)
@@ -267,6 +271,13 @@ class ProfileViewModel @Inject constructor(
             combine(_pubkey, configStore.config) { pk, _ -> pk.isNotEmpty() && feedService.isBlocked(pk) }
                 .distinctUntilChanged()
                 .collect { _isBlocked.value = it }
+        }
+        // Blocking shuts their shop as you block, and unblocking fetches it
+        // again, rather than on the next visit.
+        viewModelScope.launch {
+            _isBlocked.drop(1).distinctUntilChanged().collect {
+                if (_pubkey.value.isNotEmpty()) reloadShop()
+            }
         }
     }
 

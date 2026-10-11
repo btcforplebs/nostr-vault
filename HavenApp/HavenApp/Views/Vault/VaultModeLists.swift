@@ -34,6 +34,11 @@ extension VaultView {
             // arrived while it was already on screen.
             .onAppear { consumeRelayFocus(proxy: proxy) }
             .task(id: followersOwnerHex) { await pollFollowers() }
+            // The relay drops blocked followers from the ledger it serves;
+            // re-read now rather than at the next minute's poll.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+                refreshFollowers()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .havenFocusRelayEvent)) { _ in
                 consumeRelayFocus(proxy: proxy)
             }

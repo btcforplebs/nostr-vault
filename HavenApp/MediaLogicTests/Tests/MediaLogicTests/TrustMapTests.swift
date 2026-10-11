@@ -93,6 +93,18 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(camera.spin, .zero)
     }
 
+    func testASlowLetGoDoesNotSpin() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 200, vy: -150, at: 0, reduceMotion: false)
+        XCTAssertEqual(camera.spin, .zero)
+    }
+
+    func testAHardFlickIsCapped() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 6000, vy: 0, at: 0, reduceMotion: false)
+        XCTAssertEqual(simd_length(camera.spin), GlobeCamera.maxSpin, accuracy: 1e-9)
+    }
+
     func testFlyToArrivesAndLetsTheClockSleep() {
         var camera = GlobeCamera()
         camera.zoom = 2
@@ -316,6 +328,31 @@ final class TrustMapTests: XCTestCase {
         // Everyone and Following keep your follows' faces.
         XCTAssertEqual(faces(.everyone), [])
         XCTAssertEqual(faces(.following), [])
+    }
+
+    func testLayerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func randomKey() -> String {
+            (0..<4).map { _ in
+                seed = seed &+ 0x9E37_79B9_7F4A_7C15
+                var z = seed
+                z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+                z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+                return String(format: "%016llx", z ^ (z >> 31))
+            }.joined()
+        }
+        let web = Set((0..<4000).map { _ in randomKey() })
+        // Most people further out are vouched for by the same one or two follows.
+        let vouches = Dictionary(uniqueKeysWithValues: web.map { ($0, 1) })
+        let faces = TrustMap.layerFaceCandidates(.furtherOut, me: me, follows: [], web: web, vouches: vouches,
+                                                 count: TrustMap.layerFaceCount)
+        XCTAssertEqual(faces.count, TrustMap.layerFaceCount)
+        let octants = Set(faces.map { key -> Int in
+            let d = TrustMap.direction(of: key)
+            return Int((atan2(d.y, d.x) + .pi) / (2 * .pi) * 8) % 8
+        })
+        XCTAssertEqual(octants.count, 8, "faces bunched into \(octants.count) of 8 slices of the globe")
     }
 
     func testCloseSplitsTheWebAtTenVouches() {

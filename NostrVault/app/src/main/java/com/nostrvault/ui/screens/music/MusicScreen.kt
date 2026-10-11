@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nostrvault.data.music.WavlakeApi
+import com.nostrvault.data.music.WavlakeBlockFilter
 import com.nostrvault.data.music.WavlakeLink
 import com.nostrvault.data.music.WavlakeSearchResult
 import com.nostrvault.data.music.WavlakeTrack
@@ -60,6 +61,8 @@ import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * What a song can lead to outside the music screen: a post sharing it, or
@@ -71,6 +74,11 @@ data class MusicActions(
     val npubToHex: (String) -> String?,
     /** Who you follow, for the toolbar's "Artists you follow". */
     val followedPubkeys: () -> Set<String> = { emptySet() },
+    /**
+     * Who you block, so their music stays out of the feed. A flow, so
+     * blocking an artist clears them as you block.
+     */
+    val blockedPubkeys: StateFlow<Set<String>> = MutableStateFlow(emptySet()),
 )
 
 private fun formatTime(sec: Long): String = "%d:%02d".format(sec / 60, sec % 60)
@@ -98,6 +106,12 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
     val current by MusicPlayer.current.collectAsState()
     val playing by MusicPlayer.isPlaying.collectAsState()
     val path by MusicFeedState.path.collectAsState()
+    val blocked by actions.blockedPubkeys.collectAsState()
+    // Artist ids known to belong to a blocked key; Wavlake names a key only
+    // on an artist's own page, so this is what catches their songs elsewhere.
+    val blockedArtists = remember(blocked, recentArtists) {
+        WavlakeBlockFilter.blockedArtistIds(MusicFeedState.knownArtists(), blocked, actions.npubToHex)
+    }
     // An artist picked in the toolbar shows as a page under the search field.
     val scopeArtist = (musicScope as? MusicScope.Artist)?.artist
     val pageIsScope = path.isEmpty() && scopeArtist != null && query.isBlank()
@@ -133,7 +147,9 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 if (follows.isEmpty()) {
                     error = "Follow people on Nostr, and the Wavlake artists among them show up here."
                 } else {
-                    val (artists, songs) = MusicFeedState.followedArtists(follows, actions.npubToHex)
+                    val (artists, songs) = MusicFeedState.followedArtists(
+                        follows, actions.npubToHex, actions.blockedPubkeys.value,
+                    )
                     followedArtists = artists; trending = songs
                     if (artists.isEmpty()) {
                         error = "None of the Wavlake artists checked are people you follow. " +
@@ -171,11 +187,26 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
         }
     }
 
-    val tracksOf: List<WavlakeTrack> = when {
-        query.isNotBlank() -> results.filterIsInstance<WavlakeSearchResult.Track>().map { it.track }
-        else -> trending
+    // Nothing by a blocked artist shows: not their songs, their albums, their
+    // artist tiles, nor their search rows. Wavlake keeps it all, so an unblock
+    // shows them again.
+    val shownResults = remember(results, blocked, blockedArtists) {
+        WavlakeBlockFilter.results(results, blocked, blockedArtists, actions.npubToHex)
     }
-    val collections = if (query.isNotBlank()) results.filter { it !is WavlakeSearchResult.Track } else emptyList()
+    val shownTrending = remember(trending, blocked, blockedArtists) {
+        WavlakeBlockFilter.tracks(trending, blocked, blockedArtists, actions.npubToHex)
+    }
+    val shownRecents = remember(recentArtists, blocked, blockedArtists) {
+        WavlakeBlockFilter.artists(recentArtists, blocked, blockedArtists, actions.npubToHex)
+    }
+    val shownFollowed = remember(followedArtists, blocked, blockedArtists) {
+        WavlakeBlockFilter.artists(followedArtists, blocked, blockedArtists, actions.npubToHex)
+    }
+    val tracksOf: List<WavlakeTrack> = when {
+        query.isNotBlank() -> shownResults.filterIsInstance<WavlakeSearchResult.Track>().map { it.track }
+        else -> shownTrending
+    }
+    val collections = if (query.isNotBlank()) shownResults.filter { it !is WavlakeSearchResult.Track } else emptyList()
     val accent = LocalNostrVaultColors.current.primary
 
     LazyColumn(
@@ -297,14 +328,14 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 if (query.isBlank()) {
                     val windowWord = window.title.lowercase()
                     if (musicScope == MusicScope.Trending) {
-                        if (recentArtists.isNotEmpty()) item(key = "your-artists") {
-                            ArtistRow("Your artists", recentArtists)
+                        if (shownRecents.isNotEmpty()) item(key = "your-artists") {
+                            ArtistRow("Your artists", shownRecents)
                         }
-                        val topArtists = MusicTrendingRows.artists(trending)
+                        val topArtists = MusicTrendingRows.artists(shownTrending)
                         if (topArtists.isNotEmpty()) item(key = "top-artists") {
                             ArtistRow("Top artists $windowWord", topArtists)
                         }
-                        val topAlbums = MusicTrendingRows.albums(trending)
+                        val topAlbums = MusicTrendingRows.albums(shownTrending)
                         if (topAlbums.isNotEmpty()) item(key = "top-albums") {
                             Column {
                                 MusicSectionTitle("Top albums $windowWord")
@@ -319,10 +350,10 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         }
                         item(key = "header") { MusicSectionTitle("Trending songs $windowWord") }
                     } else {
-                        if (followedArtists.isNotEmpty()) item(key = "followed-artists") {
-                            ArtistRow("Artists you follow", followedArtists)
+                        if (shownFollowed.isNotEmpty()) item(key = "followed-artists") {
+                            ArtistRow("Artists you follow", shownFollowed)
                         }
-                        if (trending.isNotEmpty()) item(key = "header") { MusicSectionTitle("Their songs") }
+                        if (shownTrending.isNotEmpty()) item(key = "header") { MusicSectionTitle("Their songs") }
                     }
                 } else {
                     item(key = "header") { MusicSectionTitle("Songs") }

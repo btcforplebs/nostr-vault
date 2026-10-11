@@ -466,12 +466,13 @@ func searchCapacity(ctx context.Context, f nostr.Filter) (bool, string) {
 // QueryEvents/CountEvents registration, so call it instead of appending
 // db.QueryEvents and db.CountEvents, and after the route's read policies are
 // in RejectFilter: those policies run on a search filter exactly as on any
-// other, before the query, so /private and /chat stay auth-gated.
+// other, before the query, so /private and /chat stay auth-gated. It also
+// keeps blocked people's events from being served (blocked_reads.go).
 func enableSearch(rl *khatru.Relay, db DBBackend) {
 	rl.OverwriteFilter = append(rl.OverwriteFilter, detachSearchListener)
 	rl.RejectFilter = append(rl.RejectFilter, searchNeedsAnchor, searchCapacity)
-	rl.QueryEvents = append(rl.QueryEvents, searchableQuery(db))
-	rl.CountEvents = append(rl.CountEvents, searchableCount(db))
+	rl.QueryEvents = append(rl.QueryEvents, hideBlacklistedQuery(searchableQuery(db)))
+	rl.CountEvents = append(rl.CountEvents, hideBlacklistedCount(searchableCount(db)))
 	if !slices.Contains(rl.Info.SupportedNIPs, any(50)) {
 		rl.Info.SupportedNIPs = append(rl.Info.SupportedNIPs, 50)
 	}

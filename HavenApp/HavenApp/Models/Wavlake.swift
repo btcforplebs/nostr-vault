@@ -275,3 +275,74 @@ enum WavlakeLink {
         return "🎵 \(track.title) by \(by)\n\nhttps://wavlake.com/track/\(track.id)"
     }
 }
+
+/// Music by someone the active account has blocked.
+///
+/// Wavlake only names an artist's Nostr key on the artist's own page, so a
+/// blocked artist is recognised two ways: by the key, when a song or a page
+/// carries one, and otherwise by their Wavlake artist id once any page seen
+/// this launch has named that key. Nothing is removed from Wavlake or from
+/// the saved artist list, so an unblock shows them again.
+///
+/// The gap this leaves: an artist never opened, played or followed has no
+/// known key, so their songs can still rank in Trending until a page naming
+/// their key is read.
+enum WavlakeBlockFilter {
+    /// The Wavlake ids of every known artist whose linked key is blocked.
+    /// `hex` turns an npub into a hex pubkey, matching `blocked`.
+    static func blockedArtistIds(known: [WavlakeArtist], blocked: Set<String>,
+                                 hex: (String) -> String?) -> Set<String> {
+        guard !blocked.isEmpty else { return [] }
+        var ids = Set<String>()
+        for artist in known {
+            guard let npub = artist.npub, let key = hex(npub), blocked.contains(key) else { continue }
+            ids.insert(artist.id)
+        }
+        return ids
+    }
+
+    static func isBlocked(npub: String?, artistId: String?, blocked: Set<String>,
+                          artistIds: Set<String>, hex: (String) -> String?) -> Bool {
+        if blocked.isEmpty && artistIds.isEmpty { return false }
+        if let npub, let key = hex(npub), blocked.contains(key) { return true }
+        if let artistId, artistIds.contains(artistId) { return true }
+        return false
+    }
+
+    static func tracks(_ tracks: [WavlakeTrack], blocked: Set<String>,
+                       artistIds: Set<String>, hex: (String) -> String?) -> [WavlakeTrack] {
+        if blocked.isEmpty && artistIds.isEmpty { return tracks }
+        return tracks.filter {
+            !isBlocked(npub: $0.artistNpub, artistId: $0.artistId,
+                       blocked: blocked, artistIds: artistIds, hex: hex)
+        }
+    }
+
+    static func artists(_ artists: [WavlakeArtist], blocked: Set<String>,
+                        artistIds: Set<String>, hex: (String) -> String?) -> [WavlakeArtist] {
+        if blocked.isEmpty && artistIds.isEmpty { return artists }
+        return artists.filter {
+            !isBlocked(npub: $0.npub, artistId: $0.id,
+                       blocked: blocked, artistIds: artistIds, hex: hex)
+        }
+    }
+
+    /// One row of a search: the track rows by their own key or artist id,
+    /// the artist rows by id. Search carries no keys, so an artist row only
+    /// drops once a page has named their key.
+    static func results(_ results: [WavlakeSearchResult], blocked: Set<String>,
+                        artistIds: Set<String>, hex: (String) -> String?) -> [WavlakeSearchResult] {
+        if blocked.isEmpty && artistIds.isEmpty { return results }
+        return results.filter { result in
+            switch result {
+            case .track(let track):
+                return !isBlocked(npub: track.artistNpub, artistId: track.artistId,
+                                  blocked: blocked, artistIds: artistIds, hex: hex)
+            case .artist(let id, _, _):
+                return !artistIds.contains(id)
+            case .album:
+                return true
+            }
+        }
+    }
+}

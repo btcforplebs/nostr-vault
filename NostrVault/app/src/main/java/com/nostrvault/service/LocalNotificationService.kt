@@ -23,6 +23,7 @@ import com.nostrvault.BuildConfig
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.NostrMentions
@@ -308,6 +309,14 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
+        // Nothing from someone this account blocked. A gift wrap's author is a
+        // throwaway key; its real sender is checked once it opens (announceDm).
+        val blocked = config.blockedFor(npub).mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+        if (BlockedPeople.isBlocked(author, blocked)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' author ${author.take(8)} is blocked")
+            return
+        }
+
         // Nothing from outside your Web of Trust: those were the spam alerts.
         val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
         val trusted = trustedAuthors()
@@ -317,7 +326,7 @@ class LocalNotificationService @Inject constructor(
         }
 
         if (isDm(type)) {
-            announceDm(id, type, author, recipientHex, npub)
+            announceDm(id, type, author, recipientHex, npub, blocked)
             return
         }
 
@@ -443,7 +452,7 @@ class LocalNotificationService @Inject constructor(
      * device sent, wait for the inbox to decrypt the rest, then show the real
      * sender and text. If it never opens, the generic line still goes out.
      */
-    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String) {
+    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String, blocked: Set<String>) {
         // A NIP-04 DM names its author in the clear.
         if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
         val dms = dmService.get()
@@ -459,6 +468,7 @@ class LocalNotificationService @Inject constructor(
             )
             if (opened != null) {
                 if (opened.second.isFromMe) return@launch
+                if (BlockedPeople.isBlocked(opened.second.senderPubkey, blocked)) return@launch
                 // The conversation is already on screen.
                 if (appInForeground && dms.visibleConversation == opened.first) return@launch
             }

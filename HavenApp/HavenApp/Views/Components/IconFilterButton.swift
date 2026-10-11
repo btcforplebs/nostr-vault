@@ -1,6 +1,17 @@
 import SwiftUI
 
+/// How wide an `IconFilterButton`'s tap target is. A bar that can't fit
+/// its row at the usual 36 pt narrows it, so no icon has to go.
+private struct FilterButtonWidthKey: EnvironmentKey { static let defaultValue: CGFloat = 36 }
+extension EnvironmentValues {
+    var filterButtonWidth: CGFloat {
+        get { self[FilterButtonWidthKey.self] }
+        set { self[FilterButtonWidthKey.self] = newValue }
+    }
+}
+
 struct IconFilterButton: View {
+    @Environment(\.filterButtonWidth) private var width
     let icon: String
     let tooltip: String
     let isSelected: Bool
@@ -42,7 +53,7 @@ struct IconFilterButton: View {
                         .foregroundColor(isSelected ? color : .secondary)
                 }
             }
-            .frame(minWidth: 36, minHeight: 36)
+            .frame(minWidth: width, minHeight: 36)
             .contentShape(Rectangle())
             .animation(Motion.toggle, value: isSelected)
         }
@@ -123,5 +134,63 @@ struct LanguageFilterMenuItems: View {
         selected.isEmpty
             ? "All languages"
             : selected.map { FeedLanguage(code: $0).displayName }.joined(separator: ", ")
+    }
+}
+
+/// The line a filter tap leaves under the toolbar: the filter's icon and
+/// what it did ("214 talk with you", "Mentions off"). Icon-only filters say
+/// what you picked here instead of beside the icon.
+struct FilterNote: Equatable {
+    let icon: String
+    let text: String
+
+    /// A filter turned back off.
+    static func off(_ title: String) -> FilterNote {
+        FilterNote(icon: "circle.slash", text: "\(title) off")
+    }
+}
+
+/// Holds the showing note. A new one replaces the last; each goes after
+/// 2 s. VoiceOver reads it out, since it's the only text the tap leaves.
+@MainActor
+final class FilterNoteModel: ObservableObject {
+    @Published private(set) var note: FilterNote?
+    private var fade: Task<Void, Never>?
+
+    func show(_ note: FilterNote) {
+        withAnimation(Motion.fade) { self.note = note }
+        AccessibilityNotification.Announcement(note.text).post()
+        fade?.cancel()
+        fade = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.fade) { self?.note = nil }
+        }
+    }
+}
+
+/// The glass capsule for a `FilterNoteModel`'s note; nothing when none.
+/// Never takes taps, so it can sit over the content.
+struct FilterNoteView: View {
+    @ObservedObject var model: FilterNoteModel
+
+    var body: some View {
+        if let note = model.note {
+            HStack(spacing: 7) {
+                Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
+                    .foregroundColor(.havenPurple)
+                Text(note.text).monospacedDigit()
+            }
+            .font(.appSystem(size: 13, weight: .semibold))
+            .padding(.vertical, 7)
+            .padding(.horizontal, 14)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+            .allowsHitTesting(false)
+            // Announced when shown; as an element it would be read twice.
+            .accessibilityHidden(true)
+            .transition(Motion.isReduced ? .opacity : .opacity.combined(with: .move(edge: .top)))
+        }
     }
 }

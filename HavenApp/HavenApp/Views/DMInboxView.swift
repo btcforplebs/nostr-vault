@@ -187,7 +187,7 @@ struct DMInboxView: View {
 
     @ViewBuilder
     private var dmContentList: some View {
-        if dmService.conversations.isEmpty {
+        if dmService.visibleConversations.isEmpty {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -235,7 +235,7 @@ struct DMInboxView: View {
             twoPaneView
         } else {
             List {
-                ForEach(dmService.conversations) { conversation in
+                ForEach(dmService.visibleConversations) { conversation in
                     NavigationLink(destination: DMThreadView(counterpartyPubkey: conversation.id)
                         .environmentObject(nostrService)
                         .environmentObject(configService)) {
@@ -270,7 +270,7 @@ extension DMInboxView {
     var twoPaneView: some View {
         HStack(spacing: 0) {
             List(selection: $selectedConversation) {
-                ForEach(dmService.conversations) { conversation in
+                ForEach(dmService.visibleConversations) { conversation in
                     ConversationRow(conversation: conversation, nostrService: nostrService)
                         .tag(conversation.id)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

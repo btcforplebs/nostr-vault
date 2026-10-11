@@ -89,7 +89,7 @@ enum VaultMode: String, CaseIterable {
     }
 
     /// Where an inbound event of `kind` from someone else shows up. Nil for
-    /// DMs, which the Profile tab's dot covers, and for kinds no list shows.
+    /// DMs, which the Messages button's dot covers, and for kinds no list shows.
     static func listing(inboxKind kind: Int) -> VaultMode? {
         switch kind {
         case 7: return .likes
@@ -190,5 +190,41 @@ struct VaultModePill: View {
         .accessibilityLabel("Vault: \(mode.title)")
         .accessibilityValue(hasNewElsewhere ? "New activity" : "")
         .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
+    }
+}
+
+/// The envelope at the front of the Vault tab's right pill: opens the
+/// inbox, with a red dot while a message is unread. Private messages never
+/// show in the Vault list itself; this is their door.
+struct VaultMessagesButton: View {
+    @ObservedObject private var dmService = DMService.shared
+    @Environment(\.filterButtonWidth) private var width
+
+    var body: some View {
+        let unread = dmService.totalUnreadCount
+        Button {
+            NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
+        } label: {
+            Image(systemName: "envelope")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: width, height: 36)
+                .overlay(alignment: .topTrailing) {
+                    if unread > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: -5, y: 6)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Messages")
+        .accessibilityValue(unread > 0 ? "\(unread) unread" : "")
+        #if os(macOS)
+        .help("Messages")
+        #endif
     }
 }

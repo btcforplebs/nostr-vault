@@ -41,6 +41,37 @@ struct VaultActivity: Identifiable, Equatable {
         a.id == b.id && a.actors == b.actors && a.createdAt == b.createdAt && a.sats == b.sats && a.emojis == b.emojis
     }
 
+    /// One zap from a receipt: who made it (the zap request's signer, never
+    /// the receipt's wallet server), on which post, how much, and when.
+    struct Zap {
+        let sender: String
+        let target: String?
+        let sats: Int64
+        let at: Int64
+    }
+
+    /// The Zaps list's "on my notes" view: who zapped each of `targets`, and
+    /// when the newest zap on it came in. A blocked sender is left out, so a
+    /// post only they zapped drops off the list; unblocking brings it back.
+    static func zapsOnPosts(
+        _ zaps: [Zap],
+        targets: Set<String>,
+        owner: String,
+        excludeOwner: Bool,
+        isBlocked: (String) -> Bool
+    ) -> (zappers: [String: [(pubkey: String, amount: Int64)]], lastZapAt: [String: Int64]) {
+        var zappers: [String: [(pubkey: String, amount: Int64)]] = [:]
+        var lastZapAt: [String: Int64] = [:]
+        for zap in zaps {
+            guard let target = zap.target, targets.contains(target) else { continue }
+            if excludeOwner && zap.sender == owner { continue }
+            if isBlocked(zap.sender) { continue }
+            zappers[target, default: []].append((pubkey: zap.sender, amount: zap.sats))
+            lastZapAt[target] = max(lastZapAt[target] ?? 0, zap.at)
+        }
+        return (zappers, lastZapAt)
+    }
+
     static let reactionKind = 7
     static let zapKind = 9735
     static let repostKinds: Set<Int> = [6, 16]

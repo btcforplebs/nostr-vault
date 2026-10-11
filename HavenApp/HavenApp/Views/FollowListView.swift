@@ -71,6 +71,13 @@ struct FollowListView: View {
 
     private var sort: FollowListSort { sortByTab[tab] ?? .trusted }
 
+    /// Spam, plus everyone the active account blocks: both are dropped from
+    /// both lists and from the counts beside the switch. The lists
+    /// themselves are untouched, so an unblock brings them back.
+    private var dropped: Set<String> {
+        FollowListLogic.dropped(spam: hidden, blocked: configService.activeAccountBlockedHexPubkeys)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             list
@@ -160,7 +167,7 @@ struct FollowListView: View {
             follows: Set(follows.followed),
             webOfTrust: webOfTrust,
             trustRank: trustRank,
-            hidden: hidden,
+            hidden: dropped,
             sort: sort,
             query: query
         )
@@ -189,7 +196,7 @@ struct FollowListView: View {
 
     private var tabPicker: some View {
         Picker("List", selection: $tab) {
-            Text("Following \(FollowListLogic.countText(following.count, more: false))")
+            Text("Following \(FollowListLogic.countText(followingShown, more: false))")
                 .tag(FollowListTab.following)
             Text("Followers \(followersLabel)")
                 .tag(FollowListTab.followers)
@@ -198,13 +205,23 @@ struct FollowListView: View {
         .labelsHidden()
     }
 
+    /// The counts beside the switch count what the lists show, so a blocked
+    /// person is gone from both the rows and the number.
+    private var followingShown: Int {
+        FollowListLogic.shownCount(following, dropped: dropped)
+    }
+
+    private var followersShown: Int {
+        FollowListLogic.shownCount(Array(followers.keys), dropped: dropped)
+    }
+
     /// Matches the count on the profile: the full total when relays gave one,
     /// otherwise what is loaded, with + while more can load.
     private var followersLabel: String {
-        if let followersTotal, followersTotal > followers.count {
+        if let followersTotal, followersTotal > followersShown {
             return FollowListLogic.countText(followersTotal, more: false)
         }
-        return FollowListLogic.countText(followers.count, more: followersHaveMore)
+        return FollowListLogic.countText(followersShown, more: followersHaveMore)
     }
 
     private var sortMenu: some View {

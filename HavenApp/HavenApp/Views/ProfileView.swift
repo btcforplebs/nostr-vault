@@ -497,6 +497,12 @@ struct ProfileView: View {
         .onChange(of: extras.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.listings.isEmpty) { _, _ in revealLateSections() }
+        // Blocking shuts their shop as you block, and unblocking fetches it
+        // again, rather than waiting for the next visit.
+        .onChange(of: isBlocked) { _, _ in
+            shop.load(pubkey: pubkey, force: true)
+            revealLateSections()
+        }
         .onDisappear {
             // Loads in flight die with their connections; without this a
             // return before the first EOSE skips the notes load entirely.
@@ -622,22 +628,8 @@ struct ProfileView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if isOwnProfile {
+                    // Messages moved to the Vault tab's right pill.
                     HStack(spacing: 16) {
-                        Button(action: { showingDMInbox = true }) {
-                            Image(systemName: "bubble.right.fill")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
-                                .overlay(alignment: .topTrailing) {
-                                    if dmService.totalUnreadCount > 0 {
-                                        Circle()
-                                            .fill(.red)
-                                            .frame(width: 8, height: 8)
-                                            .offset(x: 3, y: -3)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-
                         Button(action: {
                             if horizontalSizeClass == .regular {
                                 NotificationCenter.default.post(name: .havenOpenSettings, object: nil)
@@ -665,14 +657,6 @@ struct ProfileView: View {
             MessageComposerView(recipientPubkey: pubkey)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
-        }
-        .sheet(isPresented: $showingDMInbox) {
-            NavigationStack {
-                DMInboxView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .dmInboxSheetSizing()
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack {

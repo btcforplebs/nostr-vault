@@ -29,11 +29,23 @@ final class PollModel: ObservableObject {
 
     private var events: [String: [String: Any]] = [:]
     private var lastLoad: Date?
+    private var blockObserver: NSObjectProtocol?
     /// A card coming back on screen asks again only after this long.
     private static let reloadAfter: TimeInterval = 30
 
     init(poll: NIP88Poll.Poll) {
         self.poll = poll
+        // Blocking someone takes their vote off the count and out of the
+        // voter list at once, rather than on the next fetch.
+        blockObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("BlockedAccountsUpdated"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.retally() }
+        }
+    }
+
+    deinit {
+        if let blockObserver { NotificationCenter.default.removeObserver(blockObserver) }
     }
 
     /// The relays a poll's votes are read from and sent to: its own, this
@@ -63,7 +75,14 @@ final class PollModel: ObservableObject {
         for event in found {
             if let id = event["id"] as? String { events[id] = event }
         }
-        let next = NIP88Poll.tally(Array(events.values), poll: poll)
+        retally()
+    }
+
+    /// Recounts what is held, leaving out people the active account blocks.
+    /// Their vote stays in `events`, so an unblock counts it again.
+    private func retally() {
+        let next = NIP88Poll.tally(Array(events.values), poll: poll,
+                                   blocked: ConfigService.shared.activeAccountBlockedHexPubkeys)
         if next != tally { tally = next }
         let missing = next.voters.filter { NostrService.shared.profiles[$0] == nil }
         if !missing.isEmpty { NostrService.shared.fetchMissingProfiles(for: Array(missing)) }

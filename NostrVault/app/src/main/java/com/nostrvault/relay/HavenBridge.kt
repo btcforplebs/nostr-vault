@@ -294,6 +294,27 @@ object HavenBridge {
     external fun getWotNewcomers(from: Int): String?
 
     // -----------------------------------------------------------------------
+    // Blocked people
+    // -----------------------------------------------------------------------
+
+    private external fun updateBlacklistNative(npubsJson: String)
+
+    /**
+     * Replaces the relay's live blacklist with [npubs] (every account's blocks
+     * combined), so a block stops the relay storing, counting and notifying
+     * about that person at once rather than at the next launch. Maps to Go:
+     * UpdateBlacklistC. iOS: ConfigService.syncBlacklistToRelay.
+     */
+    fun updateBlacklist(npubs: List<String>) {
+        if (!isLoaded) return
+        try {
+            updateBlacklistNative(RelayConfiguration.npubListJson(npubs))
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "updateBlacklist unavailable: ${e.message}")
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Follower ledger
     // -----------------------------------------------------------------------
 

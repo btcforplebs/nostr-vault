@@ -150,8 +150,9 @@ struct SearchView: View {
             postCounts[note.pubkey, default: 0] += 1
         }
         let ownPubkey = configService.activeAccountHexPubkey
+        let visible = Set(blockFilter.pubkeys(Array(postCounts.keys)))
         return postCounts
-            .filter { $0.key != ownPubkey }
+            .filter { $0.key != ownPubkey && visible.contains($0.key) }
             .sorted { $0.value > $1.value }
             .prefix(6)
             .compactMap { pubkey, _ in
@@ -171,6 +172,18 @@ struct SearchView: View {
         lastDiscoveryRefresh = now
         cachedTrending = computeTrendingHashtags()
         cachedSuggested = computeSuggestedProfiles()
+    }
+
+    /// The active account's blocks, applied to everything a search returns.
+    private var blockFilter: SearchBlockFilter {
+        SearchBlockFilter(blocked: configService.activeAccountBlockedHexPubkeys)
+    }
+
+    private func visibleNotes(_ notes: [FeedNote], _ filter: SearchBlockFilter) -> [FeedNote] {
+        filter.notes(notes) { note, blocked in
+            FeedFilterEngine.involvesBlocked(note, blocked: blocked,
+                                             authorOf: { self.feedService.findNote(id: $0)?.pubkey })
+        }
     }
 
     /// Opens a note in the split pane's detail column when there is one, and
@@ -472,6 +485,14 @@ struct SearchView: View {
             // on should already be taking keystrokes.
             searchFieldFocused = true
             #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+            // Someone was just blocked (or unblocked): redo the open search and
+            // the suggestions so the change shows at once.
+            refreshDiscovery(force: true)
+            if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                performSearch(query: searchQuery)
+            }
         }
         .onReceive(feedService.$notes) { notes in
             // Throttled refresh of the empty-state discovery lists as the feed grows.
@@ -1133,16 +1154,20 @@ struct SearchView: View {
                 guard self.searchMode == .global,
                       self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
 
+                let filter = self.blockFilter
+                let profiles = filter.profiles(snapshot.profiles, pubkey: \.pubkey)
+                let notes = self.visibleNotes(snapshot.notes, filter)
+
                 var results = SearchResults()
-                for profile in snapshot.profiles {
+                for profile in profiles {
                     results.users[profile.pubkey] = profile
                 }
-                results.userOrder = snapshot.profiles.map(\.pubkey)
+                results.userOrder = profiles.map(\.pubkey)
                 // Already ranked own → follows → everyone, newest first in each.
-                results.notes = Array(snapshot.notes.prefix(100))
+                results.notes = Array(notes.prefix(100))
 
                 var foundHashtags = Set<String>()
-                for note in snapshot.notes {
+                for note in notes {
                     for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
                         foundHashtags.insert(tag)
                     }
@@ -1176,14 +1201,18 @@ struct SearchView: View {
             guard self.searchMode == .relay,
                   self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
 
+            let filter = self.blockFilter
+            let profiles = filter.profiles(localResults.profiles, pubkey: \.pubkey)
+            let notes = self.visibleNotes(localResults.notes, filter)
+
             var results = SearchResults()
-            for profile in localResults.profiles {
+            for profile in profiles {
                 results.users[profile.pubkey] = profile
             }
-            results.notes = Array(localResults.notes.prefix(20))
+            results.notes = Array(notes.prefix(20))
 
             var foundHashtags = Set<String>()
-            for note in localResults.notes {
+            for note in notes {
                 for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
                     foundHashtags.insert(tag)
                 }
@@ -1193,7 +1222,7 @@ struct SearchView: View {
             // Links are what the matching notes link to, so a note that matches
             // on its text contributes its links even when the query is nowhere
             // in the URL (Logen, 2026-09-09).
-            results.links = self.extractURLs(from: localResults.notes)
+            results.links = self.extractURLs(from: notes)
 
             self.searchResults = results
             self.isSearching = false
@@ -1203,8 +1232,10 @@ struct SearchView: View {
     /// Fallback used only when the local relay isn't reachable yet: filters
     /// whatever's already loaded into the live feed/profile cache.
     private func performInMemoryRelaySearch(trimmedQuery: String) {
-        let localProfiles = nostrService.profiles
-        let localNotes = feedService.notes
+        let filter = blockFilter
+        let visibleKeys = Set(filter.pubkeys(Array(nostrService.profiles.keys)))
+        let localProfiles = nostrService.profiles.filter { visibleKeys.contains($0.key) }
+        let localNotes = visibleNotes(feedService.notes, filter)
 
         // Same matching rules as the relay walk, so the fallback cannot drift
         // away from the real path.

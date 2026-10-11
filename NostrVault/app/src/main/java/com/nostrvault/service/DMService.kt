@@ -4,8 +4,10 @@ import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
+import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -57,7 +59,19 @@ class DMService @Inject constructor(
     // ── Observable state ──────────────────────────────────────────────
 
     private val _conversations = MutableStateFlow<List<DMConversation>>(emptyList())
-    val conversations: StateFlow<List<DMConversation>> = _conversations.asStateFlow()
+
+    /** The active account's blocked people, as hex pubkeys. */
+    private fun blockedHex(config: HavenConfig = configStore.config.value): Set<String> =
+        config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
+
+    /**
+     * The inbox as shown: conversations with a blocked person are hidden. They
+     * stay in [_conversations] (and the cache), so unblocking brings them back.
+     */
+    val conversations: StateFlow<List<DMConversation>> =
+        combine(_conversations, configStore.config.map { blockedHex(it) }.distinctUntilChanged()) { convos, blocked ->
+            BlockedPeople.visibleConversations(convos, blocked) { it.id }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -68,9 +82,9 @@ class DMService @Inject constructor(
     val pendingDecryptCount: StateFlow<Int> = _pendingDecryptCount.asStateFlow()
 
     val totalUnreadCount: Int
-        get() = _conversations.value.sumOf { it.unreadCount }
+        get() = conversations.value.sumOf { it.unreadCount }
 
-    val totalUnreadCountFlow: StateFlow<Int> = _conversations
+    val totalUnreadCountFlow: StateFlow<Int> = conversations
         .map { convos -> convos.sumOf { it.unreadCount } }
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), 0)
 
@@ -674,6 +688,8 @@ class DMService @Inject constructor(
     }
 
     private fun addMessageToConversation(counterparty: String, message: DMMessage) {
+        // Kept even from a blocked sender (hidden, not lost), but never unread.
+        val alerts = BlockedPeople.mayAlert(message.senderPubkey, message.isFromMe, blockedHex())
         val current = _conversations.value.toMutableList()
         val existingIndex = current.indexOfFirst { it.id == counterparty }
 
@@ -694,7 +710,7 @@ class DMService @Inject constructor(
             if (isDuplicate) return
 
             val updatedMessages = (conv.messages + message).sortedBy { it.timestamp }
-            val unread = if (message.isFromMe) conv.unreadCount else conv.unreadCount + 1
+            val unread = if (alerts) conv.unreadCount + 1 else conv.unreadCount
             current[existingIndex] = conv.copy(
                 messages = updatedMessages,
                 unreadCount = unread,
@@ -704,7 +720,7 @@ class DMService @Inject constructor(
                 DMConversation(
                     id = counterparty,
                     messages = listOf(message),
-                    unreadCount = if (message.isFromMe) 0 else 1,
+                    unreadCount = if (alerts) 1 else 0,
                 )
             )
         }
