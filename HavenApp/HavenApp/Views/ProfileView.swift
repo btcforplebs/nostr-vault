@@ -628,22 +628,8 @@ struct ProfileView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if isOwnProfile {
+                    // Messages moved to the Vault tab's right pill.
                     HStack(spacing: 16) {
-                        Button(action: { showingDMInbox = true }) {
-                            Image(systemName: "bubble.right.fill")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
-                                .overlay(alignment: .topTrailing) {
-                                    if dmService.totalUnreadCount > 0 {
-                                        Circle()
-                                            .fill(.red)
-                                            .frame(width: 8, height: 8)
-                                            .offset(x: 3, y: -3)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-
                         Button(action: {
                             if horizontalSizeClass == .regular {
                                 NotificationCenter.default.post(name: .havenOpenSettings, object: nil)
@@ -671,14 +657,6 @@ struct ProfileView: View {
             MessageComposerView(recipientPubkey: pubkey)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
-        }
-        .sheet(isPresented: $showingDMInbox) {
-            NavigationStack {
-                DMInboxView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .dmInboxSheetSizing()
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack {

@@ -1,6 +1,17 @@
 import SwiftUI
 
+/// How wide an `IconFilterButton`'s tap target is. A bar that can't fit
+/// its row at the usual 36 pt narrows it, so no icon has to go.
+private struct FilterButtonWidthKey: EnvironmentKey { static let defaultValue: CGFloat = 36 }
+extension EnvironmentValues {
+    var filterButtonWidth: CGFloat {
+        get { self[FilterButtonWidthKey.self] }
+        set { self[FilterButtonWidthKey.self] = newValue }
+    }
+}
+
 struct IconFilterButton: View {
+    @Environment(\.filterButtonWidth) private var width
     let icon: String
     let tooltip: String
     let isSelected: Bool
@@ -42,7 +53,7 @@ struct IconFilterButton: View {
                         .foregroundColor(isSelected ? color : .secondary)
                 }
             }
-            .frame(minWidth: 36, minHeight: 36)
+            .frame(minWidth: width, minHeight: 36)
             .contentShape(Rectangle())
             .animation(Motion.toggle, value: isSelected)
         }

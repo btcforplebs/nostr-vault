@@ -30,6 +30,14 @@ struct VaultView: View {
     @State var initialLoad = false
     @State var isLoadingMore = false
     @State var contentFilter: ContentFilter = .all
+    @State var activityFilter: ActivityFilter = .all
+    /// The line under the toolbar after a filter tap.
+    @StateObject var filterNote = FilterNoteModel()
+    /// A filter tap whose list is still being rebuilt; its note waits for
+    /// the count.
+    @State var pendingFilterNote: VaultFilterChoice?
+    /// Bumped each time a rebuilt list lands, so a waiting note can count it.
+    @State var displayPass = 0
     /// Notes, Articles or Highlights. Only the Vault tab's mode menu changes it.
     @State var noteScope: VaultNoteScope = .notes
     /// Articles only: just the recipes.
@@ -261,6 +269,15 @@ struct VaultView: View {
             }
             #endif
         }
+        .overlay(alignment: .top) {
+            FilterNoteView(model: filterNote).padding(.top, 8)
+        }
+        .onChange(of: displayPass) { _, _ in filterListLanded() }
+        .onChange(of: activityFilter) { _, _ in
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData()
+        }
+        .onChange(of: viewMode) { _, _ in pendingFilterNote = nil }
         // -- handlers from viewContentBase --
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {

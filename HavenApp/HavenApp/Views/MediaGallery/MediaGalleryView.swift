@@ -196,9 +196,16 @@ struct MediaGalleryView: View {
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    trailingToolbarInline
-                    trailingToolbarMenu
+                HStack(spacing: 4) {
+                    // Messages leads the Vault tab's right pill in every mode.
+                    if inVaultTab {
+                        VaultMessagesButton()
+                        Divider().frame(height: 20).padding(.horizontal, 2)
+                    }
+                    ViewThatFits {
+                        trailingToolbarInline
+                        trailingToolbarMenu
+                    }
                 }
             }
             #endif

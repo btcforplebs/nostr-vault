@@ -12,6 +12,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,6 +61,8 @@ import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
 import com.nostrvault.ui.components.GlassPill
+import com.nostrvault.ui.components.LocalVaultMessages
+import com.nostrvault.ui.components.VaultMessagesButton
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
@@ -709,8 +713,19 @@ fun MediaGalleryScreen(
 
                     Spacer(Modifier.weight(1f))
 
-                    // Type + sort + layout toggle + upload
+                    // Type + sort + layout toggle + upload. In the Vault tab,
+                    // Messages leads, as on every Vault mode.
                     GlassPill {
+                        LocalVaultMessages.current?.let { messages ->
+                            VaultMessagesButton(messages)
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 2.dp)
+                                    .width(1.dp)
+                                    .height(20.dp)
+                                    .background(Color.White.copy(alpha = 0.18f)),
+                            )
+                        }
                         MediaTypeMenu(selection = typeSelection, onSelect = onTypeTap)
                         Box {
                             IconButton(
