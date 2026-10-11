@@ -1862,12 +1862,21 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 // Build zap map for displayed notes
-                val zMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
-                for (event in zapEvents) {
-                    val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" && displayedIds.contains(it[1]) }?.get(1) ?: continue
-                    val parsed = parseZapReceipt(event) ?: continue
-                    zMap.getOrPut(targetId) { mutableListOf() }.add(Pair(parsed.senderPubkey, parsed.amountSats))
+                // A zap receipt is signed by the wallet server, so the relay's
+                // block list never catches it: the zapper is checked here.
+                val noteZaps = zapEvents.mapNotNull { event ->
+                    val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" && displayedIds.contains(it[1]) }?.get(1)
+                        ?: return@mapNotNull null
+                    val parsed = parseZapReceipt(event) ?: return@mapNotNull null
+                    VaultZapsReceived.Receipt(parsed.copy(targetNoteId = targetId), event.createdAt)
                 }
+                val zMap = VaultZapsReceived.build(
+                    receipts = noteZaps,
+                    myNoteIds = displayedIds,
+                    owner = owner,
+                    isBlocked = { it in blocked },
+                    excludeOwner = false,
+                ).zappers
 
                 // Build repost map (kind 6 e-tagging a displayed note) and quote map
                 // (kind 1 q-tagging a displayed note). Mirrors iOS VaultDataProcessing
@@ -2028,16 +2037,18 @@ class DashboardViewModel @Inject constructor(
                     val targetNoteIds: Set<String> =
                         noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
 
-                    val zMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
-                    val lastZapAt = mutableMapOf<String, Long>()
-
-                    for (item in parsedReceipts) {
-                        val targetId = item.parsed.targetNoteId ?: continue
-                        if (!targetNoteIds.contains(targetId)) continue
-                        if (item.parsed.senderPubkey == owner) continue
-                        zMap.getOrPut(targetId) { mutableListOf() }.add(Pair(item.parsed.senderPubkey, item.parsed.amountSats))
-                        lastZapAt[targetId] = maxOf(lastZapAt[targetId] ?: 0L, receiptTimes[item.receiptId] ?: 0L)
-                    }
+                    // Blocked zappers are hidden here; the block observer in
+                    // init{} reruns this pass, so unblocking brings them back.
+                    val received = VaultZapsReceived.build(
+                        receipts = parsedReceipts.map {
+                            VaultZapsReceived.Receipt(it.parsed, receiptTimes[it.receiptId] ?: 0L)
+                        },
+                        myNoteIds = targetNoteIds,
+                        owner = owner,
+                        isBlocked = { it in blocked },
+                    )
+                    val zMap = received.zappers
+                    val lastZapAt = received.lastZapAt
 
                     val zappedNoteIds = zMap.keys
                     val filtered = RelayGiven.newestZapFirst(

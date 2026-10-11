@@ -63,3 +63,47 @@ data class ParsedZapReceipt(
      */
     val requestIsSigned: Boolean,
 )
+
+/**
+ * The Vault tab's Zaps > Received list: who zapped which of my notes, and
+ * when the newest zap on each landed. Pure so unit tests can pin it.
+ */
+object VaultZapsReceived {
+    /** A parsed receipt and the receipt's own created_at. */
+    data class Receipt(val parsed: ParsedZapReceipt, val receivedAt: Long)
+
+    data class Result(
+        /** Note id to (zapper, sats), in receipt order. */
+        val zappers: Map<String, List<Pair<String, Long>>>,
+        /** Note id to the newest zap's receipt time. */
+        val lastZapAt: Map<String, Long>,
+    )
+
+    /**
+     * The zapper is the zap request's signer ([ParsedZapReceipt.senderPubkey]),
+     * never the receipt's pubkey (that's the wallet server). Zaps from someone
+     * [isBlocked] are hidden, not dropped from the store: unblocking brings
+     * them back on the next pass, as the Vault Activity list does. Sats
+     * totals elsewhere still count them; this only shapes who-zapped-what.
+     */
+    fun build(
+        receipts: List<Receipt>,
+        myNoteIds: Set<String>,
+        owner: String,
+        isBlocked: (String) -> Boolean = { false },
+        excludeOwner: Boolean = true,
+    ): Result {
+        val zappers = LinkedHashMap<String, MutableList<Pair<String, Long>>>()
+        val lastZapAt = HashMap<String, Long>()
+        for (receipt in receipts) {
+            val parsed = receipt.parsed
+            val targetId = parsed.targetNoteId ?: continue
+            if (targetId !in myNoteIds) continue
+            if (excludeOwner && parsed.senderPubkey == owner) continue
+            if (isBlocked(parsed.senderPubkey)) continue
+            zappers.getOrPut(targetId) { mutableListOf() }.add(parsed.senderPubkey to parsed.amountSats)
+            lastZapAt[targetId] = maxOf(lastZapAt[targetId] ?: 0L, receipt.receivedAt)
+        }
+        return Result(zappers, lastZapAt)
+    }
+}
