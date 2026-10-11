@@ -404,9 +404,12 @@ object TrustMap {
     const val LAYER_FACES = 100
 
     /**
-     * The people past your follows [layer] shows as faces, most vouched first
-     * ([layerPeople]'s order). Everyone and Following show your follows'
-     * faces instead. iOS `layerFaceCandidates`.
+     * The people past your follows [layer] shows as faces, most vouched first.
+     * Everyone and Following show your follows' faces instead. Ties don't go
+     * in key order as in [layerPeople]: a key's leading digits are its
+     * longitude, so taking the first few hundred of thousands tied at the
+     * same count would put every face on one side of the globe. iOS
+     * `layerFaceCandidates`.
      */
     fun layerFaceCandidates(
         layer: Layer,
@@ -417,7 +420,9 @@ object TrustMap {
         count: Int = LAYER_FACE_CANDIDATES,
     ): List<String> {
         if (layer != Layer.CLOSE && layer != Layer.FURTHER_OUT) return emptyList()
-        return layerPeople(layer, me, follows, web, vouches).web.take(count)
+        return layerPeople(layer, me, follows, web, vouches).web
+            .sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { fraction(it, 16) }.thenBy { it })
+            .take(count)
     }
 
     /**

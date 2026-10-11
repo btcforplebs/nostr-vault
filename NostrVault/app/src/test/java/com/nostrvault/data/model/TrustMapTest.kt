@@ -432,6 +432,22 @@ class TrustMapTest {
     }
 
     @Test
+    fun layerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        val random = java.util.Random(42)
+        val web = (0 until 4000).map { (0 until 4).joinToString("") { "%016x".format(random.nextLong()) } }.toSet()
+        // Most people further out are vouched for by the same one or two follows.
+        val vouches = web.associateWith { 1 }
+        val faces = TrustMap.layerFaceCandidates(TrustMap.Layer.FURTHER_OUT, me, emptySet(), web, vouches, TrustMap.LAYER_FACES)
+        assertEquals(TrustMap.LAYER_FACES, faces.size)
+        val octants = faces.map {
+            val d = TrustMap.direction(it)
+            ((kotlin.math.atan2(d.y, d.x) + Math.PI) / (2 * Math.PI) * 8).toInt() % 8
+        }.toSet()
+        assertEquals("faces bunched into ${octants.size} of 8 slices of the globe", 8, octants.size)
+    }
+
+    @Test
     fun layerPeopleListWhatTheCountsCount() {
         val follows = setOf(me, key(1), key(2))
         val web = setOf(me, key(1), key(2), key(3), key(4), key(5))

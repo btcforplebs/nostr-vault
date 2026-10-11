@@ -330,6 +330,31 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(faces(.following), [])
     }
 
+    func testLayerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func randomKey() -> String {
+            (0..<4).map { _ in
+                seed = seed &+ 0x9E37_79B9_7F4A_7C15
+                var z = seed
+                z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+                z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+                return String(format: "%016llx", z ^ (z >> 31))
+            }.joined()
+        }
+        let web = Set((0..<4000).map { _ in randomKey() })
+        // Most people further out are vouched for by the same one or two follows.
+        let vouches = Dictionary(uniqueKeysWithValues: web.map { ($0, 1) })
+        let faces = TrustMap.layerFaceCandidates(.furtherOut, me: me, follows: [], web: web, vouches: vouches,
+                                                 count: TrustMap.layerFaceCount)
+        XCTAssertEqual(faces.count, TrustMap.layerFaceCount)
+        let octants = Set(faces.map { key -> Int in
+            let d = TrustMap.direction(of: key)
+            return Int((atan2(d.y, d.x) + .pi) / (2 * .pi) * 8) % 8
+        })
+        XCTAssertEqual(octants.count, 8, "faces bunched into \(octants.count) of 8 slices of the globe")
+    }
+
     func testCloseSplitsTheWebAtTenVouches() {
         let follows: Set<String> = [key(1)]
         let web: Set<String> = [me, key(1), key(2), key(3), key(4)]
