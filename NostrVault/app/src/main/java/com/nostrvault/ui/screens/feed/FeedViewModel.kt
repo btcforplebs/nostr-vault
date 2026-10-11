@@ -393,6 +393,16 @@ class FeedViewModel @Inject constructor(
     }.distinctUntilChanged()
         .flowOn(Dispatchers.Default)
 
+    /**
+     * The viewer's blocks, as hex pubkeys, for surfaces that have to filter
+     * themselves rather than ride the feed pipeline (the Music feed reads
+     * Wavlake, not the relay).
+     */
+    val blockedPubkeys: StateFlow<Set<String>> = configStore.config
+        .map { feedService.blockedHexForActiveAccount() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
+
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
         threadedModeEnabled,

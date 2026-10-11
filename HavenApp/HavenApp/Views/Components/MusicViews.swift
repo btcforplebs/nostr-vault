@@ -93,6 +93,19 @@ final class MusicFeedState: ObservableObject {
         saveRecent()
     }
 
+    /// Every artist whose Nostr key is known this launch: the saved recents
+    /// plus the pages fetched. Rankings and search carry no key, so this is
+    /// what makes a blocked artist recognisable there.
+    var knownArtists: [WavlakeArtist] { recentArtists + Array(artistCache.values) }
+
+    /// The Wavlake ids of known artists the active account blocks.
+    var blockedArtistIds: Set<String> {
+        WavlakeBlockFilter.blockedArtistIds(
+            known: knownArtists,
+            blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
+            hex: MusicSheet.hex(fromNpub:))
+    }
+
     func clearRecentArtists() {
         recentArtists = []
         saveRecent()
@@ -213,8 +226,10 @@ final class MusicFeedState: ObservableObject {
                 if let artist { artistCache[artist.id] = artist }
             }
         }
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let artists = ids.compactMap { artistCache[$0] }.filter { artist in
-            artist.npub.flatMap(MusicSheet.hex(fromNpub:)).map(follows.contains) ?? false
+            guard let key = artist.npub.flatMap(MusicSheet.hex(fromNpub:)) else { return false }
+            return follows.contains(key) && !blocked.contains(key)
         }
         let followed = Set(artists.map(\.id))
         return (artists, ranked.filter { $0.artistId.map(followed.contains) ?? false })
@@ -227,6 +242,8 @@ final class MusicFeedState: ObservableObject {
 struct MusicBrowserView: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @ObservedObject private var feed = MusicFeedState.shared
+    /// Watched so blocking an artist clears their music as you block.
+    @ObservedObject private var config = ConfigService.shared
     @State private var sheet: MusicSheet?
     @State private var query = ""
     /// The songs for the toolbar's current choice.
@@ -283,6 +300,21 @@ struct MusicBrowserView: View {
 
     private static let topAnchor = "music.top"
 
+    // MARK: - Blocked artists
+
+    private var blockedKeys: Set<String> { config.activeAccountBlockedHexPubkeys }
+    private var blockedArtistIds: Set<String> { feed.blockedArtistIds }
+
+    private func visible(_ tracks: [WavlakeTrack]) -> [WavlakeTrack] {
+        WavlakeBlockFilter.tracks(tracks, blocked: blockedKeys, artistIds: blockedArtistIds,
+                                 hex: MusicSheet.hex(fromNpub:))
+    }
+
+    private func visible(_ artists: [WavlakeArtist]) -> [WavlakeArtist] {
+        WavlakeBlockFilter.artists(artists, blocked: blockedKeys, artistIds: blockedArtistIds,
+                                   hex: MusicSheet.hex(fromNpub:))
+    }
+
     @ViewBuilder
     private func pageView(_ page: MusicFeedState.Page) -> some View {
         switch page {
@@ -330,9 +362,10 @@ struct MusicBrowserView: View {
         switch feed.scope {
         case .trending:
             let window = feed.trendingWindow.title.lowercased()
-            if !feed.recentArtists.isEmpty {
+            let recents = visible(feed.recentArtists)
+            if !recents.isEmpty {
                 header("Your artists") { EmptyView() }
-                artistRow(feed.recentArtists)
+                artistRow(recents)
             }
             if !trendingArtists.isEmpty {
                 header("Top artists \(window)") { EmptyView() }
@@ -352,18 +385,20 @@ struct MusicBrowserView: View {
                 }
             }
             header("Trending songs \(window)") { EmptyView() }
-            trackList(tracks)
+            trackList(visible(tracks))
         case .artist(let artist):
             MusicArtistPage(artist: artist, sheet: $sheet) { feed.scope = .trending }
                 .id(artist.id)
         case .following:
-            if !followedArtists.isEmpty {
+            let artists = visible(followedArtists)
+            let songs = visible(tracks)
+            if !artists.isEmpty {
                 header("Artists you follow") { EmptyView() }
-                artistRow(followedArtists)
+                artistRow(artists)
             }
-            if !tracks.isEmpty {
+            if !songs.isEmpty {
                 header("Their songs") { EmptyView() }
-                trackList(tracks)
+                trackList(songs)
             }
         }
     }
@@ -414,7 +449,7 @@ struct MusicBrowserView: View {
 
     private var trendingArtists: [WavlakeArtist] {
         var seen = Set<String>()
-        return tracks.compactMap { track -> WavlakeArtist? in
+        return visible(tracks).compactMap { track -> WavlakeArtist? in
             guard let id = track.artistId, seen.insert(id).inserted else { return nil }
             return WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub)
         }
@@ -423,7 +458,7 @@ struct MusicBrowserView: View {
 
     private var trendingAlbums: [WavlakeAlbum] {
         var seen = Set<String>()
-        return tracks.compactMap { track -> WavlakeAlbum? in
+        return visible(tracks).compactMap { track -> WavlakeAlbum? in
             guard let id = track.albumId, seen.insert(id).inserted else { return nil }
             return WavlakeAlbum(id: id, title: track.albumTitle ?? "Album", artUrl: track.albumArtUrl,
                                 artist: track.artist, artistId: track.artistId)
@@ -437,8 +472,11 @@ struct MusicBrowserView: View {
 
     @ViewBuilder
     private var searchResults: some View {
-        let tracks = results.compactMap { if case .track(let t) = $0 { return t } else { return nil } }
-        let collections = results.filter { if case .track = $0 { return false } else { return true } }
+        let shown = WavlakeBlockFilter.results(results, blocked: blockedKeys,
+                                               artistIds: blockedArtistIds,
+                                               hex: MusicSheet.hex(fromNpub:))
+        let tracks = shown.compactMap { if case .track(let t) = $0 { return t } else { return nil } }
+        let collections = shown.filter { if case .track = $0 { return false } else { return true } }
         if !collections.isEmpty {
             header("Albums and artists") { EmptyView() }
             ScrollView(.horizontal, showsIndicators: false) {

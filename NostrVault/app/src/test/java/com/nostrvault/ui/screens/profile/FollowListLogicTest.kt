@@ -81,6 +81,30 @@ class FollowListLogicTest {
     }
 
     @Test
+    fun blockedPeopleAreDroppedFromBothListsAndTheirCounts() {
+        val spam = setOf("bot")
+        val dropped = FollowListLogic.dropped(spam, setOf("blocked"))
+        val people = listOf(p("friend", "Friend"), p("blocked", "Blocked"), p("bot", "Bot"))
+        val shown = FollowListLogic.sections(
+            people = people, follows = emptySet(), webOfTrust = emptySet(), trustRank = emptyMap(),
+            hidden = dropped, sort = FollowListSort.NAME,
+        )
+        assertEquals(listOf("friend"), shown.flatMap { s -> s.people.map { it.pubkey } })
+        assertEquals(1, FollowListLogic.shownCount(listOf("friend", "blocked", "bot"), dropped))
+
+        // The control: with nobody blocked, spam alone is hidden and the
+        // count still includes everyone else.
+        val spamOnly = FollowListLogic.dropped(spam, emptySet())
+        val withBlocked = FollowListLogic.sections(
+            people = people, follows = emptySet(), webOfTrust = emptySet(), trustRank = emptyMap(),
+            hidden = spamOnly, sort = FollowListSort.NAME,
+        )
+        assertEquals(listOf("blocked", "friend"), withBlocked.flatMap { s -> s.people.map { it.pubkey } })
+        assertEquals(2, FollowListLogic.shownCount(listOf("friend", "blocked", "bot"), spamOnly))
+        assertEquals(2, FollowListLogic.shownCount(listOf("friend", "blocked"), emptySet()))
+    }
+
+    @Test
     fun bioLineFlattensLineBreaks() {
         assertEquals("Builder. Bitcoin nostr", FollowListLogic.bioLine("Builder.\n\n  Bitcoin  \nnostr"))
         assertNull(FollowListLogic.bioLine(" \n "))

@@ -64,7 +64,11 @@ enum NIP88Poll {
 
     /// Counts the votes on `poll`. The caller checks signatures; this checks
     /// that each vote is for this poll, in time, and for options it has.
-    static func tally(_ events: [[String: Any]], poll: Poll, now: Date = Date()) -> PollTally {
+    ///
+    /// `blocked` (hex pubkeys) are left out of the counts and the voter
+    /// lists. The vote itself is kept, so an unblock counts it again.
+    static func tally(_ events: [[String: Any]], poll: Poll, now: Date = Date(),
+                      blocked: Set<String> = []) -> PollTally {
         let known = Set(poll.options.map(\.id))
         let latestAllowed = min(now.timeIntervalSince1970 + maxFutureSkew,
                                 poll.endsAt?.timeIntervalSince1970 ?? .infinity)
@@ -75,6 +79,7 @@ enum NIP88Poll {
             guard (event["kind"] as? Int) == responseKind,
                   let id = event["id"] as? String,
                   let pubkey = event["pubkey"] as? String,
+                  !blocked.contains(pubkey),
                   let createdAt = (event["created_at"] as? NSNumber)?.doubleValue,
                   createdAt <= latestAllowed,
                   let tags = event["tags"] as? [[String]],

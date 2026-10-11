@@ -497,6 +497,12 @@ struct ProfileView: View {
         .onChange(of: extras.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.listings.isEmpty) { _, _ in revealLateSections() }
+        // Blocking shuts their shop as you block, and unblocking fetches it
+        // again, rather than waiting for the next visit.
+        .onChange(of: isBlocked) { _, _ in
+            shop.load(pubkey: pubkey, force: true)
+            revealLateSections()
+        }
         .onDisappear {
             // Loads in flight die with their connections; without this a
             // return before the first EOSE skips the notes load entirely.
