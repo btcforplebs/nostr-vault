@@ -77,7 +77,6 @@ abstract class HashtagNotesViewModel(
         private const val LOADING_TIMEOUT_MS = 8_000L
         /** A screening lookup gives up on relays that haven't answered by then. */
         private const val LOOKUP_TIMEOUT_MS = 6_000L
-        private const val DEFAULT_ZAP_SATS = SearchViewModel.DEFAULT_ZAP_SATS
 
         /**
          * The `#t` values for [tags]: a relay matches tag values exactly, and
@@ -659,11 +658,13 @@ abstract class HashtagNotesViewModel(
 
     fun zapNote(noteId: String, notePubkey: String) {
         viewModelScope.launch {
-            val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
+            // The Wallet default, same figure the feed and profile use.
+            val sats = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
+            val result = zapSendService.zapNote(noteId, notePubkey, sats)
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats"
+                    "Zapped $sats sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )

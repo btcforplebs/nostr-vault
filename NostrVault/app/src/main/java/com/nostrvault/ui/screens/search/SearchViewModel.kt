@@ -62,8 +62,6 @@ class SearchViewModel @Inject constructor(
 ) : ViewModel() {
 
     companion object {
-        /** Default zap amount (sats) — same figure the feed and profile use. */
-        const val DEFAULT_ZAP_SATS = 21
         private const val TRENDING_THROTTLE_MS = 5_000L
         private const val MAX_TRENDING = 8
         private const val MAX_SUGGESTED = 6
@@ -139,11 +137,13 @@ class SearchViewModel @Inject constructor(
 
     fun zapNote(noteId: String, notePubkey: String) {
         viewModelScope.launch {
-            val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
+            // The Wallet default, same figure the feed and profile use.
+            val sats = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
+            val result = zapSendService.zapNote(noteId, notePubkey, sats)
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats"
+                    "Zapped $sats sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
