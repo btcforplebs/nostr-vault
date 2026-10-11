@@ -61,7 +61,7 @@ enum class RelayCardStatus(val label: String) {
 /**
  * Top of Settings: whether the relay on this phone is running and where it
  * answers, with Start Relay when it's stopped. iOS: RelayStatusCard in
- * SettingsView.swift.
+ * Views/Settings/RelayStatusCard.swift.
  */
 @Composable
 fun RelayStatusCard(viewModel: RelayStatusCardViewModel = hiltViewModel()) {

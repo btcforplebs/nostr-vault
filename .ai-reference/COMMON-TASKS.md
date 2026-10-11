@@ -16,7 +16,7 @@ case newOption
 newOption = try container.decodeIfPresent(String.self, forKey: .newOption) ?? defaults.newOption
 ```
 
-### Step 2: Add UI control (`HavenApp/HavenApp/Views/SettingsView.swift`)
+### Step 2: Add UI control (the matching page in `HavenApp/HavenApp/Views/Settings/`, one file per page)
 Add appropriate control in the relevant settings section.
 
 ### Step 3: Map to env var (`HavenApp/HavenApp/Services/RelayProcessManager.swift`)
