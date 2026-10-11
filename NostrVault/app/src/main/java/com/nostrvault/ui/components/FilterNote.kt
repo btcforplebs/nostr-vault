@@ -95,7 +95,7 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             modifier = Modifier
                 .glassPillBackground(isOled = LocalOledMode.current)
-                .semantics { liveRegion = LiveRegionMode.Polite }
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
                 .padding(vertical = 7.dp, horizontal = 14.dp),
         ) {
             Icon(
