@@ -654,13 +654,17 @@ class ProfileViewModel @Inject constructor(
 
     /** npub (bech32) for the copy row; null if encoding fails. */
     val npub: String? get() = nostrService.hexToNpub(_pubkey.value)
+    fun npubOf(hex: String): String? = nostrService.hexToNpub(hex)
 
     /** Zap this profile: [amount] sats, the default unless chosen in the custom sheet. */
     fun zap(amount: Int = defaultZapSats) {
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         viewModelScope.launch {
-            val result = zapSendService.zapNote(pk, pk, amount)
+            // A profile zap has no note: an empty id leaves out the `e` tag,
+            // so the request carries only `p` (NIP-57) instead of naming the
+            // pubkey as an event id.
+            val result = zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
             _toast.value = result.fold(
                 onSuccess = { "Zapped $amount sats" },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },

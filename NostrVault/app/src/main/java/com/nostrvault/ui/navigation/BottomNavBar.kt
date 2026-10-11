@@ -259,7 +259,9 @@ private fun ExpandedNavRow(
         for (item in bottomNavItems) {
             val isProfileTab = item.screen == Screen.Profile
             val selected = if (isProfileTab) {
-                currentRoute?.startsWith("profile") == true
+                // Only the tab: a pushed profile (someone else's, or yours
+                // opened from a note) leaves it unselected, so a tap goes home.
+                currentRoute == PROFILE_TAB_ROUTE
             } else {
                 currentRoute == item.screen.route
             }
