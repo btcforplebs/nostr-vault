@@ -471,13 +471,14 @@ final class MediaServersModel: ObservableObject {
 
     /// Which files a server is missing. Answers the store already has for
     /// every current server are used as they are; only the rest are asked,
-    /// four at a time, and recorded.
+    /// four at a time, and recorded. A server that could not be asked last
+    /// time is asked again: it may be back.
     private func scan(generation: Int) async {
         guard let service else { return }
         let mirrors = servers.map(\.id)
         let unknown = hashes.filter { hash in
             guard let known = store.presence(hash: hash) else { return true }
-            return !mirrors.allSatisfy { known[$0] != nil }
+            return !mirrors.allSatisfy { known[$0] != nil && known[$0] != .unreachable }
         }
         let total = hashes.count
         var done = total - unknown.count
@@ -533,7 +534,8 @@ final class MediaServersModel: ObservableObject {
             copyCounts = (index + 1, work.count)
         }
         copyCounts = nil
-        VaultHistory.lastServerCopy = Date()
+        // Only a copy that moved something counts as one.
+        if failed < work.count { VaultHistory.lastServerCopy = Date() }
         waiting = missing().count
         copyNote = failed == 0 ? nil
             : "\(failed.formatted()) couldn't be copied. Test the servers above, then try again."
