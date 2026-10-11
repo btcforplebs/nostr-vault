@@ -41,6 +41,25 @@ class MarketplaceFeedService @Inject constructor(
     companion object {
         private const val TAG = "MarketplaceFeedService"
         private const val LIMIT = 200
+        /** Authors per REQ filter; relays reject very large filters (iOS `trustedAuthorsCap`). */
+        const val AUTHORS_CAP = 500
+
+        /**
+         * REQ filters for one load (iOS `trustScopedFilters`). Under the Web of
+         * Trust the same filter is asked twice: once naming trusted authors, so a
+         * page of strangers cannot crowd out the people Global will show, and
+         * once open, for trusted authors past the cap. The collector still drops
+         * untrusted authors from both.
+         */
+        fun filters(kinds: List<Int>, authors: List<String>?, trust: Set<String>?): List<String> {
+            fun filter(names: List<String>?): String {
+                val authorsJson = names?.let { list -> ",\"authors\":[${list.joinToString(",") { "\"$it\"" }}]" } ?: ""
+                return """{"kinds":[${kinds.joinToString(",")}]$authorsJson,"limit":$LIMIT}"""
+            }
+            if (authors != null) return listOf(filter(authors))
+            if (trust.isNullOrEmpty()) return listOf(filter(null))
+            return listOf(filter(trust.sorted().take(AUTHORS_CAP)), filter(null))
+        }
         /** Same window as [LiveFeedService.COLLECT_WINDOW_MS], for the same reason. */
         private const val COLLECT_WINDOW_MS = 20_000L
         /** Results older than this are refetched when the feed is opened again. */
@@ -123,7 +142,7 @@ class MarketplaceFeedService @Inject constructor(
 
         // An `authors: []` REQ matches nothing and would look like a dead
         // feed, so say what is actually true instead.
-        var authorsJson = ""
+        var authors: List<String>? = null
         // Global follows the app-wide shield: Web of Trust, or everyone.
         val trust = if (_scope.value == ReelsScope.GLOBAL) feedService.globalTrustSet() else null
         if (_scope.value == ReelsScope.FOLLOWING) {
@@ -133,14 +152,14 @@ class MarketplaceFeedService @Inject constructor(
                 _followSetIsEmpty.value = true
                 return
             }
-            authorsJson = ",\"authors\":[${follows.joinToString(",") { "\"$it\"" }}]"
+            authors = follows.toList()
         }
 
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }
             .toSet()
         val subId = "market-${System.currentTimeMillis().toString(36)}"
-        val kinds = MarketListing.KINDS.joinToString(",")
+        val req = "[\"REQ\",\"$subId\",${filters(MarketListing.KINDS, authors, trust).joinToString(",")}]"
         // Addressable: the newest event at an address wins, including a
         // re-publish marking the item sold. Same mutex-and-snapshot pattern as
         // LiveFeedService, for the same ConcurrentModificationException.
@@ -168,7 +187,7 @@ class MarketplaceFeedService @Inject constructor(
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
                             reached.set(true)
-                            client.send("""["REQ","$subId",{"kinds":[$kinds]$authorsJson,"limit":$LIMIT}]""")
+                            client.send(req)
                         }
                     }
                 }
