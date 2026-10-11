@@ -90,6 +90,9 @@ struct ComposeView: View {
     @State private var showingDraftPicker = false
     @State private var showingGifPicker = false
     @State private var isFetchingGif = false
+    /// A pasted video is copied to disk before it attaches, and one from
+    /// another device over Universal Clipboard is still in transit.
+    @State private var isPastingVideo = false
     @State private var showingDiscardConfirm = false
     @StateObject private var draftService = DraftService.shared
 
@@ -754,15 +757,21 @@ struct ComposeView: View {
                     .help("Add a video")
 
                     Button(action: handlePasteFromClipboard) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.appTitle3)
-                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                            .padding(10)
-                            .background(purple.opacity(0.1))
-                            .clipShape(Circle())
+                        Group {
+                            if isPastingVideo {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.appTitle3)
+                            }
+                        }
+                        .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                        .padding(10)
+                        .background(purple.opacity(0.1))
+                        .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(isAttachmentLimitReached)
+                    .disabled(isAttachmentLimitReached || isPastingVideo)
                     .help("Paste media from the clipboard")
 
 // Hidden when no GIF source is available in this build (no nostr.build
@@ -1372,7 +1381,29 @@ struct ComposeView: View {
     }
 
     private func handlePasteFromClipboard() {
-        guard !isAttachmentLimitReached else { return }
+        guard !isAttachmentLimitReached, !isPastingVideo else { return }
+
+        // A video first, as the Media tab's Magic Paste does: a clip copied in
+        // Photos, here or on another device over Universal Clipboard, can
+        // come with a still frame beside it, and the image branch would
+        // attach that frame instead of the video.
+        if PlatformClipboard.hasVideo() {
+            isPastingVideo = true
+            Task {
+                let video = await PlatformClipboard.copyVideoToTemporaryFile()
+                let thumbnail: PlatformImage? = if let video { await generateVideoThumbnail(url: video) } else { nil }
+                await MainActor.run {
+                    isPastingVideo = false
+                    guard let video else {
+                        error = "Couldn't read the video on the clipboard."
+                        return
+                    }
+                    let type = UTType(filenameExtension: video.pathExtension) ?? .movie
+                    appendAttachment(Attachment(data: nil, fileURL: video, type: type, thumbnail: thumbnail))
+                }
+            }
+            return
+        }
 
         if PlatformClipboard.hasImage(), let imageData = PlatformClipboard.getImageData() {
             // Detect actual image format from data magic bytes
