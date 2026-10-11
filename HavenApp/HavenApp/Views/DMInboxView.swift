@@ -151,8 +151,42 @@ struct DMInboxView: View {
 
     // MARK: - DM Content
 
+    /// Messages the signer has not opened yet. Without this they were simply
+    /// missing: the notification arrived, the inbox showed nothing.
+    @ViewBuilder
+    private var signerWaitingBanner: some View {
+        let count = dmService.waitingForSignerCount
+        if count > 0 {
+            HStack(spacing: 10) {
+                Image(systemName: "key.horizontal")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text(count == 1
+                     ? "1 message is waiting for your signer to open it."
+                     : "\(count) messages are waiting for your signer to open them.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button("Retry") { dmService.retryWaitingForSigner() }
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.orange.opacity(0.12))
+        }
+    }
+
     @ViewBuilder
     private var dmContentView: some View {
+        dmContentList
+            .safeAreaInset(edge: .top, spacing: 0) { signerWaitingBanner }
+    }
+
+    @ViewBuilder
+    private var dmContentList: some View {
         if dmService.visibleConversations.isEmpty {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {

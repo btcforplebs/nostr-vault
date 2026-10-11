@@ -61,6 +61,10 @@ class DMService: ObservableObject {
 
     @Published var conversations: [DMConversation] = []
     @Published var isLoading: Bool = false
+    /// Messages that arrived but the signer could not open yet (remote signer
+    /// offline, slow or refused). Shown on the Messages screen, retried on
+    /// their own, and again on every refresh.
+    @Published private(set) var waitingForSignerCount = 0
 
     /// The inbox as shown: conversations with a blocked person are hidden.
     /// They stay in `conversations` (and on disk), so unblocking brings them back.
@@ -88,6 +92,21 @@ class DMService: ObservableObject {
     /// signer two NIP-44 decrypts, every launch, forever.
     private var unreadableGiftWrapIds = Set<String>()
     private let maxUnreadableGiftWrapIds = 5_000
+
+    /// Gift wraps the signer did not open, by id, waiting for another try.
+    /// A failure used to leave the id in `seenGiftWrapIds`, so the wrap was
+    /// skipped for the rest of the session: the relay's notification went out,
+    /// and the message only appeared after the app was relaunched.
+    private var signerWaiting: [String: NostrEvent] = [:]
+    private var signerRetryTask: Task<Void, Never>?
+    private var signerRetryAttempt = 0
+
+    /// /inbox (NIP-04 and the gift wraps stored there) reconnects on its own,
+    /// like /chat. Before, it came back only when the app returned to the
+    /// foreground, so with the app open new DMs stopped reaching the inbox
+    /// while the relay still announced them.
+    private var inboxReconnectTask: Task<Void, Never>?
+    private var inboxReconnectAttempt = 0
 
     /// Gift wraps waiting to be opened. Drained newest first by at most
     /// `maxGiftWrapWorkers` at a time: the backlog used to start one Task per
@@ -271,14 +290,24 @@ class DMService: ObservableObject {
             .store(in: &connectionCancellables)
 
         client.$connectionState
+            .dropFirst()
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self = self, self.nip04Client === client else { return }
-                if state == .connected {
+                switch state {
+                case .connected:
                     #if DEBUG
                     print("✅ NIP-04 inbox connected")
                     #endif
+                    self.inboxReconnectAttempt = 0
+                    self.inboxReconnectTask?.cancel()
+                    self.inboxReconnectTask = nil
                     self.sendNIP04Subscription(to: client)
+                case .disconnected, .error:
+                    self.scheduleInboxReconnect()
+                default:
+                    break
                 }
             }
             .store(in: &connectionCancellables)
@@ -632,6 +661,8 @@ class DMService: ObservableObject {
     }
 
     func refresh() {
+        // Anything the signer could not open gets another try now.
+        retryWaitingForSigner()
         // Reconnect to the local chat relay
         reconnectInbox()
         // Also fetch from external relays
@@ -1337,6 +1368,10 @@ class DMService: ObservableObject {
 
         seenGiftWrapIds.insert(event.id)
         trimSeenGiftWrapIdsIfNeeded()
+        // The relay's copy came back (a refresh): it is being tried now.
+        if signerWaiting.removeValue(forKey: event.id) != nil {
+            waitingForSignerCount = signerWaiting.count
+        }
 
         pendingGiftWraps.append(event)
         startGiftWrapWorkersIfNeeded()
@@ -1445,6 +1480,8 @@ class DMService: ObservableObject {
             sortConversations()
             dmUpdateSubject.send()
             saveConversations()
+            // The signer answered: the next failure starts the backoff over.
+            if signerWaiting.isEmpty { signerRetryAttempt = 0 }
         } catch let error as NIP17Service.NIP17Error {
             // The wrap opened to something that is not a chat message (or
             // cannot be opened with this key): it will not change, so do not
@@ -1455,11 +1492,79 @@ class DMService: ObservableObject {
             guard self.switchGeneration == generation else { return }
             rememberUnreadableGiftWrap(event.id)
         } catch {
-            // Signer offline, timed out or refused: try again next launch.
+            // Signer offline, timed out or refused: keep it and try again.
             #if DEBUG
             print("Failed to unwrap gift wrap: \(error)")
             #endif
+            guard self.switchGeneration == generation else { return }
+            waitForSigner(event, autoRetry: Self.signerMayAnswerLater(error))
         }
+    }
+
+    /// No answer (offline, not connected, timed out) is worth asking again on
+    /// a timer. A refusal or a signer error is not: asking again unasked
+    /// would put the same request in front of the person every few minutes.
+    /// Those wait for Retry, a refresh or the next foreground.
+    static func signerMayAnswerLater(_ error: Error) -> Bool {
+        switch error as? NIP46Error {
+        case .timeout?, .offline?, .notConnected?: return true
+        default: return false
+        }
+    }
+
+    // MARK: - Messages waiting for the signer
+
+    private func waitForSigner(_ event: NostrEvent, autoRetry: Bool) {
+        // Out of the dedup set, so the relay's copy (on a refresh) or a retry
+        // can bring it back in.
+        seenGiftWrapIds.remove(event.id)
+        signerWaiting[event.id] = event
+        waitingForSignerCount = signerWaiting.count
+        if autoRetry { scheduleSignerRetry() }
+    }
+
+    /// 10 s, 30 s, 1.5 min, then every 3 min, at most `maxSignerRetries`
+    /// rounds (about 20 minutes). After that, Retry, a refresh or the next
+    /// foreground asks again.
+    static func signerRetryDelay(attempt: Int) -> TimeInterval {
+        [10, 30, 90, 180][min(attempt, 3)]
+    }
+    static let maxSignerRetries = 8
+
+    private func scheduleSignerRetry() {
+        guard signerRetryTask == nil, !signerWaiting.isEmpty,
+              signerRetryAttempt < Self.maxSignerRetries else { return }
+        let delay = Self.signerRetryDelay(attempt: signerRetryAttempt)
+        signerRetryAttempt += 1
+        signerRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.signerRetryTask = nil
+            self.retryWaitingForSigner()
+        }
+    }
+
+    /// Sends every waiting message back through the queue. A success clears
+    /// it; a failure puts it back in `signerWaiting` and schedules the next try.
+    func retryWaitingForSigner() {
+        guard !signerWaiting.isEmpty else { return }
+        // Asked for (Retry, refresh): once the automatic rounds are used up,
+        // this allows one more, so a signer that comes back still gets asked.
+        if signerRetryTask == nil { signerRetryAttempt = min(signerRetryAttempt, Self.maxSignerRetries - 1) }
+        let waiting = Array(signerWaiting.values)
+        signerWaiting.removeAll()
+        waitingForSignerCount = 0
+        for event in waiting {
+            handleIncomingGiftWrap(event)
+        }
+    }
+
+    private func clearSignerWaiting() {
+        signerRetryTask?.cancel()
+        signerRetryTask = nil
+        signerRetryAttempt = 0
+        signerWaiting.removeAll()
+        waitingForSignerCount = 0
     }
 
     private func rememberUnreadableGiftWrap(_ id: String) {
@@ -1501,6 +1606,7 @@ class DMService: ObservableObject {
         seenGiftWrapIds.removeAll()
         unreadableGiftWrapIds.removeAll()
         pendingGiftWraps.removeAll()
+        clearSignerWaiting()
         injectedDmIds.removeAll()
         isAuthenticated = false
         pendingAuthChallenge = nil
@@ -1589,6 +1695,24 @@ class DMService: ObservableObject {
         inboxClient?.disconnect()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startListening()
+        }
+    }
+
+    private func scheduleInboxReconnect() {
+        guard inboxReconnectTask == nil, RelayProcessManager.shared.state == .running else { return }
+        let delay = Self.chatReconnectDelay(attempt: inboxReconnectAttempt)
+        inboxReconnectAttempt += 1
+        inboxReconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.inboxReconnectTask = nil
+            guard RelayProcessManager.shared.state == .running,
+                  self.nip04Client?.connectionState != .connected,
+                  self.nip04Client?.connectionState != .connecting else { return }
+            #if DEBUG
+            print("🔄 DM inbox relay: reconnecting (attempt \(self.inboxReconnectAttempt))")
+            #endif
+            self.startNIP04Listening()
         }
     }
 
