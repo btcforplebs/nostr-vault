@@ -30,6 +30,14 @@ final class BlossomBackupStore: ObservableObject {
     /// Each server's answer for `hash`, nil until checked.
     func presence(hash: String) -> [String: BlobPresence]? { results[hash] }
 
+    /// Stores answers found elsewhere (the Media servers page's check, or a
+    /// copy that went through), merged over what is known, so the grid's
+    /// badges and that page agree without asking the servers twice.
+    func record(hash: String, presence: [String: BlobPresence]) {
+        guard !presence.isEmpty else { return }
+        results[hash, default: [:]].merge(presence) { _, new in new }
+    }
+
     /// nil until the first check for this hash has finished.
     func summary(hash: String, mirrors: [String]) -> BlossomBackupSummary? {
         guard !mirrors.isEmpty else { return BlossomBackupSummary(present: 0, unreachable: 0, total: 0, missing: []) }

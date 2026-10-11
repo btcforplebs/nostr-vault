@@ -216,7 +216,9 @@ struct MediaServersPage: View {
                      value: model.filesStored.map { $0.formatted() } ?? "—")
             DashboardDivider()
             ValueRow(icon: "clock.arrow.circlepath", title: "Waiting to copy", value: waitingText)
-            if model.isCopying || (model.waiting ?? 0) > 0 {
+            // Always there once a server is set up, so the card keeps its
+            // height while the check runs instead of growing a row a minute in.
+            if !model.servers.isEmpty {
                 DashboardDivider()
                 DashboardRow(
                     icon: "arrow.up.circle.fill",
@@ -226,9 +228,9 @@ struct MediaServersPage: View {
                     progress: model.copyProgress
                 ) {
                     RowButton(title: "Copy", isLoading: model.isCopying) {
-                        Task { await model.copyToServers(configService: configService, nostrService: nostrService) }
+                        Task { await model.copyToServers() }
                     }
-                    .disabled(model.isCopying || model.isScanning)
+                    .disabled(model.isCopying || model.isScanning || (model.waiting ?? 0) == 0)
                 }
             }
             if let note = model.copyNote {
@@ -251,8 +253,13 @@ struct MediaServersPage: View {
 
     private var copyDetail: String {
         if let copy = model.copyCounts { return "Copied \(copy.done.formatted()) of \(copy.total.formatted())." }
-        let n = model.waiting ?? 0
-        return n == 1 ? "1 file is only on this phone." : "\(n.formatted()) files are only on this phone."
+        if model.isScanning || model.waiting == nil { return "Checking which files your servers are missing…" }
+        let last = VaultHistory.lastServerCopy.map { " Last copied \($0.formatted(.relative(presentation: .named)))." } ?? ""
+        switch model.waiting ?? 0 {
+        case 0: return "Every file is on your servers." + last
+        case 1: return "1 file is only on this phone." + last
+        case let n: return "\(n.formatted()) files are only on this phone." + last
+        }
     }
 }
 
@@ -278,6 +285,7 @@ private struct ServerRow: View {
                     Text(statusLine(now: context.date))
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,24 +306,26 @@ private struct ServerRow: View {
 
     private var dotColor: Color {
         switch server.status {
-        case .online: return .havenOnline
+        case .working: return .havenOnline
+        case .answers, .lostFile: return .orange
         case .offline: return .red
         case .checking, .unknown: return .secondary.opacity(0.4)
         }
     }
 
     private func statusLine(now: Date) -> String {
+        let state: String
         switch server.status {
         case .checking: return "Checking…"
         case .unknown: return "Not checked yet"
-        case .online, .offline:
-            let state = server.status == .online
-                ? (server.responseTime.map { "Answering, \($0) ms" } ?? "Answering")
-                : "Not answering"
-            guard let at = server.checkedAt else { return state }
-            let ago = now.timeIntervalSince(at) < 60 ? "just now" : at.formatted(.relative(presentation: .named))
-            return "\(state) · checked \(ago)"
+        case .working: state = "Has your files"
+        case .answers: state = "Answers, but holds none of your files to check"
+        case .lostFile: state = "Answers, but a file it had is gone"
+        case .offline: state = "Not answering"
         }
+        guard let at = server.checkedAt else { return state }
+        let ago = now.timeIntervalSince(at) < 60 ? "just now" : at.formatted(.relative(presentation: .named))
+        return "\(state) · checked \(ago)"
     }
 }
 
@@ -352,17 +362,27 @@ private struct ValueRow: View {
 
 /// The Media servers page's state: each server's health, the files on this
 /// phone, and which of them some server is missing. "Waiting to copy" is
-/// measured (a HEAD per file per server) each time the page opens, never
-/// assumed: the old Blossom panel showed every file as needing backup until a
-/// backup ran.
+/// measured, never assumed: the old Blossom panel showed every file as
+/// needing backup until a backup ran. Answers go into `BlossomBackupStore`
+/// and are reused from it, so the grid's x/y badges agree with this page and
+/// a file is asked about once per session, not on every open.
 @MainActor
 final class MediaServersModel: ObservableObject {
     struct Server: Identifiable, Equatable {
-        enum Status: Equatable { case unknown, checking, online, offline }
+        enum Status: Equatable {
+            case unknown, checking
+            /// Holds a file of yours it was asked for: a real Blossom server.
+            case working
+            /// Answered, but there was no file of yours to ask it for. A web
+            /// server that is not Blossom answers too, so this is not green.
+            case answers
+            /// Had one of your files and now says it does not.
+            case lostFile
+            case offline
+        }
         let id: String
         let host: String
         var status: Status = .unknown
-        var responseTime: Int?
         var checkedAt: Date?
     }
 
@@ -376,9 +396,10 @@ final class MediaServersModel: ObservableObject {
     @Published private(set) var copyCounts: (done: Int, total: Int)?
     @Published private(set) var copyNote: String?
 
-    /// Hash → the servers missing it.
-    private var missing: [String: [String]] = [:]
+    private var service: BlossomService?
+    private var hashes: [String] = []
     private var loadGeneration = 0
+    private var store: BlossomBackupStore { .shared }
 
     var isScanning: Bool { scanProgress != nil }
     var isCopying: Bool { copyCounts != nil }
@@ -391,85 +412,131 @@ final class MediaServersModel: ObservableObject {
         guard !isCopying else { return }
         loadGeneration += 1
         let generation = loadGeneration
+        service = BlossomService(configService: configService, nostrService: nostrService)
         let urls = configService.config.activeBlossomMirrors
         let previous = Dictionary(uniqueKeysWithValues: servers.map { ($0.id, $0) })
         servers = urls.map { url in
             previous[url] ?? Server(id: url, host: URL(string: url)?.host ?? url)
         }
-        let hashes = await Self.localHashes(configService: configService)
+        hashes = await Self.localHashes(configService: configService)
         guard generation == loadGeneration else { return }
         filesStored = hashes.count
+        guard !urls.isEmpty else { return }
 
+        async let tests: Void = testAll()
+        async let scanned: Void = scan(generation: generation)
+        _ = await (tests, scanned)
+        // The check may have found a file a server holds; a server that only
+        // "answered" can now be tested against it.
+        guard generation == loadGeneration else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for server in servers where server.status == .answers {
+                group.addTask { await self.test(server.id) }
+            }
+        }
+    }
+
+    private func testAll() async {
         await withTaskGroup(of: Void.self) { group in
             for server in servers {
                 group.addTask { await self.test(server.id) }
             }
         }
-        guard generation == loadGeneration, !urls.isEmpty else { return }
-        await scan(hashes: hashes, configService: configService, nostrService: nostrService, generation: generation)
     }
 
+    /// Asks the server for a file of yours it is known to hold. A 401 or 404
+    /// from its front page proves nothing; holding your file does. With no
+    /// such file, it can only be shown as answering.
     func test(_ id: String) async {
-        guard let index = servers.firstIndex(where: { $0.id == id }), let url = URL(string: id) else { return }
+        guard let index = servers.firstIndex(where: { $0.id == id }) else { return }
         servers[index].status = .checking
-        let result = await Self.ping(url)
+        let status: Server.Status
+        if let service, let proof = hashes.first(where: { store.presence(hash: $0)?[id] == .present }) {
+            let answer = await service.checkPresence(mirror: id, sha256: proof)
+            store.record(hash: proof, presence: [id: answer])
+            switch answer {
+            case .present: status = .working
+            case .absent: status = .lostFile
+            case .unreachable: status = .offline
+            }
+        } else if let url = URL(string: id) {
+            status = await Self.answers(url) ? .answers : .offline
+        } else {
+            status = .offline
+        }
         guard let i = servers.firstIndex(where: { $0.id == id }) else { return }
-        servers[i].status = result.ok ? .online : .offline
-        servers[i].responseTime = result.ms
+        servers[i].status = status
         servers[i].checkedAt = Date()
     }
 
-    private func scan(hashes: [String], configService: ConfigService, nostrService: NostrService, generation: Int) async {
-        let service = BlossomService(configService: configService, nostrService: nostrService)
-        scanProgress = (0, hashes.count)
-        var found: [String: [String]] = [:]
-        var done = 0
-        // A few at a time: each check is a HEAD to every server.
-        var iterator = hashes.makeIterator()
-        await withTaskGroup(of: (String, [String]).self) { group in
+    /// Which files a server is missing. Answers the store already has for
+    /// every current server are used as they are; only the rest are asked,
+    /// four at a time, and recorded.
+    private func scan(generation: Int) async {
+        guard let service else { return }
+        let mirrors = servers.map(\.id)
+        let unknown = hashes.filter { hash in
+            guard let known = store.presence(hash: hash) else { return true }
+            return !mirrors.allSatisfy { known[$0] != nil }
+        }
+        let total = hashes.count
+        var done = total - unknown.count
+        scanProgress = (done, total)
+        var iterator = unknown.makeIterator()
+        await withTaskGroup(of: (String, [String: BlobPresence]).self) { group in
             func addNext() -> Bool {
                 guard let hash = iterator.next() else { return false }
-                group.addTask {
-                    let presence = await service.checkMirrorPresence(sha256: hash)
-                    return (hash, presence.filter { $0.value == .absent }.map(\.key))
-                }
+                group.addTask { (hash, await service.checkMirrorPresence(sha256: hash)) }
                 return true
             }
             for _ in 0..<4 { if !addNext() { break } }
-            for await (hash, absentOn) in group {
+            for await (hash, presence) in group {
                 if Task.isCancelled || generation != loadGeneration { group.cancelAll(); break }
-                if !absentOn.isEmpty { found[hash] = absentOn }
+                store.record(hash: hash, presence: presence)
                 done += 1
-                scanProgress = (done, hashes.count)
+                scanProgress = (done, total)
                 _ = addNext()
             }
         }
         guard generation == loadGeneration else { return }
         scanProgress = nil
         // Stopped early (the page closed): nothing measured, nothing claimed.
-        guard done == hashes.count else { return }
-        missing = found
-        waiting = found.count
+        guard done == total else { return }
+        waiting = missing().count
     }
 
-    func copyToServers(configService: ConfigService, nostrService: NostrService) async {
-        guard !isCopying, !missing.isEmpty else { return }
-        let service = BlossomService(configService: configService, nostrService: nostrService)
-        let work = missing.sorted { $0.key < $1.key }
+    /// Hash → the servers that said they do not have it.
+    private func missing() -> [String: [String]] {
+        let mirrors = servers.map(\.id)
+        var result: [String: [String]] = [:]
+        for hash in hashes {
+            guard let known = store.presence(hash: hash) else { continue }
+            let absentOn = mirrors.filter { known[$0] == .absent }
+            if !absentOn.isEmpty { result[hash] = absentOn }
+        }
+        return result
+    }
+
+    func copyToServers() async {
+        guard !isCopying, let service else { return }
+        let work = missing().sorted { $0.key < $1.key }
+        guard !work.isEmpty else { return }
         copyNote = nil
         copyCounts = (0, work.count)
-        var failed: [String: [String]] = [:]
+        var failed = 0
         for (index, item) in work.enumerated() {
-            let ok = await service.pushLocalToMirrors(sha256: item.key, only: item.value)
-            if !ok { failed[item.key] = item.value }
+            if await service.pushLocalToMirrors(sha256: item.key, only: item.value) {
+                store.record(hash: item.key, presence: Dictionary(uniqueKeysWithValues: item.value.map { ($0, .present) }))
+            } else {
+                failed += 1
+            }
             copyCounts = (index + 1, work.count)
         }
         copyCounts = nil
-        missing = failed
-        waiting = failed.count
-        copyNote = failed.isEmpty
-            ? "Every file is on your servers."
-            : "\(failed.count.formatted()) couldn't be copied. Test the servers above, then try again."
+        VaultHistory.lastServerCopy = Date()
+        waiting = missing().count
+        copyNote = failed == 0 ? nil
+            : "\(failed.formatted()) couldn't be copied. Test the servers above, then try again."
     }
 
     /// The blobs in this device's Blossom folder: files named by a hex SHA-256.
@@ -485,22 +552,14 @@ final class MediaServersModel: ObservableObject {
         }.value
     }
 
-    /// Any HTTP answer below 500 means the server is up (many answer 404 or
-    /// 401 at their root).
-    private static func ping(_ url: URL) async -> (ok: Bool, ms: Int?) {
+    /// The fallback when there is no file to ask for: does anything answer
+    /// at the server's address at all (below 500).
+    private static func answers(_ url: URL) async -> Bool {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         request.timeoutInterval = 10
-        let start = Date()
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let ms = Int(Date().timeIntervalSince(start) * 1000)
-            if let http = response as? HTTPURLResponse, (200..<500).contains(http.statusCode) {
-                return (true, ms)
-            }
-            return (false, ms)
-        } catch {
-            return (false, nil)
-        }
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200..<500).contains(http.statusCode)
     }
 }
