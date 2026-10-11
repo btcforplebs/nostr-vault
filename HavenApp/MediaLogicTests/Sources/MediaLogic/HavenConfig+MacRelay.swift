@@ -1,0 +1,1 @@
+../../../HavenApp/Models/Config/HavenConfig+MacRelay.swift
