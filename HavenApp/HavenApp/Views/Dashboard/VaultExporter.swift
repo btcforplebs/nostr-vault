@@ -10,6 +10,7 @@ enum VaultHistory {
     private static let notesBackupKey = "haven.vault.lastNotesBackup"
     private static let mediaBackupKey = "haven.vault.lastMediaBackup"
     private static let mediaImportKey = "haven.vault.lastMediaImport"
+    private static let serverCopyKey = "haven.vault.lastServerCopy"
 
     static var lastNotesImport: Date? {
         get { defaults.object(forKey: notesImportKey) as? Date }
@@ -30,6 +31,12 @@ enum VaultHistory {
     static var lastMediaImport: Date? {
         get { defaults.object(forKey: mediaImportKey) as? Date }
         set { defaults.set(newValue, forKey: mediaImportKey) }
+    }
+
+    /// The last Copy to servers (Media servers page) that finished.
+    static var lastServerCopy: Date? {
+        get { defaults.object(forKey: serverCopyKey) as? Date }
+        set { defaults.set(newValue, forKey: serverCopyKey) }
     }
 }
 
