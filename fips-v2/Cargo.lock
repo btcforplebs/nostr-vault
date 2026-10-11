@@ -318,6 +318,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -966,6 +967,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -1101,8 +1103,8 @@ checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
 
 [[package]]
 name = "fips"
-version = "0.5.2"
-source = "git+https://github.com/btcforplebs/fips?rev=ff355b84#ff355b84dfd68ffed61ce66e517a023173271c26"
+version = "0.5.3-dev"
+source = "git+https://github.com/btcforplebs/fips?rev=d6f075b2#d6f075b2adfb432753c51cfff0f784a7fa4ea556"
 dependencies = [
  "arc-swap",
  "bech32 0.12.0",
@@ -1113,6 +1115,8 @@ dependencies = [
  "futures",
  "hex",
  "hkdf",
+ "hmac 0.13.0",
+ "if-addrs",
  "libc",
  "libm",
  "mdns-sd",
@@ -1142,6 +1146,7 @@ dependencies = [
  "tracing-subscriber",
  "tun",
  "windows-service",
+ "windows-sys 0.61.2",
  "wintun",
  "zeroize",
 ]
