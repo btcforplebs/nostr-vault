@@ -57,6 +57,7 @@ extern void StartRelayC(int importMode);
 extern void StopRelayC(void);
 extern void RequestRelaySyncC(void);
 extern void RequestMacSyncCheckC(void);
+extern void UpdateBlacklistC(const char* npubsJSON);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
 extern int BackupToCloudC(void);
@@ -141,6 +142,14 @@ Java_com_nostrvault_relay_HavenBridge_requestRelaySync(JNIEnv *env, jobject thiz
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_requestMacSyncCheck(JNIEnv *env, jobject thiz) {
     RequestMacSyncCheckC();
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_updateBlacklistNative(JNIEnv *env, jobject thiz, jstring npubsJSON) {
+    const char *cJSON = GET_CSTR(env, npubsJSON);
+    if (cJSON == NULL) return;
+    UpdateBlacklistC((char*)cJSON);
+    REL_CSTR(env, npubsJSON, cJSON);
 }
 
 // ---- Database operations ----

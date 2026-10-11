@@ -198,6 +198,9 @@ object RelayConfiguration {
     /** Name of the DM relay list file the relay reads (DM_RELAYS_FILE). */
     const val DM_RELAYS_FILE_NAME = "relays_dm.json"
 
+    /** The blocked-people file when config names none (iOS's default name). */
+    const val BLACKLIST_FILE_NAME = "blacklisted_npubs.json"
+
     fun launchInputs(config: HavenConfig, relayDataDir: File): LaunchInputs = LaunchInputs(
         env = generateEnvDictionary(config, relayDataDir),
         importSeedRelays = config.importSeedRelays,
@@ -216,13 +219,21 @@ object RelayConfiguration {
         fun write(envKey: String, fileName: String, content: List<String>) {
             if (fileName.isEmpty()) return
             val file = File(relayDataDir, fileName)
-            file.writeText("[" + content.joinToString(",") { "\"$it\"" } + "]")
+            file.writeText(npubListJson(content))
             HavenBridge.setEnv(envKey, file.absolutePath)
         }
         write("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, inputs.importSeedRelays)
         write("BLASTR_RELAYS_FILE", config.blastrRelaysFile, inputs.blastrRelays)
         write("DM_RELAYS_FILE", DM_RELAYS_FILE_NAME, inputs.dmRelays)
+        // Read once at start; blocks made while it runs reach it through
+        // HavenBridge.updateBlacklist. Not a launch input: a block must not
+        // restart the relay.
+        write("BLACKLISTED_NPUBS_FILE", config.blacklistedNpubsFile.ifEmpty { BLACKLIST_FILE_NAME }, config.allBlockedNpubsAcrossAccounts())
     }
+
+    /** A JSON array of plain strings (npubs, relay URLs), as the relay reads it. */
+    fun npubListJson(items: List<String>): String =
+        "[" + items.joinToString(",") { "\"$it\"" } + "]"
 
     /** Format an environment dictionary as a .env file string. */
     fun formatEnvFile(envDict: Map<String, String>): String = buildString {
@@ -768,6 +779,16 @@ data class HavenConfig(
 
     /** Blocked npubs for the active account, falling back to the legacy flat list. */
     fun blockedForActiveAccount(): List<String> = blockedFor(activeOrOwnerNpub())
+
+    /**
+     * Every npub blocked on any account, combined. The relay's blacklist is
+     * global, not per-account: a block on any account stops the relay storing
+     * and notifying about that person for every account on this device.
+     * iOS: HavenConfig.allBlockedNpubsAcrossAccounts.
+     */
+    fun allBlockedNpubsAcrossAccounts(): List<String> =
+        (blockedNpubsPerAccount.values.flatten() + blockedNpubs.orEmpty())
+            .map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
     /** Blocked npubs for one account, falling back to the legacy flat list. */
     fun blockedFor(npub: String): List<String> =

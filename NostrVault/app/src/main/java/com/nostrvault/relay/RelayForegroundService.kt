@@ -641,9 +641,6 @@ class RelayForegroundService : Service() {
             if (config.whitelistedNpubsFile.isNotEmpty()) {
                 HavenBridge.setEnv("WHITELISTED_NPUBS_FILE", File(relayDataDir, config.whitelistedNpubsFile).absolutePath)
             }
-            if (config.blacklistedNpubsFile.isNotEmpty()) {
-                HavenBridge.setEnv("BLACKLISTED_NPUBS_FILE", File(relayDataDir, config.blacklistedNpubsFile).absolutePath)
-            }
 
             // Start the relay
             Log.i(TAG, "Starting Go relay on port ${config.relayPort} (attempt ${retryCount + 1})")
