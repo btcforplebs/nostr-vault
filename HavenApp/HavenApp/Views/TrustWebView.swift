@@ -1613,7 +1613,7 @@ struct TrustGlobeCanvas: View {
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate
