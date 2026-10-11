@@ -23,6 +23,7 @@ import com.nostrvault.BuildConfig
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.NostrMentions
@@ -451,6 +452,11 @@ class LocalNotificationService @Inject constructor(
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: own sent DM ${id.take(8)}")
             return
         }
+        // A blocked person never notifies. NIP-04 names them up front; a gift
+        // wrap only once it is opened, below.
+        val blocked = configStore.config.value.blockedFor(npub)
+            .mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+        if (BlockedPeople.isBlocked(author, blocked)) return
         scope.launch {
             val inThread = appInForeground && dms.visibleConversation != null
             val opened = dms.awaitOpenedMessage(
@@ -459,6 +465,7 @@ class LocalNotificationService @Inject constructor(
             )
             if (opened != null) {
                 if (opened.second.isFromMe) return@launch
+                if (BlockedPeople.isBlocked(opened.second.senderPubkey, blocked)) return@launch
                 // The conversation is already on screen.
                 if (appInForeground && dms.visibleConversation == opened.first) return@launch
             }
