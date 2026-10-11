@@ -28,6 +28,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BlurCircular
+import com.nostrvault.ui.screens.dashboard.IconFilterButton
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -44,12 +47,13 @@ import com.nostrvault.ui.theme.SecondaryText
 import kotlin.math.min
 
 /** The WOT tab's layer picker icons, iOS `TrustMap.Layer.symbolName`. */
-private val TrustMap.Layer.icon: ImageVector
+internal val TrustMap.Layer.icon: ImageVector
     get() = when (this) {
         TrustMap.Layer.EVERYONE -> NostrVaultIcons.WebOfTrust
         TrustMap.Layer.FOLLOWING -> NostrVaultIcons.People
         TrustMap.Layer.CLOSE -> NostrVaultIcons.Groups
-        TrustMap.Layer.FURTHER_OUT -> NostrVaultIcons.Sparkles
+        // iOS circle.dashed; Sparkles is the New filter's.
+        TrustMap.Layer.FURTHER_OUT -> Icons.Filled.BlurCircular
     }
 
 /** 16K, 1.5K, 912: short enough that a menu row stays on one line (iOS compactName). */
@@ -60,8 +64,9 @@ private fun compactCount(n: Int): String =
 
 /**
  * The WOT tab's bar: the feed's two glass pills. Left is the layer picker,
- * built like the feed picker (icon, name, chevron; the rare Rebuild at the
- * bottom after a divider). Right are search and the globe / list toggle.
+ * built like the feed picker (icon, name, chevron; the list and the rare
+ * Rebuild at the bottom after a divider). Right are search and the filter
+ * icons, as on iOS.
  */
 @Composable
 internal fun WotTopBar(
@@ -73,9 +78,9 @@ internal fun WotTopBar(
     onRebuild: () -> Unit,
     searchOpen: Boolean,
     onSearch: () -> Unit,
-    showingList: Boolean,
-    onGlobe: () -> Unit,
     onList: () -> Unit,
+    filters: Set<TrustMap.Filter>,
+    onFilter: (TrustMap.Filter) -> Unit,
 ) {
     val accent = LocalNostrVaultColors.current.primary
     var expanded by remember { mutableStateOf(false) }
@@ -123,6 +128,16 @@ internal fun WotTopBar(
                     )
                 }
                 HorizontalDivider()
+                // Android's list of the layer's people. iOS has no list; it sits
+                // here so the bar has room for the filters.
+                DropdownMenuItem(
+                    text = { Text("See as a list") },
+                    leadingIcon = { Icon(NostrVaultIcons.PeopleList, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        expanded = false
+                        onList()
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text(if (refreshing) "Rebuilding…" else "Rebuild your web") },
                     leadingIcon = { Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -147,13 +162,13 @@ internal fun WotTopBar(
                     .height(20.dp)
                     .background(Color.White.copy(alpha = 0.15f)),
             )
-            IconButton(onClick = onGlobe, modifier = Modifier.size(40.dp)) {
-                Icon(NostrVaultIcons.Globe, contentDescription = "Globe",
-                    tint = if (!showingList) accent else SecondaryText, modifier = Modifier.size(22.dp))
-            }
-            IconButton(onClick = onList, modifier = Modifier.size(40.dp)) {
-                Icon(NostrVaultIcons.PeopleList, contentDescription = "List",
-                    tint = if (showingList) accent else SecondaryText, modifier = Modifier.size(22.dp))
+            TrustMap.Filter.entries.forEach { filter ->
+                IconFilterButton(
+                    icon = filter.icon,
+                    contentDescription = filter.title,
+                    isSelected = filter in filters,
+                    onClick = { onFilter(filter) },
+                )
             }
         }
     }

@@ -26,8 +26,6 @@ internal fun TrustWebViewWOTTabBar(
     onRebuild: () -> Unit,
     searchOpen: Boolean,
     onSearch: () -> Unit,
-    showingList: Boolean,
-    onGlobe: () -> Unit,
     onList: () -> Unit,
     search: @Composable ColumnScope.() -> Unit,
     crumbs: List<String>,
@@ -36,6 +34,9 @@ internal fun TrustWebViewWOTTabBar(
     mappingWeb: Boolean,
     newPeople: Int,
     onLivePill: () -> Unit,
+    filters: Set<TrustMap.Filter>,
+    onFilter: (TrustMap.Filter) -> Unit,
+    filterNote: FilterNoteState,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -53,9 +54,9 @@ internal fun TrustWebViewWOTTabBar(
             onRebuild = onRebuild,
             searchOpen = searchOpen,
             onSearch = onSearch,
-            showingList = showingList,
-            onGlobe = onGlobe,
             onList = onList,
+            filters = filters,
+            onFilter = onFilter,
         )
         if (searchOpen) {
             search()
@@ -73,5 +74,6 @@ internal fun TrustWebViewWOTTabBar(
             newPeople = newPeople,
             onClick = onLivePill,
         )
+        FilterNotePill(filterNote)
     }
 }
