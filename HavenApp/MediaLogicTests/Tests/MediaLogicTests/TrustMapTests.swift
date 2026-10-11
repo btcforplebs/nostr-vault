@@ -93,6 +93,18 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(camera.spin, .zero)
     }
 
+    func testASlowLetGoDoesNotSpin() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 200, vy: -150, at: 0, reduceMotion: false)
+        XCTAssertEqual(camera.spin, .zero)
+    }
+
+    func testAHardFlickIsCapped() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 6000, vy: 0, at: 0, reduceMotion: false)
+        XCTAssertEqual(simd_length(camera.spin), GlobeCamera.maxSpin, accuracy: 1e-9)
+    }
+
     func testFlyToArrivesAndLetsTheClockSleep() {
         var camera = GlobeCamera()
         camera.zoom = 2

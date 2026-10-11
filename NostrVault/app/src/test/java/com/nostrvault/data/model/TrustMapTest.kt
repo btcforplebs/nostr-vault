@@ -111,6 +111,16 @@ class TrustMapTest {
         assertTrue(camera.spin.isZero)
     }
 
+    @Test fun `a slow let go does not spin`() {
+        val camera = GlobeCamera().apply { flick(200.0, -150.0, 0.0, reduceMotion = false) }
+        assertTrue(camera.spin.isZero)
+    }
+
+    @Test fun `a hard flick is capped`() {
+        val camera = GlobeCamera().apply { flick(6000.0, 0.0, 0.0, reduceMotion = false) }
+        assertEquals(GlobeCamera.MAX_SPIN, camera.spin.length, 1e-9)
+    }
+
     @Test fun `fly to arrives and lets the clock sleep`() {
         val camera = GlobeCamera().apply { zoom = 2.0; zoomTarget = 2.0 }
         val target = GlobeCamera.facing(TrustMap.direction(randomKey(7)))

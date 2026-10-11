@@ -504,7 +504,15 @@ struct GlobeCamera {
     static let sleepAfter: TimeInterval = 20
     static let driftSpeed = 0.05
     /// How fast a flick dies away, per second.
-    static let spinDecay = 1.6
+    static let spinDecay = 2.4
+    /// Radians the globe turns per point a finger moves.
+    static let dragTurn = 0.005
+    /// Spin per point-a-second of release speed.
+    static let flickTurn = 0.003
+    /// Slower than this at release is letting go, not a flick: no spin.
+    static let flickFloor = 350.0
+    /// A flick never spins faster than this, radians a second.
+    static let maxSpin = 2.5
     /// A frame slower than this counts as this long, so a hitch can't fling it.
     static let maxStep: TimeInterval = 1.0 / 20
 
@@ -518,7 +526,7 @@ struct GlobeCamera {
 
     /// One finger moved by `dx`, `dy` points: turn under it.
     mutating func drag(dx: Double, dy: Double, at now: TimeInterval) {
-        let k = 0.009
+        let k = Self.dragTurn
         let turn = simd_quatd(angle: dx * k, axis: SIMD3(0, 1, 0)) * simd_quatd(angle: dy * k, axis: SIMD3(1, 0, 0))
         orientation = simd_normalize(turn * orientation)
         flyTarget = nil
@@ -528,8 +536,16 @@ struct GlobeCamera {
 
     /// Let go at `vx`, `vy` points a second: keep turning that way.
     mutating func flick(vx: Double, vy: Double, at now: TimeInterval, reduceMotion: Bool) {
-        let k = 0.006
-        spin = reduceMotion ? .zero : SIMD3(vy * k, vx * k, 0)
+        let speed = (vx * vx + vy * vy).squareRoot()
+        guard !reduceMotion, speed > Self.flickFloor else {
+            spin = .zero
+            touch(at: now)
+            return
+        }
+        var v = SIMD3(vy, vx, 0) * Self.flickTurn
+        let rate = simd_length(v)
+        if rate > Self.maxSpin { v *= Self.maxSpin / rate }
+        spin = v
         touch(at: now)
     }
 
