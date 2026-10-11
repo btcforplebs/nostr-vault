@@ -958,16 +958,9 @@ class NostrService @Inject constructor(
         }
     }
 
-    /**
-     * Fetch a whole thread for the note-detail view. Queries the entire subtree
-     * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
-     * mid-thread reply is opened, not just direct replies to the opened note),
-     * the [focusedId]'s own direct replies, and fetches the root plus any
-     * [ancestorIds] by id so missing parents are filled in from the network.
-     * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
-     */
     private val COMMENT = NIP10Thread.COMMENT_KIND
 
+    /** The whole thread around [focusedId]. See NostrServiceFetching.kt threadQuery. */
     fun fetchThread(
         rootId: String,
         focusedId: String,
@@ -975,57 +968,14 @@ class NostrService @Inject constructor(
         rootCoordinate: String? = null,
         onRawEvent: ((String, String) -> Unit)? = null,
         onResult: (List<FeedNote>) -> Unit,
-    ) {
-        fun jsonArr(values: List<String>) =
-            values.distinct().joinToString(",") { "\"$it\"" }
-        // #e by root + focused note + all ancestors so legacy replies that only
-        // tag their direct parent (not the thread root) are still fetched.
-        val eIds = (listOf(rootId, focusedId) + ancestorIds).distinct()
-        // NIP-22 comments (1111) tag their direct parent in lowercase e too.
-        val eFilter = """{"kinds":[1,$COMMENT],"#e":[${jsonArr(eIds)}],"limit":200}"""
-        // NIP-22 comments name the thread root in uppercase E, so one filter
-        // reaches them at any depth (iOS NoteDetailView commentsFilter).
-        val commentsFilter = """{"kinds":[$COMMENT],"#E":[${jsonArr(listOf(rootId))}],"limit":150}"""
-        // Root note itself + ancestors are not replies, so fetch by id. An
-        // ancestor of a comment is usually itself a comment.
-        val idValues = (listOf(rootId) + ancestorIds).distinct()
-        val idFilter = """{"kinds":[1,$COMMENT],"ids":[${jsonArr(idValues)}]}"""
-        // Comments on an addressable or replaceable root name it by A; an
-        // edited article has a new event id, so #E alone misses them.
-        val filters = mutableListOf(eFilter, commentsFilter, idFilter)
-        if (rootCoordinate != null) {
-            filters.add("""{"kinds":[$COMMENT],"#A":[${jsonArr(listOf(rootCoordinate))}],"limit":150}""")
-        }
-        queryDetailRelays(filters, onRawEvent, onEose = onResult)
-    }
+    ) = threadQuery(rootId, focusedId, ancestorIds, rootCoordinate, onRawEvent, onResult)
+
+    /** Quotes, highlights and voice replies. See NostrServiceFetching.kt otherResponsesQuery. */
+    fun fetchOtherResponses(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) =
+        otherResponsesQuery(rootId, rootCoordinate, onResult)
 
     /**
-     * Responses to [rootId] that aren't thread rows (spec "below the fold"):
-     * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
-     * The caller decides which of these are quotes rather than replies.
-     *
-     * [rootCoordinate] is the root's address when it is addressable: an
-     * article's highlights name it by its `a` coordinate, not by this
-     * version's id, so `#e` alone never finds them (iOS #189).
-     */
-    fun fetchOtherResponses(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) {
-        val filters = mutableListOf(
-            """{"#q":["$rootId"],"limit":50}""",
-            """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
-        )
-        if (rootCoordinate != null) {
-            filters.add("""{"kinds":[9802,1244],"#a":[${JsonPrimitive(rootCoordinate)}],"limit":50}""")
-        }
-        queryDetailRelays(
-            filters,
-            onRawEvent = null,
-            onEose = onResult,
-            acceptKinds = null,
-        )
-    }
-
-    /**
-     * Fetch a single kind-1 note by id from the detail relay set. Used as a
+     * Fetch a single note of any kind by id from the detail relay set. Used as a
      * network fallback when the note-detail view is opened for a note that
      * is not in the in-memory feed cache (mirrors iOS NoteDetailViewWrapper).
      * [onResult] is invoked exactly once: with the note as soon as any relay
@@ -1037,7 +987,9 @@ class NostrService @Inject constructor(
         onResult: (FeedNote?) -> Unit,
     ) {
         val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
-        queryDetailRelays(listOf("""{"kinds":[1,$COMMENT,${NIP88Poll.KIND}],"ids":["$id"]}"""), onRawEvent) { notes ->
+        // No kinds: pictures, videos, highlights and articles open by id too.
+        // Only the asked-for id is kept, so nothing else can slip in.
+        queryDetailRelays(listOf("""{"ids":["$id"]}"""), onRawEvent, acceptKinds = null) { notes ->
             val match = notes.firstOrNull { it.id == id }
             if (match != null && delivered.compareAndSet(false, true)) onResult(match)
         }

@@ -133,12 +133,17 @@ object FeedFilterEngine {
                     // firehose to exactly the people who never chose it.
                     // "Everyone" (opted into behind a warning) skips the graph.
                     if (globalRequiresTrust && note.pubkey !in wotPubkeys) return@filter false
+                    // Global is top-level posts only, whatever the Replies
+                    // switch says (iOS filterFeedNotes).
+                    if (note.isReply) return@filter false
                     // Narrowed to chosen languages: notes whose language can't
                     // be told (short, links only) stay. See FeedLanguageDetector.
                     if (globalLanguages.isEmpty()) return@filter true
                     FeedLanguageDetector.admits(languageOf(note), globalLanguages)
                 }
                 FeedMode.POPULAR -> {
+                    // Ranked posts, never replies (iOS filterFeedNotes).
+                    if (note.isReply) return@filter false
                     when (popularFilter) {
                         PopularFilter.ALL -> true
                         PopularFilter.FOLLOWS -> authorForMembership in followedPubkeys
