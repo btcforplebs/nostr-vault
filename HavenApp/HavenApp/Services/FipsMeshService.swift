@@ -2,6 +2,7 @@
 import Foundation
 import UIKit
 import Security
+import UserNotifications
 
 /// The FIPS mesh on iPhone: libnvfips (nvfips.h), the same engine as Android.
 ///
@@ -34,6 +35,14 @@ final class FipsMeshService: ObservableObject {
     @Published private(set) var starting = false
     @Published private(set) var status: Status?
     @Published private(set) var lastError: String?
+    /// The mesh used up the serve limit; kiosk mode stays on and shares
+    /// again at this time (KioskCapPause).
+    @Published private(set) var pausedUntil: Date?
+    /// A share-again call is in flight.
+    private var resuming = false
+    /// The relay port kiosk mode shares, kept from the start so a share-again
+    /// call reuses the port that was checked and working.
+    private var kioskPort: UInt16?
 
     private var pollTimer: Timer?
     private var resignObserver: NSObjectProtocol?
@@ -50,17 +59,57 @@ final class FipsMeshService: ObservableObject {
 
     private init() {}
 
+    /// Kiosk mode was on when the app last left the screen. Leaving the app
+    /// stops it (iOS would suspend the mesh), and coming back starts it again.
+    private static let kioskWantedKey = "fipsMesh.kioskWanted"
+    private static let pausedNoteID = "fipsmesh-kiosk-paused"
+    private var activeObserver: NSObjectProtocol?
+
+    /// Called once at launch: turns kiosk mode back on each time the app comes
+    /// on screen, if it was on when the app left.
+    func resumeWhenActive() {
+        guard activeObserver == nil else { return }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resumeIfWanted() }
+        }
+    }
+
+    private func resumeIfWanted() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.pausedNoteID])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.pausedNoteID])
+        guard UserDefaults.standard.bool(forKey: Self.kioskWantedKey), !kioskActive, !starting else { return }
+        print("FipsMesh: app back on screen, turning kiosk mode on again")
+        startKiosk()
+    }
+
+    /// Kiosk mode stopped because the app left the screen: a tap on this
+    /// opens the app, which turns it on again.
+    private func notifyPaused() {
+        let content = UNMutableNotificationContent()
+        content.title = "Kiosk mode paused"
+        content.body = "Your vault stopped sharing on the mesh when Nostr Vault left the screen. Tap to share again."
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: Self.pausedNoteID, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { print("FipsMesh: kiosk paused notification failed: \(error)") }
+        }
+    }
+
     /// This phone's mesh npub, remembered from the last time the engine ran,
     /// so a 10063 published while it is off can drop this phone's old entry.
     var ownMeshNpub: String? { status?.npub ?? UserDefaults.standard.string(forKey: Self.ownNpubKey) }
     private static let ownNpubKey = "fipsMesh.ownNpub"
 
-    /// What one kiosk session may send to the mesh before sharing stops.
+    /// What one kiosk session may send to the mesh before sharing pauses.
+    /// 0 is no limit, the default: a kiosk is meant for home Wi-Fi.
     static let serveLimitKey = "fipsMeshServeLimitBytes"
-    static let serveLimitChoices: [Int64] = [250 << 20, 1 << 30, 5 << 30]
+    static let serveLimitChoices: [Int64] = [0, 250 << 20, 1 << 30, 5 << 30]
     static var serveLimit: Int64 {
         let v = Int64(UserDefaults.standard.integer(forKey: serveLimitKey))
-        return serveLimitChoices.contains(v) ? v : 1 << 30
+        return serveLimitChoices.contains(v) ? v : 0
     }
 
     /// The 10063 entry for this phone's vault while kiosk mode is on.
@@ -85,6 +134,7 @@ final class FipsMeshService: ObservableObject {
         lastError = nil
         // The relay's mesh port: plain HTTP, blob reads only.
         let port = ConfigService.shared.config.meshPlainPort
+        kioskPort = UInt16(exactly: port)
         let limit = Self.serveLimit
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
@@ -94,7 +144,10 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    func stopKiosk() {
+    /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
+    /// Otherwise the owner turned it off.
+    func stopKiosk(leavingApp: Bool = false) {
+        if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
@@ -103,6 +156,8 @@ final class FipsMeshService: ObservableObject {
         }
         guard kioskActive else { return }
         kioskActive = false
+        pausedUntil = nil
+        resuming = false
         UIApplication.shared.isIdleTimerDisabled = false
         pollTimer?.invalidate()
         pollTimer = nil
@@ -111,6 +166,7 @@ final class FipsMeshService: ObservableObject {
         stopEngine()
         status = nil
         publishServerListInBackgroundTask()
+        if leavingApp { notifyPaused() }
     }
 
     private func stopEngine() {
@@ -156,6 +212,7 @@ final class FipsMeshService: ObservableObject {
                 return
             }
             kioskActive = true
+            UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
             // print reaches relay.log (stdout), the file pulled off a device.
             print("FipsMesh: kiosk live, serve limit \(Self.serveLimit) bytes")
@@ -164,7 +221,7 @@ final class FipsMeshService: ObservableObject {
             resignObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.stopKiosk() }
+                MainActor.assumeIsolated { self?.stopKiosk(leavingApp: true) }
             }
             pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
@@ -242,12 +299,52 @@ final class FipsMeshService: ObservableObject {
         defer { NvFipsFreeString(raw) }
         status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
         if let npub = status?.npub { UserDefaults.standard.set(npub, forKey: Self.ownNpubKey) }
-        // The engine already stopped sharing; end kiosk so the mesh entry is withdrawn too.
-        if kioskActive, status?.cap_reached == true {
+        guard kioskActive else { return }
+        // At the limit the engine stops serving by itself. Kiosk mode stays on
+        // and shares again after the cool-down: turning it off would let anyone
+        // who uses up the limit keep the kiosk off until the owner came back.
+        switch KioskCapPause.step(capReached: status?.cap_reached == true, pausedUntil: pausedUntil, resuming: resuming, now: Date()) {
+        case .none:
+            break
+        case .pause(let until):
             let limit = ByteCountFormatter.string(fromByteCount: Int64(status?.max_serve_bytes ?? 0), countStyle: .file)
-            print("FipsMesh: kiosk off, serve limit \(limit) reached")
-            stopKiosk()
-            lastError = "Kiosk mode turned off: the mesh downloaded \(limit) from this phone, your limit for one session. Turn it on again to share more."
+            print("FipsMesh: kiosk paused, serve limit \(limit) reached")
+            pausedUntil = until
+        case .resume:
+            resumeSharing()
+        }
+    }
+
+    /// Starts a new sharing session on the running engine: a new count, so
+    /// the full limit applies again.
+    private func resumeSharing() {
+        let gen = startGen
+        // startAndShare refused a port that does not fit, so kiosk mode is not live without one.
+        guard let port = kioskPort else { return }
+        resuming = true
+        let previous = engineOp
+        let op = Task.detached(priority: .userInitiated) { () -> Int32 in
+            await previous?.value
+            return NvFipsExport(port)
+        }
+        engineOp = Task { _ = await op.value }
+        Task { @MainActor in
+            let rc = await op.value
+            // Kiosk mode was turned off (or on again) while this ran.
+            guard resuming, gen == startGen, kioskActive else { return }
+            resuming = false
+            if rc == 0 {
+                print("FipsMesh: kiosk sharing again after the cool-down")
+                pausedUntil = nil
+                lastError = nil
+                refresh()
+            } else {
+                // Kiosk mode stays on and tries again after another cool-down:
+                // turning it off here would let a stranger keep it off again.
+                print("FipsMesh: share again failed (\(rc)), trying again after the cool-down")
+                pausedUntil = Date().addingTimeInterval(KioskCapPause.coolDown)
+                lastError = "Could not start sharing again (\(rc)). Trying again in a few minutes."
+            }
         }
     }
 
@@ -266,7 +363,7 @@ final class FipsMeshService: ObservableObject {
         }
         // No start-time peers: anyone can reach this vault, and reading
         // another vault adds its npub on demand.
-        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(limit)}")
+        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(KioskCapPause.engineServeLimit(limit))}")
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         // The relay's mesh port listens only while sharing.
         SetMeshServingC(1)
