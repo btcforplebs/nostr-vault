@@ -30,11 +30,11 @@ extension ProfileFeedLoader {
     /// entirely.
     func stop() {
         disconnectClients()
-        isLoadingNotes = false
+        if isLoadingNotes { isLoadingNotes = false }
         openingPending.removeAll()
-        isLoadingOlderNotes = false
+        if isLoadingOlderNotes { isLoadingOlderNotes = false }
         olderPageSubId = nil
-        isLoadingOlderTaggedNotes = false
+        if isLoadingOlderTaggedNotes { isLoadingOlderTaggedNotes = false }
         olderTaggedSubId = nil
     }
 
@@ -78,8 +78,8 @@ extension ProfileFeedLoader {
                 let count = await Task.detached(priority: .userInitiated) {
                     FollowerSnapshot.load(owner: target)?.current.count
                 }.value
-                guard let count else { return }
-                self?.ownLedgerCount = count
+                guard let count, let self, self.ownLedgerCount != count else { return }
+                self.ownLedgerCount = count
             }
         }
 
@@ -94,14 +94,15 @@ extension ProfileFeedLoader {
         let filter: [String: Any] = ["kinds": [3], "#p": [target]]
 
         Task { [weak self] in
-            guard let count = await NostrService.shared.fetchVertexFollowerCount(target: target) else { return }
-            self?.vertexFollowerCount = count
+            guard let count = await NostrService.shared.fetchVertexFollowerCount(target: target),
+                  let self, self.vertexFollowerCount != count else { return }
+            self.vertexFollowerCount = count
         }
         for url in urls {
             Task { [weak self] in
                 guard let count = await NostrService.shared.fetchCount(from: [url], filter: filter) else { return }
-                guard let self else { return }
-                self.relayFollowerCount = max(self.relayFollowerCount ?? 0, count)
+                guard let self, count > (self.relayFollowerCount ?? -1) else { return }
+                self.relayFollowerCount = count
             }
         }
     }
@@ -165,6 +166,8 @@ extension ProfileFeedLoader {
             profileClients.append(client)
 
             client.messageSubject
+                .receive(on: parseQueue)
+                .compactMap(ProfileRelayMessage.init)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] message in
                     self?.handleProfileNoteMessage(message, relay: relay)
@@ -209,15 +212,9 @@ extension ProfileFeedLoader {
         }
     }
 
-    private func handleProfileNoteMessage(_ message: String, relay: Int) {
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json.first as? String else { return }
-
-        if type == "EVENT", json.count >= 3,
-           let eventDict = json[2] as? [String: Any],
-           let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
-           let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
+    private func handleProfileNoteMessage(_ message: ProfileRelayMessage, relay: Int) {
+        switch message {
+        case .event(let event):
 
             // Handle kind 0 (profile metadata) from the target user
             if event.kind == 0, event.pubkey == pubkey {
@@ -241,19 +238,23 @@ extension ProfileFeedLoader {
                     // This user's own contact list → extract following count and followsMe.
                     // followsMe is true if they follow ANY of our accounts (owner or
                     // whitelisted) so the badge is consistent across account switches.
+                    // Every relay sends its own copy of the same list; only a
+                    // change is published.
                     var seenTags = Set<String>()
                     let list = pTags.map { $0[1] }.filter { $0 != pubkey && seenTags.insert($0).inserted }
-                    followingList = list
-                    followingCount = pTags.filter { $0[1] != pubkey }.count
+                    if followingList != list { followingList = list }
+                    let count = pTags.filter { $0[1] != pubkey }.count
+                    if followingCount != count { followingCount = count }
                     let ourHexKeys: Set<String> = Set(ConfigService.shared.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString })
                     if !ourHexKeys.isEmpty {
-                        followsMe = pTags.contains { ourHexKeys.contains($0[1]) }
+                        let follows = pTags.contains { ourHexKeys.contains($0[1]) }
+                        if followsMe != follows { followsMe = follows }
                     }
                 } else {
-                    // Someone else's contact list containing this pubkey → they follow this user
-                    followerPubkeys.insert(event.pubkey)
-                    followersCount = followerPubkeys.count
-                    followerSeenAt[event.pubkey] = max(followerSeenAt[event.pubkey] ?? 0, event.created_at)
+                    // Someone else's contact list containing this pubkey → they
+                    // follow this user. Published with the next flush.
+                    pendingFollowers[event.pubkey] = max(pendingFollowers[event.pubkey] ?? 0, event.created_at)
+                    scheduleFlush()
                 }
                 return
             }
@@ -316,12 +317,7 @@ extension ProfileFeedLoader {
             if nostrService.profiles[pubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [pubkey])
             }
-        } else if type == "EOSE" || type == "CLOSED" {
-            // CLOSED counts the same as EOSE: the relay is saying it will send
-            // nothing more under this subscription. A refusal (sub cap, rate limit)
-            // reads identically to an exhausted history from here, and ignoring it
-            // left the page hanging on a relay that was never going to answer.
-            let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
+        case .done(let subId):
             // Page bookkeeping counts the lists, so they must be complete.
             flushPendingNotes()
             if subId.hasPrefix("followers-page-") {
@@ -347,6 +343,33 @@ extension ProfileFeedLoader {
                 // how new posts reach the profile while it is on screen.
                 openingRelayAnswered(relay)
             }
+        }
+    }
+}
+
+/// A relay message the profile acts on, parsed off the main thread.
+enum ProfileRelayMessage {
+    case event(NostrEvent)
+    /// EOSE or CLOSED. CLOSED counts the same as EOSE: the relay is saying it
+    /// will send nothing more under this subscription. A refusal (sub cap,
+    /// rate limit) reads identically to an exhausted history from here, and
+    /// ignoring it left the page hanging on a relay that was never going to
+    /// answer.
+    case done(subId: String)
+
+    init?(_ message: String) {
+        guard let data = message.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let type = json.first as? String else { return nil }
+        if type == "EVENT", json.count >= 3,
+           let eventDict = json[2] as? [String: Any],
+           let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
+           let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
+            self = .event(event)
+        } else if type == "EOSE" || type == "CLOSED" {
+            self = .done(subId: (json.count >= 2 ? json[1] as? String : nil) ?? "")
+        } else {
+            return nil
         }
     }
 }

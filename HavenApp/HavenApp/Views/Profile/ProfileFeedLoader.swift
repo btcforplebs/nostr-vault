@@ -36,8 +36,10 @@ final class ProfileFeedLoader: ObservableObject {
 
     @Published var selectedSection: ProfileSection = .notes
 
-    @Published private(set) var profileNotes: [FeedNote] = []
-    @Published private(set) var taggedNotes: [FeedNote] = []
+    // Not published: views read `buckets`, which every change to these
+    // rebuilds, so publishing them too only sent extra change notices.
+    private(set) var profileNotes: [FeedNote] = []
+    private(set) var taggedNotes: [FeedNote] = []
     /// The lists the tabs and counts read, worked out once per change to the
     /// notes rather than many times on every redraw.
     @Published private(set) var buckets = ProfileNoteBuckets()
@@ -101,6 +103,14 @@ final class ProfileFeedLoader: ObservableObject {
     var profileClients: [WebSocketClient] = []
     var profileCancellables = Set<AnyCancellable>()
     var seenNoteIds = Set<String>()
+    /// Followers received but not yet published, follower → newest
+    /// created_at. Published with the notes in one flush: a page brings up
+    /// to 100 lists per relay, and publishing each one redrew the whole
+    /// page hundreds of times while it scrolled.
+    var pendingFollowers: [String: Int64] = [:]
+    /// Relay messages are parsed here, off the main thread, in arrival
+    /// order (serial, so a relay's EOSE never overtakes its events).
+    let parseQueue = DispatchQueue(label: "ProfileFeedLoader.parse", qos: .userInitiated)
 
     // Paging bookkeeping. A "page" is one round of `older-` REQs sent to every
     // connected relay under a single subscription id; it completes when they have
@@ -177,6 +187,7 @@ final class ProfileFeedLoader: ObservableObject {
     /// decide something (paging, end of loading) flushes first.
     func flushPendingNotes() {
         pending.scheduled = false
+        flushPendingFollowers()
         guard !pending.notes.isEmpty || !pending.tagged.isEmpty else { return }
         if !pending.notes.isEmpty {
             profileNotes.append(contentsOf: pending.notes)
@@ -189,6 +200,18 @@ final class ProfileFeedLoader: ObservableObject {
             pending.tagged.removeAll()
         }
         rebucket()
+    }
+
+    private func flushPendingFollowers() {
+        guard !pendingFollowers.isEmpty else { return }
+        var seenAt = followerSeenAt
+        for (follower, at) in pendingFollowers {
+            followerPubkeys.insert(follower)
+            seenAt[follower] = max(seenAt[follower] ?? 0, at)
+        }
+        pendingFollowers.removeAll()
+        if seenAt != followerSeenAt { followerSeenAt = seenAt }
+        if followersCount != followerPubkeys.count { followersCount = followerPubkeys.count }
     }
 
     // MARK: - Tabs
