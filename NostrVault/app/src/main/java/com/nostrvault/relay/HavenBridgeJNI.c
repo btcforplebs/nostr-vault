@@ -99,6 +99,8 @@ extern char* WotRefreshProgressC(void);
 extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
+extern char* GetLogLinesC(void);
+extern int ActiveConnectionsC(void);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -523,4 +525,14 @@ Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getNotifyLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetNotifyLogC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getLogLines(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, GetLogLinesC());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_activeConnections(JNIEnv *env, jobject thiz) {
+    return (jint) ActiveConnectionsC();
 }

@@ -94,6 +94,11 @@ class RelayForegroundService : Service() {
         private val _isPortConflict = MutableStateFlow(false)
         val isPortConflict: StateFlow<Boolean> = _isPortConflict.asStateFlow()
 
+        /** The relay's open websocket connections, polled by [LogStore]. */
+        fun updateConnections(count: Int) {
+            _connections.value = count.coerceAtLeast(0)
+        }
+
         fun updateErrorStates(locked: Boolean, portConflict: Boolean) {
             _isLocked.value = locked
             _isPortConflict.value = portConflict
@@ -468,6 +473,7 @@ class RelayForegroundService : Service() {
         // Release resources only after the Go side has stopped (or timed out)
         releaseWakeLock()
         serviceScope.cancel()
+        _connections.value = 0 // the poller that kept it current died with the scope
         serviceAlive = false
         super.onDestroy()
     }

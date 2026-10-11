@@ -16,7 +16,14 @@ import com.nostrvault.ui.theme.*
 private val DatabaseColor = Color(0xFF5E5CE6) // indigo
 private val BlossomColor = Color(0xFF30D158)   // green
 private val CacheColor = Color(0xFFFF9F0A)     // orange
-private val ThumbnailColor = Color(0xFF64D2FF) // cyan
+
+/** One row of the sheet; the media cache row includes thumbnails, as on iOS. */
+private data class StorageBucket(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val color: Color,
+    val size: Long,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,7 +36,11 @@ fun StorageBreakdownSheet(
     val cacheSize by statsService.cacheSize.collectAsState()
     val thumbnailSize by statsService.thumbnailSize.collectAsState()
 
-    val totalSize = storageSize + blossomSize + cacheSize + thumbnailSize
+    // The relay data folder already holds the Blossom folder, so adding the
+    // two counted media twice. Same split as the dashboard's storage bar.
+    // iOS StorageBreakdownView.
+    val split = VaultDashboardModel.storageSplit(storageSize, blossomSize, cacheSize, thumbnailSize)
+    val totalSize = split.total
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -73,37 +84,17 @@ fun StorageBreakdownSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    StorageRow(
-                        label = "Database",
-                        icon = NostrVaultIcons.Storage,
-                        color = DatabaseColor,
-                        size = storageSize,
-                        total = totalSize,
-                    )
-                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                    StorageRow(
-                        label = "Blossom Media",
-                        icon = NostrVaultIcons.Blossom,
-                        color = BlossomColor,
-                        size = blossomSize,
-                        total = totalSize,
-                    )
-                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                    StorageRow(
-                        label = "Media Cache",
-                        icon = NostrVaultIcons.Media,
-                        color = CacheColor,
-                        size = cacheSize,
-                        total = totalSize,
-                    )
-                    HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                    StorageRow(
-                        label = "Thumbnails",
-                        icon = NostrVaultIcons.GridLayout,
-                        color = ThumbnailColor,
-                        size = thumbnailSize,
-                        total = totalSize,
-                    )
+                    val rows = listOf(
+                        StorageBucket("Database", NostrVaultIcons.Storage, DatabaseColor, split.notes),
+                        StorageBucket("Blossom Media", NostrVaultIcons.Blossom, BlossomColor, split.media),
+                        StorageBucket("Media Cache", NostrVaultIcons.Media, CacheColor, split.cache),
+                    ).filter { it.size > 0 }
+                    rows.forEachIndexed { i, row ->
+                        if (i > 0) {
+                            HorizontalDivider(color = TertiaryText.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                        }
+                        StorageRow(label = row.label, icon = row.icon, color = row.color, size = row.size, total = totalSize)
+                    }
                 }
             }
         }

@@ -104,7 +104,11 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 outputDir.mkdirs()
                 val outputFile = java.io.File(outputDir, "haven_backup_${System.currentTimeMillis()}.zip")
 
-                val result = withContext(Dispatchers.IO) {
+                // The Go backup opens the databases itself, so the relay has to
+                // be down. iOS runBackupExport.
+                val result = relayImportService.withRelayStopped(
+                    onStatus = { setExportStatus(it) },
+                ) {
                     com.nostrvault.relay.HavenBridge.backupDatabase(outputFile.absolutePath)
                 }
 
@@ -153,11 +157,12 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 outputDir.mkdirs()
                 val outputFile = java.io.File(outputDir, "haven_media_${System.currentTimeMillis()}.zip")
 
-                val result = withContext(Dispatchers.IO) {
-                    com.nostrvault.relay.HavenBridge.zipDirectory(blossomDir, outputFile.absolutePath)
+                // iOS file naming, so the backup restores on either platform.
+                withContext(Dispatchers.IO) {
+                    com.nostrvault.relay.BlossomArchive.export(java.io.File(blossomDir), outputFile)
                 }
 
-                if (result == 0 && outputFile.exists()) {
+                if (outputFile.exists()) {
                     vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP)
                     val uri = androidx.core.content.FileProvider.getUriForFile(
                         context,

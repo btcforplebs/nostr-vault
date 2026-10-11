@@ -348,6 +348,17 @@ object HavenBridge {
      */
     external fun getNotifyLog(): String?
 
+    /**
+     * Drain every relay log line queued since the last call, oldest first,
+     * joined by newlines; null when there are none. Unlike [getImportLog] this
+     * drops nothing (up to the Go side's 1000-line cap), so [LogStore] uses it
+     * for the console log.
+     */
+    external fun getLogLines(): String?
+
+    /** Open websocket connections across all the relays. */
+    external fun activeConnections(): Int
+
     // -----------------------------------------------------------------------
     // Bech32 encoding/decoding (pure Kotlin — no JNI needed)
     // -----------------------------------------------------------------------

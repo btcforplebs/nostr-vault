@@ -64,6 +64,26 @@ func pushNotify(msg string) {
 	notifyQueue = append(notifyQueue, msg)
 }
 
+// Full relay log for the host's console viewer: a bounded FIFO of every
+// line except notify markers, drained in one call by GetLogLinesC. The import
+// log above keeps only the latest line, which suits progress polling but drops
+// most of what a log viewer needs. (iOS reads stdout instead.)
+const logQueueMax = 1000
+
+var (
+	logQueueMu sync.Mutex
+	logQueue   []string
+)
+
+func pushLogLine(msg string) {
+	logQueueMu.Lock()
+	defer logQueueMu.Unlock()
+	if len(logQueue) >= logQueueMax {
+		logQueue = logQueue[1:] // drop oldest to bound memory
+	}
+	logQueue = append(logQueue, msg)
+}
+
 // importLogWriter intercepts log.Println output and stores the latest message
 // so the host app (Android/iOS) can poll for progress updates.
 type importLogWriter struct {
@@ -80,6 +100,7 @@ func (w *importLogWriter) Write(p []byte) (n int, err error) {
 			pushNotify(msg)
 		} else {
 			importLogLatest.Store(msg)
+			pushLogLine(msg)
 		}
 	}
 	return w.original.Write(p)
@@ -110,6 +131,28 @@ func GetNotifyLogC() *C.char {
 	msg := notifyQueue[0]
 	notifyQueue = notifyQueue[1:]
 	return C.CString(msg)
+}
+
+// GetLogLinesC drains every queued log line, oldest first, joined by "\n",
+// or returns NULL when nothing has been logged since the last call.
+//
+//export GetLogLinesC
+func GetLogLinesC() *C.char {
+	logQueueMu.Lock()
+	lines := logQueue
+	logQueue = nil
+	logQueueMu.Unlock()
+	if len(lines) == 0 {
+		return nil
+	}
+	return C.CString(strings.Join(lines, "\n"))
+}
+
+// ActiveConnectionsC returns the number of open websocket connections.
+//
+//export ActiveConnectionsC
+func ActiveConnectionsC() C.int {
+	return C.int(activeConnectionCount())
 }
 
 // NIP-46 remote signer state (independent of relay lifecycle).
@@ -252,6 +295,8 @@ func StartRelayC(importMode bool) {
 		if err := initRelays(cycle.ctx); err != nil {
 			return fmt.Errorf("error initializing databases/relays: %w", err)
 		}
+		// Fresh relays each cycle: forget the last cycle's connections.
+		trackConnections(privateRelay, chatRelay, outboxRelay, inboxRelay, feedRelay)
 		log.Println("✅ Databases ready")
 
 		log.Println("⏳ Starting background services [3/3]")

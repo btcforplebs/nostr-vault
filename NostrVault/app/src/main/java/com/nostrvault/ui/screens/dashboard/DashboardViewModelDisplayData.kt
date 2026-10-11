@@ -26,6 +26,19 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         }
     }
 
+    /**
+     * Likes gets the same bounded settle: an empty list stops showing
+     * "Loading likes…" after 5 s even if a relay never answers.
+     * iOS updateLikesSettleState.
+     */
+    internal fun DashboardViewModel.armLikesSettle() {
+        likesSettleJob?.cancel()
+        likesSettleJob = viewModelScope.launch {
+            delay(5000)
+            _likesHasLoadedOnce.value = true
+        }
+    }
+
     internal fun DashboardViewModel.scheduleUpdateDisplayData() {
         updateJob?.cancel()
         updateGeneration++
@@ -134,6 +147,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                         }
                     }
                 }.sortedByDescending { it.createdAt }
+                    .let { VaultRepostDedupe.apply(it, owner, whitelist) }
 
                 Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
                 notesFilteredCount = filtered.size
@@ -144,9 +158,31 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 val cap = if (_noteScope.value.pagesByButton) Int.MAX_VALUE else maxDisplayedItems
 
                 // Convert to FeedNote for display
+                // Reposts and your own notes skip the spam filter: iOS filters
+                // neither, and a bare repost has no text of its own to judge.
+                // A bare repost shows its original when the vault has it.
+                val loadedById = noteEvents.associateBy { it.id }
                 val displaySlice = filtered.take(cap).map { event ->
-                    FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
-                }.filter { !it.isNoiseOrSpam() }
+                    val note = FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
+                    val original = note.repostedEventId?.takeIf { note.isBareRepost }
+                        ?.let { loadedById[it] }?.takeIf { it.kind != 6 }
+                        ?.let { FeedNote.fromEvent(it.id, it.pubkey, it.content, it.tags, it.createdAt, it.kind) }
+                    when {
+                        original != null -> note.withRepostedOriginal(original)
+                        // Credited, like the feed does, to the author its `p` tag names.
+                        note.isBareRepost -> note.copy(
+                            pubkey = note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: note.pubkey,
+                            repostedBy = note.pubkey,
+                        )
+                        else -> note
+                    }
+                }.filter { it.kind == 6 || it.publisher == owner || !it.isNoiseOrSpam() }
+                // Reposts are headed by the reposter but show the original's author.
+                displaySlice.filter { it.repostedBy != null }
+                    .flatMap { listOf(it.pubkey, it.repostedBy!!) }
+                    .distinct()
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { nostrService.fetchMissingProfiles(it) }
 
                 val droppedBySpamFilter = (filtered.size.coerceAtMost(cap)) - displaySlice.size
                 if (droppedBySpamFilter > 0) {
@@ -384,3 +420,26 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
     }
 
     // ── External relay fetching (port of iOS VaultNetworking) ────
+
+/**
+ * A repost is a second card for a post. When the original is listed with its
+ * engagement bar (your note or a whitelisted one), the repost is already
+ * counted there, so its card goes; several reposts of a note that isn't
+ * listed collapse to the newest. [events] must be newest first.
+ * iOS updateDisplayData (VaultDataProcessing.swift).
+ */
+internal object VaultRepostDedupe {
+    fun apply(events: List<NostrEvent>, owner: String, whitelist: Set<String>): List<NostrEvent> {
+        val listedWithEngagement = events.asSequence()
+            .filter { it.kind != 6 && (it.pubkey == owner || it.pubkey in whitelist) }
+            .map { it.id }
+            .toHashSet()
+        val shownTargets = HashSet<String>()
+        return events.filter { event ->
+            if (event.kind != 6) return@filter true
+            val target = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                ?: return@filter true
+            target !in listedWithEngagement && shownTargets.add(target)
+        }
+    }
+}
