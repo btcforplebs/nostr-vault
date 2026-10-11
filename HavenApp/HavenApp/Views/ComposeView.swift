@@ -219,6 +219,9 @@ struct ComposeView: View {
                                     .frame(minHeight: 200)
                                     .scrollContentBackground(.hidden)
                                     .accessibilityLabel("Post content")
+                                    #if os(iOS)
+                                    .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)"))
+                                    #endif
                                     .onChange(of: content) { oldValue, newValue in
                                         updateMentionQuery(old: oldValue, new: newValue)
                                         scheduleAutoSave(newValue)
@@ -369,48 +372,49 @@ struct ComposeView: View {
 
     // MARK: - @mention popup
 
+    /// One-line strip of people, docked on the footer like the keyboard's own
+    /// suggestion bar. The old five-row card stood ~260pt tall between the text
+    /// and the footer; with the keyboard up on iPhone that squeezed the editor
+    /// to a sliver and hid the line being typed. One row keeps the caret, and
+    /// the `@name` being written, in view.
     private var mentionPopup: some View {
-        VStack(spacing: 0) {
-            ForEach(mentionResults.prefix(5)) { profile in
-                Button {
-                    insertMention(profile)
-                } label: {
-                    HStack(spacing: 10) {
-                        AvatarView(url: profile.pictureURL, pubkey: profile.pubkey, size: 36)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.bestName)
-                                .font(.appSystem(size: 14, weight: .semibold))
-                                .foregroundColor(.primary)
-                            if let nip05 = profile.nip05, !nip05.isEmpty {
-                                Text(nip05)
-                                    .font(.appSystem(size: 12))
-                                    .foregroundColor(.secondary)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(mentionResults.prefix(8)) { profile in
+                    Button {
+                        insertMention(profile)
+                    } label: {
+                        HStack(spacing: 8) {
+                            AvatarView(url: profile.pictureURL, pubkey: profile.pubkey, size: 30)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(profile.bestName)
+                                    .font(.appSystem(size: 14, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                if let nip05 = profile.nip05, !nip05.isEmpty {
+                                    Text(nip05)
+                                        .font(.appSystem(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                            .lineLimit(1)
+                            .frame(maxWidth: 160, alignment: .leading)
                         }
-                        Spacer()
+                        .padding(.leading, 4)
+                        .padding(.trailing, 12)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.havenPurple.opacity(0.1)))
+                        .contentShape(Capsule())
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if profile.id != mentionResults.prefix(5).last?.id {
-                    Divider().padding(.horizontal, 14)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mention \(profile.bestName)")
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.platformControlBackground)
-                .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.havenPurple.opacity(0.2), lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .background(Color.platformSecondaryGroupedBackground)
+        .overlay(alignment: .top) { Divider() }
+        .transition(.opacity)
         .animation(Motion.panel, value: mentionResults.count)
     }
 
@@ -2419,3 +2423,63 @@ private struct BlossomPickerGridItem: View {
             .contentShape(Rectangle())
     }
 }
+
+#if os(iOS)
+/// Keeps the caret on screen while typing. The editor grows with its text
+/// inside the compose ScrollView, so the text view never scrolls itself and
+/// UIKit doesn't scroll the SwiftUI ScrollView around it: once a note ran
+/// past the keyboard (or the @mention strip appeared), the line being typed
+/// slid out of sight. On every edit this scrolls the enclosing scroll view
+/// just enough to show the caret.
+private struct CaretFollower: UIViewRepresentable {
+    /// Changes whenever the caret may have moved or the visible area changed.
+    let trigger: String
+
+    final class Coordinator {
+        weak var textView: UITextView?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        _ = trigger
+        // After SwiftUI has laid out the editor's new height.
+        DispatchQueue.main.async {
+            if context.coordinator.textView?.window == nil, let window = view.window {
+                context.coordinator.textView = Self.focusedTextView(in: window)
+            }
+            guard let textView = context.coordinator.textView,
+                  textView.isFirstResponder,
+                  let caret = textView.selectedTextRange?.end,
+                  let scrollView = Self.enclosingScrollView(of: textView) else { return }
+            scrollView.layoutIfNeeded()
+            let rect = textView.convert(textView.caretRect(for: caret), to: scrollView)
+            scrollView.scrollRectToVisible(rect.insetBy(dx: 0, dy: -12), animated: false)
+        }
+    }
+
+    private static func focusedTextView(in view: UIView) -> UITextView? {
+        if let textView = view as? UITextView, textView.isFirstResponder { return textView }
+        for sub in view.subviews {
+            if let found = focusedTextView(in: sub) { return found }
+        }
+        return nil
+    }
+
+    /// The first scroll view above the text view (a UITextView is itself one).
+    private static func enclosingScrollView(of view: UIView) -> UIScrollView? {
+        var current = view.superview
+        while let v = current {
+            if let scroll = v as? UIScrollView { return scroll }
+            current = v.superview
+        }
+        return nil
+    }
+}
+#endif
