@@ -322,7 +322,7 @@ struct MenuBarView: View {
                                     .environmentObject(StatsService.shared)
                                     .transition(.opacity)
                             case .profile:
-                                ProfileView(pubkey: activeHex)
+                                MyProfileView(pubkey: activeHex)
                                     .id(activeHex)
                                     .environmentObject(nostrService)
                                     .environmentObject(configService)
@@ -495,7 +495,7 @@ struct MenuBarView: View {
                                     .environmentObject(StatsService.shared)
                                     .transition(.opacity)
                             case .profile:
-                                ProfileView(pubkey: activeHex)
+                                MyProfileView(pubkey: activeHex)
                                     .id(activeHex)
                                     .environmentObject(nostrService)
                                     .environmentObject(configService)
@@ -921,6 +921,10 @@ struct MenuBarView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
                 .frame(minWidth: 480, minHeight: 500)
+        }
+        // Your own profile, opened from a note or a list: the tab, where editing is.
+        .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
+            selectedTab = .profile
         }
         // Notification taps: LocalNotificationService posts these on both platforms,
         // but until now only iOS listened, so clicking a zap, reaction or repost

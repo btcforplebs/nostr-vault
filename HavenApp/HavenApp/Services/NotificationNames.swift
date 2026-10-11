@@ -18,6 +18,10 @@ extension Notification.Name {
     static let havenOpenRelayZaps = Notification.Name("com.haven.openRelayZaps")
     /// Posted to navigate to wallet.
     static let havenOpenWallet = Notification.Name("OpenWallet")
+    /// The Profile tab was tapped while showing: back to the top, fetched fresh.
+    static let havenProfileScrollToTop = Notification.Name("ProfileScrollToTop")
+    /// Switch to the Profile tab (your own profile, opened from elsewhere).
+    static let havenShowMyProfileTab = Notification.Name("com.haven.showMyProfileTab")
     /// Posted when the user taps a reaction notification — opens relay page likes section.
     static let havenOpenRelayLikes = Notification.Name("com.haven.openRelayLikes")
     /// Posted when the user taps a new-follower notification — switches the
