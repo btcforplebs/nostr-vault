@@ -260,7 +260,7 @@ final class ProfileFeedLoader: ObservableObject {
     /// More may be older AND there is a note to page back from. A profile
     /// with nothing at all has no anchor, so it has nothing to look back for.
     func canPageOlder(for section: ProfileSection) -> Bool {
-        guard hasMore(for: section) else { return false }
+        guard hasMore(for: section), !profileClients.isEmpty else { return false }
         return section == .tagged ? !taggedNotes.isEmpty : !profileNotes.isEmpty
     }
 
@@ -271,6 +271,23 @@ final class ProfileFeedLoader: ObservableObject {
     /// Asks for the page before the oldest note of the tab's own stream.
     func loadOlder(for section: ProfileSection) {
         if section == .tagged { loadOlderTaggedNotes() } else { loadOlderProfileNotes() }
+    }
+
+    /// Automatic pages already spent on each empty tab. Capped so a tab that
+    /// is empty for good (someone who never reposts) cannot walk the whole
+    /// archive on its own; past the cap the tab offers "Look further back".
+    private var emptyTabPages: [ProfileSection: Int] = [:]
+
+    /// An empty tab is on screen with nothing in flight: page back for it,
+    /// up to 8 pages. Called again each time a page finishes, so a tab
+    /// chosen while another tab's page was loading still gets its turn.
+    func autoPageEmptyTab(_ section: ProfileSection) {
+        guard notes(for: section).isEmpty, canPageOlder(for: section),
+              !isLoadingOlder(for: section) else { return }
+        let spent = emptyTabPages[section, default: 0]
+        guard spent < 8 else { return }
+        emptyTabPages[section] = spent + 1
+        loadOlder(for: section)
     }
 
     // MARK: - Follow counts
@@ -365,8 +382,9 @@ final class ProfileFeedLoader: ObservableObject {
     /// Asks each relay for its own follower COUNT and keeps the largest.
     /// Relays hold different subsets of contact lists, so adding their
     /// counts together would double-count; the largest single answer is
-    /// the closest to the real number. Your own profile reads the ledger
-    /// instead and asks nobody.
+    /// the closest to the real number. Your own profile shows the ledger
+    /// when it has one; the relays' numbers stand in while your relay is
+    /// stopped or still opening it.
     private func fetchFollowerCount() {
         let target = pubkey
         if usesOwnLedger {
@@ -377,7 +395,6 @@ final class ProfileFeedLoader: ObservableObject {
                 guard let count else { return }
                 self?.ownLedgerCount = count
             }
-            return
         }
 
         var urls: [URL] = []
@@ -451,13 +468,10 @@ final class ProfileFeedLoader: ObservableObject {
             "#p": [pubkey],
             "limit": 50
         ]
-        var filters: [Any] = [notesFilter, profileFilter, contactFilter]
-        // Your own followers come from the ledger; asking the relays for a
-        // sample of them too only cost a hundred events nobody reads.
-        if !usesOwnLedger {
-            filters.append(["kinds": [3], "#p": [pubkey], "limit": 100] as [String: Any])
-        }
-        filters.append(taggedFilter)
+        // Followers: a sample, for anyone else's list, and for your own when
+        // your relay's ledger is not open.
+        let followersFilter: [String: Any] = ["kinds": [3], "#p": [pubkey], "limit": 100]
+        let filters: [Any] = [notesFilter, profileFilter, contactFilter, followersFilter, taggedFilter]
 
         openingPending = Set(relayURLs.indices)
         for (relay, url) in relayURLs.enumerated() {

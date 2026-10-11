@@ -887,10 +887,11 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        // Once the opening load is in, page back for this tab by itself.
-        .task(id: "\(section.rawValue)-\(opening)") {
-            guard !opening, olderLeft else { return }
-            loader.loadOlder(for: section)
+        // Once the opening load is in, page back for this tab by itself, and
+        // again whenever a page finishes (it may have been another tab's).
+        .task(id: "\(section.rawValue)-\(opening)-\(pagingNow)") {
+            guard !opening, !pagingNow else { return }
+            loader.autoPageEmptyTab(section)
         }
     }
 

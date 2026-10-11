@@ -142,7 +142,12 @@ struct PersonProfileView: View {
         HStack(spacing: 8) {
             if isYou {
                 // Nothing to follow, message or zap. Editing is on the tab.
-                ProfileActions.pill("Open My Profile", icon: "person.crop.circle") { openMyProfile() }
+                // Not from inside a pushed list (Following / Followers): that
+                // page is a cover this one cannot close, so the tab would
+                // switch out of sight underneath it.
+                if !embeddedInNavigation {
+                    ProfileActions.pill("Open My Profile", icon: "person.crop.circle") { openMyProfile() }
+                }
                 ProfileActions.trustWeb(hint: "Shows your web of trust") { showingTrustWeb = true }
             } else {
                 ProfileActions.pill(isFollowing ? "Unfollow" : "Follow",

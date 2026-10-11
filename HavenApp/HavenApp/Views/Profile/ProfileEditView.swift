@@ -159,8 +159,9 @@ struct ProfileEditView: View {
                 onDiscard?()
                 performDismiss()
             }
-            .foregroundColor(hasChanges ? .red : .secondary)
-            .disabled(!hasChanges)
+            .foregroundColor(hasChanges && uploading == nil ? .red : .secondary)
+            // Closing mid-upload would save without the new picture.
+            .disabled(!hasChanges || uploading != nil)
 
             Spacer()
 
@@ -178,8 +179,9 @@ struct ProfileEditView: View {
             Button(action: performDismiss) {
                 Text("Done")
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(uploading == nil ? .havenPurple : .secondary)
             }
+            .disabled(uploading != nil)
         }
         .padding(.horizontal, 16)
         .padding(.top, 18)

@@ -41,6 +41,9 @@ struct MyProfileView: View {
     @State private var showingTrustWeb = false
     @State private var showingSell = false
     @State private var scrollToTopToken = 0
+    /// Bumped by every save. A refusal only undoes the save it belongs to:
+    /// one that arrives after a newer save would put back an older profile.
+    @State private var saveGeneration = 0
 
     init(pubkey: String) {
         self.pubkey = pubkey
@@ -280,8 +283,12 @@ struct MyProfileView: View {
         .environmentObject(configService)
         .presentationDragIndicator(.visible)
         #else
-        ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, onSave: applyProfileUpdate,
-                        onRefused: { shownBefore, edited in profileRefused(shownBefore: shownBefore, edited: edited) })
+        let generation = saveGeneration + 1
+        ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, draft: unsavedDraft,
+                        onSave: { saveGeneration = generation; applyProfileUpdate($0) },
+                        onRefused: { shownBefore, edited in
+                            profileRefused(generation: generation, shownBefore: shownBefore, edited: edited)
+                        })
         .environmentObject(nostrService)
         .environmentObject(configService)
         #endif
@@ -296,7 +303,8 @@ struct MyProfileView: View {
 
     /// No relay took the new profile: the page goes back to what it showed
     /// and the next edit opens with what was typed.
-    private func profileRefused(shownBefore: FeedProfile?, edited: [String: String]) {
+    private func profileRefused(generation: Int, shownBefore: FeedProfile?, edited: [String: String]) {
+        guard generation == saveGeneration else { return }
         nostrService.profiles[pubkey] = shownBefore
         unsavedDraft = edited
         ErrorNotificationManager.shared.show("Profile not saved: no relay accepted it. Edit Profile still has your changes.")
@@ -308,16 +316,19 @@ struct MyProfileView: View {
     /// next edit.
     private func autosaveProfile(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) {
         let shownBefore = nostrService.profiles[pubkey]
+        saveGeneration += 1
+        let generation = saveGeneration
         unsavedDraft = nil
         applyProfileUpdate(ProfileEditView.preview(existing, initial: initial, edited: edited))
         Task {
             let result = await ProfileEditView.publish(
                 nostrService: nostrService, existing: existing, initial: initial, edited: edited,
-                onRefused: { profileRefused(shownBefore: shownBefore, edited: edited) })
+                onRefused: { profileRefused(generation: generation, shownBefore: shownBefore, edited: edited) })
             switch result {
             case .success(let updated):
                 applyProfileUpdate(updated)
             case .failure:
+                guard generation == saveGeneration else { return }
                 nostrService.profiles[pubkey] = shownBefore
                 unsavedDraft = edited
                 ErrorNotificationManager.shared.show("Profile not saved. Pull down to try again.")

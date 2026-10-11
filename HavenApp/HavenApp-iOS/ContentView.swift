@@ -471,6 +471,10 @@ struct iPadSidebarView: View {
                     }
                 }
                 .id(activeHex)
+                // A note pushed on the tab would cover the profile.
+                .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
+                    profilePath = NavigationPath()
+                }
                 .modifier(MiniPlayerInset())
             case 3:
                 WOTTabView()
@@ -660,6 +664,10 @@ struct iPhoneTabView: View {
                 }
             }
             .id(activeHex)
+            // A note pushed on the tab would cover the profile.
+            .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
+                profilePath = NavigationPath()
+            }
             .toolbar(.hidden, for: .tabBar)
             .tag(2)
 
