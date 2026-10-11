@@ -413,13 +413,18 @@ enum TrustMap {
     static let layerFaceCount = 100
 
     /// The people past your follows a layer shows as faces, most vouched
-    /// first (`layerPeople`'s order). Everyone and Following show your
-    /// follows' faces instead.
+    /// first. Everyone and Following show your follows' faces instead.
+    /// Ties don't go in key order as in `layerPeople`: a key's leading digits
+    /// are its longitude, so taking the first few hundred of thousands tied
+    /// at the same count would put every face on one side of the globe.
     static func layerFaceCandidates(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
                                     vouches: [String: Int]? = nil,
                                     count: Int = layerFaceCandidateCount) -> [String] {
         guard layer == .close || layer == .furtherOut else { return [] }
-        return Array(layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web.prefix(count))
+        let people = layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web
+        let ranked = people.map { (vouches: vouches?[$0] ?? 0, rank: fraction($0, from: 16), key: $0) }
+            .sorted { ($1.vouches, $0.rank, $0.key) < ($0.vouches, $1.rank, $1.key) }
+        return Array(ranked.prefix(count).map(\.key))
     }
 
     /// People in each layer, never counting you. `web` is the relay's whole
