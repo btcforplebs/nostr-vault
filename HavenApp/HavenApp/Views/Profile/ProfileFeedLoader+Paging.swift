@@ -7,6 +7,7 @@ extension ProfileFeedLoader {
     /// Asks every relay for the next 100 lists naming this profile, older
     /// than the oldest already seen.
     func loadMoreFollowers() {
+        flushPendingNotes()
         guard followerPageSubId == nil, !followersExhausted, !profileClients.isEmpty,
               let oldest = followerSeenAt.values.min() else { return }
         followerPageToken &+= 1
@@ -28,6 +29,7 @@ extension ProfileFeedLoader {
 
     func finishFollowerPage(token: Int) {
         guard token == followerPageToken, let subId = followerPageSubId else { return }
+        flushPendingNotes()
         closeProfileSubscription(subId)
         followerPageSubId = nil
         if followerSeenAt.count > followerPageCountBefore {
@@ -110,9 +112,12 @@ extension ProfileFeedLoader {
         // The scroll sentinel only fires again when the VISIBLE list grows. A page
         // that was entirely replies adds nothing to the Notes tab, so paging would
         // stop with history still left. Carry on ourselves — bounded, so one flick
-        // of the scroll cannot walk the whole archive.
+        // of the scroll cannot walk the whole archive. An empty tab is left to
+        // `autoPageEmptyTab` and its own cap: chaining here too re-armed that
+        // cap after every run, so an empty tab paged about 70 times, not 8.
         guard hasMoreNotes,
               !visibleGrew,
+              !currentSectionNotes.isEmpty,
               olderPageSection == selectedSection,
               autoPagedInARow < 8 else {
             autoPagedInARow = 0
@@ -192,8 +197,10 @@ extension ProfileFeedLoader {
             if quietOlderTaggedPages >= 2 { hasMoreTaggedNotes = false }
         }
 
+        // An empty Tagged tab is left to `autoPageEmptyTab`, as above.
         guard hasMoreTaggedNotes,
               !visibleGrew,
+              !buckets.tagged.isEmpty,
               selectedSection == .tagged,
               autoPagedTaggedInARow < 8 else {
             autoPagedTaggedInARow = 0
