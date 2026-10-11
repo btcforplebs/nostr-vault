@@ -49,7 +49,7 @@ import javax.inject.Inject
  *  comments, highlights and NIP-88 polls. Comments and highlights that tag you
  *  were never requested, so they never showed up there. iOS:
  *  NostrService.relayTabNoteKinds. */
-private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802, NIP88Poll.KIND)
+internal val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802, NIP88Poll.KIND)
 
 /**
  * True when the Notes list holds back loaded notes behind its display cap, so
@@ -71,49 +71,47 @@ class DashboardViewModel @Inject constructor(
     val statsService: StatsService,
     val configStore: ConfigStore,
     val nostrService: NostrService,
-    private val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
-    private val blossomService: com.nostrvault.service.BlossomService,
-    private val feedService: com.nostrvault.service.FeedService,
-    private val nwcService: NWCService,
-    private val zapHistoryService: ZapHistoryService,
+    internal val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
+    internal val blossomService: com.nostrvault.service.BlossomService,
+    internal val feedService: com.nostrvault.service.FeedService,
+    internal val nwcService: NWCService,
+    internal val zapHistoryService: ZapHistoryService,
     /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
-    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
+    internal val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
     /** The list on show, kept across Android killing the app; see [restoreSavedMode]. */
-    private val savedState: androidx.lifecycle.SavedStateHandle,
+    internal val savedState: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
 
     /** The shared Blossom mirror run behind "Import Blossom" (iOS MirrorService). */
     val blossomMirrorRun = blossomService.mirrorRun
 
-    fun importBlossom() { blossomService.runMirror() }
-
     companion object {
-        private const val TAG = "DashboardVM"
+        internal const val TAG = "DashboardVM"
         private const val MAX_LOCAL_NOTES = 500
         private const val LOAD_TIMEOUT_MS = 15_000L
-        private const val LOAD_MORE_TIMEOUT_MS = 8_000L
+        internal const val LOAD_MORE_TIMEOUT_MS = 8_000L
         // High bound so the relay tab scrolls back through (effectively) full history.
-        private const val MAX_ALL_EVENTS = 10_000
+        internal const val MAX_ALL_EVENTS = 10_000
         /** iOS establishNotificationBaseline's 3 s after the relay is up. */
-        private const val DOT_BASELINE_DELAY_MS = 3_000L
-        private const val ALL_EVENTS_TRIM_SLACK = 200
-        private const val MAX_SEEN_IDS = 10_000
-        private const val MAX_ZAP_RECEIPT_CACHE = 500
+        internal const val DOT_BASELINE_DELAY_MS = 3_000L
+        internal const val ALL_EVENTS_TRIM_SLACK = 200
+        internal const val MAX_SEEN_IDS = 10_000
+        internal const val MAX_ZAP_RECEIPT_CACHE = 500
         /** Zaps > Given reads the wallet's 200 most recent payments. */
-        private const val WALLET_GIVEN_PAGES = 4
-        private const val WALLET_GIVEN_PAGE_SIZE = 50
+        internal const val WALLET_GIVEN_PAGES = 4
+        internal const val WALLET_GIVEN_PAGE_SIZE = 50
         private const val SNAPSHOT_MAX_EVENTS = 500
-        private const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
-        private const val SNAPSHOT_FILE = "vault_snapshot.json"
+        internal const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
+        internal const val SNAPSHOT_FILE = "vault_snapshot.json"
         private const val FOLLOWERS_POLL_MS = 60_000L
-        private const val SAVED_VIEW_MODE = "vault.viewMode"
-        private const val SAVED_NOTE_SCOPE = "vault.noteScope"
-        private const val SAVED_RECIPES = "vault.recipesOnly"
+        internal const val SAVED_VIEW_MODE = "vault.viewMode"
+        internal const val SAVED_NOTE_SCOPE = "vault.noteScope"
+        internal const val SAVED_RECIPES = "vault.recipesOnly"
         /** One Articles / Highlights "Load older" page, per query. */
-        private const val OLDER_PAGE_SIZE = 50
+        internal const val OLDER_PAGE_SIZE = 50
     }
 
-    private val json = Json { ignoreUnknownKeys = true }
+    internal val json = Json { ignoreUnknownKeys = true }
 
     // ── Stats state ──────────────────────────────────────────────
 
@@ -140,111 +138,98 @@ class DashboardViewModel @Inject constructor(
 
     // ── Import/Export state ──────────────────────────────────────
 
-    private val _isImporting = MutableStateFlow(false)
+    internal val _isImporting = MutableStateFlow(false)
     val isImporting = _isImporting.asStateFlow()
 
-    private val _importProgress = MutableStateFlow(0f)
+    internal val _importProgress = MutableStateFlow(0f)
     val importProgress = _importProgress.asStateFlow()
 
-    private val _importStatusMessage = MutableStateFlow("")
+    internal val _importStatusMessage = MutableStateFlow("")
     val importStatusMessage = _importStatusMessage.asStateFlow()
 
-    private val _importCompleted = MutableStateFlow(false)
+    internal val _importCompleted = MutableStateFlow(false)
     val importCompleted = _importCompleted.asStateFlow()
 
-    private val _isExportingJsonl = MutableStateFlow(false)
+    internal val _isExportingJsonl = MutableStateFlow(false)
     val isExportingJsonl = _isExportingJsonl.asStateFlow()
 
-    private val _isExportingMedia = MutableStateFlow(false)
+    internal val _isExportingMedia = MutableStateFlow(false)
     val isExportingMedia = _isExportingMedia.asStateFlow()
 
     private val _exportUri = MutableStateFlow<android.net.Uri?>(null)
     val exportUri = _exportUri.asStateFlow()
 
     /** The last export's outcome in words, for the Vault Dashboard (iOS VaultExporter.statusMessage). */
-    private val _exportStatus = MutableStateFlow("")
+    internal val _exportStatus = MutableStateFlow("")
     val exportStatus = _exportStatus.asStateFlow()
 
-    private val _exportStatusIsError = MutableStateFlow(false)
+    internal val _exportStatusIsError = MutableStateFlow(false)
     val exportStatusIsError = _exportStatusIsError.asStateFlow()
-    private var exportStatusClear: Job? = null
-
-    private fun setExportStatus(message: String, isError: Boolean = false, clearLater: Boolean = false) {
-        exportStatusClear?.cancel()
-        _exportStatus.value = message
-        _exportStatusIsError.value = isError
-        if (clearLater) {
-            exportStatusClear = viewModelScope.launch {
-                delay(3_000)
-                _exportStatus.value = ""
-                _exportStatusIsError.value = false
-            }
-        }
-    }
+    internal var exportStatusClear: Job? = null
 
     // ── EOSE tracking per relay ──────────────────────────────────
-    private val relayEoseReceived = ConcurrentHashMap<String, Boolean>()
-    private val activeRelayUrls = mutableSetOf<String>()
+    internal val relayEoseReceived = ConcurrentHashMap<String, Boolean>()
+    internal val activeRelayUrls = mutableSetOf<String>()
 
     // ── View mode & filters ──────────────────────────────────────
 
-    private val _viewMode = MutableStateFlow(VaultViewMode.NOTES)
+    internal val _viewMode = MutableStateFlow(VaultViewMode.NOTES)
     val viewMode: StateFlow<VaultViewMode> = _viewMode.asStateFlow()
 
-    private val _contentFilter = MutableStateFlow(VaultContentFilter.ALL)
+    internal val _contentFilter = MutableStateFlow(VaultContentFilter.ALL)
     val contentFilter: StateFlow<VaultContentFilter> = _contentFilter.asStateFlow()
 
-    private val _likesFilter = MutableStateFlow(VaultLikesFilter.ON_MY_NOTES)
+    internal val _likesFilter = MutableStateFlow(VaultLikesFilter.ON_MY_NOTES)
     val likesFilter: StateFlow<VaultLikesFilter> = _likesFilter.asStateFlow()
 
-    private val _zapsFilter = MutableStateFlow(VaultZapsFilter.ON_MY_NOTES)
+    internal val _zapsFilter = MutableStateFlow(VaultZapsFilter.ON_MY_NOTES)
     val zapsFilter: StateFlow<VaultZapsFilter> = _zapsFilter.asStateFlow()
 
-    private val _followersFilter = MutableStateFlow(VaultFollowersFilter.NEW)
+    internal val _followersFilter = MutableStateFlow(VaultFollowersFilter.NEW)
     val followersFilter: StateFlow<VaultFollowersFilter> = _followersFilter.asStateFlow()
 
     /** Notes, Articles or Highlights. Only the Vault tab's mode menu changes it. */
-    private val _noteScope = MutableStateFlow(VaultNoteScope.NOTES)
+    internal val _noteScope = MutableStateFlow(VaultNoteScope.NOTES)
     val noteScope: StateFlow<VaultNoteScope> = _noteScope.asStateFlow()
 
     /** Articles only: just the recipes. */
-    private val _recipesOnly = MutableStateFlow(false)
+    internal val _recipesOnly = MutableStateFlow(false)
     val recipesOnly: StateFlow<Boolean> = _recipesOnly.asStateFlow()
 
     // ── Articles / Highlights "Load older" ───────────────────────
 
-    private val _isLoadingOlder = MutableStateFlow(false)
+    internal val _isLoadingOlder = MutableStateFlow(false)
     val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder.asStateFlow()
 
     /** Scopes whose last older page came back empty: nothing older to load. */
-    private val _noOlderPages = MutableStateFlow<Set<VaultNoteScope>>(emptySet())
+    internal val _noOlderPages = MutableStateFlow<Set<VaultNoteScope>>(emptySet())
     val noOlderPages: StateFlow<Set<VaultNoteScope>> = _noOlderPages.asStateFlow()
 
     /** Per scope: the outbox (your posts) and inbox (tagging you) cursors. */
-    private val olderCursors = ConcurrentHashMap<VaultNoteScope, Pair<VaultPageCursor, VaultPageCursor>>()
+    internal val olderCursors = ConcurrentHashMap<VaultNoteScope, Pair<VaultPageCursor, VaultPageCursor>>()
     /** Bumped on account switch, so a page still loading for the previous account is dropped. */
-    @Volatile private var olderGeneration = 0
+    @Volatile internal var olderGeneration = 0
 
     // ── Followers (relay follower ledger, iOS #136) ──────────────
 
     /** Null while the relay is stopped or the ledger hasn't opened yet. */
-    private val _followerSnapshot = MutableStateFlow<FollowerSnapshot?>(null)
+    internal val _followerSnapshot = MutableStateFlow<FollowerSnapshot?>(null)
     val followerSnapshot: StateFlow<FollowerSnapshot?> = _followerSnapshot.asStateFlow()
 
     /** Red dot on the Followers mode button: follows since the owner last looked. */
-    private val _hasNewFollowers = MutableStateFlow(false)
+    internal val _hasNewFollowers = MutableStateFlow(false)
     val hasNewFollowers: StateFlow<Boolean> = _hasNewFollowers.asStateFlow()
 
     /** Notes, Likes and Zaps lists with something new since you last looked (iOS hasNewNotes/Likes/Zaps). */
-    private val _newActivity = MutableStateFlow<Set<VaultViewMode>>(emptySet())
+    internal val _newActivity = MutableStateFlow<Set<VaultViewMode>>(emptySet())
 
     /**
      * When each dotted list was last looked at, as the newest created_at it
      * held then. Empty until the first load settles: before that everything
      * would read as new.
      */
-    private val dotSeenAt = ConcurrentHashMap<VaultViewMode, Long>()
-    private var dotBaselineJob: Job? = null
+    internal val dotSeenAt = ConcurrentHashMap<VaultViewMode, Long>()
+    internal var dotBaselineJob: Job? = null
     /** The list in sight at the last check, so leaving it marks it seen too. */
     private var lastWatched: VaultViewMode? = null
 
@@ -255,60 +240,60 @@ class DashboardViewModel @Inject constructor(
 
     // ── Display data ─────────────────────────────────────────────
 
-    private val _displayNotes = MutableStateFlow<List<FeedNote>>(emptyList())
+    internal val _displayNotes = MutableStateFlow<List<FeedNote>>(emptyList())
     val displayNotes: StateFlow<List<FeedNote>> = _displayNotes.asStateFlow()
 
-    private val _displayLikedNotes = MutableStateFlow<List<FeedNote>>(emptyList())
+    internal val _displayLikedNotes = MutableStateFlow<List<FeedNote>>(emptyList())
     val displayLikedNotes: StateFlow<List<FeedNote>> = _displayLikedNotes.asStateFlow()
 
-    private val _displayZappedNotes = MutableStateFlow<List<FeedNote>>(emptyList())
+    internal val _displayZappedNotes = MutableStateFlow<List<FeedNote>>(emptyList())
     val displayZappedNotes: StateFlow<List<FeedNote>> = _displayZappedNotes.asStateFlow()
 
     /** noteId -> list of (pubkey, emoji) */
-    private val _reactionMap = MutableStateFlow<Map<String, List<Pair<String, String>>>>(emptyMap())
+    internal val _reactionMap = MutableStateFlow<Map<String, List<Pair<String, String>>>>(emptyMap())
     val reactionMap: StateFlow<Map<String, List<Pair<String, String>>>> = _reactionMap.asStateFlow()
 
     /** noteId -> list of (pubkey, amountSats) */
-    private val _zapMap = MutableStateFlow<Map<String, List<Pair<String, Long>>>>(emptyMap())
+    internal val _zapMap = MutableStateFlow<Map<String, List<Pair<String, Long>>>>(emptyMap())
     val zapMap: StateFlow<Map<String, List<Pair<String, Long>>>> = _zapMap.asStateFlow()
 
     /** noteId -> created_at of the most recent reaction on it */
-    private val _latestReactionDates = MutableStateFlow<Map<String, Long>>(emptyMap())
+    internal val _latestReactionDates = MutableStateFlow<Map<String, Long>>(emptyMap())
     val latestReactionDates: StateFlow<Map<String, Long>> = _latestReactionDates.asStateFlow()
 
     /** noteId -> list of reposter pubkeys (kind 6 e-tagging the note) */
-    private val _repostMap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    internal val _repostMap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val repostMap: StateFlow<Map<String, List<String>>> = _repostMap.asStateFlow()
 
     /** noteId -> list of quoter pubkeys (kind 1 q-tagging the note) */
-    private val _quoteMap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    internal val _quoteMap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val quoteMap: StateFlow<Map<String, List<String>>> = _quoteMap.asStateFlow()
 
     // ── Connection / loading ─────────────────────────────────────
 
-    private val _isRefreshing = MutableStateFlow(false)
+    internal val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    private val _isLoadingMore = MutableStateFlow(false)
+    internal val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
 
-    private val _connectionStatus = MutableStateFlow("Connecting...")
+    internal val _connectionStatus = MutableStateFlow("Connecting...")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
-    private val _connectionColor = MutableStateFlow("yellow")
+    internal val _connectionColor = MutableStateFlow("yellow")
     val connectionColor: StateFlow<String> = _connectionColor.asStateFlow()
 
     /** Bumped each time a rebuilt list lands, so a filter note can count it. */
-    private val _displayPass = MutableStateFlow(0)
+    internal val _displayPass = MutableStateFlow(0)
     val displayPass: StateFlow<Int> = _displayPass.asStateFlow()
 
-    private val _notesHasLoadedOnce = MutableStateFlow(false)
+    internal val _notesHasLoadedOnce = MutableStateFlow(false)
     val notesHasLoadedOnce: StateFlow<Boolean> = _notesHasLoadedOnce.asStateFlow()
 
-    private val _likesHasLoadedOnce = MutableStateFlow(false)
+    internal val _likesHasLoadedOnce = MutableStateFlow(false)
     val likesHasLoadedOnce: StateFlow<Boolean> = _likesHasLoadedOnce.asStateFlow()
 
-    private val _zapsHasLoadedOnce = MutableStateFlow(false)
+    internal val _zapsHasLoadedOnce = MutableStateFlow(false)
     val zapsHasLoadedOnce: StateFlow<Boolean> = _zapsHasLoadedOnce.asStateFlow()
 
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
@@ -316,70 +301,62 @@ class DashboardViewModel @Inject constructor(
     // ── Internal state ───────────────────────────────────────────
 
     /** All raw events from the local relay (all kinds including 7, 9735). */
-    private val allEvents = mutableListOf<NostrEvent>()
-    private val allEventsMutex = Mutex()
-    private val seenIds = ConcurrentHashMap.newKeySet<String>()
+    internal val allEvents = mutableListOf<NostrEvent>()
+    internal val allEventsMutex = Mutex()
+    internal val seenIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Newest created_at seen — lets resume re-subscribes fetch only the gap. */
     @Volatile
-    private var newestEventCreatedAt = 0L
+    internal var newestEventCreatedAt = 0L
 
     // Persistent local relay connections (outbox + inbox)
-    private var outboxClient: WebSocketClient? = null
-    private var inboxClient: WebSocketClient? = null
+    internal var outboxClient: WebSocketClient? = null
+    internal var inboxClient: WebSocketClient? = null
     // Mac relay connections (outbox + inbox) — the source-of-truth relay shared
     // with the iOS/macOS apps. iOS queries macRelayURL + macRelayURL/inbox in
     // VaultNetworking.performRefresh; mirror that here so all devices converge on
     // the same data instead of each showing its own independently-built inbox.
-    private var macOutboxClient: WebSocketClient? = null
-    private var macInboxClient: WebSocketClient? = null
-    private var clientJobs = mutableListOf<Job>()
-    private var isFullReload = false
+    internal var macOutboxClient: WebSocketClient? = null
+    internal var macInboxClient: WebSocketClient? = null
+    internal var clientJobs = mutableListOf<Job>()
+    internal var isFullReload = false
 
-    private val zapReceiptCache = ConcurrentHashMap<String, ParsedZapReceipt>()
-    private val requestedMissingIds = ConcurrentHashMap.newKeySet<String>()
-    private val requestedMissingZapNoteIds = ConcurrentHashMap.newKeySet<String>()
-    private var hasFetchedZapReceipts = false
+    internal val zapReceiptCache = ConcurrentHashMap<String, ParsedZapReceipt>()
+    internal val requestedMissingIds = ConcurrentHashMap.newKeySet<String>()
+    internal val requestedMissingZapNoteIds = ConcurrentHashMap.newKeySet<String>()
+    internal var hasFetchedZapReceipts = false
 
     /**
      * Zaps > Given from the wallet's payment history (NWC): the posts it paid,
      * newest payment first, with the sats and when. Most zap receipts never
      * tag the sender, so relays alone left Given empty (iOS #294).
      */
-    private data class WalletGiven(
+    internal data class WalletGiven(
         val notes: List<FeedNote> = emptyList(),
         val amounts: Map<String, Long> = emptyMap(),
         val times: Map<String, Long> = emptyMap(),
     )
-    @Volatile private var walletGiven = WalletGiven()
+    @Volatile internal var walletGiven = WalletGiven()
     /** Account + wallet the history was read for; null until it was. */
-    @Volatile private var walletGivenKey: String? = null
+    @Volatile internal var walletGivenKey: String? = null
     /** Bumped on account switch, so a read still running for the previous account is dropped. */
-    @Volatile private var walletGivenGen = 0
-    private val _walletGivenLoading = MutableStateFlow(false)
+    @Volatile internal var walletGivenGen = 0
+    internal val _walletGivenLoading = MutableStateFlow(false)
     val walletGivenLoading: StateFlow<Boolean> = _walletGivenLoading.asStateFlow()
 
-    private var updateJob: Job? = null
-    private var updateGeneration = 0
-    private var maxDisplayedItems = 50
+    internal var updateJob: Job? = null
+    internal var updateGeneration = 0
+    internal var maxDisplayedItems = 50
 
     /** How many rows a list shows before "load more"; a count this big is a cap. */
     val pageSize: Int get() = maxDisplayedItems
     /** Notes that passed the Notes filter on the last rebuild, before the cap. */
-    @Volatile private var notesFilteredCount = 0
+    @Volatile internal var notesFilteredCount = 0
 
     // Bounded settle for the Zaps view: guarantees the spinner gives up within
     // ~6s and shows the empty state instead of "loading zaps" forever when the
     // owner simply has no zaps yet. Armed on entering Zaps / changing its filter.
-    private var zapsSettleJob: Job? = null
-    private fun armZapsSettle() {
-        zapsSettleJob?.cancel()
-        zapsSettleJob = viewModelScope.launch {
-            delay(6000)
-            _zapsHasLoadedOnce.value = true
-        }
-    }
-
+    internal var zapsSettleJob: Job? = null
     init {
         restoreSavedMode()
         loadStats()
@@ -613,583 +590,10 @@ class DashboardViewModel @Inject constructor(
 
     // ── Import / Export ─────────────────────────────────────────
 
-    fun importNotes(context: android.content.Context) {
-        if (_isImporting.value) return
-        if (configStore.config.value.useExternalRelay) {
-            _importStatusMessage.value = com.nostrvault.service.EXTERNAL_RELAY_IMPORT_MESSAGE
-            return
-        }
-        _isImporting.value = true
-        _importProgress.value = 0f
-        _importStatusMessage.value = "Preparing import..."
-        _importCompleted.value = false
-
-        viewModelScope.launch {
-            try {
-                // Stop relay first
-                RelayForegroundService.stop(context)
-                delay(2000)
-
-                // Start in import mode
-                withContext(Dispatchers.IO) {
-                    val config = configStore.config.value
-                    val relayDataDir = java.io.File(context.filesDir, "relay_data")
-                    val envDict = com.nostrvault.relay.RelayConfiguration.generateEnvDictionary(
-                        config = config,
-                        relayDataDir = relayDataDir,
-                    )
-                    for ((key, value) in envDict) {
-                        com.nostrvault.relay.HavenBridge.setEnv(key, value)
-                    }
-                    com.nostrvault.relay.HavenBridge.startRelay(importMode = true)
-                }
-
-                // Poll for progress
-                val batch = com.nostrvault.relay.RelayLogParser.BatchedStateUpdate()
-                while (!batch.importCompleted && !batch.stopImporting) {
-                    val logLine = withContext(Dispatchers.IO) {
-                        com.nostrvault.relay.HavenBridge.getImportLog()
-                    }
-                    if (!logLine.isNullOrBlank()) {
-                        batch.importProgress = null
-                        batch.importStatusMessage = null
-                        com.nostrvault.relay.RelayLogParser.collectStateChanges(logLine, batch)
-                        batch.importProgress?.let { _importProgress.value = it.toFloat() }
-                        batch.importStatusMessage?.let { _importStatusMessage.value = it }
-                    }
-                    delay(200)
-                }
-
-                _importProgress.value = 1f
-                _importStatusMessage.value = "Import Complete!"
-                _importCompleted.value = true
-                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_IMPORT)
-            } catch (e: Exception) {
-                _importStatusMessage.value = "Import failed: ${e.message}"
-                _importCompleted.value = true
-            } finally {
-                _isImporting.value = false
-                // Restart relay normally
-                RelayForegroundService.start(context)
-            }
-        }
-    }
-
-    fun exportJsonl(context: android.content.Context) {
-        if (_isExportingJsonl.value || _isExportingMedia.value) return
-        _isExportingJsonl.value = true
-        setExportStatus("Preparing notes backup…")
-
-        viewModelScope.launch {
-            try {
-                val outputDir = java.io.File(context.cacheDir, "exports")
-                outputDir.mkdirs()
-                val outputFile = java.io.File(outputDir, "haven_backup_${System.currentTimeMillis()}.zip")
-
-                val result = withContext(Dispatchers.IO) {
-                    com.nostrvault.relay.HavenBridge.backupDatabase(outputFile.absolutePath)
-                }
-
-                if (result == 0 && outputFile.exists()) {
-                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_BACKUP)
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        outputFile,
-                    )
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "application/zip"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "Export Database"))
-                    setExportStatus("Ready to share", clearLater = true)
-                } else {
-                    setExportStatus("Notes backup failed", isError = true, clearLater = true)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "JSONL export failed: ${e.message}")
-                setExportStatus("Notes backup failed", isError = true, clearLater = true)
-            } finally {
-                _isExportingJsonl.value = false
-            }
-        }
-    }
-
-    fun exportMedia(context: android.content.Context) {
-        if (_isExportingMedia.value || _isExportingJsonl.value) return
-        _isExportingMedia.value = true
-        setExportStatus("Preparing media backup…")
-
-        viewModelScope.launch {
-            try {
-                val config = configStore.config.value
-                val blossomDir = config.relayDataDir?.let { "$it/${config.blossomPath}" }
-                if (blossomDir == null) {
-                    _isExportingMedia.value = false
-                    setExportStatus("Media backup failed", isError = true, clearLater = true)
-                    return@launch
-                }
-
-                val outputDir = java.io.File(context.cacheDir, "exports")
-                outputDir.mkdirs()
-                val outputFile = java.io.File(outputDir, "haven_media_${System.currentTimeMillis()}.zip")
-
-                val result = withContext(Dispatchers.IO) {
-                    com.nostrvault.relay.HavenBridge.zipDirectory(blossomDir, outputFile.absolutePath)
-                }
-
-                if (result == 0 && outputFile.exists()) {
-                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP)
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        outputFile,
-                    )
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "application/zip"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "Export Media"))
-                    setExportStatus("Ready to share", clearLater = true)
-                } else {
-                    setExportStatus("Media backup failed", isError = true, clearLater = true)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Media export failed: ${e.message}")
-                setExportStatus("Media backup failed", isError = true, clearLater = true)
-            } finally {
-                _isExportingMedia.value = false
-            }
-        }
-    }
-
-    fun dismissImport() {
-        _importCompleted.value = false
-        _importProgress.value = 0f
-        _importStatusMessage.value = ""
-    }
-
-    // ── Local relay notes ────────────────────────────────────────
-
-    // ── Local relay notes (persistent connections) ──────────────
-
-    /**
-     * Thin wrapper for pull-to-refresh. Full reload clears state.
-     */
-    fun loadLocalRelayNotes() {
-        // Pull-to-refresh: ask the embedded relay to fetch newly tagged events
-        // (replies, reactions, zaps, reposts, mentions, DMs) and the owner's own
-        // notes from external relays into the local DBs. Injected events then
-        // stream in over the local subscription opened below. Non-blocking.
-        runCatching { com.nostrvault.relay.HavenBridge.requestRelaySync() }
-            .onFailure { Log.w(TAG, "requestRelaySync failed: ${it.message}") }
-
-        // Keep existing data and only fetch new events (don't clear or full reload)
-        _isRefreshing.value = true
-        // Ask again for liked and zapped posts that are still missing.
-        forgetGivenLookups()
-        when (_viewMode.value) {
-            VaultViewMode.LIKES -> fetchMissingLikedNotes()
-            VaultViewMode.ZAPS -> {
-                fetchMoreZapReceipts()
-                fetchMissingZappedNotes()
-            }
-            else -> {}
-        }
-
-        // Reuse live sockets: re-send the since-bounded subscriptions instead of
-        // tearing every connection down and replaying the whole window. Only
-        // rebuild connections when they're actually gone/dead.
-        if (!resendVaultSubscriptions()) {
-            connectToLocalRelay()
-        }
-    }
-
-    /**
-     * Re-sends the vault subscriptions on live connections so events the relay
-     * imported since the last REQ stream in (the importer writes straight to
-     * its DBs and never notifies open subscriptions). Returns false when the
-     * local connections aren't up — caller decides whether to reconnect.
-     */
-    private fun resendVaultSubscriptions(): Boolean {
-        val outboxUp = outboxClient?.connectionState?.value == WebSocketClient.ConnectionState.CONNECTED
-        val inboxUp = inboxClient?.connectionState?.value == WebSocketClient.ConnectionState.CONNECTED
-        if (!outboxUp || !inboxUp) return false
-
-        val authors = buildAuthorSet()
-        val ownerHex = nostrService.activeHexPubkey
-        val config = configStore.config.value
-        val localUrl = config.nostrURL ?: return false
-        val inboxUrl = config.localInboxURL ?: return false
-        val macWss = config.macRelayWssURL
-
-        outboxClient?.let { sendVaultSubscription(it, "vault-outbox", authors, ownerHex, localUrl) }
-        inboxClient?.let { sendVaultSubscription(it, "vault-inbox", authors, ownerHex, inboxUrl) }
-        // Re-pull the Mac relay (source of truth) too so we converge on its data
-        macOutboxClient?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
-            ?.let { sendVaultSubscription(it, "vault-mac-outbox", authors, ownerHex, macWss) }
-        macInboxClient?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
-            ?.let { sendVaultSubscription(it, "vault-mac-inbox", authors, ownerHex, "$macWss/inbox") }
-        return true
-    }
-
-    /**
-     * Creates persistent WebSocket connections to the local relay (outbox + inbox).
-     * Message collectors feed into shared allEvents; subscriptions are sent
-     * automatically when the connection reaches CONNECTED state.
-     */
-    private fun connectToLocalRelay() {
-        val config = configStore.config.value
-        if (config.nostrURL == null) {
-            _connectionStatus.value = "No local relay"
-            _connectionColor.value = "red"
-            return
-        }
-        val localUrl = config.nostrURL ?: return
-        val inboxUrl = config.localInboxURL ?: return
-        val ownerHex = nostrService.activeHexPubkey
-        val authors = buildAuthorSet()
-
-        Log.d(TAG, "connectToLocalRelay: outbox=$localUrl, inbox=$inboxUrl, authors=${authors.size}, fullReload=$isFullReload")
-
-        disconnectFromLocalRelay()
-
-        _connectionStatus.value = "Connecting..."
-        _connectionColor.value = "yellow"
-
-        // --- Outbox connection ---
-        val outbox = WebSocketClient(url = localUrl, scope = viewModelScope, trustLocalhost = true)
-        outboxClient = outbox
-
-        val outboxMsgJob = viewModelScope.launch(Dispatchers.IO) {
-            outbox.messages.collect { msg -> processRelayMessage(msg, localUrl) }
-        }
-        val outboxStateJob = viewModelScope.launch {
-            outbox.connectionState.collect { state ->
-                when (state) {
-                    WebSocketClient.ConnectionState.CONNECTED -> {
-                        sendVaultSubscription(outbox, "vault-outbox", authors, ownerHex, localUrl)
-                        updateConnectionStatus()
-                    }
-                    WebSocketClient.ConnectionState.DISCONNECTED -> updateConnectionStatus()
-                    else -> {}
-                }
-            }
-        }
-
-        // --- Inbox connection ---
-        val inbox = WebSocketClient(url = inboxUrl, scope = viewModelScope, trustLocalhost = true)
-        inboxClient = inbox
-
-        val inboxMsgJob = viewModelScope.launch(Dispatchers.IO) {
-            inbox.messages.collect { msg -> processRelayMessage(msg, inboxUrl) }
-        }
-        val inboxStateJob = viewModelScope.launch {
-            inbox.connectionState.collect { state ->
-                when (state) {
-                    WebSocketClient.ConnectionState.CONNECTED -> {
-                        sendVaultSubscription(inbox, "vault-inbox", authors, ownerHex, inboxUrl)
-                        updateConnectionStatus()
-                    }
-                    WebSocketClient.ConnectionState.DISCONNECTED -> updateConnectionStatus()
-                    else -> {}
-                }
-            }
-        }
-
-        val jobs = mutableListOf(outboxMsgJob, outboxStateJob, inboxMsgJob, inboxStateJob)
-
-        // --- Mac relay connections (source-of-truth, shared with iOS/macOS) ---
-        // Real cert on a public domain → normal system trust (trustLocalhost = false).
-        // The inbox relay requires no AUTH to query, so a plain REQ returns the
-        // tagged replies/reactions/zaps the local embedded relay hasn't imported yet.
-        val macWss = config.macRelayWssURL
-        if (macWss.isNotEmpty()) {
-            val macInboxUrl = "$macWss/inbox"
-            Log.d(TAG, "connectToLocalRelay: mac outbox=$macWss, mac inbox=$macInboxUrl")
-
-            val macOutbox = WebSocketClient(url = macWss, scope = viewModelScope, trustLocalhost = false)
-            macOutboxClient = macOutbox
-            jobs += viewModelScope.launch(Dispatchers.IO) {
-                macOutbox.messages.collect { msg -> processRelayMessage(msg, macWss) }
-            }
-            jobs += viewModelScope.launch {
-                macOutbox.connectionState.collect { state ->
-                    when (state) {
-                        WebSocketClient.ConnectionState.CONNECTED ->
-                            sendVaultSubscription(macOutbox, "vault-mac-outbox", authors, ownerHex, macWss)
-                        else -> {}
-                    }
-                }
-            }
-
-            val macInbox = WebSocketClient(url = macInboxUrl, scope = viewModelScope, trustLocalhost = false)
-            macInboxClient = macInbox
-            jobs += viewModelScope.launch(Dispatchers.IO) {
-                macInbox.messages.collect { msg -> processRelayMessage(msg, macInboxUrl) }
-            }
-            jobs += viewModelScope.launch {
-                macInbox.connectionState.collect { state ->
-                    when (state) {
-                        WebSocketClient.ConnectionState.CONNECTED ->
-                            sendVaultSubscription(macInbox, "vault-mac-inbox", authors, ownerHex, macInboxUrl)
-                        else -> {}
-                    }
-                }
-            }
-        }
-
-        clientJobs = jobs
-        outbox.connect()
-        inbox.connect()
-        macOutboxClient?.connect()
-        macInboxClient?.connect()
-    }
-
-    /**
-     * Sends a Nostr REQ subscription on an existing connection.
-     */
-    private fun sendVaultSubscription(
-        client: WebSocketClient,
-        subId: String,
-        authors: Set<String>,
-        ownerHex: String,
-        relayUrl: String,
-    ) {
-        // Track this relay as active and reset EOSE tracking
-        activeRelayUrls.add(relayUrl)
-        relayEoseReceived[relayUrl] = false
-
-        val authorsJson = authors.joinToString(",") { "\"$it\"" }
-        // Always cap the stored-event replay. Without a limit the relay dumps the
-        // entire vault history on every connect. When we already hold events
-        // (resume re-subscribe), only ask for the gap since the newest one.
-        val newest = newestEventCreatedAt
-        val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
-
-        val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson]$sinceClause,"limit":500}"""
-
-        val filters = if (ownerHex.isNotEmpty()) {
-            // IMPORTANT: Mentions filter should NOT use sinceClause - we want ALL notes
-            // where the user is tagged, not just recent ones. This fixes the bug where
-            // older tagged notes never appear in the TAGGED filter.
-            val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"limit":500}"""
-            "$authorFilter,$mentionsFilter"
-        } else {
-            authorFilter
-        }
-
-        Log.d(TAG, "sendVaultSubscription: subId=$subId, fullReload=$isFullReload")
-        client.send("""["REQ","$subId",$filters]""")
-    }
-
-    /**
-     * Processes a single relay message from either the outbox or inbox connection.
-     * Deduplicates via seenIds, routes metadata to NostrService, accumulates
-     * content events into allEvents, and schedules a display update.
-     */
-    private suspend fun processRelayMessage(msg: String, relayUrl: String) {
-        try {
-            val parsed = json.parseToJsonElement(msg).jsonArray
-            val type = parsed[0].jsonPrimitive.contentOrNull ?: return
-
-            when (type) {
-                "EVENT" -> {
-                    if (parsed.size < 3) return
-                    val eventObj = parsed[2].jsonObject
-                    val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
-                    if (!seenIds.add(id)) return
-
-                    val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return
-                    val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
-                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
-                    val sig = eventObj["sig"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
-                        tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                    } ?: emptyList()
-
-                    // Metadata events go to NostrService
-                    if (kind in listOf(0, 10002, 10050, 10063, 10000)) {
-                        nostrService.processRelayMessage(msg, relayUrl)
-                        return
-                    }
-
-                    // NIP-57: a zap receipt is spoofable by anyone who can reach a relay
-                    // we query — only trust it if it came from the pubkey the recipient's
-                    // own LNURL endpoint designates as authorized to publish on their behalf.
-                    if (kind == 9735) {
-                        val recipientPubkey = tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
-                        if (recipientPubkey == null || !ZapValidationService.isValidReceipt(
-                                receiptPubkey = pubkey,
-                                recipientPubkey = recipientPubkey,
-                                profiles = nostrService.profiles.value,
-                            )
-                        ) {
-                            return
-                        }
-                    }
-
-                    val nostrEvent = NostrEvent(
-                        id = id,
-                        pubkey = pubkey,
-                        createdAt = createdAt,
-                        kind = kind,
-                        tags = tags,
-                        content = content,
-                        sig = sig,
-                    )
-
-                    allEventsMutex.withLock {
-                        allEvents.add(nostrEvent)
-                        trimAllEventsLocked()
-                    }
-                    // Future-dated junk must not poison the resume catch-up window
-                    val nowSecs = System.currentTimeMillis() / 1000
-                    if (createdAt > newestEventCreatedAt && createdAt <= nowSecs + 60) {
-                        newestEventCreatedAt = createdAt
-                    }
-
-                    if (seenIds.size > MAX_SEEN_IDS) {
-                        val retained = allEventsMutex.withLock { allEvents.mapTo(HashSet()) { it.id } }
-                        seenIds.retainAll(retained)
-                        seenIds.add(id)
-                    }
-
-                    nostrService.fetchMissingProfiles(listOf(pubkey))
-                    scheduleUpdateDisplayData()
-                }
-                "EOSE" -> {
-                    if (parsed.size >= 2) {
-                        val subId = parsed[1].jsonPrimitive.contentOrNull
-                        val eventCount = allEventsMutex.withLock { allEvents.size }
-                        Log.d(TAG, "EOSE received from $relayUrl, subId=$subId, total events loaded: $eventCount")
-
-                        // Track that this relay has sent EOSE
-                        relayEoseReceived[relayUrl] = true
-
-                        // If all connected relays have sent EOSE, finalize loading
-                        if (allRelaysFinished()) {
-                            handleEOSE()
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Parse error: ${e.message}")
-        }
-    }
-
-    /** Caller must hold [allEventsMutex]. Trims oldest events past the cap. */
-    private fun trimAllEventsLocked() {
-        if (allEvents.size > MAX_ALL_EVENTS + ALL_EVENTS_TRIM_SLACK) {
-            // Articles and highlights are kept: their "Load older" pages are
-            // the oldest events here by design, and trimming them would throw
-            // a page away as it lands while its cursor moved on past it.
-            val pagedApart = setOf(VaultNoteScope.ARTICLE_KIND, VaultNoteScope.HIGHLIGHT_KIND)
-            val (kept, rest) = allEvents.partition { it.kind in pagedApart }
-            val newest = rest.sortedByDescending { it.createdAt }
-                .take((MAX_ALL_EVENTS - kept.size).coerceAtLeast(0))
-            allEvents.clear()
-            allEvents.addAll(newest)
-            allEvents.addAll(kept)
-        }
-    }
-
-    /**
-     * Checks if all connected relays have sent EOSE.
-     */
-    private fun allRelaysFinished(): Boolean {
-        // If no relays are active, consider it finished
-        if (activeRelayUrls.isEmpty()) return true
-
-        // Check if all active relays have sent EOSE
-        return activeRelayUrls.all { url ->
-            relayEoseReceived[url] == true
-        }
-    }
-
-    /**
-     * Called when all relays have sent EOSE (end of stored events).
-     * Updates connection state and stops the refresh spinner.
-     */
-    private fun handleEOSE() {
-        viewModelScope.launch(Dispatchers.Main.immediate) {
-            _isRefreshing.value = false
-            _notesHasLoadedOnce.value = true
-            isFullReload = false
-            updateConnectionStatus()
-            loadFirstPageInScope()
-            // All stored events are in — bypass the debounce
-            updateJob?.cancel()
-            updateGeneration++
-            updateDisplayData(updateGeneration)
-            // As iOS: the dots count from a few seconds after the first load,
-            // once the stored burst and the live catch-up are in.
-            if (dotSeenAt.isEmpty() && dotBaselineJob == null) {
-                dotBaselineJob = viewModelScope.launch {
-                    delay(DOT_BASELINE_DELAY_MS)
-                    val newest = dotNewest()
-                    VaultDots.eventLists.forEach { dotSeenAt[it] = newest.getValue(it) }
-                    _newActivity.value = emptySet()
-                }
-            }
-        }
-    }
-
-    /** The newest created_at in each dotted list, from what the tab holds now. */
-    private suspend fun dotNewest(): Map<VaultViewMode, Long> {
-        val events = allEventsMutex.withLock { allEvents.map { it.kind to it.createdAt } }
-        return VaultDots.newest(events, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
-    }
-
-    /** Lights the dot on each list that got something new while you were elsewhere. */
-    private fun refreshDots(newest: Map<VaultViewMode, Long>) {
-        val lit = VaultDots.lit(newest, dotSeenAt, watchedMode(), configStore.config.value.zapsOnlyMode)
-        if (!_newActivity.value.containsAll(lit)) _newActivity.value = _newActivity.value + lit
-    }
-
     /** The "Vault" list is on screen: every list's own dot clears (iOS #506). */
     fun markAllListsViewed() {
         VaultDots.eventLists.forEach(::markListViewed)
     }
-
-    /** Clears [list]'s dot and moves its seen mark up to what it holds now. */
-    private fun markListViewed(list: VaultViewMode) {
-        if (list == VaultViewMode.FOLLOWERS) {
-            markFollowersSeen()
-            return
-        }
-        _newActivity.value = _newActivity.value - list
-        if (dotSeenAt.isEmpty()) return
-        viewModelScope.launch(Dispatchers.Main.immediate) {
-            val newest = dotNewest()
-            if (dotSeenAt.isNotEmpty()) dotSeenAt[list] = newest.getValue(list)
-        }
-    }
-
-    // ── Connection helpers ────────────────────────────────────────
-
-    private fun disconnectFromLocalRelay() {
-        clientJobs.forEach { it.cancel() }
-        clientJobs.clear()
-        outboxClient?.disconnect()
-        inboxClient?.disconnect()
-        macOutboxClient?.disconnect()
-        macInboxClient?.disconnect()
-        outboxClient = null
-        inboxClient = null
-        macOutboxClient = null
-        macInboxClient = null
-
-        // Clear EOSE tracking state
-        activeRelayUrls.clear()
-        relayEoseReceived.clear()
-    }
-
-    // ── Snapshot persistence ─────────────────────────────────────
 
     fun persistSnapshot() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1210,186 +614,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun restoreSnapshotIfAvailable(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val dir = configStore.config.value.appSupportDir ?: return@withContext false
-            val file = File(dir, SNAPSHOT_FILE)
-            if (!file.exists()) return@withContext false
-
-            val snapshot = json.decodeFromString<DiskVaultSnapshot>(file.readText())
-            if (System.currentTimeMillis() - snapshot.savedAt > SNAPSHOT_MAX_AGE_MS) {
-                file.delete()
-                return@withContext false
-            }
-
-            allEventsMutex.withLock {
-                for (event in snapshot.events) {
-                    allEvents.add(event)
-                    seenIds.add(event.id)
-                }
-                newestEventCreatedAt = allEvents.maxOfOrNull { it.createdAt } ?: 0L
-            }
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "Vault snapshot restore failed: ${e.message}")
-            false
-        }
-    }
-
-    private fun buildAuthorSet(): Set<String> {
-        val config = configStore.config.value
-        val authors = mutableSetOf<String>()
-        val ownerHex = nostrService.activeHexPubkey
-        if (ownerHex.isNotEmpty()) authors.add(ownerHex)
-        config.whitelistedNpubs?.forEach { npub ->
-            nostrService.npubToHex(npub)?.let { authors.add(it) }
-        }
-        return authors
-    }
-
-    private fun updateConnectionStatus() {
-        val outboxConnected = outboxClient?.connectionState?.value == WebSocketClient.ConnectionState.CONNECTED
-        val inboxConnected = inboxClient?.connectionState?.value == WebSocketClient.ConnectionState.CONNECTED
-        when {
-            outboxConnected && inboxConnected -> {
-                val count = _displayNotes.value.size
-                _connectionStatus.value = if (count > 0) "Local ($count)" else "Live"
-                _connectionColor.value = "green"
-            }
-            outboxConnected || inboxConnected -> {
-                _connectionStatus.value = "Partial"
-                _connectionColor.value = "yellow"
-            }
-            outboxClient != null -> {
-                // Clients exist but not connected yet (connecting/reconnecting)
-                _connectionStatus.value = "Connecting..."
-                _connectionColor.value = "yellow"
-            }
-            else -> {
-                _connectionStatus.value = "Offline"
-                _connectionColor.value = "red"
-            }
-        }
-    }
-
-    fun loadMore() {
-        Log.d(TAG, "loadMore called: isLoadingMore=${_isLoadingMore.value}, viewMode=${_viewMode.value}, notesCount=${_displayNotes.value.size}")
-        if (_isLoadingMore.value) return
-        // Articles and Highlights page by their own button (loadOlderInScope).
-        if (_viewMode.value == VaultViewMode.NOTES && _noteScope.value.pagesByButton) return
-        val currentNotes = _displayNotes.value
-        if (currentNotes.isEmpty()) return
-
-        // For notes mode, show more of what is loaded, and pull older notes
-        // from the relay once everything loaded is listed. Without raising the
-        // cap the list stopped at 50: older notes loaded underneath but never
-        // showed (iOS #273).
-        if (_viewMode.value == VaultViewMode.NOTES) {
-            val hiddenBelowCap = relayNotesHiddenBelowCap(notesFilteredCount, maxDisplayedItems)
-            maxDisplayedItems += 50
-            if (hiddenBelowCap) {
-                scheduleUpdateDisplayData()
-                return
-            }
-            val oldest = currentNotes.lastOrNull()?.createdAt ?: return
-            val config = configStore.config.value
-            if (config.nostrURL == null) {
-                Log.w(TAG, "loadMore: No relay URL configured")
-                return
-            }
-            val localUrl = config.nostrURL ?: return
-            val inboxUrl = config.localInboxURL ?: return
-
-            // Build author set matching loadLocalRelayNotes
-            val ownerHex = nostrService.activeHexPubkey
-            val authors = mutableSetOf<String>()
-            if (ownerHex.isNotEmpty()) authors.add(ownerHex)
-            config.whitelistedNpubs?.forEach { npub ->
-                nostrService.npubToHex(npub)?.let { authors.add(it) }
-            }
-
-            _isLoadingMore.value = true
-
-            viewModelScope.launch(Dispatchers.IO) {
-                val untilSecs = oldest.time / 1000 - 1
-                val authorsJson = authors.joinToString(",") { "\"$it\"" }
-                val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
-
-                val filters = if (ownerHex.isNotEmpty()) {
-                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
-                    "$authorFilter,$mentionsFilter"
-                } else {
-                    authorFilter
-                }
-
-                // Query outbox
-                val (outboxRaw, _) = queryRelayEndpoint(localUrl, filters, "outbox-hist", LOAD_MORE_TIMEOUT_MS)
-
-                // Query inbox for older tagged notes
-                val (inboxRaw, _) = queryRelayEndpoint(inboxUrl, filters, "inbox-hist", LOAD_MORE_TIMEOUT_MS)
-
-                allEventsMutex.withLock {
-                    allEvents.addAll(outboxRaw)
-                    allEvents.addAll(inboxRaw)
-                    trimAllEventsLocked()
-                }
-
-                withContext(Dispatchers.Main.immediate) {
-                    _isLoadingMore.value = false
-                }
-
-                scheduleUpdateDisplayData()
-            }
-        } else {
-            // For likes/zaps mode, just increase the display limit
-            maxDisplayedItems += 50
-            scheduleUpdateDisplayData()
-        }
-    }
-
-    // ── Mode & filter setters ────────────────────────────────────
-
-    fun setViewMode(mode: VaultViewMode) {
-        _viewMode.value = mode
-        maxDisplayedItems = 50
-        scheduleUpdateDisplayData()
-        when (mode) {
-            VaultViewMode.LIKES -> fetchMissingLikedNotes()
-            VaultViewMode.ZAPS -> {
-                armZapsSettle()
-                fetchMoreZapReceipts()
-                fetchMissingZappedNotes()
-            }
-            VaultViewMode.FOLLOWERS -> viewModelScope.launch { refreshFollowers() }
-            else -> {}
-        }
-    }
-
-    /**
-     * The list and scope on show before Android killed the app, so the tab
-     * comes back where it was. Set straight, without setViewMode's fetches:
-     * nothing has loaded yet. A notification consumed after this still picks
-     * its own list (applyRelayFocusView).
-     */
-    private fun restoreSavedMode() {
-        savedState.get<String>(SAVED_VIEW_MODE)
-            ?.let { name -> VaultViewMode.entries.firstOrNull { it.name == name } }
-            ?.let { _viewMode.value = it }
-        savedState.get<String>(SAVED_NOTE_SCOPE)
-            ?.let { name -> VaultNoteScope.entries.firstOrNull { it.name == name } }
-            ?.let { _noteScope.value = it }
-        _recipesOnly.value = _noteScope.value == VaultNoteScope.ARTICLES && savedState.get<Boolean>(SAVED_RECIPES) == true
-        viewModelScope.launch {
-            kotlinx.coroutines.flow.combine(_viewMode, _noteScope, _recipesOnly) { mode, scope, recipes ->
-                Triple(mode, scope, recipes)
-            }.collect { (mode, scope, recipes) ->
-                savedState[SAVED_VIEW_MODE] = mode.name
-                savedState[SAVED_NOTE_SCOPE] = scope.name
-                savedState[SAVED_RECIPES] = recipes
-            }
-        }
-    }
-
     /** The Vault pill's pick. Media only flips the tab's half; the lists keep their state. */
     fun selectMode(mode: VaultMode) {
         mode.noteScope?.let { setNoteScope(it) }
@@ -1397,141 +621,6 @@ class DashboardViewModel @Inject constructor(
         com.nostrvault.ui.navigation.VaultSection.show(media = mode == VaultMode.MEDIA)
         if (allRelaysFinished() && activeRelayUrls.isNotEmpty()) loadFirstPageInScope()
     }
-
-    fun setNoteScope(scope: VaultNoteScope) {
-        if (scope != VaultNoteScope.ARTICLES) _recipesOnly.value = false
-        if (_noteScope.value == scope) return
-        _noteScope.value = scope
-        maxDisplayedItems = 50
-        _notesHasLoadedOnce.value = false
-        scheduleUpdateDisplayData()
-    }
-
-    fun toggleRecipesOnly() {
-        if (_noteScope.value != VaultNoteScope.ARTICLES) return
-        _recipesOnly.value = !_recipesOnly.value
-        maxDisplayedItems = 50
-        scheduleUpdateDisplayData()
-    }
-
-    /**
-     * Articles and Highlights open on their newest page. The relay's first
-     * load is the newest posts of every kind together, so an article older
-     * than those was in none of it, and the list said "No articles found"
-     * until you tapped Load older. Runs once that first load is in.
-     */
-    private fun loadFirstPageInScope() {
-        val scope = _noteScope.value
-        if (!scope.pagesByButton || scope in _noOlderPages.value) return
-        val kind = scope.kinds(RELAY_TAB_NOTE_KINDS).single()
-        viewModelScope.launch {
-            val loaded = allEventsMutex.withLock { allEvents.any { it.kind == kind } }
-            if (!loaded) loadOlderInScope()
-        }
-    }
-
-    /**
-     * Articles' and Highlights' "Load older": one page of just that kind from
-     * the local relay, older than the oldest one loaded, however far back.
-     * It leaves Notes' paging alone, so Notes can't skip what lies between.
-     * These lists have no display cap (see updateDisplayData), so every row
-     * loaded is already listed.
-     */
-    fun loadOlderInScope() {
-        val scope = _noteScope.value
-        if (_viewMode.value != VaultViewMode.NOTES || !scope.pagesByButton || _isLoadingOlder.value) return
-        val config = configStore.config.value
-        val outboxUrl = config.nostrURL ?: return
-        val inboxUrl = config.localInboxURL
-        val ownerHex = nostrService.activeHexPubkey
-        val authors = buildList {
-            if (ownerHex.isNotEmpty()) add(ownerHex)
-            config.whitelistedNpubs?.forEach { npub -> nostrService.npubToHex(npub)?.let(::add) }
-        }.distinct()
-        if (authors.isEmpty()) return
-        val kind = scope.kinds(RELAY_TAB_NOTE_KINDS).single()
-        val gen = olderGeneration
-        _isLoadingOlder.value = true
-        viewModelScope.launch(Dispatchers.IO) {
-            val authorSet = authors.toSet()
-            fun mine(e: NostrEvent) = e.kind == kind && e.pubkey in authorSet
-            fun tagged(e: NostrEvent) = e.kind == kind && e.tags.any { it.size >= 2 && it[0] == "p" && it[1] == ownerHex }
-            val loaded = allEventsMutex.withLock { allEvents.filter { it.kind == kind } }
-            val now = System.currentTimeMillis() / 1000
-            val (outCursor, inCursor) = olderCursors[scope] ?: Pair(
-                VaultPageCursor.start(loaded.filter(::mine).map { it.createdAt }, now),
-                // No inbox or no account to be tagged: nothing to page there.
-                VaultPageCursor.start(loaded.filter(::tagged).map { it.createdAt }, now)
-                    .let { if (inboxUrl == null || ownerHex.isEmpty()) it.copy(done = true) else it },
-            )
-
-            suspend fun page(cursor: VaultPageCursor, url: String?, filter: String, label: String, keep: (NostrEvent) -> Boolean): Pair<VaultPageCursor, List<NostrEvent>> {
-                if (cursor.done || url == null) return cursor to emptyList()
-                val answered = java.util.concurrent.atomic.AtomicBoolean(false)
-                val (raw, _) = queryRelayEndpoint(url, filter, label, LOAD_MORE_TIMEOUT_MS, dedupe = false, answered = answered)
-                // A relay that never answered says nothing about what's older.
-                if (!answered.get()) return cursor to emptyList()
-                val page = raw.filter(keep)
-                return cursor.after(page.map { it.createdAt }) to page
-            }
-
-            val authorsJson = authors.joinToString(",") { "\"$it\"" }
-            val (nextOut, outEvents) = page(
-                outCursor, outboxUrl,
-                """{"kinds":[$kind],"authors":[$authorsJson],"until":${outCursor.until},"limit":$OLDER_PAGE_SIZE}""",
-                "older-out", ::mine,
-            )
-            val (nextIn, inEvents) = page(
-                inCursor, inboxUrl,
-                """{"kinds":[$kind],"#p":["$ownerHex"],"until":${inCursor.until},"limit":$OLDER_PAGE_SIZE}""",
-                "older-in", ::tagged,
-            )
-
-            if (gen != olderGeneration) return@launch
-            val added = (outEvents + inEvents).filter { seenIds.add(it.id) }
-            allEventsMutex.withLock {
-                allEvents.addAll(added)
-                trimAllEventsLocked()
-            }
-            olderCursors[scope] = nextOut to nextIn
-            withContext(Dispatchers.Main.immediate) {
-                if (nextOut.done && nextIn.done) _noOlderPages.value = _noOlderPages.value + scope
-                _isLoadingOlder.value = false
-            }
-            scheduleUpdateDisplayData()
-        }
-    }
-
-    fun setContentFilter(filter: VaultContentFilter) {
-        _contentFilter.value = filter
-        maxDisplayedItems = 50
-        _notesHasLoadedOnce.value = false
-        scheduleUpdateDisplayData()
-    }
-
-    fun setLikesFilter(filter: VaultLikesFilter) {
-        _likesFilter.value = filter
-        maxDisplayedItems = 50
-        _likesHasLoadedOnce.value = false
-        scheduleUpdateDisplayData()
-        if (filter == VaultLikesFilter.MY_LIKES) fetchMissingLikedNotes()
-    }
-
-    fun setZapsFilter(filter: VaultZapsFilter) {
-        _zapsFilter.value = filter
-        maxDisplayedItems = 50
-        _zapsHasLoadedOnce.value = false
-        armZapsSettle()
-        scheduleUpdateDisplayData()
-        if (filter == VaultZapsFilter.MY_ZAPS) fetchMissingZappedNotes()
-    }
-
-    fun setFollowersFilter(filter: VaultFollowersFilter) {
-        _followersFilter.value = filter
-        fetchFollowerProfiles()
-    }
-
-    // ── Followers ────────────────────────────────────────────────
 
     /**
      * Re-reads the ledger every minute while the Relay tab is on screen. A new
@@ -1562,709 +651,12 @@ class DashboardViewModel @Inject constructor(
         fetchFollowerProfiles()
     }
 
-    /** The list in sight; see [VaultDots.watchedMode]. */
-    private fun watchedMode(): VaultViewMode? = VaultDots.watchedMode(
-        com.nostrvault.ui.navigation.VaultSection.showsMedia.value, _viewMode.value, _noteScope.value,
-    )
-
-    private fun markFollowersSeen() {
-        followersSeenStore.markSeen(nostrService.activeHexPubkey)
-        _hasNewFollowers.value = false
-    }
-
-    private fun fetchFollowerProfiles() {
-        val snapshot = _followerSnapshot.value ?: return
-        val shown = snapshot.entries(_followersFilter.value).take(300).map { it.pubkey }
-        if (shown.isNotEmpty()) nostrService.fetchMissingProfiles(shown)
-    }
-
-    // ── Notification focus (port of iOS consumeRelayFocus, PR #95) ──
-
     /** Events fetched by id for a notification tap, when not (yet) in [allEvents]. */
-    private val focusEvents = ConcurrentHashMap<String, NostrEvent>()
-
-    /**
-     * Switch to the list that holds a notification's event: likes → Likes on
-     * my notes, zaps → Zaps on my notes, everything else → Notes / All. Filters
-     * are only touched when they differ, since setting one resets its list.
-     */
-    suspend fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
-        when (NotificationTarget.viewFor(request.type, zapsOnly)) {
-            VaultViewMode.LIKES -> {
-                if (_likesFilter.value != VaultLikesFilter.ON_MY_NOTES) setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
-                if (_viewMode.value != VaultViewMode.LIKES) setViewMode(VaultViewMode.LIKES)
-            }
-            VaultViewMode.ZAPS -> {
-                if (_zapsFilter.value != VaultZapsFilter.ON_MY_NOTES) setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
-                if (_viewMode.value != VaultViewMode.ZAPS) setViewMode(VaultViewMode.ZAPS)
-            }
-            VaultViewMode.NOTES -> {
-                // Notes leaves out articles and highlights: land on the list
-                // that holds the target (again once it loads; alignFocusScope).
-                setNoteScope(VaultNoteScope.forKind(focusEvent(request.eventId)?.kind))
-                // A reply from outside your network isn't listed under All.
-                val author = focusEvent(request.eventId)?.pubkey
-                val target = if (author != null && VaultContentFilter.isOutside(
-                        author, nostrService.activeHexPubkey, resolveWhitelistedHexPubkeys(),
-                        feedService.relayTabTrustedPubkeys(),
-                    )
-                ) VaultContentFilter.OUTSIDE else VaultContentFilter.ALL
-                if (_contentFilter.value != target) setContentFilter(target)
-                if (_viewMode.value != VaultViewMode.NOTES) setViewMode(VaultViewMode.NOTES)
-            }
-            VaultViewMode.FOLLOWERS -> {
-                if (_viewMode.value != VaultViewMode.FOLLOWERS) setViewMode(VaultViewMode.FOLLOWERS)
-                return // a list, not an event: nothing to fetch
-            }
-        }
-        fetchFocusEventIfMissing(request.eventId)
-    }
-
-    /**
-     * A notification's event can load after the tap picked Notes for it; once
-     * it has, move to the scope that lists it (an article or a highlight).
-     */
-    /** @return true once the event's kind is known: aligned, nothing more to do. */
-    suspend fun alignFocusScope(request: RelayFocusRequest, zapsOnly: Boolean): Boolean {
-        val kind = focusEvent(request.eventId)?.kind ?: return false
-        val scope = NotificationTarget.vaultModeFor(request.type, kind, zapsOnly).noteScope ?: return true
-        if (_viewMode.value == VaultViewMode.NOTES && _noteScope.value != scope) setNoteScope(scope)
-        return true
-    }
-
-    /**
-     * The notification's event carries the target in its tags, so it has to be
-     * at hand. It normally arrives over the live inbox subscription; on a cold
-     * start that can lag, so also ask the local relays for it by id.
-     */
-    private fun fetchFocusEventIfMissing(id: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (focusEvent(id) != null) return@launch
-            val config = configStore.config.value
-            val urls = listOfNotNull(config.nostrURL, config.localInboxURL).distinct()
-            for (url in urls) {
-                val (raw, _) = queryRelayEndpoint(
-                    url, "{\"ids\":[\"$id\"]}", "focus", LOAD_MORE_TIMEOUT_MS, dedupe = false,
-                )
-                raw.firstOrNull { it.id == id }?.let {
-                    focusEvents[id] = it
-                    return@launch
-                }
-            }
-        }
-    }
-
-    private suspend fun focusEvent(id: String): NostrEvent? =
-        focusEvents[id] ?: allEventsMutex.withLock { allEvents.firstOrNull { it.id == id } }
+    internal val focusEvents = ConcurrentHashMap<String, NostrEvent>()
 
     /** Ids to look for in the list, best first; see [NotificationTarget.focusCandidates]. */
     suspend fun focusCandidates(request: RelayFocusRequest): List<String> =
         NotificationTarget.focusCandidates(request.eventId, focusEvent(request.eventId)?.tags.orEmpty())
-
-    /**
-     * The post to open when the event never shows up in the list (older than
-     * the loaded page). Null when the notification's event could not be found,
-     * since opening a reaction or zap receipt as a note shows nothing.
-     */
-    suspend fun focusFallbackNoteId(request: RelayFocusRequest): String? =
-        // A mention or reply is a note itself, so its id opens even untagged.
-        NotificationTarget.targetNoteId(
-            request.type, request.eventId, focusEvent(request.eventId)?.tags.orEmpty(),
-        )
-
-    // ── Display data processing (port of iOS VaultDataProcessing) ──
-
-    private fun scheduleUpdateDisplayData() {
-        updateJob?.cancel()
-        updateGeneration++
-        val gen = updateGeneration
-        // Longer debounce during the initial stored-event burst; 150ms (matching
-        // iOS) once live. EOSE bypasses this entirely via handleEOSE().
-        val debounceMs = if (!_notesHasLoadedOnce.value) 500L else 150L
-        updateJob = viewModelScope.launch {
-            delay(debounceMs)
-            if (gen != updateGeneration) return@launch
-            updateDisplayData(gen)
-            // Likes and zaps that arrive later name more missing posts; ask
-            // for those too (iOS re-asks on every events change). Ids already
-            // asked for are skipped.
-            when (_viewMode.value) {
-                VaultViewMode.LIKES -> if (_likesFilter.value == VaultLikesFilter.MY_LIKES) fetchMissingLikedNotes()
-                VaultViewMode.ZAPS -> if (_zapsFilter.value == VaultZapsFilter.MY_ZAPS) fetchMissingZappedNotes()
-                else -> {}
-            }
-        }
-    }
-
-    /**
-     * Rebuilds the shown list, then tells a waiting filter note it landed. Every
-     * path goes through here: the debounced one, EOSE and the snapshot restore.
-     */
-    private suspend fun updateDisplayData(gen: Int) {
-        rebuildDisplayData(gen)
-        if (gen == updateGeneration) _displayPass.value++
-    }
-
-    private suspend fun rebuildDisplayData(gen: Int) = withContext(Dispatchers.Default) {
-        val currentMode = _viewMode.value
-        val events = allEventsMutex.withLock { allEvents.toList() }
-        val owner = nostrService.activeHexPubkey
-        val whitelist = resolveWhitelistedHexPubkeys()
-        val trusted = feedService.relayTabTrustedPubkeys()
-        val blocked = configStore.config.value.blockedForActiveAccount()
-            .mapNotNull { nostrService.npubToHex(it) }.toSet()
-
-        // Partition once instead of re-scanning the full list per kind.
-        // allEvents can hold one event twice (history pages query outbox and
-        // inbox, and the snapshot is saved from allEvents); the lists key on
-        // id, and a duplicate key crashes the LazyColumn.
-        val noteEvents = ArrayList<NostrEvent>(events.size)
-        val reactionEvents = ArrayList<NostrEvent>()
-        val zapEvents = ArrayList<NostrEvent>()
-        val partitionedIds = HashSet<String>(events.size * 2)
-        for (event in events) {
-            if (!partitionedIds.add(event.id)) continue
-            when (event.kind) {
-                in RELAY_TAB_NOTE_KINDS -> noteEvents.add(event)
-                7 -> reactionEvents.add(event)
-                9735 -> zapEvents.add(event)
-            }
-        }
-        if (dotSeenAt.isNotEmpty()) {
-            val newest = VaultDots.newest(events.map { it.kind to it.createdAt }, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
-            withContext(Dispatchers.Main) { refreshDots(newest) }
-        }
-
-        when (currentMode) {
-            // Followers come from the relay's follower ledger, not these events.
-            VaultViewMode.FOLLOWERS -> Unit
-            VaultViewMode.NOTES -> {
-                val currentFilter = _contentFilter.value
-                val scopeKinds = _noteScope.value.kinds(RELAY_TAB_NOTE_KINDS)
-                val recipesOnly = _noteScope.value == VaultNoteScope.ARTICLES && _recipesOnly.value
-
-                val filtered = noteEvents.filter { event ->
-                    // Log all events before kind filtering to see what we're dropping
-                    val hasUserPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
-                    if (hasUserPTag && event.pubkey != owner) {
-                        Log.d(TAG, "Event with user p-tag BEFORE filter: id=${event.id.take(8)}, kind=${event.kind}, from=${event.pubkey.take(8)}")
-                    }
-
-                    if (event.kind !in RELAY_TAB_NOTE_KINDS) {
-                        if (hasUserPTag && event.pubkey != owner) {
-                            Log.w(TAG, "DROPPING event kind ${event.kind} that tags user: id=${event.id.take(8)}")
-                        }
-                        return@filter false
-                    }
-                    // Articles and highlights are listed apart in the Vault tab.
-                    if (event.kind !in scopeKinds) return@filter false
-                    if (recipesOnly && !VaultNoteScope.isRecipe(event.tags)) return@filter false
-
-                    if (event.pubkey in blocked) return@filter false
-
-                    val isMine = event.pubkey == owner
-                    val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
-                    val isOutside = isTagged &&
-                        VaultContentFilter.isOutside(event.pubkey, owner, whitelist, trusted)
-                    when (currentFilter) {
-                        VaultContentFilter.ALL -> {
-                            val isWhitelisted = whitelist.contains(event.pubkey)
-                            (isMine || isTagged || isWhitelisted) && !isOutside
-                        }
-                        VaultContentFilter.MINE -> isMine
-                        VaultContentFilter.OUTSIDE -> isOutside
-                        VaultContentFilter.TAGGED -> {
-                            val tagged = !isMine && isTagged && !isOutside
-                            if (tagged) {
-                                Log.d(TAG, "TAGGED note included: id=${event.id.take(8)}, from=${event.pubkey.take(8)}, kind=${event.kind}")
-                            }
-                            tagged
-                        }
-                    }
-                }.sortedByDescending { it.createdAt }
-
-                Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
-                notesFilteredCount = filtered.size
-
-                // Articles and Highlights are short and page by button, so
-                // nothing loaded may sit hidden under a cap with no way to
-                // reveal it: they list every row they have.
-                val cap = if (_noteScope.value.pagesByButton) Int.MAX_VALUE else maxDisplayedItems
-
-                // Convert to FeedNote for display
-                val displaySlice = filtered.take(cap).map { event ->
-                    FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
-                }.filter { !it.isNoiseOrSpam() }
-
-                val droppedBySpamFilter = (filtered.size.coerceAtMost(cap)) - displaySlice.size
-                if (droppedBySpamFilter > 0) {
-                    Log.w(TAG, "Spam filter dropped $droppedBySpamFilter notes")
-                }
-                if (filtered.size > cap) {
-                    Log.w(TAG, "Display limit: showing ${cap} of ${filtered.size} filtered notes (${filtered.size - cap} hidden)")
-                }
-
-                val displayedIds = displaySlice.map { it.id }.toSet()
-
-                // Build reaction map for displayed notes
-                val rxMap = mutableMapOf<String, MutableList<Pair<String, String>>>()
-                val latestReaction = mutableMapOf<String, Long>()
-                for (event in reactionEvents) {
-                    val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" && displayedIds.contains(it[1]) }?.get(1) ?: continue
-                    val emoji = if (event.content.isEmpty()) "+" else event.content
-                    rxMap.getOrPut(targetId) { mutableListOf() }.add(Pair(event.pubkey, emoji))
-                    val existing = latestReaction[targetId]
-                    if (existing == null || event.createdAt > existing) {
-                        latestReaction[targetId] = event.createdAt
-                    }
-                }
-
-                // Build zap map for displayed notes
-                // A zap receipt is signed by the wallet server, so the relay's
-                // block list never catches it: the zapper is checked here.
-                val noteZaps = zapEvents.mapNotNull { event ->
-                    val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" && displayedIds.contains(it[1]) }?.get(1)
-                        ?: return@mapNotNull null
-                    val parsed = parseZapReceipt(event) ?: return@mapNotNull null
-                    VaultZapsReceived.Receipt(parsed.copy(targetNoteId = targetId), event.createdAt)
-                }
-                val zMap = VaultZapsReceived.build(
-                    receipts = noteZaps,
-                    myNoteIds = displayedIds,
-                    owner = owner,
-                    isBlocked = { it in blocked },
-                    excludeOwner = false,
-                ).zappers
-
-                // Build repost map (kind 6 e-tagging a displayed note) and quote map
-                // (kind 1 q-tagging a displayed note). Mirrors iOS VaultDataProcessing
-                // so reposts/quotes of your note appear in the engagement bar.
-                val rpMap = mutableMapOf<String, MutableList<String>>()
-                val qtMap = mutableMapOf<String, MutableList<String>>()
-                for (event in noteEvents) {
-                    when (event.kind) {
-                        6 -> {
-                            val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" && displayedIds.contains(it[1]) }?.get(1) ?: continue
-                            rpMap.getOrPut(targetId) { mutableListOf() }.add(event.pubkey)
-                        }
-                        1 -> {
-                            val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "q" && displayedIds.contains(it[1]) }?.get(1) ?: continue
-                            qtMap.getOrPut(targetId) { mutableListOf() }.add(event.pubkey)
-                        }
-                    }
-                }
-
-                if (gen != updateGeneration) return@withContext
-                withContext(Dispatchers.Main.immediate) {
-                    _displayNotes.value = displaySlice
-                    _reactionMap.value = rxMap
-                    _zapMap.value = zMap
-                    _latestReactionDates.value = latestReaction
-                    _repostMap.value = rpMap
-                    _quoteMap.value = qtMap
-                    _notesHasLoadedOnce.value = true
-                    _connectionStatus.value = "Local (${displaySlice.size})"
-                }
-            }
-
-            VaultViewMode.LIKES -> {
-                val currentLikesFilter = _likesFilter.value
-
-                if (currentLikesFilter == VaultLikesFilter.MY_LIKES) {
-                    // My Likes: notes I reacted to
-                    val myLikeDates = mutableMapOf<String, Long>()
-                    for (event in reactionEvents) {
-                        if (event.pubkey != owner) continue
-                        val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: continue
-                        val existing = myLikeDates[targetId]
-                        if (existing == null || event.createdAt > existing) {
-                            myLikeDates[targetId] = event.createdAt
-                        }
-                    }
-
-                    val myLikedNoteIds = myLikeDates.keys
-                    val filtered = noteEvents
-                        .filter { myLikedNoteIds.contains(it.id) }
-                        .sortedByDescending { myLikeDates[it.id] ?: 0L }
-
-                    val displaySlice = filtered.take(maxDisplayedItems).map { event ->
-                        FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
-                    }
-
-                    if (gen != updateGeneration) return@withContext
-                    withContext(Dispatchers.Main.immediate) {
-                        _displayLikedNotes.value = displaySlice
-                        _reactionMap.value = emptyMap()
-                        _latestReactionDates.value = emptyMap()
-                        if (displaySlice.isNotEmpty()) _likesHasLoadedOnce.value = true
-                    }
-                } else {
-                    // Incoming reactions on target note sets
-                    // Received: reactions others left on my notes.
-                    val targetNoteIds: Set<String> =
-                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
-
-                    val rxMap = mutableMapOf<String, MutableList<Pair<String, String>>>()
-                    val latestReaction = mutableMapOf<String, Long>()
-
-                    for (event in reactionEvents) {
-                        if (event.pubkey == owner) continue
-                        val targetId = event.tags.firstOrNull {
-                            it.size >= 2 && it[0] == "e" && targetNoteIds.contains(it[1])
-                        }?.get(1) ?: continue
-                        val emoji = if (event.content.isEmpty()) "+" else event.content
-                        rxMap.getOrPut(targetId) { mutableListOf() }.add(Pair(event.pubkey, emoji))
-                        val existing = latestReaction[targetId]
-                        if (existing == null || event.createdAt > existing) {
-                            latestReaction[targetId] = event.createdAt
-                        }
-                    }
-
-                    val likedNoteIds = rxMap.keys
-                    val filtered = noteEvents
-                        .filter { likedNoteIds.contains(it.id) }
-                        .sortedWith(compareByDescending<NostrEvent> { latestReaction[it.id] ?: 0L }
-                            .thenByDescending { it.createdAt })
-
-                    val displaySlice = filtered.take(maxDisplayedItems).map { event ->
-                        FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
-                    }
-
-                    if (gen != updateGeneration) return@withContext
-                    withContext(Dispatchers.Main.immediate) {
-                        _displayLikedNotes.value = displaySlice
-                        _reactionMap.value = rxMap
-                        _latestReactionDates.value = latestReaction
-                        if (displaySlice.isNotEmpty()) _likesHasLoadedOnce.value = true
-                    }
-                }
-            }
-
-            VaultViewMode.ZAPS -> {
-                val currentZapsFilter = _zapsFilter.value
-
-                // Parse all zap receipts (with caching)
-                data class ParsedEntry(val receiptId: String, val parsed: ParsedZapReceipt)
-                val parsedReceipts = mutableListOf<ParsedEntry>()
-                for (receipt in zapEvents) {
-                    val parsed = parseZapReceipt(receipt) ?: continue
-                    parsedReceipts.add(ParsedEntry(receipt.id, parsed))
-                }
-
-                // Both lists run newest zap first: a post moves to the top
-                // when a zap on it comes in (iOS #296).
-                val receiptTimes = zapEvents.associate { it.id to it.createdAt }
-
-                if (currentZapsFilter == VaultZapsFilter.MY_ZAPS) {
-                    val myReceipts = parsedReceipts
-                        .filter { it.parsed.senderPubkey == owner && it.parsed.requestIsSigned }
-                    // Receipts on the relays, plus what this app recorded
-                    // zapping from this phone.
-                    // Stream and profile zaps record a non-note key; only event ids count.
-                    val locallyZapped = feedService.zappedEventIds.value.filterKeys(RelayGiven::isEventId)
-                    val myZappedNoteIds = myReceipts.mapNotNull { it.parsed.targetNoteId }.toSet() + locallyZapped.keys
-                    val wallet = walletGiven
-
-                    // The wallet's history, then anything only a receipt or
-                    // this app's own list knows about.
-                    val seen = wallet.notes.map { it.id }.toHashSet()
-                    val candidates = wallet.notes + noteEvents
-                        .filter { myZappedNoteIds.contains(it.id) && seen.add(it.id) }
-                        .map { event -> FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind) }
-                    val lastZapAt = RelayGiven.lastZapTimes(
-                        wallet.times,
-                        myReceipts.mapNotNull { item ->
-                            val id = item.parsed.targetNoteId ?: return@mapNotNull null
-                            id to (receiptTimes[item.receiptId] ?: return@mapNotNull null)
-                        },
-                    )
-                    val filtered = RelayGiven.newestZapFirst(candidates, lastZapAt, { it.id }, { it.createdAt.time / 1000 })
-                    val displaySlice = filtered.take(maxDisplayedItems)
-                    val givenMap = RelayGiven.givenAmounts(locallyZapped, wallet.amounts)
-                        .mapValues { (_, sats) -> listOf(owner to sats) }
-
-                    if (gen != updateGeneration) return@withContext
-                    withContext(Dispatchers.Main.immediate) {
-                        _displayZappedNotes.value = displaySlice
-                        _zapMap.value = givenMap
-                        if (displaySlice.isNotEmpty()) _zapsHasLoadedOnce.value = true
-                    }
-                } else {
-                    // Incoming zaps on target note sets
-                    // Received: zaps others sent to my notes.
-                    val targetNoteIds: Set<String> =
-                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
-
-                    // Blocked zappers are hidden here; the block observer in
-                    // init{} reruns this pass, so unblocking brings them back.
-                    val received = VaultZapsReceived.build(
-                        receipts = parsedReceipts.map {
-                            VaultZapsReceived.Receipt(it.parsed, receiptTimes[it.receiptId] ?: 0L)
-                        },
-                        myNoteIds = targetNoteIds,
-                        owner = owner,
-                        isBlocked = { it in blocked },
-                    )
-                    val zMap = received.zappers
-                    val lastZapAt = received.lastZapAt
-
-                    val zappedNoteIds = zMap.keys
-                    val filtered = RelayGiven.newestZapFirst(
-                        noteEvents.filter { zappedNoteIds.contains(it.id) },
-                        lastZapAt,
-                        { it.id },
-                        { it.createdAt },
-                    )
-
-                    val displaySlice = filtered.take(maxDisplayedItems).map { event ->
-                        FeedNote.fromEvent(event.id, event.pubkey, event.content, event.tags, event.createdAt, event.kind)
-                    }
-
-                    if (gen != updateGeneration) return@withContext
-                    withContext(Dispatchers.Main.immediate) {
-                        _displayZappedNotes.value = displaySlice
-                        _zapMap.value = zMap
-                        if (displaySlice.isNotEmpty()) _zapsHasLoadedOnce.value = true
-                    }
-                }
-            }
-        }
-    }
-
-    // ── External relay fetching (port of iOS VaultNetworking) ────
-
-    private fun fetchMissingLikedNotes() {
-        val owner = nostrService.activeHexPubkey
-        if (owner.isEmpty()) return
-
-        viewModelScope.launch(Dispatchers.Default) {
-            val events = allEventsMutex.withLock { allEvents.toList() }
-
-            val myLikes = events.filter { it.kind == 7 && it.pubkey == owner }
-            val likedAuthor = HashMap<String, String>()
-            val likedNoteIds = HashSet<String>()
-            for (like in myLikes) {
-                val target = like.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: continue
-                likedNoteIds.add(target)
-                like.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)?.let { likedAuthor[target] = it }
-            }
-
-            val existingIds = events.map { it.id }.toSet()
-            val missingIds = likedNoteIds.subtract(existingIds).subtract(requestedMissingIds)
-            if (missingIds.isEmpty()) return@launch
-
-            for (id in missingIds) requestedMissingIds.add(id)
-            Log.d(TAG, "Fetching ${missingIds.size} missing liked notes")
-
-            // You mostly like posts from the feed, which already holds them
-            // signed and whole: take those now instead of waiting on relays
-            // (iOS #295: primal returned 7 of the last 20 liked posts).
-            for (id in missingIds) {
-                val event = feedService.getCachedRawEvent(id)?.let(RelayGiven::eventFromJson) ?: continue
-                if (event.id == id) nostrService.injectEvent(event)
-            }
-
-            val config = configStore.config.value
-            val relayUrls = RelayGiven.likedNoteRelays(
-                localRoot = config.nostrURL,
-                localFeed = config.localRelayURL("feed"),
-                feedRelays = config.activeFeedRelays,
-                missingIds = missingIds,
-                likedAuthor = likedAuthor,
-                outboxRelays = nostrService.outboxRelays.value,
-            )
-            nostrService.fetchNotesByIds(missingIds.toList(), relayUrls)
-        }
-    }
-
-    private fun fetchMissingZappedNotes() {
-        viewModelScope.launch(Dispatchers.Default) {
-            val events = allEventsMutex.withLock { allEvents.toList() }
-            val zapReceipts = events.filter { it.kind == 9735 }
-
-            val targetNoteIds = mutableSetOf<String>()
-            for (receipt in zapReceipts) {
-                val cached = zapReceiptCache[receipt.id]
-                if (cached != null) {
-                    cached.targetNoteId?.let { targetNoteIds.add(it) }
-                } else {
-                    val targetId = receipt.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-                    if (targetId != null) targetNoteIds.add(targetId)
-                }
-            }
-
-            // Posts this app zapped from this phone, for Given (iOS #296).
-            targetNoteIds.addAll(feedService.zappedEventIds.value.keys.filter(RelayGiven::isEventId))
-
-            val existingIds = events.map { it.id }.toSet()
-            val missingIds = targetNoteIds.subtract(existingIds).subtract(requestedMissingZapNoteIds)
-            if (missingIds.isEmpty()) return@launch
-
-            for (id in missingIds) requestedMissingZapNoteIds.add(id)
-            Log.d(TAG, "Fetching ${missingIds.size} missing zapped notes")
-
-            val relayUrls = buildExternalRelayUrls()
-            nostrService.fetchNotesByIds(missingIds.toList(), relayUrls)
-        }
-    }
-
-    private fun fetchMoreZapReceipts() {
-        fetchGivenZapsFromWallet()
-        if (hasFetchedZapReceipts) return
-        hasFetchedZapReceipts = true
-
-        val localUrl = configStore.config.value.nostrURL ?: return
-        val urls = listOfNotNull(localUrl, configStore.config.value.localInboxURL).distinct()
-        Log.d(TAG, "Fetching extended zap receipts history")
-        nostrService.fetchZapReceipts(urls)
-
-        // Your relay only holds receipts that tag you with `p`, i.e. zaps you
-        // received. The receipt for a zap you sent is published to the relays
-        // of the person you zapped and tags you with `P`, so "Given" stayed
-        // empty. Ask the feed relays for those.
-        val owner = nostrService.activeHexPubkey
-        if (owner.isNotEmpty()) {
-            // Your published inbox too: zaps sent from here ask for receipts there.
-            val externalUrls = (buildExternalRelayUrls() + nostrService.relayLists.value[owner].orEmpty())
-                .filter { it != localUrl }
-                .distinctBy { it.lowercase() }
-            nostrService.fetchZapReceipts(externalUrls, limit = 500, tagFilter = mapOf("#P" to listOf(owner)))
-        }
-    }
-
-    /** Lets a refresh or account switch ask again for posts still missing. */
-    private fun forgetGivenLookups() {
-        requestedMissingIds.clear()
-        requestedMissingZapNoteIds.clear()
-        hasFetchedZapReceipts = false
-    }
-
-    /**
-     * Zaps > Given from the wallet: the zaps the connected NWC wallet paid,
-     * matched to their posts the same way the wallet's own history is. Read
-     * once per account and wallet; a pull-to-refresh does not redo it.
-     */
-    private fun fetchGivenZapsFromWallet() {
-        val owner = nostrService.activeHexPubkey
-        val nwcURI = configStore.config.value.nwcURI
-        if (owner.isEmpty() || nwcURI.isNullOrBlank() || _walletGivenLoading.value) return
-        val key = "$owner|$nwcURI"
-        if (walletGivenKey == key) return
-        walletGivenKey = key
-        walletGiven = WalletGiven()
-        _walletGivenLoading.value = true
-        val gen = walletGivenGen
-        fun stillCurrent() = walletGivenGen == gen && walletGivenKey == key
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val sent = mutableListOf<WalletTransaction>()
-                for (page in 0 until WALLET_GIVEN_PAGES) {
-                    val txs = try {
-                        nwcService.listTransactions(limit = WALLET_GIVEN_PAGE_SIZE, offset = page * WALLET_GIVEN_PAGE_SIZE)
-                    } catch (e: Exception) {
-                        // Unsupported or unreachable: try again on the next visit.
-                        Log.w(TAG, "Wallet history for Given failed: ${e.message}")
-                        if (page == 0 && stillCurrent()) walletGivenKey = null
-                        break
-                    }
-                    sent += txs.filter {
-                        it.direction == WalletTransaction.Direction.OUTGOING &&
-                            it.state == WalletTransaction.State.SETTLED
-                    }
-                    if (txs.size < WALLET_GIVEN_PAGE_SIZE) break
-                }
-                if (!stillCurrent() || sent.isEmpty()) return@launch
-
-                val found = zapHistoryService.lookup(sent, owner)
-                if (!stillCurrent()) return@launch
-                val notes = mutableListOf<FeedNote>()
-                val amounts = HashMap<String, Long>()
-                val times = HashMap<String, Long>()
-                for (tx in sent.sortedByDescending { it.createdAt }) {
-                    val postId = found.details[tx.id]?.postId ?: continue
-                    val note = found.posts[postId] ?: continue
-                    if (postId !in amounts) {
-                        notes.add(note)
-                        times[postId] = tx.createdAt
-                    }
-                    amounts[postId] = (amounts[postId] ?: 0L) + tx.amountSats
-                }
-                walletGiven = WalletGiven(notes, amounts, times)
-            } finally {
-                if (walletGivenGen == gen) {
-                    _walletGivenLoading.value = false
-                    scheduleUpdateDisplayData()
-                }
-            }
-        }
-    }
-
-    /** Merge events from NostrService.events into our allEvents store. */
-    private suspend fun mergeNostrServiceEvents() {
-        val serviceEvents = nostrService.events
-        allEventsMutex.withLock {
-            val existingIds = allEvents.map { it.id }.toHashSet()
-            for (event in serviceEvents) {
-                // seenIds too: the live subscription marks an event seen before
-                // it reaches allEvents, so checking allEvents alone let one
-                // arriving on both paths be added twice.
-                // Every kind the tab lists, so a liked or zapped comment or
-                // highlight fetched for Given is kept.
-                if ((event.kind in RELAY_TAB_NOTE_KINDS || event.kind == 7 || event.kind == 9735) &&
-                    existingIds.add(event.id) && seenIds.add(event.id)) {
-                    allEvents.add(event)
-                }
-            }
-            trimAllEventsLocked()
-        }
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────
-
-    private fun buildExternalRelayUrls(): List<String> {
-        val urls = mutableListOf<String>()
-        configStore.config.value.nostrURL?.let { urls.add(it) }
-        urls.addAll(configStore.config.value.readRelays)
-        return urls
-    }
-
-    private fun resolveWhitelistedHexPubkeys(): Set<String> {
-        return configStore.config.value.whitelistedNpubs
-            ?.mapNotNull { nostrService.npubToHex(it) }
-            ?.toSet() ?: emptySet()
-    }
-
-    private fun parseZapReceipt(event: NostrEvent): ParsedZapReceipt? {
-        zapReceiptCache[event.id]?.let { return it }
-
-        val descJson = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1) ?: return null
-        try {
-            val zapReq = json.parseToJsonElement(descJson).jsonObject
-            val senderPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: return null
-            val reqTags = zapReq["tags"]?.jsonArray
-            // The note comes from the signed request, not the receipt: a forged
-            // receipt can wrap your real request and point it at another note.
-            val requestTargetId = reqTags?.firstNotNullOfOrNull { tag ->
-                val tagArr = tag as? JsonArray ?: return@firstNotNullOfOrNull null
-                if (tagArr.size >= 2 && (tagArr[0] as? JsonPrimitive)?.contentOrNull == "e") (tagArr[1] as? JsonPrimitive)?.contentOrNull else null
-            }
-            val targetId = requestTargetId ?: event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-
-            // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
-            val amountSats = com.nostrvault.util.ZapAmount.sats(event.tags)
-
-            val parsed = ParsedZapReceipt(senderPubkey, targetId, amountSats, com.nostrvault.relay.HavenBridge.verifyEvent(descJson))
-            zapReceiptCache[event.id] = parsed
-            if (zapReceiptCache.size > MAX_ZAP_RECEIPT_CACHE) {
-                val toRemove = zapReceiptCache.keys.take(zapReceiptCache.size - MAX_ZAP_RECEIPT_CACHE)
-                toRemove.forEach { zapReceiptCache.remove(it) }
-            }
-            return parsed
-        } catch (_: Exception) {
-            return null
-        }
-    }
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
 
@@ -2277,104 +669,6 @@ class DashboardViewModel @Inject constructor(
 
     fun isWhitelisted(pubkey: String): Boolean =
         resolveWhitelistedHexPubkeys().contains(pubkey)
-
-    /**
-     * Query a relay endpoint, collecting events until EOSE or timeout.
-     * Uses the shared [seenIds] set to deduplicate across calls.
-     */
-    private suspend fun queryRelayEndpoint(
-        url: String,
-        filters: String,
-        subIdPrefix: String,
-        timeoutMs: Long,
-        /** False for lookups that must not mark ids as seen: a seen id is
-         *  dropped by the live subscription, so it would never reach the list. */
-        dedupe: Boolean = true,
-        /** Set once the relay ends the stored events (EOSE): an empty result is then a real "none". */
-        answered: java.util.concurrent.atomic.AtomicBoolean? = null,
-    ): Pair<List<NostrEvent>, List<FeedNote>> {
-        val rawEvents = mutableListOf<NostrEvent>()
-        val contentNotes = mutableListOf<FeedNote>()
-        val client = WebSocketClient(url = url, scope = viewModelScope, trustLocalhost = true)
-        val subId = "$subIdPrefix-${UUID.randomUUID().toString().take(8)}"
-        var eoseReceived = false
-
-        val collectJob = viewModelScope.launch(Dispatchers.IO) {
-            client.messages.collect { msg ->
-                try {
-                    val parsed = json.parseToJsonElement(msg).jsonArray
-                    val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-
-                    when (type) {
-                        "EVENT" -> {
-                            if (parsed.size < 3) return@collect
-                            val eventObj = parsed[2].jsonObject
-                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                            if (dedupe && !seenIds.add(id)) return@collect
-
-                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect
-                            val sig = eventObj["sig"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
-                                tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                            } ?: emptyList()
-
-                            if (kind in listOf(0, 10002, 10050, 10063, 10000)) {
-                                nostrService.processRelayMessage(msg, url)
-                                return@collect
-                            }
-
-                            val nostrEvent = NostrEvent(
-                                id = id, pubkey = pubkey, createdAt = createdAt,
-                                kind = kind, tags = tags, content = content, sig = sig,
-                            )
-                            rawEvents.add(nostrEvent)
-
-                            if (kind in RELAY_TAB_NOTE_KINDS) {
-                                val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
-                                if (!note.isNoiseOrSpam()) {
-                                    contentNotes.add(note)
-                                }
-                            }
-
-                            nostrService.fetchMissingProfiles(listOf(pubkey))
-                        }
-                        "EOSE" -> {
-                            eoseReceived = true
-                            answered?.set(true)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Parse error in $subIdPrefix: ${e.message}")
-                }
-            }
-        }
-
-        client.connect()
-
-        var waited = 0L
-        while (client.connectionState.value != WebSocketClient.ConnectionState.CONNECTED && waited < 5000) {
-            delay(100)
-            waited += 100
-        }
-
-        if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
-            val sent = client.send("[\"REQ\",\"$subId\",$filters]")
-            if (sent) {
-                val deadline = System.currentTimeMillis() + timeoutMs
-                while (!eoseReceived && System.currentTimeMillis() < deadline) {
-                    delay(200)
-                }
-            }
-        }
-
-        collectJob.cancel()
-        client.disconnect()
-
-        return Pair(rawEvents, contentNotes)
-    }
 
 }
 
