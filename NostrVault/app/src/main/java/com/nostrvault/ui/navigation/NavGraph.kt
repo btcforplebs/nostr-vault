@@ -1,7 +1,5 @@
 package com.nostrvault.ui.navigation
 
-import androidx.compose.ui.graphics.TransformOrigin
-import com.nostrvault.ui.components.ThreadZoomOrigin
 import com.nostrvault.ui.components.ZapFlightStage
 import com.nostrvault.ui.components.ScrollChrome
 import com.nostrvault.ui.components.blockedWhen
@@ -19,17 +17,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.data.model.FeedNote
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -43,31 +37,7 @@ import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.relay.LogStore
-import com.nostrvault.ui.screens.ArticleReaderScreen
 import com.nostrvault.ui.screens.*
-import com.nostrvault.ui.screens.dashboard.LogViewerScreen
-import com.nostrvault.ui.screens.dashboard.RelayActivityScreen
-import com.nostrvault.ui.screens.dm.DMInboxScreen
-import com.nostrvault.ui.screens.dm.DMThreadScreen
-import com.nostrvault.ui.screens.dm.NewMessageScreen
-import com.nostrvault.ui.screens.feed.FeedScreen
-import com.nostrvault.ui.screens.profile.ProfileScreen
-import com.nostrvault.ui.screens.settings.AccountSettingsScreen
-import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
-import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
-import com.nostrvault.ui.screens.settings.FeedSettingsScreen
-import com.nostrvault.ui.screens.settings.BackupSettingsScreen
-import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
-import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
-import com.nostrvault.ui.screens.settings.FollowingBackupScreen
-import com.nostrvault.ui.screens.settings.ImportSettingsScreen
-import com.nostrvault.ui.screens.settings.MediaSettingsScreen
-import com.nostrvault.ui.screens.settings.RelayAccessSettingsScreen
-import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
-import com.nostrvault.ui.screens.settings.PowSettingsScreen
-import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
-import com.nostrvault.ui.screens.settings.RelayMatrixScreen
-import com.nostrvault.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -76,8 +46,8 @@ import kotlinx.coroutines.flow.StateFlow
  * tabs and switching modes feel like the same gesture), and a hierarchical push
  * is a `fade`.
  */
-private fun <T> tabMotion(): FiniteAnimationSpec<T> = Motion.toggle()
-private fun <T> pushMotion(): FiniteAnimationSpec<T> = Motion.fade()
+internal fun <T> tabMotion(): FiniteAnimationSpec<T> = Motion.toggle()
+internal fun <T> pushMotion(): FiniteAnimationSpec<T> = Motion.fade()
 
 /** The five bottom-nav destinations. Navigating between any two of these is a
  *  lateral "tab switch" (fade-through) rather than a hierarchical push. */
@@ -90,7 +60,7 @@ private val TOP_LEVEL_ROUTES = setOf(
 )
 
 /** True when both ends of the transition are top-level tabs. */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean {
     val from = initialState.destination.route
     val to = targetState.destination.route
     return from in TOP_LEVEL_ROUTES && to in TOP_LEVEL_ROUTES
@@ -131,12 +101,14 @@ fun NostrVaultNavHost(
 
     // Account switcher state
     var showAccountSwitcher by remember { mutableStateOf(false) }
-    val config by configStore.config.collectAsState()
+    val configState = configStore.config.collectAsState()
+    val config by configState
     val activeHex by configStore.activeAccountHexPubkey.collectAsState()
     val profiles by nostrService.profiles.collectAsState()
     val activeProfile = profiles[activeHex]
     val isOwner = config.activeAccountNpub.isNullOrBlank()
-    val unreadDMs by dmUnreadCount.collectAsState()
+    val unreadDMsState = dmUnreadCount.collectAsState()
+    val unreadDMs by unreadDMsState
     val relayActivity by hasNewRelayActivity.collectAsState()
     // Zaps Only hides Likes: a like then lights no Vault list.
     LaunchedEffect(config.zapsOnlyMode) { RelayForegroundService.setZapsOnlyMode(config.zapsOnlyMode) }
@@ -153,62 +125,7 @@ fun NostrVaultNavHost(
         navigateToTutorialRoute(navController, route)
     }
 
-    // A tap from outside the app — widget, notification, nostr: link — lands in
-    // PendingDeepLink; this is the only place that can act on it. Setup has to
-    // be finished first: navigating away from the wizard would strand a
-    // half-configured install with no way back.
-    val pendingLink by PendingDeepLink.target.collectAsState()
-    LaunchedEffect(pendingLink, isSetupComplete) {
-        if (pendingLink == null || !isSetupComplete) return@LaunchedEffect
-        val target = PendingDeepLink.consume() ?: return@LaunchedEffect
-        // Notifications carry the account they arrived for. Switch first, so a
-        // mention of a second identity does not open under the first.
-        target.accountNpub
-            ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
-            ?.let { configStore.switchActiveAccount(it) }
-        if (target.mediaPaste) PendingMediaPaste.request()
-        // The Vault tab opens on the half the link names: Media for the
-        // gallery and Magic Paste, the relay's lists for a post. A tap naming
-        // no list (a widget's Relay) keeps the list the tab had, "Vault" or
-        // another.
-        if (target.route == Screen.Dashboard.route) {
-            if (target.vaultMedia || target.relayFocus != null) VaultSection.show(media = target.vaultMedia)
-            else VaultSection.leaveMedia()
-        }
-        // A notification's post goes in the note cache first, so the note
-        // screen finds it there and shows it at once instead of fetching.
-        target.seedNote?.let {
-            feedService.cacheNote(FeedNote.fromEvent(it.id, it.pubkey, it.content, it.tags, it.createdAt, it.kind))
-        }
-        val focus = target.relayFocus
-        if (focus == null && target.route == Screen.Dashboard.route) {
-            // A widget's Media or Relay tap: switch to the Vault tab as the
-            // bottom bar does, so its view models and connection are reused
-            // rather than a second copy pushed on top.
-            navController.navigate(Screen.Dashboard.route) {
-                popUpTo(Screen.Feed.route) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
-            navController.popBackStack(Screen.Dashboard.route, inclusive = false)
-            return@LaunchedEffect
-        }
-        if (focus == null) {
-            navController.navigate(target.route) { launchSingleTop = true }
-            return@LaunchedEffect
-        }
-        // A notification about a post: park the target for the Vault tab's relay half, then
-        // switch to that tab as the bottom bar does — the same instance, so its
-        // loaded events are reused — and drop anything stacked on it (an open
-        // thread), so the list the tab scrolls is the one on screen.
-        RelayFocus.request(focus)
-        navController.navigate(Screen.Dashboard.route) {
-            popUpTo(Screen.Feed.route) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
-        }
-        navController.popBackStack(Screen.Dashboard.route, inclusive = false)
-    }
+    PendingDeepLinkEffect(isSetupComplete, configStore, feedService, navController)
 
     // The bars fold with the scroll on the list tabs (Feed, and both halves of
     // Vault), following the finger; tabs without that wiring, and "disable
@@ -272,546 +189,12 @@ fun NostrVaultNavHost(
                     else fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, animationSpec = pushMotion())
                 },
             ) {
-                // ── Setup ─────────────────────────────────────────────
-                composable(Screen.SetupWizard.route) {
-                    SetupWizardScreen(
-                        onComplete = {
-                            navController.navigate(Screen.Feed.route) {
-                                popUpTo(Screen.SetupWizard.route) { inclusive = true }
-                            }
-                        },
-                    )
-                }
-
-                // ── Bottom nav tabs ───────────────────────────────────
-                composable(Screen.Feed.route) {
-                    FeedScreen(
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                        onArticleClick = { noteId ->
-                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                        },
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onMessageUser = { pubkey, draft ->
-                            navController.navigate(Screen.DMThread.createRoute(pubkey, draft))
-                        },
-                        onCompose = {
-                            navController.navigate(Screen.ComposeNote.createRoute())
-                        },
-                        onComposeMode = { kind ->
-                            navController.navigate(Screen.ModeCompose.createRoute(kind.route))
-                        },
-                        onComposeText = { text ->
-                            navController.navigate(Screen.ComposeNote.createRoute(text = text))
-                        },
-                        onReply = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                        },
-                        onQuote = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                        },
-                        onOpenDashboard = { navController.navigate(Screen.FeedDashboard.route) },
-                    )
-                }
-
-                composable(Screen.FeedDashboard.route) {
-                    com.nostrvault.ui.screens.feed.FeedDashboardScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenFeed = { navController.popBackStack(Screen.Feed.route, inclusive = false) },
-                        onProfileClick = { navController.navigate(Screen.Profile.createRoute(it)) },
-                        onNoteClick = { navController.navigate(Screen.NoteDetail.createRoute(it)) },
-                        onHashtagClick = { navController.navigate(Screen.HashtagFeed.createRoute(it)) },
-                        onOpenVault = { target ->
-                            // As a notification tap does: park the list for the
-                            // Vault tab's relay half, then switch to that tab.
-                            if (target == com.nostrvault.ui.screens.feed.VaultTarget.VAULT) {
-                                VaultSection.leaveMedia()
-                            } else {
-                                VaultSection.show(media = false)
-                            }
-                            when (target) {
-                                com.nostrvault.ui.screens.feed.VaultTarget.ZAPS ->
-                                    RelayFocus.request(RelayFocusRequest("zap", ""))
-                                com.nostrvault.ui.screens.feed.VaultTarget.FOLLOWERS ->
-                                    RelayFocus.request(RelayFocusRequest(NotificationTarget.FOLLOWERS, ""))
-                                com.nostrvault.ui.screens.feed.VaultTarget.VAULT -> Unit
-                            }
-                            navController.navigate(Screen.Dashboard.route) {
-                                popUpTo(Screen.Feed.route) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                    )
-                }
-
-                composable(Screen.Search.route) {
-                    SearchScreen(
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                        onArticleClick = { noteId ->
-                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                        },
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onReply = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                        },
-                        onQuote = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                        },
-                        onCompose = {
-                            navController.navigate(Screen.ComposeNote.createRoute())
-                        },
-                    )
-                }
-
-                composable(Screen.WOT.route) {
-                    WOTTabScreen(
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onMessage = { pubkey ->
-                            navController.navigate(Screen.DMThread.createRoute(pubkey))
-                        },
-                    )
-                }
-
-                composable(Screen.DMInbox.route) {
-                    DMInboxScreen(
-                        onConversationClick = { pubkey ->
-                            navController.navigate(Screen.DMThread.createRoute(pubkey))
-                        },
-                        onNewMessage = {
-                            navController.navigate(Screen.NewMessage.createRoute())
-                        },
-                    )
-                }
-
-                composable(
-                    route = Screen.Profile.route,
-                    arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
-                ) { entry ->
-                    val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
-                    ProfileScreen(
-                        pubkey = pubkey,
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                        onArticleClick = { noteId ->
-                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                        },
-                        onProfileClick = { pk ->
-                            navController.navigate(Screen.Profile.createRoute(pk))
-                        },
-                        onReply = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                        },
-                        onQuote = { noteId ->
-                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                        },
-                        onSell = {
-                            navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
-                        },
-                        onComposeText = { text ->
-                            navController.navigate(Screen.ComposeNote.createRoute(text = text))
-                        },
-                        onNavigateToSettings = {
-                            navController.navigate(Screen.Settings.route)
-                        },
-                        onOpenLightning = {
-                            navController.navigate(Screen.Wallet.route)
-                        },
-                        onNavigateToDMThread = { pk ->
-                            navController.navigate(Screen.DMThread.createRoute(pk))
-                        },
-                        onMessageUser = { pk, draft ->
-                            navController.navigate(Screen.DMThread.createRoute(pk, draft))
-                        },
-                        onOpenFollowList = { tab, total ->
-                            navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.FollowList.route,
-                    arguments = listOf(
-                        navArgument("pubkey") { type = NavType.StringType },
-                        navArgument("tab") { type = NavType.StringType; defaultValue = "FOLLOWING" },
-                        navArgument("total") { type = NavType.StringType; defaultValue = "-1" },
-                    ),
-                ) {
-                    com.nostrvault.ui.screens.profile.FollowListScreen(
-                        onProfileClick = { pk -> navController.navigate(Screen.Profile.createRoute(pk)) },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                // ── Detail screens ────────────────────────────────────
-                composable(
-                    route = Screen.AddressLink.route,
-                    arguments = listOf(navArgument("naddr") { type = NavType.StringType }),
-                ) { entry ->
-                    val naddr = entry.arguments?.getString("naddr") ?: return@composable
-                    com.nostrvault.ui.screens.AddressLinkScreen(
-                        naddr = naddr,
-                        feedService = feedService,
-                        onResolved = { route ->
-                            navController.navigate(route) {
-                                popUpTo(Screen.AddressLink.route) { inclusive = true }
-                            }
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.ArticleReader.route,
-                    arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
-                ) {
-                    ArticleReaderScreen(
-                        onBack = { navController.popBackStack() },
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onComment = { id ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
-                        },
-                        onNoteClick = { id ->
-                            navController.navigate(Screen.NoteDetail.createRoute(id))
-                        },
-                    )
-                }
-
-                composable(
-                    route = Screen.NoteDetail.route,
-                    arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
-                    // Zooms open out of the tapped post and closes back into
-                    // it (iOS #306); from the middle when no post was tapped.
-                    enterTransition = {
-                        val origin = ThreadZoomOrigin.take(targetState.id) ?: TransformOrigin.Center
-                        fadeIn(pushMotion()) + scaleIn(initialScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())
-                    },
-                    // Coming back to a thread is the host's return, not the
-                    // open-zoom: composable() would otherwise reuse enterTransition.
-                    popEnterTransition = {
-                        if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
-                        else fadeIn(pushMotion()) + scaleIn(initialScale = 1.10f, animationSpec = pushMotion())
-                    },
-                    popExitTransition = {
-                        val origin = ThreadZoomOrigin.closing(initialState.id) ?: TransformOrigin.Center
-                        fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())
-                    },
-                ) { entry ->
-                    val noteId = entry.arguments?.getString("noteId") ?: return@composable
-                    NoteDetailScreen(
-                        noteId = noteId,
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onNoteClick = { id ->
-                            navController.navigate(Screen.NoteDetail.createRoute(id))
-                        },
-                        onArticleClick = { id ->
-                            navController.navigate(Screen.ArticleReader.createRoute(id))
-                        },
-                        onReply = { id ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
-                        },
-                        onQuote = { id ->
-                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = id))
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.HashtagFeed.route,
-                    arguments = listOf(navArgument("tag") { type = NavType.StringType }),
-                ) {
-                    HashtagFeedScreen(
-                        onNoteClick = { id ->
-                            navController.navigate(Screen.NoteDetail.createRoute(id))
-                        },
-                        onArticleClick = { id ->
-                            navController.navigate(Screen.ArticleReader.createRoute(id))
-                        },
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onReply = { id ->
-                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
-                        },
-                        onQuote = { id ->
-                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = id))
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.DMThread.route,
-                    arguments = listOf(
-                        navArgument("pubkey") { type = NavType.StringType },
-                        navArgument("draft") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    ),
-                ) { entry ->
-                    val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
-                    DMThreadScreen(
-                        counterpartyPubkey = pubkey,
-                        initialMessage = entry.arguments?.getString("draft"),
-                        onProfileClick = { pk ->
-                            navController.navigate(Screen.Profile.createRoute(pk))
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.NewMessage.route,
-                    arguments = listOf(
-                        navArgument("pubkey") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    ),
-                ) {
-                    NewMessageScreen(
-                        onMessageSent = { recipientHex ->
-                            navController.navigate(Screen.DMThread.createRoute(recipientHex)) {
-                                popUpTo(Screen.NewMessage.route) { inclusive = true }
-                            }
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(
-                    route = Screen.ComposeNote.route,
-                    arguments = listOf(
-                        navArgument("replyTo") { type = NavType.StringType; nullable = true; defaultValue = null },
-                        navArgument("quoteTo") { type = NavType.StringType; nullable = true; defaultValue = null },
-                        navArgument("draftId") { type = NavType.StringType; nullable = true; defaultValue = null },
-                        navArgument("text") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    ),
-                ) { entry ->
-                    ComposeNoteScreen(
-                        onPublished = { navController.popBackStack() },
-                        onBack = { navController.popBackStack() },
-                        onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
-                    )
-                }
-
-                composable(
-                    route = Screen.ModeCompose.route,
-                    arguments = listOf(navArgument("kind") { type = NavType.StringType }),
-                ) {
-                    ModeComposeScreen(onDone = { navController.popBackStack() })
-                }
-
-                composable(Screen.Drafts.route) {
-                    DraftsScreen(
-                        onResumeDraft = { draftId, _, replyToId, quoteToId ->
-                            // Replace the composer this was opened from, rather than
-                            // stacking a second one behind it (matches iOS, which loads
-                            // the draft into the open composer). Popping Drafts as well
-                            // means Back from the resumed draft leaves the composer
-                            // entirely instead of landing on the list again.
-                            navController.navigate(
-                                Screen.ComposeNote.createRoute(
-                                    replyToNoteId = replyToId,
-                                    quoteToNoteId = quoteToId,
-                                    draftId = draftId,
-                                )
-                            ) {
-                                popUpTo(Screen.ComposeNote.route) { inclusive = true }
-                            }
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                // ── Wallet ────────────────────────────────────────────
-                composable(Screen.Wallet.route) {
-                    WalletScreen(
-                        onBack = { navController.popBackStack() },
-                        onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                    )
-                }
-
-                composable(Screen.BitcoinSweep.route) {
-                    BitcoinSweepScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                // ── Settings ──────────────────────────────────────────
-                composable(Screen.Settings.route) {
-                    SettingsScreen(
-                        onNavigate = { screen -> navController.navigate(screen.route) },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.TutorialsSettings.route) {
-                    com.nostrvault.tutorials.TutorialsSettingsScreen(
-                        account = nostrService.activeHexPubkey,
-                        onBack = { navController.popBackStack() },
-                        // To the tutorial's page, where the replayed card waits.
-                        onReplay = { id -> navigateToTutorialRoute(navController, tutorialRoute(id)) },
-                    )
-                }
-
-                composable(Screen.AppearanceSettings.route) {
-                    AppearanceSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.FeedSettings.route) {
-                    FeedSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenRelays = { navController.navigate(Screen.Relays.route) },
-                    )
-                }
-
-                composable(Screen.AccountSettings.route) {
-                    AccountSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.BlockedSettings.route) {
-                    BlockedSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.AdvancedSettings.route) {
-                    AdvancedSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.MediaSettings.route) {
-                    MediaSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.RelayAccessSettings.route) {
-                    RelayAccessSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.ImportSettings.route) {
-                    ImportSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.BackupSettings.route) {
-                    BackupSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.Relays.route) {
-                    RelayMatrixScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenMediaServers = { navController.navigate(Screen.BlossomSettings.route) },
-                    )
-                }
-
-                composable(Screen.BlossomSettings.route) {
-                    BlossomSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.PowSettings.route) {
-                    PowSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.FollowingBackup.route) {
-                    FollowingBackupScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.NotificationSettings.route) {
-                    NotificationSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                composable(Screen.HavenRelaySettings.route) {
-                    HavenRelaySettingsScreen(
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                // ── Vault ─────────────────────────────────────────────
-                composable(Screen.Dashboard.route) {
-                    VaultTabScreen(
-                        onNavigate = { screen -> navController.navigate(screen.route) },
-                        onNoteClick = { noteId ->
-                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                        },
-                        onArticleClick = { noteId ->
-                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                        },
-                        onProfileClick = { pubkey ->
-                            navController.navigate(Screen.Profile.createRoute(pubkey))
-                        },
-                        onMediaClick = { index ->
-                            navController.navigate(Screen.MediaViewer.createRoute(index))
-                        },
-                        logStore = logStore,
-                        feedService = feedService,
-                        unreadDMs = unreadDMs,
-                    )
-                }
-
-                composable(Screen.RelayActivity.route) {
-                    val currentLogs by logStore.logs.collectAsState()
-                    RelayActivityScreen(
-                        logs = currentLogs,
-                        onBack = { navController.popBackStack() },
-                        onOpenFullLogs = { navController.navigate(Screen.LogViewer.route) },
-                    )
-                }
-
-                composable(Screen.LogViewer.route) {
-                    val currentLogs by logStore.logs.collectAsState()
-                    LogViewerScreen(
-                        logs = currentLogs,
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-
-                // ── Media viewer ──────────────────────────────────────
-                composable(
-                    route = Screen.MediaViewer.route,
-                    arguments = listOf(navArgument("index") { type = NavType.IntType }),
-                ) { entry ->
-                    val index = entry.arguments?.getInt("index") ?: 0
-                    MediaViewerScreen(
-                        initialIndex = index,
-                        onBack = { navController.popBackStack() },
-                        autoplayVideos = config.autoplayVideos,
-                    )
-                }
+                tabRoutes(navController)
+                detailRoutes(navController, feedService)
+                walletRoutes(navController)
+                settingsRoutes(navController, nostrService)
+                vaultRoutes(navController, logStore, feedService, unreadDMsState)
+                mediaRoutes(navController, configState)
             }
         }
 
@@ -1026,7 +409,7 @@ internal fun tutorialRoute(id: com.nostrvault.tutorials.TutorialID): String = wh
 /** Tabs open as the bottom bar opens them, then drop anything their saved
  *  stack brings back (a thread, or the wallet an earlier card opened), so
  *  the tab itself is on screen for its cards. The wallet goes on top. */
-private fun navigateToTutorialRoute(navController: androidx.navigation.NavHostController, route: String) {
+internal fun navigateToTutorialRoute(navController: androidx.navigation.NavHostController, route: String) {
     if (route == Screen.Wallet.route) {
         navController.navigate(route) { launchSingleTop = true }
         return
