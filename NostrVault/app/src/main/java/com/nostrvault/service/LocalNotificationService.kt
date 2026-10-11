@@ -309,6 +309,14 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
+        // Nothing from someone this account blocked. A gift wrap's author is a
+        // throwaway key; its real sender is checked once it opens (announceDm).
+        val blocked = config.blockedFor(npub).mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+        if (BlockedPeople.isBlocked(author, blocked)) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' author ${author.take(8)} is blocked")
+            return
+        }
+
         // Nothing from outside your Web of Trust: those were the spam alerts.
         val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
         val trusted = trustedAuthors()
@@ -318,7 +326,7 @@ class LocalNotificationService @Inject constructor(
         }
 
         if (isDm(type)) {
-            announceDm(id, type, author, recipientHex, npub)
+            announceDm(id, type, author, recipientHex, npub, blocked)
             return
         }
 
@@ -444,7 +452,7 @@ class LocalNotificationService @Inject constructor(
      * device sent, wait for the inbox to decrypt the rest, then show the real
      * sender and text. If it never opens, the generic line still goes out.
      */
-    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String) {
+    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String, blocked: Set<String>) {
         // A NIP-04 DM names its author in the clear.
         if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
         val dms = dmService.get()
@@ -452,11 +460,6 @@ class LocalNotificationService @Inject constructor(
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: own sent DM ${id.take(8)}")
             return
         }
-        // A blocked person never notifies. NIP-04 names them up front; a gift
-        // wrap only once it is opened, below.
-        val blocked = configStore.config.value.blockedFor(npub)
-            .mapNotNull { nostrService.get().npubToHex(it) }.toSet()
-        if (BlockedPeople.isBlocked(author, blocked)) return
         scope.launch {
             val inThread = appInForeground && dms.visibleConversation != null
             val opened = dms.awaitOpenedMessage(
