@@ -181,32 +181,71 @@ struct PlatformClipboard {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL] ?? []
-        return urls.first { url in
+        if let file = urls.first(where: { url in
             UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        }) {
+            return file
         }
-        #elseif canImport(UIKit)
-        for provider in UIPasteboard.general.itemProviders {
-            guard let typeID = provider.registeredTypeIdentifiers.first(where: {
-                UTType($0)?.conforms(to: .movie) == true
-            }) else { continue }
-            let ext = UTType(typeID)?.preferredFilenameExtension ?? "mov"
-            return await withCheckedContinuation { continuation in
-                provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, _ in
-                    // The provided file is deleted when this handler returns.
-                    guard let url else { continuation.resume(returning: nil); return }
-                    let dest = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("pasted-video-\(UUID().uuidString.prefix(8))")
-                        .appendingPathExtension(ext)
-                    do {
-                        try FileManager.default.copyItem(at: url, to: dest)
-                        continuation.resume(returning: dest)
-                    } catch {
-                        continuation.resume(returning: nil)
-                    }
-                }
+        // A clip copied on an iPhone or iPad arrives over Universal Clipboard
+        // as the movie's bytes, not a file URL. There is no file-backed read
+        // for those, so this one does come through memory.
+        for item in NSPasteboard.general.pasteboardItems ?? [] {
+            for type in item.types {
+                guard let utType = UTType(type.rawValue), utType.conforms(to: .movie),
+                      let data = item.data(forType: type) else { continue }
+                let dest = temporaryVideoURL(extension: utType.preferredFilenameExtension ?? "mov")
+                if (try? data.write(to: dest)) != nil { return dest }
             }
         }
         return nil
+        #elseif canImport(UIKit)
+        for provider in UIPasteboard.general.itemProviders {
+            // Every movie type, in the order offered: a clip from another
+            // device over Universal Clipboard can offer one that fails to
+            // load and another that works.
+            let movieTypes = provider.registeredTypeIdentifiers.filter {
+                UTType($0)?.conforms(to: .movie) == true
+            }
+            for typeID in movieTypes {
+                if let file = await loadVideoFile(from: provider, typeID: typeID) { return file }
+            }
+        }
+        return nil
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private static func loadVideoFile(from provider: NSItemProvider, typeID: String) async -> URL? {
+        let ext = UTType(typeID)?.preferredFilenameExtension ?? "mov"
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, _ in
+                // The provided file is deleted when this handler returns.
+                guard let url else { continuation.resume(returning: nil); return }
+                let dest = temporaryVideoURL(extension: ext)
+                do {
+                    try FileManager.default.copyItem(at: url, to: dest)
+                    continuation.resume(returning: dest)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+    #endif
+
+    private static func temporaryVideoURL(extension ext: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("pasted-video-\(UUID().uuidString.prefix(8))")
+            .appendingPathExtension(ext)
+    }
+
+    /// Whether the clipboard holds a video. Reads the types only, so it
+    /// raises no paste prompt.
+    static func hasVideo() -> Bool {
+        #if canImport(AppKit)
+        return (NSPasteboard.general.types ?? []).contains { UTType($0.rawValue)?.conforms(to: .movie) == true }
+        #elseif canImport(UIKit)
+        return UIPasteboard.general.types.contains { UTType($0)?.conforms(to: .movie) == true }
         #endif
     }
 
@@ -656,7 +695,8 @@ struct PastesClipboardImage: ViewModifier {
     /// don't raise the paste-permission prompt.
     private func refresh() {
         let board = UIPasteboard.general
-        clipboardHoldsOnlyImage = board.hasImages && !board.hasStrings && !board.hasURLs
+        clipboardHoldsOnlyImage = (board.hasImages || PlatformClipboard.hasVideo())
+            && !board.hasStrings && !board.hasURLs
     }
 }
 #endif
