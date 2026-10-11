@@ -213,61 +213,36 @@ extension ProfileContent {
         } else if selectedSection == .media {
             mediaGrid(notes: notes)
         } else {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(notes.enumerated()), id: \.element.id) { idx, note in
-                    if idx > 0 {
-                        Rectangle()
-                            .fill(Color.platformSeparator.opacity(0.4))
-                            .frame(height: 0.5)
-                            .padding(.leading, 16)
+            ProfileNoteList(
+                notes: notes,
+                section: selectedSection,
+                pubkey: pubkey,
+                profile: profile,
+                feedService: feedService,
+                nostrService: nostrService,
+                onReply: { note in
+                    if note.kind == 6, let refId = note.repostedEventId,
+                       let original = feedService.findNote(id: refId) {
+                        composeContext = ComposeContext(replyTo: original, quoteTo: nil)
+                    } else {
+                        composeContext = ComposeContext(replyTo: note, quoteTo: nil)
                     }
-                    FeedNoteRow(
-                        note: note,
-                        profile: selectedSection == .tagged
-                            ? nostrService.profiles[note.pubkey]
-                            : profile,
-                        rowData: FeedNoteRowData.resolve(
-                            for: note,
-                            feedService: feedService,
-                            nostrService: nostrService
-                        ).with(engagement: engagementStore.engagement(for: feedService.originalNote(for: note).id)),
-                        onReply: {
-                            if note.kind == 6, let refId = note.repostedEventId,
-                               let original = feedService.findNote(id: refId) {
-                                composeContext = ComposeContext(replyTo: original, quoteTo: nil)
-                            } else {
-                                composeContext = ComposeContext(replyTo: note, quoteTo: nil)
-                            }
-                        },
-                        onQuote: {
-                            composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
-                        },
-                        onProfile: { tapped in
-                            // This page already shows that profile.
-                            guard tapped != pubkey else { return }
-                            showingProfileKey = IdentifiableString(id: tapped)
-                        },
-                        onMedia: { url, urls in
-                            showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                        },
-                        showParent: false
-                    )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            openNote(note)
-                        }
-                }
-
+                },
+                onQuote: { note in
+                    composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
+                },
+                onProfile: { tapped in
+                    // This page already shows that profile.
+                    guard tapped != pubkey else { return }
+                    showingProfileKey = IdentifiableString(id: tapped)
+                },
+                onMedia: { url, urls in
+                    showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+                },
+                onOpen: { note in openNote(note) }
+            ) {
                 olderPageSentinel(itemCount: notes.count)
             }
-            // Numbers under each post, fetched as the posts appear. The tagged
-            // tab is other people's posts, so it is left out.
-            .task(id: selectedSection == .tagged ? [] : notes.map(\.id)) {
-                guard selectedSection != .tagged else { return }
-                await engagementStore.load(ids: notes.map { feedService.originalNote(for: $0).id }, author: pubkey)
-            }
-            .scrollTargetLayout()
-            .padding(.top, 4)
         }
     }
 

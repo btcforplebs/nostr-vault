@@ -8,35 +8,10 @@ import Photos
 extension ProfileContent {
     // MARK: - Media
 
+    /// The media tab's tiles, one per file. Built once per set of posts (see
+    /// `ProfileMediaItems`), not on every redraw of the page.
     private var displayMedia: [MediaItem] {
-        let items: [(url: URL, note: FeedNote)] = loader.buckets.media.flatMap { note in
-            note.mediaURLs.map { (url: $0, note: note) }
-        }
-        return items.map { item in
-            let ext = item.url.pathExtension.lowercased()
-            var isGIF = ext == "gif"
-            var isVideo = SupportedMediaFormats.videoExtensions.contains(ext)
-            var isAudio = SupportedMediaFormats.audioExtensions.contains(ext)
-
-            if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: item.url) {
-                isGIF = MediaTypeDetector.shared.isGIFContentType(cachedMime)
-                isVideo = MediaTypeDetector.shared.isVideoContentType(cachedMime)
-                isAudio = cachedMime.lowercased().hasPrefix("audio/")
-            }
-
-            let type: MediaItem.MediaType = isVideo ? .video : (isAudio ? .audio : .image)
-            let mime = isGIF ? "image/gif" : (isVideo ? "video/mp4" : nil)
-
-            return MediaItem(
-                id: UUID.deterministic(from: item.url.absoluteString),
-                url: item.url,
-                type: type,
-                dateAdded: item.note.createdAt,
-                pubkey: item.note.pubkey,
-                tags: item.note.tags,
-                mimeType: mime
-            )
-        }
+        ProfileMediaItems.shared.items(for: loader.buckets.media).items
     }
 
     var isPresentingViewer: Binding<Bool> {
@@ -64,14 +39,15 @@ extension ProfileContent {
                                              spacing: gridSpacing, minimum: 3, maximum: 6)
         #endif
 
-        let items = displayMedia
+        let built = ProfileMediaItems.shared.items(for: loader.buckets.media)
+        let items = built.items
 
         return VStack(spacing: 0) {
             LazyVGrid(columns: columns, spacing: gridSpacing) {
                 ForEach(items) { mediaItem in
                     // Your own files get the Vault grid's Delete menu; only a
                     // Blossom file (named by its hash) can be deleted.
-                    let hash = canDeleteMedia ? MediaCacheService.blossomHash(in: mediaItem.url) : nil
+                    let hash = canDeleteMedia ? built.blossomHashes[mediaItem.id] : nil
                     MediaGridItem(
                         item: mediaItem,
                         onDeleteFromMirrors: hash.map { hash in { _ in deleteFromMirrors(hash: hash) } },
@@ -309,10 +285,80 @@ extension ProfileContent {
     #endif
 
     private func navigateMedia(direction: Int) {
+        let media = displayMedia
         guard let current = selectedMedia,
-              let index = displayMedia.firstIndex(where: { $0.id == current.id }) else { return }
+              let index = media.firstIndex(where: { $0.id == current.id }) else { return }
         let newIndex = index + direction
-        guard displayMedia.indices.contains(newIndex) else { return }
-        withAnimation(Motion.fade) { selectedMedia = displayMedia[newIndex] }
+        guard media.indices.contains(newIndex) else { return }
+        withAnimation(Motion.fade) { selectedMedia = media[newIndex] }
+    }
+}
+
+/// The media tab's tiles, built once per set of posts. Building them hashes
+/// every URL into an id and looks up its type, and the page redraws many
+/// times a second while it loads, so each redraw used to rebuild them all.
+///
+/// A file with no extension (a Blossom hash) is guessed to be an image until
+/// its type is detected; the set is rebuilt once a guessed URL's type is known.
+@MainActor
+final class ProfileMediaItems {
+    static let shared = ProfileMediaItems()
+
+    struct Built {
+        let items: [MediaItem]
+        /// The Blossom hash of each tile's file, for its Delete menu.
+        let blossomHashes: [UUID: String]
+        /// URLs whose type was guessed from the extension alone.
+        let guessed: [URL]
+    }
+
+    private var noteIDs: [String] = []
+    private var built = Built(items: [], blossomHashes: [:], guessed: [])
+
+    func items(for notes: [FeedNote]) -> Built {
+        let ids = notes.map(\.id)
+        let typeArrived = built.guessed.contains { MediaTypeDetector.shared.getCachedContentType(for: $0) != nil }
+        if ids != noteIDs || typeArrived {
+            noteIDs = ids
+            built = Self.build(notes)
+        }
+        return built
+    }
+
+    private static func build(_ notes: [FeedNote]) -> Built {
+        var items: [MediaItem] = []
+        var hashes: [UUID: String] = [:]
+        var guessed: [URL] = []
+        for note in notes {
+            for url in note.mediaURLs {
+                let ext = url.pathExtension.lowercased()
+                var isGIF = ext == "gif"
+                var isVideo = SupportedMediaFormats.videoExtensions.contains(ext)
+                var isAudio = SupportedMediaFormats.audioExtensions.contains(ext)
+
+                if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: url) {
+                    isGIF = MediaTypeDetector.shared.isGIFContentType(cachedMime)
+                    isVideo = MediaTypeDetector.shared.isVideoContentType(cachedMime)
+                    isAudio = cachedMime.lowercased().hasPrefix("audio/")
+                } else {
+                    guessed.append(url)
+                }
+
+                let type: MediaItem.MediaType = isVideo ? .video : (isAudio ? .audio : .image)
+                let mime = isGIF ? "image/gif" : (isVideo ? "video/mp4" : nil)
+                let item = MediaItem(
+                    id: UUID.deterministic(from: url.absoluteString),
+                    url: url,
+                    type: type,
+                    dateAdded: note.createdAt,
+                    pubkey: note.pubkey,
+                    tags: note.tags,
+                    mimeType: mime
+                )
+                items.append(item)
+                if let hash = MediaCacheService.blossomHash(in: url) { hashes[item.id] = hash }
+            }
+        }
+        return Built(items: items, blossomHashes: hashes, guessed: guessed)
     }
 }
