@@ -62,8 +62,14 @@ class DMService: ObservableObject {
     @Published var conversations: [DMConversation] = []
     @Published var isLoading: Bool = false
 
+    /// The inbox as shown: conversations with a blocked person are hidden.
+    /// They stay in `conversations` (and on disk), so unblocking brings them back.
+    var visibleConversations: [DMConversation] {
+        BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id }
+    }
+
     var totalUnreadCount: Int {
-        conversations.reduce(0) { $0 + $1.unreadCount }
+        visibleConversations.reduce(0) { $0 + $1.unreadCount }
     }
 
     private var inboxClient: WebSocketClient?       // /chat (NIP-17 gift wraps)
@@ -141,6 +147,12 @@ class DMService: ObservableObject {
             .sink { [weak self] _ in
                 self?.handleAccountSwitch()
             }
+            .store(in: &cancellables)
+
+        // A block or unblock changes what the inbox shows and the unread badge.
+        NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         // Auto-connect when relay becomes available
@@ -1277,19 +1289,21 @@ class DMService: ObservableObject {
                 isFromMe: isFromMe,
                 isNIP04: true
             )
+            let unread = BlockedPeople.mayAlert(sender: event.pubkey, isFromMe: isFromMe,
+                                                blocked: ConfigService.shared.activeAccountBlockedHexPubkeys)
 
             if let idx = conversations.firstIndex(where: { $0.id == counterpartyPubkey }) {
                 guard !conversations[idx].messages.contains(where: { $0.id == event.id }) else { return }
                 conversations[idx].messages.append(message)
                 conversations[idx].messages.sort { $0.timestamp < $1.timestamp }
-                if !isFromMe {
+                if unread {
                     conversations[idx].unreadCount += 1
                 }
             } else {
                 let conversation = DMConversation(
                     id: counterpartyPubkey,
                     messages: [message],
-                    unreadCount: isFromMe ? 0 : 1
+                    unreadCount: unread ? 1 : 0
                 )
                 conversations.append(conversation)
             }
@@ -1389,6 +1403,9 @@ class DMService: ObservableObject {
                 timestamp: timestamp,
                 isFromMe: isFromMe
             )
+            // Kept even from a blocked sender (hidden, not lost), but never unread.
+            let unread = BlockedPeople.mayAlert(sender: senderPubkey, isFromMe: isFromMe,
+                                                blocked: ConfigService.shared.activeAccountBlockedHexPubkeys)
 
             #if DEBUG
             print("Received DM from \(senderPubkey.prefix(8)): \(content.prefix(50))")
@@ -1413,14 +1430,14 @@ class DMService: ObservableObject {
 
                 conversations[idx].messages.append(message)
                 conversations[idx].messages.sort { $0.timestamp < $1.timestamp }
-                if !isFromMe {
+                if unread {
                     conversations[idx].unreadCount += 1
                 }
             } else {
                 let conversation = DMConversation(
                     id: counterpartyPubkey,
                     messages: [message],
-                    unreadCount: isFromMe ? 0 : 1
+                    unreadCount: unread ? 1 : 0
                 )
                 conversations.append(conversation)
             }

@@ -767,8 +767,11 @@ data class HavenConfig(
     }
 
     /** Blocked npubs for the active account, falling back to the legacy flat list. */
-    fun blockedForActiveAccount(): List<String> =
-        blockedNpubsPerAccount[activeOrOwnerNpub()] ?: blockedNpubs ?: emptyList()
+    fun blockedForActiveAccount(): List<String> = blockedFor(activeOrOwnerNpub())
+
+    /** Blocked npubs for one account, falling back to the legacy flat list. */
+    fun blockedFor(npub: String): List<String> =
+        blockedNpubsPerAccount[npub] ?: blockedNpubs ?: emptyList()
 
     /** Per-account push preferences, falling back to the global flags. */
     fun pushPrefsFor(npub: String): PushPrefs =

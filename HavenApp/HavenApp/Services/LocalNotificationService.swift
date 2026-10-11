@@ -330,6 +330,10 @@ final class LocalNotificationService {
         // A NIP-04 DM names its author in the clear.
         if !author.isEmpty, author.lowercased() == recipientHex.lowercased() { return }
         if DMService.shared.isOwnSentWrap(id) { return }
+        // A blocked person never notifies. NIP-04 names them up front; a gift
+        // wrap only once it is opened, below.
+        let blocked = ConfigService.shared.blockedHexPubkeys(forAccount: npub)
+        if BlockedPeople.isBlocked(author, in: blocked) { return }
 
         Task { @MainActor in
             let inThread = appInForeground && DMService.shared.visibleConversation != nil
@@ -339,6 +343,7 @@ final class LocalNotificationService {
             )
             if let opened {
                 if opened.message.isFromMe { return }
+                if BlockedPeople.isBlocked(opened.message.senderPubkey, in: blocked) { return }
                 // The conversation is already on screen.
                 if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
             }
