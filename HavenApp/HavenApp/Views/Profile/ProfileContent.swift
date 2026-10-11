@@ -43,8 +43,6 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     /// `feedWatch` redraws only for the parts this page shows.
     var feedService: FeedService { .shared }
     @StateObject private var feedWatch = ProfileFeedWatch()
-    /// Likes, reposts, replies and zap sats under each post.
-    @ObservedObject var engagementStore = ProfileEngagementStore.shared
     @Environment(\.openURL) var openURL
     /// Built once: a new value each pass invalidated every row under the tabs.
     @State private var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
