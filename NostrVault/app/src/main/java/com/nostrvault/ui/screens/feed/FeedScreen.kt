@@ -708,6 +708,7 @@ fun FeedScreen(
                         onOpenProfile = onProfileClick,
                         npubToHex = viewModel::npubToHex,
                         followedPubkeys = { viewModel.followedPubkeys.value.toSet() },
+                        blockedPubkeys = viewModel.blockedPubkeys,
                     ),
                     contentPadding = padding,
                 )

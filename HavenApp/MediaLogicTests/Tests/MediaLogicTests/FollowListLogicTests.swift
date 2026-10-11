@@ -63,6 +63,28 @@ final class FollowListLogicTests: XCTestCase {
         XCTAssertEqual(FollowListLogic.countText(1_500, more: true), "1.5k+")
     }
 
+    func testBlockedPeopleAreDroppedFromBothListsAndTheirCounts() {
+        let spam: Set<String> = ["bot"]
+        let blocked: Set<String> = ["blocked"]
+        let dropped = FollowListLogic.dropped(spam: spam, blocked: blocked)
+        let people = [p("friend", "Friend"), p("blocked", "Blocked"), p("bot", "Bot")]
+        let shown = FollowListLogic.sections(
+            people: people, follows: [], webOfTrust: [], trustRank: [:], hidden: dropped, sort: .name
+        )
+        XCTAssertEqual(shown.flatMap { $0.people.map(\.pubkey) }, ["friend"])
+        XCTAssertEqual(FollowListLogic.shownCount(["friend", "blocked", "bot"], dropped: dropped), 1)
+
+        // The control: with nobody blocked, spam alone is hidden and the
+        // count still includes everyone else.
+        let spamOnly = FollowListLogic.dropped(spam: spam, blocked: [])
+        let withBlocked = FollowListLogic.sections(
+            people: people, follows: [], webOfTrust: [], trustRank: [:], hidden: spamOnly, sort: .name
+        )
+        XCTAssertEqual(withBlocked.flatMap { $0.people.map(\.pubkey) }, ["blocked", "friend"])
+        XCTAssertEqual(FollowListLogic.shownCount(["friend", "blocked", "bot"], dropped: spamOnly), 2)
+        XCTAssertEqual(FollowListLogic.shownCount(["friend", "blocked"], dropped: []), 2)
+    }
+
     func testBioLineFlattensLineBreaks() {
         XCTAssertEqual(FollowListLogic.bioLine("Builder.\n\n  Bitcoin  \nnostr"), "Builder. Bitcoin nostr")
         XCTAssertNil(FollowListLogic.bioLine(" \n "))

@@ -90,6 +90,13 @@ object MusicFeedState {
     /** Artist pages fetched this launch, for their Nostr keys. */
     private val artistCache = mutableMapOf<String, WavlakeArtist>()
 
+    /**
+     * Every artist whose Nostr key is known this launch: the saved recents
+     * plus the pages fetched. Rankings and search carry no key, so this is
+     * what makes a blocked artist recognisable there.
+     */
+    fun knownArtists(): List<WavlakeArtist> = _recentArtists.value + artistCache.values
+
     /** Loads the saved artists, and adds the artist of every song that starts, from the feed or a post. */
     @OptIn(FlowPreview::class)
     fun init(context: Context) {
@@ -153,6 +160,7 @@ object MusicFeedState {
     suspend fun followedArtists(
         follows: Set<String>,
         npubToHex: (String) -> String?,
+        blocked: Set<String> = emptySet(),
     ): Pair<List<WavlakeArtist>, List<WavlakeTrack>> {
         val ranked = runCatching { WavlakeApi.trending(days = 90) }.getOrDefault(emptyList())
         val ids = (_recentArtists.value.map { it.id } + ranked.mapNotNull { it.artistId }).distinct()
@@ -161,7 +169,8 @@ object MusicFeedState {
             missing.map { id -> async { runCatching { WavlakeApi.artist(id) }.getOrNull() } }.awaitAll()
         }.filterNotNull().forEach { artistCache[it.id] = it }
         val artists = ids.mapNotNull { artistCache[it] }.filter { a ->
-            a.npub?.let(npubToHex)?.let { it in follows } == true
+            val key = a.npub?.let(npubToHex)
+            key != null && key in follows && key !in blocked
         }
         val followed = artists.map { it.id }.toSet()
         return artists to ranked.filter { it.artistId in followed }

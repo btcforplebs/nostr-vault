@@ -107,6 +107,21 @@ object FollowListLogic {
         return person.name.contains(q, ignoreCase = true) || person.nip05.contains(q, ignoreCase = true)
     }
 
+    /**
+     * Everyone kept off both lists: the viewer's spam, plus everyone the
+     * viewer blocks. Blocking hides, so no record is dropped — an unblock
+     * brings them back.
+     */
+    fun dropped(spam: Set<String>, blocked: Set<String>): Set<String> =
+        if (blocked.isEmpty()) spam else spam + blocked
+
+    /**
+     * How many of [people] the list actually shows, so the count beside the
+     * switch matches the rows under it.
+     */
+    fun shownCount(people: Collection<String>, dropped: Set<String>): Int =
+        if (dropped.isEmpty()) people.size else people.count { it !in dropped }
+
     /** A count that may be short of the real number reads "48+". */
     fun countText(count: Int, more: Boolean): String {
         val short = when {

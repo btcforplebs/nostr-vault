@@ -183,4 +183,23 @@ class NIP88PollTest {
     @Test fun pollOnANoteNeedsOptions() {
         assertNull(note(1068, "Nothing to pick", emptyList()).poll)
     }
+
+    @Test fun blockedVotersAreLeftOutOfTheCountAndTheVoterList() {
+        val p = poll()
+        val blocked = "c".repeat(64)
+        val votes = listOf(vote('a', listOf("yes")), vote('c', listOf("yes")), vote('d', listOf("no")))
+        val shown = NIP88Poll.tally(votes, p, now, blocked = setOf(blocked))
+        assertEquals(1, shown.count("yes"))
+        assertEquals(setOf("a".repeat(64), "d".repeat(64)), shown.voters)
+        assertNull(shown.picksByVoter[blocked])
+        assertEquals(setOf("a".repeat(64)), shown.votersByOption["yes"])
+        assertEquals(0.5, shown.share("yes"), 0.0001)
+
+        // The control: unblocked, the same votes all count. A vote is hidden,
+        // never dropped, so an unblock counts it again.
+        val all = NIP88Poll.tally(votes, p, now)
+        assertEquals(2, all.count("yes"))
+        assertEquals(3, all.voters.size)
+        assertEquals(listOf("yes"), all.picksByVoter[blocked])
+    }
 }

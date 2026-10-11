@@ -111,8 +111,16 @@ object NIP88Poll {
     /**
      * Counts the votes on [poll]. The caller checks signatures; this checks
      * that each vote is for this poll, in time, and for options it has.
+     *
+     * [blocked] (hex pubkeys) are left out of the counts and the voter lists;
+     * their vote is kept, so an unblock counts it again.
      */
-    fun tally(responses: List<Response>, poll: Poll, nowSecs: Long = System.currentTimeMillis() / 1000): PollTally {
+    fun tally(
+        responses: List<Response>,
+        poll: Poll,
+        nowSecs: Long = System.currentTimeMillis() / 1000,
+        blocked: Set<String> = emptySet(),
+    ): PollTally {
         val known = poll.options.map { it.id }.toSet()
         val latestAllowed = minOf(nowSecs + MAX_FUTURE_SKEW_SECS, poll.endsAt ?: Long.MAX_VALUE)
         // Each person's newest vote. Ties go to the lower id so every device
@@ -120,6 +128,7 @@ object NIP88Poll {
         val newest = HashMap<String, Response>()
         for (r in responses) {
             if (r.kind != RESPONSE_KIND || r.createdAt > latestAllowed) continue
+            if (r.pubkey in blocked) continue
             if (r.tags.none { it.size >= 2 && it[0] == "e" && it[1] == poll.id }) continue
             val current = newest[r.pubkey]
             if (current != null &&

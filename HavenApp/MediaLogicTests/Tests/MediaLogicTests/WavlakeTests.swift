@@ -100,6 +100,54 @@ final class WavlakeLinkTests: XCTestCase {
         XCTAssertEqual(tracks.map(\.artistNpub), ["npub1abc", nil])
     }
 
+    // MARK: Blocked artists
+
+    /// npub → hex, standing in for Bech32 in the app.
+    private func hex(_ npub: String) -> String? {
+        ["npub1blocked": "hexblocked", "npub1ok": "hexok"][npub]
+    }
+
+    private func track(_ id: String, artistId: String?, npub: String? = nil) -> WavlakeTrack {
+        WavlakeTrack(id: id, title: id, artist: "A", artistId: artistId, albumId: "al\(id)",
+                     albumTitle: "Al", albumArtUrl: nil, mediaUrl: "https://x/\(id).mp3",
+                     duration: nil, msatTotal: nil, artistNpub: npub)
+    }
+
+    func testBlockedArtistsMusicIsHiddenByKeyAndByWavlakeId() {
+        let blocked: Set<String> = ["hexblocked"]
+        let known = [WavlakeArtist(id: "a1", name: "Blocked", artUrl: nil, npub: "npub1blocked"),
+                     WavlakeArtist(id: "a2", name: "Fine", artUrl: nil, npub: "npub1ok"),
+                     WavlakeArtist(id: "a3", name: "No key", artUrl: nil, npub: nil)]
+        let ids = WavlakeBlockFilter.blockedArtistIds(known: known, blocked: blocked, hex: hex)
+        XCTAssertEqual(ids, ["a1"])
+
+        // By key when a song carries one, by artist id when it doesn't.
+        let songs = [track("t1", artistId: "a1"), track("t2", artistId: "a2"),
+                     track("t3", artistId: nil, npub: "npub1blocked"), track("t4", artistId: "a3")]
+        let shown = WavlakeBlockFilter.tracks(songs, blocked: blocked, artistIds: ids, hex: hex)
+        XCTAssertEqual(shown.map(\.id), ["t2", "t4"])
+
+        XCTAssertEqual(WavlakeBlockFilter.artists(known, blocked: blocked, artistIds: ids, hex: hex).map(\.id),
+                       ["a2", "a3"])
+        let results: [WavlakeSearchResult] = [
+            .track(track("t1", artistId: "a1")), .track(track("t2", artistId: "a2")),
+            .artist(id: "a1", name: "Blocked", artUrl: nil), .artist(id: "a2", name: "Fine", artUrl: nil),
+            .album(id: "al1", title: "One", artUrl: nil),
+        ]
+        XCTAssertEqual(WavlakeBlockFilter.results(results, blocked: blocked, artistIds: ids, hex: hex).map(\.id),
+                       ["track:t2", "artist:a2", "album:al1"])
+    }
+
+    func testNothingIsHiddenWhenNobodyIsBlocked() {
+        let known = [WavlakeArtist(id: "a1", name: "Blocked", artUrl: nil, npub: "npub1blocked")]
+        let ids = WavlakeBlockFilter.blockedArtistIds(known: known, blocked: [], hex: hex)
+        XCTAssertTrue(ids.isEmpty)
+        let songs = [track("t1", artistId: "a1"), track("t2", artistId: "a2", npub: "npub1blocked")]
+        XCTAssertEqual(WavlakeBlockFilter.tracks(songs, blocked: [], artistIds: ids, hex: hex).map(\.id),
+                       ["t1", "t2"])
+        XCTAssertEqual(WavlakeBlockFilter.artists(known, blocked: [], artistIds: ids, hex: hex).map(\.id), ["a1"])
+    }
+
     func testShareTextMentionsArtistOnNostr() {
         let json = #"[{"id":"t1","title":"21 Million","artist":"Rare Scrilla","mediaUrl":"https://x/a.mp3","artistNpub":"npub1xyz"}]"#
         let t = WavlakeAPI.tracks(fromRankings: Data(json.utf8))[0]

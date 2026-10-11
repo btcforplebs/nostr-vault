@@ -21,6 +21,13 @@ final class SellerListingsLoader: ObservableObject {
         loadedPubkey = pubkey
         book.removeAll()
         listings = []
+        // A blocked seller's shop stays shut: nothing is asked for and
+        // nothing shows, so the Shop tab drops off their profile. Their
+        // listings are untouched, so an unblock shows them again.
+        guard !ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey) else {
+            isLoading = false
+            return
+        }
         isLoading = true
 
         let filter: [String: Any] = ["kinds": MarketListing.kinds, "authors": [pubkey], "limit": 100]
