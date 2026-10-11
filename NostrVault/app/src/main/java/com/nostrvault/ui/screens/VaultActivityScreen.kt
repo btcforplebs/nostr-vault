@@ -119,6 +119,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import java.text.NumberFormat
 import javax.inject.Inject
+import com.nostrvault.ui.screens.dashboard.IconFilterButton
 
 /**
  * The Vault tab's first list, "Vault": replies, mentions, likes, zaps,

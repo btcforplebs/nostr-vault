@@ -212,11 +212,11 @@ struct NostrEvent: Codable, Identifiable {
 |------|------|---------|
 | `MenuBarView` | `Views/MenuBarView.swift` | Main menu bar UI: status, feed, metrics |
 | `DashboardView` | `Views/DashboardView.swift` | Stats, connection info, relay status |
-| `FeedView` | `Views/FeedView.swift` | Note feed display |
+| `FeedView` | `Views/Feed/FeedView.swift` | Note feed display |
 | `ComposeView` | `Views/ComposeView.swift` | New note composition with media upload |
 | `NoteDetailView` | `Views/NoteDetailView.swift` | Single note with replies |
 | `ProfileView` | `Views/ProfileView.swift` | User profile sheet with bio, NIP-05, follow/unfollow, zap, swipe-to-dismiss. Streams author's notes from relays (own WebSocket clients). Notes open in NoteDetailView via NavigationStack sheet. |
-| `SettingsView` | `Views/SettingsView.swift` | All configuration tabs |
+| `SettingsView` | `Views/Settings/SettingsView.swift` | Settings list; each page is its own file in `Views/Settings/` |
 | `SetupWizardView` | `Views/SetupWizardView.swift` | First-run setup (multi-step) |
 | `LogsView` | `Views/LogsView.swift` | Relay log viewer |
 | `FeedMediaViewer` | `Views/FeedMediaViewer.swift` | Media gallery with swipe |
