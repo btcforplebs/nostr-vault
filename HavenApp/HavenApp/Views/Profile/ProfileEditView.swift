@@ -1,5 +1,4 @@
 import SwiftUI
-import CryptoKit
 #if os(iOS)
 import PhotosUI
 #endif
@@ -10,6 +9,7 @@ struct ProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
     var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
 
     let existing: FeedProfile
     /// Unsaved fields from an autosave that failed, by kind-0 key, laid over
@@ -22,6 +22,18 @@ struct ProfileEditView: View {
     var onAutosave: ((_ initial: [String: String], _ edited: [String: String]) -> Void)? = nil
     /// Discard was tapped: whatever `draft` held is thrown away too.
     var onDiscard: (() -> Void)? = nil
+    /// Save (the Mac) closes the sheet once the profile is signed and sent;
+    /// this runs if no relay then accepts it, with what the page showed
+    /// before and what was typed.
+    var onRefused: ((_ shownBefore: FeedProfile?, _ edited: [String: String]) -> Void)? = nil
+
+    #if os(iOS)
+    @State private var pickedPicture: PhotosPickerItem?
+    @State private var pickedBanner: PhotosPickerItem?
+    #endif
+    @State private var uploading: UploadTarget?
+    @State private var uploadError: String?
+    enum UploadTarget { case picture, banner }
 
     @State private var displayName: String = ""
     @State private var name: String = ""
@@ -73,6 +85,10 @@ struct ProfileEditView: View {
                         divider
 
                         fieldGroup(title: "MEDIA") {
+                            #if os(iOS)
+                            photoPickers
+                            fieldDivider
+                            #endif
                             field(label: "Picture URL", text: $pictureURL, placeholder: "https://…", keyboardKind: .urlLike)
                             fieldDivider
                             field(label: "Banner URL", text: $bannerURL, placeholder: "https://…", keyboardKind: .urlLike)
@@ -101,6 +117,12 @@ struct ProfileEditView: View {
             }
         }
         .onAppear { loadFromExisting() }
+        #if os(iOS)
+        // Swiping away mid-upload would save without the new picture.
+        .interactiveDismissDisabled(uploading != nil)
+        .onChange(of: pickedPicture) { _, item in upload(item, to: .picture) }
+        .onChange(of: pickedBanner) { _, item in upload(item, to: .banner) }
+        #endif
         .onDisappear {
             guard let onAutosave, !discarded, hasChanges else { return }
             onAutosave(initialFields, formFields())
@@ -385,10 +407,13 @@ struct ProfileEditView: View {
         isSaving = true
         let edited = formFields()
         let initial = initialFields
+        let shownBefore = nostrService.profiles[existing.pubkey]
+        let onRefused = onRefused
 
         Task {
             switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
-                                                 initial: initial, edited: edited) {
+                                                 initial: initial, edited: edited,
+                                                 onRefused: { onRefused?(shownBefore, edited) }) {
             case .success(let updated):
                 onSave(updated)
                 isSaving = false
@@ -419,9 +444,11 @@ struct ProfileEditView: View {
     }
 
     /// Publishes the changed fields as a new kind 0 and returns the profile it
-    /// describes.
+    /// describes. Success means signed and sent; `onRefused` runs later, on
+    /// the main thread, if every relay then turns it down or never answers.
     static func publish(nostrService: NostrService, existing: FeedProfile,
-                        initial: [String: String], edited: [String: String]) async -> Result<FeedProfile, SaveFailure> {
+                        initial: [String: String], edited: [String: String],
+                        onRefused: (@MainActor () -> Void)? = nil) async -> Result<FeedProfile, SaveFailure> {
         // A kind 0 replaces the whole profile. Start from the newest one on
         // the relays so lud06 and every key this form doesn't show
         // survive; if it can't be fetched, publishing would wipe them, so
@@ -442,7 +469,10 @@ struct ProfileEditView: View {
             return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
         }
 
-        nostrService.postEvent(signed)
+        nostrService.postEvent(signed, onBroadcastOutcome: { outcome in
+            guard outcome == .refused else { return }
+            Task { @MainActor in onRefused?() }
+        })
 
         var updated = profile(existing, from: merged)
         updated.lud06 = merged["lud06"] as? String
@@ -462,6 +492,99 @@ struct ProfileEditView: View {
         updated.website = merged[ProfileMetadataMerge.website] as? String
         return updated
     }
+
+    // MARK: - Photo upload
+
+    #if os(iOS)
+    /// Picture and banner from Photos, uploaded to your Blossom servers; the
+    /// URL lands in the field below, the same as pasting one.
+    private var photoPickers: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                photoPicker("Picture", selection: $pickedPicture, target: .picture)
+                photoPicker("Banner", selection: $pickedBanner, target: .banner)
+            }
+            if let uploadError {
+                Text(uploadError)
+                    .font(.appSystem(size: 11))
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func photoPicker(_ title: String, selection: Binding<PhotosPickerItem?>, target: UploadTarget) -> some View {
+        let label = photoPickerLabel(title, busy: uploading == target)
+        return PhotosPicker(selection: selection, matching: .images) { label }
+            .buttonStyle(.plain)
+            .disabled(uploading != nil)
+            .accessibilityLabel("Choose \(title.lowercased()) from Photos")
+    }
+
+    private func photoPickerLabel(_ title: String, busy: Bool) -> some View {
+        HStack(spacing: 6) {
+            if busy {
+                ProgressView().scaleEffect(0.7).tint(.havenPurple)
+            } else {
+                Image(systemName: "photo.badge.plus")
+                    .font(.appSystem(size: 12, weight: .semibold))
+            }
+            Text(busy ? "Uploading…" : "Choose \(title.lowercased())")
+                .font(.appSystem(size: 13, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundColor(.havenPurple)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 32)
+        .background(Color.havenPurple.opacity(0.12))
+        .cornerRadius(6)
+    }
+
+    private func upload(_ item: PhotosPickerItem?, to target: UploadTarget) {
+        guard let item else { return }
+        uploading = target
+        uploadError = nil
+        Task {
+            defer {
+                uploading = nil
+                pickedPicture = nil
+                pickedBanner = nil
+            }
+            do {
+                guard let raw = try await item.loadTransferable(type: Data.self),
+                      let jpeg = ProfileEditView.jpeg(raw, longEdge: target == .picture ? 1024 : 2400) else {
+                    uploadError = "Couldn't read that photo."
+                    return
+                }
+                let blob = try await ModePostPublisher.upload(data: jpeg, mimeType: "image/jpeg",
+                                                              configService: configService, nostrService: nostrService)
+                switch target {
+                case .picture: pictureURL = blob.url.absoluteString
+                case .banner: bannerURL = blob.url.absoluteString
+                }
+            } catch {
+                uploadError = error.localizedDescription
+            }
+        }
+    }
+
+    /// A JPEG no longer than `longEdge` on its long side. Photos hands over
+    /// HEIC at full camera size; a profile picture is shown at 72 points.
+    private static func jpeg(_ data: Data, longEdge: CGFloat) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let size = image.size
+        let scale = min(1, longEdge / max(size.width, size.height, 1))
+        let target = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+        return resized.jpegData(compressionQuality: 0.88)
+    }
+    #endif
 
     private func performDismiss() {
         if let onDismiss = onDismiss {

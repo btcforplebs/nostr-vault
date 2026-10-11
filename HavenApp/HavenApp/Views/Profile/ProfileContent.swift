@@ -5,22 +5,44 @@ import ImageIO
 import Photos
 #endif
 
-struct ProfileView: View {
+/// The part of a profile that is the same for everyone: banner, name, bio,
+/// links, follow counts, the tabs and what is under them, and the readers
+/// they open. What you can DO on a profile is not here — your own profile
+/// (`MyProfileView`) and anyone else's (`PersonProfileView`) each bring their
+/// own badge, action row, toolbar and sheets.
+struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecoration: ViewModifier>: View {
     let pubkey: String
-    var embeddedInNavigation: Bool = false
-    var onDismiss: (() -> Void)? = nil
+    @ObservedObject var loader: ProfileFeedLoader
+    @ObservedObject var shop: SellerListingsLoader
+    @ObservedObject var extras: ProfileExtrasLoader
+    /// Set when this profile is a sheet: a close button on the banner, and on
+    /// the Mac the app's banners drawn over it.
+    var dismissAction: (() -> Void)? = nil
+    /// Your own profile keeps its Shop tab, where the Sell button is, even
+    /// with nothing listed.
+    var shopAlwaysVisible = false
+    var shopEmptyText = "Nothing for sale"
+    /// Your own Blossom files get the Vault grid's Delete menu.
+    var canDeleteMedia = false
+    /// Changing it scrolls the page back to the top.
+    var scrollToTopToken = 0
+    /// Applied to the scroll view itself (pull-to-edit needs its geometry).
+    let scrollDecoration: ScrollDecoration
+    @ViewBuilder let badge: () -> Badge
+    /// Called with 0, 1, 2: each a tighter row, for when the wider one does
+    /// not fit on one line.
+    @ViewBuilder let actions: (_ compact: Int) -> Actions
+    @ViewBuilder let shopHeader: () -> ShopHeader
 
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
     /// Not observed: the main feed changes many times a second while it
     /// loads, and observing all of it redrew this page each time.
     /// `feedWatch` redraws only for the parts this page shows.
     private var feedService: FeedService { .shared }
     @StateObject private var feedWatch = ProfileFeedWatch()
-    @StateObject private var dmService = DMService.shared
     /// Likes, reposts, replies and zap sats under each post.
     @ObservedObject private var engagementStore = ProfileEngagementStore.shared
-    @EnvironmentObject var configService: ConfigService
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
     @State private var showingNoteDetail: FeedNote?
@@ -41,152 +63,25 @@ struct ProfileView: View {
     #if os(macOS)
     @State private var keyMonitor: Any? = nil
     #endif
-    
-    @State private var showSweep = false
-    @State private var showLightning = false
-    @State private var zapSheetContext: ZapSheetContext?
     @State private var copiedNpub = false
     @State private var copiedLightning = false
-
-    // Edit profile
-    @State private var showingEditProfile = false
-    /// Fields from an autosave that did not reach the relays; the next edit
-    /// opens with them.
-    @State private var unsavedDraft: [String: String]?
-
-    // Compose post
-    @State private var showingCompose = false
+    /// Reply or quote from a row.
     @State private var composeContext: ComposeContext?
 
-    // Settings (iOS — accessed from toolbar)
-    @State private var showingSettings = false
-    #if os(iOS)
-    /// iPad (regular width) has one Settings: the sidebar's. The gear selects
-    /// it instead of opening a second copy in a sheet.
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
-
-    // Message composer
-    @State private var showingMessageComposer = false
-
-    // DM inbox
-    @State private var showingDMInbox = false
-
-    // Wallet views
-    @State private var showingLightning = false
-
-    // Web of Trust globe
-    @State private var showingTrustWeb = false
-
-    @ObservedObject private var tutorialCenter = TutorialCenter.shared
-
-    // Following / followers count
-    @State private var followingCount: Int? = nil
-    @State private var followsMe: Bool = false
-    @State private var followersCount: Int? = nil
-    @State private var followerPubkeys = Set<String>()
-    /// This profile's follows, in contact-list order (other profiles only;
-    /// your own come from the feed's follow list).
-    @State private var followingList: [String] = []
-    /// Follower → created_at of their list naming this profile.
-    @State private var followerSeenAt: [String: Int64] = [:]
     /// The Following / Followers page, open on the tab that was tapped.
     @State private var followListTab: FollowListTab?
-    /// The viewer's follower ledger, read when the page opens.
+    /// The viewer's follower ledger, read before the page opens.
     @State private var viewerLedger: FollowerSnapshot?
-    /// Your own followers on your relay's ledger, spam left out: the list the
-    /// FOLLOWERS button opens and the Vault's Followers tab, so the header
-    /// shows the same number. Only set on your own profile.
-    @State private var ownLedgerCount: Int?
-    /// Older followers, a page at a time, as the Followers list scrolls.
-    @State private var followerPageSubId: String?
-    @State private var followerPageToken = 0
-    @State private var followerPageAnswers = 0
-    @State private var followerPageExpected = 0
-    @State private var followerPageCountBefore = 0
-    @State private var quietFollowerPages = 0
-    @State private var followersExhausted = false
-    /// Finished follower pages; the list's loader is keyed on it so it asks
-    /// again after a page that brought nobody new.
-    @State private var followerPagesDone = 0
-    /// created_at of the kind 0 and kind 3 now shown. Each relay answers with
-    /// its own copy and the answers arrive in any order, so an older copy from
-    /// a slow relay must not replace a newer one already on screen.
-    @State private var shownMetadataAt: Int64 = 0
-    @State private var shownContactsAt: Int64 = 0
-    /// Largest NIP-45 COUNT any relay gave for this profile's followers.
-    @State private var relayFollowerCount: Int? = nil
-    /// Vertex's count, the one npub.world shows. Preferred when it answers.
-    @State private var vertexFollowerCount: Int? = nil
 
-    // Note streaming
-    @State private var profileNotes: [FeedNote] = []
-    @State private var isLoadingNotes = false
-    /// Bumped by each opening load, so the fallback timer of an earlier load
-    /// cannot end a later one early.
-    @State private var notesLoadToken = 0
-    /// False until the first load starts, so the first frame reads
-    /// "Loading…" rather than "No notes yet".
-    @State private var notesLoadStarted = false
-    /// Relays of the opening load that have not answered yet (EOSE, CLOSED or
-    /// a failed connection). Loading ends when the last one answers, not the
-    /// first: the phone's own relay always answers first, and for someone
-    /// else it usually has nothing.
-    @State private var openingPending = Set<Int>()
-    /// Notes received but not yet on screen. They go in together a moment
-    /// later, in one sort and one redraw, instead of one of each per event.
-    @State private var pending = PendingProfileNotes()
-    /// The lists the tabs and counts read, worked out once per change to the
-    /// notes rather than many times on every redraw.
-    @State private var buckets = ProfileNoteBuckets()
-    @State private var profileClients: [WebSocketClient] = []
-    @State private var profileCancellables = Set<AnyCancellable>()
-    @State private var seenNoteIds = Set<String>()
-    @State private var isLoadingOlderNotes = false
-    @State private var hasMoreNotes = true
-
-    // Paging bookkeeping. A "page" is one round of `older-` REQs sent to every
-    // connected relay under a single subscription id; it completes when they have
-    // all answered (EOSE or CLOSED), or when the fallback timer fires — whichever
-    // comes first. The token guards against a late timer finishing a newer page.
-    @State private var olderPageToken = 0
-    @State private var olderPageSubId: String? = nil
-    @State private var olderPageAnswers = 0
-    @State private var olderPageExpected = 0
-    @State private var olderPageCountBefore = 0
-    @State private var olderPageVisibleBefore = 0
-    @State private var olderPageSection: ProfileSection = .notes
-    @State private var quietOlderPages = 0
-    @State private var autoPagedInARow = 0
-
-    // Tagged notes (notes by others that tag/mention/repost/quote this user)
-    @State private var taggedNotes: [FeedNote] = []
-    @State private var seenTaggedIds = Set<String>()
-    @State private var isLoadingOlderTaggedNotes = false
-    @State private var hasMoreTaggedNotes = true
-    @State private var olderTaggedToken = 0
-    @State private var olderTaggedSubId: String? = nil
-    @State private var olderTaggedAnswers = 0
-    @State private var olderTaggedExpected = 0
-    @State private var olderTaggedCountBefore = 0
-    @State private var olderTaggedVisibleBefore = 0
-    @State private var quietOlderTaggedPages = 0
-    @State private var autoPagedTaggedInARow = 0
-
-    @State private var selectedSection: ProfileSection = .notes
     /// The late tabs on show. Set only when their loader finishes, so the
     /// tab bar re-spaces once instead of once per tab as each one arrives.
     @State private var revealedSections = Set<ProfileSection>()
     /// Set once the profile has waited long enough for its metadata; the
     /// header stops holding space for a bio that is not coming.
     @State private var metadataWaitOver = false
-
     /// Height of the profile's scroll view. A section is at least this tall,
-
     /// so picking one with a single item keeps the tabs where they were and
-
     /// leaves blank space below, instead of the page snapping back down.
-
     @State private var viewportHeight: CGFloat = 0
     /// Width of the scroll view; the banner's height follows it.
     @State private var viewportWidth: CGFloat = 0
@@ -195,299 +90,80 @@ struct ProfileView: View {
     @State private var topInset: CGFloat = 0
     /// The topmost note on screen, which the scroll view keeps in place.
     @State private var scrolledNoteID: String?
-    @StateObject private var shop = SellerListingsLoader()
-    /// This person's articles, diVines and music, each a tab when they have any.
-    @StateObject private var extras = ProfileExtrasLoader()
     @State private var showingArticle: ArticleRoute?
     @State private var musicSheet: MusicSheet?
-    @State private var showingSell = false
     @State private var selectedListing: MarketListing?
 
-    /// The five tabs every profile has come first; the ones that only show
-    /// once this person's articles, diVines, music or listings arrive go
-    /// after them, so a late tab never pushes an earlier one along.
-    enum ProfileSection: String, CaseIterable, Identifiable {
-        case notes = "Notes"
-        case media = "Media"
-        case replies = "Replies"
-        case reposts = "Reposts"
-        case tagged = "Tagged"
-        case articles = "Articles"
-        case divines = "diVines"
-        case music = "Music"
-        case shop = "Shop"
-        var id: String { rawValue }
-
-        /// The feed types' own icons, so a tab reads the same as the feed it
-        /// matches. Tabs are icons only; the name is the accessibility label
-        /// and, on the Mac, the tooltip.
-        var symbol: String {
-            switch self {
-            case .notes: return "text.bubble"
-            case .media: return FeedMode.media.symbolName
-            case .replies: return "arrowshape.turn.up.left"
-            case .reposts: return "arrow.2.squarepath"
-            case .articles: return FeedMode.articles.symbolName
-            case .divines: return FeedMode.reels.symbolName
-            case .music: return FeedMode.music.symbolName
-            case .tagged: return "at"
-            case .shop: return FeedMode.marketplace.symbolName
-            }
-        }
-    }
-
-    private var isOwnProfile: Bool {
-        configService.activeAccountHexPubkey == pubkey
-    }
-
-    // NWC wallet belongs to the owner only — don't re-fetch balance for whitelisted accounts.
-    private var isOwnerProfile: Bool {
-        Bech32.decode(configService.config.ownerNpub)?.hexString == pubkey
-    }
-
-    private var isFollowing: Bool {
-        feedService.followedPubkeys.contains(pubkey)
-    }
-
-    private var isBlocked: Bool {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return false }
-        let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
-        let blockedList = configService.config.blockedNpubsPerAccount[targetNpub] ?? []
-        return blockedList.contains(npub)
-    }
+    private static var topID: String { "profile-top" }
 
     private var profile: FeedProfile? {
         nostrService.profiles[pubkey]
     }
 
-    private var defaultZapSats: Int {
-        max(1, ConfigService.shared.config.defaultZapAmount / 1000)
-    }
-
-    // MARK: - Ordering
-
-    /// A TOTAL order: newest first, ties broken by id. Sorting on the timestamp
-    /// alone leaves same-second notes in arrival order, which reshuffles on every
-    /// event that lands, and makes `profileNotes.last` — the anchor every `until`
-    /// page is built on — an arbitrary member of the tie group. At a page boundary
-    /// that drops one note and re-requests another.
-    private static func newestFirst(_ a: FeedNote, _ b: FeedNote) -> Bool {
-        if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
-        return a.id > b.id
-    }
-
-    // MARK: - Filtered notes for tabs
-
-    private var topNotes: [FeedNote] { buckets.top }
-    private var mediaNotes: [FeedNote] { buckets.media }
-    private var replyNotes: [FeedNote] { buckets.replies }
-    private var repostNotes: [FeedNote] { buckets.reposts }
-    private var taggedFilteredNotes: [FeedNote] { buckets.tagged }
-
-    /// Splits the notes into the tab lists. `mediaURLs` scans each note's
-    /// text, so this runs when the notes change, never from `body`.
-    /// Reposts get their own tab; everything else is a post or a reply.
-    /// Media is this person's own pictures and video, posted or replied
-    /// with — a repost's media is someone else's, so it stays out.
-    private func rebucket() {
-        var top: [FeedNote] = [], media: [FeedNote] = []
-        var replies: [FeedNote] = [], reposts: [FeedNote] = []
-        for note in profileNotes {
-            if note.kind == 6 {
-                reposts.append(note)
-                continue
-            }
-            if note.isReply { replies.append(note) } else { top.append(note) }
-            if !note.mediaURLs.isEmpty { media.append(note) }
-        }
-        buckets = ProfileNoteBuckets(
-            top: top,
-            media: media,
-            replies: replies,
-            reposts: reposts,
-            tagged: taggedNotes.filter { $0.pubkey != pubkey }
-        )
-    }
-
-    private func scheduleFlush() {
-        guard !pending.scheduled else { return }
-        pending.scheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { flushPendingNotes() }
-    }
-
-    /// Puts the waiting notes on screen. Anything that reads the lists to
-    /// decide something (paging, end of loading) flushes first.
-    private func flushPendingNotes() {
-        pending.scheduled = false
-        guard !pending.notes.isEmpty || !pending.tagged.isEmpty else { return }
-        if !pending.notes.isEmpty {
-            profileNotes.append(contentsOf: pending.notes)
-            profileNotes.sort(by: Self.newestFirst)
-            pending.notes.removeAll()
-        }
-        if !pending.tagged.isEmpty {
-            taggedNotes.append(contentsOf: pending.tagged)
-            taggedNotes.sort(by: Self.newestFirst)
-            pending.tagged.removeAll()
-        }
-        rebucket()
-    }
-
-    private var currentSectionNotes: [FeedNote] {
-        switch selectedSection {
-        case .notes: return topNotes
-        case .media: return mediaNotes
-        case .replies: return replyNotes
-        case .reposts: return repostNotes
-        case .tagged: return taggedFilteredNotes
-        case .shop, .articles, .divines, .music: return []
-        }
-    }
-
-    private var displayMedia: [MediaItem] {
-        let items: [(url: URL, note: FeedNote)] = mediaNotes.flatMap { note in
-            note.mediaURLs.map { (url: $0, note: note) }
-        }
-        return items.map { item in
-            let ext = item.url.pathExtension.lowercased()
-            var isGIF = ext == "gif"
-            var isVideo = SupportedMediaFormats.videoExtensions.contains(ext)
-            var isAudio = SupportedMediaFormats.audioExtensions.contains(ext)
-            
-            if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: item.url) {
-                isGIF = MediaTypeDetector.shared.isGIFContentType(cachedMime)
-                isVideo = MediaTypeDetector.shared.isVideoContentType(cachedMime)
-                isAudio = cachedMime.lowercased().hasPrefix("audio/")
-            }
-            
-            let type: MediaItem.MediaType = isVideo ? .video : (isAudio ? .audio : .image)
-            let mime = isGIF ? "image/gif" : (isVideo ? "video/mp4" : nil)
-            
-            return MediaItem(
-                id: UUID.deterministic(from: item.url.absoluteString),
-                url: item.url,
-                type: type,
-                dateAdded: item.note.createdAt,
-                pubkey: item.note.pubkey,
-                tags: item.note.tags,
-                mimeType: mime
-            )
-        }
-    }
-
-    private var isPresentingViewer: Binding<Bool> {
-        Binding(
-            get: { selectedMedia != nil },
-            set: { presenting in
-                if !presenting {
-                    selectedMedia = nil
-                    dragOffset = .zero
-                }
-            }
-        )
-    }
-
-    /// What each tab holds so far. These are the notes loaded, not totals:
-    /// `hasMore` says when older pages may still add to them. Your own
-    /// relay's note count included replies and your Blossom file count
-    /// included every upload, so neither matched its tab and both are gone.
-    private var sectionCount: (notes: Int, media: Int, replies: Int, reposts: Int, tagged: Int) {
-        (topNotes.count, mediaNotes.count, replyNotes.count, repostNotes.count, taggedFilteredNotes.count)
-    }
-
-    /// True until paging has found no older notes. A short profile shows the
-    /// sentinel at once, so it pages to the end and drops the "+" quickly.
-    private func hasMore(for section: ProfileSection) -> Bool {
-        switch section {
-        case .notes, .media, .replies, .reposts: return hasMoreNotes
-        case .tagged: return hasMoreTaggedNotes
-        default: return false
-        }
-    }
-
-    /// "48", or "48+" while older pages may still raise it. Nothing loaded
-    /// yet with more to come reads "—", as FOLLOWING does before it knows.
-    private func countText(for section: ProfileSection) -> String {
-        let n = count(for: section)
-        guard hasMore(for: section) else { return shortInt(n) }
-        return n == 0 ? "—" : shortInt(n) + "+"
-    }
-
-    /// Opens a note in the split pane's detail column when this profile is the
-    /// pane's list, and falls back to the sheet everywhere else.
-    private func openNote(_ note: FeedNote) {
-        if let noteDetailSelection, !isPresented {
-            noteDetailSelection.select(note)
-        } else {
-            showingNoteDetail = note
-        }
-    }
+    private var selectedSection: ProfileSection { loader.selectedSection }
 
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                bannerHeader
+        ScrollViewReader { proxy in
+            ScrollView {
                 VStack(spacing: 0) {
-                    // Who, what they say, where to find them, then what you
-                    // can do. One rule above the tabs instead of one between
-                    // every block.
-                    headerBlock
-                    if let about = profile?.about, !about.isEmpty {
-                        bioBlock(about)
-                    } else if awaitingMetadata {
-                        bioPlaceholder
+                    bannerHeader
+                        .id(Self.topID)
+                    VStack(spacing: 0) {
+                        // Who, what they say, where to find them, then what you
+                        // can do. One rule above the tabs instead of one between
+                        // every block.
+                        headerBlock
+                        if let about = profile?.about, !about.isEmpty {
+                            bioBlock(about)
+                        } else if awaitingMetadata {
+                            bioPlaceholder
+                        }
+                        if awaitingMetadata {
+                            linksPlaceholder
+                        } else {
+                            linksRow
+                        }
+                        followCountsRow
+                        actionRow
+                            .padding(.top, 14)
+                        divider
+                        sectionTabBar
+                        sectionContent
+                            .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
+                            .tabBarBottomPadding()
+                            .frame(minHeight: viewportHeight, alignment: .top)
                     }
-                    if awaitingMetadata {
-                        linksPlaceholder
-                    } else {
-                        linksRow
-                    }
-                    followCountsRow
-                    actionRow
-                        .padding(.top, 14)
-                    divider
-                    sectionTabBar
-                    sectionContent
-                        .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
-                        .tabBarBottomPadding()
-                        .frame(minHeight: viewportHeight, alignment: .top)
+                    .frame(maxWidth: 720)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
+            }
+            // Holds the note you are reading in place while notes arrive from
+            // each relay and are sorted in above it, and while rows above it
+            // grow as their media loads. The main feed does the same.
+            .scrollPosition(id: $scrolledNoteID)
+            .scrollDirectionTracking(feedService: feedService)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: {
+                viewportHeight = $0.height
+                viewportWidth = $0.width
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
+            // The banner draws its own scrim under the bar; the system edge would
+            // lay a grey band over it.
+            .hiddenTopScrollEdge()
+            .modifier(scrollDecoration)
+            .onChange(of: scrollToTopToken) { _, _ in
+                scrolledNoteID = nil
+                withAnimation(Motion.fade) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
         }
-        // Holds the note you are reading in place while notes arrive from
-        // each relay and are sorted in above it, and while rows above it
-        // grow as their media loads. The main feed does the same.
-        .scrollPosition(id: $scrolledNoteID)
-        .scrollDirectionTracking(feedService: feedService)
-        .onGeometryChange(for: CGSize.self) { $0.size } action: {
-            viewportHeight = $0.height
-            viewportWidth = $0.width
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
-        // The banner draws its own scrim under the bar; the system edge would
-        // lay a grey band over it.
-        .hiddenTopScrollEdge()
-        #if os(iOS)
-        // Your own profile has nothing that needs pulling fresh, so the pull
-        // opens the editor instead (Logen). Swiping the editor away saves.
-        .pullToEdit(isEnabled: isOwnProfile && !showsDismissButton) {
-            showingEditProfile = true
-        }
-        #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .onAppear {
-            nostrService.fetchMissingProfiles(for: [pubkey])
-            fetchAuthorNotes()
-            fetchFollowerCount()
+            loader.start()
             shop.load(pubkey: pubkey)
-            extras.load(pubkey: pubkey, relays: extrasRelays)
+            extras.load(pubkey: pubkey, relays: loader.extrasRelays)
             revealLateSections()
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { metadataWaitOver = true }
             #if os(macOS)
@@ -498,23 +174,10 @@ struct ProfileView: View {
         .onChange(of: shop.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.listings.isEmpty) { _, _ in revealLateSections() }
         .onDisappear {
-            // Loads in flight die with their connections; without this a
-            // return before the first EOSE skips the notes load entirely.
-            disconnectClients()
-            isLoadingNotes = false
-            openingPending.removeAll()
-            isLoadingOlderNotes = false
-            olderPageSubId = nil
-            isLoadingOlderTaggedNotes = false
-            olderTaggedSubId = nil
+            loader.stop()
             #if os(macOS)
             removeKeyMonitor()
             #endif
-        }
-        .sheet(isPresented: $showingSell, onDismiss: { shop.load(pubkey: pubkey, force: true) }) {
-            MarketplaceSellView(onDismiss: { showingSell = false })
-                .environmentObject(nostrService)
-                .environmentObject(configService)
         }
         .sheet(item: $showingArticle) { route in
             // In a stack so a comment under the article can open as a note.
@@ -559,211 +222,17 @@ struct ProfileView: View {
         })
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .hashtagLinks()
-        .sheet(isPresented: $showSweep) {
-            BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
-                .environmentObject(ConfigService.shared)
-        }
-        // Vault in Your Pocket's last card hands over to Wallet Connect, whose
-        // cards are on the wallet. On appear too: the Profile tab may only now be
-        // showing.
-        .onChange(of: tutorialCenter.active) { _, active in
-            if active == .walletConnect && isOwnerProfile { showingLightning = true }
-            // A replay of Vault in Your Pocket: its cards are on the Vault tab.
-            if active == .pocketRelay { showingLightning = false }
-        }
-        .onAppear {
-            if tutorialCenter.active == .walletConnect && isOwnerProfile { showingLightning = true }
-        }
-        .sheet(isPresented: $showingLightning) {
-            NavigationStack {
-                WalletLightningTab()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .navigationTitle("Lightning")
-                    #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    #endif
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { showingLightning = false }
-                                .foregroundColor(.havenPurple)
-                        }
-                    }
-            }
-            #if os(macOS)
-            .frame(minWidth: 500, minHeight: 550)
-            #endif
-        }
-        .sheet(isPresented: $showingCompose) {
-            ComposeView(onDismiss: { showingCompose = false })
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-        }
         .sheet(item: $composeContext) { ctx in
             ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo, initialContent: ctx.initialContent, restoredDraftId: ctx.draftId)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
-        }
-        #if os(iOS)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                if isOwnProfile {
-                    HStack(spacing: 16) {
-                        if isOwnerProfile {
-                            Button(action: { showingLightning = true }) {
-                                Image(systemName: "bolt.fill")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if isOwnProfile {
-                    HStack(spacing: 16) {
-                        Button(action: { showingDMInbox = true }) {
-                            Image(systemName: "bubble.right.fill")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
-                                .overlay(alignment: .topTrailing) {
-                                    if dmService.totalUnreadCount > 0 {
-                                        Circle()
-                                            .fill(.red)
-                                            .frame(width: 8, height: 8)
-                                            .offset(x: 3, y: -3)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: {
-                            if horizontalSizeClass == .regular {
-                                NotificationCenter.default.post(name: .havenOpenSettings, object: nil)
-                            } else {
-                                showingSettings = true
-                            }
-                        }) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } else {
-                    Button(action: { showingMessageComposer = true }) {
-                        Image(systemName: "message.fill")
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.havenPurple)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .sheet(isPresented: $showingMessageComposer) {
-            MessageComposerView(recipientPubkey: pubkey)
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-        }
-        .sheet(isPresented: $showingDMInbox) {
-            NavigationStack {
-                DMInboxView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .dmInboxSheetSizing()
-        }
-        .sheet(isPresented: $showingSettings) {
-            NavigationStack {
-                SettingsView()
-                    .environmentObject(RelayProcessManager.shared)
-                    .environmentObject(ConfigService.shared)
-                    .environmentObject(NostrService.shared)
-                    .environmentObject(StatsService.shared)
-                    .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { showingSettings = false }
-                                .foregroundColor(.havenPurple)
-                        }
-                    }
-            }
-        }
-        #else
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                if isOwnProfile {
-                    // The profile's only refresh path; on iOS the pull opens the editor.
-                    Button(action: { Task { await refreshProfile() } }) {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundColor(.havenPurple)
-                    }
-                    .help("Refresh Profile")
-                    .keyboardShortcut("r", modifiers: .command)
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                if isOwnerProfile {
-                    Button(action: { showingLightning = true }) {
-                        Image(systemName: "bolt.fill")
-                            .foregroundColor(.havenPurple)
-                    }
-                    .help("Lightning")
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                if isOwnProfile {
-                    Button(action: { showingDMInbox = true }) {
-                        Image(systemName: "bubble.right.fill")
-                            .foregroundColor(.havenPurple)
-                            .overlay(alignment: .topTrailing) {
-                                if dmService.totalUnreadCount > 0 {
-                                    Circle()
-                                        .fill(.red)
-                                        .frame(width: 7, height: 7)
-                                        .offset(x: 2, y: -2)
-                                }
-                            }
-                    }
-                    .help("Messages")
-                }
-            }
-        }
-        .sheet(isPresented: $showingDMInbox) {
-            DMInboxView()
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-                .frame(minWidth: 480, minHeight: 500)
-        }
-        .sheet(isPresented: $showingMessageComposer) {
-            DMThreadView(counterpartyPubkey: pubkey)
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-                .frame(minWidth: 440, minHeight: 400)
-        }
-        #endif
-        .sheet(isPresented: $showingEditProfile) {
-            let existing = profile ?? FeedProfile(pubkey: pubkey)
-            #if os(iOS)
-            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, draft: unsavedDraft,
-                            onSave: applyProfileUpdate,
-                            onAutosave: { initial, edited in autosaveProfile(existing, initial: initial, edited: edited) },
-                            onDiscard: { unsavedDraft = nil })
-            .environmentObject(nostrService)
-            .presentationDragIndicator(.visible)
-            #else
-            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, onSave: applyProfileUpdate)
-            .environmentObject(nostrService)
-            #endif
         }
         #if os(macOS)
         // On iPhone and iPad every banner is drawn in its own window above all
         // sheets (BannerWindow in SceneDelegate), so a profile sheet cannot
         // cover one; the Mac still draws them over the sheet itself.
         .overlay(alignment: .top) {
-            if onDismiss != nil {
+            if dismissAction != nil {
                 VStack(spacing: 6) {
                     FollowNotificationBanner()
                     ZapNotificationBanner()
@@ -773,101 +242,24 @@ struct ProfileView: View {
                 .allowsHitTesting(true)
             }
         }
-        #endif
-        #if os(iOS)
-        .overlay(alignment: .bottomTrailing) {
-            if isOwnProfile {
-                ChromeFold(anchor: .bottomTrailing) {
-                    Button(action: { showingCompose = true }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.pencil")
-                                .font(.appSystem(size: 15, weight: .bold))
-                            Text("Post")
-                                .font(.appSystem(size: 14, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(.white)
-                        .frame(height: 48)
-                        .padding(.horizontal, 18)
-                        .background(
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
-                        )
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    // Shares the row above the tab bar with the music mini player.
-                    .modifier(FloatingButtonSlot())
-                    .hoverEffect(.lift)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-            guard (note.object as? Int) == 2 else { return }
-            showingCompose = true
-        }
-        // ⌘R on an iPad keyboard. The Mac binds it to its refresh button; on
-        // iOS pulling down opens the editor, so the key is the refresh.
-        .modifier(RefreshesOnTabCommand(tab: 2, isActive: { isOwnProfile }) {
-            Task { await refreshProfile() }
-        })
+        .overlay(fullScreenOverlay)
+        #else
         .fullScreenCover(isPresented: isPresentingViewer) {
             if let item = selectedMedia {
                 mediaViewerContent(for: item)
             }
         }
-        #else
-        .overlay(fullScreenOverlay)
         #endif
-        // "Delete file and post" from a Media tile takes the post down; drop
-        // it here too, or its tile stays up showing a missing file.
-        .onReceive(NotificationCenter.default.publisher(for: .havenOwnEventsDeleted)) { note in
-            guard isOwnProfile, let ids = note.object as? Set<String> else { return }
-            profileNotes.removeAll { ids.contains($0.id) }
-            rebucket()
-        }
-        .sheet(item: $zapSheetContext) { context in
-            CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                if let lud16 = lightningAddress {
-                    Task { await zapProfile(lud16: lud16, amount: amount) }
-                }
-            }
-            #if os(iOS)
-            .presentationDetents([.height(380), .medium])
-            .smallSheetSizing()
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Color.platformWindowBackground)
-            #endif
-        }
     }
 
-    // MARK: - Dismiss header (sheet context only)
-
-    private var showsDismissButton: Bool {
-        !embeddedInNavigation && (!isOwnProfile || onDismiss != nil)
-    }
-
-    /// Sits on the banner, so it carries its own dark disc instead of relying
-    /// on the page behind it.
-    private var dismissHeader: some View {
-        HStack {
-            Spacer()
-            Button(action: { performDismiss() }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.appSystem(size: 24))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white.opacity(0.9), .black.opacity(0.45))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+    /// Opens a note in the split pane's detail column when this profile is the
+    /// pane's list, and falls back to the sheet everywhere else.
+    private func openNote(_ note: FeedNote) {
+        if let noteDetailSelection, !isPresented {
+            noteDetailSelection.select(note)
+        } else {
+            showingNoteDetail = note
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
     }
 
     // MARK: - Banner
@@ -890,16 +282,26 @@ struct ProfileView: View {
             onTap: { url in showingMediaUrl = IdentifiableURL(url: url) }
         )
         .overlay(alignment: .top) {
-            if showsDismissButton { dismissHeader }
+            if let dismissAction { dismissHeader(dismissAction) }
         }
     }
 
-    private func performDismiss() {
-        if let onDismiss = onDismiss {
-            onDismiss()
-        } else {
-            dismiss()
+    /// Sits on the banner, so it carries its own dark disc instead of relying
+    /// on the page behind it.
+    private func dismissHeader(_ action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button(action: action) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.appSystem(size: 24))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white.opacity(0.9), .black.opacity(0.45))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     private var divider: some View {
@@ -925,7 +327,7 @@ struct ProfileView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(profile?.bestName ?? shortPubkey)
+                    Text(profile?.bestName ?? ProfileFormat.shortPubkey(pubkey))
                         .font(.appSystem(size: 20, weight: .bold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
@@ -938,7 +340,7 @@ struct ProfileView: View {
 
                     Spacer(minLength: 0)
 
-                    statusBadge
+                    badge()
                 }
 
                 if let nip05 = profile?.nip05, !nip05.isEmpty {
@@ -957,56 +359,6 @@ struct ProfileView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
-    }
-
-    @ViewBuilder
-    private var statusBadge: some View {
-        if isOwnProfile {
-            Text("YOU")
-                .font(.appSystem(size: 9, weight: .heavy))
-                .tracking(0.8)
-                .foregroundColor(.havenPurple)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.havenPurple.opacity(0.15))
-                .cornerRadius(4)
-        } else if isFollowing && followsMe {
-            HStack(spacing: 3) {
-                Text("∞")
-                    .font(.appSystem(size: 13, weight: .black))
-                Text("MUTUAL")
-                    .font(.appSystem(size: 9, weight: .heavy))
-                    .tracking(0.8)
-            }
-            .foregroundColor(Color.havenVerified)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Color.havenVerified.opacity(0.13))
-            .cornerRadius(4)
-        } else {
-            HStack(spacing: 4) {
-                if isFollowing {
-                    Text("FOLLOWING")
-                        .font(.appSystem(size: 9, weight: .heavy))
-                        .tracking(0.8)
-                        .foregroundColor(.green)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.green.opacity(0.15))
-                        .cornerRadius(4)
-                }
-                if followsMe {
-                    Text("FOLLOWS YOU")
-                        .font(.appSystem(size: 9, weight: .heavy))
-                        .tracking(0.8)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.secondary.opacity(0.12))
-                        .cornerRadius(4)
-                }
-            }
-        }
     }
 
     // MARK: - Metadata placeholders
@@ -1056,159 +408,15 @@ struct ProfileView: View {
 
     // MARK: - Action row
 
-    /// One line, never scrolled: the labelled actions share the width and the
-    /// icon-only ones keep a fixed square. When space runs out (small phones,
-    /// large text) Message drops its word first, then Zap.
+    /// One line, never scrolled. When space runs out (small phones, large
+    /// text) the screen's own row drops words, tightest last.
     private var actionRow: some View {
         ViewThatFits(in: .horizontal) {
-            actionButtons(compact: 0)
-            actionButtons(compact: 1)
-            actionButtons(compact: 2)
+            actions(0).fixedSize(horizontal: false, vertical: true)
+            actions(1).fixedSize(horizontal: false, vertical: true)
+            actions(2).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
-        .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
-    }
-
-    private static let actionHeight: CGFloat = 32
-
-    private func actionButtons(compact: Int) -> some View {
-        HStack(spacing: 8) {
-            if isOwnProfile {
-                #if os(macOS)
-                actionPill("Post", icon: "pencil", filled: true) { showingCompose = true }
-                #endif
-                // Pulling the page down opens this too; the button stays for
-                // VoiceOver and anyone who has not found the pull.
-                actionPill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
-                trustWebButton
-            } else {
-                actionPill(isFollowing ? "Unfollow" : "Follow",
-                           icon: isFollowing ? "person.badge.minus" : "person.badge.plus",
-                           filled: isFollowing, action: toggleFollow)
-                if compact > 0 {
-                    actionIcon("message.fill") { showingMessageComposer = true }
-                        .accessibilityLabel("Message")
-                } else {
-                    actionPill("Message", icon: "message.fill") { showingMessageComposer = true }
-                }
-                if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
-                    zapPill(showsWord: compact < 2)
-                }
-                trustWebButton
-                moreMenu
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func actionPill(_ title: String, icon: String, filled: Bool = false,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.appSystem(size: 12, weight: .semibold))
-                Text(title)
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .fixedSize()
-            .foregroundColor(filled ? .white : .havenPurple)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: Self.actionHeight)
-            .background(filled ? Color.havenPurple : Color.havenPurple.opacity(0.12))
-            .cornerRadius(6)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func actionIcon(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { actionIconLabel(icon) }
-            .buttonStyle(.plain)
-    }
-
-    private func actionIconLabel(_ icon: String) -> some View {
-        Image(systemName: icon)
-            .font(.appSystem(size: 13, weight: .semibold))
-            .foregroundColor(.havenPurple)
-            .frame(width: Self.actionHeight + 4, height: Self.actionHeight)
-            .background(Color.havenPurple.opacity(0.12))
-            .cornerRadius(6)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    /// Tap zaps the default amount; long-press picks one.
-    private func zapPill(showsWord: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "bolt.fill")
-                .font(.appSystem(size: 12, weight: .semibold))
-            Text(showsWord ? "Zap \(defaultZapSats)" : "\(defaultZapSats)")
-                .font(.appSystem(size: 13, weight: .semibold))
-                .lineLimit(1)
-        }
-        .fixedSize()
-        .foregroundColor(.orange)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, minHeight: Self.actionHeight)
-        .background(Color.orange.opacity(0.15))
-        .cornerRadius(6)
-        .overlay { ZapBurstView(isAnimating: $showLightning) }
-        .contentShape(RoundedRectangle(cornerRadius: 6))
-        .onLongPressGesture {
-            #if os(iOS)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            #endif
-            zapSheetContext = ZapSheetContext(defaultAmount: defaultZapSats)
-        }
-        .onTapGesture {
-            if let lud16 = lightningAddress {
-                Task { await zapProfile(lud16: lud16) }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Zap \(defaultZapSats) sats")
-        .accessibilityHint("Long-press to choose an amount")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { if let lud16 = lightningAddress { Task { await zapProfile(lud16: lud16) } } }
-    }
-
-    private var trustWebButton: some View {
-        Button { showingTrustWeb = true } label: {
-            // The WoT tab's globe, so the button and the tab read as one place.
-            Image("WoTTab")
-                .resizable()
-                .frame(width: 15, height: 15)
-                .foregroundColor(.havenPurple)
-                .frame(width: Self.actionHeight + 4, height: Self.actionHeight)
-                .background(Color.havenPurple.opacity(0.12))
-                .cornerRadius(6)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-            .accessibilityLabel("Web of Trust")
-            .accessibilityHint(isOwnProfile ? "Shows your web of trust" : "Shows how you're connected to them")
-    }
-
-    /// The rarer actions, with Block last and apart so it is never a mis-tap
-    /// away from Message.
-    private var moreMenu: some View {
-        Menu {
-            Button(action: copyNpub) {
-                Label("Copy npub", systemImage: "doc.on.doc")
-            }
-            Divider()
-            Button(role: isBlocked ? nil : .destructive, action: toggleBlock) {
-                Label(isBlocked ? "Unblock" : "Block",
-                      systemImage: isBlocked ? "hand.raised.slash" : "hand.raised")
-            }
-        } label: {
-            actionIconLabel("ellipsis")
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("More")
     }
 
     // MARK: - Follow counts
@@ -1218,23 +426,16 @@ struct ProfileView: View {
     private var followCountsRow: some View {
         HStack(spacing: 18) {
             Button { openFollowList(.following) } label: {
-                followCount(followingDisplay, label: "Following")
+                followCount(loader.followingCountShown.map(ProfileFormat.shortInt) ?? "—", label: "Following")
             }
             Button { openFollowList(.followers) } label: {
-                followCount(displayedFollowersCount.map(shortInt) ?? "—", label: "Followers")
+                followCount(loader.displayedFollowersCount.map(ProfileFormat.shortInt) ?? "—", label: "Followers")
             }
             Spacer(minLength: 0)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.top, 12)
-    }
-
-    private var followingDisplay: String {
-        if isOwnProfile {
-            return shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count)
-        }
-        return followingCount.map(shortInt) ?? "—"
     }
 
     private func followCount(_ value: String, label: String) -> some View {
@@ -1254,12 +455,17 @@ struct ProfileView: View {
 
     // MARK: - Follow lists
 
+    /// Reads the viewer's ledger first, then opens. Opening first built the
+    /// page without it: your own Followers showed the relays' sample with a
+    /// "load more", then swapped to the full list a moment later.
     private func openFollowList(_ tab: FollowListTab) {
         let viewer = configService.activeAccountHexPubkey
-        followListTab = tab
         Task.detached(priority: .userInitiated) {
             let ledger = FollowerSnapshot.load(owner: viewer)
-            await MainActor.run { viewerLedger = ledger }
+            await MainActor.run {
+                viewerLedger = ledger
+                followListTab = tab
+            }
         }
     }
 
@@ -1267,29 +473,27 @@ struct ProfileView: View {
         let ledger = viewerLedger
         let viewerFollowers = ledger.map { Set($0.current.map(\.pubkey)) } ?? []
         let spam = ledger.map { Set($0.followers.filter(\.isSpam).map(\.pubkey)) } ?? []
-        let following = isOwnProfile
-            ? feedService.followedPubkeys.filter { $0 != pubkey }
-            : followingList
         // Your own followers come from the relay's ledger, which is complete.
         // Anyone else's are what relays returned, which may be short.
-        let ownLedger = isOwnProfile ? ledger : nil
+        let ownLedger = loader.usesOwnLedger ? ledger : nil
         let followers: [String: Int64] = ownLedger.map { snap in
             Dictionary(snap.current.map { ($0.pubkey, $0.existing ? $0.listAt : $0.followedAt) }, uniquingKeysWith: max)
-        } ?? followerSeenAt
-        let haveMore = ownLedger == nil && !followersExhausted && (displayedFollowersCount ?? 0) > followers.count
+        } ?? loader.followerSeenAt
+        let haveMore = ownLedger == nil && !loader.followersExhausted
+            && (loader.displayedFollowersCount ?? 0) > followers.count
         return FollowListView(
             subject: pubkey,
-            subjectName: profile?.bestName ?? shortPubkey,
+            subjectName: profile?.bestName ?? ProfileFormat.shortPubkey(pubkey),
             startOn: tab,
-            following: following,
+            following: loader.followingPubkeys,
             followers: followers,
             followersHaveMore: haveMore,
-            followerPagesDone: followerPagesDone,
-            followersTotal: ownLedger == nil ? displayedFollowersCount : nil,
+            followerPagesDone: loader.followerPagesDone,
+            followersTotal: ownLedger == nil ? loader.displayedFollowersCount : nil,
             isViewersOwnFollowers: ownLedger != nil,
             followsViewer: viewerFollowers,
             hidden: spam,
-            onLoadMoreFollowers: ownLedger == nil ? { loadMoreFollowers() } : nil
+            onLoadMoreFollowers: ownLedger == nil ? { loader.loadMoreFollowers() } : nil
         )
         .environmentObject(nostrService)
         .environmentObject(configService)
@@ -1297,12 +501,26 @@ struct ProfileView: View {
 
     // MARK: - Links
 
+    private var lightningAddress: String? {
+        guard let profile else { return nil }
+        if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
+        if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
+        return nil
+    }
+
+    private var formattedNpub: String {
+        if let npub = ProfileFormat.npub(pubkey) {
+            return String(npub.prefix(12)) + "…" + String(npub.suffix(8))
+        }
+        return "npub…" + String(pubkey.suffix(8))
+    }
+
     /// Lightning address, website and npub, one wrapping row of chips in
     /// place of a table row each. Tap copies, or opens the website.
     private var linksRow: some View {
         ProfileChipFlow(spacing: 8) {
             if let lud16 = lightningAddress {
-                Button { copyToClipboard(lud16); triggerCopied($copiedLightning) } label: {
+                Button { ProfileFormat.copy(lud16); flash($copiedLightning) } label: {
                     linkChip(lud16, icon: copiedLightning ? "checkmark" : "bolt.fill",
                              tint: copiedLightning ? .green : .orange)
                 }
@@ -1316,7 +534,9 @@ struct ProfileView: View {
                 }
                 .accessibilityLabel("Open \(shown)")
             }
-            Button(action: copyNpub) {
+            Button {
+                if let npub = ProfileFormat.npub(pubkey) { ProfileFormat.copy(npub); flash($copiedNpub) }
+            } label: {
                 linkChip(formattedNpub, icon: copiedNpub ? "checkmark" : "key.fill",
                          tint: copiedNpub ? .green : .secondary)
             }
@@ -1326,6 +546,13 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    private func flash(_ flag: Binding<Bool>) {
+        flag.wrappedValue = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            flag.wrappedValue = false
+        }
     }
 
     private func linkChip(_ text: String, icon: String, tint: Color) -> some View {
@@ -1359,7 +586,7 @@ struct ProfileView: View {
                         // The other section's notes are not this one's: an
                         // anchor left over would pull the page to it.
                         scrolledNoteID = nil
-                        selectedSection = section
+                        loader.selectedSection = section
                     }
                 }) {
                     VStack(spacing: 6) {
@@ -1411,7 +638,7 @@ struct ProfileView: View {
     private var visibleSections: [ProfileSection] {
         ProfileSection.allCases.filter { section in
             switch section {
-            case .shop: return isOwnProfile || revealedSections.contains(.shop)
+            case .shop: return shopAlwaysVisible || revealedSections.contains(.shop)
             // Only when this person has some, so most profiles keep five tabs.
             case .articles, .divines, .music: return revealedSections.contains(section)
             default: return true
@@ -1434,7 +661,7 @@ struct ProfileView: View {
         }
         guard next != revealedSections else { return }
         revealedSections = next
-        if !visibleSections.contains(selectedSection) { selectedSection = .notes }
+        if !visibleSections.contains(selectedSection) { loader.selectedSection = .notes }
     }
 
     private func count(for section: ProfileSection) -> Int {
@@ -1443,16 +670,16 @@ struct ProfileView: View {
         case .articles: return extras.articles.count
         case .divines: return extras.reels.count
         case .music: return extras.tracks.count
-        case .notes: return sectionCount.notes
-        case .media: return sectionCount.media
-        case .replies: return sectionCount.replies
-        case .reposts: return sectionCount.reposts
-        case .tagged: return sectionCount.tagged
+        default: return loader.notes(for: section).count
         }
     }
 
+    /// "48", or "48+" while older pages may still raise it. These are the
+    /// notes loaded, not totals.
     private func countLabel(for section: ProfileSection) -> String {
-        count(for: section) > 0 ? countText(for: section) : ""
+        let n = count(for: section)
+        guard n > 0 else { return "" }
+        return loader.hasMore(for: section) ? ProfileFormat.shortInt(n) + "+" : ProfileFormat.shortInt(n)
     }
 
     // MARK: - Section content
@@ -1469,20 +696,6 @@ struct ProfileView: View {
     }
 
     // MARK: - Articles, diVines, music
-
-    /// Where this person's articles and diVines are likely to be: the relays
-    /// the profile reads, their outbox, and diVine's own relay.
-    private var extrasRelays: [URL] {
-        var strings: [String] = []
-        if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
-            strings.append(configService.config.nostrURL)
-        }
-        strings += configService.config.readRelays.prefix(3)
-        strings += (nostrService.outboxRelays[pubkey] ?? []).prefix(3)
-        strings.append(ReelsFeedService.divineRelay)
-        var seen = Set<String>()
-        return strings.filter { seen.insert($0).inserted }.compactMap { URL(string: $0) }
-    }
 
     private var articlesSection: some View {
         LazyVStack(spacing: 12) {
@@ -1530,27 +743,15 @@ struct ProfileView: View {
             .padding(16)
     }
 
-    @ViewBuilder
     private var shopSection: some View {
         VStack(spacing: 14) {
-            if isOwnProfile {
-                Button { showingSell = true } label: {
-                    Label("Sell something", systemImage: "tag")
-                        .font(.appSystem(size: 14, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(Color.havenPurple)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
+            shopHeader()
             if shop.listings.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: sectionEmptyIcon)
                         .font(.appSystem(size: 24, weight: .thin))
                         .foregroundColor(.secondary.opacity(0.5))
-                    Text(shop.isLoading ? "Loading…" : (isOwnProfile ? "You haven't listed anything yet" : "Nothing for sale"))
+                    Text(shop.isLoading ? "Loading…" : shopEmptyText)
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -1568,25 +769,13 @@ struct ProfileView: View {
         .padding(16)
     }
 
+    // MARK: - Notes
+
     @ViewBuilder
     private var noteSectionContent: some View {
-        let notes = currentSectionNotes
+        let notes = loader.currentSectionNotes
         if notes.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: sectionEmptyIcon)
-                    .font(.appSystem(size: 24, weight: .thin))
-                    .foregroundColor(.secondary.opacity(0.5))
-                Text(isLoadingNotes || !notesLoadStarted ? "Loading…" : "No \(selectedSection.rawValue.lowercased()) yet")
-                    .font(.appSystem(size: 12))
-                    .foregroundColor(.secondary)
-                if isLoadingNotes || !notesLoadStarted {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .tint(Color.havenPurple)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 48)
+            emptyNoteSection
         } else if selectedSection == .media {
             mediaGrid(notes: notes)
         } else {
@@ -1635,26 +824,7 @@ struct ProfileView: View {
                         }
                 }
 
-                // Infinite scroll sentinel
-                let hasMore = selectedSection == .tagged ? hasMoreTaggedNotes : hasMoreNotes
-                if hasMore && !notes.isEmpty {
-                    Color.clear
-                        .frame(height: 1)
-                        .onAppear {
-                            if selectedSection == .tagged {
-                                loadOlderTaggedNotes()
-                            } else {
-                                loadOlderProfileNotes()
-                            }
-                        }
-                    if (selectedSection == .tagged ? isLoadingOlderTaggedNotes : isLoadingOlderNotes) {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .tint(Color.havenPurple)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                    }
-                }
+                olderPageSentinel(itemCount: notes.count)
             }
             // Numbers under each post, fetched as the posts appear. The tagged
             // tab is other people's posts, so it is left out.
@@ -1665,6 +835,117 @@ struct ProfileView: View {
             .scrollTargetLayout()
             .padding(.top, 4)
         }
+    }
+
+    /// Infinite scroll: asks for the page before the oldest note when the
+    /// end of the list comes on screen.
+    @ViewBuilder
+    private func olderPageSentinel(itemCount: Int) -> some View {
+        if loader.hasMore(for: selectedSection) && itemCount > 0 {
+            Color.clear
+                .frame(height: 1)
+                .onAppear { loader.loadOlder(for: selectedSection) }
+            if loader.isLoadingOlder(for: selectedSection) {
+                ProgressView()
+                    .scaleEffect(0.6)
+                    .tint(Color.havenPurple)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            }
+        }
+    }
+
+    /// Nothing in this tab yet. The opening load is the newest 50 posts, so a
+    /// tab can be empty while older pages still hold some (replies, reposts,
+    /// media): it pages back on its own, and offers to look further when the
+    /// automatic rounds run out. "No replies yet" only once nothing older is
+    /// left.
+    private var emptyNoteSection: some View {
+        let section = selectedSection
+        let opening = loader.isLoadingNotes || !loader.notesLoadStarted
+        let olderLeft = loader.canPageOlder(for: section)
+        let pagingNow = loader.isLoadingOlder(for: section)
+        return VStack(spacing: 10) {
+            Image(systemName: sectionEmptyIcon)
+                .font(.appSystem(size: 24, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+            Text(opening || pagingNow ? "Loading…"
+                 : olderLeft ? "None in the latest posts"
+                 : "No \(section.rawValue.lowercased()) yet")
+                .font(.appSystem(size: 12))
+                .foregroundColor(.secondary)
+            if opening || pagingNow {
+                ProgressView()
+                    .scaleEffect(0.6)
+                    .tint(Color.havenPurple)
+            } else if olderLeft {
+                Button("Look further back") { loader.loadOlder(for: section) }
+                    .font(.appSystem(size: 12, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+        // Once the opening load is in, page back for this tab by itself.
+        .task(id: "\(section.rawValue)-\(opening)") {
+            guard !opening, olderLeft else { return }
+            loader.loadOlder(for: section)
+        }
+    }
+
+    private var sectionEmptyIcon: String {
+        switch selectedSection {
+        case .notes: return "text.bubble"
+        case .media: return "photo"
+        case .replies: return "arrowshape.turn.up.left"
+        default: return selectedSection.symbol
+        }
+    }
+
+    // MARK: - Media
+
+    private var displayMedia: [MediaItem] {
+        let items: [(url: URL, note: FeedNote)] = loader.buckets.media.flatMap { note in
+            note.mediaURLs.map { (url: $0, note: note) }
+        }
+        return items.map { item in
+            let ext = item.url.pathExtension.lowercased()
+            var isGIF = ext == "gif"
+            var isVideo = SupportedMediaFormats.videoExtensions.contains(ext)
+            var isAudio = SupportedMediaFormats.audioExtensions.contains(ext)
+
+            if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: item.url) {
+                isGIF = MediaTypeDetector.shared.isGIFContentType(cachedMime)
+                isVideo = MediaTypeDetector.shared.isVideoContentType(cachedMime)
+                isAudio = cachedMime.lowercased().hasPrefix("audio/")
+            }
+
+            let type: MediaItem.MediaType = isVideo ? .video : (isAudio ? .audio : .image)
+            let mime = isGIF ? "image/gif" : (isVideo ? "video/mp4" : nil)
+
+            return MediaItem(
+                id: UUID.deterministic(from: item.url.absoluteString),
+                url: item.url,
+                type: type,
+                dateAdded: item.note.createdAt,
+                pubkey: item.note.pubkey,
+                tags: item.note.tags,
+                mimeType: mime
+            )
+        }
+    }
+
+    private var isPresentingViewer: Binding<Bool> {
+        Binding(
+            get: { selectedMedia != nil },
+            set: { presenting in
+                if !presenting {
+                    selectedMedia = nil
+                    dragOffset = .zero
+                }
+            }
+        )
     }
 
     private func mediaGrid(notes: [FeedNote]) -> some View {
@@ -1687,7 +968,7 @@ struct ProfileView: View {
                 ForEach(items) { mediaItem in
                     // Your own files get the Vault grid's Delete menu; only a
                     // Blossom file (named by its hash) can be deleted.
-                    let hash = isOwnProfile ? MediaCacheService.blossomHash(in: mediaItem.url) : nil
+                    let hash = canDeleteMedia ? MediaCacheService.blossomHash(in: mediaItem.url) : nil
                     MediaGridItem(
                         item: mediaItem,
                         onDeleteFromMirrors: hash.map { hash in { _ in deleteFromMirrors(hash: hash) } },
@@ -1702,21 +983,7 @@ struct ProfileView: View {
             .padding(.horizontal, 8)
             .padding(.top, 2)
 
-            // Infinite scroll sentinel for media
-            if hasMoreNotes && !items.isEmpty {
-                Color.clear
-                    .frame(height: 1)
-                    .onAppear {
-                        loadOlderProfileNotes()
-                    }
-                if isLoadingOlderNotes {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .tint(Color.havenPurple)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                }
-            }
+            olderPageSentinel(itemCount: items.count)
         }
     }
 
@@ -1944,700 +1211,6 @@ struct ProfileView: View {
         let newIndex = index + direction
         guard displayMedia.indices.contains(newIndex) else { return }
         withAnimation(Motion.fade) { selectedMedia = displayMedia[newIndex] }
-    }
-
-    private var sectionEmptyIcon: String {
-        switch selectedSection {
-        case .notes: return "text.bubble"
-        case .media: return "photo"
-        case .replies: return "arrowshape.turn.up.left"
-        default: return selectedSection.symbol
-        }
-    }
-
-    // MARK: - Refresh
-
-    /// Pull to refresh. Reloads in place: everything on screen stays until
-    /// something newer replaces it, so the page never blanks and refills. New
-    /// posts are added at the top, counts change only when a new number
-    /// arrives, and the header, Shop and the extra tabs are fetched again.
-    /// The spinner stays until every relay has answered the new load.
-    private func refreshProfile() async {
-        let started = Date()
-        nostrService.fetchMissingProfiles(for: [pubkey], force: true)
-        shop.load(pubkey: pubkey, force: true)
-        extras.load(pubkey: pubkey, relays: extrasRelays, force: true)
-
-        // A page of older notes in flight dies with its connection; let the
-        // next scroll to the bottom ask again.
-        disconnectClients()
-        isLoadingNotes = false
-        isLoadingOlderNotes = false
-        olderPageSubId = nil
-        isLoadingOlderTaggedNotes = false
-        olderTaggedSubId = nil
-
-        fetchAuthorNotes()
-        fetchFollowerCount()
-
-        // Until every relay has answered (EOSE, CLOSED or a failed
-        // connection), 8s at most, and long enough that the spinner reads as
-        // having done something.
-        while isLoadingNotes, Date().timeIntervalSince(started) < 8 {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        let shown = Date().timeIntervalSince(started)
-        if shown < 0.6 {
-            try? await Task.sleep(nanoseconds: UInt64((0.6 - shown) * 1_000_000_000))
-        }
-    }
-
-    // MARK: - Follower count
-
-    /// Your own profile shows your relay's ledger, so the header matches the
-    /// list it opens and the Vault. Anyone else: Vertex counts follow lists
-    /// from across Nostr, once per follower, so its answer wins. Without it: the streamed kind-3 events stop at 100
-    /// per relay, so they undercount anyone with more followers. Relays that
-    /// answer NIP-45 COUNT give the full number; show whichever is larger.
-    private var displayedFollowersCount: Int? {
-        if isOwnProfile, let ownLedgerCount { return ownLedgerCount }
-        if let vertexFollowerCount { return vertexFollowerCount }
-        switch (relayFollowerCount, followersCount) {
-        case let (relay?, streamed?): return max(relay, streamed)
-        case let (relay, streamed): return relay ?? streamed
-        }
-    }
-
-    /// Asks each relay for its own follower COUNT and keeps the largest.
-    /// Relays hold different subsets of contact lists, so adding their
-    /// counts together would double-count; the largest single answer is
-    /// the closest to the real number.
-    private func fetchFollowerCount() {
-        var urls: [URL] = []
-        var seen = Set<String>()
-        // damus and primal answer COUNT; most other popular relays reject it.
-        let candidates = ["wss://relay.damus.io", "wss://relay.primal.net"]
-            + ConfigService.shared.config.activeFeedRelays.prefix(3)
-        for str in candidates where seen.insert(str).inserted {
-            if let url = URL(string: str) { urls.append(url) }
-        }
-        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey]]
-
-        let target = pubkey
-        if isOwnProfile {
-            Task.detached(priority: .userInitiated) {
-                guard let ledger = FollowerSnapshot.load(owner: target) else { return }
-                let count = ledger.current.count
-                await MainActor.run { if target == pubkey { ownLedgerCount = count } }
-            }
-        }
-        Task {
-            guard let count = await nostrService.fetchVertexFollowerCount(target: target) else { return }
-            await MainActor.run { vertexFollowerCount = count }
-        }
-
-        for url in urls {
-            Task {
-                guard let count = await nostrService.fetchCount(from: [url], filter: filter) else { return }
-                await MainActor.run {
-                    relayFollowerCount = max(relayFollowerCount ?? 0, count)
-                }
-            }
-        }
-    }
-
-    // MARK: - Profile editing
-
-    private func applyProfileUpdate(_ updated: FeedProfile) {
-        nostrService.profiles[pubkey] = updated
-        nostrService.saveProfilesThrottled()
-    }
-
-    /// The edit sheet was swiped away with changes. They show at once and are
-    /// published behind; if that fails the page goes back to what it showed
-    /// and keeps the changes for the next edit.
-    private func autosaveProfile(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) {
-        let shownBefore = nostrService.profiles[pubkey]
-        unsavedDraft = nil
-        applyProfileUpdate(ProfileEditView.preview(existing, initial: initial, edited: edited))
-        Task {
-            switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
-                                                 initial: initial, edited: edited) {
-            case .success(let updated):
-                applyProfileUpdate(updated)
-            case .failure:
-                nostrService.profiles[pubkey] = shownBefore
-                unsavedDraft = edited
-                ErrorNotificationManager.shared.show("Profile not saved. Pull down to try again.")
-            }
-        }
-    }
-
-    // MARK: - Note streaming
-
-    private func fetchAuthorNotes() {
-        guard !isLoadingNotes else { return }
-        isLoadingNotes = true
-        notesLoadStarted = true
-
-        let existing = feedService.notes.filter { $0.pubkey == pubkey }
-        for note in existing {
-            if !seenNoteIds.contains(note.id) {
-                seenNoteIds.insert(note.id)
-                pending.notes.append(note)
-            }
-        }
-        flushPendingNotes()
-
-        var relayURLs: [URL] = []
-        if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
-            let config = ConfigService.shared.config
-            if let local = URL(string: config.nostrURL) {
-                relayURLs.append(local)
-            }
-        }
-        let externalStrs = ConfigService.shared.config.readRelays
-        // Use up to 3 external relays to improve chances of finding the user's data.
-        relayURLs.append(contentsOf: externalStrs.prefix(3).compactMap { URL(string: $0) })
-
-        // NIP-65 outbox model: we're fetching events FROM this user, so query their
-        // write/outbox relays (where they actually publish), not their read/inbox
-        // relays (where others send things TO them).
-        if let userRelays = nostrService.outboxRelays[pubkey] {
-            let existingStrings = Set(relayURLs.map { $0.absoluteString })
-            for relayStr in userRelays.prefix(3) {
-                if !existingStrings.contains(relayStr), let url = URL(string: relayStr) {
-                    relayURLs.append(url)
-                }
-            }
-        }
-
-        openingPending = Set(relayURLs.indices)
-        for (relay, url) in relayURLs.enumerated() {
-            let client = WebSocketClient()
-            profileClients.append(client)
-
-            client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [self] message in
-                    self.handleProfileNoteMessage(message, relay: relay)
-                }
-                .store(in: &profileCancellables)
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    // A relay that can't be reached has answered too: it
-                    // will send nothing.
-                    if state == .error { openingRelayAnswered(relay) }
-                    if state == .connected {
-                        let notesFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023, NIP88Poll.kind],
-                            "authors": [pubkey],
-                            "limit": 50
-                        ]
-                        let profileFilter: [String: Any] = [
-                            "kinds": [0],
-                            "authors": [pubkey],
-                            "limit": 1
-                        ]
-                        let contactFilter: [String: Any] = [
-                            "kinds": [3],
-                            "authors": [pubkey],
-                            "limit": 1
-                        ]
-                        let followersFilter: [String: Any] = [
-                            "kinds": [3],
-                            "#p": [pubkey],
-                            "limit": 100
-                        ]
-                        let taggedFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023, NIP88Poll.kind],
-                            "#p": [pubkey],
-                            "limit": 50
-                        ]
-                        let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))", notesFilter, profileFilter, contactFilter, followersFilter, taggedFilter]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
-                    }
-                }
-                .store(in: &profileCancellables)
-
-            client.connect(url: url)
-        }
-
-        notesLoadToken += 1
-        let token = notesLoadToken
-        if relayURLs.isEmpty { isLoadingNotes = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-            guard token == notesLoadToken else { return }
-            flushPendingNotes()
-            openingPending.removeAll()
-            isLoadingNotes = false
-        }
-    }
-
-    private func openingRelayAnswered(_ relay: Int) {
-        guard openingPending.remove(relay) != nil else { return }
-        if openingPending.isEmpty {
-            flushPendingNotes()
-            isLoadingNotes = false
-        }
-    }
-
-    private func handleProfileNoteMessage(_ message: String, relay: Int) {
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String else { return }
-
-        if type == "EVENT", json.count >= 3,
-           let eventDict = json[2] as? [String: Any],
-           let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
-           let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
-
-            // Handle kind 0 (profile metadata) from the target user
-            if event.kind == 0, event.pubkey == pubkey {
-                guard event.created_at >= shownMetadataAt else { return }
-                shownMetadataAt = event.created_at
-                if let result = ProfileRepository.parseMetadataContent(
-                    event.content, pubkey: pubkey,
-                    existingProfile: nostrService.profiles[pubkey],
-                    createdAt: event.created_at
-                ), result.changed {
-                    nostrService.profiles[pubkey] = result.profile
-                }
-                return
-            }
-
-            if event.kind == 3 {
-                let pTags = event.tags.filter { $0.count >= 2 && $0[0] == "p" }
-                if event.pubkey == pubkey {
-                    guard event.created_at >= shownContactsAt else { return }
-                    shownContactsAt = event.created_at
-                    // This user's own contact list → extract following count and followsMe.
-                    // followsMe is true if they follow ANY of our accounts (owner or
-                    // whitelisted) so the badge is consistent across account switches.
-                    var seenTags = Set<String>()
-                    let list = pTags.map { $0[1] }.filter { $0 != pubkey && seenTags.insert($0).inserted }
-                    self.followingList = list
-                    let count = pTags.filter { $0[1] != pubkey }.count
-                    self.followingCount = count
-                    let ourHexKeys: Set<String> = Set(configService.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString })
-                    if !ourHexKeys.isEmpty {
-                        self.followsMe = pTags.contains { ourHexKeys.contains($0[1]) }
-                    }
-                } else {
-                    // Someone else's contact list containing this pubkey → they follow this user
-                    followerPubkeys.insert(event.pubkey)
-                    followersCount = followerPubkeys.count
-                    followerSeenAt[event.pubkey] = max(followerSeenAt[event.pubkey] ?? 0, event.created_at)
-                }
-                return
-            }
-
-            // Check if this is a tagged event (authored by someone else, but p-tagging the profile user)
-            let isTaggedEvent = event.pubkey != pubkey &&
-                [1, 6, 30023, NIP88Poll.kind].contains(event.kind) &&
-                event.tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == pubkey })
-
-            if isTaggedEvent {
-                guard !seenTaggedIds.contains(event.id) else { return }
-                seenTaggedIds.insert(event.id)
-
-                let note = FeedNote(
-                    id: event.id,
-                    pubkey: event.pubkey,
-                    content: event.content,
-                    createdAt: Date(timeIntervalSince1970: TimeInterval(event.created_at)),
-                    tags: event.tags,
-                    kind: event.kind
-                )
-
-                pending.tagged.append(note)
-                scheduleFlush()
-
-                // Fetch profile for the tagger
-                if nostrService.profiles[event.pubkey] == nil {
-                    nostrService.fetchMissingProfiles(for: [event.pubkey])
-                }
-
-                // Trigger fetch of the original note for empty-content reposts
-                if event.kind == 6 && event.content.isEmpty,
-                   let refId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
-                    feedService.fetchMissingNote(id: refId)
-                }
-
-                return
-            }
-
-            // For notes (kind 1, 6, 30023), only show from the target user
-            guard event.pubkey == pubkey else { return }
-
-            guard !seenNoteIds.contains(event.id) else { return }
-            seenNoteIds.insert(event.id)
-
-            let note = FeedNote(
-                id: event.id,
-                pubkey: event.pubkey,
-                content: event.content,
-                createdAt: Date(timeIntervalSince1970: TimeInterval(event.created_at)),
-                tags: event.tags,
-                kind: event.kind
-            )
-
-            pending.notes.append(note)
-            scheduleFlush()
-
-            // Trigger fetch of the original note for empty-content reposts
-            if event.kind == 6 && event.content.isEmpty,
-               let refId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
-                feedService.fetchMissingNote(id: refId)
-            }
-
-            if profile == nil {
-                nostrService.fetchMissingProfiles(for: [pubkey])
-            }
-        } else if type == "EOSE" || type == "CLOSED" {
-            // CLOSED counts the same as EOSE: the relay is saying it will send
-            // nothing more under this subscription. A refusal (sub cap, rate limit)
-            // reads identically to an exhausted history from here, and ignoring it
-            // left the page hanging on a relay that was never going to answer.
-            let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
-            // Page bookkeeping counts the lists, so they must be complete.
-            flushPendingNotes()
-            if subId.hasPrefix("followers-page-") {
-                guard subId == followerPageSubId else { return }
-                followerPageAnswers += 1
-                if followerPageAnswers >= followerPageExpected {
-                    finishFollowerPage(token: followerPageToken)
-                }
-            } else if subId.hasPrefix("older-tagged-") {
-                guard subId == olderTaggedSubId else { return }
-                olderTaggedAnswers += 1
-                if olderTaggedAnswers >= olderTaggedExpected {
-                    finishOlderTaggedPage(token: olderTaggedToken)
-                }
-            } else if subId.hasPrefix("older-") {
-                guard subId == olderPageSubId else { return }
-                olderPageAnswers += 1
-                if olderPageAnswers >= olderPageExpected {
-                    finishOlderPage(token: olderPageToken)
-                }
-            } else {
-                // The opening subscription is deliberately left open — it is also
-                // how new posts reach the profile while it is on screen.
-                openingRelayAnswered(relay)
-            }
-        }
-    }
-
-    /// Asks every relay for the next 100 lists naming this profile, older
-    /// than the oldest already seen.
-    private func loadMoreFollowers() {
-        guard followerPageSubId == nil, !followersExhausted, !profileClients.isEmpty,
-              let oldest = followerSeenAt.values.min() else { return }
-        followerPageToken &+= 1
-        let token = followerPageToken
-        let subId = "followers-page-\(UUID().uuidString.prefix(6))"
-        followerPageSubId = subId
-        followerPageAnswers = 0
-        followerPageExpected = profileClients.count
-        followerPageCountBefore = followerSeenAt.count
-        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey], "until": Int(oldest) - 1, "limit": 100]
-        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
-              let str = String(data: data, encoding: .utf8) else {
-            followerPageSubId = nil
-            return
-        }
-        for client in profileClients { client.send(text: str) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { finishFollowerPage(token: token) }
-    }
-
-    private func finishFollowerPage(token: Int) {
-        guard token == followerPageToken, let subId = followerPageSubId else { return }
-        closeProfileSubscription(subId)
-        followerPageSubId = nil
-        if followerSeenAt.count > followerPageCountBefore {
-            quietFollowerPages = 0
-        } else {
-            // Two empty rounds in a row, not one: a single quiet round is more
-            // often a slow relay than the end of the list.
-            quietFollowerPages += 1
-            if quietFollowerPages >= 2 { followersExhausted = true }
-        }
-        followerPagesDone += 1
-    }
-
-    private func loadOlderProfileNotes() {
-        guard !isLoadingOlderNotes, hasMoreNotes else { return }
-        flushPendingNotes()
-        guard let oldest = profileNotes.last else { return }
-        guard !profileClients.isEmpty else { return }
-        isLoadingOlderNotes = true
-
-        olderPageToken &+= 1
-        let token = olderPageToken
-        let subId = "older-\(UUID().uuidString.prefix(6))"
-        olderPageSubId = subId
-        olderPageAnswers = 0
-        olderPageExpected = profileClients.count
-        olderPageCountBefore = profileNotes.count
-        olderPageVisibleBefore = currentSectionNotes.count
-        olderPageSection = selectedSection
-
-        let filter: [String: Any] = [
-            "kinds": [1, 6, 30023, NIP88Poll.kind],
-            "authors": [pubkey],
-            "until": Int(oldest.createdAt.timeIntervalSince1970),
-            "limit": 50
-        ]
-        // One subscription id for the whole page, so every relay's answer counts
-        // toward the same page and the CLOSE below releases all of them.
-        let req: [Any] = ["REQ", subId, filter]
-        guard let data = try? JSONSerialization.data(withJSONObject: req),
-              let str = String(data: data, encoding: .utf8) else {
-            isLoadingOlderNotes = false
-            return
-        }
-        for client in profileClients {
-            client.send(text: str)
-        }
-
-        // Fallback only. Normally the page finishes when every relay has answered.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-            finishOlderPage(token: token)
-        }
-    }
-
-    private func finishOlderPage(token: Int) {
-        guard token == olderPageToken, isLoadingOlderNotes else { return }
-        flushPendingNotes()
-        isLoadingOlderNotes = false
-        if let subId = olderPageSubId {
-            closeProfileSubscription(subId)
-            olderPageSubId = nil
-        }
-
-        let grew = profileNotes.count > olderPageCountBefore
-        let visibleGrew = currentSectionNotes.count > olderPageVisibleBefore
-
-        if grew {
-            quietOlderPages = 0
-        } else {
-            // One quiet round is a slow relay far more often than an exhausted
-            // history. Only a second empty round in a row ends paging — the old
-            // code latched this off after a single 5s window and never reset it,
-            // so one slow relay killed paging for the life of the screen.
-            quietOlderPages += 1
-            if quietOlderPages >= 2 { hasMoreNotes = false }
-        }
-
-        // The scroll sentinel only fires again when the VISIBLE list grows. A page
-        // that was entirely replies adds nothing to the Notes tab, so paging would
-        // stop with history still left. Carry on ourselves — bounded, so one flick
-        // of the scroll cannot walk the whole archive.
-        guard hasMoreNotes,
-              !visibleGrew,
-              olderPageSection == selectedSection,
-              autoPagedInARow < 8 else {
-            autoPagedInARow = 0
-            return
-        }
-        autoPagedInARow += 1
-        loadOlderProfileNotes()
-    }
-
-    /// The paging subscriptions are one-shot, but nothing ever released them.
-    /// Every page leaked one on every relay, and relays that cap concurrent REQs
-    /// start refusing — which this screen then read as "no more notes".
-    private func closeProfileSubscription(_ subId: String) {
-        let msg: [Any] = ["CLOSE", subId]
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
-              let str = String(data: data, encoding: .utf8) else { return }
-        for client in profileClients {
-            client.send(text: str)
-        }
-    }
-
-    private func loadOlderTaggedNotes() {
-        guard !isLoadingOlderTaggedNotes, hasMoreTaggedNotes else { return }
-        flushPendingNotes()
-        guard let oldest = taggedNotes.last else { return }
-        guard !profileClients.isEmpty else { return }
-        isLoadingOlderTaggedNotes = true
-
-        olderTaggedToken &+= 1
-        let token = olderTaggedToken
-        let subId = "older-tagged-\(UUID().uuidString.prefix(6))"
-        olderTaggedSubId = subId
-        olderTaggedAnswers = 0
-        olderTaggedExpected = profileClients.count
-        olderTaggedCountBefore = taggedNotes.count
-        olderTaggedVisibleBefore = taggedFilteredNotes.count
-
-        let filter: [String: Any] = [
-            "kinds": [1, 6, 30023, NIP88Poll.kind],
-            "#p": [pubkey],
-            "until": Int(oldest.createdAt.timeIntervalSince1970),
-            "limit": 50
-        ]
-        let req: [Any] = ["REQ", subId, filter]
-        guard let data = try? JSONSerialization.data(withJSONObject: req),
-              let str = String(data: data, encoding: .utf8) else {
-            isLoadingOlderTaggedNotes = false
-            return
-        }
-        for client in profileClients {
-            client.send(text: str)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-            finishOlderTaggedPage(token: token)
-        }
-    }
-
-    private func finishOlderTaggedPage(token: Int) {
-        guard token == olderTaggedToken, isLoadingOlderTaggedNotes else { return }
-        flushPendingNotes()
-        isLoadingOlderTaggedNotes = false
-        if let subId = olderTaggedSubId {
-            closeProfileSubscription(subId)
-            olderTaggedSubId = nil
-        }
-
-        let grew = taggedNotes.count > olderTaggedCountBefore
-        // Tagged hides the profile owner's own notes, so a page can grow the pool
-        // without adding a single visible row — same stall as the Notes tab.
-        let visibleGrew = taggedFilteredNotes.count > olderTaggedVisibleBefore
-
-        if grew {
-            quietOlderTaggedPages = 0
-        } else {
-            quietOlderTaggedPages += 1
-            if quietOlderTaggedPages >= 2 { hasMoreTaggedNotes = false }
-        }
-
-        guard hasMoreTaggedNotes,
-              !visibleGrew,
-              selectedSection == .tagged,
-              autoPagedTaggedInARow < 8 else {
-            autoPagedTaggedInARow = 0
-            return
-        }
-        autoPagedTaggedInARow += 1
-        loadOlderTaggedNotes()
-    }
-
-    private func disconnectClients() {
-        for client in profileClients {
-            client.disconnect()
-        }
-        profileClients.removeAll()
-        profileCancellables.removeAll()
-    }
-
-    private func formatSats(_ sats: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        let formatted = formatter.string(from: NSNumber(value: sats)) ?? "\(sats)"
-        return "\(formatted) sats"
-    }
-
-    private func shortInt(_ n: Int) -> String {
-        if n >= 1_000_000 {
-            return String(format: "%.1fM", Double(n) / 1_000_000)
-        } else if n >= 1_000 {
-            return String(format: "%.1fk", Double(n) / 1_000)
-        }
-        return "\(n)"
-    }
-
-    // MARK: - Helpers
-
-    private var shortPubkey: String {
-        String(pubkey.prefix(8)) + "…" + String(pubkey.suffix(4))
-    }
-
-    private var formattedNpub: String {
-        if let data = Bech32.hexToData(pubkey),
-           let npub = Bech32.encode(hrp: "npub", data: data) {
-            return String(npub.prefix(12)) + "…" + String(npub.suffix(8))
-        }
-        return "npub…" + String(pubkey.suffix(8))
-    }
-
-    private func formattedAddress(_ address: String) -> String {
-        guard address.count > 16 else { return address }
-        return String(address.prefix(10)) + "…" + String(address.suffix(8))
-    }
-
-    private var lightningAddress: String? {
-        guard let profile = profile else { return nil }
-        if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
-        if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
-        // NIP-05 resolves to /.well-known/nostr.json — a completely different endpoint
-        // from the LUD-16 /.well-known/lnurlp/ path. Do NOT use NIP-05 as a lightning address.
-        return nil
-    }
-
-    private func copyNpub() {
-        if let data = Bech32.hexToData(pubkey),
-           let npub = Bech32.encode(hrp: "npub", data: data) {
-            copyToClipboard(npub)
-            triggerCopied($copiedNpub)
-        }
-    }
-
-    private func copyToClipboard(_ string: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
-        #else
-        UIPasteboard.general.string = string
-        #endif
-    }
-
-    private func triggerCopied(_ flag: Binding<Bool>) {
-        flag.wrappedValue = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            flag.wrappedValue = false
-        }
-    }
-
-    private func toggleFollow() {
-        FollowActions.toggle(pubkey, name: profile?.bestName ?? shortPubkey, isFollowing: isFollowing)
-    }
-
-    private func toggleBlock() {
-        guard let data = Data(hex: pubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if isBlocked {
-            configService.unblockProfile(npub)
-        } else {
-            configService.blockProfile(npub)
-        }
-    }
-
-    private func zapProfile(lud16: String, amount: Int? = nil) async {
-        do {
-            try await ZapService.shared.zapNote(
-                noteId: pubkey,
-                notePubkey: pubkey,
-                lud16: lud16,
-                amountSats: amount
-            )
-            await MainActor.run {
-                showLightning = true
-            }
-        } catch {
-            #if DEBUG
-            print("ProfileView: Zap failed: \(error)")
-            #endif
-        }
     }
 }
 

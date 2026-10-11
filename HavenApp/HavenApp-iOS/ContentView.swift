@@ -119,6 +119,13 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenWallet)) { _ in
             selectedTab = 2 // Profile tab
+            // The tab opens the wallet when it shows; it may not be built yet.
+            ProfileTabRequests.shared.openWallet = true
+        }
+        // Your own profile, opened from a note or a list: the tab, where editing is.
+        .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
+            selectedTab = 2
+            pendingProfilePubkey = nil
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
         .modifier(IPadCommandKeys(selectedTab: $selectedTab))
@@ -454,7 +461,7 @@ struct iPadSidebarView: View {
                         emptyTitle: "No Note Selected",
                         emptyMessage: "Pick a note from your profile to read it here."
                     ) {
-                        ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                        MyProfileView(pubkey: activeHex)
                             .navigationTitle("Profile")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbarBackground(.hidden, for: .navigationBar)
@@ -643,7 +650,7 @@ struct iPhoneTabView: View {
 
             NavigationStack(path: $profilePath) {
                 noteSplit("Pick a note from your profile to read it here.") {
-                    ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                    MyProfileView(pubkey: activeHex)
                         .navigationTitle("Profile")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.hidden, for: .navigationBar)
@@ -1222,7 +1229,7 @@ struct BottomTabBar: View {
                 if !profilePath.isEmpty {
                     profilePath = NavigationPath()
                 } else {
-                    NotificationCenter.default.post(name: NSNotification.Name("ProfileScrollToTop"), object: nil)
+                    NotificationCenter.default.post(name: .havenProfileScrollToTop, object: nil)
                 }
             } else {
                 selectedTab = 2
