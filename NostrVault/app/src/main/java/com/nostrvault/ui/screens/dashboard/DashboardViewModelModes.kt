@@ -48,7 +48,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SAVED_RE
         maxDisplayedItems = 50
         scheduleUpdateDisplayData()
         when (mode) {
-            VaultViewMode.LIKES -> fetchMissingLikedNotes()
+            VaultViewMode.LIKES -> {
+                armLikesSettle()
+                fetchMissingLikedNotes()
+            }
             VaultViewMode.ZAPS -> {
                 armZapsSettle()
                 fetchMoreZapReceipts()
@@ -69,6 +72,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SAVED_RE
         savedState.get<String>(SAVED_VIEW_MODE)
             ?.let { name -> VaultViewMode.entries.firstOrNull { it.name == name } }
             ?.let { _viewMode.value = it }
+        if (_viewMode.value == VaultViewMode.LIKES) armLikesSettle()
         savedState.get<String>(SAVED_NOTE_SCOPE)
             ?.let { name -> VaultNoteScope.entries.firstOrNull { it.name == name } }
             ?.let { _noteScope.value = it }
@@ -111,6 +115,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SAVED_RE
         _likesFilter.value = filter
         maxDisplayedItems = 50
         _likesHasLoadedOnce.value = false
+        armLikesSettle()
         scheduleUpdateDisplayData()
         if (filter == VaultLikesFilter.MY_LIKES) fetchMissingLikedNotes()
     }

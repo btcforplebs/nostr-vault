@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewModelScope
+import com.nostrvault.relay.BlossomArchive
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -113,7 +115,18 @@ import java.net.URL
 
             withContext(Dispatchers.IO) {
                 try {
-                    val result = HavenBridge.restoreDatabase(zipPath)
+                    // The Go restore opens the databases itself, so a running
+                    // relay is stopped first and started again after; one that
+                    // isn't running stays down. iOS runBackupRestore.
+                    val result = if (RelayForegroundService.serviceAlive) {
+                        relayImportService.withRelayStopped { HavenBridge.restoreDatabase(zipPath) }
+                    } else {
+                        val relayDataDir = File(appContext.filesDir, "relay_data")
+                        RelayConfiguration.ensureDirectories(relayDataDir)
+                        RelayConfiguration.generateEnvDictionary(configStore.config.value, relayDataDir)
+                            .forEach { (key, value) -> HavenBridge.setEnv(key, value) }
+                        HavenBridge.restoreDatabase(zipPath)
+                    }
                     if (result == 0) {
                         _importCompleted.value = true
                         _importStatus.value = "Restore complete"
@@ -191,12 +204,13 @@ import java.net.URL
                     val relayDataDir = File(appContext.filesDir, "relay_data")
                     val blossomDir = File(relayDataDir, "blossom")
                     blossomDir.mkdirs()
-                    val result = HavenBridge.unzipDirectory(zipPath, blossomDir.absolutePath)
-                    if (result == 0) {
+                    // Reads iOS and Android media backups alike.
+                    val result = BlossomArchive.import(File(zipPath), blossomDir)
+                    if (result.imported > 0 || result.skipped == 0) {
                         _mirrorCompleted.value = true
                         _mirrorStatus.value = "Media import complete"
                     } else {
-                        _mirrorStatus.value = "Import failed (code $result)"
+                        _mirrorStatus.value = "Import failed: no media files in this backup"
                     }
                 } catch (e: Exception) {
                     _mirrorStatus.value = "Import failed: ${e.message}"

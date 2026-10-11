@@ -17,6 +17,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.BlossomArchive
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.RelayImportService
 import com.nostrvault.ui.theme.*
@@ -49,7 +50,8 @@ class BackupSettingsViewModel @Inject constructor(
 
     // Notes export/import touch the databases, which the running relay holds open
     // in-process. They must run with the relay stopped (withRelayStopped), then it
-    // restarts. Media export/import only zip the blossom directory — no relay stop.
+    // restarts. Media export/import only read and write the blossom
+    // directory (BlossomArchive, the iOS file naming) — no relay stop.
 
     fun exportNotes(dest: Uri) = run(
         "Exporting notes…", "Notes exported", dest = dest, stopRelay = true,
@@ -65,11 +67,14 @@ class BackupSettingsViewModel @Inject constructor(
     fun exportMedia(
         dest: Uri,
     ) = run("Exporting media…", "Media exported", dest = dest, onSuccess = { vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP) }) { tmp ->
-        HavenBridge.zipDirectory(blossomDir, tmp.absolutePath)
+        BlossomArchive.export(File(blossomDir), tmp)
+        0
     }
 
     fun importMedia(src: Uri) = run("Restoring media…", "Media restored", src = src) { tmp ->
-        HavenBridge.unzipDirectory(tmp.absolutePath, blossomDir)
+        val result = BlossomArchive.import(tmp, File(blossomDir))
+        if (result.imported == 0 && result.skipped > 0) error("No media files in this backup")
+        0
     }
 
     /**

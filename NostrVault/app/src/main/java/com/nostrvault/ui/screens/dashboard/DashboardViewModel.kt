@@ -78,6 +78,8 @@ class DashboardViewModel @Inject constructor(
     internal val zapHistoryService: ZapHistoryService,
     /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
     internal val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
+    /** Stops the relay around a notes backup, like Settings › Backup. */
+    internal val relayImportService: com.nostrvault.service.RelayImportService,
     /** The list on show, kept across Android killing the app; see [restoreSavedMode]. */
     internal val savedState: androidx.lifecycle.SavedStateHandle,
 ) : ViewModel() {
@@ -357,6 +359,7 @@ class DashboardViewModel @Inject constructor(
     // ~6s and shows the empty state instead of "loading zaps" forever when the
     // owner simply has no zaps yet. Armed on entering Zaps / changing its filter.
     internal var zapsSettleJob: Job? = null
+    internal var likesSettleJob: Job? = null
     init {
         restoreSavedMode()
         loadStats()
@@ -502,6 +505,7 @@ class DashboardViewModel @Inject constructor(
             updateGeneration++
             _notesHasLoadedOnce.value = false
             _likesHasLoadedOnce.value = false
+            if (_viewMode.value == VaultViewMode.LIKES) armLikesSettle()
             _zapsHasLoadedOnce.value = false
             _displayNotes.value = emptyList()
             _displayLikedNotes.value = emptyList()
