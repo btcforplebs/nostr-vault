@@ -67,6 +67,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import com.nostrvault.service.SearchBlockFilter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -133,6 +137,8 @@ class SearchViewModel @Inject constructor(
     val sources = _sources.asStateFlow()
 
     private var session: GlobalSearchSession? = null
+    /** What the running search returned before blocks were applied. */
+    private var rawResults = GlobalSearchResults()
     private var sessionJob: Job? = null
     /** Authors whose profile has already been requested for this search. */
     private val requestedAuthors = HashSet<String>()
@@ -222,6 +228,18 @@ class SearchViewModel @Inject constructor(
         _recentSearches.value = configStore.config.value.recentSearches
 
         refreshDiscovery(force = true)
+
+        // Blocking someone from a result (or unblocking) re-applies at once.
+        viewModelScope.launch {
+            configStore.config
+                .map { it.blockedForActiveAccount() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    if (session != null) _results.value = visible(rawResults)
+                    refreshDiscovery(force = true)
+                }
+        }
 
         // Refresh discovery when feed notes change (throttled)
         viewModelScope.launch {
@@ -355,13 +373,19 @@ class SearchViewModel @Inject constructor(
         _isSearching.value = true
         sessionJob = viewModelScope.launch {
             started.state.collect { state ->
-                _results.value = state.results
+                rawResults = state.results
+                _results.value = visible(state.results)
                 _sources.value = state.sources
                 _isSearching.value = state.isRunning
                 requestMissingAuthors(state.results.notes)
             }
         }
     }
+
+    private fun visible(results: GlobalSearchResults): GlobalSearchResults =
+        SearchBlockFilter.apply(results, feedService.blockedHexForActiveAccount()) {
+            feedService.findNote(it)?.pubkey
+        }
 
     /** Note authors from outside the follow graph have no cached profile yet. */
     private fun requestMissingAuthors(notes: List<FeedNote>) {
@@ -374,6 +398,7 @@ class SearchViewModel @Inject constructor(
         sessionJob = null
         session?.cancel()
         session = null
+        rawResults = GlobalSearchResults()
         _sources.value = emptyList()
     }
 
@@ -455,8 +480,10 @@ class SearchViewModel @Inject constructor(
         }
         val ownPubkey = configStore.activeAccountHexPubkey.value
         val profileMap = nostrService.profiles.value
+        val visible = SearchBlockFilter
+            .visiblePubkeys(postCounts.keys.toList(), feedService.blockedHexForActiveAccount()).toSet()
         return postCounts
-            .filter { it.key != ownPubkey }
+            .filter { it.key != ownPubkey && it.key in visible }
             .entries
             .sortedByDescending { it.value }
             .take(MAX_SUGGESTED)
