@@ -7,8 +7,8 @@ extension VaultView {
     /// The Vault tab's first list: replies, mentions, likes, zaps, reposts and
     /// follows from everyone, newest first, the way a notifications page reads.
     var activityList: some View {
-        let zapsOnly = configService.config.zapsOnlyMode
-        let lines = displayActivity.filter { activityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
+        // Already filtered (All / Mentions, and likes in Zaps Only).
+        let lines = displayActivity
         let isLoading = nostrService.isFetching || relayManager.isBooting || !activityHasLoadedOnce
         return Group {
             if lines.isEmpty && isLoading {

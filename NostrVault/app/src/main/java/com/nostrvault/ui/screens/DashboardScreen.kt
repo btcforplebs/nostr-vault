@@ -1755,7 +1755,6 @@ class DashboardViewModel @Inject constructor(
             delay(debounceMs)
             if (gen != updateGeneration) return@launch
             updateDisplayData(gen)
-            if (gen == updateGeneration) _displayPass.value++
             // Likes and zaps that arrive later name more missing posts; ask
             // for those too (iOS re-asks on every events change). Ids already
             // asked for are skipped.
@@ -1767,7 +1766,16 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun updateDisplayData(gen: Int) = withContext(Dispatchers.Default) {
+    /**
+     * Rebuilds the shown list, then tells a waiting filter note it landed. Every
+     * path goes through here: the debounced one, EOSE and the snapshot restore.
+     */
+    private suspend fun updateDisplayData(gen: Int) {
+        rebuildDisplayData(gen)
+        if (gen == updateGeneration) _displayPass.value++
+    }
+
+    private suspend fun rebuildDisplayData(gen: Int) = withContext(Dispatchers.Default) {
         val currentMode = _viewMode.value
         val events = allEventsMutex.withLock { allEvents.toList() }
         val owner = nostrService.activeHexPubkey

@@ -191,9 +191,8 @@ extension VaultView {
 
     // MARK: - Filter note
 
-    /// A filter tap's note. A list rebuilt off the main thread (Notes,
-    /// Likes, Zaps) is counted when it lands; "checking…" shows only if
-    /// that takes a moment.
+    /// A filter tap's note. A list rebuilt off the main thread is counted
+    /// when it lands; "checking…" shows only if that takes a moment.
     func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
         if choice == .recipes && !recipesOnly {
             pendingFilterNote = nil
@@ -206,6 +205,9 @@ extension VaultView {
             return
         }
         pendingFilterNote = choice
+        // A rebuild already running for the old pick must not land as this
+        // one's count; onChange schedules the new rebuild.
+        updateGeneration += 1
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard pendingFilterNote == choice else { return }
@@ -232,10 +234,8 @@ extension VaultView {
 
     private func filterCount(_ choice: VaultFilterChoice) -> (Int, Bool) {
         switch choice {
-        case .activity(let filter):
-            let zapsOnly = configService.config.zapsOnlyMode
-            let n = displayActivity.filter { filter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }.count
-            return (n, displayActivity.count >= maxDisplayedItems)
+        case .activity:
+            return (displayActivity.count, displayActivity.count >= maxDisplayedItems)
         case .notes, .recipes:
             return (displayNotes.count, displayNotes.count >= maxDisplayedItems)
         case .likes:

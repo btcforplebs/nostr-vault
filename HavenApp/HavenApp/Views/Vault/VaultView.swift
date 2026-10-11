@@ -273,6 +273,10 @@ struct VaultView: View {
             FilterNoteView(model: filterNote).padding(.top, 8)
         }
         .onChange(of: displayPass) { _, _ in filterListLanded() }
+        .onChange(of: activityFilter) { _, _ in
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData()
+        }
         .onChange(of: viewMode) { _, _ in pendingFilterNote = nil }
         // -- handlers from viewContentBase --
         .onAppear {

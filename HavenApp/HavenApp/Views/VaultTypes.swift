@@ -120,12 +120,12 @@ enum VaultFilterChoice: Equatable {
         }
     }
 
-    /// Notes, Likes and Zaps rebuild their list off the main thread after a
-    /// pick; the note waits for it so its count is the new list's.
+    /// Every list but Followers is rebuilt off the main thread after a pick;
+    /// the note waits for it so its count is the new list's.
     var waitsForList: Bool {
         switch self {
-        case .notes, .recipes, .likes, .zaps: return true
-        case .activity, .followers: return false
+        case .activity, .notes, .recipes, .likes, .zaps: return true
+        case .followers: return false
         }
     }
 

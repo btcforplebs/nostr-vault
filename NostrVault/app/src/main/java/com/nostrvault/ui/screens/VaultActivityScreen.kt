@@ -388,14 +388,16 @@ internal fun VaultActivityScreen(
     var filter by rememberSaveable { mutableStateOf(VaultActivityFilter.ALL) }
     // In Zaps Only mode, likes are hidden.
     val lines = remember(all, shownCount, zapsOnly, filter) {
-        all.take(shownCount).filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+        // Filtered before the page cap, so a page of likes doesn't hide the
+        // mentions behind it.
+        all.filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }.take(shownCount)
     }
     val filterNote = rememberFilterNoteState()
     fun pick(next: VaultActivityFilter) {
         filter = next
-        val shown = all.take(shownCount)
-        val count = shown.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
-        val capped = all.size > shownCount
+        val matching = all.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+        val count = minOf(matching, shownCount)
+        val capped = matching > shownCount
         filterNote.show(
             if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
             else countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet"),

@@ -253,6 +253,8 @@ extension VaultView {
         print("updateDisplayData: events=\(currentEvents.count) filter=\(currentFilter)")
         #endif
         let currentMode = viewMode
+        let currentActivityFilter = activityFilter
+        let zapsOnly = configService.config.zapsOnlyMode
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
         let walletGiven = walletGivenNotes
@@ -279,7 +281,11 @@ extension VaultView {
                     isBlocked: { blacklist.contains($0) },
                     isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
                 )
-                let shown = Array(lines.prefix(currentMaxDisplayed))
+                // Filtered before the page cap, so a page of likes doesn't
+                // hide the mentions behind it.
+                let shown = Array(lines.lazy
+                    .filter { currentActivityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
+                    .prefix(currentMaxDisplayed))
                 let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                 await MainActor.run {
