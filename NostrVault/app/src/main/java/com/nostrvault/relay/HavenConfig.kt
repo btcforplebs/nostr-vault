@@ -255,6 +255,13 @@ data class HavenConfig(
     val pushNotifyZaps: Boolean = true,
     val pushNotifyReactions: Boolean = false,
     val pushNotifyReposts: Boolean = false,
+    /**
+     * Someone new follows you. The per-account toggle lives in
+     * [PushPrefs.follows]; this is the global fallback for an account with no
+     * stored entry, which [pushPrefsFor] used to leave out entirely — so the
+     * global switch could not turn new-follower notifications off at all.
+     */
+    val pushNotifyFollows: Boolean = true,
     /** Setup's "Stay in the Loop" step (or the one launch-time ask for paths
      *  without it) has dealt with POST_NOTIFICATIONS; don't ask again. */
     val notificationPermissionAsked: Boolean = false,
@@ -525,5 +532,6 @@ data class HavenConfig(
             zaps = pushNotifyZaps,
             reactions = pushNotifyReactions,
             reposts = pushNotifyReposts,
+            follows = pushNotifyFollows,
         )
 }

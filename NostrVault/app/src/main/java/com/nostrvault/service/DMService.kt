@@ -47,10 +47,21 @@ class DMService @Inject constructor(
         // NIP-59 backdates a gift wrap's created_at by up to 2 days; plus a minute.
         internal const val GIFT_WRAP_BACKDATE_SECONDS = 2 * 24 * 60 * 60L + 60
         internal const val OPTIMISTIC_DEDUP_THRESHOLD_MS = 30_000L
-        private const val MAX_INJECTED_DM_IDS = 5_000
+        internal const val MAX_INJECTED_DM_IDS = 5_000
         internal const val CACHE_SAVE_DEBOUNCE_MS = 500L
         private const val MAX_OPENED_MESSAGES = 200
         internal const val MAX_SENT_SELF_WRAP_IDS = 500
+
+        /** Cap on the persisted signer-decrypt backlog (see DMServicePendingQueue). */
+        internal const val MAX_PERSISTED_PENDING = 500
+        internal const val PENDING_SAVE_DEBOUNCE_MS = 750L
+
+        // Relay-write pacing for externally-fetched DMs (see DMServiceLocalInjection).
+        // The chat relay's per-IP limiter allows ~50 events a minute for an
+        // author it doesn't whitelist, and a gift wrap's author is a throwaway key.
+        internal const val INJECTION_INTERVAL_MS = 1_500L
+        internal const val INJECTION_CONNECT_TIMEOUT_MS = 30_000L
+        internal const val MAX_INJECTION_QUEUE = 2_000
     }
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -88,14 +99,22 @@ class DMService @Inject constructor(
 
     internal var inboxClient: WebSocketClient? = null     // NIP-17 /chat relay
     internal var nip04Client: WebSocketClient? = null     // NIP-04 /inbox relay
-    internal var chatInjectionClient: WebSocketClient? = null
-    internal var inboxInjectionClient: WebSocketClient? = null
+    // Externally-fetched DMs are written back through the two sockets above
+    // (see DMServiceLocalInjection): they are already NIP-42 authenticated,
+    // where a temporary socket would have to pay for AUTH again.
     /** Persistent live subscriptions to the user's PUBLIC DM relays. */
     internal val liveExternalClients = mutableListOf<WebSocketClient>()
     internal var periodicSyncJob: Job? = null
     internal var chatResubJob: Job? = null
 
     internal val seenGiftWrapIds = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * The id of the kind-22242 AUTH event last sent on the /chat socket. The
+     * relay answers AUTH with an OK carrying this id, and that OK — not any
+     * other — is what releases the kind-1059 subscription.
+     */
+    @Volatile internal var chatAuthEventId: String? = null
 
     // ── Notification lookups ──────────────────────────────────────────
     // The relay raises a notification marker for every DM event it stores,
@@ -119,6 +138,17 @@ class DMService @Inject constructor(
 
     internal val injectedDmIds = ConcurrentHashMap.newKeySet<String>()
 
+    /** One externally-fetched DM waiting to be written into the local relay. */
+    internal data class PendingInjection(
+        val kind: Int,
+        val frame: String,
+        val eventId: String,
+        val generation: Int,
+    )
+
+    internal val injectionQueue = java.util.concurrent.ConcurrentLinkedQueue<PendingInjection>()
+    internal val injectionDraining = java.util.concurrent.atomic.AtomicBoolean(false)
+
     // ── Lazy (Amber) decryption queue ─────────────────────────────────
     // In Amber mode we must NOT decrypt inbound DMs in the background: every
     // decrypt is a remote-signer round-trip funneled through one app-wide lock,
@@ -133,11 +163,32 @@ class DMService @Inject constructor(
      *  surfaces this so the user can enable auto-signing in Amber. */
     internal val _decryptBlocked = MutableStateFlow(false)
     val decryptBlocked: StateFlow<Boolean> = _decryptBlocked.asStateFlow()
+
+    /**
+     * One bunker (NIP-46) decrypt at a time. A backlog of gift wraps would
+     * otherwise open one RPC per wrap against a single remote signer session.
+     */
+    internal val bunkerDecryptMutex = Mutex()
+
+    /** So "no key for this account" is logged once per account, not per DM. */
+    internal val warnedNoDmKey = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Why DMs are unavailable on the active account, or null when they work.
+     * Non-null for a watch-only (npub-only) account: there is no key on this
+     * device, so nothing can be decrypted or sealed and the screens say so
+     * instead of showing a silently empty inbox.
+     */
+    val dmUnavailable: StateFlow<String?> =
+        configStore.config.map { dmUnavailableReason() }
+            .distinctUntilChanged()
+            .stateIn(scope, SharingStarted.Eagerly, null)
     internal var lastBlockedSize = -1
     internal var switchGeneration = 0
     internal var lastExternalFetchTimestamp = 0L
     internal var hasStarted = false
     internal var saveJob: Job? = null
+    internal var pendingSaveJob: Job? = null
 
     /**
      * The account (hex pubkey) whose conversations are in memory, and so the
@@ -230,12 +281,16 @@ class DMService @Inject constructor(
                     _decryptBlocked.value = true
                     _pendingDecryptCount.value = pendingDecryptQueue.size
                     if (BuildConfig.DEBUG) Log.w(TAG, "DBG: drain blocked — signer silent-decrypt unavailable, ${pendingDecryptQueue.size} pending")
+                    savePendingQueue()
                     return@withLock
                 }
                 _pendingDecryptCount.value = pendingDecryptQueue.size
             }
             _pendingDecryptCount.value = pendingDecryptQueue.size
         }
+        // The backlog shrank (or emptied): persist so a restart doesn't
+        // re-open messages this drain already folded into the cache.
+        savePendingQueue()
     }
 
     // ══════════════════════════════════════════════════════════════════

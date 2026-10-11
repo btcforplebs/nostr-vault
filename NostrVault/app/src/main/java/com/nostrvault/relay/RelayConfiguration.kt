@@ -174,9 +174,74 @@ object RelayConfiguration {
             // WoT
             "WOT_FETCH_TIMEOUT_SECONDS" to "60",
 
+            // Notifications: which kinds the relay may raise a marker for.
+            // Its catch-up summary ("N more new items while you were away") is
+            // one number, so nothing can filter it after the fact — the kinds
+            // have to be decided before the relay starts.
+            "NOTIFY_KINDS" to notifyKinds(config).joinToString(","),
+
             // TLS
             "HAVEN_ENABLE_TLS" to enableTLS,
         )
+    }
+
+    /**
+     * Kind 0 (profile metadata) never raises a notification, so a list holding
+     * only it is how "notify for nothing" is said to the relay: an EMPTY
+     * NOTIFY_KINDS means "no preference, notify for everything"
+     * (haven-go/config.go getKindSet). Same as iOS NotificationPolicy.silentKind.
+     */
+    const val SILENT_NOTIFY_KIND = 0
+
+    /**
+     * Event kinds the relay should raise notifications for, given what the user
+     * has switched on — the union across every account on the device, since the
+     * relay is shared and the client still applies each account's own
+     * preferences to the individual markers. Port of iOS
+     * RelayConfiguration.notifyKinds + NotificationPolicy.notifyKinds.
+     */
+    fun notifyKinds(config: HavenConfig): List<Int> {
+        // An account with no stored entry runs on PushPrefs()'s defaults
+        // everywhere else, so it has to count here too — a user who never
+        // opened the notification settings has no entries at all, and leaving
+        // them out would report "notify for nothing".
+        val prefs = config.allAccountNpubs().map { config.pushPrefsFor(it) }
+            .ifEmpty { listOf(config.pushPrefsFor(config.ownerNpub)) }
+
+        // With phone notifications off, DMs are still marked: the in-app banner
+        // shows them while the app is open, and that banner is part of the app,
+        // not a phone notification.
+        if (!config.enablePushNotifications) {
+            return notifyKinds(mentionsOrReplies = false, dms = prefs.any { it.dms })
+        }
+        return notifyKinds(
+            mentionsOrReplies = prefs.any { it.mentions || it.replies },
+            dms = prefs.any { it.dms },
+            zaps = prefs.any { it.zaps },
+            reactions = !config.zapsOnlyMode && prefs.any { it.reactions },
+            reposts = prefs.any { it.reposts },
+        )
+    }
+
+    /** The kind set for one combination of switches; see [notifyKinds]. */
+    fun notifyKinds(
+        mentionsOrReplies: Boolean,
+        dms: Boolean,
+        zaps: Boolean = false,
+        reactions: Boolean = false,
+        reposts: Boolean = false,
+    ): List<Int> {
+        val kinds = mutableListOf<Int>()
+        // A mention and a reply are both kind 1, and a reply may also be a
+        // NIP-22 comment (kind 1111), so either switch enables both.
+        if (mentionsOrReplies) kinds += listOf(1, 1111)
+        if (dms) kinds += listOf(4, 1059)
+        // Kind 16 is the generic repost: an article, a picture, anything but a
+        // plain text note.
+        if (reposts) kinds += listOf(6, 16)
+        if (reactions) kinds += 7
+        if (zaps) kinds += 9735
+        return if (kinds.isEmpty()) listOf(SILENT_NOTIFY_KIND) else kinds.sorted()
     }
 
     /**

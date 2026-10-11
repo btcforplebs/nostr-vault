@@ -1,9 +1,20 @@
 package com.nostrvault.ui.screens.dm
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.theme.SecondaryGroupedBg
+import com.nostrvault.ui.theme.SecondaryText
 
 /**
  * A DM that could not be sent. Same alert as iOS (DMThreadView and
@@ -36,4 +47,26 @@ internal fun DMSendFailedDialog(message: String, onDismiss: () -> Unit) {
             TextButton(onClick = onDismiss) { Text("OK") }
         },
     )
+}
+
+/**
+ * Replaces the message box on an account that has no key on this device. Sending
+ * would throw and reading decrypts nothing, so saying why beats an empty thread
+ * with a live-looking composer.
+ */
+@Composable
+internal fun DMUnavailableNotice(reason: String) {
+    Surface(color = SecondaryGroupedBg, tonalElevation = 2.dp) {
+        Column(modifier = Modifier.navigationBarsPadding()) {
+            Text(
+                text = reason,
+                color = SecondaryText,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+            )
+        }
+    }
 }

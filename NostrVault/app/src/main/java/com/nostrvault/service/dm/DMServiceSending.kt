@@ -34,43 +34,63 @@ import com.nostrvault.service.DMService.Companion.TAG
                 val recipientEvent: String
                 val selfEvent: String
 
-                if (isAmberMode()) {
-                    // Amber mode: delegate NIP-44 encrypt + seal signing to Amber
-                    recipientEvent = NIP17Service.createGiftWrappedDMWithAmber(
-                        content = content,
-                        senderPubkey = ownHexPubkey,
-                        recipientPubkey = recipientHexPubkey,
-                        amberSignerService = amberSignerService,
-                    ) ?: throw Exception("Failed to create recipient wrap via Amber")
-                    selfEvent = NIP17Service.createGiftWrappedDMWithAmber(
-                        content = content,
-                        senderPubkey = ownHexPubkey,
-                        recipientPubkey = ownHexPubkey,
-                        amberSignerService = amberSignerService,
-                    ) ?: throw Exception("Failed to create self wrap via Amber")
-                } else {
-                    val privkey = resolvePrivateKey() ?: throw Exception("No private key")
-
-                    // Create gift wraps concurrently
-                    val recipientWrap = async {
-                        NIP17Service.createGiftWrappedDM(
+                when (dmCryptoMode()) {
+                    DMCrypto.AMBER -> {
+                        // Amber mode: delegate NIP-44 encrypt + seal signing to Amber
+                        recipientEvent = NIP17Service.createGiftWrappedDMWithAmber(
                             content = content,
-                            senderSecretKey = privkey,
                             senderPubkey = ownHexPubkey,
                             recipientPubkey = recipientHexPubkey,
-                        )
-                    }
-                    val selfWrap = async {
-                        NIP17Service.createGiftWrappedDM(
+                            amberSignerService = amberSignerService,
+                        ) ?: throw Exception("Failed to create recipient wrap via Amber")
+                        selfEvent = NIP17Service.createGiftWrappedDMWithAmber(
                             content = content,
-                            senderSecretKey = privkey,
                             senderPubkey = ownHexPubkey,
                             recipientPubkey = ownHexPubkey,
-                        )
+                            amberSignerService = amberSignerService,
+                        ) ?: throw Exception("Failed to create self wrap via Amber")
                     }
+                    DMCrypto.BUNKER -> {
+                        // One seal at a time: two concurrent sign requests to the
+                        // same remote signer is how a bunker session gets wedged.
+                        recipientEvent = createGiftWrappedDMWithBunker(
+                            content = content,
+                            senderPubkey = ownHexPubkey,
+                            recipientPubkey = recipientHexPubkey,
+                        ) ?: throw Exception("Your signer could not seal this message")
+                        selfEvent = createGiftWrappedDMWithBunker(
+                            content = content,
+                            senderPubkey = ownHexPubkey,
+                            recipientPubkey = ownHexPubkey,
+                        ) ?: throw Exception("Your signer could not seal your own copy")
+                    }
+                    DMCrypto.NONE -> throw Exception(
+                        dmUnavailableReason() ?: "No key for this account on this device",
+                    )
+                    DMCrypto.LOCAL -> {
+                        val privkey = resolvePrivateKey() ?: throw Exception("No private key")
 
-                    recipientEvent = recipientWrap.await() ?: throw Exception("Failed to create recipient wrap")
-                    selfEvent = selfWrap.await() ?: throw Exception("Failed to create self wrap")
+                        // Create gift wraps concurrently
+                        val recipientWrap = async {
+                            NIP17Service.createGiftWrappedDM(
+                                content = content,
+                                senderSecretKey = privkey,
+                                senderPubkey = ownHexPubkey,
+                                recipientPubkey = recipientHexPubkey,
+                            )
+                        }
+                        val selfWrap = async {
+                            NIP17Service.createGiftWrappedDM(
+                                content = content,
+                                senderSecretKey = privkey,
+                                senderPubkey = ownHexPubkey,
+                                recipientPubkey = ownHexPubkey,
+                            )
+                        }
+
+                        recipientEvent = recipientWrap.await() ?: throw Exception("Failed to create recipient wrap")
+                        selfEvent = selfWrap.await() ?: throw Exception("Failed to create self wrap")
+                    }
                 }
 
                 if (switchGeneration != generation) return@withContext
@@ -134,13 +154,24 @@ import com.nostrvault.service.DMService.Companion.TAG
         withContext(Dispatchers.IO) {
             var publishing = false
             try {
-                val encrypted = if (isAmberMode()) {
-                    amberSignerService.nip04Encrypt(content, recipientHexPubkey)
+                val encrypted = when (dmCryptoMode()) {
+                    DMCrypto.AMBER -> amberSignerService.nip04Encrypt(content, recipientHexPubkey)
                         ?: throw Exception("Amber encryption failed")
-                } else {
-                    val privkey = resolvePrivateKey() ?: throw Exception("No private key")
-                    NIP04Service.encrypt(content, recipientHexPubkey, privkey)
-                        ?: throw Exception("Encryption failed")
+                    DMCrypto.BUNKER -> {
+                        if (!ensureDmBunkerConnected(nostrService.activeHexPubkey)) {
+                            throw Exception("Your signer is not reachable")
+                        }
+                        NIP46Service.nip04Encrypt(recipientHexPubkey, content)
+                            ?: throw Exception("Your signer could not encrypt this message")
+                    }
+                    DMCrypto.NONE -> throw Exception(
+                        dmUnavailableReason() ?: "No key for this account on this device",
+                    )
+                    DMCrypto.LOCAL -> {
+                        val privkey = resolvePrivateKey() ?: throw Exception("No private key")
+                        NIP04Service.encrypt(content, recipientHexPubkey, privkey)
+                            ?: throw Exception("Encryption failed")
+                    }
                 }
 
                 val tags = listOf(listOf("p", recipientHexPubkey))

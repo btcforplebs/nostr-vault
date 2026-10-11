@@ -105,6 +105,9 @@ class DMThreadViewModel @Inject constructor(
     private val _attachedImage = MutableStateFlow<Uri?>(null)
     val attachedImage = _attachedImage.asStateFlow()
 
+    /** Why this account can't use DMs, or null when it can. See DMService.dmUnavailable. */
+    val dmUnavailable: StateFlow<String?> = dmService.dmUnavailable
+
     /** Set when a send fails; the screen shows it in the "Failed to Send" alert. */
     private val _sendError = MutableStateFlow<String?>(null)
     val sendError = _sendError.asStateFlow()
@@ -219,6 +222,7 @@ fun DMThreadScreen(
     val hasNIP04Messages by viewModel.hasNIP04Messages.collectAsState()
     val attachedImage by viewModel.attachedImage.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
+    val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val listState = rememberLazyListState()
     val colors = LocalNostrVaultColors.current
 
@@ -279,23 +283,31 @@ fun DMThreadScreen(
         },
         bottomBar = {
             Column {
-                ProtocolToggleRow(
-                    useNIP04 = useNIP04,
-                    onToggle = viewModel::toggleProtocol,
-                )
-                MessageInputBar(
-                    text = messageText,
-                    isSending = isSending,
-                    attachedImage = attachedImage,
-                    onTextChange = viewModel::setMessageText,
-                    onSend = viewModel::sendMessage,
-                    onPickImage = {
-                        imagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
-                    onClearImage = viewModel::clearAttachedImage,
-                )
+                // Watch-only: there is no key on this device to seal a message
+                // with, so the box is replaced by the reason rather than
+                // letting every send fail into an alert.
+                val blocked = dmUnavailable
+                if (blocked != null) {
+                    DMUnavailableNotice(blocked)
+                } else {
+                    ProtocolToggleRow(
+                        useNIP04 = useNIP04,
+                        onToggle = viewModel::toggleProtocol,
+                    )
+                    MessageInputBar(
+                        text = messageText,
+                        isSending = isSending,
+                        attachedImage = attachedImage,
+                        onTextChange = viewModel::setMessageText,
+                        onSend = viewModel::sendMessage,
+                        onPickImage = {
+                            imagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onClearImage = viewModel::clearAttachedImage,
+                    )
+                }
             }
         },
         containerColor = WindowBackground,
