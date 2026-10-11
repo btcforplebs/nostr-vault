@@ -9,12 +9,20 @@ struct PersonProfileView: View {
     var embeddedInNavigation: Bool = false
     var onDismiss: (() -> Void)? = nil
 
-    @EnvironmentObject var nostrService: NostrService
+    /// Not observed. `profiles` changes each time any profile arrives, and
+    /// the notes being scrolled fetch their authors', so observing it here
+    /// rebuilt this page's toolbar, sheets and action rows mid-scroll.
+    /// Everything that reads a profile is drawn inside `ProfileContent`,
+    /// which observes it.
+    private var nostrService: NostrService { .shared }
     @EnvironmentObject var configService: ConfigService
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var loader: ProfileFeedLoader
-    @StateObject private var shop = SellerListingsLoader()
-    @StateObject private var extras = ProfileExtrasLoader()
+    /// Owns the loaders without observing them: they publish while the page
+    /// pages and counts followers, and only `ProfileContent` draws from them.
+    @StateObject private var models: Models
+    private var loader: ProfileFeedLoader { models.loader }
+    private var shop: SellerListingsLoader { models.shop }
+    private var extras: ProfileExtrasLoader { models.extras }
     /// Not observed; see `ProfileContent.feedService`. The follow button
     /// reads `followedPubkeys`, which `ProfileContent`'s feed watch redraws for.
     private var feedService: FeedService { .shared }
@@ -28,7 +36,19 @@ struct PersonProfileView: View {
         self.pubkey = pubkey
         self.embeddedInNavigation = embeddedInNavigation
         self.onDismiss = onDismiss
-        _loader = StateObject(wrappedValue: ProfileFeedLoader(pubkey: pubkey, usesOwnLedger: false))
+        _models = StateObject(wrappedValue: Models(pubkey: pubkey))
+    }
+
+    /// Never publishes, so holding it redraws nothing.
+    @MainActor
+    final class Models: ObservableObject {
+        let loader: ProfileFeedLoader
+        let shop = SellerListingsLoader()
+        let extras = ProfileExtrasLoader()
+
+        init(pubkey: String) {
+            loader = ProfileFeedLoader(pubkey: pubkey, usesOwnLedger: false)
+        }
     }
 
     /// Your own key, opened from somewhere other than the Profile tab.
