@@ -707,18 +707,11 @@ struct VaultDashboardView: View {
     private var advancedSection: some View {
         DashboardSection(title: "Advanced") {
             SettingLink(icon: "server.rack", title: "Relay details", value: nil) {
-                DashboardView()
-                    .navigationTitle("Relay details")
+                RelayDetailsPage().settingsPage("Relay details")
             }
             DashboardDivider()
-            SettingLink(icon: "photo.on.rectangle", title: "Media server details", value: nil) {
-                ScrollView { BlossomDashboardView(embedded: true).padding(.vertical, 10) }
-                    .background(Color.platformWindowBackground.ignoresSafeArea())
-                    .navigationTitle("Media server details")
-            }
-            DashboardDivider()
-            SettingLink(icon: "text.alignleft", title: "Raw logs", value: nil) {
-                LogsView(logStore: relayManager.logStore).settingsPage("Logs")
+            SettingLink(icon: "photo.on.rectangle", title: "Media servers", value: nil) {
+                MediaServersPage().settingsPage("Media servers")
             }
         }
     }
@@ -731,7 +724,7 @@ struct VaultDashboardView: View {
 // MARK: - Building blocks
 
 /// A titled card of rows: the section style every Vault Dashboard block uses.
-private struct DashboardSection<Content: View>: View {
+struct DashboardSection<Content: View>: View {
     let title: String
     var detail: String?
     /// Off for content that draws its own cards, like the tiles.
@@ -767,11 +760,11 @@ private struct DashboardSection<Content: View>: View {
     }
 }
 
-private struct DashboardDivider: View {
+struct DashboardDivider: View {
     var body: some View { Divider().padding(.leading, 52) }
 }
 
-private enum RowState {
+enum RowState {
     case done, todo, info
 
     @MainActor var color: Color {
@@ -783,7 +776,7 @@ private enum RowState {
     }
 }
 
-private struct RowIcon: View {
+struct RowIcon: View {
     let icon: String
     let state: RowState
 
@@ -806,7 +799,7 @@ private struct RowIcon: View {
     }
 }
 
-private struct RowText: View {
+struct RowText: View {
     let title: String
     let detail: String
 
@@ -825,7 +818,7 @@ private struct RowText: View {
 }
 
 /// A row with a trailing control (a button) and an optional progress bar.
-private struct DashboardRow<Trailing: View>: View {
+struct DashboardRow<Trailing: View>: View {
     let icon: String
     let title: String
     let detail: String
@@ -854,7 +847,7 @@ private struct DashboardRow<Trailing: View>: View {
 }
 
 /// A row that opens a settings page.
-private struct DashboardRowLink<Destination: View>: View {
+struct DashboardRowLink<Destination: View>: View {
     let icon: String
     let title: String
     let detail: String
@@ -884,7 +877,7 @@ private struct DashboardRowLink<Destination: View>: View {
     }
 }
 
-private struct RowLabel: View {
+struct RowLabel: View {
     let icon: String
     let title: String
 
@@ -904,7 +897,7 @@ private struct RowLabel: View {
 }
 
 /// A quick link to one of the vault's own settings, showing its current value.
-private struct SettingLink<Destination: View>: View {
+struct SettingLink<Destination: View>: View {
     let icon: String
     let title: String
     let value: String?
@@ -933,7 +926,7 @@ private struct SettingLink<Destination: View>: View {
     }
 }
 
-private struct RowButton: View {
+struct RowButton: View {
     let title: String
     var isLoading = false
     let action: () -> Void
@@ -1010,7 +1003,7 @@ private struct MacSyncSettingsPage: View {
     }
 }
 
-private extension View {
+extension View {
     /// A settings page pushed from the dashboard, titled like it is in Settings.
     func settingsPage(_ title: String) -> some View {
         navigationTitle(title)
