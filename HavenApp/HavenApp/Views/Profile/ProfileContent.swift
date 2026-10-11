@@ -10,7 +10,7 @@ import Photos
 /// they open. What you can DO on a profile is not here — your own profile
 /// (`MyProfileView`) and anyone else's (`PersonProfileView`) each bring their
 /// own badge, action row, toolbar and sheets.
-struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecoration: ViewModifier>: View {
+struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     let pubkey: String
     @ObservedObject var loader: ProfileFeedLoader
     @ObservedObject var shop: SellerListingsLoader
@@ -26,15 +26,17 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
     var canDeleteMedia = false
     /// Changing it scrolls the page back to the top.
     var scrollToTopToken = 0
-    /// Applied to the scroll view itself (pull-to-edit needs its geometry).
-    let scrollDecoration: ScrollDecoration
     @ViewBuilder let badge: () -> Badge
     /// Called with 0, 1, 2: each a tighter row, for when the wider one does
     /// not fit on one line.
     @ViewBuilder let actions: (_ compact: Int) -> Actions
     @ViewBuilder let shopHeader: () -> ShopHeader
 
-    @EnvironmentObject var nostrService: NostrService
+    /// Not observed: its `profiles` dictionary changes each time any author
+    /// arrives, and observing it redrew this page mid-scroll. `metadataWatch`
+    /// redraws for this profile's own metadata.
+    var nostrService: NostrService { .shared }
+    @StateObject private var metadataWatch = ProfileMetadataWatch()
     @EnvironmentObject var configService: ConfigService
     /// Not observed: the main feed changes many times a second while it
     /// loads, and observing all of it redrew this page each time.
@@ -44,6 +46,8 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
     /// Likes, reposts, replies and zap sats under each post.
     @ObservedObject var engagementStore = ProfileEngagementStore.shared
     @Environment(\.openURL) var openURL
+    /// Built once: a new value each pass invalidated every row under the tabs.
+    @State private var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
 
     @State private var showingNoteDetail: FeedNote?
     /// Non-nil when an iPad split pane owns the note detail column.
@@ -131,7 +135,7 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
                         divider
                         sectionTabBar
                         sectionContent
-                            .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
+                            .environment(\.feedActions, feedActions)
                             .tabBarBottomPadding()
                             .frame(minHeight: viewportHeight, alignment: .top)
                     }
@@ -152,7 +156,6 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
             // The banner draws its own scrim under the bar; the system edge would
             // lay a grey band over it.
             .hiddenTopScrollEdge()
-            .modifier(scrollDecoration)
             .onChange(of: scrollToTopToken) { _, _ in
                 scrolledNoteID = nil
                 withAnimation(Motion.fade) { proxy.scrollTo(Self.topID, anchor: .top) }
@@ -161,6 +164,7 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .onAppear {
+            metadataWatch.watch(pubkey)
             loader.start()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: loader.extrasRelays)
