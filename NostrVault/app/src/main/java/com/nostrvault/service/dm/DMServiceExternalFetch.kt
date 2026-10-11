@@ -168,8 +168,8 @@ import com.nostrvault.service.DMService.Companion.TAG
             val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
 
             when (kind) {
-                1059 -> handleIncomingGiftWrap(eventObj, generation)
-                4 -> handleIncomingNIP04(eventObj, generation)
+                1059 -> handleIncomingGiftWrap(eventObj, generation, fromExternal = true)
+                4 -> handleIncomingNIP04(eventObj, generation, fromExternal = true)
             }
         } catch (_: Exception) {}
     }
@@ -212,7 +212,8 @@ import com.nostrvault.service.DMService.Companion.TAG
         if (relays.isEmpty()) return
 
         // Bound the initial backlog to a week; live events stream after EOSE.
-        // Dedup (seenGiftWrapIds / injectedDmIds) absorbs overlap on reconnect.
+        // Dedup (seenGiftWrapIds for decrypts, injectedDmIds for relay writes)
+        // absorbs overlap on reconnect.
         val since = System.currentTimeMillis() / 1000 - (7 * 24 * 60 * 60)
 
         Log.d(TAG, "Opening live DM subscriptions on ${relays.size} external relays")

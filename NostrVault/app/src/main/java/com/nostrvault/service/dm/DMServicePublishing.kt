@@ -12,17 +12,27 @@ import com.nostrvault.service.DMService.Companion.TAG
     // Utilities
     // ══════════════════════════════════════════════════════════════════
 
-    internal fun DMService.isAmberMode(): Boolean = configStore.config.value.signingMode == "amber"
+    /**
+     * Whether the ACTIVE account signs through Amber. Was the owner's global
+     * mode, so a second account on Amber decrypted nothing and an Amber owner
+     * with a local second account queued DMs it could have read at once.
+     */
+    internal fun DMService.isAmberMode(): Boolean =
+        configStore.config.value.activeSigningMode() == "amber"
 
+    /**
+     * The ACTIVE account's secret key, or null when the key is not on this
+     * device (Amber, a bunker, or watch-only). This used to resolve the
+     * OWNER's key whatever account was active, so a second account's DMs were
+     * sealed with the owner's key: the seal's author then contradicted the
+     * rumor's, every correct client (this one included — see
+     * [NIP17Service.isAuthoredBySealer]) dropped the message, and the wrap tied
+     * the second account to the owner key.
+     */
     internal fun DMService.resolvePrivateKey(): String? {
-        val config = configStore.config.value
-        // Amber mode -- no local private key available
-        if (config.signingMode == "amber") return null
-        return config.ownerHexKey ?: config.ownerNcryptsec?.let { ncryptsec ->
-            val password = credentialStore.getKeychainPassword(config.ownerNpub ?: return null)
-                ?: return null
-            NIP49Service.decrypt(ncryptsec, password)
-        }
+        val mode = configStore.config.value.activeSigningMode()
+        if (mode == "amber" || mode == "nip46") return null
+        return nostrService.resolveSecretKey(forceOwner = false)
     }
 
     internal suspend fun DMService.fetchRecipientDMRelays(pubkey: String): List<String> {

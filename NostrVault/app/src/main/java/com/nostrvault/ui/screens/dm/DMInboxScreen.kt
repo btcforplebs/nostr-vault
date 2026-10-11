@@ -64,6 +64,9 @@ class DMInboxViewModel @Inject constructor(
      *  background/auto signing for this app. */
     val decryptBlocked: StateFlow<Boolean> = dmService.decryptBlocked
 
+    /** Why this account can't use DMs, or null when it can. See DMService.dmUnavailable. */
+    val dmUnavailable: StateFlow<String?> = dmService.dmUnavailable
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -116,6 +119,7 @@ fun DMInboxScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
+    val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     GlassScaffold(
@@ -199,7 +203,12 @@ fun DMInboxScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                if (conversations.isEmpty()) {
+                val blocked = dmUnavailable
+                if (blocked != null && conversations.isEmpty()) {
+                    // A watch-only account has no key here, so the inbox can
+                    // only ever be empty: say that instead of "no messages yet".
+                    DMUnavailableNotice(blocked)
+                } else if (conversations.isEmpty()) {
                     DMInboxEmptyState()
                 } else {
                     // iOS: one grouped surface, no separators between rows.

@@ -12,18 +12,26 @@ import com.nostrvault.service.DMService.Companion.TAG
     /** Saves the old account's inbox under its own key, then starts the new one's. */
     internal fun DMService.switchAccount() {
         saveJob?.cancel()
+        pendingSaveJob?.cancel()
         val conversations = _conversations.value
+        val pending = pendingDecryptQueue.toList()
         val oldKey = loadedCacheKey
-        scope.launch(Dispatchers.IO) { if (oldKey != null) writeCache(oldKey, conversations) }
+        scope.launch(Dispatchers.IO) {
+            if (oldKey != null) {
+                writeCache(oldKey, conversations)
+                // The old account's undecrypted backlog belongs to its own
+                // file; startListening is about to clear the queue.
+                writePendingQueue(oldKey, pending)
+            }
+        }
 
-        chatInjectionClient?.disconnect(); chatInjectionClient = null
-        inboxInjectionClient?.disconnect(); inboxInjectionClient = null
         _conversations.value = emptyList()
         seenGiftWrapIds.clear()
         injectedDmIds.clear()
         openedMessages.clear()
         sentSelfWrapIds.clear()
         visibleConversation = null
+        warnedNoDmKey.set(false)
         startListening()
     }
 
@@ -35,12 +43,17 @@ import com.nostrvault.service.DMService.Companion.TAG
         // Drop any pending decrypts queued for a previous account/generation.
         pendingDecryptQueue.clear()
         queuedDecryptIds.clear()
+        injectionQueue.clear()
+        chatAuthEventId = null
         _pendingDecryptCount.value = 0
         _decryptBlocked.value = false
         lastBlockedSize = -1
         chatResubJob?.cancel()
 
         loadCachedConversations()
+        // Pick the signer backlog back up before any socket work, so a
+        // restart does not depend on a relay re-serving those wraps.
+        restorePendingDecrypts(generation)
         connectToLocalChatRelay(generation)
         connectToLocalNip04Relay(generation)
         // Persistent subscriptions to our public DM relays so inbound replies
@@ -208,6 +221,9 @@ import com.nostrvault.service.DMService.Companion.TAG
 
             val eventJson = serializeEvent(authEvent)
             if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
+            // Remember it: the relay's OK for THIS id is what releases the
+            // kind-1059 subscription (see handleChatRelayMessage).
+            chatAuthEventId = authEvent.id
             client?.send("[\"AUTH\",$eventJson]")
         }
     }

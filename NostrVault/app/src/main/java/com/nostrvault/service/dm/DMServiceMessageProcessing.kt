@@ -6,6 +6,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import com.nostrvault.service.DMService.Companion.TAG
 
@@ -60,12 +61,19 @@ import com.nostrvault.service.DMService.Companion.TAG
                     // subscription must be sent here, once AUTH succeeds — NOT on
                     // EOSE (an EOSE only ever arrives in response to a REQ, so the
                     // old EOSE-gated subscribe never fired and no DMs loaded).
-                    // Re-sending on every successful OK is idempotent (same subId
-                    // replaces the subscription) and re-arms it after a reconnect.
+                    //
+                    // Only the OK that answers our own AUTH event may do this.
+                    // This used to fire on ANY successful OK, which was harmless
+                    // while the socket carried nothing but our own two sent
+                    // wraps — but every externally-fetched DM is now written back
+                    // over this same socket (DMServiceLocalInjection), and one
+                    // re-REQ per write would have the relay re-stream the whole
+                    // stored backlog hundreds of times over.
+                    val okId = parsed.getOrNull(1)?.jsonPrimitive?.contentOrNull
                     val success = parsed.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
                     val reason = parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull
-                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
-                    if (success) sendChatNip17Req()
+                    if (BuildConfig.DEBUG) Log.w(TAG, "DBG: /chat OK id=${okId?.take(8)} success=$success reason=$reason")
+                    if (success && okId != null && okId == chatAuthEventId) sendChatNip17Req()
                 }
                 "CLOSED" -> {
                     // The /chat relay's RejectFilter is [MustAuth, MustBeInWotToQuery].
@@ -130,18 +138,27 @@ import com.nostrvault.service.DMService.Companion.TAG
         }
     }
 
-    internal suspend fun DMService.handleIncomingNIP04(eventObj: JsonObject, generation: Int) {
+    /** @param fromExternal see [handleIncomingGiftWrap]. */
+    internal suspend fun DMService.handleIncomingNIP04(
+        eventObj: JsonObject,
+        generation: Int,
+        fromExternal: Boolean = false,
+    ) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
         if (!HavenBridge.verifyEvent(eventObj.toString())) return
+        if (fromExternal) injectExternalDmIntoLocalRelay(eventObj, eventId, 4)
+        if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
 
-        // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
-        if (isAmberMode()) { enqueuePendingDecrypt(eventObj, eventId); return }
+        // Key check before any seen claim — see handleIncomingGiftWrap.
+        when (dmCryptoMode()) {
+            DMCrypto.NONE -> { warnNoDmKeyOnce(); return }
+            DMCrypto.AMBER -> { enqueuePendingDecrypt(eventObj, eventId); return }
+            DMCrypto.BUNKER, DMCrypto.LOCAL -> Unit
+        }
 
-        // Local key: decrypt eagerly — cheap, no signer IPC or prompts.
         if (!seenGiftWrapIds.add(eventId)) return
-        decryptNip04(eventObj, eventId, generation)
+        if (!decryptNip04(eventObj, eventId, generation)) seenGiftWrapIds.remove(eventId)
     }
 
     /**
@@ -172,16 +189,29 @@ import com.nostrvault.service.DMService.Companion.TAG
 
                 // Decrypt (Amber or local key). silentOnly for the Amber path — a
                 // backlog drain must not launch an interactive Intent per message.
-                val plaintext = if (isAmberMode()) {
-                    amberSignerService.nip04Decrypt(content, counterparty, silentOnly = true)
-                        ?: run {
-                            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
+                val plaintext = when (dmCryptoMode()) {
+                    DMCrypto.AMBER ->
+                        amberSignerService.nip04Decrypt(content, counterparty, silentOnly = true)
+                            ?: run {
+                                if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} silent decrypt unavailable")
+                                return@withContext false // retryable
+                            }
+                    DMCrypto.BUNKER ->
+                        // Serialized: one bunker RPC at a time (see decryptGiftWrap).
+                        bunkerDecryptMutex.withLock {
+                            if (ensureDmBunkerConnected(nostrService.activeHexPubkey)) {
+                                NIP46Service.nip04Decrypt(counterparty, content)
+                            } else null
+                        } ?: run {
+                            if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} bunker decrypt unavailable")
                             return@withContext false // retryable
                         }
-                } else {
-                    val privkey = resolvePrivateKey() ?: return@withContext true
-                    NIP04Service.decrypt(content, counterparty, privkey)
-                        ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                    DMCrypto.LOCAL -> {
+                        val privkey = resolvePrivateKey() ?: return@withContext false
+                        NIP04Service.decrypt(content, counterparty, privkey)
+                            ?: run { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext true }
+                    }
+                    DMCrypto.NONE -> return@withContext false
                 }
                 if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
 
@@ -212,5 +242,7 @@ import com.nostrvault.service.DMService.Companion.TAG
         if (!queuedDecryptIds.add(eventId)) return
         pendingDecryptQueue.add(eventObj)
         _pendingDecryptCount.value = pendingDecryptQueue.size
+        // Survive a process death: the signer may not be reachable for hours.
+        savePendingQueue()
         if (BuildConfig.DEBUG) Log.w(TAG, "DBG: queued ${eventId.take(8)} for decrypt (pending=${pendingDecryptQueue.size})")
     }
