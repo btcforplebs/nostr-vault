@@ -456,7 +456,7 @@ private fun AccountDetail(
         )
     }
 
-    // Same titles, messages and buttons as iOS (SettingsView.swift).
+    // Same titles, messages and buttons as iOS (AccountDetailView.swift).
     if (confirmDisconnectSigner) {
         AlertDialog(
             onDismissRequest = { confirmDisconnectSigner = false },
