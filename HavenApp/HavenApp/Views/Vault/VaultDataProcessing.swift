@@ -468,15 +468,13 @@ extension VaultView {
                     }
 
                     let excludeSelf = (currentZapsFilter == .onMyNotes)
-                    var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
-                    var lastZapAt: [String: Int64] = [:]
-                    for item in parsedReceipts {
-                        guard let targetId = item.parsed.targetNoteId,
-                              targetNoteIds.contains(targetId) else { continue }
-                        if excludeSelf && item.parsed.senderPubkey == owner { continue }
-                        zMap[targetId, default: []].append((pubkey: item.parsed.senderPubkey, amount: item.parsed.amountSats))
-                        lastZapAt[targetId] = max(lastZapAt[targetId] ?? 0, receiptTimes[item.receiptId] ?? 0)
-                    }
+                    let (zMap, lastZapAt) = VaultActivity.zapsOnPosts(
+                        parsedReceipts.map {
+                            VaultActivity.Zap(sender: $0.parsed.senderPubkey, target: $0.parsed.targetNoteId,
+                                              sats: $0.parsed.amountSats, at: receiptTimes[$0.receiptId] ?? 0)
+                        },
+                        targets: targetNoteIds, owner: owner, excludeOwner: excludeSelf,
+                        isBlocked: { blacklist.contains($0) })
 
                     let zappedNoteIds = Set(zMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
@@ -562,7 +560,7 @@ extension VaultView {
                     }
                 }
 
-                var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                var noteZaps: [VaultActivity.Zap] = []
                 if !displayedIds.isEmpty {
                     let zapReceipts = currentEvents.filter { $0.kind == 9735 }
                     for receipt in zapReceipts {
@@ -575,9 +573,15 @@ extension VaultView {
                         // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
                         let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: receipt.tags,
                                                                          requestTags: zapReq["tags"] as? [[String]] ?? []))
-                        zMap[targetId, default: []].append((pubkey: senderPubkey, amount: amountSats))
+                        noteZaps.append(VaultActivity.Zap(sender: senderPubkey, target: targetId,
+                                                          sats: amountSats, at: receipt.created_at))
                     }
                 }
+                // A zap receipt is signed by the wallet server, so the relay's
+                // block list never catches it: the zapper is checked here.
+                let zMap = VaultActivity.zapsOnPosts(noteZaps, targets: displayedIds, owner: owner,
+                                                     excludeOwner: false,
+                                                     isBlocked: { blacklist.contains($0) }).zappers
 
                 // Repost map: noteId -> [reposter pubkeys]
                 var rpMap: [String: [String]] = [:]
