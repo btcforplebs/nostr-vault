@@ -5,8 +5,6 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.service.NostrService.Companion.TAG
 import com.nostrvault.service.deleted.DeletedPost
 import com.nostrvault.service.deleted.DeletedPostsStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -15,34 +13,6 @@ import kotlin.coroutines.resume
     // be posted again. See DeletedPost for why un-delete makes a new post.
     // Port of iOS NostrService+DeletedPosts.swift.
     // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Sends the NIP-09 delete request for your post [noteId], keeping a copy
-     * in [store]. The account is locked at the tap; the copy is taken first
-     * (the vault still holds the post) but saved only once the kind 5 is
-     * signed by that same key, so a failed or wrong-account delete leaves no
-     * copy of a post that is still live.
-     */
-    fun NostrService.deleteKeepingCopy(noteId: String, store: DeletedPostsStore) {
-        val lock = lockPostingAccount()
-        scope.launch(Dispatchers.IO) {
-            val copy = try {
-                copyBeforeDeleting(noteId)
-            } catch (e: Exception) {
-                Log.w(TAG, "deleteKeepingCopy: no copy for ${noteId.take(8)}: ${e.message}")
-                null
-            }
-            val signed = try {
-                signEventAsync(kind = 5, content = "", tags = listOf(listOf("e", noteId)), lockedTo = lock)
-                    ?.also { requireStillPostingAs(lock, it.pubkey) }
-            } catch (e: Exception) {
-                Log.e(TAG, "deleteKeepingCopy: kind 5 not signed: ${e.message}")
-                null
-            } ?: return@launch
-            if (copy != null && copy.pubkey == signed.pubkey) store.save(copy)
-            postEvent(signed)
-        }
-    }
 
     /**
      * A copy of your post [noteId], taken before its delete request is
