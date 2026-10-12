@@ -149,6 +149,8 @@ fun FeedScreen(
     val relayBootStatus by viewModel.relayBootStatus.collectAsState()
     val feedRelaysUnreachable by viewModel.feedRelaysUnreachable.collectAsState()
     val liveLoadFailed by viewModel.liveLoadFailed.collectAsState()
+    val liveFollowSetIsEmpty by viewModel.liveFollowSetIsEmpty.collectAsState()
+    val liveGlobalGate by viewModel.liveGlobalGate.collectAsState()
     val marketLoadFailed by viewModel.marketLoadFailed.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
     val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
@@ -707,6 +709,8 @@ fun FeedScreen(
                     loadFailed = liveLoadFailed,
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(FeedMode.LIVE, global = true) },
+                    followSetIsEmpty = liveFollowSetIsEmpty,
+                    globalGate = liveGlobalGate,
                 )
             } else if (!hasAnyNotes && isRelayImporting) {
                 // The relay is busy importing ("Keep it running"), so nothing

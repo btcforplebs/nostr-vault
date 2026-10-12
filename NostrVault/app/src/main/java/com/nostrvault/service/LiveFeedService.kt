@@ -51,6 +51,44 @@ class LiveFeedService @Inject constructor(
          * were disconnected at t+6s before any of them answered.
          */
         private const val COLLECT_WINDOW_MS = 20_000L
+
+        /** iOS LiveChat.globalGate. */
+        fun globalGate(trust: Set<String>?, hasNoWebOfTrustYet: Boolean): GlobalGate = when {
+            trust == null -> GlobalGate.Everyone
+            trust.isEmpty() && hasNoWebOfTrustYet -> GlobalGate.NewAccount
+            else -> GlobalGate.Trusted(trust)
+        }
+
+        /**
+         * A stream marked adult by its tags (NIP-36 content warning, a NIP-32
+         * content-warning label, #nsfw and the like) or by its title or
+         * summary (🔞, "NSFW"). Of the 5 streams live on the default relays on
+         * 2026-10-12, the adult one carried no tag, only a 🔞 in its title.
+         * iOS LiveChat.isAdultStream.
+         */
+        fun isAdultStream(tags: List<List<String>>): Boolean {
+            if (com.nostrvault.data.model.TopicFeedFilter.isAdult(tags)) return true
+            if (tags.any { it.size >= 2 && it[0] == "L" && it[1].lowercase() == "content-warning" }) return true
+            val text = tags.filter { it.size >= 2 && (it[0] == "title" || it[0] == "summary") }
+                .joinToString(" ") { it[1].lowercase() }
+            if ("🔞" in text) return true
+            return text.split(Regex("[^\\p{L}\\p{N}]+"))
+                .any { it in com.nostrvault.data.model.TopicFeedFilter.adultHashtags }
+        }
+    }
+
+    /** Who the Global side lets in. iOS LiveChat.GlobalGate. */
+    sealed interface GlobalGate {
+        /** The shield is set to Everyone. */
+        data object Everyone : GlobalGate
+        /**
+         * The Web of Trust. Empty while the graph is still being built, and
+         * then nobody passes: an account with a graph coming must not flash
+         * unfiltered first.
+         */
+        data class Trusted(val pubkeys: Set<String>) : GlobalGate
+        /** Follows nobody, so no graph: everyone, minus adult streams. */
+        data object NewAccount : GlobalGate
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -73,8 +111,23 @@ class LiveFeedService @Inject constructor(
     private val _scope = MutableStateFlow(ReelsScope.FOLLOWING)
     val liveScope: StateFlow<ReelsScope> = _scope.asStateFlow()
 
+    /** Who Global let in on the last load; null on Following. */
+    private val _globalGate = MutableStateFlow<GlobalGate?>(null)
+    val globalGate: StateFlow<GlobalGate?> = _globalGate.asStateFlow()
+
+    /** Following, and the account follows nobody: nothing was asked. */
+    private val _followSetIsEmpty = MutableStateFlow(false)
+    val followSetIsEmpty: StateFlow<Boolean> = _followSetIsEmpty.asStateFlow()
+
+    /**
+     * The owner picked a side. Until then someone who follows nobody is
+     * opened on Global, since Following can only ever be empty for them.
+     */
+    @Volatile private var scopeChosen = false
+
     fun setScope(newScope: ReelsScope) {
         if (newScope == _scope.value) return
+        scopeChosen = true
         _scope.value = newScope
         _streams.value = emptyList()
         refresh()
@@ -90,6 +143,22 @@ class LiveFeedService @Inject constructor(
         removedHosts.clear()
         _isLoading.value = true
         _loadFailed.value = false
+        _followSetIsEmpty.value = false
+        _globalGate.value = null
+
+        if (_scope.value == ReelsScope.FOLLOWING && !scopeChosen &&
+            feedService.followListIsKnown.value && feedService.followedPubkeys.value.isEmpty()
+        ) {
+            _scope.value = ReelsScope.GLOBAL
+        }
+        if (_scope.value == ReelsScope.FOLLOWING && feedService.followedPubkeys.value.isEmpty()) {
+            // Every stream would be dropped for want of a followed host; asking
+            // five relays for 20s to show nothing is all cost.
+            _streams.value = emptyList()
+            _isLoading.value = false
+            _followSetIsEmpty.value = true
+            return
+        }
 
         val relays = configStore.config.value.activeFeedRelays
         if (relays.isEmpty()) {
@@ -105,8 +174,15 @@ class LiveFeedService @Inject constructor(
         // everyone with the shield off. Either way judged on the hosts.
         val admitted: Set<String>? = when (_scope.value) {
             ReelsScope.FOLLOWING -> feedService.followedPubkeys.value.toSet()
-            ReelsScope.GLOBAL -> feedService.globalTrustSet()
+            ReelsScope.GLOBAL -> {
+                // trust first: reading it loads the graph that hasNoWebOfTrustYet checks.
+                val trust = feedService.globalTrustSet()
+                val gate = globalGate(trust, feedService.hasNoWebOfTrustYet())
+                _globalGate.value = gate
+                (gate as? GlobalGate.Trusted)?.pubkeys
+            }
         }
+        val hidesAdult = _globalGate.value == GlobalGate.NewAccount
         val subId = "live-${System.currentTimeMillis().toString(36)}"
         // Following asks by author and by `p`, for streams a service publishes
         // on a follow's behalf (iOS parity); Global asks for any stream.
@@ -136,7 +212,7 @@ class LiveFeedService @Inject constructor(
                 clients.add(client)
                 launch {
                     client.messages.collect { raw ->
-                        val stream = parseStream(raw, subId) ?: return@collect
+                        val stream = parseStream(raw, subId, hidesAdult) ?: return@collect
                         if (stream.hostPubkey in blocked) return@collect
                         if (admitted != null && stream.hosts.none { it in admitted }) return@collect
                         val snapshot = newestLock.withLock {
@@ -193,7 +269,7 @@ class LiveFeedService @Inject constructor(
     }
 
     /** @return the stream in this relay message, or null if it is not one. */
-    private fun parseStream(raw: String, expectedSubId: String): LiveStream? = try {
+    private fun parseStream(raw: String, expectedSubId: String, hidesAdult: Boolean): LiveStream? = try {
         val array = json.parseToJsonElement(raw) as? JsonArray
         if (array == null || array.size < 3 ||
             array[0].jsonPrimitive.content != "EVENT" ||
@@ -203,15 +279,16 @@ class LiveFeedService @Inject constructor(
         } else {
             val event = array[2].jsonObject
             val kind = event["kind"]?.jsonPrimitive?.content?.toIntOrNull()
-            if (kind != LiveStream.KIND) {
+            val tags = event["tags"]?.jsonArray?.map { tag ->
+                tag.jsonArray.map { it.jsonPrimitive.content }
+            } ?: emptyList()
+            if (kind != LiveStream.KIND || (hidesAdult && isAdultStream(tags))) {
                 null
             } else {
                 LiveStream.from(
                     pubkey = event["pubkey"]?.jsonPrimitive?.content.orEmpty(),
                     createdAt = event["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                    tags = event["tags"]?.jsonArray?.map { tag ->
-                        tag.jsonArray.map { it.jsonPrimitive.content }
-                    } ?: emptyList(),
+                    tags = tags,
                 )
             }
         }

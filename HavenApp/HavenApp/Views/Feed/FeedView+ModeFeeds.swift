@@ -344,6 +344,9 @@ extension FeedView {
             } else if liveService.streams.isEmpty {
                 emptyLiveStateView
             } else {
+                if liveService.scope == .global && liveService.globalGate == .newAccount {
+                    liveUnfilteredBanner
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
                     ForEach(liveService.streams) { stream in
                         LiveStreamCardView(stream: stream, profile: nostrService.profiles[stream.hostPubkey])
@@ -358,23 +361,31 @@ extension FeedView {
         .onAppear { liveService.loadIfNeeded() }
     }
 
+    private var emptyLiveText: LiveChat.EmptyLiveText {
+        LiveChat.emptyLiveText(followSetIsEmpty: liveService.followSetIsEmpty,
+                               loadFailed: liveService.loadFailed,
+                               gate: liveService.scope == .global ? liveService.globalGate : nil)
+    }
+
     private var emptyLiveStateView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: liveService.loadFailed ? "wifi.slash" : "dot.radiowaves.left.and.right")
+        let text = emptyLiveText
+        return VStack(spacing: 10) {
+            Image(systemName: text.noConnection ? "wifi.slash" : "dot.radiowaves.left.and.right")
                 .font(.appSystem(size: 34))
                 .foregroundColor(.havenPurple.opacity(0.7))
-            Text(emptyLiveTitle)
+            Text(text.title)
                 .font(.appSystem(size: 16, weight: .bold))
-            Text(emptyLiveMessage)
+            Text(text.message)
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-            if liveService.followSetIsEmpty {
+            switch text.action {
+            case .showGlobal:
                 Button("Show Global streams") { liveService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)
-            } else {
+            case .tryAgain:
                 Button("Try again") { liveService.refresh() }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
@@ -385,17 +396,14 @@ extension FeedView {
         .padding(.vertical, 60)
     }
 
-    private var emptyLiveTitle: String {
-        if liveService.followSetIsEmpty { return "Nobody you follow is live" }
-        return liveService.loadFailed ? "Could not reach any relay" : "Nothing live right now"
-    }
-
-    private var emptyLiveMessage: String {
-        if liveService.followSetIsEmpty {
-            return "Switch to Global to see everyone who is streaming."
-        }
-        return liveService.loadFailed
-            ? "Live streams come from other people's relays, so this one needs a connection."
-            : "Most stream announcements on Nostr are for streams that already ended. Only running ones show here."
+    /// Global with no web of trust yet shows everyone (minus adult streams);
+    /// say so, as the topic feed does.
+    private var liveUnfilteredBanner: some View {
+        Label("Unfiltered: people you don't know yet", systemImage: "eye")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .accessibilityLabel("Unfiltered. These streams are from people you don't know yet.")
     }
 }
