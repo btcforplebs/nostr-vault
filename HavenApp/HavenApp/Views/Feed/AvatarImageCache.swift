@@ -11,6 +11,7 @@ final class AvatarImageCache {
     private let cache = NSCache<NSURL, PlatformImage>()
     private var inFlight: [URL: [(PlatformImage?) -> Void]] = [:]
     private let lock = NSLock()
+    private let backoff = AvatarRetryBackoff()
 
     // Downsample target — large enough for a profile header on @3x retina,
     // small enough that 300 entries fit in ~24 MB.
@@ -31,14 +32,15 @@ final class AvatarImageCache {
     }
 
     /// Loads an avatar, hitting (in order): memory cache → on-disk cache → network.
-    /// Coalesces concurrent requests for the same URL and skips known-404s.
+    /// Coalesces concurrent requests for the same URL, skips known-dead links
+    /// and links that failed recently (see `AvatarFetchFailure`).
     /// `completion` is always called on the main thread.
     func load(url: URL, completion: @escaping (PlatformImage?) -> Void) {
         if let cached = image(for: url) {
             completion(cached)
             return
         }
-        if MediaCacheService.shared.isKnown404(url: url) {
+        if MediaCacheService.shared.isKnown404(url: url) || backoff.isBackingOff(url) {
             completion(nil)
             return
         }
@@ -74,14 +76,16 @@ final class AvatarImageCache {
             }
 
             // Network. Only the small copy is kept; the original is dropped.
-            URLSession.shared.dataTask(with: AvatarThumbnail.url(for: url)) { data, response, _ in
+            URLSession.shared.dataTask(with: AvatarThumbnail.url(for: url)) { data, response, error in
+                let status = (response as? HTTPURLResponse)?.statusCode
                 guard let data = data,
-                      let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode),
+                      let status, (200..<300).contains(status),
                       let img = Self.downsample(data: data) else {
+                    self.recordFailure(url: url, status: status, error: (error as? URLError)?.code)
                     self.finish(url: url, image: nil)
                     return
                 }
+                self.backoff.clear(url)
                 Self.keepSmallCopy(img, for: url)
                 self.finish(url: url, image: Self.platformImage(img))
             }.resume()
@@ -92,6 +96,21 @@ final class AvatarImageCache {
     func load(url: URL) async -> PlatformImage? {
         await withCheckedContinuation { continuation in
             load(url: url) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// Keyed by the original URL, so a profile that changes its picture gets
+    /// a fresh try at the new one.
+    private func recordFailure(url: URL, status: Int?, error: URLError.Code?) {
+        switch AvatarFetchFailure(statusCode: status, error: error) {
+        case .dead:
+            // Not announced: the notification rebuilds the media gallery and
+            // vault, which don't show avatars.
+            MediaCacheService.shared.markNotFound(url: url, announce: false)
+        case .backOff:
+            backoff.backOff(url)
+        case .retry:
+            break
         }
     }
 
