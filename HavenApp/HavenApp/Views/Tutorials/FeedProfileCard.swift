@@ -8,7 +8,7 @@ enum FollowActions {
     static func toggle(_ pubkey: String, name: String, isFollowing: Bool) {
         let feed = FeedService.shared
         if isFollowing {
-            switch feed.unfollowUser(pubkey) {
+            switch feed.unfollowUser(pubkey, onPublishFailed: publishFailed(name, follow: false)) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
             case .failure(.contactsNotLoaded), .failure(.listUnavailable):
@@ -18,7 +18,7 @@ enum FollowActions {
                 FollowNotificationManager.shared.add(recipientName: name, kind: .failed(unfollowErrorMessage(err)))
             }
         } else {
-            switch feed.followUser(pubkey) {
+            switch feed.followUser(pubkey, onPublishFailed: publishFailed(name, follow: true)) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
             case .failure(.contactsNotLoaded), .failure(.listUnavailable):
@@ -26,6 +26,15 @@ enum FollowActions {
             case .failure(let err):
                 FollowNotificationManager.shared.add(recipientName: name, kind: .failed(followErrorMessage(err)))
             }
+        }
+    }
+
+    /// The relays refused the new list (or it couldn't be signed) and the
+    /// change was put back: say so, or the button just snaps back.
+    static func publishFailed(_ name: String, follow: Bool) -> () -> Void {
+        {
+            FollowNotificationManager.shared.add(
+                recipientName: name, kind: .failed(follow ? "Couldn't follow, try again" : "Couldn't unfollow, try again"))
         }
     }
 

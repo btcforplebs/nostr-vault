@@ -21,6 +21,16 @@ final class TrustPathTests: XCTestCase {
         XCTAssertNil(TrustPath.known(author: author, me: me, follows: ["a"]), "Not followed: only relays can tell")
     }
 
+    func testCardNeverContradictsFollows() {
+        let follow = TrustPath(reach: .follow, bridges: ["a"], hasMore: false)
+        let bridged = TrustPath(reach: .bridged, bridges: ["a"], hasMore: false)
+        XCTAssertNil(TrustPath.carried(follow, author: author, me: me, follows: ["a"]),
+                     "Unfollowed: an old \"You follow them\" must not stay up")
+        XCTAssertEqual(TrustPath.carried(bridged, author: author, me: me, follows: ["a", author])?.reach, .follow)
+        XCTAssertEqual(TrustPath.carried(bridged, author: author, me: me, follows: ["a"]), bridged,
+                       "Nothing contradicts it: keep it until the trace lands")
+    }
+
     func testDirectFollowKeepsBridges() {
         let path = TrustPath.resolve(author: author, me: me, follows: [author, "a"], trustGraph: ["x"],
                                      contactLists: [list("a", tags: [author])])

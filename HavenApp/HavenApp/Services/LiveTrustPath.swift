@@ -26,10 +26,13 @@ final class LiveTrustPath: ObservableObject {
     }
 
     /// The old answer stays on screen until the new one lands, so the card
-    /// changes once instead of flashing empty.
+    /// changes once instead of flashing empty, unless your follows now
+    /// contradict it (`TrustPath.carried`).
     private func retrace() {
         trace?.cancel()
         guard let author else { trace = nil; return }
+        path = TrustPath.carried(path, author: author, me: ConfigService.shared.activeAccountHexPubkey,
+                                 follows: Set(FeedService.shared.followedPubkeys))
         trace = Task { [weak self] in
             let found = await TrustPathService.shared.path(for: author)
             guard !Task.isCancelled, let self, self.author == author else { return }

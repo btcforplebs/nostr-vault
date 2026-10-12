@@ -301,7 +301,7 @@ struct FeedActions {
             followUser: { hexPubkey in
                 // Same confirmation as following from a profile page.
                 let name = nostrService.profiles[hexPubkey]?.bestName ?? "npub…" + String(hexPubkey.suffix(6))
-                switch feedService.followUser(hexPubkey) {
+                switch feedService.followUser(hexPubkey, onPublishFailed: FollowActions.publishFailed(name, follow: true)) {
                 case .success:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
                 case .failure(.contactsNotLoaded), .failure(.listUnavailable):
@@ -315,7 +315,7 @@ struct FeedActions {
             },
             unfollowUser: { hexPubkey in
                 let name = nostrService.profiles[hexPubkey]?.bestName ?? "npub…" + String(hexPubkey.suffix(6))
-                switch feedService.unfollowUser(hexPubkey) {
+                switch feedService.unfollowUser(hexPubkey, onPublishFailed: FollowActions.publishFailed(name, follow: false)) {
                 case .success:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
                 case .failure(.contactsNotLoaded), .failure(.listUnavailable):

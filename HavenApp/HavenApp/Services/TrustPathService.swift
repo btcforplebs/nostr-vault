@@ -82,15 +82,21 @@ final class TrustPathService {
     /// the saved web reloaded, an account switch. Never on subscribe. It hops
     /// to the main queue on purpose: `@Published` fires in willSet, so a
     /// plain sink would still read the old follows.
-    static var webChanged: AnyPublisher<Void, Never> {
+    ///
+    /// One stream, built once, that every screen shares. A chain built per
+    /// call gave each SwiftUI body render its own: a resubscribe could lose a
+    /// change still waiting on the main-queue hop, and the globe's button
+    /// missed a rolled-back unfollow while its card line caught it.
+    static let webChanged: AnyPublisher<Void, Never> = {
         let feed = FeedService.shared
         let follows = feed.$followedPubkeys.map { Set($0) }.removeDuplicates().dropFirst().map { _ in () }
         let saved = feed.$wotPubkeys.removeDuplicates().dropFirst().map { _ in () }
         let account = ConfigService.shared.$activeAccountHexPubkey.removeDuplicates().dropFirst().map { _ in () }
         return follows.merge(with: saved, account)
             .receive(on: DispatchQueue.main)
+            .share()
             .eraseToAnyPublisher()
-    }
+    }()
 
     // MARK: - Links
 

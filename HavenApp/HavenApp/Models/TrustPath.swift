@@ -57,6 +57,15 @@ struct TrustPath: Equatable {
         return resolve(author: author, follows: follows, trustGraph: [], bridges: [])
     }
 
+    /// What a card can keep showing while it traces again after your follows
+    /// changed: the answer that needs no relays if there is one, and nil
+    /// (tracing) rather than an old "You follow them" for someone you no
+    /// longer follow, so the line never contradicts the Follow button.
+    static func carried(_ old: TrustPath?, author: String, me: String, follows: Set<String>) -> TrustPath? {
+        if let known = known(author: author, me: me, follows: follows) { return known }
+        return old?.reach == .follow || old?.reach == .you ? nil : old
+    }
+
     /// Builds the path from follow lists relays returned. Lists signed by
     /// anyone you don't follow, or that don't tag the author, are ignored, so
     /// a relay can't make up a bridge; only each signer's newest list counts.

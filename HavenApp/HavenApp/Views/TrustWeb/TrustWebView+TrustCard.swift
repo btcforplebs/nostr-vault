@@ -24,7 +24,9 @@ extension TrustWebView {
     /// them (the post card's answer and words), and what you can do about it.
     /// Block sits behind "…" so it can't be hit by accident.
     func trustCard(_ pubkey: String) -> some View {
-        let following = myFollows.contains(pubkey)
+        // Your follow list itself, as the card's line (`LiveTrustPath`) reads
+        // it, so the button and "You follow them" can never disagree.
+        let following = FeedService.shared.followedPubkeys.contains(pubkey)
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey)
         let bridges = cardPath?.bridges ?? []
         return VStack(alignment: .leading, spacing: 12) {

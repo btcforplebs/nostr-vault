@@ -22,7 +22,10 @@ extension FeedService {
         let actions = pendingFollowActions.filter { $0.account == account }
         pendingFollowActions.removeAll()
         for action in actions {
-            let result = action.follow ? followUser(action.pubkey) : unfollowUser(action.pubkey)
+            let name = NostrService.shared.profiles[action.pubkey]?.bestName ?? "npub…" + String(action.pubkey.suffix(6))
+            let failed = FollowActions.publishFailed(name, follow: action.follow)
+            let result = action.follow ? followUser(action.pubkey, onPublishFailed: failed)
+                                       : unfollowUser(action.pubkey, onPublishFailed: failed)
             // Turn the tap's "Following…" pill into the confirmation. A list
             // still unavailable re-queues the action and keeps the pill.
             switch result {
