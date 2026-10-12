@@ -195,7 +195,7 @@ enum PlainLog {
             let text = String(scrub(m).prefix(120))
             return Message(key: "error|\(text)", severity: .problem,
                            title: "Something went wrong: \(text)",
-                           hint: "Copy the logs and send them to support if this keeps happening.")
+                           hint: "If this keeps happening, restart your relay from the dashboard.")
         }
         return nil
     }

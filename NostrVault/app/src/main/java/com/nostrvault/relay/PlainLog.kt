@@ -164,7 +164,7 @@ object PlainLog {
             val text = scrub(m).take(120)
             return Message("error|$text", Severity.PROBLEM,
                 "Something went wrong: $text",
-                "Copy the logs and send them to support if this keeps happening.")
+                "If this keeps happening, restart your relay from the dashboard.")
         }
         return null
     }
