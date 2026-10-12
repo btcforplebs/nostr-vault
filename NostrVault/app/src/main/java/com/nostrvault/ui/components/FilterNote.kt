@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
@@ -48,27 +47,37 @@ import kotlinx.coroutines.launch
  * The line a filter tap leaves under the toolbar, in one grammar for every
  * screen: "what it does · current setting [· count]", e.g.
  * "Global · Web of Trust on", "Mentions · on · 214+". A filter turned off
- * keeps its own icon, dimmed, so the "what it does" half still reads.
- * iOS `FilterNote`.
+ * keeps its own icon, dimmed, so the "what it does" half still reads. When
+ * the line is too long for the screen, the title is what gets cut; the
+ * setting and count always show whole. iOS `FilterNote`.
  */
 data class FilterNote(
     val icon: ImageVector,
-    val text: String,
+    /** What the button does. The only part that truncates. */
+    val title: String,
+    /** "setting [· count]", kept whole after the title. */
+    val detail: String? = null,
     /** An off setting: the icon and text drop to secondary. */
     val dimmed: Boolean = false,
 ) {
+    /** The whole line, as read out. */
+    val text: String get() = detail?.let { "$title · $it" } ?: title
+
     companion object {
         /** "Title · setting", with an optional count last ("Mentions · on · 18"). */
         fun setting(icon: ImageVector, title: String, setting: String, count: String? = null): FilterNote {
-            val parts = listOfNotNull(title, setting, count?.takeIf { it.isNotEmpty() })
-            return FilterNote(icon, parts.joinToString(" · "))
+            val parts = listOfNotNull(setting, count?.takeIf { it.isNotEmpty() })
+            return FilterNote(icon, title, parts.joinToString(" · "))
         }
 
         /** A filter turned back off: "Title · off" with the button's own icon. */
-        fun off(title: String, icon: ImageVector) = FilterNote(icon, "$title · off", dimmed = true)
+        fun off(title: String, icon: ImageVector) = FilterNote(icon, title, "off", dimmed = true)
 
         /** A filter turned back off, without its icon. */
-        @Deprecated("Pass the button's own icon: off(title, icon)", ReplaceWith("FilterNote.off(title, icon)"))
+        @Deprecated(
+            "Pass the button's own icon: off(title, icon)",
+            ReplaceWith("FilterNote.off(title, NostrVaultIcons.FilterOff)", "com.nostrvault.ui.theme.NostrVaultIcons"),
+        )
         fun off(title: String) = FilterNote(NostrVaultIcons.FilterOff, "$title off")
     }
 }
@@ -76,8 +85,9 @@ data class FilterNote(
 /**
  * Holds the showing note. [show] is a tap: the text replaces cleanly and the
  * one 2 s timer restarts. [update] is a late result (a count that landed): it
- * changes the text only while the note is still showing and is a no-op once
- * it has gone, so the pill never pops back. iOS `FilterNoteModel`.
+ * changes the text only while the note is still showing, keeps whatever time
+ * is left on the timer, and is a no-op once the note has gone, so the pill
+ * never pops back and a repeating signal can't pin it. iOS `FilterNoteModel`.
  */
 @Stable
 class FilterNoteState internal constructor(private val scope: CoroutineScope) {
@@ -93,7 +103,6 @@ class FilterNoteState internal constructor(private val scope: CoroutineScope) {
     fun update(note: FilterNote) {
         if (this.note == null) return
         this.note = note
-        restartTimer()
     }
 
     fun hide() {
@@ -117,8 +126,11 @@ fun rememberFilterNoteState(): FilterNoteState {
     return remember(scope) { FilterNoteState(scope) }
 }
 
-/** The widest the pill gets: a 375 dp phone minus 16 dp margins, as on iOS. */
-private val FilterNoteMaxWidth = 343.dp
+/** The pill's side margins: it never gets wider than the host minus these. */
+private val FilterNoteMargin = 16.dp
+
+/** The dimmed (off) look, the same on iOS. */
+private const val FilterNoteDimmedAlpha = 0.55f
 
 /**
  * Hosts a screen's filter note around the [GlassScaffold] content: the pill
@@ -147,9 +159,10 @@ fun FilterNoteHost(
 }
 
 /**
- * The glass capsule for [state]'s note; nothing when none. One line, cut off
- * with "…" past [FilterNoteMaxWidth]. Takes no taps, so it can sit over the
- * content. Fades in with a slight scale from its top edge, not a slide from
+ * The glass capsule for [state]'s note; nothing when none. One line that hugs
+ * its text up to the host's width minus [FilterNoteMargin] each side, so it
+ * follows the font scale; past that the title is cut with "…" and the setting
+ * and count stay whole. Takes no taps, so it can sit over the content. Fades in with a slight scale from its top edge, not a slide from
  * under the bar; Reduce Motion gets the fade alone. A second tap crossfades
  * the text in place. TalkBack reads each new note, since it's the only text
  * the tap leaves.
@@ -172,13 +185,13 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
             transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
             label = "filterNote",
         ) { shown ->
-            val tint = if (shown.dimmed) LocalContentColor.current.copy(alpha = 0.55f) else LocalNostrVaultColors.current.primary
-            val textColor = if (shown.dimmed) LocalContentColor.current.copy(alpha = 0.55f) else LocalContentColor.current
+            val tint = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalNostrVaultColors.current.primary
+            val textColor = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalContentColor.current
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
                 modifier = Modifier
-                    .widthIn(max = FilterNoteMaxWidth)
+                    .padding(horizontal = FilterNoteMargin)
                     .glassPillBackground(isOled = LocalOledMode.current)
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
                     .padding(vertical = 7.dp, horizontal = 14.dp),
@@ -189,14 +202,28 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
                     tint = tint,
                     modifier = Modifier.size(14.dp),
                 )
-                Text(
-                    text = shown.text,
-                    color = textColor,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The title gives way: it takes what's left after the detail.
+                    Text(
+                        text = shown.title,
+                        color = textColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    shown.detail?.let { detail ->
+                        Text(
+                            text = " · $detail",
+                            color = textColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
             }
         }
     }

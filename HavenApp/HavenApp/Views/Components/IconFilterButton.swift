@@ -141,29 +141,41 @@ struct LanguageFilterMenuItems: View {
 /// screen: "what it does · current setting [· count]", e.g.
 /// "Global · Web of Trust on", "Mentions · on · 214+". A filter turned off
 /// keeps its own icon, dimmed, so the "what it does" half still reads.
+/// When the line is too long for the screen, the title is what gets cut;
+/// the setting and count always show whole.
 struct FilterNote: Equatable {
     let icon: String
-    let text: String
+    /// What the button does. The only part that truncates.
+    let title: String
+    /// "setting [· count]", kept whole after the title.
+    let detail: String?
     /// An off setting: the icon and text drop to secondary.
     var dimmed: Bool = false
+
+    /// The whole line, as read out.
+    var text: String { detail.map { "\(title) · \($0)" } ?? title }
 
     /// Free text; prefer `init(icon:title:setting:count:)` for the grammar.
     init(icon: String, text: String, dimmed: Bool = false) {
         self.icon = icon
-        self.text = text
+        self.title = text
+        self.detail = nil
         self.dimmed = dimmed
     }
 
     /// "Title · setting", with an optional count last ("Mentions · on · 18").
-    init(icon: String, title: String, setting: String, count: String? = nil) {
-        var parts = [title, setting]
+    init(icon: String, title: String, setting: String, count: String? = nil, dimmed: Bool = false) {
+        var parts = [setting]
         if let count, !count.isEmpty { parts.append(count) }
-        self.init(icon: icon, text: parts.joined(separator: " · "))
+        self.icon = icon
+        self.title = title
+        self.detail = parts.joined(separator: " · ")
+        self.dimmed = dimmed
     }
 
     /// A filter turned back off: "Title · off" with the button's own icon.
     static func off(_ title: String, icon: String) -> FilterNote {
-        FilterNote(icon: icon, text: "\(title) · off", dimmed: true)
+        FilterNote(icon: icon, title: title, setting: "off", dimmed: true)
     }
 
     /// A filter turned back off, without its icon.
@@ -175,9 +187,10 @@ struct FilterNote: Equatable {
 
 /// Holds the showing note. `show` is a tap: the text replaces cleanly and
 /// the one 2 s timer restarts. `update` is a late result (a count that
-/// landed): it changes the text only while the note is still showing and
-/// is a no-op once it has gone, so the pill never pops back. VoiceOver
-/// reads each out, since it's the only text the tap leaves.
+/// landed): it changes the text only while the note is still showing, keeps
+/// whatever time is left on the timer, and is a no-op once the note has
+/// gone, so the pill never pops back and a repeating signal can't pin it.
+/// VoiceOver reads each out, since it's the only text the tap leaves.
 @MainActor
 final class FilterNoteModel: ObservableObject {
     @Published private(set) var note: FilterNote?
@@ -193,7 +206,6 @@ final class FilterNoteModel: ObservableObject {
         guard self.note != nil else { return }
         withAnimation(Motion.fade) { self.note = note }
         AccessibilityNotification.Announcement(note.text).post()
-        restartTimer()
     }
 
     func hide() {
@@ -213,32 +225,43 @@ final class FilterNoteModel: ObservableObject {
 }
 
 /// The glass capsule for a `FilterNoteModel`'s note; nothing when none.
-/// One line, cut off with "…" past `maxWidth` (a 375 pt phone minus 16 pt
-/// margins). Never takes taps, so it can sit over the content. Fades in
-/// with a slight scale from its top edge, not a slide from under the bar;
-/// Reduce Motion gets the fade alone.
+/// One line that hugs its text up to the host's width minus 16 pt margins,
+/// so it follows the text-size setting; past that the title is cut with
+/// "…" and the setting and count stay whole. Never takes taps, so it can
+/// sit over the content. Fades in with a slight scale from its top edge,
+/// not a slide from under the bar; Reduce Motion gets the fade alone.
 struct FilterNoteView: View {
     @ObservedObject var model: FilterNoteModel
-    static let maxWidth: CGFloat = 343
+    /// The dimmed (off) look, the same on Android.
+    static let dimmedOpacity = 0.55
 
     var body: some View {
         if let note = model.note {
             HStack(spacing: 7) {
                 Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
-                    .foregroundColor(note.dimmed ? .secondary : .havenPurple)
-                Text(note.text).monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundColor(note.dimmed ? .secondary : .primary)
+                    .foregroundColor(note.dimmed ? .primary.opacity(Self.dimmedOpacity) : .havenPurple)
+                HStack(spacing: 0) {
+                    Text(note.title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let detail = note.detail {
+                        // Laid out first, so a long title gives way to it.
+                        Text(" · \(detail)")
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+                }
+                .monospacedDigit()
+                .foregroundColor(note.dimmed ? .primary.opacity(Self.dimmedOpacity) : .primary)
             }
             .font(.appSystem(size: 13, weight: .semibold))
             .padding(.vertical, 7)
             .padding(.horizontal, 14)
-            .frame(maxWidth: Self.maxWidth)
-            .fixedSize(horizontal: true, vertical: false)
             .background(Capsule().fill(.ultraThinMaterial))
             .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
             .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+            // The margins: the capsule never gets wider than the host minus these.
+            .padding(.horizontal, 16)
             // A second tap swaps the text in place, not mid-transition.
             .contentTransition(.opacity)
             .animation(Motion.fade, value: note)
@@ -257,10 +280,12 @@ extension View {
     /// the content, so it sits in the gap under the toolbar above the first
     /// post. Never in the layout flow, so a tap moves nothing; when the
     /// list is scrolled it may sit over content, and still takes no taps.
-    /// Apply once per screen, on the content view under the toolbar.
-    func filterNoteHost(_ model: FilterNoteModel) -> some View {
+    /// Apply once per screen, on the content view under the toolbar. When
+    /// the screen draws its own header inside that content (the Mac Vault),
+    /// pass the header's height as `topInset` so the pill sits under it.
+    func filterNoteHost(_ model: FilterNoteModel, topInset: CGFloat = 0) -> some View {
         overlay(alignment: .top) {
-            FilterNoteView(model: model).padding(.top, 8)
+            FilterNoteView(model: model).padding(.top, topInset + 8)
         }
     }
 }
