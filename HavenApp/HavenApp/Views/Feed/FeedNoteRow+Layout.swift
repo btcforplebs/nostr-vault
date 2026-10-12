@@ -25,6 +25,8 @@ extension FeedNoteRow {
             onProfile: { onProfile?($0) },
             onTap: { onTapRow?() }
         )
+        // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
+        .equatable()
     }
 
     /// What a condensed row shows instead of the raw note body: an article's
