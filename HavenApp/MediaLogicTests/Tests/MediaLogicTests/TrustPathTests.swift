@@ -14,6 +14,13 @@ final class TrustPathTests: XCTestCase {
         XCTAssertEqual(path.reach, .you)
     }
 
+    func testFollowIsKnownWithoutRelays() {
+        let path = TrustPath.known(author: author, me: me, follows: [author, "a"])
+        XCTAssertEqual(path?.reach, .follow)
+        XCTAssertEqual(TrustPath.known(author: me, me: me, follows: [])?.reach, .you)
+        XCTAssertNil(TrustPath.known(author: author, me: me, follows: ["a"]), "Not followed: only relays can tell")
+    }
+
     func testDirectFollowKeepsBridges() {
         let path = TrustPath.resolve(author: author, me: me, follows: [author, "a"], trustGraph: ["x"],
                                      contactLists: [list("a", tags: [author])])

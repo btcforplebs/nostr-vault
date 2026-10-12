@@ -47,6 +47,16 @@ struct TrustPath: Equatable {
     /// follow list (~90 KB at 1,000 follows), so this is the cost knob.
     static let listsPerFilter = shownBridges + 1
 
+    /// The answer that needs no relays: you, or someone you follow. A follow
+    /// is one hop whatever the relays say, and asking them takes seconds, so a
+    /// fresh Follow reads "You follow them" at once instead of "Not in your web".
+    /// nil when only relays can tell.
+    static func known(author: String, me: String, follows: Set<String>) -> TrustPath? {
+        if author == me { return TrustPath(reach: .you, bridges: [], hasMore: false) }
+        guard follows.contains(author) else { return nil }
+        return resolve(author: author, follows: follows, trustGraph: [], bridges: [])
+    }
+
     /// Builds the path from follow lists relays returned. Lists signed by
     /// anyone you don't follow, or that don't tag the author, are ignored, so
     /// a relay can't make up a bridge; only each signer's newest list counts.
