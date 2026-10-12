@@ -193,6 +193,14 @@ enum ContactManager {
         foundList || (relaysAsked > 0 && relaysAnswered >= relaysAsked)
     }
 
+    /// Whether a contact list of `tagCount` p-tags may be published: never an
+    /// empty one, and never one that shrank drastically (`shouldBlockPublish`).
+    /// A refused list is rolled back like a list the relays refused, so the
+    /// screen never shows an unfollow that went nowhere.
+    static func mayPublish(tagCount: Int, lastFetchedCount: Int) -> Bool {
+        tagCount > 0 && !shouldBlockPublish(currentTagCount: tagCount, lastFetchedCount: lastFetchedCount)
+    }
+
     /// Returns true if publishing the contact list should be BLOCKED because
     /// it would shrink drastically relative to the last relay-fetched count
     /// (prevents accidental follow-list wipes from stale data).

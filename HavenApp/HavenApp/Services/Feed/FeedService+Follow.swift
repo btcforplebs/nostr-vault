@@ -85,27 +85,14 @@ extension FeedService {
         }
     }
 
-    /// - rollback: the list before this edit. If signing fails or every relay
-    ///   refuses the event, and nothing has changed the list since, it is put
-    ///   back so the screen never shows a follow that was not published.
+    /// - rollback: the list before this edit. If it may not be published at
+    ///   all (empty, or shrunk past the safety check), signing fails, or every
+    ///   relay refuses the event, and nothing has changed the list since, it
+    ///   is put back so the screen never shows a follow that was not published.
     func publishContactList(
         rollback: (pTags: [[String]], pubkeys: [String])? = nil,
         onFailure: (() -> Void)? = nil
     ) {
-        guard !contactListPTags.isEmpty else { return }
-        if ContactManager.shouldBlockPublish(currentTagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount) {
-            #if DEBUG
-            print("FeedService: BLOCKED contact list publish — \(contactListPTags.count) tags vs \(lastFetchedContactCount) fetched. Possible data loss.")
-            #endif
-            return
-        }
-        // The key has a list now; from here on its load must find it.
-        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
-        // Bump the local-edit guard synchronously to "now" so an immediate contact
-        // refresh (firing before the async sign/post below completes) can't accept a
-        // stale relay copy and drop the edit we're about to publish.
-        ownContactListAccountKey = currentSnapshotKey()
-        ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
         let attempted = contactListPTags
         let fail: @MainActor (_ refusedAt: Int64?) -> Void = { [weak self] refusedAt in
             guard let self else { return }
@@ -118,6 +105,21 @@ extension FeedService {
             }
             onFailure?()
         }
+        guard ContactManager.mayPublish(tagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount) else {
+            #if DEBUG
+            print("FeedService: BLOCKED contact list publish — \(contactListPTags.count) tags vs \(lastFetchedContactCount) fetched. Possible data loss.")
+            #endif
+            // After the caller's re-filter, so the rollback lands last.
+            DispatchQueue.main.async { fail(nil) }
+            return
+        }
+        // The key has a list now; from here on its load must find it.
+        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
+        // Bump the local-edit guard synchronously to "now" so an immediate contact
+        // refresh (firing before the async sign/post below completes) can't accept a
+        // stale relay copy and drop the edit we're about to publish.
+        ownContactListAccountKey = currentSnapshotKey()
+        ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
         Task { [weak self] in
             guard let self = self else { return }
             guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: attempted) else {

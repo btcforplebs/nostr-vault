@@ -75,4 +75,13 @@ final class FollowListEOSETallyTests: XCTestCase {
         tally.eose(from: "wss://two", subId: "cl-b")
         XCTAssertTrue(ContactManager.loadConfirmsList(foundList: false, relaysAsked: 2, relaysAnswered: tally.answered.count))
     }
+
+    /// Every list the publish guard stops must count as refused, so the edit
+    /// is rolled back and the user told, not left on screen unpublished.
+    func testGuardRefusesEmptyAndShrunkLists() {
+        XCTAssertFalse(ContactManager.mayPublish(tagCount: 0, lastFetchedCount: 0), "Empty list")
+        XCTAssertFalse(ContactManager.mayPublish(tagCount: 9, lastFetchedCount: 20), "Shrunk past half")
+        XCTAssertTrue(ContactManager.mayPublish(tagCount: 2, lastFetchedCount: 3), "One unfollow from a short list")
+        XCTAssertTrue(ContactManager.mayPublish(tagCount: 19, lastFetchedCount: 20))
+    }
 }
