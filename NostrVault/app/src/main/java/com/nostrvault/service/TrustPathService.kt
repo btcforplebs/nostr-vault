@@ -109,6 +109,8 @@ class TrustPathService @Inject constructor(
                 return TrustPath.resolve(author, follows.toSet(), trustGraph, it)
             }
         }
+        // Someone you follow: no relays to ask. Their bridges only come from the links file above.
+        TrustPath.known(author, center, follows.toSet())?.let { return it }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         val key = "$me|$center|$author|${follows.toSet().hashCode()}|${trustGraph.isEmpty()}"

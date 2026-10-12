@@ -119,6 +119,18 @@ data class TrustPath(
             return resolve(author, follows, trustGraph, allBridges(author, me, follows, contactLists))
         }
 
+        /**
+         * The answer that needs no relays: you, or someone you follow. A follow
+         * is one hop whatever the relays say, and asking them takes seconds, so
+         * a fresh Follow reads "You follow them" at once instead of "Not in your
+         * web". Null when only relays can tell. iOS: TrustPath.known.
+         */
+        fun known(author: String, me: String, follows: Set<String>): TrustPath? {
+            if (author == me) return TrustPath(Reach.YOU, emptyList(), false)
+            if (author !in follows) return null
+            return resolve(author, follows, emptySet(), emptyList())
+        }
+
         /** The path from bridges already known, e.g. from [TrustLinks], sorted by key. */
         fun resolve(
             author: String,
