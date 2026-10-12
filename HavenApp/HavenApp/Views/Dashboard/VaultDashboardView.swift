@@ -16,15 +16,12 @@ struct VaultDashboardView: View {
     @ObservedObject private var followingBackup = FollowingBackupService.shared
     @ObservedObject private var feedService = FeedService.shared
     @StateObject private var exporter = VaultExporter()
-    @Environment(\.dismiss) private var dismiss
+    @StateObject private var contents = VaultContentsModel()
 
-    @State private var kindCounts: [Int: Int] = [:]
-    @State private var mediaCount: Int?
     @State private var macSync: RelayConfiguration.MacSyncStatus?
     @State private var isPreparingImport = false
     @State private var didCopyAddress = false
     @State private var haloPulse = false
-    @State private var showingStorageBreakdown = false
     @State private var showingFullActivity = false
     @State private var showingShareSheet = false
     /// Bumped when a "last ran" date changes, since `VaultHistory` lives in
@@ -37,8 +34,7 @@ struct VaultDashboardView: View {
                 statusCard
                 safetySection
                 reachSection
-                ownedSection
-                storageSection
+                VaultContentsSection(model: contents)
                 keepItFullSection
                 settingsSection
                 activitySection
@@ -59,7 +55,11 @@ struct VaultDashboardView: View {
             if running { Task { await refresh() } }
         }
         .onChange(of: relayManager.importCompleted) { _, completed in
-            if completed { isPreparingImport = false; historyRevision += 1 }
+            if completed {
+                isPreparingImport = false
+                historyRevision += 1
+                Task { await refresh() }
+            }
         }
         .onChange(of: relayManager.isImporting) { _, importing in
             if importing { isPreparingImport = false }
@@ -78,11 +78,6 @@ struct VaultDashboardView: View {
             }
         }
         #endif
-        .sheet(isPresented: $showingStorageBreakdown) {
-            StorageBreakdownView()
-                .environmentObject(statsService)
-                .environmentObject(configService)
-        }
         .sheet(isPresented: $showingFullActivity) {
             NavigationStack {
                 RelayActivityWindow(logStore: relayManager.logStore) {
@@ -99,13 +94,8 @@ struct VaultDashboardView: View {
     private func refresh() async {
         statsService.refreshStats()
         macSync = RelayConfiguration.macSyncStatus(under: configService.relayDataDir)
-        guard relayManager.isRunning else { return }
-        let counts = await statsService.fetchCountsByKind()
-        if !counts.isEmpty { kindCounts = counts }
-        let owner = nostrService.activeHexPubkey
-        if !owner.isEmpty {
-            mediaCount = await statsService.fetchBlobList(for: owner).count
-        }
+        await contents.load(owner: nostrService.activeHexPubkey, relayManager: relayManager,
+                            configService: configService, statsService: statsService)
     }
 
     // MARK: - Status
@@ -384,7 +374,7 @@ struct VaultDashboardView: View {
                 detail: macSyncDetail,
                 state: config.macRelayURL.isEmpty ? .todo : .done
             ) {
-                MacSyncSettingsPage().settingsPage("Sync with Mac")
+                MacSyncSettingsPage().settingsPage("Sync with Vault on Mac")
             }
             DashboardDivider()
             DashboardRow(
@@ -464,96 +454,6 @@ struct VaultDashboardView: View {
         configService.config.publishRelayListPerAccount[activeNpub] = true
         configService.save()
         NostrService.shared.publishRelayList(forNpub: activeNpub)
-    }
-
-    // MARK: - In your vault
-
-    private var ownedSection: some View {
-        let messages = kindCounts.isEmpty ? nil : (kindCounts[4] ?? 0) + (kindCounts[1059] ?? 0)
-        return DashboardSection(title: "In your vault", framed: false) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                OwnedTile(icon: VaultMode.notes.symbol, title: "Notes", count: kindCounts.isEmpty ? nil : kindCounts[1] ?? 0) {
-                    open(.notes)
-                }
-                OwnedTile(icon: VaultMode.articles.symbol, title: "Articles", count: kindCounts.isEmpty ? nil : kindCounts[30023] ?? 0) {
-                    open(.articles)
-                }
-                OwnedTile(icon: VaultMode.media.symbol, title: "Media", count: mediaCount) {
-                    open(.media)
-                }
-                OwnedTile(icon: "envelope.fill", title: "Messages", count: messages) {
-                    dismiss()
-                    NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
-                }
-            }
-        }
-    }
-
-    private func open(_ mode: VaultMode) {
-        dismiss()
-        mode.select()
-    }
-
-    // MARK: - Storage
-
-    private var storageSection: some View {
-        let media = statsService.blossomSize
-        let cache = statsService.cacheSize + statsService.thumbnailSize
-        let notes = max(0, statsService.storageSize - media - cache)
-        let total = max(1, notes + media + cache)
-        let parts: [(String, Int64, Color)] = [("Notes", notes, .havenPurple), ("Media", media, .blue), ("Cache", cache, .gray)]
-
-        return DashboardSection(title: "Storage", detail: Self.size(statsService.storageSize)) {
-            Button { showingStorageBreakdown = true } label: {
-                VStack(alignment: .leading, spacing: 12) {
-                    GeometryReader { geo in
-                        HStack(spacing: 2) {
-                            ForEach(parts, id: \.0) { part in
-                                if part.1 > 0 {
-                                    Rectangle()
-                                        .fill(part.2)
-                                        .frame(width: max(3, (geo.size.width - 4) * CGFloat(part.1) / CGFloat(total)))
-                                }
-                            }
-                        }
-                        .frame(width: geo.size.width, alignment: .leading)
-                        .background(Color.platformControlBackground)
-                        .clipShape(Capsule())
-                    }
-                    .frame(height: 10)
-
-                    HStack(alignment: .center, spacing: 0) {
-                        ForEach(parts, id: \.0) { part in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 5) {
-                                    Circle().fill(part.2).frame(width: 7, height: 7)
-                                    Text(part.0).foregroundColor(.primary)
-                                }
-                                Text(Self.size(part.1))
-                                    .foregroundColor(.secondary)
-                                    .monospacedDigit()
-                                    .padding(.leading, 12)
-                            }
-                            .font(.appSystem(size: 12))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.appSystem(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary.opacity(0.6))
-                    }
-                }
-                .padding(14)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Storage breakdown")
-        }
-    }
-
-    /// "None" rather than ByteCountFormatter's "Zero KB".
-    private static func size(_ bytes: Int64) -> String {
-        bytes <= 0 ? "None" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     // MARK: - Keep it full
@@ -677,8 +577,8 @@ struct VaultDashboardView: View {
                 BlossomSettingsView().settingsPage("Media Servers")
             }
             DashboardDivider()
-            SettingLink(icon: "laptopcomputer", title: "Sync with Mac", value: config.macRelayURL.isEmpty ? "Off" : "On") {
-                MacSyncSettingsPage().settingsPage("Sync with Mac")
+            SettingLink(icon: "laptopcomputer", title: "Sync with Vault on Mac", value: config.macRelayURL.isEmpty ? "Off" : "On") {
+                MacSyncSettingsPage().settingsPage("Sync with Vault on Mac")
             }
             DashboardDivider()
             Toggle(isOn: Binding(
