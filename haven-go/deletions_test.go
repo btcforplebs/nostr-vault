@@ -420,3 +420,52 @@ func TestSweepDeleteRequests(t *testing.T) {
 		}
 	})
 }
+
+// The startup import (importOwnerNotes) writes to the outbox store directly
+// too, so a delete request it pulls from a seed relay must remove its target
+// as well. The target is stored beforehand, so only the import's own
+// deletion step can remove it — not the isDeleted re-import guard.
+func TestImportOwnerNotesAppliesDeleteRequests(t *testing.T) {
+	owner := newTestKey(t)
+	savedCfg, savedDB, savedPool, savedReach := config, outboxDB, pool, reachableImportRelays.Load()
+	t.Cleanup(func() {
+		config, outboxDB, pool = savedCfg, savedDB, savedPool
+		reachableImportRelays.Store(savedReach)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	setupSyncConfig(owner.pk)
+	config.OwnerPubKey = owner.pk
+	config.ImportStartDate = time.Now().AddDate(0, 0, -1).Format(layout)
+	config.ImportOwnerNotesFetchTimeoutSeconds = 5
+	reachableImportRelays.Store(nil)
+	pool = nostr.NewSimplePool(ctx)
+
+	deletionBackends(t, func(t *testing.T, db DBBackend) {
+		seed := newFakeMac(t, false, 0)
+		config.ImportSeedRelays = []string{seed.url}
+		outboxDB = db
+		post := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "deleted on another device"})
+		if err := db.SaveEvent(ctx, &post); err != nil {
+			t.Fatal(err)
+		}
+		kept := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "stays"})
+		req := owner.sign(t, nostr.Event{Kind: nostr.KindDeletion, Tags: nostr.Tags{{"e", post.ID}}})
+		for _, ev := range []nostr.Event{kept, req} {
+			if err := seed.store.Store.SaveEvent(ctx, &ev); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		importOwnerNotes(ctx)
+
+		// Positive control: the import ran and stored what the relay served.
+		if !stored(t, db, kept.ID) || !stored(t, db, req.ID) {
+			t.Fatal("import stored nothing — the test cannot tell a skipped deletion from a broken import")
+		}
+		if stored(t, db, post.ID) {
+			t.Fatal("post survived a delete request pulled by the startup import")
+		}
+	})
+}
