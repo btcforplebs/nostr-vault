@@ -18,7 +18,7 @@ class SettingsGroupsTest {
                 "Feed", "Appearance", "Media & Cache",
                 "Notifications",
                 "Relays", "Media Servers",
-                "Sync with Mac", "Who Can Reach You", "Import Notes", "Backup & Restore",
+                "Sync with Vault on Mac", "Who Can Reach You", "Import Notes", "Backup & Restore",
                 "Tutorials",
                 "Proof of Work", "Database & Reset", "Logs",
             ),

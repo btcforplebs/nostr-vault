@@ -39,7 +39,7 @@ class HavenRelaySettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
-    // ── Sync with Mac (iOS MacRelaySyncStatusView) ──────────────
+    // ── Sync with Vault on Mac (iOS MacRelaySyncStatusView) ─────
 
     private val _macSync = MutableStateFlow<MacSyncStatus?>(null)
     val macSync = _macSync.asStateFlow()
@@ -139,7 +139,7 @@ fun HavenRelaySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sync with Mac") },
+                title = { Text("Sync with Vault on Mac") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -349,7 +349,7 @@ private fun MacSyncSection(
         ) {
             Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Check sync with Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Check sync with Vault on Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

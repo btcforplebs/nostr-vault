@@ -100,7 +100,7 @@ struct BlossomSettingsView: View {
                             Text("No Mac Sync Relay Configured")
                                 .font(.appSubheadline.bold())
                                 .foregroundColor(.secondary)
-                            Text("Add your Mac in Sync with Mac and it's used here automatically.")
+                            Text("Add it under Sync with Vault on Mac and it's used here automatically.")
                                 .font(.appCaption)
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
