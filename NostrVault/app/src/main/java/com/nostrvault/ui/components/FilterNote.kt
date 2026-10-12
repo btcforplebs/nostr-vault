@@ -12,9 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
@@ -29,11 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -145,6 +148,44 @@ fun rememberFilterNoteState(): FilterNoteState {
     return remember(scope) { FilterNoteState(scope) }
 }
 
+/** The least width the title keeps once both halves can't fit, as on iOS. */
+private val FilterNoteTitleFloor = 72.dp
+
+/**
+ * Lays the title and the "· setting · count" detail on one line. When they
+ * fit, each takes its natural width. When they don't, the title gives way
+ * first, down to [FilterNoteTitleFloor] or its full text, whichever is less;
+ * past that the detail is what gets cut. So "Lan… · English, Spanish,
+ * Portuguese, German" becomes "Languages · English, Spanish, Portu…", and
+ * nothing shrinks to a bare "L". With one child it just hugs it. iOS
+ * `FilterNoteLine`.
+ */
+@Composable
+private fun FilterNoteLine(content: @Composable () -> Unit) {
+    Layout(content = content) { measurables, constraints ->
+        val available = constraints.maxWidth
+        val ideal = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+        val widths = if (measurables.size == 2 && available != Constraints.Infinity && ideal.sum() > available) {
+            val floor = minOf(ideal[0], FilterNoteTitleFloor.roundToPx())
+            val title = minOf(available, maxOf(available - ideal[1], floor))
+            listOf(title, maxOf(available - title, 0))
+        } else {
+            ideal.map { minOf(it, available) }
+        }
+        val placeables = measurables.mapIndexed { i, m ->
+            m.measure(constraints.copy(minWidth = 0, maxWidth = widths[i]))
+        }
+        val height = placeables.maxOfOrNull { it.height } ?: 0
+        layout(placeables.sumOf { it.width }, height) {
+            var x = 0
+            placeables.forEach { p ->
+                p.placeRelative(x, (height - p.height) / 2)
+                x += p.width
+            }
+        }
+    }
+}
+
 /** The pill's side margins: it never gets wider than the host minus these. */
 private val FilterNoteMargin = 16.dp
 
@@ -152,20 +193,23 @@ private val FilterNoteMargin = 16.dp
 private const val FilterNoteDimmedAlpha = 0.55f
 
 /**
- * How far above the host's top edge the pill is drawn, so its top overlaps
- * the bottom of the toolbar glass and its bottom stays above the first post,
- * the same as iOS.
+ * Where the pill's bottom edge sits, below the top of the scaffold padding,
+ * at every font scale: the same 12 dp as iOS, where a 26 dp pill at 100%
+ * reaches 4 dp into the bar and ends 6 dp above the first post. A bigger
+ * pill grows upward behind the bar, never down over the post. Those are
+ * iPhone numbers; the Android gap has not been measured yet, so check it on
+ * a device when the Android lanes start and change this constant if needed.
  */
-private val FilterNoteRise = 14.dp
+private val FilterNoteBottomEdge = 12.dp
 
 /**
  * Hosts a screen's filter note around the [GlassScaffold] content: the pill
- * is drawn at the top centre, raised [FilterNoteRise] above the top of
- * [padding] so it overlaps the bottom of the toolbar and stays above the
- * first post, outside the bar that folds on scroll. Never in the layout
- * flow, so a tap moves nothing; when the list is scrolled it may sit over
- * content, and still takes no taps. Wrap the scaffold's content once per
- * screen, never the toolbar slot.
+ * is drawn at the top centre with its bottom edge [FilterNoteBottomEdge]
+ * below the top of [padding], so it stays above the first post at every font
+ * scale and overlaps the bottom of the toolbar, outside the bar that folds
+ * on scroll. Never in the layout flow, so a tap moves nothing; when the list
+ * is scrolled it may sit over content, and still takes no taps. Wrap the
+ * scaffold's content once per screen, never the toolbar slot.
  */
 @Composable
 fun FilterNoteHost(
@@ -181,7 +225,10 @@ fun FilterNoteHost(
             Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = padding.calculateTopPadding())
-                .offset(y = -FilterNoteRise),
+                // A slot of fixed height; the pill is aligned to its bottom
+                // and overflows upward when it is taller.
+                .height(FilterNoteBottomEdge)
+                .wrapContentHeight(Alignment.Bottom, unbounded = true),
         )
     }
 }
@@ -189,9 +236,11 @@ fun FilterNoteHost(
 /**
  * The glass capsule for [state]'s note; nothing when none. One line that hugs
  * its text up to the host's width minus [FilterNoteMargin] each side, so it
- * follows the font scale; past that the title is cut with "…" and the setting
- * and count stay whole. Takes no taps, so it can sit over the content. Fades in with a slight scale from its top edge, not a slide from
- * under the bar; Reduce Motion gets the fade alone. A second tap crossfades
+ * follows the font scale; past that the title is cut with "…" down to
+ * [FilterNoteTitleFloor], then the setting and count are cut the same way,
+ * so neither half vanishes. Takes no taps, so it can sit over the content.
+ * Fades in with a slight scale from its top edge, not a slide from under
+ * the bar; Reduce Motion gets the fade alone. A second tap crossfades
  * the text in place. TalkBack reads each new note, since it's the only text
  * the tap leaves.
  */
@@ -231,16 +280,15 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
                     tint = tint,
                     modifier = Modifier.size(14.dp),
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The title gives way: it takes what's left after the detail.
+                FilterNoteLine {
                     Text(
                         text = shown.title,
                         color = textColor,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
                     )
                     shown.detail?.let { detail ->
                         Text(
