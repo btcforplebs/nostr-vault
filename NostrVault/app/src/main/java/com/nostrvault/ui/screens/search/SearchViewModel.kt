@@ -13,7 +13,10 @@ import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchSourceState
 import com.nostrvault.service.GlobalSearchSession
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.InterestListService
+import com.nostrvault.service.SearchRecommendations
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.data.model.NoteStats
@@ -59,6 +62,7 @@ class SearchViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val zapSendService: ZapSendService,
+    private val interestListService: InterestListService,
 ) : ViewModel() {
 
     companion object {
@@ -174,6 +178,16 @@ class SearchViewModel @Inject constructor(
     private val _suggestedProfiles = MutableStateFlow<List<Pair<String, FeedProfile>>>(emptyList())
     val suggestedProfiles = _suggestedProfiles.asStateFlow()
 
+    // "For you": ranked on device from the relay's trust graph and feed.
+    private val _recommendedPeople = MutableStateFlow<List<SearchRecommendations.Person>>(emptyList())
+    val recommendedPeople = _recommendedPeople.asStateFlow()
+
+    private val _topics = MutableStateFlow<List<String>>(emptyList())
+    val topics = _topics.asStateFlow()
+
+    private val _pickedNotes = MutableStateFlow<List<FeedNote>>(emptyList())
+    val pickedNotes = _pickedNotes.asStateFlow()
+
     // Bech32 direct lookup
     private val _directLookup = MutableSharedFlow<DirectLookupResult>(extraBufferCapacity = 1)
     val directLookup = _directLookup.asSharedFlow()
@@ -186,7 +200,17 @@ class SearchViewModel @Inject constructor(
     init {
         _recentSearches.value = configStore.config.value.recentSearches
 
+        interestListService.refreshIfNeeded()
         refreshDiscovery(force = true)
+
+        // Following or unfollowing a topic, or the trust graph landing,
+        // changes what "For you" picks.
+        viewModelScope.launch {
+            interestListService.hashtags.drop(1).collect { refreshDiscovery(force = true) }
+        }
+        viewModelScope.launch {
+            feedService.wotVouches.drop(1).collect { refreshDiscovery(force = true) }
+        }
 
         // Blocking someone from a result (or unblocking) re-applies at once.
         viewModelScope.launch {
@@ -412,6 +436,40 @@ class SearchViewModel @Inject constructor(
             withContext(Dispatchers.Main.immediate) {
                 _trendingHashtags.value = hashtags
                 _suggestedProfiles.value = suggested
+            }
+        }
+        refreshRecommendations()
+    }
+
+    /** Recomputes "For you". Called from [refreshDiscovery], so it shares its throttle. */
+    private fun refreshRecommendations() {
+        if (feedService.wotVouches.value == null && !feedService.wotCacheRead.value) feedService.loadWotPubkeys()
+        val owner = configStore.activeAccountHexPubkey.value
+        val blocked = feedService.blockedHexForActiveAccount()
+        val following = feedService.followedPubkeys.value.toSet()
+        val vouches = feedService.wotVouches.value.orEmpty()
+        val followedTags = interestListService.hashtags.value
+        val notes = feedService.notes.value
+        val reacted = feedService.myReactions.value.keys
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val people = SearchRecommendations.people(vouches, following, owner, blocked)
+            val engaged = notes.filter { it.pubkey == owner || it.id in reacted }.map { it.tags }
+            val topics = SearchRecommendations.interests(followedTags, engaged)
+            val picked = SearchRecommendations.notes(
+                notes.map { SearchRecommendations.Candidate(it.id, it.pubkey, it.tags, it.createdAt) },
+                interests = topics.toSet(), following = following, vouches = vouches,
+                owner = owner, blocked = blocked, seen = reacted,
+            )
+            val byId = HashMap<String, FeedNote>().apply { notes.forEach { putIfAbsent(it.id, it) } }
+            val pickedNotes = picked.mapNotNull { byId[it] }.filter {
+                !FeedFilterEngine.involvesBlocked(it, blocked) { id -> feedService.findNote(id)?.pubkey }
+            }
+            withContext(Dispatchers.Main.immediate) {
+                _recommendedPeople.value = people
+                _topics.value = topics
+                _pickedNotes.value = pickedNotes
+                if (people.isNotEmpty()) nostrService.fetchMissingProfiles(people.map { it.pubkey })
             }
         }
     }

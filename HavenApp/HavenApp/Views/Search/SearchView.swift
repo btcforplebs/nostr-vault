@@ -28,6 +28,9 @@ struct SearchView: View {
     @State var cachedTrending: [String] = []
     @State var cachedSuggested: [(String, FeedProfile)] = []
     @State var lastDiscoveryRefresh: Date = .distantPast
+    @State var cachedRecommendedPeople: [SearchRecommendations.Person] = []
+    @State var cachedTopics: [String] = []
+    @State var cachedPickedNotes: [FeedNote] = []
     /// Global search: one status per source, streamed with the results.
     @State var globalSources: [GlobalSearchSourceStatus] = []
     @State var globalFinished = true
@@ -402,6 +405,7 @@ struct SearchView: View {
         .onDisappear { isShowing = false }
         .onAppear {
             isShowing = true
+            InterestListService.shared.refreshIfNeeded()
             refreshDiscovery(force: true)
             if SearchFocusRequest.take() {
                 // Focus set during the appear pass is dropped; the next turn holds.
@@ -431,6 +435,13 @@ struct SearchView: View {
                 isSearching = false
                 openNote(note)
             }
+        }
+        .onReceive(InterestListService.shared.$hashtags.dropFirst()) { _ in
+            // Following or unfollowing a topic changes what "For you" picks.
+            refreshDiscovery(force: true)
+        }
+        .onReceive(feedService.$wotVouches.dropFirst()) { _ in
+            refreshDiscovery(force: true)
         }
         .onReceive(feedService.$parentNotesCache) { cache in
             guard let noteId = pendingDirectNoteId else { return }

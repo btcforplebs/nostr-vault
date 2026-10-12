@@ -44,6 +44,8 @@ extension SearchView {
                     }
                 }
 
+                recommendationsSection
+
                 // Trending hashtags
                 let trending = cachedTrending
                 if !trending.isEmpty {
@@ -110,7 +112,8 @@ extension SearchView {
                 }
 
                 // Fallback if nothing to show
-                if recentSearches.isEmpty && trending.isEmpty && suggested.isEmpty {
+                if recentSearches.isEmpty && trending.isEmpty && suggested.isEmpty
+                    && cachedRecommendedPeople.isEmpty && cachedTopics.isEmpty && cachedPickedNotes.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "magnifyingglass")
                             .font(.appSystem(size: 48, weight: .thin))
