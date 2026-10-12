@@ -835,6 +835,7 @@
 		B96E7A8C9767CDFD392FCE73 /* NoteDetailView+Replies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFB14BE787FF5D3A51852F1 /* NoteDetailView+Replies.swift */; };
 		B97355461D7DFA6A0694F145 /* ThreadNoteEngagementRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993A161A3C18B64245FE5 /* ThreadNoteEngagementRow.swift */; };
 		B98B2A4703AA7C738B6B055E /* VaultChangeHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982E5846CE3EB2461F41A4FB /* VaultChangeHandlers.swift */; };
+		BA044BE21BC71A3EFC45D3C7 /* AvatarFetchFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB6B148D5ECDEFEA102655C /* AvatarFetchFailure.swift */; };
 		BA11C71362F0FB9D248BB2FC /* WalletSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4C145BD660E4F7A185A677 /* WalletSettingsView.swift */; };
 		BA28A725680810BA41A69746 /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD61BE8DFF662A086B42872 /* NIP17Service.swift */; };
 		BA37590B08DE61C083CD12DF /* TrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */; };
@@ -1080,6 +1081,7 @@
 		EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
 		EC69E7FB15A8D973C111A810 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		EC907339E02BF6357A5CFC2D /* ArticleInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E1BD51ACE15691E3AB709B /* ArticleInlineBody.swift */; };
+		ECA89E9FE9AA143F1CEBB858 /* AvatarFetchFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB6B148D5ECDEFEA102655C /* AvatarFetchFailure.swift */; };
 		ECCFB80095D15CF9CB57204E /* ImportKeySheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0CC041733ECA113CC8CAFB /* ImportKeySheetView.swift */; };
 		ECE5D86C1C52C6006894B668 /* FeedService+NoteStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0CF308038EED2246C1A5B2 /* FeedService+NoteStats.swift */; };
 		ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
@@ -1425,6 +1427,7 @@
 		5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Methods.swift"; sourceTree = "<group>"; };
 		5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostEngagement.swift; sourceTree = "<group>"; };
+		5DB6B148D5ECDEFEA102655C /* AvatarFetchFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarFetchFailure.swift; sourceTree = "<group>"; };
 		5E31B27EC2F18B0F61C3A10A /* IconFilterButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconFilterButton.swift; sourceTree = "<group>"; };
 		5E6292D77D86100F897D4C79 /* MiniPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerBar.swift; sourceTree = "<group>"; };
 		5E687B37FB00F4ED20723DBB /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
@@ -2454,6 +2457,7 @@
 			children = (
 				7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */,
 				17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */,
+				5DB6B148D5ECDEFEA102655C /* AvatarFetchFailure.swift */,
 				0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */,
 				E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */,
 				EC971B12438093F727E8967F /* Bolt11.swift */,
@@ -3076,6 +3080,7 @@
 				D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */,
 				3533021253AF812093E42AD8 /* AudioSessionManager.swift in Sources */,
 				71DE4A482D94D5FC8A9C6B16 /* AuthorQuickMenu.swift in Sources */,
+				ECA89E9FE9AA143F1CEBB858 /* AvatarFetchFailure.swift in Sources */,
 				B2B6F4E8D6BD8E06FE74A425 /* AvatarImageCache.swift in Sources */,
 				2174A70CAD5EDDA3B412FAA3 /* AvatarThumbnail.swift in Sources */,
 				6DCC887966E76402C4A29E22 /* AvatarView.swift in Sources */,
@@ -3673,6 +3678,7 @@
 				6599E6B809A7C89D83B5765A /* AudioPlayerView.swift in Sources */,
 				2247405E2C6D66EF47A435CB /* AudioSessionManager.swift in Sources */,
 				DB1158550F7E716883D5BF64 /* AuthorQuickMenu.swift in Sources */,
+				BA044BE21BC71A3EFC45D3C7 /* AvatarFetchFailure.swift in Sources */,
 				DC040E2F965DE84F4C1BE9CC /* AvatarImageCache.swift in Sources */,
 				BD5A27165C17582AFFB599EF /* AvatarThumbnail.swift in Sources */,
 				741FA84BBE033DB172644990 /* AvatarView.swift in Sources */,
