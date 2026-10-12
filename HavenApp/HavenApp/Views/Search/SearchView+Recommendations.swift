@@ -15,14 +15,17 @@ extension SearchView {
         cachedRecommendedPeople = people
         nostrService.fetchMissingProfiles(for: people.map(\.pubkey))
 
-        let topics = InterestListService.shared.hashtags
-        cachedTopics = Array(topics.prefix(12))
-
         let notes = feedService.notes
+        let reacted = Set(feedService.myReactions.keys)
+        let engaged = notes.filter { $0.pubkey == owner || reacted.contains($0.id) }.map(\.tags)
+        let topics = SearchRecommendations.interests(followed: InterestListService.shared.hashtags,
+                                                     engaged: engaged)
+        cachedTopics = topics
+
         let picked = SearchRecommendations.notes(
             notes.map { .init(id: $0.id, pubkey: $0.pubkey, tags: $0.tags, createdAt: $0.createdAt) },
             interests: Set(topics), following: following, vouches: vouches,
-            owner: owner, blocked: blocked
+            owner: owner, blocked: blocked, seen: reacted
         )
         let byId = Dictionary(notes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         cachedPickedNotes = visibleNotes(picked.compactMap { byId[$0] }, blockFilter)

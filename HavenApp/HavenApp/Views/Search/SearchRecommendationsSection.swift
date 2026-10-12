@@ -75,10 +75,11 @@ struct SearchRecommendationsSection: View {
                     .font(.appSystem(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
-                Text("\(person.vouches) you follow")
+                Text("\(person.vouches) of your follows")
                     .font(.appSystem(size: 10))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(width: 96)
             .padding(.vertical, 10)

@@ -71,4 +71,26 @@ final class SearchRecommendationsTests: XCTestCase {
                                                    following: [], vouches: [:], owner: "me",
                                                    blocked: []), [])
     }
+
+    func testNotesSkipSeen() {
+        let ids = SearchRecommendations.notes([note("1", "a", ["art"]), note("2", "b", ["art"])],
+                                              interests: ["art"], following: [], vouches: [:],
+                                              owner: "me", blocked: [], seen: ["1"])
+        XCTAssertEqual(ids, ["2"])
+    }
+
+    // MARK: Interests
+
+    func testInterestsFollowedFirstThenEngagedByUse() {
+        let engaged: [[[String]]] = [
+            [["t", "Music"]], [["t", "music"]], [["t", "art"]], [["t", "Bitcoin"]],
+        ]
+        XCTAssertEqual(SearchRecommendations.interests(followed: ["#Bitcoin", "nostr"], engaged: engaged),
+                       ["bitcoin", "nostr", "music", "art"])
+    }
+
+    func testInterestsCapped() {
+        let engaged: [[[String]]] = (0..<20).map { [["t", "t\($0)"]] }
+        XCTAssertEqual(SearchRecommendations.interests(followed: ["a", "b"], engaged: engaged, limit: 4).count, 4)
+    }
 }

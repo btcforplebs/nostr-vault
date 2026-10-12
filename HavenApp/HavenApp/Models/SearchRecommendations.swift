@@ -30,6 +30,21 @@ enum SearchRecommendations {
             .map { Person(pubkey: $0.key, vouches: $0.value) }
     }
 
+    /// Your interests: the hashtags you follow, then the ones on notes you
+    /// wrote or reacted to (each a note's tag array), most used first. Many
+    /// people never follow a hashtag, and what they post and like says the
+    /// same thing.
+    static func interests(followed: [String], engaged: [[[String]]], limit: Int = 12) -> [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        for tag in followed {
+            let name = InterestList.normalize(tag)
+            if !name.isEmpty, seen.insert(name).inserted { out.append(name) }
+        }
+        let rest = HashtagSuggestions.top(engaged, excluding: seen, limit: max(0, limit - out.count))
+        return Array((out + rest).prefix(limit))
+    }
+
     /// A note as the picker sees it.
     struct Candidate {
         let id: String
@@ -42,12 +57,14 @@ enum SearchRecommendations {
     /// yours, not blocked. Ranked by how many interests a note hits, then by
     /// how close its author is to you (followed, else vouches), then newest.
     /// At most one note per author, so one prolific poster can't fill it.
+    /// Notes in `seen` (ones you already reacted to) are left out.
     static func notes(_ candidates: [Candidate],
                       interests: Set<String>,
                       following: Set<String>,
                       vouches: [String: Int],
                       owner: String,
                       blocked: Set<String>,
+                      seen: Set<String> = [],
                       limit: Int = 5) -> [String] {
         let wanted = Set(interests.map(InterestList.normalize).filter { !$0.isEmpty })
         guard !wanted.isEmpty else { return [] }
@@ -63,7 +80,8 @@ enum SearchRecommendations {
         let followedCloseness = Int.max
 
         var scored: [Scored] = []
-        for note in candidates where note.pubkey != owner && !blocked.contains(note.pubkey) {
+        for note in candidates where note.pubkey != owner && !blocked.contains(note.pubkey)
+            && !seen.contains(note.id) {
             var hit = Set<String>()
             for tag in note.tags where tag.count >= 2 && tag[0] == "t" {
                 let name = InterestList.normalize(tag[1])
