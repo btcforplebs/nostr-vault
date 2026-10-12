@@ -30,11 +30,11 @@ class DeadRelaysTest {
         for (list in lists) assertTrue(list.toString(), list.none(DeadRelays::isDead))
     }
 
-    /** Several features ask only the first three read relays, so all three must be alive. */
+    /** Several features ask only the first three read relays, so all three must be alive and match iOS feedRelays.prefix(3). */
     @Test
-    fun `the first three read relays are live ones`() {
+    fun `the first three read relays are live ones and match iOS`() {
         assertEquals(
-            listOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.btcforplebs.com"),
+            listOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social"),
             HavenConfig().readRelays.take(3),
         )
     }
