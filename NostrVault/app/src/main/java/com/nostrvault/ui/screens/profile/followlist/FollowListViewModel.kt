@@ -10,6 +10,7 @@ import com.nostrvault.data.model.FollowerSnapshot
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.profileRelayUrls
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

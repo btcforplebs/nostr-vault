@@ -76,8 +76,11 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
             put("limit", 2)
         }
 
-        val readRelays = configStore.config.value.readRelays
-        for (relayUrl in readRelays.take(3)) {
+        // The profile relays too: purplepag.es and user.kindpag.es index
+        // relay lists, so a stranger's outbox is found when no read relay has it.
+        val relays = (configStore.config.value.readRelays.take(3) + PROFILE_RELAYS)
+            .distinctBy { com.nostrvault.data.remote.LookupSocketPool.relayKey(it) }
+        for (relayUrl in relays) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
                 lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
@@ -85,6 +88,19 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
                 }
             }
         }
+    }
+
+    /** The relays a profile page asks: local, up to 3 feed relays, up to 3 of the profile's outbox. */
+    fun NostrService.profileRelayUrls(pubkey: String): List<String> {
+        val config = configStore.config.value
+        return buildList {
+            config.nostrURL?.let { add(it) }
+            addAll(config.readRelays.take(3))
+            // NIP-65 outbox model: we're fetching events FROM this user, so query
+            // their write/outbox relays (where they actually publish), not their
+            // read/inbox relays (where others send things TO them).
+            _outboxRelays.value[pubkey]?.let { addAll(it.take(3)) }
+        }.distinct().take(6)
     }
 
     /**
