@@ -167,7 +167,7 @@ class StatsService @Inject constructor(
             withContext(Dispatchers.Main.immediate) {
                 if (merged != null && yours != null) {
                     _kindCounts.value = merged.filterKeys { it != TOTAL_KEY }
-                    if (author != null) _yourKindCounts.value = yours
+                    _yourKindCounts.value = if (author != null) yours else emptyMap()
                     _loadedEventsCount.value = merged[TOTAL_KEY] ?: 0
                 }
                 _isUpdatingCount.value = false
@@ -215,7 +215,9 @@ class StatsService @Inject constructor(
                 cont.resume(answer) { _, _, _ -> }
             }
 
-            listener = scope.launch {
+            // Undispatched so it subscribes before connect(): the flow keeps no
+            // replay, and a reply that lands first would be dropped.
+            listener = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 client.messages.collect { msg ->
                     try {
                         val parsed = json.parseToJsonElement(msg).jsonArray
