@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -133,12 +134,20 @@ private val FilterNoteMargin = 16.dp
 private const val FilterNoteDimmedAlpha = 0.55f
 
 /**
+ * How far above the host's top edge the pill is drawn, so its top overlaps
+ * the bottom of the toolbar glass and its bottom stays above the first post,
+ * the same as iOS.
+ */
+private val FilterNoteRise = 14.dp
+
+/**
  * Hosts a screen's filter note around the [GlassScaffold] content: the pill
- * is drawn at the top centre, just under the toolbar (the top of [padding]),
- * outside the bar that folds on scroll. Never in the layout flow, so a tap
- * moves nothing; when the list is scrolled it may sit over content, and
- * still takes no taps. Wrap the scaffold's content once per screen, never
- * the toolbar slot.
+ * is drawn at the top centre, raised [FilterNoteRise] above the top of
+ * [padding] so it overlaps the bottom of the toolbar and stays above the
+ * first post, outside the bar that folds on scroll. Never in the layout
+ * flow, so a tap moves nothing; when the list is scrolled it may sit over
+ * content, and still takes no taps. Wrap the scaffold's content once per
+ * screen, never the toolbar slot.
  */
 @Composable
 fun FilterNoteHost(
@@ -153,7 +162,8 @@ fun FilterNoteHost(
             state,
             Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = padding.calculateTopPadding() + 8.dp),
+                .padding(top = padding.calculateTopPadding())
+                .offset(y = -FilterNoteRise),
         )
     }
 }
@@ -194,7 +204,8 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
                     .padding(horizontal = FilterNoteMargin)
                     .glassPillBackground(isOled = LocalOledMode.current)
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-                    .padding(vertical = 7.dp, horizontal = 14.dp),
+                    // 26 dp tall: fits the gap between the toolbar and the first post.
+                    .padding(vertical = 5.dp, horizontal = 14.dp),
             ) {
                 Icon(
                     imageVector = shown.icon,

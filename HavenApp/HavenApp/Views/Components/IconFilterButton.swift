@@ -234,6 +234,12 @@ struct FilterNoteView: View {
     @ObservedObject var model: FilterNoteModel
     /// The dimmed (off) look, the same on Android.
     static let dimmedOpacity = 0.55
+    /// How far above the host's top edge the pill is drawn, so its top
+    /// overlaps the bottom of the toolbar glass and its bottom stays above
+    /// the first post. On an iPhone the content starts about 10 pt under
+    /// the bar and the first post about 18 pt under that; a 26 pt pill
+    /// raised 14 pt runs from 4 pt inside the glass to 6 pt above the post.
+    static let rise: CGFloat = 14
 
     var body: some View {
         if let note = model.note {
@@ -255,7 +261,8 @@ struct FilterNoteView: View {
                 .foregroundColor(note.dimmed ? .primary.opacity(Self.dimmedOpacity) : .primary)
             }
             .font(.appSystem(size: 13, weight: .semibold))
-            .padding(.vertical, 7)
+            // 26 pt tall: fits the gap between the toolbar and the first post.
+            .padding(.vertical, 5)
             .padding(.horizontal, 14)
             .background(Capsule().fill(.ultraThinMaterial))
             .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
@@ -277,15 +284,19 @@ struct FilterNoteView: View {
 
 extension View {
     /// Hosts a screen's filter note: an overlay pinned to the top edge of
-    /// the content, so it sits in the gap under the toolbar above the first
+    /// the content and raised `FilterNoteView.rise`, so its top overlaps the
+    /// bottom of the toolbar glass and its bottom stays above the first
     /// post. Never in the layout flow, so a tap moves nothing; when the
     /// list is scrolled it may sit over content, and still takes no taps.
     /// Apply once per screen, on the content view under the toolbar. When
     /// the screen draws its own header inside that content (the Mac Vault),
-    /// pass the header's height as `topInset` so the pill sits under it.
+    /// pass the header's height as `topInset`; the pill then overlaps the
+    /// bottom of that header the same way.
     func filterNoteHost(_ model: FilterNoteModel, topInset: CGFloat = 0) -> some View {
         overlay(alignment: .top) {
-            FilterNoteView(model: model).padding(.top, topInset + 8)
+            FilterNoteView(model: model)
+                .padding(.top, topInset)
+                .offset(y: -FilterNoteView.rise)
         }
     }
 }
