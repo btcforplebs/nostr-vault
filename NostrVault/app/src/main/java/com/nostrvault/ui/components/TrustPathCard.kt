@@ -25,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.data.model.TrustPathText
+import com.nostrvault.service.LiveTrustPath
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.TrustPathService
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -65,7 +67,7 @@ import dagger.hilt.components.SingletonComponent
 interface TrustPathEntryPoint {
     fun trustPathService(): TrustPathService
     fun nostrService(): NostrService
-    /** The WOT tab's trust card follows and blocks with it. */
+    /** The globe's trust card follows and blocks with it. */
     fun feedService(): com.nostrvault.service.FeedService
 }
 
@@ -75,6 +77,21 @@ internal fun rememberTrustPathServices(): TrustPathEntryPoint {
     return remember(context) {
         EntryPointAccessors.fromApplication(context.applicationContext, TrustPathEntryPoint::class.java)
     }
+}
+
+/**
+ * [author]'s Trust Path, traced again whenever your web changes, so a follow
+ * shows here at once. Null while tracing, and for no one.
+ */
+@Composable
+internal fun rememberLiveTrustPath(author: String?): TrustPath? {
+    val trust = rememberTrustPathServices().trustPathService()
+    val scope = rememberCoroutineScope()
+    val live = remember(trust, scope) { LiveTrustPath(trust, scope) }
+    LaunchedEffect(live, author) { live.track(author) }
+    val path by live.path.collectAsState()
+    // Until the switch above runs, the path is still the last person's.
+    return path.takeIf { live.author == author }
 }
 
 /**
@@ -97,13 +114,13 @@ fun TrustPathCard(
     val profiles by nostrService.profiles.collectAsState()
     val me = trust.me
 
-    var path by remember(author) { mutableStateOf<TrustPath?>(null) }
+    // Live: follow them anywhere and the card says so without reopening.
+    val path = rememberLiveTrustPath(author)
     var showingGlobe by remember { mutableStateOf(false) }
 
-    LaunchedEffect(author) {
-        val found = trust.path(author)
+    LaunchedEffect(path) {
+        val found = path ?: return@LaunchedEffect
         nostrService.fetchMissingProfiles(listOf(me, author) + found.bridges)
-        path = found
     }
 
     fun name(pubkey: String) = profiles[pubkey]?.bestName ?: "npub…${pubkey.takeLast(6)}"

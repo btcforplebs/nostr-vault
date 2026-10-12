@@ -9,7 +9,11 @@ import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -58,6 +62,16 @@ class TrustPathService @Inject constructor(
      * to pick it up when it lands. iOS reads it from cache synchronously.
      */
     val trustGraphUpdates: StateFlow<Set<String>> get() = feedService.wotPubkeys
+
+    /**
+     * Fires when your web changed: a follow, an unfollow, the saved web
+     * reloading, an account switch. Once on collect too, so a collector traces
+     * straight away. The new values are already readable when it fires.
+     */
+    val webChanged: Flow<Unit>
+        get() = combine(feedService.followedPubkeys, feedService.wotPubkeys, meUpdates) { follows, web, me ->
+            Triple(follows.toSet(), web, me)
+        }.distinctUntilChanged().map { }
 
     /** True while your follow list is being fetched. */
     val isLoadingFollows: StateFlow<Boolean> get() = feedService.isLoadingContacts

@@ -43,7 +43,7 @@ internal fun TrustWebViewGlobe(
     modifier: Modifier,
     /** Off on the WOT tab, where the globe runs to the screen's edges. */
     clip: Boolean = true,
-    /** Keeps the pills and the peek card clear of the floating tab bar. */
+    /** Keeps the pills and the trust card clear of the floating tab bar. */
     overlayPadding: PaddingValues = PaddingValues(0.dp),
     frame: TrustFrame?,
     centerKey: String,
@@ -69,7 +69,6 @@ internal fun TrustWebViewGlobe(
     followsPending: Boolean,
     mappingWeb: Boolean,
     accent: Color,
-    peek: String?,
     onProfileClick: ((String) -> Unit)?,
     openProfile: (String) -> Unit,
     feedService: FeedService,
@@ -91,8 +90,8 @@ internal fun TrustWebViewGlobe(
             profiles = profiles, name = name,
             onTap = tapped,
             // A tap on open space also puts the keyboard away.
-            focus = if (isWOTTab) card else null,
-            focusBridges = if (isWOTTab) cardPath?.all.orEmpty() else emptyList(),
+            focus = card,
+            focusBridges = cardPath?.all.orEmpty(),
             onEmptyTap = onEmptyTap,
         )
         // The WoT tutorial's first card points at the middle of the
@@ -118,31 +117,14 @@ internal fun TrustWebViewGlobe(
             )
             // Your follows are in but the wider web (the haze) isn't yet.
             // The WOT tab says so in its live pill instead.
-            !isWOTTab && mappingWeb ->
+            !isWOTTab && mappingWeb && card == null ->
                 StatusPill(
                     text = "Mapping your wider web…", accent = accent, small = true,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                 )
         }
-        peek?.let { pubkey ->
-            val followsAuthor = frame?.bridges?.contains(pubkey) == true ||
-                frame?.chains?.any { it.via == pubkey } == true
-            PeekCard(
-                pubkey = pubkey, name = name(pubkey), profile = profiles[pubkey], accent = accent,
-                line = listOfNotNull(
-                    when { pubkey == me -> "You"; pubkey in myFollows -> "You follow"; else -> "Not someone you follow" },
-                    when {
-                        pubkey == author -> null
-                        followsAuthor -> "follows ${name(author)}"
-                        else -> "not seen following ${name(author)}"
-                    },
-                ).joinToString(" · "),
-                onProfile = onProfileClick?.let { { openProfile(pubkey) } },
-                modifier = Modifier.align(Alignment.BottomStart),
-            )
-        }
         val shown = card
-        if (isWOTTab && shown != null) {
+        if (shown != null) {
             val following = shown in myFollows
             var blocked by remember(shown) { mutableStateOf(feedService.isBlocked(shown)) }
             TrustCard(

@@ -22,4 +22,14 @@ class TrustFrameTest {
         assertEquals(true, updated.exhausted)
         assertEquals(chains, updated.chains)
     }
+
+    @Test fun `a new author path keeps bridges you still follow and adds the new ones`() {
+        val found = TrustFrame("me", listOf("b1", "b2"), true, path).copy(bridges = listOf("b1", "b2"), seen = setOf("s"))
+        val traced = TrustPath(TrustPath.Reach.FOLLOW, listOf("b1", "b3"), false, listOf("b1", "b3"))
+        // b2 was unfollowed; b3 is a new follow who follows the author.
+        val updated = found.withPath(traced, follows = setOf("b1", "b3", "author"))
+        assertEquals(traced, updated.path)
+        assertEquals(listOf("b1", "b3"), updated.bridges)
+        assertEquals(setOf("s"), updated.seen)
+    }
 }

@@ -169,15 +169,14 @@ class FeedService @Inject constructor(
      */
     fun relayTabTrustedPubkeys(): Set<String> {
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        val wot = _wotPubkeys.value
-        if (wot.isEmpty()) return emptySet()
-        return wot + _followedPubkeys.value
+        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
     }
 
     fun globalTrustSet(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return _wotPubkeys.value
+        // Your follows too, so someone you just followed passes right away.
+        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
     }
 
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())

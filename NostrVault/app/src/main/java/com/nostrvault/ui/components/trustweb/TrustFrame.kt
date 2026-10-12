@@ -36,4 +36,12 @@ internal data class TrustFrame(
      */
     fun withRing(ring: List<String>, listFound: Boolean = true): TrustFrame =
         copy(ring = ring, listFound = listFound, ringSet = ring.toSet())
+
+    /**
+     * The same frame with the author's path traced again after your follows
+     * changed: bridges you still follow stay, ones you unfollowed drop, and
+     * the new trace's join them.
+     */
+    fun withPath(path: TrustPath, follows: Set<String>): TrustFrame =
+        copy(path = path, bridges = (bridges.filter { it in follows } + path.all).distinct().sorted())
 }

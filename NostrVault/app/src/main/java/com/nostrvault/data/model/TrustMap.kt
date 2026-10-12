@@ -214,6 +214,14 @@ object TrustMap {
         return scores
     }
 
+    /**
+     * Your web right now: the relay's saved web plus everyone you follow, so a
+     * follow counts the moment you make it, not at the next daily rebuild.
+     * Empty while no web is saved: no graph, no claims.
+     */
+    fun web(saved: Set<String>, follows: Set<String>): Set<String> =
+        if (saved.isEmpty()) emptySet() else saved + follows
+
     /** How close a search hit is to you: the tag on its row, and its rank. */
     enum class Tier { FOLLOW, WEB, OTHER }
 
