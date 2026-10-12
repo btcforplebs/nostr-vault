@@ -188,20 +188,6 @@ enum BlobCopyOutcome: Equatable {
     case stopped
 }
 
-/// What one copy run has learned about each server, so a server that turns
-/// the key down is asked once, not once a file with a new signature each time.
-actor BlobCopyRun {
-    private var refused: [String: String] = [:]
-    private var singleOnly: Set<String> = []
-
-    /// The reason a server gave for refusing even a one-file signature.
-    func refusal(_ server: String) -> String? { refused[server] }
-    func markRefused(_ server: String, reason: String) { refused[server] = reason }
-    /// A server that took a one-file signature after turning down the batch one.
-    func wantsSingle(_ server: String) -> Bool { singleOnly.contains(server) }
-    func markWantsSingle(_ server: String) { singleOnly.insert(server) }
-}
-
 extension BlossomService {
     /// Sessions for copying stored files. Unlike `remoteSession` they do not
     /// wait for connectivity: that wait lasted up to 15 minutes a try, which
@@ -326,9 +312,9 @@ extension BlossomService {
                 for (server, attempt) in await send(viaSingle, auth: auth) {
                     results[server] = attempt.outcome
                     if attempt.authRefused, case .failed(let reason) = attempt.outcome {
-                        // It refuses the key itself: not on its list, unpaid.
-                        // No more signatures for it this run.
-                        await run.markRefused(server, reason: reason)
+                        // Maybe it refuses the key itself: not on its list,
+                        // unpaid. Then no more signatures for it this run.
+                        await run.noteRefusal(server, hash: sha256, status: attempt.status, reason: reason)
                     } else if batchAuth != nil, attempt.outcome == .copied {
                         await run.markWantsSingle(server)
                     }
@@ -363,9 +349,11 @@ extension BlossomService {
         let outcome: BlobCopyOutcome
         var worthRetry = false
         var authRefused = false
+        /// The HTTP status of a refusal, so the run can tell 401 from 403.
+        var status: Int?
         static let copied = CopyAttempt(outcome: .copied)
-        static func failed(_ reason: String, retry: Bool = false, authRefused: Bool = false) -> CopyAttempt {
-            CopyAttempt(outcome: .failed(reason), worthRetry: retry, authRefused: authRefused)
+        static func failed(_ reason: String, retry: Bool = false, authRefused: Bool = false, status: Int? = nil) -> CopyAttempt {
+            CopyAttempt(outcome: .failed(reason), worthRetry: retry, authRefused: authRefused, status: status)
         }
     }
 
@@ -402,7 +390,7 @@ extension BlossomService {
         let said = serverSays.flatMap { $0.isEmpty || $0.hasPrefix("<") ? nil : $0 }
         let suffix = said.map { " It said: \"\($0)\"." } ?? ""
         switch status {
-        case 401, 403: return .failed("The server turned down your key (HTTP \(status))." + suffix, authRefused: true)
+        case 401, 403: return .failed("The server turned down your key (HTTP \(status))." + suffix, authRefused: true, status: status)
         case 402: return .failed("The server wants payment to store files (HTTP 402)." + suffix)
         case 409: return .failed("The server already has a different file under this name (HTTP 409)." + suffix)
         case 413: return .failed("Too big for this server (HTTP 413)." + suffix)

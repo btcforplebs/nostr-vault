@@ -70,4 +70,28 @@ class BlobCopyTest {
         assertTrue(json.contains("[\"x\",\"${"b".repeat(64)}\"]"))
         assertTrue(json.contains("\"created_at\":1"))
     }
+
+    @Test
+    fun `a 401 marks the server at once`() {
+        val run = BlobCopyRun()
+        run.noteRefusal("s", "a", 401, "not on the list")
+        assertEquals("not on the list", run.refusal("s"))
+        assertEquals(null, run.refusal("other"))
+    }
+
+    @Test
+    fun `a 403 marks the server only for two different files`() {
+        val run = BlobCopyRun()
+        run.noteRefusal("s", "a", 403, "no videos")
+        run.noteRefusal("s", "a", 403, "no videos")
+        assertEquals(null, run.refusal("s"))
+        run.noteRefusal("s", "b", 403, "second")
+        assertEquals("second", run.refusal("s"))
+    }
+
+    @Test
+    fun `a refusal keeps its status`() {
+        assertEquals(403, copyFailure(403, null).status)
+        assertEquals(401, copyFailure(401, null).status)
+    }
 }

@@ -47,25 +47,40 @@ internal data class CopyAttempt(
     val outcome: BlobCopyOutcome,
     val worthRetry: Boolean = false,
     val authRefused: Boolean = false,
+    /** The HTTP status of a refusal, so the run can tell 401 from 403. */
+    val status: Int? = null,
 ) {
     companion object {
         val copied = CopyAttempt(BlobCopyOutcome.Copied)
-        fun failed(reason: String, retry: Boolean = false, authRefused: Boolean = false) =
-            CopyAttempt(BlobCopyOutcome.Failed(reason), retry, authRefused)
+        fun failed(reason: String, retry: Boolean = false, authRefused: Boolean = false, status: Int? = null) =
+            CopyAttempt(BlobCopyOutcome.Failed(reason), retry, authRefused, status)
     }
 }
 
 /**
  * What one copy run has learned about each server, so a server that turns the
  * key down is asked once, not once a file with a new signature each time.
+ *
+ * Only a refusal of the key counts: a 401, or a 403 for two different files.
+ * One 403 can be about that file alone (its type, its content), and marking
+ * the server for it would fail every later file with that file's reason.
  */
 class BlobCopyRun {
     private val refused = mutableMapOf<String, String>()
+    private val forbidden = mutableMapOf<String, MutableSet<String>>()
     private val singleOnly = mutableSetOf<String>()
 
-    /** The reason a server gave for refusing even a one-file signature. */
+    /** The reason a server gave when it refused the key for this run. */
     @Synchronized fun refusal(server: String): String? = refused[server]
-    @Synchronized fun markRefused(server: String, reason: String) { refused[server] = reason }
+
+    /** A server turned down a one-file signature for [hash]. */
+    @Synchronized fun noteRefusal(server: String, hash: String, status: Int?, reason: String) {
+        if (status == 403) {
+            val files = forbidden.getOrPut(server) { mutableSetOf() }.apply { add(hash) }
+            if (files.size < 2) return
+        }
+        refused[server] = reason
+    }
     /** A server that took a one-file signature after turning down the batch one. */
     @Synchronized fun wantsSingle(server: String): Boolean = server in singleOnly
     @Synchronized fun markWantsSingle(server: String) { singleOnly += server }
@@ -217,9 +232,9 @@ suspend fun BlossomService.copyStoredBlob(
                 results[server] = attempt.outcome
                 val outcome = attempt.outcome
                 if (attempt.authRefused && outcome is BlobCopyOutcome.Failed) {
-                    // It refuses the key itself: not on its list, unpaid.
-                    // No more signatures for it this run.
-                    run.markRefused(server, outcome.reason)
+                    // Maybe it refuses the key itself: not on its list,
+                    // unpaid. Then no more signatures for it this run.
+                    run.noteRefusal(server, sha256, attempt.status, outcome.reason)
                 } else if (batchAuth != null && outcome == BlobCopyOutcome.Copied) {
                     run.markWantsSingle(server)
                 }
@@ -290,7 +305,7 @@ internal fun copyFailure(status: Int, serverSays: String?): CopyAttempt {
     val said = serverSays?.takeIf { it.isNotBlank() && !it.startsWith("<") }
     val suffix = said?.let { " It said: \"$it\"." } ?: ""
     return when (status) {
-        401, 403 -> CopyAttempt.failed("The server turned down your key (HTTP $status).$suffix", authRefused = true)
+        401, 403 -> CopyAttempt.failed("The server turned down your key (HTTP $status).$suffix", authRefused = true, status = status)
         402 -> CopyAttempt.failed("The server wants payment to store files (HTTP 402).$suffix")
         409 -> CopyAttempt.failed("The server already has a different file under this name (HTTP 409).$suffix")
         413 -> CopyAttempt.failed("Too big for this server (HTTP 413).$suffix")
