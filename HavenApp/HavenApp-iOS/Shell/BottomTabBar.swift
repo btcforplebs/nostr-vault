@@ -203,7 +203,7 @@ struct BottomTabBar: View {
     // MARK: - Tab Item
 
     /// `icon` is an SF Symbol; `assetIcon`, when set, is a template image from
-    /// the asset catalog drawn on the same 24pt grid instead.
+    /// the asset catalog sized to match the symbols instead.
     private func tabItem(index: Int, title: String, icon: String = "", assetIcon: String? = nil, hasRedBadge: Bool = false, onReselect: @escaping () -> Void, onSelect: @escaping () -> Void = {}) -> some View {
         let selected = selectedTab == index
         return Button {
@@ -217,9 +217,13 @@ struct BottomTabBar: View {
             VStack(spacing: 4) {
                 Group {
                     if let assetIcon {
+                        // 26pt draws the globe's 20pt circle at about 21.5pt, as tall
+                        // as the Vault symbol; a circle reads smaller than a box of
+                        // the same size. It scales with Text Size like the symbols.
+                        let side = 26 * CGFloat(configService.config.textSizeScale)
                         Image(assetIcon)
                             .resizable()
-                            .frame(width: 24, height: 24)
+                            .frame(width: side, height: side)
                     } else {
                         Image(systemName: icon)
                             .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
