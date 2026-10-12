@@ -62,10 +62,13 @@ extension NostrService {
         }
     }
 
-    /// Publishes a NIP-09 deletion request (kind 5) for the given event ID
+    /// Publishes a NIP-09 deletion request (kind 5) for the given event ID,
+    /// then drops the post from `events` so your Posts and Media lists stop
+    /// showing it before the next reload. Signing failures leave the list
+    /// alone, like `deleteOwnEvents`.
     func deleteNote(id: String) {
         Task {
-            guard let signed = await signEventAsync(kind: 5, content: "", tags: [["e", id]]) else {
+            guard let signed = await signEventAsync(kind: 5, content: "", tags: NoteDeletion.requestTags(noteId: id)) else {
                 #if DEBUG
                 print("NostrService: Failed to sign deletion event")
                 #endif
@@ -75,6 +78,9 @@ extension NostrService {
             #if DEBUG
             print("NostrService: Posted Kind 5 deletion request for event \(id)")
             #endif
+            events = NoteDeletion.without(events, noteId: id)
+            eventUpdateSubject.send()
+            NotificationCenter.default.post(name: .havenOwnEventsDeleted, object: Set([id]))
         }
     }
 
