@@ -9,6 +9,8 @@ struct ProfileView: View {
     var onDismiss: (() -> Void)? = nil
 
     var body: some View {
+        // Skipped when only the host redrew; see `PersonProfileView`.
         PersonProfileView(pubkey: pubkey, embeddedInNavigation: embeddedInNavigation, onDismiss: onDismiss)
+            .equatable()
     }
 }
