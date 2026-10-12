@@ -8,6 +8,7 @@ struct MediaServersPage: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @StateObject private var model = MediaServersModel()
+    @State private var showFiles = false
 
     var body: some View {
         ScrollView {
@@ -63,10 +64,32 @@ struct MediaServersPage: View {
                     state: .info,
                     progress: model.copyProgress
                 ) {
-                    RowButton(title: "Copy", isLoading: model.isCopying) {
-                        Task { await model.copyToServers() }
+                    if model.isCopying {
+                        RowButton(title: "Stop") { model.stopCopy() }
+                    } else {
+                        RowButton(title: model.hasFailures ? "Retry" : "Copy") {
+                            withAnimation(Motion.control) { showFiles = true }
+                            model.startCopy()
+                        }
+                        .disabled(model.isScanning || (model.waiting ?? 0) == 0)
                     }
-                    .disabled(model.isCopying || model.isScanning || (model.waiting ?? 0) == 0)
+                }
+            }
+            if !model.files.isEmpty {
+                DashboardDivider()
+                Button {
+                    withAnimation(Motion.control) { showFiles.toggle() }
+                } label: {
+                    ValueRow(icon: "list.bullet", title: showFiles ? "Hide files" : "Show files",
+                             value: model.files.count.formatted(), chevron: !showFiles)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(showFiles ? "Hides the list of files" : "Lists each file and what happened to it")
+                if showFiles {
+                    ForEach(model.files) { file in
+                        DashboardDivider()
+                        MediaCopyFileRow(file: file, hostFor: model.host(for:))
+                    }
                 }
             }
             if let note = model.copyNote {
@@ -88,7 +111,11 @@ struct MediaServersPage: View {
     }
 
     private var copyDetail: String {
-        if let copy = model.copyCounts { return "Copied \(copy.done.formatted()) of \(copy.total.formatted())." }
+        if let copy = model.copyCounts {
+            let failed = model.files.filter(\.isFailed).count
+            let tail = failed > 0 ? ", \(failed.formatted()) failed" : ""
+            return "Sent \(copy.done.formatted()) of \(copy.total.formatted())\(tail). Now: \(model.copyingNow)."
+        }
         if model.isScanning || model.waiting == nil { return "Checking which files your servers are missing…" }
         let last = VaultHistory.lastServerCopy.map { " Last copied \($0.formatted(.relative(presentation: .named)))." } ?? ""
         switch model.waiting ?? 0 {
@@ -202,14 +229,29 @@ final class MediaServersModel: ObservableObject {
     @Published private(set) var scanProgress: (done: Int, total: Int)?
     @Published private(set) var copyCounts: (done: Int, total: Int)?
     @Published private(set) var copyNote: String?
+    /// Each file some server is missing, and what the last copy did with it.
+    @Published private(set) var files: [MediaCopyFile] = []
 
     private var service: BlossomService?
     private var hashes: [String] = []
+    private var fileURLs: [String: URL] = [:]
+    private var copyTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var store: BlossomBackupStore { .shared }
 
     var isScanning: Bool { scanProgress != nil }
     var isCopying: Bool { copyCounts != nil }
+    var hasFailures: Bool { files.contains(where: \.isFailed) }
+    /// The files being sent right now, for the copy row's line.
+    var copyingNow: String {
+        let now = files.filter { $0.status == .copying }
+        guard let first = now.first else { return "finishing" }
+        return now.count == 1 ? first.title : "\(first.title) and \(now.count - 1) more"
+    }
+
+    func host(for server: String) -> String {
+        servers.first(where: { $0.id == server })?.host ?? URL(string: server)?.host ?? server
+    }
     var copyProgress: Double? {
         guard let c = copyCounts, c.total > 0 else { return nil }
         return Double(c.done) / Double(c.total)
@@ -225,8 +267,10 @@ final class MediaServersModel: ObservableObject {
         servers = urls.map { url in
             previous[url] ?? Server(id: url, host: URL(string: url)?.host ?? url)
         }
-        hashes = await Self.localHashes(configService: configService)
+        let local = await Self.localFiles(configService: configService)
         guard generation == loadGeneration else { return }
+        hashes = local.map(\.hash)
+        fileURLs = Dictionary(local.map { ($0.hash, $0.url) }, uniquingKeysWith: { first, _ in first })
         filesStored = hashes.count
         guard !urls.isEmpty else { return }
 
@@ -311,6 +355,20 @@ final class MediaServersModel: ObservableObject {
         // Stopped early (the page closed): nothing measured, nothing claimed.
         guard done == total else { return }
         waiting = missing().count
+        rebuildFiles()
+    }
+
+    /// The list under the copy row: every file a server is missing. A file
+    /// that failed keeps its reasons until it is tried again.
+    private func rebuildFiles() {
+        let previous = Dictionary(uniqueKeysWithValues: files.map { ($0.id, $0) })
+        files = missing().sorted { $0.key < $1.key }.compactMap { hash, absentOn in
+            guard let url = fileURLs[hash] else { return nil }
+            var file = previous[hash] ?? MediaCopyFile(hash: hash, url: url)
+            file.servers = absentOn
+            if file.status == .copied || file.status == .copying { file.status = .waiting }
+            return file
+        }
     }
 
     /// Hash → the servers that said they do not have it.
@@ -325,38 +383,100 @@ final class MediaServersModel: ObservableObject {
         return result
     }
 
-    func copyToServers() async {
+    func startCopy() {
+        guard !isCopying, service != nil else { return }
+        copyTask = Task { await copyToServers() }
+    }
+
+    /// Stops after the files already on their way; the rest stay waiting.
+    func stopCopy() {
+        copyTask?.cancel()
+    }
+
+    /// Sends every file some server is missing, two at a time, and keeps
+    /// what happened to each one on screen: waiting, sending, copied, or
+    /// failed with the server's reason. The old loop sent one file at a time
+    /// through a session that could wait 15 minutes for a connection, three
+    /// times per file, and only moved its counter when a file was done.
+    private func copyToServers() async {
         guard !isCopying, let service else { return }
-        let work = missing().sorted { $0.key < $1.key }
+        let work = files.indices.filter { files[$0].status != .copied }.map { files[$0].id }
         guard !work.isEmpty else { return }
         copyNote = nil
+        for id in work { update(id) { $0.status = .waiting } }
         copyCounts = (0, work.count)
-        var failed = 0
-        for (index, item) in work.enumerated() {
-            if await service.pushLocalToMirrors(sha256: item.key, only: item.value) {
-                store.record(hash: item.key, presence: Dictionary(uniqueKeysWithValues: item.value.map { ($0, .present) }))
-            } else {
-                failed += 1
+        service.appLog("copy to servers: \(work.count) file(s)")
+        var done = 0
+        let jobs = files.filter { work.contains($0.id) }.map { (id: $0.id, url: $0.url, servers: $0.servers) }
+        var iterator = jobs.makeIterator()
+        await withTaskGroup(of: (String, [String: BlobCopyOutcome]).self) { group in
+            func addNext() -> String? {
+                guard !Task.isCancelled, let job = iterator.next() else { return nil }
+                group.addTask { (job.id, await service.copyStoredBlob(sha256: job.id, fileURL: job.url, to: job.servers)) }
+                return job.id
             }
-            copyCounts = (index + 1, work.count)
+            for _ in 0..<2 {
+                guard let id = addNext() else { break }
+                update(id) { $0.status = .copying }
+            }
+            for await (id, outcomes) in group {
+                record(id, outcomes)
+                done += 1
+                copyCounts = (done, work.count)
+                if let next = addNext() { update(next) { $0.status = .copying } }
+            }
+        }
+        let stopped = Task.isCancelled
+        for id in work where files.first(where: { $0.id == id })?.status == .copying {
+            update(id) { $0.status = .waiting }
         }
         copyCounts = nil
+        copyTask = nil
+        let failed = files.filter(\.isFailed).count
+        let copied = work.count - files.filter { work.contains($0.id) && $0.status != .copied }.count
         // Only a copy that moved something counts as one.
-        if failed < work.count { VaultHistory.lastServerCopy = Date() }
+        if copied > 0 { VaultHistory.lastServerCopy = Date() }
+        files.removeAll { $0.status == .copied }
         waiting = missing().count
-        copyNote = failed == 0 ? nil
-            : "\(failed.formatted()) couldn't be copied. Test the servers above, then try again."
+        service.appLog("copy to servers: \(copied) copied, \(failed) failed\(stopped ? ", stopped" : "")")
+        if stopped {
+            copyNote = "Stopped. \(copied.formatted()) copied; the rest are still waiting."
+        } else if failed > 0 {
+            copyNote = failed == 1
+                ? "1 file couldn't be copied. The reason is under it in the list. Fix that, then tap Retry."
+                : "\(failed.formatted()) files couldn't be copied. The reason is under each one. Fix that, then tap Retry."
+        }
+    }
+
+    private func record(_ id: String, _ outcomes: [String: BlobCopyOutcome]) {
+        let copiedTo = outcomes.compactMap { $0.value == .copied ? $0.key : nil }
+        if !copiedTo.isEmpty {
+            store.record(hash: id, presence: Dictionary(uniqueKeysWithValues: copiedTo.map { ($0, .present) }))
+        }
+        let failures = outcomes.compactMap { server, outcome -> MediaCopyFile.Failure? in
+            guard case .failed(let reason) = outcome else { return nil }
+            return .init(server: server, reason: reason)
+        }.sorted { $0.server < $1.server }
+        update(id) { file in
+            file.servers.removeAll { copiedTo.contains($0) }
+            file.status = failures.isEmpty ? .copied : .failed(failures)
+        }
+    }
+
+    private func update(_ id: String, _ change: (inout MediaCopyFile) -> Void) {
+        guard let i = files.firstIndex(where: { $0.id == id }) else { return }
+        change(&files[i])
     }
 
     /// The blobs in this device's Blossom folder: files named by a hex SHA-256.
-    private static func localHashes(configService: ConfigService) async -> [String] {
+    private static func localFiles(configService: ConfigService) async -> [(hash: String, url: URL)] {
         let dir = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath)
         return await Task.detached(priority: .userInitiated) {
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
             return files.compactMap { url in
                 let hash = url.deletingPathExtension().lastPathComponent
-                return (hash.count == 64 && hash.allSatisfy(\.isHexDigit)) ? hash : nil
+                return (hash.count == 64 && hash.allSatisfy(\.isHexDigit)) ? (hash, url) : nil
             }
         }.value
     }

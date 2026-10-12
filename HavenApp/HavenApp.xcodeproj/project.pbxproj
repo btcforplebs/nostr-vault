@@ -304,6 +304,7 @@
 		443513AFB69CE37E9C30FA03 /* NoteDetailView+Parents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6F3DA371A22E888542EB92 /* NoteDetailView+Parents.swift */; };
 		44CD4B45BB1992B54B6B594B /* FeedService+Follow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C28CF4FEF54D4C0FE1E90 /* FeedService+Follow.swift */; };
 		44E16F1E6747845181FD3F3A /* PushNotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */; };
+		44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */; };
 		44F1646379AB87C0FA885525 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74DC08C4C796F5023B17EB8 /* ProfileContent+Header.swift */; };
 		461A76D356816D9F40923F71 /* MusicComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429BA3E5D0E9C89079389857 /* MusicComponents.swift */; };
@@ -415,6 +416,7 @@
 		5ACED3DC08D71D9754190597 /* MyProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C0A5C932EB95B83B6288BD1 /* MyProfileView.swift */; };
 		5AEA663D4C925CFBB1E13E82 /* MosaicWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618885CB514523D351B723B4 /* MosaicWidget.swift */; };
 		5AFD09F5A22D8DD9BB5DEF4B /* FillYourFeedGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */; };
+		5B55C977E5ADD84B68CF98E1 /* MediaCopyFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */; };
 		5B5BD0E20CD42D2982DFECB9 /* TutorialsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BCEFB561BABBB904949610 /* TutorialsSettingsView.swift */; };
 		5BD7BA7D1478C8AB5A28919B /* MediaCacheService+NotFound.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9F7D8C7003D8BBF7042027 /* MediaCacheService+NotFound.swift */; };
 		5BE1C0F1ADE02933CC0A2272 /* BlossomDashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */; };
@@ -1788,6 +1790,7 @@
 		EC971B12438093F727E8967F /* Bolt11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bolt11.swift; sourceTree = "<group>"; };
 		ED0D438DE03F310940F4D19A /* EventPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventPublisher.swift; sourceTree = "<group>"; };
 		ED924B5483C85E11E4917120 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCopyFileRow.swift; sourceTree = "<group>"; };
 		EE000450336CCC4829F6DEE1 /* NostrService+MessageProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+MessageProcessing.swift"; sourceTree = "<group>"; };
 		EE40C4040B7017248832CFDC /* FeedView+RootContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+RootContent.swift"; sourceTree = "<group>"; };
 		EE6164DC044E0ED9CC69EFBF /* WotRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotRefresh.swift; sourceTree = "<group>"; };
@@ -2264,6 +2267,7 @@
 				0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */,
 				F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */,
 				8CCBDC2A4AF4AEB828097AEC /* MacSyncSettingsPage.swift */,
+				EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */,
 				8C52A97A40D28F1C1381665A /* MediaServersPage.swift */,
 				104C14D088ED0825A8996A61 /* RelayActivityViews.swift */,
 				6AB6A0B4CA70E65B86DCFB31 /* VaultDashboardComponents.swift */,
@@ -3338,6 +3342,7 @@
 				4B2914A701BE9E329839B7F2 /* MediaCacheService+Sources.swift in Sources */,
 				FAF9A21319A7923F9762B1E8 /* MediaCacheService+Thumbnails.swift in Sources */,
 				DDF88C90EED2AAB24C40E13E /* MediaCacheService.swift in Sources */,
+				44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */,
 				81E4B84A7AD7E745DE93E2A4 /* MediaDateGrouping.swift in Sources */,
 				040DD927F572B12A2A02312B /* MediaGalleryDataProcessing.swift in Sources */,
 				18D877F6D6B57C3C14907074 /* MediaGalleryGrid.swift in Sources */,
@@ -3936,6 +3941,7 @@
 				C5C8191696EA0207483291CF /* MediaCacheService+Sources.swift in Sources */,
 				25152CC40795124356403E17 /* MediaCacheService+Thumbnails.swift in Sources */,
 				5E7C388BDCF4352D837F6ED9 /* MediaCacheService.swift in Sources */,
+				5B55C977E5ADD84B68CF98E1 /* MediaCopyFileRow.swift in Sources */,
 				4295059D93DE26D8335EE808 /* MediaDateGrouping.swift in Sources */,
 				98F3C8B40BF9B4F8F3C99EBD /* MediaGalleryDataProcessing.swift in Sources */,
 				346E57283E62BF450CDC1B58 /* MediaGalleryGrid.swift in Sources */,
