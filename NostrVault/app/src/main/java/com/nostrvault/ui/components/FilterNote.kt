@@ -148,8 +148,13 @@ fun rememberFilterNoteState(): FilterNoteState {
     return remember(scope) { FilterNoteState(scope) }
 }
 
-/** The least width the title keeps once both halves can't fit, as on iOS. */
-private val FilterNoteTitleFloor = 72.dp
+/**
+ * The least width the title keeps once both halves can't fit, as on iOS. In
+ * sp, so it follows the font scale and holds the same glyphs at every size;
+ * [FilterNoteLine] caps it at half the line, so the detail can never be the
+ * half that vanishes on a narrow host.
+ */
+private val FilterNoteTitleFloor = 72.sp
 
 /**
  * Lays the title and the "· setting · count" detail on one line. When they
@@ -166,7 +171,7 @@ private fun FilterNoteLine(content: @Composable () -> Unit) {
         val available = constraints.maxWidth
         val ideal = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
         val widths = if (measurables.size == 2 && available != Constraints.Infinity && ideal.sum() > available) {
-            val floor = minOf(ideal[0], FilterNoteTitleFloor.roundToPx())
+            val floor = minOf(ideal[0], FilterNoteTitleFloor.roundToPx(), available / 2)
             val title = minOf(available, maxOf(available - ideal[1], floor))
             listOf(title, maxOf(available - title, 0))
         } else {

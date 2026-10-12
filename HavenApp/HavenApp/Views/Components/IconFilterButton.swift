@@ -243,13 +243,18 @@ final class FilterNoteModel: ObservableObject {
 
 /// Lays the title and the "· setting · count" detail on one line. When they
 /// fit, each takes its natural width. When they don't, the title gives way
-/// first, down to `titleFloor` or its full text, whichever is less; past
+/// first, down to its floor or its full text, whichever is less; past
 /// that the detail is what gets cut. So "Lan… · English, Spanish,
 /// Portuguese, German" becomes "Languages · English, Spanish, Portu…", and
 /// nothing shrinks to a bare "L". With one subview it just hugs it.
 struct FilterNoteLine: Layout {
-    /// The least width the title keeps once both halves can't fit.
+    /// The least width the title keeps once both halves can't fit, at 100%
+    /// text size. It scales with `textScale`, so it holds the same glyphs
+    /// at every size, and is capped at half the line, so the detail can
+    /// never be the half that vanishes on a narrow host.
     static let titleFloor: CGFloat = 72
+    /// The text-size setting the pill's font uses (`Font.appSystem`).
+    var textScale: CGFloat = 1
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let widths = widths(proposal: proposal, subviews: subviews)
@@ -278,7 +283,8 @@ struct FilterNoteLine: Layout {
         guard let available = proposal.width, subviews.count == 2, ideal.reduce(0, +) > available else {
             return ideal.map { min($0, proposal.width ?? $0) }
         }
-        let title = min(available, max(available - ideal[1], min(ideal[0], Self.titleFloor)))
+        let floor = min(ideal[0], Self.titleFloor * textScale, available / 2)
+        let title = min(available, max(available - ideal[1], floor))
         return zip(subviews, [title, max(available - title, 0)]).map { subview, width in
             min(width, subview.sizeThatFits(ProposedViewSize(width: width, height: proposal.height)).width)
         }
@@ -302,48 +308,65 @@ struct FilterNoteView: View {
     /// so the bottom lands 6 pt above the post; at 100% the 26 pt pill then
     /// reaches 4 pt into the glass. A bigger pill grows upward behind the
     /// bar, where it is hidden, never down over the post. On macOS the
-    /// header is in the content, not above it, so there the pill sits just
-    /// under it instead (see `filterNoteHost`).
+    /// header is in the content, not above it, so there the pill has a
+    /// slot of its own instead (see `filterNoteHost`).
     static let bottomEdge: CGFloat = 12
 
     var body: some View {
         if let note = model.note {
-            HStack(spacing: 7) {
-                Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
-                    .foregroundColor(note.dimmed ? .primary.opacity(Self.dimmedOpacity) : .havenPurple)
-                FilterNoteLine {
-                    Text(note.title)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let detail = note.detail {
-                        Text(" · \(detail)")
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-                .monospacedDigit()
-                .foregroundColor(note.dimmed ? .primary.opacity(Self.dimmedOpacity) : .primary)
-            }
-            .font(.appSystem(size: 13, weight: .semibold))
-            // 26 pt tall: fits the gap between the toolbar and the first post.
-            .padding(.vertical, 5)
-            .padding(.horizontal, 14)
-            .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
-            // The margins: the capsule never gets wider than the host minus these.
-            .padding(.horizontal, 16)
-            // A second tap swaps the text in place, not mid-transition.
-            .contentTransition(.opacity)
-            .animation(Motion.fade, value: note)
-            .allowsHitTesting(false)
-            // Announced when shown; as an element it would be read twice.
-            .accessibilityHidden(true)
-            .transition(Motion.isReduced
-                ? .opacity
-                : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+            Self.capsule(for: note)
+                // A second tap swaps the text in place, not mid-transition.
+                .contentTransition(.opacity)
+                .animation(Motion.fade, value: note)
+                .transition(Motion.isReduced
+                    ? .opacity
+                    : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
         }
     }
+
+    /// The capsule for `note`, with its margins, at the current text size.
+    /// Also the shape of `template`, so a slot sized by it fits any note.
+    static func capsule(for note: FilterNote) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
+                .foregroundColor(note.dimmed ? .primary.opacity(dimmedOpacity) : .havenPurple)
+            FilterNoteLine(textScale: CGFloat(ConfigService.shared.config.textSizeScale)) {
+                Text(note.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let detail = note.detail {
+                    Text(" · \(detail)")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .monospacedDigit()
+            .foregroundColor(note.dimmed ? .primary.opacity(dimmedOpacity) : .primary)
+        }
+        .font(.appSystem(size: 13, weight: .semibold))
+        // 26 pt tall: fits the gap between the toolbar and the first post.
+        .padding(.vertical, 5)
+        .padding(.horizontal, 14)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+        // The margins: the capsule never gets wider than the host minus these.
+        .padding(.horizontal, 16)
+        .allowsHitTesting(false)
+        // Announced when shown; as an element it would be read twice.
+        .accessibilityHidden(true)
+    }
+
+    #if os(macOS)
+    /// An invisible one-line pill, as tall as any note at the current text
+    /// size: every note is one line in the same font. `filterNoteHost` on
+    /// macOS sizes its permanent slot by it.
+    static var template: some View {
+        capsule(for: FilterNote(icon: "circle", text: "Ag")).hidden()
+    }
+    /// The gap on macOS between the slot's pill and the content under it.
+    static let macSlotMargin: CGFloat = 4
+    #endif
 }
 
 extension View {
@@ -355,21 +378,34 @@ extension View {
     /// list is scrolled it may sit over content, and still takes no taps.
     /// Apply once per screen, on the content view under the toolbar. When
     /// the screen draws its own header inside that content (the Mac Vault),
-    /// pass the header's height as `topInset`. On macOS the pill then sits
-    /// just under that header with no rise: the header is in flow, and the
-    /// overlay would paint over it rather than slip behind it.
+    /// pass the header's height as `topInset`.
+    ///
+    /// On macOS the header is in flow and the content starts right under
+    /// it, so there is no gap to draw into: the host instead reserves a
+    /// permanent slot at the top of the content, as tall as a pill at the
+    /// current text size plus `FilterNoteView.macSlotMargin`, whether or
+    /// not a note shows, and draws the pill in it. Always there, so the
+    /// content never jumps; sized by the text, so the pill never reaches
+    /// the first row. A scroll view's content passes under it like a
+    /// safe area, and its pinned headers stick below it.
     func filterNoteHost(_ model: FilterNoteModel, topInset: CGFloat = 0) -> some View {
-        overlay(alignment: .top) {
-            #if os(macOS)
-            FilterNoteView(model: model)
+        #if os(macOS)
+        safeAreaInset(edge: .top, spacing: 0) {
+            FilterNoteView.template
+                .padding(.bottom, FilterNoteView.macSlotMargin)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .top) { FilterNoteView(model: model) }
                 .padding(.top, topInset)
-            #else
+                .allowsHitTesting(false)
+        }
+        #else
+        overlay(alignment: .top) {
             FilterNoteView(model: model)
                 // A slot of fixed height; the pill is aligned to its bottom
                 // and overflows upward when it is taller.
                 .frame(height: FilterNoteView.bottomEdge, alignment: .bottom)
                 .padding(.top, topInset)
-            #endif
         }
+        #endif
     }
 }
