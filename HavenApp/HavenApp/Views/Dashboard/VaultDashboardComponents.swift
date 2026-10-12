@@ -229,48 +229,6 @@ struct RowButton: View {
     }
 }
 
-/// One thing the vault holds: a count that opens its list in the Vault tab.
-struct OwnedTile: View {
-    let icon: String
-    let title: String
-    let count: Int?
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: icon)
-                    .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.havenPurple)
-                Group {
-                    if let count {
-                        Text(count.formatted())
-                    } else {
-                        Text("—").foregroundColor(.secondary)
-                    }
-                }
-                .font(.appSystem(size: 22, weight: .bold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                Text(title)
-                    .font(.appSystem(size: 13))
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(14)
-            .background(Color.platformCardBackground, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.platformCardBorder, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(title))
-        .accessibilityValue(Text(count.map { $0.formatted() } ?? "Loading"))
-        .accessibilityHint(Text("Opens \(title.lowercased()) in the Vault tab"))
-    }
-}
-
 extension View {
     /// A settings page pushed from the dashboard, titled like it is in Settings.
     func settingsPage(_ title: String) -> some View {

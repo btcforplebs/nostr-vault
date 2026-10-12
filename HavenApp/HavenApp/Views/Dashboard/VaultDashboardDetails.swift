@@ -8,16 +8,13 @@ import SwiftUI
 
 // MARK: - Relay details
 
-/// Where the vault is and what it holds, by kind.
+/// Where the vault is: its address, port and how long it has run. What it
+/// holds is on the dashboard, under In your vault.
 struct RelayDetailsPage: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var statsService: StatsService
 
-    @State private var counts: [Int: Int] = [:]
-    @State private var isCounting = false
     @State private var didCopyAddress = false
-    @State private var showingBreakdown = false
 
     private var config: HavenConfig { configService.config }
 
@@ -25,19 +22,12 @@ struct RelayDetailsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 relaySection
-                storedSection
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
         .background(Color.platformWindowBackground.ignoresSafeArea())
-        .refreshable { await count() }
-        .task(id: relayManager.isRunning) { await count() }
-        .sheet(isPresented: $showingBreakdown) {
-            EventKindBreakdownView()
-                .environmentObject(statsService)
-        }
     }
 
     // MARK: Your relay
@@ -95,72 +85,6 @@ struct RelayDetailsPage: View {
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             withAnimation(Motion.control) { didCopyAddress = false }
         }
-    }
-
-    // MARK: What's stored
-
-    /// Kinds grouped the way people think of them. Anything not named here
-    /// (and every kind the count does not ask about) is "Other".
-    private static let groups: [(title: String, icon: String, kinds: [Int])] = [
-        ("Notes", VaultMode.notes.symbol, [1]),
-        ("Articles", VaultMode.articles.symbol, [30023, 30024]),
-        ("Reactions", VaultMode.likes.symbol, [7]),
-        ("Reposts", "arrow.2.squarepath", [6, 16]),
-        ("Zaps", VaultMode.zaps.symbol, [9734, 9735]),
-        ("Messages", "envelope.fill", [4, 1059]),
-        ("Profile and lists", "person.crop.circle",
-         [0, 3, 10000, 10001, 10002, 10003, 10005, 10006, 10015, 10030, 30000, 30001, 30002]),
-    ]
-
-    /// The count's total, under key -1 (see `StatsService.fetchCountsByKind`).
-    private var total: Int? { counts[-1] }
-
-    private var groupRows: [(title: String, icon: String, count: Int)] {
-        var rows: [(title: String, icon: String, count: Int)] = Self.groups.map { group in
-            (group.title, group.icon, group.kinds.reduce(0) { $0 + (counts[$1] ?? 0) })
-        }
-        let named = rows.reduce(0) { $0 + $1.count }
-        if let total, total > named {
-            rows.append(("Other", "ellipsis.circle", total - named))
-        }
-        return rows.filter { $0.count > 0 }
-    }
-
-    private var storedSection: some View {
-        DashboardSection(title: "What's stored", detail: total.map { $0.formatted() }) {
-            if counts.isEmpty {
-                HStack(spacing: 8) {
-                    if isCounting { ProgressView().controlSize(.small) }
-                    Text(isCounting ? "Counting…"
-                         : relayManager.isRunning ? "Couldn't count. Pull down to try again."
-                         : "Start your vault to count what's in it.")
-                        .font(.appSystem(size: 13))
-                        .foregroundColor(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            } else {
-                let rows = groupRows
-                ForEach(Array(rows.enumerated()), id: \.element.title) { index, row in
-                    if index > 0 { DashboardDivider() }
-                    Button { showingBreakdown = true } label: {
-                        ValueRow(icon: row.icon, title: row.title, value: row.count.formatted(), chevron: true)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(Text("Shows every kind"))
-                }
-            }
-        }
-    }
-
-    private func count() async {
-        guard relayManager.isRunning else { return }
-        isCounting = true
-        let fresh = await statsService.fetchCountsByKind()
-        // An incomplete answer comes back empty; keep what is shown.
-        if !fresh.isEmpty { counts = fresh }
-        isCounting = false
     }
 }
 
