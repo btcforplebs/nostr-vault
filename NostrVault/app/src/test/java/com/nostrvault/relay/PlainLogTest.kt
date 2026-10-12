@@ -96,7 +96,7 @@ class PlainLogTest {
         assertTrue(out.contains("https://cdn.example.com"))
         assertTrue(out.contains("wss://[private-relay]"))
         assertEquals("a private relay", PlainLog.relayHost("relay=ws://umbrel:4848 x"))
-        assertEquals("nos.lol", PlainLog.relayHost("relay=wss://nos.lol x"))
+        assertEquals("relay.damus.io", PlainLog.relayHost("relay=wss://relay.damus.io x"))
     }
 
     @Test

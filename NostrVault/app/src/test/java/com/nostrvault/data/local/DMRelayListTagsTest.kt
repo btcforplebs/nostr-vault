@@ -13,7 +13,7 @@ class DMRelayListTagsTest {
 
     @Test
     fun stillReadsLegacyRTagsAndDropsDuplicates() {
-        val tags = listOf(listOf("r", "wss://nos.lol"), listOf("relay", "wss://nos.lol"), listOf("relay", "not a url"))
-        assertEquals(listOf("wss://nos.lol"), ProfileRepository.parseDMRelayListTags(tags))
+        val tags = listOf(listOf("r", "wss://relay.damus.io"), listOf("relay", "wss://relay.damus.io"), listOf("relay", "not a url"))
+        assertEquals(listOf("wss://relay.damus.io"), ProfileRepository.parseDMRelayListTags(tags))
     }
 }

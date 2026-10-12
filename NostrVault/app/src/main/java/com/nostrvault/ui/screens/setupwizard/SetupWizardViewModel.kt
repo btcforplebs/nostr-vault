@@ -129,15 +129,7 @@ class SetupWizardViewModel @Inject constructor(
     val isAmberAvailable = _isAmberAvailable.asStateFlow()
 
     // Relays
-    internal val _wizardRelays = MutableStateFlow(
-        listOf(
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-            "wss://nostr.mom",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net",
-        )
-    )
+    internal val _wizardRelays = MutableStateFlow(HavenConfig.DEFAULT_READ_RELAYS)
     val wizardRelays = _wizardRelays.asStateFlow()
 
     internal val _newRelayInput = MutableStateFlow("")

@@ -54,9 +54,9 @@ class LiveChatService @Inject constructor(
          * for this, including mynostrspace.com — served zero kind-1311 events
          * of any kind. It stays in the list because other clients publish
          * there and it may come back, but it is not the one to rely on.
+         * nos.lol itself stopped answering and was dropped on 2026-10-12.
          */
         val STREAMING_RELAYS = listOf(
-            "wss://nos.lol",
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://relay.zap.stream",

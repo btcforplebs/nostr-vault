@@ -9,16 +9,16 @@ import org.junit.Test
 
 /** Mirrors iOS RelayCheckTests. */
 class RelayCheckTest {
-    private val defaults = listOf("wss://relay.primal.net", "wss://nos.lol", "wss://nostr.mom")
+    private val defaults = listOf("wss://relay.primal.net", "wss://nostr-pub.wellorder.net", "wss://relay.snort.social")
 
     @Test fun theirWriteRelaysComeFirstThenDefaultsWithoutDuplicates() {
         val tags = listOf(
             listOf("r", "wss://relay.damus.io"), listOf("r", "wss://nostr.wine/", "write"),
-            listOf("r", "wss://read.only", "read"), listOf("r", "WSS://NOS.LOL"), listOf("p", "x"),
+            listOf("r", "wss://read.only", "read"), listOf("r", "WSS://NOSTR-PUB.WELLORDER.NET"), listOf("p", "x"),
         )
         val rows = RelayCheck.rows(tags, defaults)
         assertEquals(
-            listOf("wss://relay.damus.io", "wss://nostr.wine", "wss://nos.lol", "wss://relay.primal.net", "wss://nostr.mom"),
+            listOf("wss://relay.damus.io", "wss://nostr.wine", "wss://nostr-pub.wellorder.net", "wss://relay.primal.net", "wss://relay.snort.social"),
             rows.map { it.url },
         )
         assertEquals(listOf(true, true, true, false, false), rows.map { it.isYours })
@@ -53,7 +53,7 @@ class RelayCheckTest {
             base[2].copy(result = Result.NotAnswering),
         )
         assertEquals("2 relays are ready to import from. 1 didn't answer, so we'll skip it.", RelayCheck.summary(rows))
-        assertEquals(listOf("wss://relay.primal.net", "wss://nos.lol"), RelayCheck.importList(rows))
+        assertEquals(listOf("wss://relay.primal.net", "wss://nostr-pub.wellorder.net"), RelayCheck.importList(rows))
         rows = listOf(rows[0], rows[1].copy(result = Result.Refused, isOn = false), rows[2])
         assertEquals(
             "1 relay is ready to import from. 1 didn't answer, so we'll skip it. 1 won't share notes.",

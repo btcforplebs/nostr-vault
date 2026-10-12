@@ -68,12 +68,12 @@ class LiveStreamTest {
     @Test fun `the relays tag names where the chat is`() {
         val s = LiveStream.from(host, 1L, listOf(
             listOf("d", "x"),
-            listOf("relays", "wss://relay.damus.io", "wss://nos.lol", "https://not-a-relay"),
+            listOf("relays", "wss://relay.damus.io", "wss://relay.snort.social", "https://not-a-relay"),
         ))!!
         // A stream's own hint is the only trustworthy source of its chat relay
         // — the relay everyone's docs name for this served zero chat when
         // measured. Non-websocket entries are not relays.
-        assertEquals(listOf("wss://relay.damus.io", "wss://nos.lol"), s.chatRelays)
+        assertEquals(listOf("wss://relay.damus.io", "wss://relay.snort.social"), s.chatRelays)
     }
 
     @Test fun `a web page is not a playable stream`() {

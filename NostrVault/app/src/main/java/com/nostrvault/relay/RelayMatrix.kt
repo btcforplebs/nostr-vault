@@ -188,16 +188,16 @@ object RelayMatrix {
 
     // Recommended
 
-    /** Well-known public relays, timed for "Fastest from this device". Same as iOS. */
+    /**
+     * Well-known public relays, timed for "Fastest from this device". Same as
+     * iOS. nos.lol, nostr.mom and offchain.pub left on 2026-10-12 ([DeadRelays]).
+     */
     val wellKnownRelays = listOf(
         "wss://relay.damus.io",
         "wss://relay.primal.net",
-        "wss://nos.lol",
         "wss://relay.snort.social",
         "wss://relay.btcforplebs.com",
-        "wss://nostr.mom",
         "wss://nostr-pub.wellorder.net",
-        "wss://offchain.pub",
         "wss://relay.nostr.bg",
         "wss://nostr.oxtr.dev",
         "wss://relay.nostr.net",

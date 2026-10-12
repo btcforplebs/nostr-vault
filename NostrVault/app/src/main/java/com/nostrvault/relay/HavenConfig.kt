@@ -106,13 +106,10 @@ data class HavenConfig(
 
     // DM Relays — the Go relay merges these with importSeedRelays for the
     // inbox tagged-event (#p = owner) subscription. Was hardcoded empty on
-    // Android, so tagged notes on relays not in importSeedRelays (e.g.
-    // nos.lol) never reached the inbox. Mirrors iOS HavenConfig.dmRelays.
-    val dmRelays: List<String> = listOf(
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://relay.btcforplebs.com",
-    ),
+    // Android, so tagged notes on relays not in importSeedRelays never
+    // reached the inbox. Mirrors iOS HavenConfig.dmRelays. relay.damus.io
+    // replaced nos.lol, which stopped answering (2026-10-12, see [DeadRelays]).
+    val dmRelays: List<String> = DEFAULT_DM_RELAYS,
     /**
      * When [dmRelays] last changed, in Unix seconds: the created_at of a
      * published kind 10050 this device adopted, or the time this device
@@ -122,21 +119,10 @@ data class HavenConfig(
     /** Never connect: published as the blocked relay list (NIP-51 kind 10006). See [RelayBlocklist]. */
     val blockedRelays: List<String> = emptyList(),
 
-    // Relay URLs
-    val inboxRelays: List<String>? = listOf(
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
-        "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
-    ),
-    val feedRelays: List<String>? = listOf(
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
-        "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
-    ),
+    // Relay URLs. nos.lol and nostr.mom were dropped and relay.damus.io and
+    // relay.snort.social added on 2026-10-12 (see [DeadRelays]).
+    val inboxRelays: List<String>? = DEFAULT_READ_RELAYS,
+    val feedRelays: List<String>? = DEFAULT_READ_RELAYS,
 
     // Haven Relay (wss:// URL to a remote Haven relay to sync missed notes)
     val macRelayURL: String = "",
@@ -303,6 +289,26 @@ data class HavenConfig(
 
         /** The config for an install with none saved yet (or just reset). */
         fun newInstall(): HavenConfig = HavenConfig(feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS)
+
+        /**
+         * Default inbox/feed relays. Every entry answered a handshake from
+         * this network on 2026-10-12; keep it that way, since several features
+         * ask only the first three (see [DeadRelays]). Same as iOS.
+         */
+        val DEFAULT_READ_RELAYS: List<String> = listOf(
+            "wss://relay.primal.net",
+            "wss://relay.damus.io",
+            "wss://relay.btcforplebs.com",
+            "wss://nostr-pub.wellorder.net",
+            "wss://relay.snort.social",
+        )
+
+        /** Default DM (kind 10050) relays. Same as iOS. */
+        val DEFAULT_DM_RELAYS: List<String> = listOf(
+            "wss://relay.primal.net",
+            "wss://relay.damus.io",
+            "wss://relay.btcforplebs.com",
+        )
     }
 
 
@@ -379,13 +385,7 @@ data class HavenConfig(
 
     /** Active inbox/feed relays (user-configured or defaults). */
     val activeInboxRelays: List<String>
-        get() = inboxRelays ?: listOf(
-            "wss://relay.primal.net",
-            "wss://nos.lol",
-            "wss://nostr.mom",
-            "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net",
-        )
+        get() = inboxRelays ?: DEFAULT_READ_RELAYS
 
     /** Active feed relays, including the Haven relay if configured. */
     val activeFeedRelays: List<String>

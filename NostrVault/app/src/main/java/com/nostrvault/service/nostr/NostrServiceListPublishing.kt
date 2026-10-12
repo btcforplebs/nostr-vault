@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.relay.DMInbox
+import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
@@ -63,11 +64,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         var relays = dmRelays.filter { !isLoopbackRelay(it) }
         // Never publish an empty list — fall back to public defaults.
         if (relays.isEmpty()) {
-            relays = listOf(
-                "wss://relay.primal.net",
-                "wss://nos.lol",
-                "wss://relay.btcforplebs.com",
-            )
+            relays = HavenConfig.DEFAULT_DM_RELAYS
         }
         // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
         // which no other client reads — they saw an empty list and had nowhere
