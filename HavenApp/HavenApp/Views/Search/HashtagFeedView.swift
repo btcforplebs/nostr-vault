@@ -83,9 +83,10 @@ struct HashtagFeedView: View {
             interests.refreshIfNeeded()
             restart()
         }
-        // The follow list and the trust graph can arrive after the sheet opens.
-        .onChange(of: feedService.followedPubkeys.count) { _, _ in restart() }
-        .onChange(of: feedService.wotPubkeys.count) { _, _ in restart() }
+        // Your web changed: the follow list or trust graph arrived after the
+        // sheet opens, you followed someone here, or you switched accounts. A count
+        // missed a swap that kept the size, so this listens to the web itself.
+        .onReceive(TrustPathService.webChanged) { restart() }
         .onChange(of: everyone) { _, _ in restart() }
         .onDisappear { model.stop() }
         .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingEveryoneWarning) {
