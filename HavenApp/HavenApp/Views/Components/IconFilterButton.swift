@@ -329,6 +329,10 @@ struct FilterNoteView: View {
     static func capsule(for note: FilterNote) -> some View {
         HStack(spacing: 7) {
             Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
+                // Symbols differ in height (square.stack is 4 pt taller than
+                // circle at 160%); pinned to the text's line so the text sets
+                // the pill's height and every note is as tall as `template`.
+                .frame(height: Self.lineHeight)
                 .foregroundColor(note.dimmed ? .primary.opacity(dimmedOpacity) : .havenPurple)
             FilterNoteLine(textScale: CGFloat(ConfigService.shared.config.textSizeScale)) {
                 Text(note.title)
@@ -357,10 +361,21 @@ struct FilterNoteView: View {
         .accessibilityHidden(true)
     }
 
+    /// The line height of the pill's text at the current text size; the
+    /// icon is pinned to it, so the text alone sets the pill's height.
+    static var lineHeight: CGFloat {
+        let size = 13 * CGFloat(ConfigService.shared.config.textSizeScale)
+        #if canImport(UIKit)
+        return UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
+        #else
+        return NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: size, weight: .semibold))
+        #endif
+    }
+
     #if os(macOS)
     /// An invisible one-line pill, as tall as any note at the current text
-    /// size: every note is one line in the same font. `filterNoteHost` on
-    /// macOS sizes its permanent slot by it.
+    /// size: every note is one line in the same font, with its icon pinned
+    /// to that line. `filterNoteHost` on macOS sizes its permanent slot by it.
     static var template: some View {
         capsule(for: FilterNote(icon: "circle", text: "Ag")).hidden()
     }
@@ -377,8 +392,8 @@ extension View {
     /// grows. Never in the layout flow, so a tap moves nothing; when the
     /// list is scrolled it may sit over content, and still takes no taps.
     /// Apply once per screen, on the content view under the toolbar. When
-    /// the screen draws its own header inside that content (the Mac Vault),
-    /// pass the header's height as `topInset`.
+    /// the screen draws its own header inside that content, pass the
+    /// header's height as `topInset`, so the slot starts under it.
     ///
     /// On macOS the header is in flow and the content starts right under
     /// it, so there is no gap to draw into: the host instead reserves a
@@ -387,7 +402,10 @@ extension View {
     /// not a note shows, and draws the pill in it. Always there, so the
     /// content never jumps; sized by the text, so the pill never reaches
     /// the first row. A scroll view's content passes under it like a
-    /// safe area, and its pinned headers stick below it.
+    /// safe area, and its pinned headers stick below it. Apply it to the
+    /// content under the header and leave `topInset` 0 (the Mac Vault does):
+    /// on macOS the inset pads the slot's content, so a header height there
+    /// is a blank band of that height above the slot.
     func filterNoteHost(_ model: FilterNoteModel, topInset: CGFloat = 0) -> some View {
         #if os(macOS)
         safeAreaInset(edge: .top, spacing: 0) {
