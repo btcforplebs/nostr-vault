@@ -5,33 +5,62 @@ extension ProfileFeedLoader {
     // MARK: - Follower pages
 
     /// Asks every relay for the next 100 lists naming this profile, older
-    /// than the oldest already seen.
+    /// than the oldest already seen; the first page, when none has been seen.
+    /// Pages have their own connections: the Followers list covers the
+    /// profile on iPhone, which stops the page's own load, and a page in
+    /// flight must not hold up the notes behind 7 MB of contact lists.
     func loadMoreFollowers() {
         flushPendingNotes()
-        guard followerPageSubId == nil, !followersExhausted, !profileClients.isEmpty,
-              let oldest = followerSeenAt.values.min() else { return }
+        let urls = profileRelayURLs
+        guard followerPageSubId == nil, !followersExhausted, !urls.isEmpty else { return }
+        var filter: [String: Any] = ["kinds": [3], "#p": [pubkey], "limit": 100]
+        if let oldest = followerSeenAt.values.min() { filter["until"] = Int(oldest) - 1 }
+        let subId = "followers-page-\(UUID().uuidString.prefix(6))"
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+              let str = String(data: data, encoding: .utf8) else { return }
         followerPageToken &+= 1
         let token = followerPageToken
-        let subId = "followers-page-\(UUID().uuidString.prefix(6))"
         followerPageSubId = subId
-        followerPageAnswers = 0
-        followerPageExpected = profileClients.count
+        followerPagePending = Set(urls.indices)
         followerPageCountBefore = followerSeenAt.count
-        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey], "until": Int(oldest) - 1, "limit": 100]
-        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
-              let str = String(data: data, encoding: .utf8) else {
-            followerPageSubId = nil
-            return
+
+        for (relay, url) in urls.enumerated() {
+            let client = WebSocketClient()
+            followerClients.append(client)
+            client.messageSubject
+                .receive(on: parseQueue)
+                .compactMap(ProfileRelayMessage.init)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] message in
+                    self?.handleProfileNoteMessage(message, relay: relay)
+                }
+                .store(in: &followerCancellables)
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak client] state in
+                    if state == .error { self?.followerPageRelayAnswered(relay) }
+                    if state == .connected { client?.send(text: str) }
+                }
+                .store(in: &followerCancellables)
+            client.connect(url: url)
         }
-        for client in profileClients { client.send(text: str) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.finishFollowerPage(token: token) }
+        // Fallback only: a fresh connection and up to 7 MB, so longer than
+        // the note pages get.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in self?.finishFollowerPage(token: token) }
+    }
+
+    /// EOSE, CLOSED or a failed connection: that relay is done with the page.
+    func followerPageRelayAnswered(_ relay: Int) {
+        guard followerPagePending.remove(relay) != nil, followerPagePending.isEmpty else { return }
+        finishFollowerPage(token: followerPageToken)
     }
 
     func finishFollowerPage(token: Int) {
-        guard token == followerPageToken, let subId = followerPageSubId else { return }
+        guard token == followerPageToken, followerPageSubId != nil else { return }
         flushPendingNotes()
-        closeProfileSubscription(subId)
+        disconnectFollowerClients()
         followerPageSubId = nil
+        followerPagePending.removeAll()
         if followerSeenAt.count > followerPageCountBefore {
             quietFollowerPages = 0
         } else {
@@ -41,6 +70,12 @@ extension ProfileFeedLoader {
             if quietFollowerPages >= 2 { followersExhausted = true }
         }
         followerPagesDone += 1
+    }
+
+    private func disconnectFollowerClients() {
+        for client in followerClients { client.disconnect() }
+        followerClients.removeAll()
+        followerCancellables.removeAll()
     }
 
     // MARK: - Note pages
