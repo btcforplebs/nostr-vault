@@ -47,6 +47,7 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts & Keys"
         case blocked = "Blocked"
+        case recentlyDeleted = "Recently Deleted"
         case followingBackup = "Following Backup"
         case wallet = "Wallet"
         case feed = "Feed"
@@ -84,6 +85,7 @@ struct SettingsView: View {
             switch self {
             case .accounts: return "person.badge.key"
             case .blocked: return "person.crop.circle.badge.xmark"
+            case .recentlyDeleted: return "trash"
             case .followingBackup: return "person.crop.circle.badge.clock"
             case .wallet: return "bitcoinsign.circle"
             case .feed: return "newspaper"
@@ -124,7 +126,7 @@ struct SettingsView: View {
         let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup]
         #endif
         return [
-            ("Account", [.accounts, .blocked, .followingBackup, .wallet]),
+            ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .wallet]),
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
@@ -592,6 +594,7 @@ struct SettingsView: View {
         switch tab {
         case .accounts: return .blue
         case .blocked: return .red
+        case .recentlyDeleted: return .gray
         case .appearance: return .purple
         case .feed: return .pink
         case .media: return .indigo
@@ -630,6 +633,7 @@ struct SettingsView: View {
             switch tab {
             case .accounts: AccountsSettingsView()
             case .blocked: BlockedSettingsView()
+            case .recentlyDeleted: RecentlyDeletedSettingsView()
             case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
             case .relays: RelayMatrixView()
