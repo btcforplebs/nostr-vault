@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.FeedNoteRemoval
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
@@ -403,7 +404,11 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
 
+    /** Deleting a parent or a reply takes it off this screen too; the focused note closes the screen. */
     fun deleteNote(noteId: String) {
+        _parentNotes.value = FeedNoteRemoval.without(_parentNotes.value, noteId)
+        _allReplies.value = FeedNoteRemoval.without(_allReplies.value, noteId)
+        _otherResponses.value = FeedNoteRemoval.without(_otherResponses.value, noteId)
         viewModelScope.launch {
             nostrService.deleteNote(noteId)
             feedService.removeNote(noteId)
