@@ -137,8 +137,11 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
                             .tabBarBottomPadding()
                             .frame(minHeight: viewportHeight, alignment: .top)
                     }
-                    .frame(maxWidth: 720)
-                    .frame(maxWidth: .infinity)
+                    // Top, not centred: the notes' lazy stack can come out
+                    // taller when placed than when measured, and centring
+                    // split the extra, sliding the header up under the banner.
+                    .frame(maxWidth: 720, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
             // Holds the note you are reading in place while notes arrive from
