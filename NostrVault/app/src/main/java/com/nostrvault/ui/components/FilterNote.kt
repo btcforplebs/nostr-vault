@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -86,24 +87,31 @@ data class FilterNote(
 /**
  * Holds the showing note. [show] is a tap: the text replaces cleanly and the
  * one 2 s timer restarts. [update] is a late result (a count that landed): it
- * changes the text only while the note is still showing, keeps whatever time
- * is left on the timer, and is a no-op once the note has gone, so the pill
- * never pops back and a repeating signal can't pin it. iOS `FilterNoteModel`.
+ * changes the text only while the note is still showing, keeps the time left
+ * (raised to a short floor so the count is readable, never past a cap after
+ * the tap), and is a no-op once the note has gone, so the pill never pops
+ * back and a repeating signal can't pin it. iOS `FilterNoteModel`.
  */
 @Stable
 class FilterNoteState internal constructor(private val scope: CoroutineScope) {
     var note: FilterNote? by mutableStateOf(null)
         private set
     private var fade: Job? = null
+    private var shownAt = 0L
+    private var hidesAt = 0L
 
     fun show(note: FilterNote) {
         this.note = note
-        restartTimer()
+        shownAt = SystemClock.elapsedRealtime()
+        hideAt(shownAt + DURATION_MS)
     }
 
     fun update(note: FilterNote) {
         if (this.note == null) return
         this.note = note
+        // Keep the time left, extended to the floor, within the cap.
+        val floor = minOf(SystemClock.elapsedRealtime() + UPDATE_FLOOR_MS, shownAt + MAX_DURATION_MS)
+        if (floor > hidesAt) hideAt(floor)
     }
 
     fun hide() {
@@ -112,12 +120,22 @@ class FilterNoteState internal constructor(private val scope: CoroutineScope) {
         note = null
     }
 
-    private fun restartTimer() {
+    private fun hideAt(at: Long) {
+        hidesAt = at
         fade?.cancel()
         fade = scope.launch {
-            delay(2_000)
+            delay(at - SystemClock.elapsedRealtime())
             this@FilterNoteState.note = null
         }
+    }
+
+    private companion object {
+        /** `show()` gives the pill this long. */
+        const val DURATION_MS = 2_000L
+        /** `update()` leaves at least this long, so a late count is readable… */
+        const val UPDATE_FLOOR_MS = 800L
+        /** …but never past this long after `show()`, so a repeating signal cannot pin the pill. */
+        const val MAX_DURATION_MS = 6_000L
     }
 }
 
@@ -232,6 +250,8 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             softWrap = false,
+                            // "…" as on iOS; the default clips mid-glyph.
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

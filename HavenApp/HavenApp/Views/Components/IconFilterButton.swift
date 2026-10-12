@@ -188,36 +188,53 @@ struct FilterNote: Equatable {
 /// Holds the showing note. `show` is a tap: the text replaces cleanly and
 /// the one 2 s timer restarts. `update` is a late result (a count that
 /// landed): it changes the text only while the note is still showing, keeps
-/// whatever time is left on the timer, and is a no-op once the note has
-/// gone, so the pill never pops back and a repeating signal can't pin it.
+/// the time left (raised to a short floor so the count is readable, never
+/// past a cap after the tap), and is a no-op once the note has gone, so
+/// the pill never pops back and a repeating signal can't pin it.
 /// VoiceOver reads each out, since it's the only text the tap leaves.
 @MainActor
 final class FilterNoteModel: ObservableObject {
     @Published private(set) var note: FilterNote?
+    /// `show()` gives the pill this long.
+    static let duration: Duration = .seconds(2)
+    /// `update()` leaves at least this long, so a late count is readable…
+    static let updateFloor: Duration = .milliseconds(800)
+    /// …but never past this long after `show()`, so a repeating signal
+    /// cannot pin the pill.
+    static let maxDuration: Duration = .seconds(6)
     private var fade: Task<Void, Never>?
+    private var shownAt: ContinuousClock.Instant?
+    private var hidesAt: ContinuousClock.Instant?
 
     func show(_ note: FilterNote) {
         withAnimation(Motion.fade) { self.note = note }
         AccessibilityNotification.Announcement(note.text).post()
-        restartTimer()
+        let now = ContinuousClock.now
+        shownAt = now
+        hide(at: now + Self.duration)
     }
 
     func update(_ note: FilterNote) {
-        guard self.note != nil else { return }
+        guard self.note != nil, let hidesAt, let shownAt else { return }
         withAnimation(Motion.fade) { self.note = note }
         AccessibilityNotification.Announcement(note.text).post()
+        // Keep the time left, extended to the floor, within the cap.
+        let floor = min(ContinuousClock.now + Self.updateFloor, shownAt + Self.maxDuration)
+        if floor > hidesAt { hide(at: floor) }
     }
 
     func hide() {
         fade?.cancel()
         fade = nil
+        hidesAt = nil
         withAnimation(Motion.fade) { note = nil }
     }
 
-    private func restartTimer() {
+    private func hide(at instant: ContinuousClock.Instant) {
+        hidesAt = instant
         fade?.cancel()
         fade = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(until: instant, clock: .continuous)
             guard !Task.isCancelled else { return }
             withAnimation(Motion.fade) { self?.note = nil }
         }
