@@ -141,4 +141,31 @@ class DeletedPostsStoreTest {
         val saved = post(tags = listOf(listOf("p", other), listOf("nonce", "12345", "20")))
         assertEquals(listOf(listOf("p", other)), saved.republishDraft().tags)
     }
+
+    /** A passed NIP-40 expiry would make relays refuse the new event. */
+    @Test
+    fun `un-delete drops the expiration`() {
+        val saved = post(tags = listOf(listOf("p", other), listOf("expiration", "1700000100")))
+        assertEquals(listOf(listOf("p", other)), saved.republishDraft().tags)
+    }
+
+    /**
+     * Posted again with today's time, an old replaceable or addressable
+     * version would replace the newer one live at that address.
+     */
+    @Test
+    fun `replaceable and addressable kinds get no copy`() {
+        listOf(1, 6, 16, 20, 1068, 1111).forEach { assertTrue("$it", DeletedPost.keepsCopy(it)) }
+        listOf(0, 3, 10000, 10002, 19999, 30023, 30402, 39999).forEach { assertFalse("$it", DeletedPost.keepsCopy(it)) }
+    }
+
+    @Test
+    fun `changes are announced`() {
+        val store = DeletedPostsStore(directory)
+        val start = store.changes.value
+        store.save(post(), now)
+        assertEquals(start + 1, store.changes.value)
+        store.remove(post().id, me)
+        assertEquals(start + 2, store.changes.value)
+    }
 }

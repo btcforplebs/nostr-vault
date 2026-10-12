@@ -5,6 +5,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -49,7 +50,7 @@ class DeletedPostsStore internal constructor(private val directory: File) {
             val posts = listOf(post) + read(post.pubkey).filter { it.id != post.id }
             write(unexpired(posts, nowMs), post.pubkey)
         }
-        _changes.value++
+        _changes.update { it + 1 }
     }
 
     /** Drops a copy: after un-delete, or Delete forever. */
@@ -59,7 +60,7 @@ class DeletedPostsStore internal constructor(private val directory: File) {
             val kept = posts.filter { it.id != id }
             if (kept.size != posts.size) write(kept, account)
         }
-        _changes.value++
+        _changes.update { it + 1 }
     }
 
     private fun fileFor(account: String): File? {

@@ -53,12 +53,12 @@ class RecentlyDeletedSettingsViewModel @Inject constructor(
             _message.value = if (posted) {
                 "Posted again."
             } else {
-                "Couldn't post it again. Check that this account can sign, then try again."
+                "Couldn't post it again: it wasn't signed, or no relay took it. The copy is kept here."
             }
         }
     }
 
     fun deleteForever(post: DeletedPost) {
-        store.remove(post.id, post.pubkey)
+        viewModelScope.launch(Dispatchers.IO) { store.remove(post.id, post.pubkey) }
     }
 }

@@ -33,13 +33,25 @@ data class DeletedPost(
      * in the same thread. `created_at` is not carried over: the signer stamps
      * the moment of un-delete.
      *
-     * A `nonce` tag is dropped. It claims proof of work for the *old* event
+     * Two tags are dropped. `nonce` claims proof of work for the *old* event
      * id, which the new id does not have; the signer mines a fresh one when
-     * proof of work is on.
+     * proof of work is on. `expiration` (NIP-40) may already have passed,
+     * and relays refuse or drop an event that is already expired.
      */
-    fun republishDraft(): Draft = Draft(kind, content, tags.filter { it.firstOrNull() != "nonce" })
+    fun republishDraft(): Draft = Draft(kind, content, tags.filter { it.firstOrNull() !in DROPPED_TAGS })
 
     companion object {
+        private val DROPPED_TAGS = setOf("nonce", "expiration")
+
+        /**
+         * Whether a deleted event of [kind] gets a copy. Replaceable and
+         * addressable kinds (0, 3, 10000–19999, 30000–39999) do not: posted
+         * again with today's time, an old version would replace whatever
+         * newer version is live at that address.
+         */
+        fun keepsCopy(kind: Int): Boolean =
+            !(kind == 0 || kind == 3 || kind in 10000 until 20000 || kind in 30000 until 40000)
+
         /** Words the Recently Deleted screen shows next to Un-delete. */
         const val UNDELETE_NOTE =
             "Un-delete posts it again as a new post. Likes and replies on the old post don't come back."
