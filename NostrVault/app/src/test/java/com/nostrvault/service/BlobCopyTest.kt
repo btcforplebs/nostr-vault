@@ -43,7 +43,7 @@ class BlobCopyTest {
         assertEquals("Couldn't find the server's address.", reason(copyFailure(UnknownHostException("x"))))
         assertEquals("The server stopped answering.", reason(copyFailure(SocketTimeoutException("x"))))
         assertTrue(copyFailure(SocketTimeoutException("x")).worthRetry)
-        assertEquals("Stopped.", reason(copyFailure(IOException("Canceled"))))
+        assertEquals("The connection dropped.", reason(copyFailure(IOException("reset"))))
     }
 
     @Test

@@ -395,7 +395,8 @@ final class MediaServersModel: ObservableObject {
         copyTask = Task { await copyToServers() }
     }
 
-    /// Stops after the files already on their way; the rest stay waiting.
+    /// Stops now. Files already on their way are cut off and go back to
+    /// waiting with the rest; what had arrived stays copied.
     func stopCopy() {
         copyTask?.cancel()
     }
@@ -415,6 +416,8 @@ final class MediaServersModel: ObservableObject {
         service.appLog("copy to servers: \(work.count) file(s)")
         var done = 0
         let jobs = files.filter { work.contains($0.id) }.map { (id: $0.id, url: $0.url, servers: $0.servers) }
+        // Shared by every file: a server that refuses the key is asked once.
+        let run = BlobCopyRun()
         // One signature per batch, not per file: with a remote signer every
         // signature is a round trip, and maybe a prompt to approve.
         for start in stride(from: 0, to: jobs.count, by: Self.filesPerSignature) {
@@ -436,7 +439,7 @@ final class MediaServersModel: ObservableObject {
             await withTaskGroup(of: (String, [String: BlobCopyOutcome]).self) { group in
                 func addNext() -> String? {
                     guard !Task.isCancelled, let job = iterator.next() else { return nil }
-                    group.addTask { (job.id, await service.copyStoredBlob(sha256: job.id, fileURL: job.url, to: job.servers, batchAuth: auth)) }
+                    group.addTask { (job.id, await service.copyStoredBlob(sha256: job.id, fileURL: job.url, to: job.servers, batchAuth: auth, run: run)) }
                     return job.id
                 }
                 for _ in 0..<2 {
@@ -482,9 +485,10 @@ final class MediaServersModel: ObservableObject {
             guard case .failed(let reason) = outcome else { return nil }
             return .init(server: server, reason: reason)
         }.sorted { $0.server < $1.server }
+        let stopped = outcomes.values.contains(.stopped)
         update(id) { file in
             file.servers.removeAll { copiedTo.contains($0) }
-            file.status = failures.isEmpty ? .copied : .failed(failures)
+            file.status = !failures.isEmpty ? .failed(failures) : stopped ? .waiting : .copied
         }
     }
 

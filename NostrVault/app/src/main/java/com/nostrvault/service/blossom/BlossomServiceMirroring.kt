@@ -55,13 +55,29 @@ internal data class CopyAttempt(
     }
 }
 
-/** How long signing may take before the copy gives up on it. */
-private const val COPY_SIGN_LIMIT_MS = 45_000L
+/**
+ * What one copy run has learned about each server, so a server that turns the
+ * key down is asked once, not once a file with a new signature each time.
+ */
+class BlobCopyRun {
+    private val refused = mutableMapOf<String, String>()
+    private val singleOnly = mutableSetOf<String>()
+
+    /** The reason a server gave for refusing even a one-file signature. */
+    @Synchronized fun refusal(server: String): String? = refused[server]
+    @Synchronized fun markRefused(server: String, reason: String) { refused[server] = reason }
+    /** A server that took a one-file signature after turning down the batch one. */
+    @Synchronized fun wantsSingle(server: String): Boolean = server in singleOnly
+    @Synchronized fun markWantsSingle(server: String) { singleOnly += server }
+}
 
 /**
- * Copy clients: a minute without a byte moving is a stall, and one file gets
- * 15 minutes at most. The upload client allows 10 minutes of write silence,
- * three tries a file, which is how a copy could sit on one file for half an hour.
+ * Copy clients: 150 s with no byte moving is a stall, either way. That also
+ * covers the wait after the last byte, while a server works on a big file
+ * before it answers. No cap on a whole upload, so a big video on a slow line
+ * keeps going while bytes move. The upload client allows 10 minutes of write
+ * silence, three tries a file, which is how a copy could sit on one file for
+ * half an hour.
  */
 private val copyClients = mutableMapOf<OkHttpClient, OkHttpClient>()
 
@@ -69,9 +85,9 @@ private fun copyClient(base: OkHttpClient): OkHttpClient = synchronized(copyClie
     copyClients.getOrPut(base) {
         base.newBuilder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.MINUTES)
+            .writeTimeout(150, TimeUnit.SECONDS)
+            .readTimeout(150, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.MILLISECONDS)
             .build()
     }
 }
@@ -87,10 +103,12 @@ fun BlossomService.localBlobFile(sha256: String): File? {
 /**
  * One upload authorisation for several files: an `x` tag per hash. Signing
  * one per file meant a signer round trip (and maybe a prompt) per file, and
- * a copy that sat still while the signer did not answer. Blossom servers
- * match the `x` tag they need among all of them (khatru:
- * `FindWithValue("x", hash)`); one that refuses gets a single-file signature,
- * see [copyStoredBlob]. Null when the signer gave nothing in time.
+ * a copy that sat still while the signer did not answer. BUD-11 lets an
+ * authorisation carry several `x` tags; on `PUT /upload` the server needs one
+ * that matches `X-SHA-256`. A server that refuses it gets a single-file
+ * signature, see [copyStoredBlob]. No time limit of our own: the signer has
+ * one, and an approval that comes late must still count. Null when the signer
+ * gave nothing.
  */
 suspend fun BlossomService.makeBatchUploadAuth(hashes: List<String>): String? {
     if (hashes.isEmpty()) return null
@@ -100,9 +118,7 @@ suspend fun BlossomService.makeBatchUploadAuth(hashes: List<String>): String? {
     val content = if (hashes.size == 1) "Blossom upload ${hashes[0].take(8)}" else "Blossom upload of ${hashes.size} files"
     Log.i(TAG, "copy: asking the signer for one upload authorisation covering ${hashes.size} file(s)")
     val event = try {
-        withTimeoutOrNull(COPY_SIGN_LIMIT_MS) {
-            nostrService.signEventAsync(kind = AUTH_KIND, content = content, tags = tags, forceOwner = true)
-        }
+        nostrService.signEventAsync(kind = AUTH_KIND, content = content, tags = tags, forceOwner = true)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -135,54 +151,92 @@ fun BlossomService.signerProblem(): String = when (configStore.config.value.acti
  * Sends a file stored on this phone to each of [servers], streaming it from
  * disk, and says what happened at each one. [batchAuth] is a shared
  * authorisation from [makeBatchUploadAuth]; without one, or when a server
- * turns it down, the file is signed on its own.
+ * turns it down, the file is signed on its own, once for all servers. [run]
+ * remembers across files which servers refuse the key outright, so they are
+ * not sent to the signer again. Stop cancels the uploads in flight.
  */
 suspend fun BlossomService.copyStoredBlob(
     sha256: String,
     file: File,
     servers: List<String>,
     batchAuth: String? = null,
+    run: BlobCopyRun = BlobCopyRun(),
 ): Map<String, BlobCopyOutcome> = withContext(Dispatchers.IO) {
     val tag = sha256.take(8)
-    fun all(outcome: BlobCopyOutcome) = servers.associateWith { outcome }
     if (servers.isEmpty()) return@withContext emptyMap()
     val size = file.length()
     if (!file.isFile || size <= 0L) {
         Log.w(TAG, "copy $tag: the file is no longer on this phone")
-        return@withContext all(BlobCopyOutcome.Failed("This file is no longer on this phone."))
+        return@withContext servers.associateWith { BlobCopyOutcome.Failed("This file is no longer on this phone.") }
     }
     val contentType = sniffContentType(file)
     Log.i(TAG, "copy $tag ($size bytes, $contentType) to ${servers.joinToString()}")
 
-    suspend fun ownAuth(): String? = withTimeoutOrNull(COPY_SIGN_LIMIT_MS) {
-        createAuthHeader("upload", sha256).ifEmpty { null }
-    }
-    val auth = batchAuth ?: ownAuth()
-        ?: return@withContext all(BlobCopyOutcome.Failed(signerProblem()))
-
-    servers.map { server ->
-        async {
-            var attempt = putStoredBlob(file, size, sha256, contentType, server, auth)
-            // One more try for the failures that tend to pass: a server
-            // error, a dropped connection, a stall.
-            if (attempt.worthRetry && isActive) {
-                delay(2_000)
-                attempt = putStoredBlob(file, size, sha256, contentType, server, auth)
-            }
-            // A server that wants exactly one hash per signature.
-            if (attempt.authRefused && batchAuth != null && isActive) {
-                ownAuth()?.let { single -> attempt = putStoredBlob(file, size, sha256, contentType, server, single) }
-            }
-            when (val outcome = attempt.outcome) {
-                BlobCopyOutcome.Copied -> Log.i(TAG, "copy $tag to $server: done")
-                is BlobCopyOutcome.Failed -> Log.w(TAG, "copy $tag to $server failed: ${outcome.reason}")
-            }
-            server to attempt.outcome
+    val results = mutableMapOf<String, BlobCopyOutcome>()
+    val viaBatch = mutableListOf<String>()
+    val viaSingle = mutableListOf<String>()
+    for (server in servers) {
+        val refused = run.refusal(server)
+        when {
+            refused != null -> results[server] = BlobCopyOutcome.Failed(refused)
+            batchAuth != null && !run.wantsSingle(server) -> viaBatch += server
+            else -> viaSingle += server
         }
-    }.awaitAll().toMap()
+    }
+
+    suspend fun send(targets: List<String>, auth: String): Map<String, CopyAttempt> = coroutineScope {
+        targets.map { server ->
+            async {
+                var attempt = putStoredBlob(file, size, sha256, contentType, server, auth)
+                // One more try for the failures that tend to pass: a server
+                // error, a dropped connection, a stall.
+                if (attempt.worthRetry) {
+                    delay(2_000)
+                    attempt = putStoredBlob(file, size, sha256, contentType, server, auth)
+                }
+                server to attempt
+            }
+        }.awaitAll().toMap()
+    }
+
+    if (batchAuth != null && viaBatch.isNotEmpty()) {
+        for ((server, attempt) in send(viaBatch, batchAuth)) {
+            // Maybe a server that wants exactly one hash per signature.
+            if (attempt.authRefused) viaSingle += server else results[server] = attempt.outcome
+        }
+    }
+    if (viaSingle.isNotEmpty()) {
+        // The file's own signature, asked for once whatever the number of servers.
+        val single = createAuthHeader("upload", sha256).ifEmpty { null }
+        if (single == null) {
+            Log.w(TAG, "copy $tag: could not sign the upload")
+            val reason = BlobCopyOutcome.Failed(signerProblem())
+            viaSingle.forEach { results[it] = reason }
+        } else {
+            for ((server, attempt) in send(viaSingle, single)) {
+                results[server] = attempt.outcome
+                val outcome = attempt.outcome
+                if (attempt.authRefused && outcome is BlobCopyOutcome.Failed) {
+                    // It refuses the key itself: not on its list, unpaid.
+                    // No more signatures for it this run.
+                    run.markRefused(server, outcome.reason)
+                } else if (batchAuth != null && outcome == BlobCopyOutcome.Copied) {
+                    run.markWantsSingle(server)
+                }
+            }
+        }
+    }
+
+    results.forEach { (server, outcome) ->
+        when (outcome) {
+            BlobCopyOutcome.Copied -> Log.i(TAG, "copy $tag to $server: done")
+            is BlobCopyOutcome.Failed -> Log.w(TAG, "copy $tag to $server failed: ${outcome.reason}")
+        }
+    }
+    results
 }
 
-private fun BlossomService.putStoredBlob(
+private suspend fun BlossomService.putStoredBlob(
     file: File,
     size: Long,
     sha256: String,
@@ -205,7 +259,7 @@ private fun BlossomService.putStoredBlob(
         return CopyAttempt.failed("This server address isn't valid.")
     }
     return try {
-        copyClient(clientFor(base)).newCall(request).execute().use { response ->
+        copyClient(clientFor(base)).newCall(request).await().use { response ->
             if (response.isSuccessful) return CopyAttempt.copied
             val said = response.header("X-Reason") ?: response.body?.string()?.take(200)?.trim()
             copyFailure(response.code, said)
@@ -214,6 +268,22 @@ private fun BlossomService.putStoredBlob(
         if (e is CancellationException) throw e
         copyFailure(e)
     }
+}
+
+/**
+ * Runs the call without blocking, and cancels it when the coroutine is
+ * cancelled: Stop cuts off an upload in flight instead of waiting it out.
+ */
+private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { cancel() }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            if (cont.isActive) cont.resumeWith(Result.success(response)) else response.close()
+        }
+        override fun onFailure(call: Call, e: IOException) {
+            if (cont.isActive) cont.resumeWith(Result.failure(e))
+        }
+    })
 }
 
 internal fun copyFailure(status: Int, serverSays: String?): CopyAttempt {
@@ -225,7 +295,8 @@ internal fun copyFailure(status: Int, serverSays: String?): CopyAttempt {
         409 -> CopyAttempt.failed("The server already has a different file under this name (HTTP 409).$suffix")
         413 -> CopyAttempt.failed("Too big for this server (HTTP 413).$suffix")
         415 -> CopyAttempt.failed("The server doesn't take this type of file (HTTP 415).$suffix")
-        429 -> CopyAttempt.failed("The server asked us to slow down (HTTP 429). Try again in a minute.", retry = true)
+        // Shown only after the retry two seconds later was turned down too.
+        429 -> CopyAttempt.failed("The server asked us to slow down (HTTP 429). Wait a minute, then tap Retry.", retry = true)
         in 500..599 -> CopyAttempt.failed("The server had a problem (HTTP $status). Try again later.$suffix", retry = true)
         else -> CopyAttempt.failed("The server said no (HTTP $status).$suffix")
     }
@@ -237,11 +308,7 @@ internal fun copyFailure(error: Exception): CopyAttempt = when (error) {
     is ConnectException -> CopyAttempt.failed("The server isn't answering.", retry = true)
     is SSLException -> CopyAttempt.failed("Couldn't make a secure connection to the server.")
     is java.io.FileNotFoundException -> CopyAttempt.failed("This file is no longer on this phone.")
-    is IOException -> if (error.message?.contains("Canceled", ignoreCase = true) == true) {
-        CopyAttempt.failed("Stopped.")
-    } else {
-        CopyAttempt.failed("The connection dropped.", retry = true)
-    }
+    is IOException -> CopyAttempt.failed("The connection dropped.", retry = true)
     else -> CopyAttempt.failed(error.message ?: "Something went wrong.", retry = true)
 }
 

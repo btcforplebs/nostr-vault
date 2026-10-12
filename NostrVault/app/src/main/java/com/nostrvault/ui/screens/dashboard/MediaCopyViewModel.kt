@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.service.BlobCopyOutcome
+import com.nostrvault.service.BlobCopyRun
 import com.nostrvault.service.BlobPresence
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.copyStoredBlob
@@ -200,7 +201,10 @@ class MediaCopyViewModel @Inject constructor(
         copyJob = viewModelScope.launch { copyToServers() }
     }
 
-    /** Stops after the files already on their way; the rest stay waiting. */
+    /**
+     * Stops now. Files already on their way are cut off and go back to
+     * waiting with the rest; what had arrived stays copied.
+     */
     fun stopCopy() {
         copyJob?.cancel()
     }
@@ -219,6 +223,8 @@ class MediaCopyViewModel @Inject constructor(
         Log.i(TAG, "copy to servers: ${work.size} file(s)")
         var done = 0
         var stopped = false
+        // Shared by every file: a server that refuses the key is asked once.
+        val run = BlobCopyRun()
         try {
             // One signature per batch, not per file: with a remote signer every
             // signature is a round trip, and maybe a prompt to approve.
@@ -240,7 +246,7 @@ class MediaCopyViewModel @Inject constructor(
                             gate.withPermit {
                                 if (!isActive) return@withPermit
                                 update(setOf(job.hash)) { it.copy(status = MediaCopyFile.Status.Copying) }
-                                val outcomes = blossomService.copyStoredBlob(job.hash, job.file, job.servers, auth)
+                                val outcomes = blossomService.copyStoredBlob(job.hash, job.file, job.servers, auth, run)
                                 record(job.hash, outcomes)
                                 synchronized(this@MediaCopyViewModel) { done += 1 }
                                 _state.update { it.copy(copy = done to work.size) }
