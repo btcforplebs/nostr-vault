@@ -2,6 +2,8 @@ package com.nostrvault.service
 
 import com.nostrvault.data.local.DeletedNotesStore
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.relay.HavenBridge
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -38,12 +40,16 @@ fun FeedService.withoutDeletedNotes(notes: List<FeedNote>): List<FeedNote> =
 fun deleteRequestsFilter(owner: String): String =
     """{"kinds":[${DeletedNotes.REQUEST_KIND}],"authors":["$owner"],"limit":200}"""
 
-/** A kind 5 from a feed subscription, on the relay's reader thread. */
-fun FeedService.handleDeleteRequest(pubkey: String, tags: List<List<String>>) {
+/**
+ * A kind 5 from a feed subscription, as the relay sent it, on the relay's
+ * reader thread. Nothing is remembered until the event's signature checks
+ * out: a relay could otherwise hide any post under your name.
+ */
+fun FeedService.handleDeleteRequest(event: JsonObject, tags: List<List<String>>) {
     val ids = DeletedNotes.targets(tags)
     if (ids.isEmpty()) return
     scope.launch(Dispatchers.Main.immediate) {
-        if (!DeletedNotes.isOwnRequest(DeletedNotes.REQUEST_KIND, pubkey, deletedNotesAccount)) return@launch
+        if (!DeletedNotes.isOwnSignedRequest(event, deletedNotesAccount, HavenBridge::verifyEvent)) return@launch
         purgeDeletedNotes(ids)
     }
 }

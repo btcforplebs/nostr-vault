@@ -24,6 +24,31 @@ final class DeletedNotesTests: XCTestCase {
         XCTAssertFalse(DeletedNotes.isOwnRequest(kind: 5, pubkey: "", owner: ""))
     }
 
+    private func request(pubkey: String, kind: Int = 5) -> [String: Any] {
+        ["id": String(repeating: "e", count: 64), "kind": kind, "pubkey": pubkey,
+         "tags": [["e", gone]], "content": "", "sig": String(repeating: "f", count: 128)]
+    }
+
+    func testYourOwnSignedRequestCounts() {
+        XCTAssertTrue(DeletedNotes.isOwnSignedRequest(request(pubkey: me), owner: me) { _ in true })
+    }
+
+    /// A relay in the feed set can send a kind 5 under the owner's pubkey
+    /// naming any post. With a bad `sig` or a changed `id` it marks nothing.
+    func testRequestThatFailsVerificationMarksNothing() {
+        var verified = 0
+        XCTAssertFalse(DeletedNotes.isOwnSignedRequest(request(pubkey: me), owner: me) { _ in verified += 1; return false })
+        XCTAssertEqual(verified, 1, "the signature is checked, not assumed")
+    }
+
+    func testSomeoneElsesRequestIsDroppedBeforeVerification() {
+        var verified = 0
+        XCTAssertFalse(DeletedNotes.isOwnSignedRequest(request(pubkey: other), owner: me) { _ in verified += 1; return true })
+        XCTAssertFalse(DeletedNotes.isOwnSignedRequest(request(pubkey: me, kind: 1), owner: me) { _ in verified += 1; return true })
+        XCTAssertFalse(DeletedNotes.isOwnSignedRequest(["tags": [["e", gone]]], owner: me) { _ in verified += 1; return true })
+        XCTAssertEqual(verified, 0)
+    }
+
     func testDeletedPostAndItsRepostsAreHidden() {
         let deleted: Set<String> = [gone]
         XCTAssertTrue(DeletedNotes.hides(Note(id: gone), deleted: deleted))

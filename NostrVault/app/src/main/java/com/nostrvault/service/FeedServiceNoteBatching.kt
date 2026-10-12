@@ -101,7 +101,7 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
 
         when (kind) {
             // Your own deletion requests, from this device or another.
-            DeletedNotes.REQUEST_KIND -> handleDeleteRequest(pubkey, tags)
+            DeletedNotes.REQUEST_KIND -> handleDeleteRequest(eventObj, tags)
             7 -> {
                 // Reaction event — track engagement
                 val targetId = tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return

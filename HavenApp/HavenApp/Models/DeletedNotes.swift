@@ -30,6 +30,17 @@ enum DeletedNotes {
         kind == requestKind && !owner.isEmpty && pubkey == owner
     }
 
+    /// Your own request, and really yours: a relay can send a kind 5 under
+    /// your pubkey naming any post, and a forged one would hide that post on
+    /// this device for good. Only the id hash and signature prove you sent
+    /// it. `verify` is `NostrEventVerifier.isValid` in the app.
+    static func isOwnSignedRequest(_ event: [String: Any], owner: String, verify: ([String: Any]) -> Bool) -> Bool {
+        guard let kind = event["kind"] as? Int,
+              let pubkey = event["pubkey"] as? String,
+              isOwnRequest(kind: kind, pubkey: pubkey, owner: owner) else { return false }
+        return verify(event)
+    }
+
     /// Whether a row stays off screen: the deleted post, or a repost of it.
     static func hides(_ note: DeletableNote, deleted: Set<String>) -> Bool {
         guard !deleted.isEmpty else { return false }

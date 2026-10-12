@@ -41,13 +41,16 @@ extension FeedService {
         ["kinds": [DeletedNotes.requestKind], "authors": [owner], "limit": 200]
     }
 
-    /// A kind 5 from a feed subscription. Called on the feed's processing
-    /// queue; applies on the main actor like the other feed state changes.
-    nonisolated func handleDeleteRequest(pubkey: String, tags: [[String]]) {
-        let ids = DeletedNotes.targets(ofRequestTags: tags)
+    /// A kind 5 from a feed subscription, as the relay sent it. Called on
+    /// the feed's processing queue; applies on the main actor like the other
+    /// feed state changes. Nothing is remembered until the event's signature
+    /// checks out: a relay could otherwise hide any post under your name.
+    nonisolated func handleDeleteRequest(_ event: [String: Any]) {
+        let ids = DeletedNotes.targets(ofRequestTags: event["tags"] as? [[String]] ?? [])
         guard !ids.isEmpty else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, DeletedNotes.isOwnRequest(kind: DeletedNotes.requestKind, pubkey: pubkey, owner: self.deletedNotesAccount) else { return }
+            guard let self,
+                  DeletedNotes.isOwnSignedRequest(event, owner: self.deletedNotesAccount, verify: NostrEventVerifier.isValid) else { return }
             self.purgeDeletedNotes(ids)
         }
     }

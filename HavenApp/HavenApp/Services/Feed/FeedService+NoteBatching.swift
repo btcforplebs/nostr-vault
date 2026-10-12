@@ -81,7 +81,7 @@ extension FeedService {
 
         // Your own deletion requests, from this device or another.
         if kind == DeletedNotes.requestKind {
-            handleDeleteRequest(pubkey: pubkey, tags: tags)
+            handleDeleteRequest(ev)
             return
         }
 
