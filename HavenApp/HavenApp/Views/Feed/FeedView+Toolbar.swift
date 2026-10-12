@@ -305,7 +305,7 @@ struct FeedToolbarState: Equatable {
         }
         if languages != old.languages {
             return FilterNote(icon: languages.isEmpty ? "character.bubble" : "character.bubble.fill",
-                              title: "Languages", setting: LanguageFilterMenuItems.summary(languages))
+                              title: "Languages", setting: Self.languageSetting(languages))
         }
         if autoLoad != old.autoLoad {
             return autoLoad
@@ -335,6 +335,13 @@ struct FeedToolbarState: Equatable {
             return Self.shownOrHidden("Engagement scores", icon: "chart.bar.fill", shown: engagement)
         }
         return nil
+    }
+
+    /// The picked languages, at most two by name: "English, Spanish +2".
+    /// Multi-select would otherwise push the setting past the pill's width.
+    static func languageSetting(_ codes: [String]) -> String {
+        guard codes.count > 2 else { return LanguageFilterMenuItems.summary(codes) }
+        return LanguageFilterMenuItems.summary(Array(codes.prefix(2))) + " +\(codes.count - 2)"
     }
 
     /// A show/hide toggle: "Reposts · shown", or "Reposts · hidden" with
