@@ -197,8 +197,30 @@ enum ContactManager {
     /// empty one, and never one that shrank drastically (`shouldBlockPublish`).
     /// A refused list is rolled back like a list the relays refused, so the
     /// screen never shows an unfollow that went nowhere.
-    static func mayPublish(tagCount: Int, lastFetchedCount: Int) -> Bool {
-        tagCount > 0 && !shouldBlockPublish(currentTagCount: tagCount, lastFetchedCount: lastFetchedCount)
+    ///
+    /// `unfollowFrom`: the size of the loaded list a single Unfollow tap was
+    /// made on. The guard stops a list that failed to load from wiping the
+    /// follows; one deliberate unfollow is not that, so it always passes,
+    /// even to an empty list (1 → 0) or to half (2 → 1).
+    static func mayPublish(tagCount: Int, lastFetchedCount: Int, unfollowFrom: Int? = nil) -> Bool {
+        if let unfollowFrom, unfollowFrom - tagCount == 1 { return true }
+        return tagCount > 0 && !shouldBlockPublish(currentTagCount: tagCount, lastFetchedCount: lastFetchedCount)
+    }
+
+    /// An account with no key here (added by npub only) can't sign a follow
+    /// list. A bunker signs for the account, so it isn't read-only.
+    static func isReadOnly(signingMode: String, hasKey: Bool) -> Bool {
+        signingMode != "nip46" && !hasKey
+    }
+
+    /// What to tell the user when a follow or unfollow was put back. "Try
+    /// again" only where trying again can work.
+    static func publishFailedMessage(follow: Bool, readOnly: Bool) -> String {
+        if readOnly {
+            return follow ? "This account is read-only. Add its key to follow."
+                          : "This account is read-only. Add its key to unfollow."
+        }
+        return follow ? "Couldn't follow, try again" : "Couldn't unfollow, try again"
     }
 
     /// Returns true if publishing the contact list should be BLOCKED because

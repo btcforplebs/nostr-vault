@@ -33,8 +33,8 @@ enum FollowActions {
     /// change was put back: say so, or the button just snaps back.
     static func publishFailed(_ name: String, follow: Bool) -> () -> Void {
         {
-            FollowNotificationManager.shared.add(
-                recipientName: name, kind: .failed(follow ? "Couldn't follow, try again" : "Couldn't unfollow, try again"))
+            FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
         }
     }
 

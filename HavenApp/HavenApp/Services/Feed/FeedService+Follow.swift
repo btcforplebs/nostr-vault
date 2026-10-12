@@ -74,7 +74,7 @@ extension FeedService {
             let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
             contactListPTags = result.pTags
             followedPubkeys = result.pubkeys
-            publishContactList(rollback: previous, onFailure: onPublishFailed)
+            publishContactList(rollback: previous, unfollowFrom: previous.pTags.count, onFailure: onPublishFailed)
             // Re-filter so the unfollowed author's notes disappear from the
             // Following feed immediately (the filter now excludes non-follows).
             recomputeFilteredNotes()
@@ -86,11 +86,14 @@ extension FeedService {
     }
 
     /// - rollback: the list before this edit. If it may not be published at
-    ///   all (empty, or shrunk past the safety check), signing fails, or every
-    ///   relay refuses the event, and nothing has changed the list since, it
-    ///   is put back so the screen never shows a follow that was not published.
+    ///   all (empty, shrunk past the safety check, or a read-only account),
+    ///   signing fails, or every relay refuses the event, and nothing has
+    ///   changed the list since, it is put back so the screen never shows a
+    ///   follow that was not published.
+    /// - unfollowFrom: set by a single Unfollow tap; see `ContactManager.mayPublish`.
     func publishContactList(
         rollback: (pTags: [[String]], pubkeys: [String])? = nil,
+        unfollowFrom: Int? = nil,
         onFailure: (() -> Void)? = nil
     ) {
         let attempted = contactListPTags
@@ -105,11 +108,18 @@ extension FeedService {
             }
             onFailure?()
         }
-        guard ContactManager.mayPublish(tagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount) else {
+        guard ContactManager.mayPublish(tagCount: contactListPTags.count, lastFetchedCount: lastFetchedContactCount,
+                                        unfollowFrom: unfollowFrom) else {
             #if DEBUG
             print("FeedService: BLOCKED contact list publish — \(contactListPTags.count) tags vs \(lastFetchedContactCount) fetched. Possible data loss.")
             #endif
             // After the caller's re-filter, so the rollback lands last.
+            DispatchQueue.main.async { fail(nil) }
+            return
+        }
+        // No key to sign with: don't try. `onFailure` reads the same check
+        // to say "read-only" instead of "try again".
+        guard !Self.activeAccountIsReadOnly else {
             DispatchQueue.main.async { fail(nil) }
             return
         }
@@ -132,6 +142,17 @@ extension FeedService {
                 Task { @MainActor in fail(event.created_at) }
             })
         }
+    }
+
+    /// The active account has no key here and no bunker, so nothing it
+    /// publishes can be signed.
+    static var activeAccountIsReadOnly: Bool {
+        let config = ConfigService.shared.config
+        let activeNpub = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasKey = activeNpub.isEmpty || activeNpub == config.ownerNpub
+            ? !config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil
+            : ConfigService.shared.hasCredential(forNpub: activeNpub)
+        return ContactManager.isReadOnly(signingMode: config.activeSigningMode(), hasKey: hasKey)
     }
 
     /// Records the timestamp + a durable backup of a contact list we just signed,

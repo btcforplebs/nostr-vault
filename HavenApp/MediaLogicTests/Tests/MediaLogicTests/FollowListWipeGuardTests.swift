@@ -84,4 +84,27 @@ final class FollowListEOSETallyTests: XCTestCase {
         XCTAssertTrue(ContactManager.mayPublish(tagCount: 2, lastFetchedCount: 3), "One unfollow from a short list")
         XCTAssertTrue(ContactManager.mayPublish(tagCount: 19, lastFetchedCount: 20))
     }
+
+    /// One deliberate Unfollow on a loaded list always publishes, even when
+    /// it empties or halves the list. Every other publish keeps the guard.
+    func testSingleUnfollowPassesTheGuard() {
+        XCTAssertTrue(ContactManager.mayPublish(tagCount: 0, lastFetchedCount: 1, unfollowFrom: 1), "1 → 0")
+        XCTAssertTrue(ContactManager.mayPublish(tagCount: 1, lastFetchedCount: 2, unfollowFrom: 2), "2 → 1")
+        XCTAssertTrue(ContactManager.mayPublish(tagCount: 11, lastFetchedCount: 30, unfollowFrom: 12), "Half of the fetched count")
+        XCTAssertFalse(ContactManager.mayPublish(tagCount: 0, lastFetchedCount: 1), "Not an unfollow")
+        XCTAssertFalse(ContactManager.mayPublish(tagCount: 0, lastFetchedCount: 5, unfollowFrom: 5), "More than one removed")
+        XCTAssertFalse(ContactManager.mayPublish(tagCount: 9, lastFetchedCount: 20, unfollowFrom: 20), "More than one removed")
+    }
+
+    /// A read-only account is told so; only a refusal that can clear says "try again".
+    func testReadOnlyAccountIsNotToldToTryAgain() {
+        XCTAssertTrue(ContactManager.isReadOnly(signingMode: "local", hasKey: false))
+        XCTAssertFalse(ContactManager.isReadOnly(signingMode: "local", hasKey: true))
+        XCTAssertFalse(ContactManager.isReadOnly(signingMode: "nip46", hasKey: false), "A bunker signs")
+        XCTAssertEqual(ContactManager.publishFailedMessage(follow: true, readOnly: true),
+                       "This account is read-only. Add its key to follow.")
+        XCTAssertEqual(ContactManager.publishFailedMessage(follow: false, readOnly: true),
+                       "This account is read-only. Add its key to unfollow.")
+        XCTAssertEqual(ContactManager.publishFailedMessage(follow: false, readOnly: false), "Couldn't unfollow, try again")
+    }
 }
