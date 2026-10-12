@@ -81,6 +81,7 @@ extension NostrService {
             events = NoteDeletion.without(events, noteId: id)
             eventUpdateSubject.send()
             NotificationCenter.default.post(name: .havenOwnEventsDeleted, object: Set([id]))
+            DeletedNotesStore.shared.markDeleted([id], account: activeHexPubkey)
         }
     }
 
@@ -116,6 +117,7 @@ extension NostrService {
         noteMedia.removeAll { $0.pubkey == activeHexPubkey && $0.url.absoluteString.lowercased().contains(hash) }
         eventUpdateSubject.send()
         NotificationCenter.default.post(name: .havenOwnEventsDeleted, object: ids)
+        DeletedNotesStore.shared.markDeleted(ids, account: activeHexPubkey)
         return targets.count
     }
 }

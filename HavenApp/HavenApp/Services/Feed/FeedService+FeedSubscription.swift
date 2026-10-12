@@ -386,6 +386,14 @@ extension FeedService {
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
         }
+
+        // Your own deletion requests (kind 5), so a post deleted on another
+        // device leaves this one too. No `since`: an old request still counts.
+        let delReq = ["REQ", "del-\(subId)", Self.deleteRequestsFilter(owner: ownerHex)] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: delReq),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
+        }
     }
 
     /// Combined subscription — sends primary + auxiliary at once. Used for
@@ -464,6 +472,14 @@ extension FeedService {
         ]
         let outZapsReq = ["REQ", "zaps-out-\(subId)", outgoingZapsFilter] as [Any]
         if let data = try? JSONSerialization.data(withJSONObject: outZapsReq),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
+        }
+
+        // Your own deletion requests (kind 5), so a post deleted on another
+        // device leaves this one too. No `since`: an old request still counts.
+        let delReq = ["REQ", "del-\(subId)", Self.deleteRequestsFilter(owner: ownerHex)] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: delReq),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
         }

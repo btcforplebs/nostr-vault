@@ -13,4 +13,10 @@ enum NoteDeletion {
     static func without<Event: Identifiable>(_ events: [Event], noteId: Event.ID) -> [Event] {
         events.filter { $0.id != noteId }
     }
+
+    /// `events` without the deleted posts. Nothing else moves.
+    static func without<Event: Identifiable>(_ events: [Event], noteIds: Set<Event.ID>) -> [Event] {
+        guard !noteIds.isEmpty else { return events }
+        return events.filter { !noteIds.contains($0.id) }
+    }
 }

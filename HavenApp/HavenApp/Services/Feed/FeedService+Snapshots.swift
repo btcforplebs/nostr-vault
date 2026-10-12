@@ -46,8 +46,8 @@ extension FeedService {
     @discardableResult
     func restoreSnapshot(forKey key: String) -> Bool {
         guard let snap = accountSnapshots[key] else { return false }
-        notes = snap.notes
-        parentNotesCache = snap.parentNotesCache
+        notes = withoutDeletedNotes(snap.notes)
+        parentNotesCache = withoutDeletedNotes(snap.parentNotesCache)
         followedPubkeys = snap.followedPubkeys
         extendedNetworkPubkeys = snap.extendedNetworkPubkeys
         seenIds = snap.seenIds
@@ -174,7 +174,7 @@ extension FeedService {
         // snapshots to disk; applied, they show a blank feed with no loading
         // state. Treat one as missing so the caller loads the account instead.
         guard let diskSnap = loadDiskSnapshot(forKey: key), !diskSnap.notes.isEmpty else { return false }
-        notes = diskSnap.notes
+        notes = withoutDeletedNotes(diskSnap.notes)
         followedPubkeys = diskSnap.followedPubkeys
         extendedNetworkPubkeys = diskSnap.extendedNetworkPubkeys
         if !diskSnap.extendedNetworkPubkeys.isEmpty {
