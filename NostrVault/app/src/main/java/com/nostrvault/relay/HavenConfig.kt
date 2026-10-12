@@ -519,9 +519,15 @@ data class HavenConfig(
         (blockedNpubsPerAccount.values.flatten() + blockedNpubs.orEmpty())
             .map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
-    /** Blocked npubs for one account, falling back to the legacy flat list. */
+    /**
+     * Blocked npubs for one account. Only the owner falls back to the legacy
+     * flat list, while it has no list of its own: the legacy list is the
+     * owner's, and another account showing it copied it into that account's
+     * own list and published it as that account's mute list.
+     * iOS: ConfigService.blockedHexPubkeys(forAccount:).
+     */
     fun blockedFor(npub: String): List<String> =
-        blockedNpubsPerAccount[npub] ?: blockedNpubs ?: emptyList()
+        blockedNpubsPerAccount[npub] ?: if (npub == ownerNpub) blockedNpubs.orEmpty() else emptyList()
 
     /** Per-account push preferences, falling back to the global flags. */
     fun pushPrefsFor(npub: String): PushPrefs =
