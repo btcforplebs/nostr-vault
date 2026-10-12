@@ -116,7 +116,7 @@ struct VaultContentsSection: View {
                     }
                 }
             }
-            if model.countFailed || model.isCounting {
+            if model.countFailed || model.isCounting || model.publicOnly {
                 DashboardDivider()
                 statusLine
             }
@@ -130,7 +130,8 @@ struct VaultContentsSection: View {
             if model.isCounting { ProgressView().controlSize(.small) }
             Text(model.isCounting ? "Counting…"
                  : !relayManager.isRunning ? "Start your vault to count what's in it."
-                 : "Couldn't count. Pull down to try again.")
+                 : model.countFailed ? "Couldn't count. Pull down to try again."
+                 : RelayCountSession.publicOnlyNote)
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
             Spacer(minLength: 0)

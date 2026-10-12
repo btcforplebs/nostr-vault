@@ -9,6 +9,8 @@ struct EventKindBreakdownView: View {
     @State private var isLoading = true
     /// The last count did not get an answer from every relay.
     @State private var countFailed = false
+    /// The owner has no key, so /private and /chat were left out.
+    @State private var publicOnly = false
 
     private static let kindNames: [Int: String] = [
         0: "Profile Metadata",
@@ -93,6 +95,11 @@ struct EventKindBreakdownView: View {
                                     Text("Total Events")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
+                                    if publicOnly {
+                                        Text(RelayCountSession.publicOnlyNote)
+                                            .font(.appSystem(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                                 Spacer()
                             }
@@ -151,6 +158,7 @@ struct EventKindBreakdownView: View {
 
     private func reload() async {
         isLoading = true
+        publicOnly = !DMService.shared.canSignAsOwner()
         let fresh = await statsService.fetchCountsByKind()
         counts = fresh ?? [:]
         countFailed = fresh == nil

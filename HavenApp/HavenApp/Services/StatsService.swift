@@ -80,7 +80,8 @@ class StatsService: ObservableObject {
     /// Event counts per kind across the vault's relays, plus the total under
     /// key -1. One socket per relay pipelines every COUNT (`RelayCounter`,
     /// which AUTHs as the owner on /private and /chat). Nil unless every
-    /// relay answered every COUNT: a partial sum would undercount.
+    /// relay answered every COUNT: a partial sum would undercount. Without
+    /// the owner's key the total covers the public routes only.
     func fetchCountsByKind() async -> [Int: Int]? {
         let config = ConfigService.shared.config
         #if os(macOS)
@@ -90,12 +91,13 @@ class StatsService: ObservableObject {
         #endif
         guard let baseURL = URL(string: baseURLString) else { return nil }
 
-        let relayURLs = [
+        // Watch-only: /private and /chat can't be AUTHed, so count the rest.
+        let relayURLs = RelayCountSession.countable([
             baseURL,
             baseURL.appendingPathComponent("inbox"),
             baseURL.appendingPathComponent("private"),
             baseURL.appendingPathComponent("chat")
-        ]
+        ], canSignAsOwner: DMService.shared.canSignAsOwner())
 
         // Common Nostr kinds to query — covers profile, social, media, lists, long-form, zaps, DMs
         let kindsToQuery = [

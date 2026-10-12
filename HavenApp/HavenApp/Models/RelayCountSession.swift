@@ -36,6 +36,16 @@ struct RelayCountSession {
         authRoutes.contains(url.lastPathComponent)
     }
 
+    /// Shown where the counts would be when the owner has no key (watch-only):
+    /// /private and /chat can't be AUTHed, so only the public routes count.
+    static let publicOnlyNote = "Public events only. Add your key to count private ones."
+
+    /// The routes worth counting. Without a key the AUTH routes are left
+    /// out, so a watch-only vault gets public numbers, not "couldn't count".
+    static func countable(_ urls: [URL], canSignAsOwner: Bool) -> [URL] {
+        canSignAsOwner ? urls : urls.filter { !needsAuth($0) }
+    }
+
     let keys: Set<String>
     let prefix: String
     let needsAuth: Bool

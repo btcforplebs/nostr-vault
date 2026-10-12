@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.service.StatsService
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -50,6 +51,7 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
     val total by viewModel.totalEvents.collectAsState()
     val isCounting by viewModel.isCounting.collectAsState()
     val countFailed by viewModel.countFailed.collectAsState()
+    val publicOnly by viewModel.countsPublicOnly.collectAsState()
     val media by viewModel.media.collectAsState()
     val cache by viewModel.cache.collectAsState()
     val isClearingCache by viewModel.isClearingCache.collectAsState()
@@ -87,12 +89,12 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
                     row.kinds.forEach { BreakdownLine(it.title, count(it.count)) }
                 }
             }
-            if (isCounting || countFailed) {
+            if (isCounting || countFailed || publicOnly) {
                 DashDivider()
-                CountStatus(isCounting, relayStatus)
+                CountStatus(isCounting, countFailed, relayStatus)
             }
         } else {
-            CountStatus(isCounting, relayStatus)
+            CountStatus(isCounting, countFailed, relayStatus)
         }
 
         DashDivider()
@@ -158,9 +160,12 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
     }
 }
 
-/** Counting, the vault is off, or the last count did not get every relay's answer. */
+/**
+ * Counting, the vault is off, the last count did not get every relay's
+ * answer, or (watch-only) only the public endpoints were counted.
+ */
 @Composable
-private fun CountStatus(isCounting: Boolean, relayStatus: RelayForegroundService.RelayStatus) {
+private fun CountStatus(isCounting: Boolean, countFailed: Boolean, relayStatus: RelayForegroundService.RelayStatus) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -173,7 +178,8 @@ private fun CountStatus(isCounting: Boolean, relayStatus: RelayForegroundService
             when {
                 isCounting -> "Counting…"
                 relayStatus != RelayForegroundService.RelayStatus.RUNNING -> "Start your vault to count what's in it."
-                else -> "Couldn't count. Tap refresh to try again."
+                countFailed -> "Couldn't count. Tap refresh to try again."
+                else -> StatsService.PUBLIC_ONLY_NOTE
             },
             color = SecondaryText,
             fontSize = 13.sp,

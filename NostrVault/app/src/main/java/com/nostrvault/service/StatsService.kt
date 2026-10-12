@@ -52,15 +52,24 @@ class StatsService @Inject constructor(
 
         /**
          * Every endpoint the vault stores events on. An external relay folds
-         * them onto one URL, so it is asked (and counted) once.
+         * them onto one URL, so it is asked (and counted) once. A watch-only
+         * owner can't AUTH, so /private and /chat are left out and the
+         * counts cover the public endpoints (iOS `RelayCountSession.countable`).
          */
         internal fun countEndpoints(config: com.nostrvault.relay.HavenConfig): List<String> =
             listOfNotNull(
                 config.nostrURL,
                 config.localRelayURL("inbox"),
-                config.localRelayURL("private"),
-                config.localRelayURL("chat"),
+                config.localRelayURL("private").takeUnless { ownerIsWatchOnly(config) },
+                config.localRelayURL("chat").takeUnless { ownerIsWatchOnly(config) },
             ).distinct()
+
+        /** The owner was set up from a public key alone: no key to AUTH with. */
+        internal fun ownerIsWatchOnly(config: com.nostrvault.relay.HavenConfig): Boolean =
+            config.effectiveSigningMode(config.ownerNpub) == "browse"
+
+        /** Shown where the counts would be for a watch-only owner (iOS `RelayCountSession.publicOnlyNote`). */
+        const val PUBLIC_ONLY_NOTE = "Public events only. Add your key to count private ones."
 
         /** Each endpoint's counts summed per key; null when there were none, or one did not answer. */
         internal fun mergeEndpointCounts(perEndpoint: List<Map<Int, Int>?>): Map<Int, Int>? {

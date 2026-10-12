@@ -21,6 +21,11 @@ class StatsCountEndpointsTest {
         )
     }
 
+    @Test fun `a watch-only owner is counted on the public endpoints only`() {
+        val urls = StatsService.countEndpoints(HavenConfig(ownerNpub = owner, signingMode = "browse"))
+        assertEquals(listOf("ws://127.0.0.1:3355", "ws://127.0.0.1:3355/inbox"), urls)
+    }
+
     @Test fun `an external relay is asked once, not four times`() {
         val config = HavenConfig(ownerNpub = owner, useExternalRelay = true, externalRelayURL = "wss://relay.example.com")
         assertEquals(1, StatsService.countEndpoints(config).size)
