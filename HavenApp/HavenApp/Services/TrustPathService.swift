@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Finds and caches the Trust Path for an author. Runs only when Event Info
 /// opens, never while scrolling: a few follow lists, then the answer is cached
@@ -71,6 +72,22 @@ final class TrustPathService {
             cache[key] = result
         }
         return result
+    }
+
+    // MARK: - Changes
+
+    /// Fires on the main queue after your web changed: a follow, an unfollow,
+    /// the saved web reloaded, an account switch. Never on subscribe. It hops
+    /// to the main queue on purpose: `@Published` fires in willSet, so a
+    /// plain sink would still read the old follows.
+    static var webChanged: AnyPublisher<Void, Never> {
+        let feed = FeedService.shared
+        let follows = feed.$followedPubkeys.map { Set($0) }.removeDuplicates().dropFirst().map { _ in () }
+        let saved = feed.$wotPubkeys.removeDuplicates().dropFirst().map { _ in () }
+        let account = ConfigService.shared.$activeAccountHexPubkey.removeDuplicates().dropFirst().map { _ in () }
+        return follows.merge(with: saved, account)
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
     }
 
     // MARK: - Links

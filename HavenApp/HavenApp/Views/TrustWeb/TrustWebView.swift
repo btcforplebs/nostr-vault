@@ -107,7 +107,10 @@ struct TrustWebView: View {
     /// The WOT tab's trust card: who was tapped or searched, and how they
     /// reach you (nil while it's being traced).
     @State var card: String?
-    @State var cardPath: TrustPath?
+    /// Traced again on every follow or unfollow, so the card's line flips to
+    /// "You follow them" the moment you tap Follow (`LiveTrustPath`).
+    @StateObject var cardTrust = LiveTrustPath()
+    var cardPath: TrustPath? { cardTrust.path }
     @State var messagePubkey: String?
     /// The refresh button's run: which step, 0 to 3, and nil when idle.
     @State var refreshStep: Int?
@@ -206,22 +209,10 @@ struct TrustWebView: View {
         }
         .onChange(of: query) { _, text in searchRelays(text) }
         .onChange(of: layer) { _, _ in prepareLayerFaces() }
-        .onReceive(FeedService.shared.$followedPubkeys.dropFirst()) { follows in
-            // In place, so you stay wherever you'd gone on the globe.
-            guard isWOTTab, Set(follows) != myFollows else { return }
-            myFollows = Set(follows)
-            // Keep what the globe had already found around you.
-            var updated = Frame(center: me, ring: follows, path: path)
-            if let old = frames[me] {
-                updated.bridges = old.bridges
-                updated.seen = old.seen
-                updated.exhausted = old.exhausted
-                updated.chains = old.chains
-            }
-            frames[me] = updated
-            prepareFaces(me)
-            // Someone you unfollowed moves out to the haze; a new follow leaves it.
-            recomputeHaze()
+        .onReceive(TrustPathService.webChanged) {
+            // Every globe, not just the tab's: a follow from a post's or a
+            // profile's globe folds them into your web the same way.
+            foldInFollows()
         }
         .onReceive(NotificationCenter.default.publisher(for: .wotTabReselected)) { _ in
             guard isWOTTab else { return }

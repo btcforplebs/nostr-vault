@@ -6,23 +6,17 @@ extension TrustWebView {
     func openCard(_ pubkey: String) {
         withAnimation(Motion.fade) {
             card = pubkey
-            cardPath = nil
+            // From you, whoever is in the middle: which of your follows follow them.
+            cardTrust.track(pubkey)
         }
         nostrService.fetchMissingProfiles(for: [pubkey])
-        Task {
-            // From you, whoever is in the middle: which of your follows follow them.
-            let found = await TrustPathService.shared.path(for: pubkey)
-            guard card == pubkey else { return }
-            nostrService.fetchMissingProfiles(for: found.bridges)
-            withAnimation(Motion.fade) { cardPath = found }
-        }
     }
 
     func closeCard() {
         guard card != nil else { return }
         withAnimation(Motion.fade) {
             card = nil
-            cardPath = nil
+            cardTrust.track(nil)
         }
     }
 
@@ -67,6 +61,7 @@ extension TrustWebView {
                     .font(.appSystem(size: 13))
                     .foregroundColor(cardPath?.reach == .outside ? .secondary : .primary.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
+                    .animation(Motion.fade, value: cardPath)
                 Spacer(minLength: 0)
             }
             HStack(spacing: 8) {

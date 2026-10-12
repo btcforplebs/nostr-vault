@@ -21,6 +21,18 @@ final class TrustMapTests: XCTestCase {
         }.joined()
     }
 
+    func testWebFoldsInFollowsTheMomentTheyAreMade() {
+        let saved: Set = [key(1), key(2)]
+        let outsider = key(9)
+        XCTAssertFalse(TrustMap.web(saved: saved, follows: [key(1)]).contains(outsider))
+        // Following someone outside the saved web puts them in it at once.
+        XCTAssertEqual(TrustMap.web(saved: saved, follows: [key(1), outsider]), [key(1), key(2), outsider])
+        // Unfollowing only takes back what the follow added: the saved web stays.
+        XCTAssertEqual(TrustMap.web(saved: saved, follows: []), saved)
+        // No saved web: no graph, so nothing is claimed in or out.
+        XCTAssertEqual(TrustMap.web(saved: [], follows: [outsider]), [])
+    }
+
     func testDirectionComesFromTheKeyAndStaysPut() {
         // Longitude is the leading digits; height is the next eight.
         let front = TrustMap.direction(of: "00000000" + "80000000" + String(repeating: "f", count: 48))
