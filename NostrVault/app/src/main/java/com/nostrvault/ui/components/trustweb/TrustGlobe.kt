@@ -31,6 +31,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -122,7 +123,8 @@ internal fun TrustGlobe(
     /** A tap that lands on no one, e.g. to close the peek card. */
     onEmptyTap: () -> Unit,
 ) {
-    val scene = remember { GlobeScene(lite) }
+    val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
+    val scene = remember(phone) { GlobeScene(lite, phone) }
     val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val haptic = LocalHapticFeedback.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()

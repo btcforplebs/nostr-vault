@@ -443,16 +443,10 @@ final class TrustMapTests: XCTestCase {
     }
 
     func testTwoFiltersNarrowToWhoMatchesBoth() {
-        let matches: [TrustMap.Filter: Set<String>] = [.talk: ["a", "b", "c"], .followsBack: ["b", "c", "d"], .new: ["c"]]
+        let matches: [TrustMap.Filter: Set<String>] = [.talk: ["a", "b", "c"], .followsBack: ["b", "c", "d"]]
         XCTAssertEqual(TrustMap.lit(by: [.talk], matches: matches), ["a", "b", "c"])
         XCTAssertEqual(TrustMap.lit(by: [.talk, .followsBack], matches: matches), ["b", "c"])
-        XCTAssertEqual(TrustMap.lit(by: [.talk, .followsBack, .new], matches: matches), ["c"])
-        XCTAssertEqual(TrustMap.lit(by: [.new], matches: [:]), [])
-    }
-
-    func testNewcomersAreWhoJoinedSinceYouLooked() {
-        XCTAssertEqual(TrustMap.newcomers(web: ["a", "b", "c"], seen: ["a"]), ["b", "c"])
-        XCTAssertEqual(TrustMap.newcomers(web: ["a"], seen: nil), [])
+        XCTAssertEqual(TrustMap.lit(by: [.followsBack], matches: [:]), [])
     }
 
     func testFilterCountsReadAsSentences() {

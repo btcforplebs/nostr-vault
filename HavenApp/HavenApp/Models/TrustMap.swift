@@ -315,13 +315,12 @@ enum TrustMap {
     /// The WOT tab's filter icons: what kind of person, on top of the layer's
     /// how far out. Toggles; any mix can be on.
     enum Filter: String, CaseIterable, Hashable {
-        case talk, followsBack, new
+        case talk, followsBack
 
         var title: String {
             switch self {
             case .talk: "Talk with you"
             case .followsBack: "Follow you back"
-            case .new: "New in your web"
             }
         }
 
@@ -329,7 +328,6 @@ enum TrustMap {
             switch self {
             case .talk: "bubble.left.and.bubble.right"
             case .followsBack: "arrow.left.arrow.right"
-            case .new: "sparkles"
             }
         }
 
@@ -340,13 +338,11 @@ enum TrustMap {
                 switch self {
                 case .talk: return "No one here you talk with yet"
                 case .followsBack: return "None of your follows follow you back"
-                case .new: return "No one new since your last look"
                 }
             }
             switch self {
             case .talk: return n == 1 ? "1 talks with you" : "\(people) talk with you"
             case .followsBack: return n == 1 ? "1 follows you back" : "\(people) follow you back"
-            case .new: return n == 1 ? "1 new in your web" : "\(people) new in your web"
             }
         }
     }
@@ -360,12 +356,6 @@ enum TrustMap {
             lit = lit.map { $0.intersection(match) } ?? match
         }
         return lit
-    }
-
-    /// People in your web now who weren't when you last looked. Nothing on
-    /// a first look: there's no "before" yet.
-    static func newcomers(web: Set<String>, seen: Set<String>?) -> Set<String> {
-        seen.map { web.subtracting($0) } ?? []
     }
 
     /// Close: at least this many of your follows follow them. From a real

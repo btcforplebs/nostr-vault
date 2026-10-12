@@ -127,84 +127,48 @@ extension TrustWebView {
         .transition(.opacity)
     }
 
-    /// The feed's purple "New Posts" button, for people: a rebuild running,
-    /// or how many joined your web since you looked. Nothing when neither.
+    /// The feed's purple "New Posts" pill, for a rebuild: its steps while it
+    /// runs and how it ended. Nothing when no rebuild is running.
     @ViewBuilder private var livePill: some View {
-        let rebuilding = refreshStep != nil || mappingWeb || liveRebuild
-        if rebuilding || newPeople > 0 {
-            Button {
-                if liveRebuild { arrivalsDismissed += newPeople }
-                withAnimation(Motion.fade) { newPeople = 0 }
-                // Who they are, not just how many.
-                if !filters.contains(.new) { toggle(.new) }
-            } label: {
-                HStack(spacing: 8) {
-                    if refreshStep != nil, refreshValue >= 3 {
-                        // How the Rebuild button's run ended, over any count.
-                        Image(systemName: refreshFailed ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                            .font(.appSystem(size: 13, weight: .bold))
-                        Text(refreshCaption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                    } else if newPeople > 0 {
-                        Image(systemName: "arrow.up").font(.appSystem(size: 12, weight: .bold))
-                        Text("\(newPeople.formatted()) new people")
-                            .monospacedDigit()
-                            .contentTransition(.numericText(value: Double(newPeople)))
-                    } else if refreshStep != nil {
-                        // The Rebuild button's steps.
-                        ProgressView().controlSize(.mini).tint(.white)
-                        Text(refreshCaption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                    } else {
-                        ProgressView().controlSize(.mini).tint(.white)
-                        Text("Mapping your web")
-                    }
+        if refreshStep != nil || mappingWeb || liveRebuild {
+            HStack(spacing: 8) {
+                if refreshStep != nil, refreshValue >= 3 {
+                    // How the Rebuild button's run ended.
+                    Image(systemName: refreshFailed ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.appSystem(size: 13, weight: .bold))
+                    Text(refreshCaption)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                } else if refreshStep != nil {
+                    // The Rebuild button's steps.
+                    ProgressView().controlSize(.mini).tint(.white)
+                    Text(refreshCaption)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                } else {
+                    ProgressView().controlSize(.mini).tint(.white)
+                    Text("Mapping your web")
                 }
-                .font(.appSystem(size: 13, weight: .bold))
-                .padding(.vertical, 10)
-                .padding(.horizontal, 20)
-                .frame(maxWidth: 340)
-                .background(
-                    Capsule()
-                        .fill(Color.havenPurple)
-                        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-                )
-                .foregroundColor(.white)
             }
-            .buttonStyle(.plain)
-            .disabled(newPeople == 0)
-            .accessibilityLabel(refreshStep != nil && (refreshValue >= 3 || newPeople == 0) ? refreshCaption
-                                : newPeople > 0 ? "\(newPeople) new people in your web" : "Your web is updating")
-            .animation(Motion.fade, value: newPeople)
+            .font(.appSystem(size: 13, weight: .bold))
+            .padding(.vertical, 10)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: 340)
+            .background(
+                Capsule()
+                    .fill(Color.havenPurple)
+                    .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+            )
+            .foregroundColor(.white)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(refreshStep != nil ? refreshCaption : "Your web is updating")
             .transition(.opacity.combined(with: .move(edge: .top)))
-        }
-    }
-
-    /// The web grew: count the newcomers into the pill, which folds away a
-    /// few seconds after the last one arrives. The first count is the start.
-    func countNewPeople(_ count: Int) {
-        guard isWOTTab else { return }
-        // A rebuild the relay reports on counts its own newcomers, live; the
-        // saved web landing afterwards is the same people again.
-        guard !liveCounted else { webSeen = count; return }
-        guard let seen = webSeen else { webSeen = count; return }
-        guard count > seen else { webSeen = count; return }
-        withAnimation(Motion.fade) { newPeople += count - seen }
-        webSeen = count
-        newPeopleFade?.cancel()
-        newPeopleFade = Task {
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            withAnimation(Motion.fade) { newPeople = 0 }
         }
     }
 
     /// Follows the relay's rebuilds while the WOT tab is open, whoever started
     /// them (the daily timer, the boot check or the dropdown): newcomers fade
-    /// in as stars and count up in the pill, and the saved web loads when the
-    /// rebuild ends.
+    /// in as stars, and the saved web loads when the rebuild ends.
     func followRebuilds() async {
         var cursor = 0
         while !Task.isCancelled {
@@ -212,11 +176,8 @@ extension TrustWebView {
             if let progress, progress.running {
                 if !liveRebuild {
                     liveRebuild = true
-                    liveCounted = true
-                    newPeopleFade?.cancel()
                     cursor = 0
                     arrivals = []
-                    arrivalsDismissed = 0
                 }
                 let from = cursor
                 if let batch = await Task.detached(operation: { WotRefresh.newcomers(from: from) }).value {
@@ -226,8 +187,6 @@ extension TrustWebView {
                         recomputeHaze()
                     }
                 }
-                let count = max(0, (progress.new ?? arrivals.count) - arrivalsDismissed)
-                if count != newPeople { withAnimation(Motion.fade) { newPeople = count } }
             } else if liveRebuild {
                 liveRebuild = false
                 cursor = 0
@@ -236,12 +195,6 @@ extension TrustWebView {
                 arrivals = []
                 FeedService.shared.loadWotPubkeys()
                 recomputeHaze()
-                newPeopleFade = Task {
-                    try? await Task.sleep(for: .seconds(5))
-                    guard !Task.isCancelled else { return }
-                    withAnimation(Motion.fade) { newPeople = 0 }
-                    liveCounted = false
-                }
             }
             try? await Task.sleep(for: .seconds(liveRebuild ? 1 : 5))
         }
