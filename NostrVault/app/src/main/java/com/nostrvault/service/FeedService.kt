@@ -1294,6 +1294,7 @@ class FeedService @Inject constructor(
      * reply/quote targets loaded outside the feed.
      */
     fun cacheNote(note: FeedNote) {
+        if (hidesDeleted(note)) return
         var updated = _parentNotesCache.value + (note.id to note)
         // For kind-6 reposts, also cache under the original note's ID so
         // lookups by effectiveEventId succeed.
@@ -1339,16 +1340,6 @@ class FeedService @Inject constructor(
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
-    /**
-     * A user's Retry: forget that [id] was given up on, so the lookup runs now
-     * instead of waiting out [UNAVAILABLE_RETRY_MS]. iOS retryMissingNote.
-     */
-    fun retryMissingNote(id: String) {
-        unavailableSince.remove(id)
-        if (id in _unavailableNoteIds.value) _unavailableNoteIds.update { it - id }
-        fetchMissingNote(id)
-    }
-
     fun fetchMissingNotesBatch(ids: List<String>) {
         // A post that arrived through the feed itself can be the parent (or
         // repost original, or quote) a row is waiting on. Rows read parents
@@ -1356,9 +1347,10 @@ class FeedService @Inject constructor(
         // answered for a note the phone already had (iOS #302). Checked
         // before the in-flight filter: the feed often delivers it mid-lookup.
         val inFeed = adoptFeedNotes(ids)
+        val deleted = markDeletedUnavailable(ids)
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->
-            if (id in inFeed) return@filter false
+            if (id in inFeed || id in deleted) return@filter false
             if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
             val since = unavailableSince[id] ?: return@filter true
             now - since >= UNAVAILABLE_RETRY_MS

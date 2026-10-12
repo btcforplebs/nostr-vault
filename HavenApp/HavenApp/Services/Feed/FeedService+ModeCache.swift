@@ -56,8 +56,9 @@ extension FeedService {
             modeCaches.removeValue(forKey: key)
             return nil
         }
-        notes = cache.notes
-        parentNotesCache = cache.parentNotesCache
+        // A cache saved before a delete still holds the post.
+        notes = withoutDeletedNotes(cache.notes)
+        parentNotesCache = withoutDeletedNotes(cache.parentNotesCache)
         // Seen = exactly what was kept, and resume from the newest kept note:
         // anything dropped from the cache can then come back from relays
         // instead of being refused as already seen.

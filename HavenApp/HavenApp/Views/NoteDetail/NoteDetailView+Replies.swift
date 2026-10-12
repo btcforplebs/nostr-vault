@@ -105,6 +105,8 @@ extension NoteDetailView {
            let createdAt = ev["created_at"] as? Int64,
            let kind = ev["kind"] as? Int,
            let tags = ev["tags"] as? [[String]] {
+            // A deleted post never comes back as a parent or a reply.
+            if feedService.isDeleted(id) { return }
 
             if isOtherResponse(kind: kind, tags: tags) {
                 // Shown as "<name> highlighted this": it must really be theirs.

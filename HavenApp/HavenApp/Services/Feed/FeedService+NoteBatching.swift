@@ -79,6 +79,12 @@ extension FeedService {
             return
         }
 
+        // Your own deletion requests, from this device or another.
+        if kind == DeletedNotes.requestKind {
+            handleDeleteRequest(ev)
+            return
+        }
+
         // Handle Reactions (Kind 7) — track for self-like detection + per-note counting
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
@@ -220,7 +226,7 @@ extension FeedService {
         var parentIdsToFetch: [String] = []
         var referencedAuthors = Set<String>()
         for note in snap.notes {
-            guard !seenIds.contains(note.id) else { continue }
+            guard !seenIds.contains(note.id), !hidesDeleted(note) else { continue }
             seenIds.insert(note.id)
             noteBuffer.append(note)
             added = true

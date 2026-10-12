@@ -100,6 +100,8 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
         if (kind == NIP10Thread.COMMENT_KIND && !NIP10Thread.isNoteComment(kind, tags)) return
 
         when (kind) {
+            // Your own deletion requests, from this device or another.
+            DeletedNotes.REQUEST_KIND -> handleDeleteRequest(eventObj, tags)
             7 -> {
                 // Reaction event — track engagement
                 val targetId = tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
@@ -127,6 +129,8 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
                 // Content note
                 val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
                 if (note.isNoise) return
+                // A relay that ignored the deletion request served it anyway.
+                if (hidesDeleted(note)) return
 
                 accumulator.addNote(note)
 

@@ -9,6 +9,7 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.deleteEverywhereLeftover
+import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.ui.screens.DeleteScope
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
