@@ -57,6 +57,9 @@ fun SearchScreen(
     val recentSearches by viewModel.recentSearches.collectAsState()
     val trendingHashtags by viewModel.trendingHashtags.collectAsState()
     val suggestedProfiles by viewModel.suggestedProfiles.collectAsState()
+    val recommendedPeople by viewModel.recommendedPeople.collectAsState()
+    val topics by viewModel.topics.collectAsState()
+    val pickedNotes by viewModel.pickedNotes.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
@@ -77,6 +80,35 @@ fun SearchScreen(
     val context = LocalContext.current
     val openHashtag = LocalOpenHashtag.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val namedPeople = remember(recommendedPeople, profiles) { namedRecommendedPeople(recommendedPeople, profiles) }
+
+    // One note card for search results and "For you" picks alike.
+    val noteCard: @Composable (com.nostrvault.data.model.FeedNote) -> Unit = { note ->
+        val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
+            note.quotedEventIds.mapNotNull { qid ->
+                viewModel.quotedNoteFor(qid)?.let { qid to it }
+            }.toMap()
+        }
+        NoteCard(
+            note = note,
+            avatarMenu = viewModel.avatarMenu,
+            profile = viewModel.profileFor(note.pubkey),
+            profiles = profiles,
+            quotedNotes = quotedNotesMap,
+            isLiked = note.effectiveEventId in likedIds,
+            isReposted = note.effectiveEventId in repostedIds,
+            onNoteClick = onNoteClick,
+            onArticleClick = onArticleClick,
+            onProfileClick = onProfileClick,
+            onLike = viewModel::likeNote,
+            onRepost = viewModel::repostNote,
+            onReply = onReply,
+            onQuote = onQuote,
+            onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
+            onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
+        )
+        HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+    }
 
     // Zap feedback, the same way the profile timeline reports it.
     LaunchedEffect(toast) {
@@ -240,7 +272,8 @@ fun SearchScreen(
             // Empty state with discovery sections
             val hasDiscovery = recentSearches.isNotEmpty() ||
                 trendingHashtags.isNotEmpty() ||
-                suggestedProfiles.isNotEmpty()
+                suggestedProfiles.isNotEmpty() ||
+                namedPeople.isNotEmpty() || topics.isNotEmpty() || pickedNotes.isNotEmpty()
 
             if (hasDiscovery) {
                 LazyColumn(
@@ -286,6 +319,16 @@ fun SearchScreen(
                             Spacer(Modifier.height(24.dp))
                         }
                     }
+
+                    searchRecommendationsSection(
+                        people = namedPeople,
+                        topics = topics,
+                        notes = pickedNotes,
+                        colors = colors,
+                        onProfile = onProfileClick,
+                        onTopic = { tag -> if (openHashtag != null) openHashtag(tag) else viewModel.setQuery("#$tag") },
+                        noteContent = noteCard,
+                    )
 
                     // Trending hashtags section
                     if (trendingHashtags.isNotEmpty()) {
@@ -434,32 +477,7 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
-                    items(results.notes, key = { it.id }) { note ->
-                        val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
-                            note.quotedEventIds.mapNotNull { qid ->
-                                viewModel.quotedNoteFor(qid)?.let { qid to it }
-                            }.toMap()
-                        }
-                        NoteCard(
-                            note = note,
-                            avatarMenu = viewModel.avatarMenu,
-                            profile = viewModel.profileFor(note.pubkey),
-                            profiles = profiles,
-                            quotedNotes = quotedNotesMap,
-                            isLiked = note.effectiveEventId in likedIds,
-                            isReposted = note.effectiveEventId in repostedIds,
-                            onNoteClick = onNoteClick,
-                            onArticleClick = onArticleClick,
-                            onProfileClick = onProfileClick,
-                            onLike = viewModel::likeNote,
-                            onRepost = viewModel::repostNote,
-                            onReply = onReply,
-                            onQuote = onQuote,
-                            onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
-                            onTrustWeb = if (viewModel.isOwnNote(note.effectiveAuthor)) null else ({ author: String -> trustWebAuthor = author }),
-                        )
-                        HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
-                    }
+                    items(results.notes, key = { it.id }) { note -> noteCard(note) }
                 }
 
                 // Hashtags written in the matching notes
