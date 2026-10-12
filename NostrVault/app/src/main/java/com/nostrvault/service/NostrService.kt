@@ -781,19 +781,6 @@ class NostrService @Inject constructor(
      */
     fun profileStream(pubkey: String): ProfileStream = ProfileStream(pubkey, profileRelayUrls(pubkey))
 
-    /** The relays a profile page asks: local, up to 3 feed relays, up to 3 of the profile's outbox. */
-    fun profileRelayUrls(pubkey: String): List<String> {
-        val config = configStore.config.value
-        return buildList {
-            config.nostrURL?.let { add(it) }
-            addAll(config.readRelays.take(3))
-            // NIP-65 outbox model: we're fetching events FROM this user, so query
-            // their write/outbox relays (where they actually publish), not their
-            // read/inbox relays (where others send things TO them).
-            _outboxRelays.value[pubkey]?.let { addAll(it.take(3)) }
-        }.distinct().take(6)
-    }
-
     /**
      * A persistent multi-relay subscription for one profile view. Mirrors iOS
      * ProfileView's profileClients: one combined REQ (notes + metadata + contacts
@@ -822,8 +809,19 @@ class NostrService @Inject constructor(
         /** EOSE subId — prefix is "profile-" (initial), "older-", or "older-tagged-". */
         var onEose: ((String) -> Unit)? = null
 
-        fun start() {
-            for (relayUrl in relayUrls) {
+        /** Relay keys this stream has asked, so [addRelays] opens only new ones. */
+        private val asked = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        @Volatile private var closed = false
+        fun start() = addRelays(relayUrls)
+
+        /**
+         * Opens the same REQ on [urls] not asked yet, adding to the open
+         * stream (no reload); [loadOlder] pages them too. For the outbox,
+         * once their kind 10002 arrives.
+         */
+        fun addRelays(urls: List<String>) {
+            for (relayUrl in urls) {
+                if (closed || !asked.add(LookupSocketPool.relayKey(relayUrl))) continue
                 val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalUrl(relayUrl))
                 clients.add(client)
                 tempClientsLock.withLock { temporaryClients.add(client) }
@@ -872,6 +870,7 @@ class NostrService @Inject constructor(
         }
 
         fun close() {
+            closed = true
             jobs.forEach { it.cancel() }
             jobs.clear()
             clients.forEach { c ->

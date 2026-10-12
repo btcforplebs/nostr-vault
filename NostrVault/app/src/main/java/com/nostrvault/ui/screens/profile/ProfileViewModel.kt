@@ -11,11 +11,13 @@ import com.nostrvault.data.model.NoteStats
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.fetchRelayList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -116,6 +118,8 @@ class ProfileViewModel @Inject constructor(
         /** Posts arriving within this long of each other share one count query. */
         private const val ENGAGEMENT_DEBOUNCE_MS = 300L
         private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
+        /** How long a profile waits for its relay list before giving up on the outbox. */
+        private const val OUTBOX_WAIT_MS = 30_000L
     }
 
     /** The Shop tab: this person's marketplace listings. */
@@ -442,6 +446,23 @@ class ProfileViewModel @Inject constructor(
         }
         stream = s
         s.start()
+        askOutboxWhenKnown(pk, s)
+    }
+
+    /**
+     * Someone far out in the web of trust has no relay list cached, so the
+     * stream never asked their own relays. Fetch their kind 10002 and, when
+     * the outbox arrives, open the same REQ there too.
+     */
+    private fun askOutboxWhenKnown(pk: String, s: NostrService.ProfileStream) {
+        if (!nostrService.outboxRelays.value[pk].isNullOrEmpty()) return
+        nostrService.fetchRelayList(pk)
+        viewModelScope.launch {
+            val outbox = withTimeoutOrNull(OUTBOX_WAIT_MS) {
+                nostrService.outboxRelays.mapNotNull { it[pk]?.takeIf(List<String>::isNotEmpty) }.first()
+            } ?: return@launch
+            if (stream === s) s.addRelays(outbox.take(3))
+        }
     }
 
     @Synchronized
