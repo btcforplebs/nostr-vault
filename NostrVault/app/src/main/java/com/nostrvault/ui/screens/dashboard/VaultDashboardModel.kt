@@ -121,14 +121,7 @@ internal object VaultDashboardModel {
         else -> "$count people blocked."
     }
 
-    /** Messages are NIP-04 DMs plus gift wraps; null while counts haven't loaded. */
-    fun messagesCount(kindCounts: Map<Int, Int>): Int? =
-        if (kindCounts.isEmpty()) null else (kindCounts[4] ?: 0) + (kindCounts[1059] ?: 0)
-
-    fun kindCount(kindCounts: Map<Int, Int>, kind: Int): Int? =
-        if (kindCounts.isEmpty()) null else kindCounts[kind] ?: 0
-
-    /** Notes / Media / Cache, in bytes, for the storage bar. */
+    /** Notes and data / Media / Cache, in bytes, for the storage bar. */
     data class StorageSplit(val notes: Long, val media: Long, val cache: Long) {
         val total: Long get() = notes + media + cache
     }

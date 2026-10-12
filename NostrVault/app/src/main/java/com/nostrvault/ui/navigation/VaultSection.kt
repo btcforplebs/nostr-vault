@@ -36,12 +36,45 @@ object VaultSection {
 
     fun openedNewActivity() { _opensNewActivity.value = false }
 
+    /**
+     * The Vault Dashboard opened a page (a setting, Relay activity), so back
+     * from it reopens the dashboard over the part of the tab it sat on.
+     * Null when the dashboard sent you nowhere, or you have since moved on.
+     */
+    data class DashboardTrip(
+        /** The part the tab showed under the dashboard, put back on return. */
+        val media: Boolean,
+        val activity: Boolean,
+    )
+
+    private val _dashboardTrip = MutableStateFlow<DashboardTrip?>(null)
+    val dashboardTrip: StateFlow<DashboardTrip?> = _dashboardTrip
+
+    /** The dashboard is about to open a page; back from it reopens the dashboard. */
+    fun leaveDashboardForPage() {
+        _dashboardTrip.value = DashboardTrip(media = _showsMedia.value, activity = _showsActivity.value)
+    }
+
+    /**
+     * Back reached the dashboard's trip: the tab is on its old part again and
+     * the trip is over. False when there was none, so back does what it would.
+     */
+    fun returnToDashboard(): Boolean {
+        val trip = _dashboardTrip.value ?: return false
+        _dashboardTrip.value = null
+        chosen = true
+        _showsMedia.value = trip.media
+        _showsActivity.value = trip.activity && !trip.media
+        return true
+    }
+
     /** Something chose a part in this process; a restored copy is older than it. */
     @Volatile private var chosen = false
 
     /** Media, or the relay's lists (leaving "Vault"). */
     fun show(media: Boolean) {
         chosen = true
+        _dashboardTrip.value = null
         _showsActivity.value = false
         _showsMedia.value = media
     }
@@ -49,6 +82,7 @@ object VaultSection {
     /** The "Vault" list. */
     fun showActivity() {
         chosen = true
+        _dashboardTrip.value = null
         _showsMedia.value = false
         _showsActivity.value = true
     }
@@ -59,6 +93,7 @@ object VaultSection {
      */
     fun leaveMedia() {
         chosen = true
+        _dashboardTrip.value = null
         _showsMedia.value = false
     }
 
@@ -79,5 +114,6 @@ object VaultSection {
         _showsMedia.value = false
         _showsActivity.value = true
         _opensNewActivity.value = false
+        _dashboardTrip.value = null
     }
 }

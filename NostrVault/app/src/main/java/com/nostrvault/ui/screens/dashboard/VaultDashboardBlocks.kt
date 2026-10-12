@@ -105,7 +105,7 @@ private fun RowState.spoken(): String = when (this) {
 }
 
 @Composable
-private fun RowIcon(icon: ImageVector, state: RowState) {
+internal fun RowIcon(icon: ImageVector, state: RowState) {
     val tint = state.color()
     Box(modifier = Modifier.size(30.dp)) {
         Box(
@@ -258,34 +258,6 @@ internal fun RowButton(title: String, isLoading: Boolean = false, enabled: Boole
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-    }
-}
-
-/** One thing the vault holds: a count that opens its list in the Vault tab. */
-@Composable
-internal fun OwnedTile(icon: ImageVector, title: String, count: Int?, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val primary = LocalNostrVaultColors.current.primary
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = SecondaryGroupedBg,
-        modifier = modifier
-            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
-            .semantics(mergeDescendants = true) {
-                contentDescription = "$title, ${count?.let { "%,d".format(it) } ?: "Loading"}. Opens ${title.lowercase()} in the Vault tab"
-            },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(14.dp)) {
-            Icon(icon, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
-            Text(
-                count?.let { "%,d".format(it) } ?: "—",
-                color = if (count == null) SecondaryText else PrimaryText,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
-            Text(title, color = SecondaryText, fontSize = 13.sp)
         }
     }
 }

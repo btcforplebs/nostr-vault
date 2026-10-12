@@ -17,6 +17,7 @@ import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.FollowingBackupService
+import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.StatsService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,8 +33,9 @@ import javax.inject.Inject
 
 /**
  * State behind the Vault Dashboard (v2) that the Vault tab's own view model
- * doesn't hold: the safety checks, who can reach you, the tile counts and the
- * "last ran" history. Port of the data half of iOS `VaultDashboardView`.
+ * doesn't hold: the safety checks, who can reach you, what is in the vault
+ * and the "last ran" history. Port of the data half of iOS
+ * `VaultDashboardView` and `VaultContentsModel`.
  */
 @HiltViewModel
 class VaultDashboardViewModel @Inject constructor(
@@ -44,6 +46,8 @@ class VaultDashboardViewModel @Inject constructor(
     private val feedService: FeedService,
     private val followingBackupService: FollowingBackupService,
     private val historyStore: VaultHistoryStore,
+    private val mediaCacheService: MediaCacheService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     private companion object {
@@ -56,10 +60,32 @@ class VaultDashboardViewModel @Inject constructor(
     val history: StateFlow<VaultHistory.Snapshot> = historyStore.state
     val wotPubkeys: StateFlow<Set<String>> = feedService.wotPubkeys
     val kindCounts: StateFlow<Map<Int, Int>> = statsService.kindCounts
+    val yourKindCounts: StateFlow<Map<Int, Int>> = statsService.yourKindCounts
+    /** Every event in the vault: the `{}` COUNT summed over its relays. */
+    val totalEvents: StateFlow<Int> = statsService.loadedEventsCount
 
-    /** Blobs the vault's Blossom server holds for you; null until the relay answers. */
-    private val _mediaCount = MutableStateFlow<Int?>(null)
-    val mediaCount: StateFlow<Int?> = _mediaCount.asStateFlow()
+    private val _isCounting = MutableStateFlow(false)
+    val isCounting: StateFlow<Boolean> = _isCounting.asStateFlow()
+
+    /** The last count did not get an answer from every relay; the old numbers stay up. */
+    private val _countFailed = MutableStateFlow(false)
+    val countFailed: StateFlow<Boolean> = _countFailed.asStateFlow()
+
+    /** The files in the Blossom folder, by type; null until scanned. */
+    private val _media = MutableStateFlow<VaultDashboardContents.Media?>(null)
+    internal val media: StateFlow<VaultDashboardContents.Media?> = _media.asStateFlow()
+
+    /** The media cache (MediaCacheService's folders), by type; null until scanned. */
+    data class Cache(val images: Pair<Int, Long>, val videos: Pair<Int, Long>, val thumbnails: Pair<Int, Long>, val other: Pair<Int, Long>) {
+        val bytes: Long get() = images.second + videos.second + thumbnails.second + other.second
+        val isEmpty: Boolean get() = images.first + videos.first + thumbnails.first + other.first == 0
+    }
+
+    private val _cache = MutableStateFlow<Cache?>(null)
+    val cache: StateFlow<Cache?> = _cache.asStateFlow()
+
+    private val _isClearingCache = MutableStateFlow(false)
+    val isClearingCache: StateFlow<Boolean> = _isClearingCache.asStateFlow()
 
     private val _macSync = MutableStateFlow<MacSyncStatus?>(null)
     val macSync: StateFlow<MacSyncStatus?> = _macSync.asStateFlow()
@@ -99,20 +125,91 @@ class VaultDashboardViewModel @Inject constructor(
         refreshLocal(configStore.config.value)
         refreshFollowList()
         readRelayStart()
+        loadFiles()
         if (RelayForegroundService.relayStatus.value != RelayForegroundService.RelayStatus.RUNNING) return
         if (counting) return
         counting = true
+        _isCounting.value = true
         viewModelScope.launch {
             try {
-                statsService.fetchCountsByKind()
-                val owner = nostrService.activeHexPubkey
-                if (owner.isNotEmpty()) {
-                    _mediaCount.value = runCatching { statsService.fetchBlobList(owner).size }
-                        .onFailure { Log.w(TAG, "Blob list failed: ${it.message}") }
-                        .getOrNull() ?: _mediaCount.value
-                }
+                val owner = nostrService.activeHexPubkey.ifEmpty { null }
+                // A partial answer would undercount; StatsService keeps what is shown.
+                _countFailed.value = !statsService.fetchCountsByKind(owner, VaultDashboardContents.yourKinds)
             } finally {
                 counting = false
+                _isCounting.value = false
+            }
+        }
+    }
+
+    /** The Blossom folder and the media cache, sized and typed by their bytes. */
+    fun loadFiles() {
+        viewModelScope.launch {
+            val cfg = configStore.config.value
+            val (media, cache) = withContext(Dispatchers.IO) {
+                val blossom = cfg.relayDataDir?.let { File(it, cfg.blossomPath) }
+                scanMedia(blossom) to scanCache()
+            }
+            _media.value = media
+            _cache.value = cache
+        }
+    }
+
+    /** The same files the media grid lists (MediaGalleryViewModel.loadLocalBlossomFiles). */
+    private fun scanMedia(dir: File?): VaultDashboardContents.Media {
+        val counts = HashMap<VaultDashboardContents.MediaType, Pair<Int, Long>>()
+        dir?.listFiles()?.forEach { file ->
+            if (!file.isFile || !VaultDashboardContents.isListedBlob(file.nameWithoutExtension)) return@forEach
+            val type = VaultDashboardContents.mediaType(readHeader(file))
+            val (n, bytes) = counts[type] ?: (0 to 0L)
+            counts[type] = n + 1 to bytes + file.length()
+        }
+        return VaultDashboardContents.Media(
+            VaultDashboardContents.MediaType.entries.map { t ->
+                val (n, bytes) = counts[t] ?: (0 to 0L)
+                VaultDashboardContents.MediaBucket(t, n, bytes)
+            },
+        )
+    }
+
+    private fun readHeader(file: File): ByteArray = runCatching {
+        file.inputStream().use { input ->
+            val buf = ByteArray(16)
+            val n = input.read(buf)
+            if (n <= 0) ByteArray(0) else buf.copyOf(n)
+        }
+    }.getOrDefault(ByteArray(0))
+
+    private fun scanCache(): Cache {
+        val media = statsService.calculateCacheBreakdown(mediaCacheService.cacheDirectory.path)
+        val thumbs = mediaCacheService.thumbnailDirectory.walkTopDown().filter { it.isFile }.toList()
+        return Cache(
+            images = media.imageCount to media.imageSize,
+            videos = media.videoCount to media.videoSize,
+            thumbnails = thumbs.size to thumbs.sumOf { it.length() },
+            other = media.otherCount to media.otherSize,
+        )
+    }
+
+    /** Clears other people's media kept for quick loading; your own Blossom files stay. */
+    fun clearCache() {
+        if (_isClearingCache.value) return
+        _isClearingCache.value = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { mediaCacheService.clearCache() }
+                val freed = VaultDashboardModel.size(result.bytesFreed).let { if (it == "None") "0 B" else it }
+                if (result.filesFailed == 0) {
+                    notificationManager.showToast("Cleared $freed of temporary copies")
+                } else {
+                    notificationManager.showError(
+                        "Cleared $freed, but ${result.filesFailed} files could not be removed",
+                        style = com.nostrvault.ui.notification.ErrorStyle.WARNING,
+                    )
+                }
+                _cache.value = withContext(Dispatchers.IO) { scanCache() }
+            } finally {
+                _isClearingCache.value = false
             }
         }
     }

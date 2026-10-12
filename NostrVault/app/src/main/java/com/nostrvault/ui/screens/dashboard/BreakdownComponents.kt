@@ -1,48 +1,41 @@
 package com.nostrvault.ui.screens.dashboard
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nostrvault.ui.theme.*
-import java.text.NumberFormat
-
-val kindNames = mapOf(
-    0 to "Profile Metadata",
-    1 to "Short Notes",
-    3 to "Contacts",
-    4 to "Encrypted DMs (NIP-04)",
-    5 to "Deletions",
-    6 to "Reposts",
-    7 to "Reactions",
-    9 to "Chat Messages",
-    11 to "Channel Create",
-    12 to "Channel Metadata",
-    16 to "Generic Repost",
-    1059 to "Gift Wrapped DMs (NIP-44)",
-    1063 to "File Metadata",
-    9735 to "Zap Receipts",
-    10000 to "Mute List",
-    10002 to "Relay List",
-    10050 to "DM Relays",
-    10063 to "User Server List",
-    30023 to "Long-form Articles",
-    30078 to "App Data",
-    39000 to "Group Metadata",
-    39001 to "Group Admins",
-    39002 to "Group Members",
-)
+import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.PrimaryText
+import com.nostrvault.ui.theme.SecondaryText
 
 fun formatSize(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
@@ -54,191 +47,83 @@ fun formatSize(bytes: Long): String {
     return "%.2f GB".format(gb)
 }
 
+/**
+ * A row that opens its breakdown underneath it, one level deep (iOS
+ * VaultContentsSection's ExpandingRow). Without [canExpand] it is a plain row
+ * and the chevron keeps its room so the numbers still line up.
+ */
 @Composable
-fun KindRow(
-    kind: Int,
-    name: String,
-    count: Int,
-    total: Int,
+internal fun ExpandingRow(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    detail: String?,
+    expanded: Boolean,
+    canExpand: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    val percentage = if (total > 0) count.toFloat() / total else 0f
-    val formatted = NumberFormat.getIntegerInstance().format(count)
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = name,
-                    color = PrimaryText,
-                    fontSize = 13.sp,
+    val turn by animateFloatAsState(if (expanded && canExpand) 90f else 0f, label = "chevron")
+    val spoken = listOfNotNull(value, detail).joinToString(", ")
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (canExpand) {
+                        Modifier.clickable(
+                            role = Role.Button,
+                            onClickLabel = if (expanded) "Hide the breakdown" else "Show the breakdown",
+                            onClick = onToggle,
+                        )
+                    } else {
+                        Modifier
+                    },
                 )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "kind $kind",
-                    color = TertiaryText,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "$title, $spoken"
+                    if (canExpand) stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+        ) {
+            RowIcon(icon, RowState.INFO)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+                Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                if (detail != null) Text(detail, color = SecondaryText, fontSize = 12.sp)
             }
-            Spacer(Modifier.height(4.dp))
-            // Progress bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(SecondaryGroupedBg),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(percentage)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(LocalNostrVaultColors.current.primary),
-                )
-            }
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = formatted,
-                color = PrimaryText,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace,
+            Text(value, color = SecondaryText, fontSize = 15.sp, maxLines = 1)
+            Icon(
+                NostrVaultIcons.Navigate,
+                contentDescription = null,
+                tint = SecondaryText.copy(alpha = if (canExpand) 0.6f else 0f),
+                modifier = Modifier.size(16.dp).rotate(turn),
             )
-            Text(
-                text = "%.1f%%".format(percentage * 100),
-                color = SecondaryText,
-                fontSize = 10.sp,
+        }
+        AnimatedVisibility(
+            visible = expanded && canExpand,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, bottom = 12.dp),
+                content = content,
             )
         }
     }
 }
 
+/** One line of a breakdown: a name and its number. */
 @Composable
-fun StorageRow(
-    label: String,
-    icon: ImageVector,
-    color: Color,
-    size: Long,
-    total: Long,
-) {
-    val percentage = if (total > 0) size.toFloat() / total else 0f
-
+internal fun BreakdownLine(title: String, value: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$title, $value" },
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, color = PrimaryText, fontSize = 14.sp)
-            Spacer(Modifier.height(4.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(SecondaryGroupedBg),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(percentage)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(color),
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = formatSize(size),
-                color = PrimaryText,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "%.0f%%".format(percentage * 100),
-                color = SecondaryText,
-                fontSize = 10.sp,
-            )
-        }
-    }
-}
-
-@Composable
-fun BlobTypeRow(
-    label: String,
-    icon: ImageVector,
-    color: Color,
-    count: Int,
-    size: Long,
-    total: Long,
-) {
-    val percentage = if (total > 0) size.toFloat() / total else 0f
-    val formatted = NumberFormat.getIntegerInstance().format(count)
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, color = PrimaryText, fontSize = 14.sp)
-            Spacer(Modifier.height(4.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(SecondaryGroupedBg),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(percentage)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(color),
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = "$formatted files",
-                color = PrimaryText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = formatSize(size),
-                color = SecondaryText,
-                fontSize = 10.sp,
-            )
-        }
+        Text(title, color = PrimaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(value, color = SecondaryText, fontSize = 13.sp, maxLines = 1)
     }
 }

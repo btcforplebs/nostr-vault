@@ -37,8 +37,8 @@ private enum class VaultDashboardPage { MAIN, RELAY_DETAILS, MEDIA_DETAILS }
  * The Vault Dashboard (v2, iOS `VaultDashboardView`): one page that says
  * whether your vault is OK. The Vault tab presents it over either half: the
  * pill's last entry, the floating Vault button and the folded bar's corner
- * button all open it. The old relay dashboard and Blossom's sections live on
- * under Advanced (Relay details, Media server details).
+ * button all open it. Advanced holds Relay details (where the relay is) and
+ * Media server details (Blossom's sections).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +51,13 @@ internal fun VaultDashboardSheet(
     val tutorialRevision by TutorialCenter.revision.collectAsState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(VaultDashboardPage.MAIN) }
+    // Everything the dashboard opens stays on the Vault tab, and back comes
+    // home to the dashboard (VaultSection.dashboardTrip, VaultRoutes).
+    val openPage: (Screen) -> Unit = { screen ->
+        com.nostrvault.ui.navigation.VaultSection.leaveDashboardForPage()
+        onDismiss()
+        onNavigate(screen)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,24 +94,11 @@ internal fun VaultDashboardSheet(
             VaultDashboardPage.MAIN -> com.nostrvault.ui.screens.dashboard.VaultDashboardContent(
                 vaultViewModel = viewModel,
                 logStore = logStore,
-                onOpenScreen = { screen ->
-                    onDismiss()
-                    onNavigate(screen)
-                },
-                onOpenMode = { mode ->
-                    onDismiss()
-                    viewModel.selectMode(mode)
-                },
+                onOpenScreen = openPage,
                 onOpenRelayDetails = { page = VaultDashboardPage.RELAY_DETAILS },
                 onOpenMediaDetails = { page = VaultDashboardPage.MEDIA_DETAILS },
             )
-            VaultDashboardPage.RELAY_DETAILS -> RelayDetailsPage(
-                viewModel = viewModel,
-                logStore = logStore,
-                onNavigate = onNavigate,
-                onDismiss = onDismiss,
-                onBack = { page = VaultDashboardPage.MAIN },
-            )
+            VaultDashboardPage.RELAY_DETAILS -> RelayDetailsPage(onBack = { page = VaultDashboardPage.MAIN })
             VaultDashboardPage.MEDIA_DETAILS -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -113,10 +107,7 @@ internal fun VaultDashboardSheet(
                     .padding(bottom = 32.dp),
             ) {
                 SheetPageHeader(title = "Media server details", onBack = { page = VaultDashboardPage.MAIN })
-                BlossomDashboardSections(onOpenSettings = {
-                    onDismiss()
-                    onNavigate(Screen.BlossomSettings)
-                })
+                BlossomDashboardSections(onOpenSettings = { openPage(Screen.BlossomSettings) })
             }
         }
         TutorialStage(
@@ -131,7 +122,7 @@ internal fun VaultDashboardSheet(
 
 /** An Advanced page's title row, with the way back to the dashboard. */
 @Composable
-private fun SheetPageHeader(title: String, onBack: () -> Unit) {
+internal fun SheetPageHeader(title: String, onBack: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
