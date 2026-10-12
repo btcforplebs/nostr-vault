@@ -342,7 +342,7 @@ struct FeedToolbarState: Equatable {
     private static func shownOrHidden(_ title: String, icon: String, shown: Bool) -> FilterNote {
         shown
             ? FilterNote(icon: icon, title: title, setting: "shown")
-            : FilterNote(icon: icon, text: "\(title) · hidden", dimmed: true)
+            : FilterNote(icon: icon, title: title, setting: "hidden", dimmed: true)
     }
 }
 
