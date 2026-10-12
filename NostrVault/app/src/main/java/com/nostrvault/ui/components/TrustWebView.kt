@@ -121,7 +121,11 @@ internal fun TrustWebContent(
      * (null while it's being traced). Live, so Follow on the card shows on it.
      */
     var card by remember { mutableStateOf<String?>(null) }
-    val cardPath = rememberLiveTrustPath(card)
+    /** The author's path seen from you, traced again whenever your web changes. */
+    val authorPath = rememberLiveTrustPath(author.takeIf { it != me })
+    // The author's own card shares it rather than trace them twice.
+    val tracedCard = rememberLiveTrustPath(card.takeIf { it != author })
+    val cardPath = if (card != null && card == author) authorPath else tracedCard
     val feedService = services.feedService()
 
     val centerKey = crumbs.last()
@@ -434,11 +438,14 @@ internal fun TrustWebContent(
             frames = frames + (me to (frames[me]?.withRing(follows) ?: TrustFrame(me, follows, true, path)))
         }
     }
-    // The author's path seen from you, kept current the same way, so the
+    // The author's path ([authorPath]) kept current the same way, so the
     // legend and threads stop saying "outside your web" after a follow.
-    val authorPath = rememberLiveTrustPath(author.takeIf { it != me })
+    // The path this globe opened with is already fresh; only a change to your
+    // follows since may replace it, so a trace whose relays timed out can't.
+    val openedWith = remember { myFollows }
     LaunchedEffect(authorPath) {
         val live = authorPath ?: return@LaunchedEffect
+        if (myFollows == openedWith) return@LaunchedEffect
         val root = frames[me] ?: return@LaunchedEffect
         if (root.path == live) return@LaunchedEffect
         frames = frames + (me to root.withPath(live, myFollows))

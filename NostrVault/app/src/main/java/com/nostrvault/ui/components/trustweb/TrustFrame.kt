@@ -40,8 +40,13 @@ internal data class TrustFrame(
     /**
      * The same frame with the author's path traced again after your follows
      * changed: bridges you still follow stay, ones you unfollowed drop, and
-     * the new trace's join them.
+     * the new trace's join them, so "show everyone" neither re-reads their
+     * lists nor hides while the trace says there are more.
      */
-    fun withPath(path: TrustPath, follows: Set<String>): TrustFrame =
-        copy(path = path, bridges = (bridges.filter { it in follows } + path.all).distinct().sorted())
+    fun withPath(path: TrustPath, follows: Set<String>): TrustFrame = copy(
+        path = path,
+        bridges = (bridges.filter { it in follows } + path.all).distinct().sorted(),
+        seen = seen + path.all,
+        exhausted = exhausted && !path.hasMore,
+    )
 }
