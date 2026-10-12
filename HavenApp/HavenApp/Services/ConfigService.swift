@@ -283,12 +283,12 @@ class ConfigService: ObservableObject {
             try? data.write(to: npubsURL)
         }
         
-        // Save blacklisted npubs
-        if !config.blacklistedNpubs.isEmpty {
-            let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
-            if let data = try? encoder.encode(config.blacklistedNpubs) {
-                try? data.write(to: blacklistedURL)
-            }
+        // Save blacklisted npubs. Written even when empty, for the same reason
+        // as the whitelist: unblocking the last legacy entry must not come back
+        // on the next launch and keep that person blocked on the relay.
+        let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: blacklistedURL)
         }
     }
     
