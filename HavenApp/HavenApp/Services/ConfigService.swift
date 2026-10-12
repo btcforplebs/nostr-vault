@@ -708,7 +708,11 @@ class ConfigService: ObservableObject {
         let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetNpub = active.isEmpty ? config.ownerNpub : active
 
-        var current = config.blockedNpubsPerAccount[targetNpub] ?? []
+        // Same fallback as blockedHexPubkeys(forAccount:): an owner whose
+        // blocks only live in the legacy blacklist must still be able to
+        // unblock them, or the dashboard counts people the page can't remove.
+        var current = config.blockedNpubsPerAccount[targetNpub]
+            ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
         if let index = current.firstIndex(of: npub) {
             current.remove(at: index)
             config.blockedNpubsPerAccount[targetNpub] = current

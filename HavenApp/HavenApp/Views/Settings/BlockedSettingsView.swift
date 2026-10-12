@@ -10,7 +10,11 @@ struct BlockedSettingsView: View {
     var blockedNpubs: [String] {
         let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
-        return configService.config.blockedNpubsPerAccount[targetNpub] ?? []
+        // Same source as the dashboard's "N people blocked" count
+        // (ConfigService.blockedHexPubkeys): the owner's legacy blacklist
+        // counts until a per-account list exists.
+        return configService.config.blockedNpubsPerAccount[targetNpub]
+            ?? (targetNpub == configService.config.ownerNpub ? configService.config.blacklistedNpubs : [])
     }
 
     var body: some View {

@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.BuildConfig
@@ -105,8 +104,7 @@ internal fun RelayActivityRow(item: PlainLog.Item, compact: Boolean = false) {
                     color = PrimaryText,
                     fontSize = if (compact) 12.sp else 15.sp,
                     fontWeight = FontWeight.Medium,
-                    maxLines = if (compact) 1 else 3,
-                    overflow = TextOverflow.Ellipsis,
+                    // Never clipped: a cut-off line is the one you needed to read.
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (item.count > 1) {
@@ -129,8 +127,6 @@ internal fun RelayActivityRow(item: PlainLog.Item, compact: Boolean = false) {
                     text = hint,
                     color = SecondaryText,
                     fontSize = if (compact) 11.sp else 13.sp,
-                    maxLines = if (compact) 1 else Int.MAX_VALUE,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
