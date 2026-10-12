@@ -91,6 +91,13 @@ class DeletedPostsStore internal constructor(private val directory: File) {
     }
 
     companion object {
+        /**
+         * The app's one store, set in [com.nostrvault.NostrVaultApp.onCreate]
+         * for `deleteNote`, which is an extension on `NostrService` and so
+         * cannot be injected. Same instance the Recently Deleted screen gets.
+         */
+        lateinit var shared: DeletedPostsStore
+
         /** How long a deleted post stays un-deletable. */
         const val RETENTION_MS: Long = 30L * 24 * 60 * 60 * 1000
 

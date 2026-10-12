@@ -131,6 +131,14 @@ final class DeletedPostsStoreTests: XCTestCase {
         for kind in [0, 3, 10000, 10002, 19999, 30023, 30402, 39999] { XCTAssertFalse(DeletedPost.keepsCopy(kind: kind), "\(kind)") }
     }
 
+    /// The delete hook saves the copy only when the kind 5 was signed by the
+    /// post's own key; an account switched mid-delete leaves no copy.
+    func testCopyIsKeptOnlyWhenTheSameKeySignedTheDelete() {
+        XCTAssertEqual(DeletedPost.keptAfterSigning(post(), signer: me)?.id, post().id)
+        XCTAssertNil(DeletedPost.keptAfterSigning(post(), signer: other))
+        XCTAssertNil(DeletedPost.keptAfterSigning(nil, signer: me))
+    }
+
     func testChangesAreAnnounced() {
         let store = DeletedPostsStore(directory: directory)
         let saved = expectation(forNotification: DeletedPostsStore.didChange, object: nil)
