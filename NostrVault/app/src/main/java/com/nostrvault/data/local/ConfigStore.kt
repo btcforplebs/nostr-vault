@@ -2,6 +2,7 @@ package com.nostrvault.data.local
 
 import android.content.Context
 import android.util.Log
+import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.DeadRelays
@@ -246,15 +247,9 @@ class ConfigStore @Inject constructor(
         }
     }
 
-    /** Unblock an npub for the active account. */
+    /** Unblock an npub for the active account. See [BlockedPeople.unblock]. */
     fun unblockProfile(npub: String) {
-        update { cfg ->
-            val key = cfg.activeOrOwnerNpub()
-            val current = cfg.blockedNpubsPerAccount[key] ?: cfg.blockedNpubs ?: emptyList()
-            cfg.copy(
-                blockedNpubsPerAccount = cfg.blockedNpubsPerAccount + (key to current.filter { it != npub }),
-            )
-        }
+        update { BlockedPeople.unblock(it, npub) }
     }
 
     // ── Multi-account management ──────────────────────────────────────

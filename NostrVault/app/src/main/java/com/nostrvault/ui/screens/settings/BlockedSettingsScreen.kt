@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NostrService
@@ -56,7 +55,7 @@ class BlockedSettingsViewModel @Inject constructor(
     }
 
     fun unblock(npub: String) {
-        configStore.update { BlockedPeople.unblock(it, npub) }
+        configStore.unblockProfile(npub)
         publishMuteList()
     }
 
