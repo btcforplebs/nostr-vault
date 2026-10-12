@@ -7,6 +7,10 @@ struct iPadSidebarView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// The WoT globe's frame. The sidebar draws its row symbols large (the
+    /// Profile circle measures 21.5pt), so 26pt puts the globe's circle at
+    /// the same size; it grows with Dynamic Type as they do.
+    @ScaledMetric(relativeTo: .body) private var wotIconSide: CGFloat = 26
     @StateObject private var nostrService = NostrService.shared
     @StateObject private var feedService = FeedService.shared
     @StateObject private var dmService = DMService.shared
@@ -206,7 +210,7 @@ struct iPadSidebarView: View {
                             // A template image doesn't follow the font like an SF Symbol does.
                             Image("WoTTab")
                                 .resizable()
-                                .frame(width: 20, height: 20)
+                                .frame(width: wotIconSide, height: wotIconSide)
                         }
                     }
                     // Your relay and your Blossom files, one row; "My Media" is
