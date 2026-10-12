@@ -41,9 +41,11 @@ extension FeedView {
 
     /// The floating "New Posts" button is up: unloaded posts, and either
     /// auto-load is off or the user has scrolled away from the top. Never
-    /// when it's switched off in Appearance settings.
+    /// when it's switched off in Appearance settings, and stepped aside
+    /// while a toolbar note shows, which sits in the same spot.
     var showsNewPostsButton: Bool {
         configService.config.showNewPostsPill
+            && toolbarNote.note == nil
             && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
