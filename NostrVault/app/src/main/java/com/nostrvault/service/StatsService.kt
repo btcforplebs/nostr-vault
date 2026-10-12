@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.LocalTls
+import com.nostrvault.data.remote.RelayConnection
 import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -12,6 +13,7 @@ import java.io.FileInputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class StatsService @Inject constructor(
     private val configStore: ConfigStore,
+    private val nostrService: NostrService,
 ) {
     companion object {
         private const val TAG = "StatsService"
@@ -65,6 +68,122 @@ class StatsService @Inject constructor(
             val merged = HashMap<Int, Int>()
             for (counts in perEndpoint) for ((kind, count) in counts!!) merged[kind] = (merged[kind] ?: 0) + count
             return merged
+        }
+        /**
+         * The NIP-42 `relay` tag for an endpoint that answers COUNT only after
+         * the owner's AUTH (/private, /chat), or null for one that doesn't.
+         * Built like DM's: `localRelayURL`, the relay's ServiceURL. An external
+         * relay folds every path onto one URL, so it never matches.
+         */
+        internal fun authRelayTag(config: com.nostrvault.relay.HavenConfig, relayUrl: String): String? {
+            if (config.useExternalRelay) return null
+            return listOf("private", "chat").mapNotNull { config.localRelayURL(it) }.firstOrNull { it == relayUrl }
+        }
+
+        /**
+         * Runs the COUNTs on [client]. With [authRelayTag], the COUNTs wait for
+         * the relay's challenge, the owner's AUTH ([signAuth]) and `OK true` on
+         * that AUTH: the relay checks each message on its own, so a COUNT sent
+         * right after AUTH can be checked before the login lands and come back
+         * as 0. A refused AUTH, a NOTICE, an unsigned AUTH, a COUNT with no
+         * number or a timeout all give null (couldn't count), never 0.
+         */
+        internal suspend fun countOver(
+            client: RelayConnection,
+            scope: CoroutineScope,
+            kinds: List<Int>,
+            yours: Pair<String, List<Int>>?,
+            authRelayTag: String?,
+            signAuth: suspend (relayTag: String, challenge: String) -> Pair<String, String>?,
+            timeoutMs: Long = 20_000,
+        ): Pair<Map<Int, Int>, Map<Int, Int>>? {
+            val author = yours?.first
+            val results = ConcurrentHashMap<Int, Int>()
+            val yourResults = ConcurrentHashMap<Int, Int>()
+            val tag = UUID.randomUUID().toString().take(6)
+            val subIdToKind = buildMap {
+                put("count-total-$tag", TOTAL_KEY)
+                for (kind in kinds) put("count-k$kind-$tag", kind)
+            }
+            val yourSubIdToKind = yours?.second.orEmpty().associateBy { "count-a$it-$tag" }
+
+            return suspendCancellableCoroutine { cont ->
+                val pending = ConcurrentHashMap.newKeySet<String>().apply {
+                    addAll(subIdToKind.keys)
+                    addAll(yourSubIdToKind.keys)
+                }
+                val completed = AtomicBoolean(false)
+                val authStarted = AtomicBoolean(false)
+                val authId = AtomicReference<String?>(null)
+                var listener: Job? = null
+                var timeout: Job? = null
+
+                fun finish(answer: Pair<Map<Int, Int>, Map<Int, Int>>?) {
+                    if (!completed.compareAndSet(false, true)) return
+                    listener?.cancel()
+                    timeout?.cancel()
+                    client.disconnect()
+                    cont.resume(answer) { _, _, _ -> }
+                }
+
+                fun sendCounts() {
+                    for ((subId, kind) in subIdToKind) {
+                        val filter = if (kind == TOTAL_KEY) "{}" else """{"kinds":[$kind]}"""
+                        client.send("[\"COUNT\",\"$subId\",$filter]")
+                    }
+                    for ((subId, kind) in yourSubIdToKind) {
+                        client.send("[\"COUNT\",\"$subId\",{\"kinds\":[$kind],\"authors\":[\"$author\"]}]")
+                    }
+                }
+
+                // Undispatched so it subscribes before connect(): the flow keeps no
+                // replay, and a reply (or the challenge) that lands first would be dropped.
+                listener = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    client.messages.collect { msg ->
+                        val parsed = try { Json.parseToJsonElement(msg).jsonArray } catch (_: Exception) { return@collect }
+                        when ((parsed.getOrNull(0) as? JsonPrimitive)?.contentOrNull) {
+                            "AUTH" -> {
+                                val challenge = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: return@collect
+                                if (authRelayTag == null || !authStarted.compareAndSet(false, true)) return@collect
+                                launch {
+                                    val signed = signAuth(authRelayTag, challenge) ?: return@launch finish(null)
+                                    authId.set(signed.first)
+                                    client.send("[\"AUTH\",${signed.second}]")
+                                }
+                            }
+                            "OK" -> {
+                                val id = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull
+                                if (id == null || id != authId.get()) return@collect
+                                if ((parsed.getOrNull(2) as? JsonPrimitive)?.booleanOrNull == true) sendCounts() else finish(null)
+                            }
+                            // No subscription id, so it can't be tied to one COUNT: the route fails.
+                            "NOTICE" -> if (authRelayTag != null) finish(null)
+                            "COUNT" -> {
+                                val subId = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: return@collect
+                                val kind = subIdToKind[subId] ?: yourSubIdToKind[subId] ?: return@collect
+                                val count = NostrService.countFrom(msg) ?: return@collect finish(null)
+                                (if (subId in yourSubIdToKind) yourResults else results)[kind] = count
+                                pending.remove(subId)
+                                if (pending.isEmpty()) finish(results.toMap() to yourResults.toMap())
+                            }
+                        }
+                    }
+                }
+
+                client.connect()
+                if (authRelayTag == null) sendCounts()
+
+                timeout = scope.launch {
+                    delay(timeoutMs)
+                    finish(null)
+                }
+
+                cont.invokeOnCancellation {
+                    listener?.cancel()
+                    timeout?.cancel()
+                    client.disconnect()
+                }
+            }
         }
     }
 
@@ -185,82 +304,43 @@ class StatsService @Inject constructor(
      * One COUNT per kind plus one `{}` total (under [TOTAL_KEY]) over a
      * single connection, and with [yours] (author hex, kinds) one more per
      * kind for that account (the second map). Null unless every request was
-     * answered in time.
+     * answered in time. /private and /chat answer COUNT only after the owner's
+     * NIP-42 AUTH, so there the COUNTs wait for it; see [countOver].
      */
     private suspend fun fetchKindCounts(
         relayUrl: String,
         kinds: List<Int>,
         yours: Pair<String, List<Int>>?,
     ): Pair<Map<Int, Int>, Map<Int, Int>>? {
-        val author = yours?.first
-        val results = ConcurrentHashMap<Int, Int>()
-        val yourResults = ConcurrentHashMap<Int, Int>()
-        val tag = UUID.randomUUID().toString().take(6)
-        val subIdToKind = buildMap {
-            put("count-total-$tag", TOTAL_KEY)
-            for (kind in kinds) put("count-k$kind-$tag", kind)
-        }
-        val yourSubIdToKind = yours?.second.orEmpty().associateBy { "count-a$it-$tag" }
+        val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
+        return countOver(
+            client = client,
+            scope = scope,
+            kinds = kinds,
+            yours = yours,
+            authRelayTag = authRelayTag(configStore.config.value, relayUrl),
+            signAuth = ::signOwnerAuth,
+        )
+    }
 
-        return suspendCancellableCoroutine { cont ->
-            val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
-            val pending = ConcurrentHashMap.newKeySet<String>().apply {
-                addAll(subIdToKind.keys)
-                addAll(yourSubIdToKind.keys)
-            }
-            val completed = AtomicBoolean(false)
-            var listener: Job? = null
-            var timeout: Job? = null
-
-            fun finish(answer: Pair<Map<Int, Int>, Map<Int, Int>>?) {
-                if (!completed.compareAndSet(false, true)) return
-                listener?.cancel()
-                timeout?.cancel()
-                client.disconnect()
-                cont.resume(answer) { _, _, _ -> }
-            }
-
-            // Undispatched so it subscribes before connect(): the flow keeps no
-            // replay, and a reply that lands first would be dropped.
-            listener = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                client.messages.collect { msg ->
-                    try {
-                        val parsed = json.parseToJsonElement(msg).jsonArray
-                        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "COUNT") return@collect
-                        val subId = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                        val into = if (subId in yourSubIdToKind) yourResults else results
-                        val kind = subIdToKind[subId] ?: yourSubIdToKind[subId] ?: return@collect
-                        val count = (parsed[2].jsonObject["count"] as? JsonPrimitive)?.let {
-                            it.intOrNull ?: it.doubleOrNull?.toInt() ?: it.contentOrNull?.toIntOrNull()
-                        } ?: 0
-                        into[kind] = count
-                        pending.remove(subId)
-                        if (pending.isEmpty()) finish(results.toMap() to yourResults.toMap())
-                    } catch (_: Exception) {}
-                }
-            }
-
-            client.connect()
-
-            for ((subId, kind) in subIdToKind) {
-                val filter = if (kind == TOTAL_KEY) "{}" else """{"kinds":[$kind]}"""
-                client.send("[\"COUNT\",\"$subId\",$filter]")
-            }
-            for ((subId, kind) in yourSubIdToKind) {
-                client.send("[\"COUNT\",\"$subId\",{\"kinds\":[$kind],\"authors\":[\"$author\"]}]")
-            }
-
-            timeout = scope.launch {
-                delay(20_000)
-                finish(null)
-            }
-
-            cont.invokeOnCancellation {
-                listener?.cancel()
-                timeout?.cancel()
-                client.disconnect()
-            }
-        }
+    /**
+     * The owner's kind-22242 AUTH for [challenge], as (event id, event JSON),
+     * or null when the owner can't sign (watch-only, signer not connected).
+     * Same as DM's /chat AUTH (DMServiceListening.handleAuthChallenge).
+     */
+    private suspend fun signOwnerAuth(relayTag: String, challenge: String): Pair<String, String>? {
+        val event = try {
+            nostrService.signEventAsync(
+                kind = 22242,
+                content = "",
+                tags = listOf(listOf("relay", relayTag), listOf("challenge", challenge)),
+                forceOwner = true,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Counts AUTH not signed: ${e.message}")
+            null
+        } ?: return null
+        return event.id to EventPublisher.serializeSignedEvent(event)
     }
 
     // ══════════════════════════════════════════════════════════════════
