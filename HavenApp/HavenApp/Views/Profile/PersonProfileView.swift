@@ -4,17 +4,32 @@ import SwiftUI
 /// message, zap, block. Your own profile opened this way shows you as others
 /// see you, with a way to your Profile tab, where editing lives
 /// (`MyProfileView`).
-struct PersonProfileView: View {
+///
+/// Equatable, and drawn `.equatable()` by `ProfileView`: it opens as a sheet,
+/// and its host (the Feed, a note, search) redraws many times a second while
+/// it is up, re-running the sheet's content each time. `onDismiss` is a
+/// closure SwiftUI cannot compare, so without this every host redraw rebuilt
+/// the whole profile under your finger. Its own state, `configService` and
+/// the loaders still redraw it.
+struct PersonProfileView: View, Equatable {
     let pubkey: String
     var embeddedInNavigation: Bool = false
     var onDismiss: (() -> Void)? = nil
 
-    @EnvironmentObject var nostrService: NostrService
+    /// Not observed. `profiles` changes each time any profile arrives, and
+    /// the notes being scrolled fetch their authors', so observing it here
+    /// rebuilt this page's toolbar, sheets and action rows mid-scroll.
+    /// Everything that reads a profile is drawn inside `ProfileContent`,
+    /// which observes it.
+    private var nostrService: NostrService { .shared }
     @EnvironmentObject var configService: ConfigService
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var loader: ProfileFeedLoader
-    @StateObject private var shop = SellerListingsLoader()
-    @StateObject private var extras = ProfileExtrasLoader()
+    /// Owns the loaders without observing them: they publish while the page
+    /// pages and counts followers, and only `ProfileContent` draws from them.
+    @StateObject private var models: ProfileLoaders
+    private var loader: ProfileFeedLoader { models.loader }
+    private var shop: SellerListingsLoader { models.shop }
+    private var extras: ProfileExtrasLoader { models.extras }
     /// Not observed; see `ProfileContent.feedService`. The follow button
     /// reads `followedPubkeys`, which `ProfileContent`'s feed watch redraws for.
     private var feedService: FeedService { .shared }
@@ -28,7 +43,13 @@ struct PersonProfileView: View {
         self.pubkey = pubkey
         self.embeddedInNavigation = embeddedInNavigation
         self.onDismiss = onDismiss
-        _loader = StateObject(wrappedValue: ProfileFeedLoader(pubkey: pubkey, usesOwnLedger: false))
+        _models = StateObject(wrappedValue: ProfileLoaders(pubkey: pubkey, usesOwnLedger: false))
+    }
+
+    /// `onDismiss` is left out: every caller passes one that clears the same
+    /// sheet, so the first one is as good as a later one.
+    static func == (lhs: PersonProfileView, rhs: PersonProfileView) -> Bool {
+        lhs.pubkey == rhs.pubkey && lhs.embeddedInNavigation == rhs.embeddedInNavigation
     }
 
     /// Your own key, opened from somewhere other than the Profile tab.
@@ -47,7 +68,6 @@ struct PersonProfileView: View {
             shop: shop,
             extras: extras,
             dismissAction: embeddedInNavigation ? nil : performDismiss,
-            scrollDecoration: EmptyModifier(),
             badge: { badge },
             actions: { compact in actionButtons(compact: compact) },
             shopHeader: { EmptyView() }

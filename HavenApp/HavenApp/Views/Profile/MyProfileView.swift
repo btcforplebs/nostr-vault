@@ -16,12 +16,16 @@ final class ProfileTabRequests: ObservableObject {
 struct MyProfileView: View {
     let pubkey: String
 
-    @EnvironmentObject var nostrService: NostrService
+    /// Not observed: any profile arriving anywhere would redraw this page,
+    /// and with it the whole profile (`ProfileContent` takes closures, so it
+    /// is never skipped). `ProfileContent` watches this profile's own entry.
+    private var nostrService: NostrService { .shared }
     @EnvironmentObject var configService: ConfigService
-    @StateObject private var loader: ProfileFeedLoader
-    @StateObject private var shop = SellerListingsLoader()
-    @StateObject private var extras = ProfileExtrasLoader()
-    @StateObject private var dmService = DMService.shared
+    /// Held, not observed, for the same reason; `ProfileContent` observes them.
+    @StateObject private var loaders: ProfileLoaders
+    private var loader: ProfileFeedLoader { loaders.loader }
+    private var shop: SellerListingsLoader { loaders.shop }
+    private var extras: ProfileExtrasLoader { loaders.extras }
     @ObservedObject private var tutorialCenter = TutorialCenter.shared
     @ObservedObject private var requests = ProfileTabRequests.shared
     #if os(iOS)
@@ -47,7 +51,7 @@ struct MyProfileView: View {
 
     init(pubkey: String) {
         self.pubkey = pubkey
-        _loader = StateObject(wrappedValue: ProfileFeedLoader(pubkey: pubkey, usesOwnLedger: true))
+        _loaders = StateObject(wrappedValue: ProfileLoaders(pubkey: pubkey, usesOwnLedger: true))
     }
 
     /// The NWC wallet belongs to the owner account only; a whitelisted
@@ -68,7 +72,7 @@ struct MyProfileView: View {
             shopEmptyText: "You haven't listed anything yet",
             canDeleteMedia: true,
             scrollToTopToken: scrollToTopToken,
-            scrollDecoration: MyProfileScrollDecoration { showingEditProfile = true },
+            foldsTabBar: true,
             badge: { ProfileActions.badge("YOU", tint: .havenPurple) },
             actions: { _ in actionButtons },
             shopHeader: { sellButton }
@@ -97,14 +101,12 @@ struct MyProfileView: View {
             guard (note.object as? Int) == 2 else { return }
             showingCompose = true
         }
-        // ⌘R on an iPad keyboard. The Mac binds it to its refresh button; on
-        // iOS pulling down opens the editor, so the key is the refresh.
+        // ⌘R on an iPad keyboard. The Mac binds it to its refresh button.
         .modifier(RefreshesOnTabCommand(tab: 2) {
             Task { await loader.refresh(shop: shop, extras: extras) }
         })
         // Tapping the Profile tab while on it: back to the top, and fetched
-        // fresh, the iPhone's only way to refresh your own profile (the pull
-        // opens the editor).
+        // fresh, the iPhone's way to refresh your own profile.
         .onReceive(NotificationCenter.default.publisher(for: .havenProfileScrollToTop)) { _ in
             scrollToTopToken += 1
             Task { await loader.refresh(shop: shop, extras: extras) }
@@ -139,8 +141,6 @@ struct MyProfileView: View {
             #if os(macOS)
             ProfileActions.pill("Post", icon: "pencil", filled: true) { showingCompose = true }
             #endif
-            // Pulling the page down opens this too; the button stays for
-            // VoiceOver and anyone who has not found the pull.
             ProfileActions.pill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
             ProfileActions.trustWeb(hint: "Shows your web of trust") { showingTrustWeb = true }
         }
@@ -197,7 +197,6 @@ struct MyProfileView: View {
     private var toolbar: MyProfileToolbar {
         MyProfileToolbar(
             isOwner: isOwner,
-            hasUnreadDMs: dmService.totalUnreadCount > 0,
             onWallet: { showingLightning = true },
             onMessages: { showingDMInbox = true },
             onSettings: {
@@ -325,23 +324,9 @@ struct MyProfileView: View {
                 guard generation == saveGeneration else { return }
                 nostrService.profiles[pubkey] = shownBefore
                 unsavedDraft = edited
-                ErrorNotificationManager.shared.show("Profile not saved. Pull down to try again.")
+                ErrorNotificationManager.shared.show("Profile not saved. Tap Edit Profile to try again.")
             }
         }
-    }
-}
-
-/// Pulling your own profile down opens the editor (Logen). Nothing on the
-/// Mac, which has a refresh button instead.
-private struct MyProfileScrollDecoration: ViewModifier {
-    let onPull: () -> Void
-
-    func body(content: Content) -> some View {
-        #if os(iOS)
-        content.pullToEdit(isEnabled: true, onTrigger: onPull)
-        #else
-        content
-        #endif
     }
 }
 
@@ -351,7 +336,6 @@ private struct MyProfileScrollDecoration: ViewModifier {
 /// there pulls to refresh.
 private struct MyProfileToolbar: ViewModifier {
     let isOwner: Bool
-    let hasUnreadDMs: Bool
     let onWallet: () -> Void
     let onMessages: () -> Void
     let onSettings: () -> Void
@@ -405,14 +389,7 @@ private struct MyProfileToolbar: ViewModifier {
                 Button(action: onMessages) {
                     Image(systemName: "bubble.right.fill")
                         .foregroundColor(.havenPurple)
-                        .overlay(alignment: .topTrailing) {
-                            if hasUnreadDMs {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 7, height: 7)
-                                    .offset(x: 2, y: -2)
-                            }
-                        }
+                        .overlay(alignment: .topTrailing) { UnreadDMDot() }
                 }
                 .help("Messages")
             }
@@ -420,3 +397,20 @@ private struct MyProfileToolbar: ViewModifier {
         #endif
     }
 }
+
+#if os(macOS)
+/// The Messages button's unread dot. Its own view, so DM traffic redraws the
+/// dot and not the profile under it.
+private struct UnreadDMDot: View {
+    @ObservedObject private var dmService = DMService.shared
+
+    var body: some View {
+        if dmService.totalUnreadCount > 0 {
+            Circle()
+                .fill(.red)
+                .frame(width: 7, height: 7)
+                .offset(x: 2, y: -2)
+        }
+    }
+}
+#endif

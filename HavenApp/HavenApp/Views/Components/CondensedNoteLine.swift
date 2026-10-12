@@ -20,7 +20,13 @@ struct CondensedEngagement: Equatable {
 /// about how dense "condensed" is. In the thread view only the conversation
 /// around the note goes condensed: the note you are reading stays full size
 /// with its action bar, so a reply is one tap from wherever you landed.
-struct CondensedNoteLine: View {
+///
+/// Equatable, and drawn `.equatable()` by the feed: the feed redraws whenever
+/// any profile arrives, including the authors a profile sheet over it is
+/// fetching, and the closures below can't be compared, so without this every
+/// line under the sheet redrew on each one. Its settings and quick menu still
+/// redraw it through `configService` and its own state.
+struct CondensedNoteLine: View, Equatable {
     enum Style {
         /// Standalone row in the feed: its own bordered card.
         case card
@@ -56,6 +62,18 @@ struct CondensedNoteLine: View {
 
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
+
+    /// Everything the line draws. The closures are left out: callers build
+    /// them from the note and the screen's own state, so an equal line's old
+    /// ones act the same. Whether there is a tap still counts, for VoiceOver.
+    static func == (lhs: CondensedNoteLine, rhs: CondensedNoteLine) -> Bool {
+        lhs.note == rhs.note && lhs.profile == rhs.profile && lhs.displayPubkey == rhs.displayPubkey
+            && lhs.depth == rhs.depth && lhs.style == rhs.style && lhs.isFocused == rhs.isFocused
+            && lhs.replyCount == rhs.replyCount && lhs.contentOverride == rhs.contentOverride
+            && lhs.postedAt == rhs.postedAt && lhs.mediaURLs == rhs.mediaURLs
+            && lhs.engagement == rhs.engagement && lhs.showsMediaThumbnail == rhs.showsMediaThumbnail
+            && lhs.showsTranslate == rhs.showsTranslate && (lhs.onTap == nil) == (rhs.onTap == nil)
+    }
 
     @EnvironmentObject private var configService: ConfigService
     /// The profile picture's quick menu, as on a full post.

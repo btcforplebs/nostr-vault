@@ -10,7 +10,7 @@ import Photos
 /// they open. What you can DO on a profile is not here — your own profile
 /// (`MyProfileView`) and anyone else's (`PersonProfileView`) each bring their
 /// own badge, action row, toolbar and sheets.
-struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecoration: ViewModifier>: View {
+struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     let pubkey: String
     @ObservedObject var loader: ProfileFeedLoader
     @ObservedObject var shop: SellerListingsLoader
@@ -26,24 +26,30 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
     var canDeleteMedia = false
     /// Changing it scrolls the page back to the top.
     var scrollToTopToken = 0
-    /// Applied to the scroll view itself (pull-to-edit needs its geometry).
-    let scrollDecoration: ScrollDecoration
+    /// Scrolling folds the tab bar. Only the Profile tab's own page: anyone
+    /// else's is a sheet or a cover over the bar, and folding the hidden bar
+    /// redrew it on every frame of the scroll.
+    var foldsTabBar = false
     @ViewBuilder let badge: () -> Badge
     /// Called with 0, 1, 2: each a tighter row, for when the wider one does
     /// not fit on one line.
     @ViewBuilder let actions: (_ compact: Int) -> Actions
     @ViewBuilder let shopHeader: () -> ShopHeader
 
-    @EnvironmentObject var nostrService: NostrService
+    /// Not observed: its `profiles` dictionary changes each time any author
+    /// arrives, and observing it redrew this page mid-scroll. `metadataWatch`
+    /// redraws for this profile's own metadata.
+    var nostrService: NostrService { .shared }
+    @StateObject private var metadataWatch = ProfileMetadataWatch()
     @EnvironmentObject var configService: ConfigService
     /// Not observed: the main feed changes many times a second while it
     /// loads, and observing all of it redrew this page each time.
     /// `feedWatch` redraws only for the parts this page shows.
     var feedService: FeedService { .shared }
     @StateObject private var feedWatch = ProfileFeedWatch()
-    /// Likes, reposts, replies and zap sats under each post.
-    @ObservedObject var engagementStore = ProfileEngagementStore.shared
     @Environment(\.openURL) var openURL
+    /// Built once: a new value each pass invalidated every row under the tabs.
+    @State private var feedActions = FeedActions.make(feedService: .shared, nostrService: .shared)
 
     @State private var showingNoteDetail: FeedNote?
     /// Non-nil when an iPad split pane owns the note detail column.
@@ -131,19 +137,22 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
                         divider
                         sectionTabBar
                         sectionContent
-                            .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
+                            .environment(\.feedActions, feedActions)
                             .tabBarBottomPadding()
                             .frame(minHeight: viewportHeight, alignment: .top)
                     }
-                    .frame(maxWidth: 720)
-                    .frame(maxWidth: .infinity)
+                    // Top, not centred: the notes' lazy stack can come out
+                    // taller when placed than when measured, and centring
+                    // split the extra, sliding the header up under the banner.
+                    .frame(maxWidth: 720, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
             // Holds the note you are reading in place while notes arrive from
             // each relay and are sorted in above it, and while rows above it
             // grow as their media loads. The main feed does the same.
             .scrollPosition(id: $scrolledNoteID)
-            .scrollDirectionTracking(feedService: feedService)
+            .foldsTabBar(foldsTabBar, feedService: feedService)
             .onGeometryChange(for: CGSize.self) { $0.size } action: {
                 viewportHeight = $0.height
                 viewportWidth = $0.width
@@ -152,7 +161,6 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
             // The banner draws its own scrim under the bar; the system edge would
             // lay a grey band over it.
             .hiddenTopScrollEdge()
-            .modifier(scrollDecoration)
             .onChange(of: scrollToTopToken) { _, _ in
                 scrolledNoteID = nil
                 withAnimation(Motion.fade) { proxy.scrollTo(Self.topID, anchor: .top) }
@@ -161,6 +169,7 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .onAppear {
+            metadataWatch.watch(pubkey)
             loader.start()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: loader.extrasRelays)
@@ -264,6 +273,15 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View, ScrollDecora
 }
 
 private extension View {
+    @ViewBuilder
+    func foldsTabBar(_ folds: Bool, feedService: FeedService) -> some View {
+        if folds {
+            self.scrollDirectionTracking(feedService: feedService)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func hiddenTopScrollEdge() -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {

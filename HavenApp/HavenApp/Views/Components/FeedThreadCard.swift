@@ -163,6 +163,8 @@ struct FeedThreadCard: View {
             onProfile: onProfile,
             onTap: tapAction(for: note)
         )
+        // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
+        .equatable()
     }
 
     private func contentOverride(for note: FeedNote, original: FeedNote?) -> String? {
