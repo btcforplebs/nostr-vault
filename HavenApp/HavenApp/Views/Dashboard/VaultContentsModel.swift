@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 /// Loads the dashboard's "In your vault" section: event counts from the
@@ -106,7 +105,7 @@ final class VaultContentsModel: ObservableObject {
         var complete = true
         await withTaskGroup(of: [String: Int]?.self) { group in
             for url in urls {
-                group.addTask { await countAll(filters, at: url) }
+                group.addTask { await RelayCounter.count(filters, at: url) }
             }
             for await answer in group {
                 guard let answer else { complete = false; continue }
@@ -122,69 +121,5 @@ final class VaultContentsModel: ObservableObject {
             if key.hasPrefix("y-") { yours[String(key.dropFirst(2))] = value }
         }
         return VaultContents(total: sums["total"] ?? 0, byKind: byKind, yours: yours)
-    }
-
-    /// Asks one relay every COUNT over one socket. Nil if it did not connect
-    /// or did not answer them all within 20 seconds.
-    private static func countAll(_ filters: [String: [String: Any]], at url: URL) async -> [String: Int]? {
-        let client = WebSocketClient()
-        client.isTemporary = true
-        client.connect(url: url)
-        defer { client.disconnect() }
-
-        var connectWatch: AnyCancellable?
-        let connected = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            var resumed = false
-            connectWatch = client.$connectionState
-                .first(where: { $0 == .connected || $0 == .error })
-                .timeout(.seconds(5), scheduler: DispatchQueue.main)
-                .sink { _ in
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume(returning: false)
-                } receiveValue: { state in
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume(returning: state == .connected)
-                }
-        }
-        connectWatch?.cancel()
-        guard connected else { return nil }
-
-        let prefix = "vc-\(UUID().uuidString.prefix(6))-"
-        var results: [String: Int] = [:]
-        var answerWatch: AnyCancellable?
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            var resumed = false
-            answerWatch = client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .timeout(.seconds(20), scheduler: DispatchQueue.main)
-                .sink { _ in
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume()
-                } receiveValue: { message in
-                    guard let data = message.data(using: .utf8),
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                          json.count >= 3, json[0] as? String == "COUNT",
-                          let subId = json[1] as? String, subId.hasPrefix(prefix),
-                          let payload = json[2] as? [String: Any],
-                          let count = (payload["count"] as? NSNumber)?.intValue else { return }
-                    results[String(subId.dropFirst(prefix.count))] = count
-                    if results.count == filters.count, !resumed {
-                        resumed = true
-                        cont.resume()
-                    }
-                }
-            for (key, filter) in filters {
-                let request: [Any] = ["COUNT", prefix + key, filter]
-                if let data = try? JSONSerialization.data(withJSONObject: request),
-                   let text = String(data: data, encoding: .utf8) {
-                    client.send(text: text)
-                }
-            }
-        }
-        answerWatch?.cancel()
-        return results.count == filters.count ? results : nil
     }
 }

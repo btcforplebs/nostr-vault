@@ -7,6 +7,8 @@ struct EventKindBreakdownView: View {
 
     @State private var counts: [Int: Int] = [:]
     @State private var isLoading = true
+    /// The last count did not get an answer from every relay.
+    @State private var countFailed = false
 
     private static let kindNames: [Int: String] = [
         0: "Profile Metadata",
@@ -74,6 +76,12 @@ struct EventKindBreakdownView: View {
                             .font(.appSystem(size: 13))
                             .foregroundColor(.secondary)
                     }
+                } else if countFailed {
+                    Text("Couldn't count. Tap \(Image(systemName: "arrow.clockwise")) to try again.")
+                        .font(.appSystem(size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding()
                 } else {
                     ScrollView {
                         VStack(spacing: 8) {
@@ -143,7 +151,9 @@ struct EventKindBreakdownView: View {
 
     private func reload() async {
         isLoading = true
-        counts = await statsService.fetchCountsByKind()
+        let fresh = await statsService.fetchCountsByKind()
+        counts = fresh ?? [:]
+        countFailed = fresh == nil
         isLoading = false
     }
 }
