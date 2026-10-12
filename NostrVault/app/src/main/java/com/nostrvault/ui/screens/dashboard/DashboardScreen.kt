@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.serialization.json.*
 import com.nostrvault.ui.screens.VaultModePill
+import com.nostrvault.ui.components.RevealNewestEffect
 
 /** One filter in the relay half's right pill, for the note its tap leaves. iOS `VaultFilterChoice`. */
 internal data class RelayFilterChoice(
@@ -302,6 +303,15 @@ fun DashboardScreen(
     // Tapping the Vault tab again goes to the top of the list (iOS #275).
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
+    }
+    // New notes, likes or zaps landing above the top row show, as on "Vault".
+    RevealNewestEffect(listState) {
+        when (viewMode) {
+            VaultViewMode.NOTES -> displayNotes.map { it.id }
+            VaultViewMode.LIKES -> displayLikedNotes.map { it.id }
+            VaultViewMode.ZAPS -> displayZappedNotes.map { it.id }
+            VaultViewMode.FOLLOWERS -> emptyList()
+        }
     }
 
     // The line under the bar after a filter tap. A list rebuilt after the
