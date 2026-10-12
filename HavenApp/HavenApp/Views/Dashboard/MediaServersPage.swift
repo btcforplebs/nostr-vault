@@ -112,6 +112,9 @@ struct MediaServersPage: View {
 
     private var copyDetail: String {
         if let copy = model.copyCounts {
+            if model.isSigning {
+                return "Asking your signer to sign the upload. If it asks you to approve, approve it there."
+            }
             let failed = model.files.filter(\.isFailed).count
             let tail = failed > 0 ? ", \(failed.formatted()) failed" : ""
             return "Sent \(copy.done.formatted()) of \(copy.total.formatted())\(tail). Now: \(model.copyingNow)."
@@ -231,6 +234,8 @@ final class MediaServersModel: ObservableObject {
     @Published private(set) var copyNote: String?
     /// Each file some server is missing, and what the last copy did with it.
     @Published private(set) var files: [MediaCopyFile] = []
+    /// Waiting on the signer for the next batch's authorisation.
+    @Published private(set) var isSigning = false
 
     private var service: BlossomService?
     private var hashes: [String] = []
@@ -383,6 +388,8 @@ final class MediaServersModel: ObservableObject {
         return result
     }
 
+    private static let filesPerSignature = 25
+
     func startCopy() {
         guard !isCopying, service != nil else { return }
         copyTask = Task { await copyToServers() }
@@ -408,22 +415,40 @@ final class MediaServersModel: ObservableObject {
         service.appLog("copy to servers: \(work.count) file(s)")
         var done = 0
         let jobs = files.filter { work.contains($0.id) }.map { (id: $0.id, url: $0.url, servers: $0.servers) }
-        var iterator = jobs.makeIterator()
-        await withTaskGroup(of: (String, [String: BlobCopyOutcome]).self) { group in
-            func addNext() -> String? {
-                guard !Task.isCancelled, let job = iterator.next() else { return nil }
-                group.addTask { (job.id, await service.copyStoredBlob(sha256: job.id, fileURL: job.url, to: job.servers)) }
-                return job.id
+        // One signature per batch, not per file: with a remote signer every
+        // signature is a round trip, and maybe a prompt to approve.
+        for start in stride(from: 0, to: jobs.count, by: Self.filesPerSignature) {
+            if Task.isCancelled { break }
+            let batch = Array(jobs[start..<min(start + Self.filesPerSignature, jobs.count)])
+            isSigning = true
+            let auth = await service.makeBatchUploadAuth(hashes: batch.map(\.id))
+            isSigning = false
+            guard let auth else {
+                if Task.isCancelled { break }
+                // The next batch would ask the same signer: stop here and say why.
+                let reason = await service.signerProblem()
+                for job in jobs[start...] {
+                    update(job.id) { $0.status = .failed(job.servers.map { .init(server: $0, reason: reason) }) }
+                }
+                break
             }
-            for _ in 0..<2 {
-                guard let id = addNext() else { break }
-                update(id) { $0.status = .copying }
-            }
-            for await (id, outcomes) in group {
-                record(id, outcomes)
-                done += 1
-                copyCounts = (done, work.count)
-                if let next = addNext() { update(next) { $0.status = .copying } }
+            var iterator = batch.makeIterator()
+            await withTaskGroup(of: (String, [String: BlobCopyOutcome]).self) { group in
+                func addNext() -> String? {
+                    guard !Task.isCancelled, let job = iterator.next() else { return nil }
+                    group.addTask { (job.id, await service.copyStoredBlob(sha256: job.id, fileURL: job.url, to: job.servers, batchAuth: auth)) }
+                    return job.id
+                }
+                for _ in 0..<2 {
+                    guard let id = addNext() else { break }
+                    update(id) { $0.status = .copying }
+                }
+                for await (id, outcomes) in group {
+                    record(id, outcomes)
+                    done += 1
+                    copyCounts = (done, work.count)
+                    if let next = addNext() { update(next) { $0.status = .copying } }
+                }
             }
         }
         let stopped = Task.isCancelled

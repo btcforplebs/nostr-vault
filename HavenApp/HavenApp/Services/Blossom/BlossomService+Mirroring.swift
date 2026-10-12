@@ -210,10 +210,47 @@ extension BlossomService {
     /// A remote signer that never answers used to hold the whole copy.
     private static let copySignLimit: UInt64 = 45_000_000_000
 
+    /// One upload authorisation for several files: an `x` tag per hash.
+    ///
+    /// Signing one per file is what held the copy at "0 of 11" with a remote
+    /// signer: each request can wait 90 s for the signer, three tries a file,
+    /// before failing without a word. Blossom servers match the `x` tag they
+    /// need among all of them (khatru: `FindWithValue("x", hash)`); one that
+    /// refuses gets a single-file signature instead, see `copyStoredBlob`.
+    func makeBatchUploadAuth(hashes: [String]) async -> String? {
+        guard !hashes.isEmpty else { return nil }
+        let expiration = Int64(Date().timeIntervalSince1970) + 3 * 3600
+        let tags = [["t", "upload"]] + hashes.map { ["x", $0] } + [["expiration", String(expiration)]]
+        let content = hashes.count == 1 ? "Upload blob \(hashes[0].prefix(8))..." : "Upload \(hashes.count) blobs"
+        appLog("copy: asking the signer for one upload authorisation covering \(hashes.count) file(s)")
+        let event = await withTaskGroup(of: NostrEvent?.self) { group in
+            group.addTask { await self.nostrService.signEventAsync(kind: 24242, content: content, tags: tags) }
+            group.addTask { try? await Task.sleep(nanoseconds: Self.copySignLimit); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let event, let json = try? JSONEncoder().encode(event) else {
+            appLog("copy: the signer gave no upload authorisation", level: "WARN")
+            return nil
+        }
+        return json.base64EncodedString()
+    }
+
+    /// Why signing failed, in the words for the signer this account uses.
+    func signerProblem() async -> String {
+        let mode = await MainActor.run { ConfigService.shared.config.activeSigningMode() }
+        return mode == "nip46"
+            ? "Your signer didn't answer. Open it, approve the request if it asks, then tap Retry."
+            : "Couldn't sign with your key. If it's locked with a password, unlock it, then tap Retry."
+    }
+
     /// Sends a file stored on this device to each of `servers`, streaming it
-    /// from disk, and says what happened at each one. Every outcome is
-    /// written to the app log.
-    func copyStoredBlob(sha256: String, fileURL: URL, to servers: [String]) async -> [String: BlobCopyOutcome] {
+    /// from disk, and says what happened at each one. `batchAuth` is a shared
+    /// authorisation from `makeBatchUploadAuth`; without one, or when a server
+    /// turns it down, the file is signed on its own. Every outcome is written
+    /// to the app log.
+    func copyStoredBlob(sha256: String, fileURL: URL, to servers: [String], batchAuth: String? = nil) async -> [String: BlobCopyOutcome] {
         let tag = String(sha256.prefix(8))
         func all(_ outcome: BlobCopyOutcome) -> [String: BlobCopyOutcome] {
             Dictionary(uniqueKeysWithValues: servers.map { ($0, outcome) })
@@ -226,17 +263,21 @@ extension BlossomService {
         let contentType = Self.sniffContentType(fileURL)
         appLog("copy \(tag) (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)), \(contentType)) to \(servers.joined(separator: ", "))")
 
-        let auth = await withTaskGroup(of: String?.self) { group in
-            group.addTask { await self.makeUploadAuth(sha256: sha256) }
-            group.addTask { try? await Task.sleep(nanoseconds: Self.copySignLimit); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        let ownAuth = { () async -> String? in
+            await withTaskGroup(of: String?.self) { group in
+                group.addTask { await self.makeUploadAuth(sha256: sha256) }
+                group.addTask { try? await Task.sleep(nanoseconds: Self.copySignLimit); return nil }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
         }
-        guard let auth else {
+        var signed = batchAuth
+        if signed == nil { signed = await ownAuth() }
+        guard let auth = signed else {
             if Task.isCancelled { return all(.failed("Stopped.")) }
             appLog("copy \(tag): could not sign the upload", level: "WARN")
-            return all(.failed("Couldn't sign the upload. Check that your signer is connected."))
+            return all(.failed(await signerProblem()))
         }
 
         return await withTaskGroup(of: (String, BlobCopyOutcome).self) { group in
@@ -248,6 +289,10 @@ extension BlossomService {
                     if attempt.worthRetry, !Task.isCancelled {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
                         attempt = await self.putStoredBlob(fileURL: fileURL, size: size, sha256: sha256, contentType: contentType, server: server, auth: auth)
+                    }
+                    // A server that wants exactly one hash per signature.
+                    if attempt.authRefused, batchAuth != nil, !Task.isCancelled, let single = await ownAuth() {
+                        attempt = await self.putStoredBlob(fileURL: fileURL, size: size, sha256: sha256, contentType: contentType, server: server, auth: single)
                     }
                     return (server, attempt.outcome)
                 }
@@ -268,9 +313,10 @@ extension BlossomService {
     struct CopyAttempt {
         let outcome: BlobCopyOutcome
         var worthRetry = false
+        var authRefused = false
         static let copied = CopyAttempt(outcome: .copied)
-        static func failed(_ reason: String, retry: Bool = false) -> CopyAttempt {
-            CopyAttempt(outcome: .failed(reason), worthRetry: retry)
+        static func failed(_ reason: String, retry: Bool = false, authRefused: Bool = false) -> CopyAttempt {
+            CopyAttempt(outcome: .failed(reason), worthRetry: retry, authRefused: authRefused)
         }
     }
 
@@ -307,7 +353,7 @@ extension BlossomService {
         let said = serverSays.flatMap { $0.isEmpty || $0.hasPrefix("<") ? nil : $0 }
         let suffix = said.map { " It said: \"\($0)\"." } ?? ""
         switch status {
-        case 401, 403: return .failed("The server turned down your key (HTTP \(status))." + suffix)
+        case 401, 403: return .failed("The server turned down your key (HTTP \(status))." + suffix, authRefused: true)
         case 402: return .failed("The server wants payment to store files (HTTP 402)." + suffix)
         case 409: return .failed("The server already has a different file under this name (HTTP 409)." + suffix)
         case 413: return .failed("Too big for this server (HTTP 413)." + suffix)
