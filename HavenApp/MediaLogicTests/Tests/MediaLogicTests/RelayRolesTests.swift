@@ -2,7 +2,7 @@ import XCTest
 @testable import MediaLogic
 
 /// The read and write relay roles every feature asks for, instead of each one
-/// building its own "configured list, or primal + nos.lol" fallback.
+/// building its own "configured list, or primal + damus" fallback.
 final class RelayRolesTests: XCTestCase {
 
     func testReadRelaysAreTheFeedRelays() {

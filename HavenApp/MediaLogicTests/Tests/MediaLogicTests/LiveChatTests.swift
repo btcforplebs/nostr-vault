@@ -117,9 +117,9 @@ final class LiveChatTests: XCTestCase {
     /// stream on 2026-09-07, carries none of the chat. It stays in the list
     /// because it is the address other clients look for, but it is asked last.
     func testChatRelaysPreferTheStreamsOwnAnswerAndNeverLeadWithZapStream() {
-        let ordered = LiveChat.chatRelays(streamRelays: ["wss://relay.snort.social"],
+        let ordered = LiveChat.chatRelays(streamRelays: ["wss://streamer.example"],
                                           userRelays: ["wss://my.relay"])
-        XCTAssertEqual(ordered.first, "wss://relay.snort.social")
+        XCTAssertEqual(ordered.first, "wss://streamer.example")
         XCTAssertEqual(Array(ordered.dropFirst(1).prefix(3)), LiveChat.defaultChatRelays)
         XCTAssertEqual(ordered.last, "wss://my.relay")
         // Five sockets is the budget, and zap.stream is the first thing cut:
@@ -131,10 +131,10 @@ final class LiveChatTests: XCTestCase {
     /// Hosts advertise both forms. Two sockets to one relay prints every
     /// message twice.
     func testTrailingSlashAndCaseDoNotOpenTheSameRelayTwice() {
-        let ordered = LiveChat.chatRelays(streamRelays: ["wss://nos.lol/", "WSS://NOS.LOL"],
+        let ordered = LiveChat.chatRelays(streamRelays: ["wss://relay.snort.social/", "WSS://RELAY.SNORT.SOCIAL"],
                                           userRelays: [], limit: 10)
-        XCTAssertEqual(ordered.filter { $0.lowercased().contains("nos.lol") }.count, 1)
-        XCTAssertEqual(ordered.first, "wss://nos.lol")
+        XCTAssertEqual(ordered.filter { $0.lowercased().contains("relay.snort.social") }.count, 1)
+        XCTAssertEqual(ordered.first, "wss://relay.snort.social")
     }
 
     func testChatRelaysDropUnusableEntriesAndRespectTheLimit() {

@@ -111,6 +111,7 @@ class ConfigService: ObservableObject {
         }
         
         loadRelayLists()
+        config.dropDeadRelaysOnce()
         removeStarterPackPicksFromAccounts()
         
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
@@ -161,6 +162,7 @@ class ConfigService: ObservableObject {
 
                 // Reload lists
                 loadRelayLists()
+                config.dropDeadRelaysOnce()
 
                 // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)

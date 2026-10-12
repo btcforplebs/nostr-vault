@@ -106,7 +106,7 @@ final class TrustPathService {
     /// Where one person's follow list is asked for, all at once: the first
     /// feed relays, the index relays, and the relays they publish to. The
     /// feed relays alone missed lists the profile page found: by default
-    /// they are primal, nos.lol and nostr.mom, and the last two were down
+    /// they were primal, nos.lol and nostr.mom, and the last two were down
     /// (2026-10-10), while purplepag.es and the person's own relays had it.
     private static func listRelays(for pubkey: String) -> [URL] {
         let outbox = NostrService.shared.outboxRelays[pubkey] ?? []

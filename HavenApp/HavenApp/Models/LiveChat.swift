@@ -38,11 +38,12 @@ enum LiveChat {
     /// all 19, while nos.lol returned 200 (140 chat, 60 zaps) across 4 of them,
     /// relay.damus.io 200 across 3, and relay.primal.net 200 across 2.
     /// Following the documented relay alone shows an empty room for a stream
-    /// that is busy.
+    /// that is busy. nos.lol led that count but stopped answering
+    /// (2026-10-12); relay.snort.social took its place unmeasured.
     static let defaultChatRelays = [
-        "wss://nos.lol",
         "wss://relay.damus.io",
-        "wss://relay.primal.net"
+        "wss://relay.primal.net",
+        "wss://relay.snort.social"
     ]
 
     /// Who to ask for a stream's chat, best source first.

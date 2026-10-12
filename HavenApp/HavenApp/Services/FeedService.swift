@@ -355,9 +355,9 @@ class FeedService: ObservableObject {
     /// roots unavailable — nos.lol refused connections and damus answered no
     /// REQ — and these found two thirds of what was left (19% remained).
     /// Re-measure with `.scratch/roots/probe5.py` in the Buzz nest before
-    /// changing the list.
+    /// changing the list. offchain.pub was first until it began refusing
+    /// connections (2026-10-12).
     static let fallbackNoteRelays = [
-        "wss://offchain.pub",
         "wss://nostr.wine",
         "wss://nostr.oxtr.dev",
         "wss://nostr.land",

@@ -183,10 +183,12 @@ struct HavenConfig: Codable, Equatable {
     ]
     
     // Feed Reading
+    // nos.lol and nostr.mom dropped (2026-10-12: both time out on connect).
+    // Damus and Snort keep the first three read relays all live.
     var feedRelays: [String] = [
         "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
+        "wss://relay.damus.io",
+        "wss://relay.snort.social",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net"
     ]
@@ -194,7 +196,7 @@ struct HavenConfig: Codable, Equatable {
     // NIP-17: DM Relays (kind 10050)
     var dmRelays: [String] = [
         "wss://relay.primal.net",
-        "wss://nos.lol",
+        "wss://relay.damus.io",
         "wss://relay.btcforplebs.com"
     ]
     /// When `dmRelays` last changed, in Unix seconds: the user's own edit, or
@@ -209,6 +211,10 @@ struct HavenConfig: Codable, Equatable {
     /// owner's blocked relay list (NIP-51 kind 10006). Enforced in
     /// `WebSocketClient` through `RelayBlocklist`.
     var blockedRelays: [String] = []
+
+    /// Set once `deadRelayHosts` have been dropped from the saved relay lists
+    /// (`dropDeadRelaysOnce`). A fresh config never had them.
+    var droppedDeadRelays: Bool = true
 
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
@@ -284,7 +290,7 @@ struct HavenConfig: Codable, Equatable {
         case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
-        case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays
+        case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays, droppedDeadRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
@@ -431,6 +437,7 @@ struct HavenConfig: Codable, Equatable {
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
         dmRelaysUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .dmRelaysUpdatedAt)
         blockedRelays = try container.decodeIfPresent([String].self, forKey: .blockedRelays) ?? []
+        droppedDeadRelays = try container.decodeIfPresent(Bool.self, forKey: .droppedDeadRelays) ?? false
 
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
