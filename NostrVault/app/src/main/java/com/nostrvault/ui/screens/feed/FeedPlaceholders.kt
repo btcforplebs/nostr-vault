@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.service.LiveFeedService
 import com.nostrvault.ui.theme.*
 
 // ── Empty state ──────────────────────────────────────────────────
@@ -42,7 +43,23 @@ internal data class ScopedEmptyText(
     val noConnection: Boolean = false,
 )
 
-internal fun scopedEmptyText(mode: FeedMode, scopeFollowing: Boolean, loadFailed: Boolean = false): ScopedEmptyText? {
+internal fun scopedEmptyText(
+    mode: FeedMode,
+    scopeFollowing: Boolean,
+    loadFailed: Boolean = false,
+    /** Live, Following: the account follows nobody, so nothing was asked. */
+    liveFollowSetIsEmpty: Boolean = false,
+    /** Live, Global: who the last load let in (LiveFeedService.globalGate). */
+    liveGate: LiveFeedService.GlobalGate? = null,
+): ScopedEmptyText? {
+    // Before the connection check: with no follows, nothing was asked.
+    if (mode == FeedMode.LIVE && scopeFollowing && liveFollowSetIsEmpty) {
+        return ScopedEmptyText(
+            "Nobody you follow is live",
+            "You don't follow anyone yet. Global shows everyone who is streaming.",
+            "Show Global streams", true,
+        )
+    }
     // These feeds come from other people's relays; with none answering, an
     // empty grid is not "nothing posted" (iOS RecipeFeedService.loadFailed).
     val needsConnection = when (mode) {
@@ -69,15 +86,29 @@ internal fun scopedEmptyText(mode: FeedMode, scopeFollowing: Boolean, loadFailed
             "Nobody you follow is selling anything. Switch to Global to see every listing.",
             "Show Global listings", true,
         ) else ScopedEmptyText("No listings found", "No products, auctions or classifieds with a photo came back.", "Try again", false)
-        FeedMode.LIVE -> if (scopeFollowing) ScopedEmptyText(
-            "Nobody you follow is live",
-            "Switch to Global to see everyone who is streaming.",
-            "Show Global streams", true,
-        ) else ScopedEmptyText(
-            "Nothing live right now",
-            "Most stream announcements on Nostr are for streams that already ended. Only running ones show here.",
-            "Try again", false,
-        )
+        // iOS LiveChat.emptyLiveText. Says who was asked, never blames Nostr.
+        FeedMode.LIVE -> when {
+            scopeFollowing -> ScopedEmptyText(
+                "Nobody you follow is live",
+                "Switch to Global to see who else is streaming.",
+                "Show Global streams", true,
+            )
+            liveGate is LiveFeedService.GlobalGate.Trusted && liveGate.pubkeys.isEmpty() -> ScopedEmptyText(
+                "Building your web of trust",
+                "Streams from people in your network show here once it's ready.",
+                "Try again", false,
+            )
+            liveGate is LiveFeedService.GlobalGate.Trusted -> ScopedEmptyText(
+                "Nobody in your network is live",
+                "Nobody in your web of trust is streaming right now.",
+                "Try again", false,
+            )
+            else -> ScopedEmptyText(
+                "Nothing live right now",
+                "Nobody is streaming right now. Check back later.",
+                "Try again", false,
+            )
+        }
         // iOS FeedView.emptyArticlesStateView.
         FeedMode.ARTICLES -> ScopedEmptyText(
             "No articles yet",
@@ -104,8 +135,10 @@ internal fun ScopedEmptyPlaceholder(
     onShowGlobal: () -> Unit,
     subtitleOverride: String? = null,
     loadFailed: Boolean = false,
+    liveFollowSetIsEmpty: Boolean = false,
+    liveGate: LiveFeedService.GlobalGate? = null,
 ) {
-    val text = scopedEmptyText(mode, scopeFollowing, loadFailed)
+    val text = scopedEmptyText(mode, scopeFollowing, loadFailed, liveFollowSetIsEmpty, liveGate)
     if (text == null) {
         EmptyFeedPlaceholder(mode, onRefresh = onRefresh, subtitleOverride = subtitleOverride)
         return

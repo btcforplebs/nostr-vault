@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.service.LiveFeedService
 import com.nostrvault.ui.components.LiveStreamThumbnail
 import com.nostrvault.ui.theme.*
 
@@ -38,6 +41,10 @@ internal fun LiveGrid(
     loadFailed: Boolean = false,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
+    /** Following, and the account follows nobody. */
+    followSetIsEmpty: Boolean = false,
+    /** Who Global let in on the last load (LiveFeedService.globalGate). */
+    globalGate: LiveFeedService.GlobalGate? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     if (streams.isEmpty()) {
@@ -45,13 +52,35 @@ internal fun LiveGrid(
             if (isLoading) {
                 CircularProgressIndicator(color = colors.primary)
             } else {
-                ScopedEmptyPlaceholder(FeedMode.LIVE, scopeFollowing, onRefresh, onShowGlobal, loadFailed = loadFailed)
+                ScopedEmptyPlaceholder(
+                    FeedMode.LIVE, scopeFollowing, onRefresh, onShowGlobal,
+                    loadFailed = loadFailed,
+                    liveFollowSetIsEmpty = followSetIsEmpty,
+                    liveGate = if (scopeFollowing) null else globalGate,
+                )
             }
         }
         return
     }
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        // Global with no web of trust yet shows everyone (minus adult
+        // streams); say so, as the topic feed does. iOS liveUnfilteredBanner.
+        if (!scopeFollowing && globalGate == LiveFeedService.GlobalGate.NewAccount) {
+            item(key = "unfiltered") {
+                Text(
+                    text = "Unfiltered: people you don't know yet",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .semantics {
+                            contentDescription = "Unfiltered. These streams are from people you don't know yet."
+                        },
+                )
+            }
+        }
         items(streams, key = { it.address }) { stream ->
             Column(
                 modifier = Modifier

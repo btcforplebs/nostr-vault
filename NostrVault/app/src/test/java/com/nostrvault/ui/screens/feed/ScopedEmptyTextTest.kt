@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.feed
 
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.service.LiveFeedService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -69,5 +70,28 @@ class ScopedEmptyTextTest {
     fun otherFeedsKeepTheirOwnPlaceholder() {
         assertNull(scopedEmptyText(FeedMode.FOLLOWING, true))
         assertNull(scopedEmptyText(FeedMode.POPULAR, false))
+    }
+
+    @Test
+    fun liveEmptyStatesSayWhoWasAskedAndNeverBlameNostr() {
+        val noFollows = scopedEmptyText(FeedMode.LIVE, true, liveFollowSetIsEmpty = true)!!
+        assertEquals("You don't follow anyone yet. Global shows everyone who is streaming.", noFollows.subtitle)
+        assertTrue(noFollows.showsGlobal)
+        // Nothing was asked, so no relay failing to answer can be the reason.
+        assertFalse(scopedEmptyText(FeedMode.LIVE, true, loadFailed = true, liveFollowSetIsEmpty = true)!!.noConnection)
+
+        assertEquals("Nothing live right now",
+            scopedEmptyText(FeedMode.LIVE, false, liveGate = LiveFeedService.GlobalGate.NewAccount)!!.title)
+        assertEquals("Nobody in your network is live",
+            scopedEmptyText(FeedMode.LIVE, false, liveGate = LiveFeedService.GlobalGate.Trusted(setOf("a")))!!.title)
+        assertEquals("Building your web of trust",
+            scopedEmptyText(FeedMode.LIVE, false, liveGate = LiveFeedService.GlobalGate.Trusted(emptySet()))!!.title)
+
+        val gates = listOf(null, LiveFeedService.GlobalGate.Everyone, LiveFeedService.GlobalGate.NewAccount,
+            LiveFeedService.GlobalGate.Trusted(emptySet()), LiveFeedService.GlobalGate.Trusted(setOf("a")))
+        for (following in listOf(true, false)) for (gate in gates) {
+            val text = scopedEmptyText(FeedMode.LIVE, following, liveGate = gate)!!
+            assertFalse(text.subtitle, "Nostr" in text.subtitle)
+        }
     }
 }

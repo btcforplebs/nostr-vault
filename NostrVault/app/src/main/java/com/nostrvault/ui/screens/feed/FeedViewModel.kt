@@ -98,6 +98,10 @@ class FeedViewModel @Inject constructor(
     val liveLoading = liveFeedService.isLoading
     /** No relay answered the last Live load: "Could not reach any relay". */
     val liveLoadFailed = liveFeedService.loadFailed
+    /** Following, and the account follows nobody: nothing was asked. */
+    val liveFollowSetIsEmpty = liveFeedService.followSetIsEmpty
+    /** Who Live's Global side let in on the last load. */
+    val liveGlobalGate = liveFeedService.globalGate
 
     fun refreshLive() = liveFeedService.refresh()
 
