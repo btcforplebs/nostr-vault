@@ -271,17 +271,6 @@ struct OwnedTile: View {
     }
 }
 
-/// Settings › Sync with Mac, whichever form this platform has.
-struct MacSyncSettingsPage: View {
-    var body: some View {
-        #if os(iOS)
-        MacRelaySettingsView()
-        #else
-        MacRelayDomainSettingsView()
-        #endif
-    }
-}
-
 extension View {
     /// A settings page pushed from the dashboard, titled like it is in Settings.
     func settingsPage(_ title: String) -> some View {
