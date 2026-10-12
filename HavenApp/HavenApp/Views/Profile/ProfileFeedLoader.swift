@@ -104,6 +104,10 @@ final class ProfileFeedLoader: ObservableObject {
     /// later, in one sort and one redraw, instead of one of each per event.
     let pending = PendingProfileNotes()
     var profileClients: [WebSocketClient] = []
+    /// The opening load's filters, so relays found later get the same REQ.
+    var openingFilters: [Any] = []
+    /// Relays the opening load has asked, as `relayKey`s.
+    var askedRelays = Set<String>()
     var profileCancellables = Set<AnyCancellable>()
     var seenNoteIds = Set<String>()
     /// Followers received but not yet published, follower → newest

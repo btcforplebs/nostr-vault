@@ -184,37 +184,9 @@ extension ProfileFeedLoader {
         }
 
         openingPending = Set(relayURLs.indices)
-        for (relay, url) in relayURLs.enumerated() {
-            let client = WebSocketClient()
-            profileClients.append(client)
-
-            client.messageSubject
-                .receive(on: parseQueue)
-                .compactMap(ProfileRelayMessage.init)
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in
-                    self?.handleProfileNoteMessage(message, relay: relay)
-                }
-                .store(in: &profileCancellables)
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self, weak client] state in
-                    // A relay that can't be reached has answered too: it
-                    // will send nothing.
-                    if state == .error { self?.openingRelayAnswered(relay) }
-                    if state == .connected {
-                        let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))"] + filters
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client?.send(text: str)
-                        }
-                    }
-                }
-                .store(in: &profileCancellables)
-
-            client.connect(url: url)
-        }
+        openingFilters = filters
+        for url in relayURLs { openProfileRelay(url) }
+        lookUpOutboxIfMissing()
 
         notesLoadToken += 1
         let token = notesLoadToken
@@ -225,6 +197,85 @@ extension ProfileFeedLoader {
             self.openingPending.removeAll()
             self.isLoadingNotes = false
         }
+    }
+
+    /// Opens one relay of the profile's load and sends it the opening REQ.
+    /// Its index in `profileClients` is how its answers are counted.
+    private func openProfileRelay(_ url: URL) {
+        let relay = profileClients.count
+        let filters = openingFilters
+        let client = WebSocketClient()
+        profileClients.append(client)
+        askedRelays.insert(Self.relayKey(url.absoluteString))
+
+        client.messageSubject
+            .receive(on: parseQueue)
+            .compactMap(ProfileRelayMessage.init)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.handleProfileNoteMessage(message, relay: relay)
+            }
+            .store(in: &profileCancellables)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                // A relay that can't be reached has answered too: it
+                // will send nothing.
+                if state == .error { self?.openingRelayAnswered(relay) }
+                if state == .connected {
+                    let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))"] + filters
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let str = String(data: data, encoding: .utf8) {
+                        client?.send(text: str)
+                    }
+                }
+            }
+            .store(in: &profileCancellables)
+
+        client.connect(url: url)
+    }
+
+    /// Someone you don't follow (most of the WoT) has no relay list cached,
+    /// so the opening load never reached the relays they post to and their
+    /// page came up empty. Their kind 10002 is looked up, and the relays it
+    /// names join the load already open: nothing on screen is redrawn, and
+    /// "Loading…" holds until the lookup answers or gives up.
+    private func lookUpOutboxIfMissing() {
+        guard nostrService.outboxRelays[pubkey] == nil else { return }
+        let token = notesLoadToken + 1   // the token this load is about to take
+        openingPending.insert(Self.outboxLookup)
+        nostrService.fetchRelayList(for: pubkey)
+
+        nostrService.$outboxRelays
+            .compactMap { [pubkey] in $0[pubkey] }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] outbox in
+                guard let self, token == self.notesLoadToken else { return }
+                for str in outbox.prefix(3) where !self.askedRelays.contains(Self.relayKey(str)) {
+                    guard let url = URL(string: str) else { continue }
+                    self.openingPending.insert(self.profileClients.count)
+                    self.openProfileRelay(url)
+                }
+                self.openingRelayAnswered(Self.outboxLookup)
+            }
+            .store(in: &profileCancellables)
+
+        // The lookup's own connections give up after 5s; no list by then
+        // means none was found.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, token == self.notesLoadToken else { return }
+            self.openingRelayAnswered(Self.outboxLookup)
+        }
+    }
+
+    /// Stands in `openingPending` for the relay-list lookup.
+    private static let outboxLookup = -1
+
+    /// One spelling per relay, so "wss://x/" and "wss://X" count once.
+    static func relayKey(_ url: String) -> String {
+        url.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
     }
 
     private func openingRelayAnswered(_ relay: Int) {
