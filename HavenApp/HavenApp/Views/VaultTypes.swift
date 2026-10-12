@@ -135,34 +135,17 @@ enum VaultFilterChoice: Equatable {
         switch self {
         case .activity(.all): return "Everything"
         case .activity(.mentions), .notes(.tagged): return "Mentions"
-        case .notes(.all), .notes(.whitelist): return "All \(things)"
+        case .notes(.all): return "All \(things)"
+        case .notes(.whitelist): return "Whitelisted"
         case .notes(.mine): return "Your \(things)"
         case .notes(.outside): return "From outside your network"
-        case .recipes: return "Recipes"
+        case .recipes: return "Recipes only"
         case .likes(.onMyNotes): return "Likes received"
         case .likes(.myLikes): return "Likes given"
         case .zaps(.onMyNotes): return "Zaps received"
         case .zaps(.myZaps): return "Zaps given"
         case .followers(.new): return "Newest followers"
         case .followers(.all): return "All followers"
-        }
-    }
-
-    /// The note for an empty list; never "· 0".
-    func emptyText(scope: VaultNoteScope) -> String {
-        let things = scope.rawValue
-        switch self {
-        case .activity(.all): return "Nothing new yet"
-        case .activity(.mentions), .notes(.tagged): return "No mentions yet"
-        case .notes(.all), .notes(.whitelist): return "No \(things) yet"
-        case .notes(.mine): return "None of your \(things) yet"
-        case .notes(.outside): return "No replies from outside"
-        case .recipes: return "No recipes yet"
-        case .likes(.onMyNotes): return "No likes yet"
-        case .likes(.myLikes): return "No likes given yet"
-        case .zaps(.onMyNotes): return "No zaps yet"
-        case .zaps(.myZaps): return "No zaps given yet"
-        case .followers(.new), .followers(.all): return "No followers yet"
         }
     }
 }

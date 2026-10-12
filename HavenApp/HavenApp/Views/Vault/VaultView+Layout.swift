@@ -131,6 +131,8 @@ extension VaultView {
                             refreshAll(.incremental)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Under the header, the Mac's toolbar.
+                        .filterNoteHost(filterNote)
                     }
                     .clipped()
                 } else {
@@ -174,6 +176,7 @@ extension VaultView {
             }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .filterNoteHost(filterNote)
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {

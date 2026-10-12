@@ -70,6 +70,9 @@ extension VaultView {
 
     var viewContent: some View {
         viewContentBase
+        // A filter tap's count lands with the rebuilt list (as on iOS).
+        .onChange(of: displayPass) { _, _ in filterListLanded() }
+        .onChange(of: viewMode) { _, _ in pendingFilterNote = nil }
         .modifier(VaultChangeHandlers(
             viewMode: viewMode,
             likesFilter: likesFilter,

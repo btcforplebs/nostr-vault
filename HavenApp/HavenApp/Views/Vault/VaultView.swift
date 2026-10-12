@@ -269,9 +269,7 @@ struct VaultView: View {
             }
             #endif
         }
-        .overlay(alignment: .top) {
-            FilterNoteView(model: filterNote).padding(.top, 8)
-        }
+        .filterNoteHost(filterNote)
         .onChange(of: displayPass) { _, _ in filterListLanded() }
         .onChange(of: activityFilter) { _, _ in
             maxDisplayedItems = 50
