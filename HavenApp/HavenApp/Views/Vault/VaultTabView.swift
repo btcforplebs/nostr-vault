@@ -161,15 +161,6 @@ struct VaultModePill: View {
                     .font(.appSystem(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 30, height: 30)
-                    .overlay(alignment: .topTrailing) {
-                        if hasNewElsewhere {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 8, height: 8)
-                                .offset(x: 1, y: 1)
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
                 HStack(spacing: 3) {
                     Text(mode.title)
                         .font(.appSystem(size: 17, weight: .bold))

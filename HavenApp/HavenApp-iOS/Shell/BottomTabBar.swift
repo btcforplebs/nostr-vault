@@ -170,14 +170,11 @@ struct BottomTabBar: View {
                     )
                     .zapFlightOrigin()
                     .overlay(alignment: .topTrailing) {
-                        if dmService.totalUnreadCount > 0 || relayManager.hasNewRelayActivity {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 10, height: 10)
-                                .offset(x: 2, y: -2)
-                        }
+                        NewsDot(isShown: vaultHasNews, size: 11)
+                            .offset(x: 3, y: -3)
                     }
             }
+            .accessibilityValue(vaultHasNews ? "New activity" : "")
 
             // Contextual FAB icon — triggers compose or relay dashboard
             Button {
@@ -231,12 +228,8 @@ struct BottomTabBar: View {
                 .foregroundStyle(selected ? Color.havenPurple : .white)
                 .frame(height: 24)
                 .overlay(alignment: .topTrailing) {
-                    if hasRedBadge {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 4, y: -2)
-                    }
+                    NewsDot(isShown: hasRedBadge)
+                        .offset(x: 6, y: -4)
                 }
                 Text(title)
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
@@ -246,6 +239,7 @@ struct BottomTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(hasRedBadge ? "New activity" : "")
     }
 
     // MARK: - Expanded Profile Tab Item

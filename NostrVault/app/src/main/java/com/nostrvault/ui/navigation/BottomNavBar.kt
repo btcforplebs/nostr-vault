@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import com.nostrvault.ui.components.NewsDot
 import com.nostrvault.ui.components.blockedWhen
 import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
@@ -344,20 +345,20 @@ private fun CondensedNavCluster(
         // Music or a minimized live stream: play/pause, left of the avatar.
         nowPlaying()
 
-        // Avatar — tap to expand the bar, long-press to switch accounts.
-        Box(
-            modifier = Modifier
-                .clip(CircleShape)
-                .combinedClickable(
-                    onClick = onExpand,
-                    onLongClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onAccountSwitcher()
-                    },
-                ),
-        ) {
+        // Avatar — tap to expand the bar, long-press to switch accounts. The
+        // clip is on the avatar, not this Box, so the dot's glow isn't cut off.
+        Box {
             Box(
                 modifier = Modifier
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        onClick = onExpand,
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onAccountSwitcher()
+                        },
+                    )
+                    .semantics { if (showBadge) stateDescription = "New activity" }
                     .zapFlightOrigin()
                     .size(36.dp)
                     .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
@@ -373,15 +374,11 @@ private fun CondensedNavCluster(
                     displayName = activeDisplayName,
                 )
             }
-            if (showBadge) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp)
-                        .background(ErrorRed, CircleShape),
-                )
-            }
+            NewsDot(
+                isShown = showBadge,
+                size = 11.dp,
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp),
+            )
         }
 
         // Contextual action — compose, or the Vault Dashboard on the Vault
@@ -446,19 +443,24 @@ private fun NavTab(
             }
     } else {
         Modifier
-            .semantics { role = Role.Tab }
+            .semantics {
+                role = Role.Tab
+                if (showBadge) stateDescription = "New activity"
+            }
             .combinedClickableCompat(onClick = onClick)
     }
 
-    Column(
-        modifier = modifier
-            .clip(CircleShape)
-            .then(gesture)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Box {
+    // The dot sits outside the clipped Column so its glow isn't cut off.
+    Box(modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CircleShape)
+                .then(gesture)
+                .padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
@@ -469,21 +471,17 @@ private fun NavTab(
                     .size(24.dp)
                     .scale(scale),
             )
-            if (showBadge) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp)
-                        .background(ErrorRed, CircleShape),
-                )
-            }
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) selectedColor else Color.White,
+            )
         }
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) selectedColor else Color.White,
+        // On the icon's top-right corner: the icon is 24dp wide, centred, 6dp down.
+        NewsDot(
+            isShown = showBadge,
+            modifier = Modifier.align(Alignment.TopCenter).offset(x = 10.dp, y = 3.dp),
         )
     }
 }
