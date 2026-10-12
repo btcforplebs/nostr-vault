@@ -140,6 +140,7 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
     SettingsGroup("Account", listOf(
         SettingsRow("Accounts & Keys", NostrVaultIcons.Accounts, SettingsTile.Blue, Screen.AccountSettings),
         SettingsRow("Blocked", NostrVaultIcons.Blocked, SettingsTile.Red, Screen.BlockedSettings),
+        SettingsRow("Recently Deleted", NostrVaultIcons.Delete, SettingsTile.Gray, Screen.RecentlyDeletedSettings),
         SettingsRow("Following Backup", NostrVaultIcons.History, SettingsTile.Teal, Screen.FollowingBackup),
         SettingsRow("Wallet", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.Wallet),
     )),
