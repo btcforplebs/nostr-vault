@@ -53,9 +53,21 @@ final class ReelsFeedService: ObservableObject {
     private var isFetching: Bool { !clients.isEmpty }
     /// Who Global may show; nil = everyone (see FeedService.globalTrustSet).
     private var trust: Set<String>?
+    private var webWatch: AnyCancellable?
     private var reachedEnd: Bool { exhausted || emptyPages >= 4 }
 
     private init() {}
+
+    /// Someone you follow while this Global page is open joins `trust` at
+    /// once, so their posts pass from the next arrival instead of after a
+    /// refresh. Leaves Following and Everyone (`trust == nil`) alone.
+    private func watchWebForTrust() {
+        guard webWatch == nil else { return }
+        webWatch = TrustPathService.webChanged.sink { [weak self] in
+            guard let self, self.trust != nil else { return }
+            self.trust = FeedService.shared.globalTrustSet()
+        }
+    }
 
     func setScope(_ newScope: RecipeScope) {
         guard newScope != scope else { return }
@@ -141,6 +153,7 @@ final class ReelsFeedService: ObservableObject {
         // Global follows the app-wide shield: Web of Trust, or everyone.
         // Captured per page so a page fetched after a toggle obeys it.
         trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        watchWebForTrust()
 
         guard !exhausted else {
             isLoading = false

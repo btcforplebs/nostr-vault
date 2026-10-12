@@ -13,6 +13,8 @@ extension FeedService {
     func recomputeFilteredNotes() {
         rebuildNoteIndex()
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        // Your web with today's follows, so a follow passes Global at once.
+        let trusted = feedTrustedPubkeys
 
         let newFiltered = FeedFilterEngine.filterFeedNotes(
             notes: notes,
@@ -24,7 +26,7 @@ extension FeedService {
             showReposts: ConfigService.shared.config.showReposts,
             showReplies: ConfigService.shared.config.showReplies,
             followedPubkeys: followedPubkeys,
-            wotPubkeys: wotPubkeys,
+            wotPubkeys: trusted,
             popularFilter: popularFilter,
             popularNoteScores: popularNoteScores,
             globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
@@ -49,7 +51,7 @@ extension FeedService {
         let newMedia = FeedFilterEngine.filterMediaNotes(
             notes: notes,
             blocked: blocked,
-            wotPubkeys: wotPubkeys,
+            wotPubkeys: trusted,
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
@@ -76,7 +78,7 @@ extension FeedService {
                 count = FeedFilterEngine.filterMediaNotes(
                     notes: pendingNotes,
                     blocked: blocked,
-                    wotPubkeys: wotPubkeys,
+                    wotPubkeys: feedTrustedPubkeys,
                     isGlobalMedia: mediaFeedMode == .global,
                     globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
                     authorOf: authorOf
@@ -92,7 +94,7 @@ extension FeedService {
                     showReposts: ConfigService.shared.config.showReposts,
                     showReplies: ConfigService.shared.config.showReplies,
                     followedPubkeys: followedPubkeys,
-                    wotPubkeys: wotPubkeys,
+                    wotPubkeys: feedTrustedPubkeys,
                     popularFilter: popularFilter,
                     popularNoteScores: popularNoteScores,
                     globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),

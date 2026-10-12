@@ -35,6 +35,7 @@ final class MarketplaceFeedService: ObservableObject {
     private var lastLoadedEveryone: Bool?
     /// Who Global may show this load; nil = everyone (see globalTrustSet).
     private var trust: Set<String>?
+    private var webWatch: AnyCancellable?
 
     /// Results older than this are refetched when the feed is opened again.
     private static let staleAfter: TimeInterval = 10 * 60
@@ -53,6 +54,17 @@ final class MarketplaceFeedService: ObservableObject {
     ]
 
     private init() {}
+
+    /// Someone you follow while this Global page is open joins `trust` at
+    /// once, so their posts pass from the next arrival instead of after a
+    /// refresh. Leaves Following and Everyone (`trust == nil`) alone.
+    private func watchWebForTrust() {
+        guard webWatch == nil else { return }
+        webWatch = TrustPathService.webChanged.sink { [weak self] in
+            guard let self, self.trust != nil else { return }
+            self.trust = FeedService.shared.globalTrustSet()
+        }
+    }
 
     /// Categories that have at least one listing, in `MarketCategory` order
     /// with Other last.
@@ -109,6 +121,7 @@ final class MarketplaceFeedService: ObservableObject {
             filter["authors"] = follows
         }
         trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        watchWebForTrust()
         lastLoadedEveryone = ConfigService.shared.config.globalShowsEveryone
         let filters = FeedService.trustScopedFilters(filter, trust: trust)
         let subId = "market-\(UUID().uuidString.prefix(8))"
