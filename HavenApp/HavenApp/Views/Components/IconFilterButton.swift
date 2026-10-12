@@ -137,21 +137,47 @@ struct LanguageFilterMenuItems: View {
     }
 }
 
-/// The line a filter tap leaves under the toolbar: the filter's icon and
-/// what it did ("214 talk with you", "Mentions off"). Icon-only filters say
-/// what you picked here instead of beside the icon.
+/// The line a filter tap leaves under the toolbar, in one grammar for every
+/// screen: "what it does · current setting [· count]", e.g.
+/// "Global · Web of Trust on", "Mentions · on · 214+". A filter turned off
+/// keeps its own icon, dimmed, so the "what it does" half still reads.
 struct FilterNote: Equatable {
     let icon: String
     let text: String
+    /// An off setting: the icon and text drop to secondary.
+    var dimmed: Bool = false
 
-    /// A filter turned back off.
+    /// Free text; prefer `init(icon:title:setting:count:)` for the grammar.
+    init(icon: String, text: String, dimmed: Bool = false) {
+        self.icon = icon
+        self.text = text
+        self.dimmed = dimmed
+    }
+
+    /// "Title · setting", with an optional count last ("Mentions · on · 18").
+    init(icon: String, title: String, setting: String, count: String? = nil) {
+        var parts = [title, setting]
+        if let count, !count.isEmpty { parts.append(count) }
+        self.init(icon: icon, text: parts.joined(separator: " · "))
+    }
+
+    /// A filter turned back off: "Title · off" with the button's own icon.
+    static func off(_ title: String, icon: String) -> FilterNote {
+        FilterNote(icon: icon, text: "\(title) · off", dimmed: true)
+    }
+
+    /// A filter turned back off, without its icon.
+    @available(*, deprecated, message: "Pass the button's own icon: .off(title, icon:)")
     static func off(_ title: String) -> FilterNote {
         FilterNote(icon: "circle.slash", text: "\(title) off")
     }
 }
 
-/// Holds the showing note. A new one replaces the last; each goes after
-/// 2 s. VoiceOver reads it out, since it's the only text the tap leaves.
+/// Holds the showing note. `show` is a tap: the text replaces cleanly and
+/// the one 2 s timer restarts. `update` is a late result (a count that
+/// landed): it changes the text only while the note is still showing and
+/// is a no-op once it has gone, so the pill never pops back. VoiceOver
+/// reads each out, since it's the only text the tap leaves.
 @MainActor
 final class FilterNoteModel: ObservableObject {
     @Published private(set) var note: FilterNote?
@@ -160,6 +186,23 @@ final class FilterNoteModel: ObservableObject {
     func show(_ note: FilterNote) {
         withAnimation(Motion.fade) { self.note = note }
         AccessibilityNotification.Announcement(note.text).post()
+        restartTimer()
+    }
+
+    func update(_ note: FilterNote) {
+        guard self.note != nil else { return }
+        withAnimation(Motion.fade) { self.note = note }
+        AccessibilityNotification.Announcement(note.text).post()
+        restartTimer()
+    }
+
+    func hide() {
+        fade?.cancel()
+        fade = nil
+        withAnimation(Motion.fade) { note = nil }
+    }
+
+    private func restartTimer() {
         fade?.cancel()
         fade = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -170,27 +213,54 @@ final class FilterNoteModel: ObservableObject {
 }
 
 /// The glass capsule for a `FilterNoteModel`'s note; nothing when none.
-/// Never takes taps, so it can sit over the content.
+/// One line, cut off with "…" past `maxWidth` (a 375 pt phone minus 16 pt
+/// margins). Never takes taps, so it can sit over the content. Fades in
+/// with a slight scale from its top edge, not a slide from under the bar;
+/// Reduce Motion gets the fade alone.
 struct FilterNoteView: View {
     @ObservedObject var model: FilterNoteModel
+    static let maxWidth: CGFloat = 343
 
     var body: some View {
         if let note = model.note {
             HStack(spacing: 7) {
                 Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
-                    .foregroundColor(.havenPurple)
+                    .foregroundColor(note.dimmed ? .secondary : .havenPurple)
                 Text(note.text).monospacedDigit()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundColor(note.dimmed ? .secondary : .primary)
             }
             .font(.appSystem(size: 13, weight: .semibold))
             .padding(.vertical, 7)
             .padding(.horizontal, 14)
+            .frame(maxWidth: Self.maxWidth)
+            .fixedSize(horizontal: true, vertical: false)
             .background(Capsule().fill(.ultraThinMaterial))
             .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
             .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
+            // A second tap swaps the text in place, not mid-transition.
+            .contentTransition(.opacity)
+            .animation(Motion.fade, value: note)
             .allowsHitTesting(false)
             // Announced when shown; as an element it would be read twice.
             .accessibilityHidden(true)
-            .transition(Motion.isReduced ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            .transition(Motion.isReduced
+                ? .opacity
+                : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+        }
+    }
+}
+
+extension View {
+    /// Hosts a screen's filter note: an overlay pinned to the top edge of
+    /// the content, so it sits in the gap under the toolbar above the first
+    /// post. Never in the layout flow, so a tap moves nothing; when the
+    /// list is scrolled it may sit over content, and still takes no taps.
+    /// Apply once per screen, on the content view under the toolbar.
+    func filterNoteHost(_ model: FilterNoteModel) -> some View {
+        overlay(alignment: .top) {
+            FilterNoteView(model: model).padding(.top, 8)
         }
     }
 }
