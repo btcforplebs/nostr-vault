@@ -190,8 +190,9 @@ func searchableQuery(db DBBackend) func(context.Context, nostr.Filter) (chan *no
 
 // searchableCount keeps COUNT from answering a search filter with the
 // unfiltered total (the stores' CountEvents ignore `search`). It does not
-// count matches: the routes carry no COUNT read policy, and a match count
-// would let an unauthenticated client probe the text of stored events.
+// count matches: /private and /chat gate COUNT behind auth (init.go), but the
+// outbox and inbox do not, and a match count would let an unauthenticated
+// client probe the text of stored events there.
 func searchableCount(db DBBackend) func(context.Context, nostr.Filter) (int64, error) {
 	return func(ctx context.Context, filter nostr.Filter) (int64, error) {
 		if filter.Search != "" {

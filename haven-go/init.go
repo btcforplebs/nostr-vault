@@ -351,6 +351,10 @@ func initRelays(ctx context.Context) error {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoComplexFilters)
 	}
 	privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.MustAuth, MustBeWhitelistedToQuery)
+	// COUNT has its own policy list in khatru; without this a stranger could
+	// count private events. Only the read gate, not the filter-shape rules:
+	// the apps count the whole store with an empty filter.
+	privateRelay.RejectCountFilter = append(privateRelay.RejectCountFilter, policies.MustAuth, MustBeWhitelistedToQuery)
 
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
@@ -422,6 +426,7 @@ func initRelays(ctx context.Context) error {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoComplexFilters)
 	}
 	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery)
+	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,

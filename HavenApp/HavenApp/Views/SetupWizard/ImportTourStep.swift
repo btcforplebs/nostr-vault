@@ -16,6 +16,8 @@ struct ImportTourStep: View {
 
     @State private var index = 0
     @State private var counts: (notes: Int, likes: Int, all: Int)?
+    /// Not every relay answered the count, so there are no numbers to show.
+    @State private var countFailed = false
     @State private var started = false
 
     /// Same as the config default. 2021 was tried: the import walks the
@@ -172,6 +174,10 @@ struct ImportTourStep: View {
                     countTile(counts.likes, "likes")
                     countTile(counts.all, "in all")
                 }
+            } else if countFailed {
+                Text("Couldn't count them just now. The dashboard shows the totals.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(WizardColors.textSecondary)
             }
             if isReadOnly {
                 Text("Read-only for now. Add your private key in Settings to post.")
@@ -257,7 +263,10 @@ struct ImportTourStep: View {
     private func loadCounts() {
         Task {
             _ = await relayManager.ensureRelayReady(timeout: 30)
-            let byKind = await StatsService.shared.fetchCountsByKind()
+            guard let byKind = await StatsService.shared.fetchCountsByKind() else {
+                countFailed = true
+                return
+            }
             counts = (byKind[1] ?? 0, byKind[7] ?? 0, byKind[-1] ?? 0)
         }
     }
