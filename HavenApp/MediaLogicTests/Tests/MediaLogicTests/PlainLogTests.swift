@@ -114,7 +114,7 @@ final class PlainLogTests: XCTestCase {
         XCTAssertTrue(out.contains("https://cdn.example.com"))
         XCTAssertTrue(out.contains("wss://[private-relay]"))
         XCTAssertEqual(PlainLog.relayHost(in: "relay=ws://umbrel:4848 x"), "a private relay")
-        XCTAssertEqual(PlainLog.relayHost(in: "relay=wss://nos.lol x"), "nos.lol")
+        XCTAssertEqual(PlainLog.relayHost(in: "relay=wss://relay.damus.io x"), "relay.damus.io")
     }
 
     func testExportHasNoRawLines() {

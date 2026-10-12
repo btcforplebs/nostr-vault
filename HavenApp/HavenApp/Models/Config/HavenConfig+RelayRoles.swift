@@ -4,7 +4,39 @@ extension HavenConfig {
     // MARK: - Relay roles
 
     /// Where features read when the owner has no read relays.
-    static let fallbackRelays = ["wss://relay.primal.net", "wss://nos.lol"]
+    static let fallbackRelays = ["wss://relay.primal.net", "wss://relay.damus.io"]
+
+    /// Former default relays that stopped answering: nos.lol and nostr.mom
+    /// time out on the handshake, offchain.pub refuses the connection
+    /// (checked 2026-10-12). Dropped once from saved lists; see
+    /// `droppedDeadRelays`.
+    static let deadRelayHosts: Set<String> = ["nos.lol", "nostr.mom", "offchain.pub"]
+
+    static func isDeadRelay(_ url: String) -> Bool {
+        var host = normalizedRelayURL(url).lowercased()
+        if let scheme = host.range(of: "://") { host = String(host[scheme.upperBound...]) }
+        host = String(host.prefix { $0 != "/" && $0 != ":" })
+        return deadRelayHosts.contains(host)
+    }
+
+    /// Drops `deadRelayHosts` from the saved relay lists, once, so a relay the
+    /// owner adds back later stays. Blocked relays are left alone. Run after
+    /// the Mac's relay list files are read back, or they would restore them.
+    mutating func dropDeadRelaysOnce() {
+        guard !droppedDeadRelays else { return }
+        let defaults = HavenConfig.default
+        importSeedRelays = Self.droppingDeadRelays(importSeedRelays, orElse: defaults.importSeedRelays)
+        blastrRelays = Self.droppingDeadRelays(blastrRelays, orElse: defaults.blastrRelays)
+        feedRelays = Self.droppingDeadRelays(feedRelays, orElse: defaults.feedRelays)
+        dmRelays = Self.droppingDeadRelays(dmRelays, orElse: defaults.dmRelays)
+        droppedDeadRelays = true
+    }
+
+    /// `relays` without the dead ones, or `fallback` if nothing else is left.
+    static func droppingDeadRelays(_ relays: [String], orElse fallback: [String]) -> [String] {
+        let live = relays.filter { !isDeadRelay($0) }
+        return live.isEmpty && !relays.isEmpty ? fallback : live
+    }
 
     /// Where the owner's events go when there are no write relays: the
     /// default broadcast list (`blastrRelays`).

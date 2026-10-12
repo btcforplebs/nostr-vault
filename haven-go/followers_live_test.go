@@ -34,9 +34,9 @@ func TestLiveFollowerLedger(t *testing.T) {
 	config.WhitelistedPubKeys = map[string]struct{}{owner: {}}
 	config.ImportSeedRelays = []string{
 		"wss://relay.primal.net",
-		"wss://nos.lol",
-		"wss://nostr.mom",
 		"wss://relay.damus.io",
+		"wss://relay.snort.social",
+		"wss://nostr-pub.wellorder.net",
 	}
 	path := filepath.Join(t.TempDir(), "followers.json")
 	l, err := followers.Open(fs, path, []string{owner})

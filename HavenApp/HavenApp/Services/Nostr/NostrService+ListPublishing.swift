@@ -197,7 +197,9 @@ extension NostrService {
             || configService.hasBunkerConfig(forNpub: config.ownerNpub)
 
         let newest = await fetchNewestDMRelayList(for: ownerHex, alsoAsk: config.dmInboxRelays)
-        let published = newest?.relays.filter { !Self.isLoopbackRelay($0) }
+        // A published list can still carry relays that are gone; adopting it
+        // would undo the one-time drop of them from the saved config.
+        let published = newest?.relays.filter { !Self.isLoopbackRelay($0) && !HavenConfig.isDeadRelay($0) }
 
         var action = HavenConfig.dmInboxSyncAction(
             local: configService.config.dmInboxRelays,

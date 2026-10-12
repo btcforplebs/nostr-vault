@@ -156,9 +156,9 @@ class NostrService: ObservableObject {
     /// as Android's `PROFILE_RELAYS`. Without them a profile the phone had not
     /// cached never loaded: of the default broadcast relays nos.lol and
     /// nostr.mom are down and primal lacks most profiles, while purplepag.es
-    /// had every one tried (jack, ODELL, fiatjaf; 2026-10-06).
+    /// had every one tried (jack, ODELL, fiatjaf; 2026-10-06). offchain.pub
+    /// dropped: it refuses connections (2026-10-12).
     static let profileIndexRelays = [
-        "wss://offchain.pub",
         "wss://relay.damus.io",
         "wss://user.kindpag.es",
         "wss://purplepag.es",

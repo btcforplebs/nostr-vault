@@ -2,14 +2,14 @@ import XCTest
 @testable import MediaLogic
 
 final class FeedOutboxPlanTests: XCTestCase {
-    private let feed = ["wss://relay.primal.net", "wss://nos.lol"]
+    private let feed = ["wss://relay.primal.net", "wss://down.example"]
 
     /// A follow who writes to a feed relay is already covered and costs no
     /// extra socket; one who writes elsewhere gets that relay, asked only for them.
     func testOnlyFollowsTheFeedRelaysMissAreAskedElsewhere() {
         let plan = FeedOutboxPlan.plan(
             follows: ["a", "b", "c"],
-            writeRelays: ["a": ["wss://nos.lol/"], "b": ["wss://relay.damus.io"], "c": []],
+            writeRelays: ["a": ["wss://down.example/"], "b": ["wss://relay.damus.io"], "c": []],
             feedRelays: feed)
         XCTAssertEqual(plan, ["wss://relay.damus.io": ["b"], FeedOutboxPlan.fallbackRelay: ["c"]])
     }
@@ -58,10 +58,10 @@ final class FeedOutboxPlanTests: XCTestCase {
     /// nos.lol and nostr.mom were down on 2026-10-04 while feed relays; a
     /// follow reached only through one of them was not reached at all.
     func testADownFeedRelayReachesNobody() {
-        let lists = ["a": ["wss://nos.lol", "wss://relay.damus.io"]]
+        let lists = ["a": ["wss://down.example", "wss://relay.damus.io"]]
         XCTAssertTrue(FeedOutboxPlan.plan(follows: ["a"], writeRelays: lists, feedRelays: feed).isEmpty)
         let plan = FeedOutboxPlan.plan(follows: ["a"], writeRelays: lists, feedRelays: feed,
-                                       unreachableRelays: ["wss://nos.lol/"])
+                                       unreachableRelays: ["wss://down.example/"])
         XCTAssertEqual(plan, ["wss://relay.damus.io": ["a"]])
         let onlyDown = FeedOutboxPlan.plan(follows: ["b"], writeRelays: ["b": ["wss://relay.damus.io"]],
                                            feedRelays: feed, unreachableRelays: ["wss://relay.damus.io"])

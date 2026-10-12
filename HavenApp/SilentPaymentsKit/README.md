@@ -90,7 +90,7 @@ let notification = SilentPaymentNotification(txid: confirmedTxid, tweak: tweakHe
 ```swift
 let nostrService = NostrNotificationService(relays: [
     URL(string: "wss://relay.damus.io")!,
-    URL(string: "wss://nos.lol")!
+    URL(string: "wss://relay.primal.net")!
 ])
 
 try await nostrService.sendNotification(
