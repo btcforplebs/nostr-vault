@@ -15,3 +15,14 @@ internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNot
     val hit = index[id] ?: return null
     return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
 }
+
+/**
+ * Takes the note out of the feed, the "new posts" pill and the parent cache,
+ * so nothing puts a deleted post back. iOS twin: `FeedService+NoteOperations.swift`.
+ */
+fun FeedService.removeNote(id: String) {
+    _notes.value = FeedNoteRemoval.without(_notes.value, id)
+    _pendingNotes.value = FeedNoteRemoval.without(_pendingNotes.value, id)
+    _parentNotesCache.value = FeedNoteRemoval.without(_parentNotesCache.value, id)
+    recomputeFilteredNotes()
+}

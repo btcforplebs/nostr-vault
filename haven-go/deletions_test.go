@@ -275,3 +275,197 @@ func TestOwnerDeleteRequestPassesStorePolicies(t *testing.T) {
 		}
 	}
 }
+
+// importedDeletePath is one way a delete request from another of the owner's
+// devices reaches the outbox store without passing through khatru's
+// websocket pipeline.
+type importedDeletePath struct {
+	name  string
+	apply func(t *testing.T, outbox eventstore.RelayWrapper, ev nostr.Event)
+}
+
+func importedDeletePaths(t *testing.T) []importedDeletePath {
+	return []importedDeletePath{
+		{"owner catch-up", func(t *testing.T, outbox eventstore.RelayWrapper, ev nostr.Event) {
+			processOwnerEvent(context.Background(), nostr.RelayEvent{Event: &ev}, outbox)
+		}},
+		{"outbox negentropy", func(t *testing.T, outbox eventstore.RelayWrapper, ev nostr.Event) {
+			s := &outboxNegStore{outbox: outbox, tombs: newTestTombs(t)}
+			if err := s.Publish(context.Background(), ev); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+}
+
+// A kind 5 written straight to the outbox store (owner catch-up, outbox
+// negentropy) must remove the events it targets, exactly as khatru does for
+// a kind 5 received over a websocket. Before this, the request was stored but
+// the post stayed, so a post deleted on the phone lived on in the Mac and
+// Android vaults.
+func TestImportedDeleteRequestRemovesTargets(t *testing.T) {
+	owner, cowner := newTestKey(t), newTestKey(t)
+	saved := config
+	t.Cleanup(func() { config = saved })
+	setupSyncConfig(owner.pk)
+	config.OwnerPubKey = owner.pk
+	config.WhitelistedPubKeys[cowner.pk] = struct{}{}
+	ctx := context.Background()
+
+	del := func(k testKey, tags ...nostr.Tag) nostr.Event {
+		return k.sign(t, nostr.Event{Kind: nostr.KindDeletion, Tags: tags})
+	}
+
+	for _, path := range importedDeletePaths(t) {
+		t.Run(path.name, func(t *testing.T) {
+			deletionBackends(t, func(t *testing.T, db DBBackend) {
+				outbox := eventstore.RelayWrapper{Store: db}
+				save := func(ev nostr.Event) {
+					if err := db.SaveEvent(ctx, &ev); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				// Own post, then its delete request: post gone, request kept.
+				post := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "vault delete test"})
+				kept := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "stays"})
+				save(post)
+				save(kept)
+				req := del(owner, nostr.Tag{"e", post.ID})
+				path.apply(t, outbox, req)
+				if stored(t, db, post.ID) {
+					t.Fatal("post survived its imported delete request")
+				}
+				if !stored(t, db, req.ID) {
+					t.Fatal("delete request was not stored, so a re-import of the post would not be blocked")
+				}
+				if !stored(t, db, kept.ID) {
+					t.Fatal("an untargeted post was removed")
+				}
+
+				// Request before its target: the post must never be stored.
+				early := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "deleted before it arrived"})
+				path.apply(t, outbox, del(owner, nostr.Tag{"e", early.ID}))
+				path.apply(t, outbox, early)
+				if stored(t, db, early.ID) {
+					t.Fatal("post arriving after its delete request was stored")
+				}
+
+				// Only the author or the relay owner may delete. A co-whitelisted
+				// key cannot remove the owner's post; the owner can remove theirs.
+				ownerPost := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "owner's"})
+				coPost := cowner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "co-owner's"})
+				save(ownerPost)
+				save(coPost)
+				path.apply(t, outbox, del(cowner, nostr.Tag{"e", ownerPost.ID}))
+				if !stored(t, db, ownerPost.ID) {
+					t.Fatal("a non-author, non-owner delete request removed the owner's post")
+				}
+				path.apply(t, outbox, del(owner, nostr.Tag{"e", coPost.ID}))
+				if stored(t, db, coPost.ID) {
+					t.Fatal("the owner's delete request did not remove a co-whitelisted author's post")
+				}
+
+				// Addressable events go by "a", and only versions that existed
+				// when the request was made.
+				base := nostr.Now() - 100
+				v1 := owner.sign(t, nostr.Event{Kind: 30023, CreatedAt: base, Tags: nostr.Tags{{"d", "x"}}, Content: "v1"})
+				v2 := owner.sign(t, nostr.Event{Kind: 30023, CreatedAt: base + 20, Tags: nostr.Tags{{"d", "x"}}, Content: "v2"})
+				save(v1)
+				addr := "30023:" + owner.pk + ":x"
+				path.apply(t, outbox, owner.sign(t, nostr.Event{Kind: nostr.KindDeletion, CreatedAt: base + 10, Tags: nostr.Tags{{"a", addr}}}))
+				if stored(t, db, v1.ID) {
+					t.Fatal("article version survived an imported address delete")
+				}
+				path.apply(t, outbox, v2)
+				if !stored(t, db, v2.ID) {
+					t.Fatal("a version written after the delete request was kept out")
+				}
+			})
+		})
+	}
+}
+
+// Vaults filled before imports applied deletions hold kind 5s whose targets
+// were never removed. The startup sweep applies them once.
+func TestSweepDeleteRequests(t *testing.T) {
+	owner, stranger := newTestKey(t), newTestKey(t)
+	saved := config
+	t.Cleanup(func() { config = saved })
+	setupSyncConfig(owner.pk)
+	config.OwnerPubKey = owner.pk
+	ctx := context.Background()
+
+	deletionBackends(t, func(t *testing.T, db DBBackend) {
+		save := func(ev nostr.Event) {
+			if err := db.SaveEvent(ctx, &ev); err != nil {
+				t.Fatal(err)
+			}
+		}
+		post := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "old delete, target kept"})
+		kept := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "stays"})
+		save(post)
+		save(kept)
+		save(owner.sign(t, nostr.Event{Kind: nostr.KindDeletion, Tags: nostr.Tags{{"e", post.ID}}}))
+		// A stranger's stored request (not whitelisted) is not swept.
+		save(stranger.sign(t, nostr.Event{Kind: nostr.KindDeletion, Tags: nostr.Tags{{"e", kept.ID}}}))
+
+		sweepDeleteRequests(ctx, db)
+
+		if stored(t, db, post.ID) {
+			t.Fatal("sweep left the target of a stored delete request in place")
+		}
+		if !stored(t, db, kept.ID) {
+			t.Fatal("sweep removed a post only a stranger asked to delete")
+		}
+	})
+}
+
+// The startup import (importOwnerNotes) writes to the outbox store directly
+// too, so a delete request it pulls from a seed relay must remove its target
+// as well. The target is stored beforehand, so only the import's own
+// deletion step can remove it — not the isDeleted re-import guard.
+func TestImportOwnerNotesAppliesDeleteRequests(t *testing.T) {
+	owner := newTestKey(t)
+	savedCfg, savedDB, savedPool, savedReach := config, outboxDB, pool, reachableImportRelays.Load()
+	t.Cleanup(func() {
+		config, outboxDB, pool = savedCfg, savedDB, savedPool
+		reachableImportRelays.Store(savedReach)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	setupSyncConfig(owner.pk)
+	config.OwnerPubKey = owner.pk
+	config.ImportStartDate = time.Now().AddDate(0, 0, -1).Format(layout)
+	config.ImportOwnerNotesFetchTimeoutSeconds = 5
+	reachableImportRelays.Store(nil)
+	pool = nostr.NewSimplePool(ctx)
+
+	deletionBackends(t, func(t *testing.T, db DBBackend) {
+		seed := newFakeMac(t, false, 0)
+		config.ImportSeedRelays = []string{seed.url}
+		outboxDB = db
+		post := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "deleted on another device"})
+		if err := db.SaveEvent(ctx, &post); err != nil {
+			t.Fatal(err)
+		}
+		kept := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "stays"})
+		req := owner.sign(t, nostr.Event{Kind: nostr.KindDeletion, Tags: nostr.Tags{{"e", post.ID}}})
+		for _, ev := range []nostr.Event{kept, req} {
+			if err := seed.store.Store.SaveEvent(ctx, &ev); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		importOwnerNotes(ctx)
+
+		// Positive control: the import ran and stored what the relay served.
+		if !stored(t, db, kept.ID) || !stored(t, db, req.ID) {
+			t.Fatal("import stored nothing — the test cannot tell a skipped deletion from a broken import")
+		}
+		if stored(t, db, post.ID) {
+			t.Fatal("post survived a delete request pulled by the startup import")
+		}
+	})
+}

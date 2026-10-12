@@ -1204,11 +1204,6 @@ class FeedService @Inject constructor(
         return npub in configStore.config.value.blockedForActiveAccount()
     }
 
-    fun removeNote(id: String) {
-        _notes.value = _notes.value.filter { it.id != id }
-        recomputeFilteredNotes()
-    }
-
     fun applyPendingNotes() {
         val pending = _pendingNotes.value
         if (pending.isEmpty()) return

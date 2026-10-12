@@ -157,6 +157,7 @@ func importOwnerNotes(ctx context.Context) {
 						slog.Debug("🚫 skipping deleted event", "id", ev.ID)
 						continue
 					}
+					applyImportedDeletion(ctx, outboxDB, ev.Event)
 					if err := wdb.Publish(ctx, *ev.Event); err != nil {
 						log.Println("🚫  error importing note", ev.ID, ":", err)
 						nFailedImportNotes++
@@ -266,6 +267,10 @@ func subscribeInboxAndChat(ctx context.Context) {
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
 	wdbOutbox := eventstore.RelayWrapper{Store: outboxDB}
+
+	// Delete requests imported before applyImportedDeletion existed left
+	// their targets in place; apply them once, before any sync round.
+	sweepDeleteRequests(ctx, outboxDB)
 
 	// Build deduplicated relay set: ImportSeedRelays + DmRelays
 	relaySet := make(map[string]struct{})
@@ -1027,6 +1032,11 @@ func processOwnerEvent(ctx context.Context, ev nostr.RelayEvent, wdbOutbox event
 	if isDeleted(ctx, wdbOutbox.Store, ev.Event) {
 		return
 	}
+	// A delete request from another of the owner's devices: remove its
+	// targets here, since khatru only does that for a kind 5 it received over
+	// a websocket. Before the store, like khatru, so a failed save still
+	// leaves the targets gone.
+	applyImportedDeletion(ctx, wdbOutbox.Store, ev.Event)
 	if err := wdbOutbox.Publish(ctx, *ev.Event); err != nil {
 		log.Println("🚫 error importing owner event", ev.ID, ":", err)
 		return
