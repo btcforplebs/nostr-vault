@@ -13,6 +13,7 @@ import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.removeNote
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel

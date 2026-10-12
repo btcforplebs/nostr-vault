@@ -15,3 +15,9 @@ internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNot
     val hit = index[id] ?: return null
     return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
 }
+
+/** Takes the note out of the feed. iOS twin: `FeedService+NoteOperations.swift`. */
+fun FeedService.removeNote(id: String) {
+    _notes.value = _notes.value.filter { it.id != id }
+    recomputeFilteredNotes()
+}
