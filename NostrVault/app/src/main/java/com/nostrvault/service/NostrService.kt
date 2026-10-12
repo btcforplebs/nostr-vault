@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
+import com.nostrvault.data.local.DeletedNotesStore
 import com.nostrvault.data.local.ProfileRepository
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NIP10Thread
@@ -677,6 +678,7 @@ class NostrService @Inject constructor(
             events = events.filterNot { it.id in ids }
             noteMedia = noteMedia.filterNot { it.pubkey == owner && it.url.lowercase().contains(hash) }
             _eventUpdates.tryEmit(Unit)
+            DeletedNotesStore.shared.markDeleted(ids, owner)
         }
         return targets.size
     }

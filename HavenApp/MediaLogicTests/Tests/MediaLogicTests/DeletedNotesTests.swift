@@ -41,7 +41,9 @@ final class DeletedNotesTests: XCTestCase {
 
     func testVisibleCacheDropsTheDeletedUnderAnyKey() {
         let keep = Note(id: other)
-        let cache = [other: keep, gone: Note(id: gone), "hint": Note(id: gone)]
+        // The deleted id as a key for another note (a reply hint): a lookup by
+        // the deleted id must not find anything either.
+        let cache = [other: keep, gone: Note(id: "3"), "hint": Note(id: gone), "r": Note(id: "r", repostedEventId: gone)]
         XCTAssertEqual(DeletedNotes.visible(cache, deleted: [gone]), [other: keep])
     }
 }

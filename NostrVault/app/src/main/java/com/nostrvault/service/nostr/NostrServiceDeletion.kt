@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.data.local.DeletedNotesStore
 import com.nostrvault.service.NostrService.Companion.TAG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,6 +31,7 @@ fun NostrService.deleteNote(noteId: String) {
         withContext(Dispatchers.Main) {
             events = NoteDeletion.without(events, noteId)
             _eventUpdates.tryEmit(Unit)
+            DeletedNotesStore.shared.markDeleted(setOf(noteId), activeHexPubkey)
         }
     }
 }

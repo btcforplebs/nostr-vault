@@ -1299,6 +1299,7 @@ class FeedService @Inject constructor(
      * reply/quote targets loaded outside the feed.
      */
     fun cacheNote(note: FeedNote) {
+        if (hidesDeleted(note)) return
         var updated = _parentNotesCache.value + (note.id to note)
         // For kind-6 reposts, also cache under the original note's ID so
         // lookups by effectiveEventId succeed.
@@ -1361,9 +1362,14 @@ class FeedService @Inject constructor(
         // answered for a note the phone already had (iOS #302). Checked
         // before the in-flight filter: the feed often delivers it mid-lookup.
         val inFeed = adoptFeedNotes(ids)
+        // A deleted post is never asked for again: a relay that ignored the
+        // request would hand it back as a thread root or quote. The card
+        // shows "unavailable" instead of a skeleton.
+        val deleted = ids.filter { isDeleted(it) }
+        if (deleted.isNotEmpty()) _unavailableNoteIds.update { it + deleted }
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->
-            if (id in inFeed) return@filter false
+            if (id in inFeed || id in deleted) return@filter false
             if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
             val since = unavailableSince[id] ?: return@filter true
             now - since >= UNAVAILABLE_RETRY_MS

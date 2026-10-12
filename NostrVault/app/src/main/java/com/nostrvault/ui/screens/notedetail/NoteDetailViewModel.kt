@@ -12,6 +12,7 @@ import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.deleteNote
+import com.nostrvault.service.isDeleted
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.components.*
@@ -236,7 +237,7 @@ class NoteDetailViewModel @Inject constructor(
         } else null
         nostrService.fetchOtherResponses(rootId, rootCoordinate) { found ->
             _otherResponses.value = found
-                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
+                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) && !feedService.isDeleted(it.id) }
                 .sortedByDescending { it.createdAt }
             nostrService.fetchMissingProfiles(found.map { it.pubkey }.distinct())
         }
@@ -278,7 +279,9 @@ class NoteDetailViewModel @Inject constructor(
         _allReplies.update { replies -> replies.filterNot { it.id == id } }
     }
 
-    private fun mergeReplies(incoming: List<FeedNote>) {
+    private fun mergeReplies(fetched: List<FeedNote>) {
+        // A deleted post never comes back as a parent or a reply.
+        val incoming = fetched.filterNot { feedService.isDeleted(it.id) }
         if (incoming.isEmpty()) return
         _allReplies.value = (_allReplies.value + incoming)
             .distinctBy { it.id }

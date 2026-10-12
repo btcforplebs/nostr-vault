@@ -233,6 +233,12 @@ import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
             val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return null
             if (eventId !in wanted) return null
             if (_parentNotesCache.value.containsKey(eventId)) return eventId
+            // A relay that ignored the deletion request answered anyway. It
+            // counts as arrived so the feed does not ask again.
+            if (isDeleted(eventId)) {
+                _unavailableNoteIds.update { it + eventId }
+                return eventId
+            }
             // These come from relay hints and outboxes named in other people's
             // notes: any of them can send a note under the wanted id and any
             // author's name. Only a valid id hash and signature make it real.

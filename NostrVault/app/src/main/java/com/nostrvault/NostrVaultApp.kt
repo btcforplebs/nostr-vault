@@ -42,6 +42,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         ProfileRepository.init(this)
+        com.nostrvault.data.local.DeletedNotesStore.init(this)
         com.nostrvault.service.music.MusicPlayer.init(this)
         com.nostrvault.ui.screens.music.MusicFeedState.init(this)
         com.nostrvault.data.model.FeedMenuSettings.init(this)
