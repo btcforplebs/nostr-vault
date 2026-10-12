@@ -4,25 +4,30 @@ import Combine
 /// Recently Deleted: a copy of each post this device deletes, so it can be
 /// posted again. See `DeletedPost` for why un-delete makes a new post.
 extension NostrService {
-    /// Saves a copy of your post `id` before its delete request goes out.
+    /// A copy of your post `id`, taken before its delete request is signed.
     /// Looks in memory first, then asks this device's vault, which still holds
-    /// the post until the kind 5 reaches it. A post found nowhere, or not
-    /// signed by the active account, is not saved; the delete still goes ahead.
-    func saveCopyBeforeDeleting(id: String) async {
+    /// the post until the kind 5 reaches it. nil for a post found nowhere, not
+    /// signed by the active account, or of a kind that gets no copy
+    /// (`DeletedPost.keepsCopy`). The caller saves it once the kind 5 is
+    /// signed by the same key, so a failed or wrong-account delete leaves no
+    /// copy of a post that is still live.
+    func copyBeforeDeleting(id: String) async -> DeletedPost? {
         let owner = activeHexPubkey
-        guard !owner.isEmpty else { return }
+        guard !owner.isEmpty else { return nil }
         var found = cachedSignedEvent(id: id)
         if found == nil { found = await fetchFromOwnVault(id: id) }
-        guard let event = found, event.id == id, event.pubkey == owner, !event.sig.isEmpty else { return }
-        DeletedPostsStore.shared.save(DeletedPost(
+        guard let event = found, event.id == id, event.pubkey == owner, !event.sig.isEmpty,
+              DeletedPost.keepsCopy(kind: event.kind) else { return nil }
+        return DeletedPost(
             id: event.id, pubkey: event.pubkey, createdAt: event.created_at, kind: event.kind,
             tags: event.tags, content: event.content, sig: event.sig, deletedAt: Date()
-        ))
+        )
     }
 
-    /// Posts the saved copy again as a new event, stamped now, then drops the
-    /// copy. Returns false if it was not posted (signing failed, or the
-    /// account changed so it would go out under another name).
+    /// Posts the saved copy again as a new event, stamped now. The copy is
+    /// dropped only once an outside relay accepts the new event. Returns false
+    /// if it was not posted (signing failed, the account changed so it would
+    /// go out under another name, or no relay took it); the copy is kept.
     func undelete(_ post: DeletedPost) async -> Bool {
         guard post.pubkey == activeHexPubkey else { return false }
         let draft = post.republishDraft()
@@ -31,7 +36,10 @@ extension NostrService {
             kind: draft.kind, content: draft.content, tags: draft.tags,
             difficulty: pow.noteEnabled ? pow.noteDifficulty : 0
         ), event.pubkey == post.pubkey else { return false }
-        postEvent(event)
+        let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<BroadcastTally.Outcome, Never>) in
+            postEvent(event) { continuation.resume(returning: $0) }
+        }
+        guard outcome == .accepted else { return false }
         FeedService.shared.addNote(FeedNote(
             id: event.id,
             pubkey: event.pubkey,

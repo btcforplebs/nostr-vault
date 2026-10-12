@@ -28,6 +28,8 @@ struct RecentlyDeletedSettingsView: View {
         .groupedFormStyleCompat()
         .onAppear(perform: reload)
         .onChange(of: configService.config.activeAccountNpub) { _ in reload() }
+        // A delete in another window (the Mac feed) while this page is open.
+        .onReceive(NotificationCenter.default.publisher(for: DeletedPostsStore.didChange).receive(on: DispatchQueue.main)) { _ in reload() }
         .confirmDestructive(
             "Delete Forever",
             item: $pendingForget,
@@ -104,7 +106,7 @@ struct RecentlyDeletedSettingsView: View {
             if posted {
                 ErrorNotificationManager.shared.show("Posted again.", icon: "arrow.uturn.backward.circle.fill", style: .warning)
             } else {
-                ErrorNotificationManager.shared.show("Couldn't post it again. Check that this account can sign, then try again.")
+                ErrorNotificationManager.shared.show("Couldn't post it again: it wasn't signed, or no relay took it. The copy is kept here.")
             }
         }
     }

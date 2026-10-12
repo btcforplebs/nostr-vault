@@ -9,6 +9,9 @@ import Foundation
 final class DeletedPostsStore {
     static let shared = DeletedPostsStore(directory: DeletedPostsStore.defaultDirectory)
 
+    /// Posted after every change, so an open Recently Deleted page reloads.
+    static let didChange = Notification.Name("DeletedPostsStore.didChange")
+
     /// How long a deleted post stays un-deletable.
     static let retention: TimeInterval = 30 * 24 * 60 * 60
 
@@ -38,18 +41,23 @@ final class DeletedPostsStore {
 
     /// Saves a copy. A second delete of the same id replaces the first copy.
     func save(_ post: DeletedPost, now: Date = Date()) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         var posts = read(account: post.pubkey).filter { $0.id != post.id }
         posts.insert(post, at: 0)
         write(Self.unexpired(posts, now: now), account: post.pubkey)
+        lock.unlock()
+        // Outside the lock: an observer reads the store straight back.
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
     /// Drops a copy: after un-delete, or Delete forever.
     func remove(id: String, account: String) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         let posts = read(account: account)
         let kept = posts.filter { $0.id != id }
         if kept.count != posts.count { write(kept, account: account) }
+        lock.unlock()
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
     /// Posts deleted less than `retention` ago, most recent first.

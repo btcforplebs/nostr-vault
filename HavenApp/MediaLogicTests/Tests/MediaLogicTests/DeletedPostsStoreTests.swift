@@ -117,4 +117,27 @@ final class DeletedPostsStoreTests: XCTestCase {
         let saved = post(tags: [["p", other], ["nonce", "12345", "20"]])
         XCTAssertEqual(saved.republishDraft().tags, [["p", other]])
     }
+
+    /// A passed NIP-40 expiry would make relays refuse the new event.
+    func testRepublishDraftDropsTheExpiration() {
+        let saved = post(tags: [["p", other], ["expiration", "1700000100"]])
+        XCTAssertEqual(saved.republishDraft().tags, [["p", other]])
+    }
+
+    /// Posted again with today's time, an old replaceable or addressable
+    /// version would replace the newer one live at that address.
+    func testReplaceableAndAddressableKindsGetNoCopy() {
+        for kind in [1, 6, 16, 20, 1068, 1111] { XCTAssertTrue(DeletedPost.keepsCopy(kind: kind), "\(kind)") }
+        for kind in [0, 3, 10000, 10002, 19999, 30023, 30402, 39999] { XCTAssertFalse(DeletedPost.keepsCopy(kind: kind), "\(kind)") }
+    }
+
+    func testChangesAreAnnounced() {
+        let store = DeletedPostsStore(directory: directory)
+        let saved = expectation(forNotification: DeletedPostsStore.didChange, object: nil)
+        store.save(post(), now: now)
+        wait(for: [saved], timeout: 1)
+        let removed = expectation(forNotification: DeletedPostsStore.didChange, object: nil)
+        store.remove(id: post().id, account: me)
+        wait(for: [removed], timeout: 1)
+    }
 }
