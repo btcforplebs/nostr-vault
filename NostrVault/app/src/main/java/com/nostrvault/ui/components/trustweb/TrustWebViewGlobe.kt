@@ -55,6 +55,8 @@ internal fun TrustWebViewGlobe(
     lite: Boolean,
     ringFaces: List<String>,
     layerFaces: List<String>,
+    /** Who the WOT tab's filters leave lit; null when none is on. */
+    filterLit: Set<String>?,
     showingList: Boolean,
     isWOTTab: Boolean,
     layer: TrustMap.Layer,
@@ -82,6 +84,7 @@ internal fun TrustWebViewGlobe(
             lite = lite,
             ringFaces = ringFaces,
             layerFaces = layerFaces,
+            filterLit = if (isWOTTab) filterLit else null,
             running = !showingList,
             layer = if (isWOTTab && centerKey == me) layer else TrustMap.Layer.EVERYONE,
             summary = summary(frame, me, author, centerKey, name),

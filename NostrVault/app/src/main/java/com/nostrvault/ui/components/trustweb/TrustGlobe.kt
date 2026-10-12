@@ -105,6 +105,8 @@ internal fun TrustGlobe(
     ringFaces: List<String>,
     /** Pictures on the outer shell for the picked layer (Close or Further out), on your own globe. */
     layerFaces: List<String> = emptyList(),
+    /** Who the WOT tab's filters leave lit; the rest dim. Null when no filter is on. */
+    filterLit: Set<String>? = null,
     /** False while a sheet covers the globe: the clock stops. */
     running: Boolean,
     /** Which part of the web is lit (the WOT tab's layer picker). */
@@ -153,6 +155,8 @@ internal fun TrustGlobe(
     }
 
     LaunchedEffect(layer) { scene.focus(layer) }
+
+    LaunchedEffect(filterLit) { scene.filter(filterLit) }
 
     LaunchedEffect(focus) { focus?.let { scene.turn(it) } }
 
