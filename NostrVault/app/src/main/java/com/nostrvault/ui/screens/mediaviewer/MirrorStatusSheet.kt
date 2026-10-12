@@ -11,7 +11,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.nostrvault.service.BlobCopyOutcome
+import com.nostrvault.ui.screens.dashboard.MediaCopyViewModel
 import com.nostrvault.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,8 +25,15 @@ internal fun MirrorStatusSheet(
     isLoading: Boolean,
     totalMirrors: Int,
     onDismiss: () -> Unit,
-    onPushToMirrors: () -> Unit,
+    /** Kept for the caller; the sheet now copies in place and shows each server's answer. */
+    @Suppress("UNUSED_PARAMETER") onPushToMirrors: () -> Unit,
+    copier: MediaCopyViewModel = hiltViewModel(),
 ) {
+    val scope = rememberCoroutineScope()
+    var copying by remember(sha256) { mutableStateOf(false) }
+    /** What the last copy said, per server; copied ones read as Available. */
+    var results by remember(sha256) { mutableStateOf<Map<String, BlobCopyOutcome>>(emptyMap()) }
+    var sheetNote by remember(sha256) { mutableStateOf<String?>(null) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -60,7 +71,8 @@ internal fun MirrorStatusSheet(
                     )
                 }
                 else -> {
-                    mirrorStatus.entries.sortedBy { it.key }.forEach { (mirror, available) ->
+                    mirrorStatus.entries.sortedBy { it.key }.forEach { (mirror, found) ->
+                        val available = found || results[mirror] == BlobCopyOutcome.Copied
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -93,20 +105,53 @@ internal fun MirrorStatusSheet(
                                 fontWeight = FontWeight.Medium,
                             )
                         }
+                        (results[mirror] as? BlobCopyOutcome.Failed)?.let { failed ->
+                            Text(
+                                failed.reason,
+                                color = Color(0xFFE53935),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(start = 32.dp, bottom = 8.dp),
+                            )
+                        }
                         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                     }
 
-                    val missingCount = mirrorStatus.values.count { !it }
+                    val missingCount = mirrorStatus.count { (mirror, found) -> !found && results[mirror] != BlobCopyOutcome.Copied }
                     if (missingCount > 0) {
                         Spacer(Modifier.height(16.dp))
                         Button(
-                            onClick = { onPushToMirrors(); onDismiss() },
+                            onClick = {
+                                copying = true
+                                sheetNote = null
+                                scope.launch {
+                                    val outcome = copier.copyOne(sha256)
+                                    if (outcome == null) sheetNote = "This file isn't on this phone, so there is nothing to copy from."
+                                    else results = results + outcome
+                                    copying = false
+                                }
+                            },
+                            enabled = !copying,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                            if (copying) {
+                                CircularProgressIndicator(strokeWidth = 1.5.dp, modifier = Modifier.size(16.dp))
+                            } else {
+                                Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
                             Spacer(Modifier.width(8.dp))
-                            Text("Push to Missing Mirrors")
+                            Text(
+                                when {
+                                    copying -> "Copying…"
+                                    results.values.any { it is BlobCopyOutcome.Failed } -> "Retry"
+                                    missingCount == 1 -> "Copy to the missing server"
+                                    else -> "Copy to $missingCount missing servers"
+                                },
+                            )
                         }
+                    }
+                    sheetNote?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = SecondaryText, fontSize = 12.sp)
                     }
                 }
             }

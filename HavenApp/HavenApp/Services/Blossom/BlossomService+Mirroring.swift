@@ -177,3 +177,272 @@ extension BlossomService {
         }
     }
 }
+
+// MARK: - Copy a stored file to servers
+
+/// How sending one file to one server went, in words a person can act on.
+/// `stopped` is a send cut short by Stop: the file is still waiting.
+enum BlobCopyOutcome: Equatable {
+    case copied
+    case failed(String)
+    case stopped
+}
+
+extension BlossomService {
+    /// Sessions for copying stored files. Unlike `remoteSession` they do not
+    /// wait for connectivity: that wait lasted up to 15 minutes a try, which
+    /// is part of how the Media servers page sat on "Copied 0 of 11" with
+    /// nothing to say. There is no cap on a whole upload, so a big video on a
+    /// slow line keeps going while bytes move; 150 s with nothing moving is a
+    /// stall. That limit also covers the wait after the last byte, while a
+    /// server works on a big file before it answers.
+    private static let copySession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 150
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+    private static let copyLocalDelegate = LocalhostTrustDelegate()
+    private static let copyLocalSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 150
+        return URLSession(configuration: config, delegate: copyLocalDelegate, delegateQueue: nil)
+    }()
+
+    /// One upload authorisation for several files: an `x` tag per hash.
+    ///
+    /// Signing one per file is what held the copy at "0 of 11" with a remote
+    /// signer: each file could wait 90 s for the signer, twice, before failing
+    /// without a word. BUD-11 lets an authorisation carry several `x` tags; on
+    /// `PUT /upload` the server needs one that matches `X-SHA-256`. A server
+    /// that refuses it gets a single-file signature instead, see
+    /// `copyStoredBlob`. No time limit of our own: the signer bridge has one,
+    /// and an approval that comes late must still count.
+    func makeBatchUploadAuth(hashes: [String]) async -> String? {
+        guard !hashes.isEmpty else { return nil }
+        let expiration = Int64(Date().timeIntervalSince1970) + 3 * 3600
+        let tags = [["t", "upload"]] + hashes.map { ["x", $0] } + [["expiration", String(expiration)]]
+        let content = hashes.count == 1 ? "Upload blob \(hashes[0].prefix(8))..." : "Upload \(hashes.count) blobs"
+        appLog("copy: asking the signer for one upload authorisation covering \(hashes.count) file(s)")
+        let event = await nostrService.signEventAsync(kind: 24242, content: content, tags: tags)
+        guard let event, let json = try? JSONEncoder().encode(event) else {
+            appLog("copy: the signer gave no upload authorisation", level: "WARN")
+            return nil
+        }
+        return json.base64EncodedString()
+    }
+
+    /// Why signing failed, in the words for the signer this account uses.
+    func signerProblem() async -> String {
+        let mode = await MainActor.run { ConfigService.shared.config.activeSigningMode() }
+        return mode == "nip46"
+            ? "Your signer didn't answer. Open it, approve the request if it asks, then tap Retry."
+            : "Couldn't sign with your key. If it's locked with a password, unlock it, then tap Retry."
+    }
+
+    /// Sends a file stored on this device to each of `servers`, streaming it
+    /// from disk, and says what happened at each one. `batchAuth` is a shared
+    /// authorisation from `makeBatchUploadAuth`; without one, or when a server
+    /// turns it down, the file is signed on its own, once for all servers.
+    /// `run` remembers across files which servers refuse the key outright, so
+    /// they are not sent to the signer again. Every outcome is written to the
+    /// app log.
+    func copyStoredBlob(sha256: String, fileURL: URL, to servers: [String], batchAuth: String? = nil,
+                        run: BlobCopyRun = BlobCopyRun()) async -> [String: BlobCopyOutcome] {
+        let tag = String(sha256.prefix(8))
+        guard !servers.isEmpty else { return [:] }
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int, size > 0 else {
+            appLog("copy \(tag): the file is no longer on this device", level: "WARN")
+            return Dictionary(uniqueKeysWithValues: servers.map { ($0, .failed("This file is no longer on this phone.")) })
+        }
+        let contentType = Self.sniffContentType(fileURL)
+        appLog("copy \(tag) (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)), \(contentType)) to \(servers.joined(separator: ", "))")
+
+        var results: [String: BlobCopyOutcome] = [:]
+        var viaBatch: [String] = []
+        var viaSingle: [String] = []
+        for server in servers {
+            if let reason = await run.refusal(server) {
+                results[server] = .failed(reason)
+            } else if batchAuth != nil, !(await run.wantsSingle(server)) {
+                viaBatch.append(server)
+            } else {
+                viaSingle.append(server)
+            }
+        }
+
+        // The file's own signature, asked for at most once whatever the
+        // number of servers: makeUploadAuth caches it per hash.
+        var single: String?
+        var singleAsked = false
+        func singleAuth() async -> String? {
+            if !singleAsked { singleAsked = true; single = await makeUploadAuth(sha256: sha256) }
+            return single
+        }
+        func send(_ targets: [String], auth: String) async -> [String: CopyAttempt] {
+            await withTaskGroup(of: (String, CopyAttempt).self) { group in
+                for server in targets {
+                    group.addTask { (server, await self.putWithRetry(fileURL: fileURL, size: size, sha256: sha256, contentType: contentType, server: server, auth: auth)) }
+                }
+                var attempts: [String: CopyAttempt] = [:]
+                for await (server, attempt) in group { attempts[server] = attempt }
+                return attempts
+            }
+        }
+        func signFailed(_ targets: [String]) async {
+            let outcome: BlobCopyOutcome = Task.isCancelled ? .stopped : .failed(await signerProblem())
+            if !Task.isCancelled { appLog("copy \(tag): could not sign the upload", level: "WARN") }
+            for server in targets { results[server] = outcome }
+        }
+
+        if let batchAuth, !viaBatch.isEmpty {
+            for (server, attempt) in await send(viaBatch, auth: batchAuth) {
+                if attempt.authRefused, !Task.isCancelled {
+                    // Maybe a server that wants exactly one hash per signature.
+                    viaSingle.append(server)
+                } else {
+                    results[server] = attempt.outcome
+                }
+            }
+        }
+        if !viaSingle.isEmpty {
+            if Task.isCancelled {
+                for server in viaSingle { results[server] = .stopped }
+            } else if let auth = await singleAuth() {
+                for (server, attempt) in await send(viaSingle, auth: auth) {
+                    results[server] = attempt.outcome
+                    if attempt.authRefused, case .failed(let reason) = attempt.outcome {
+                        // Maybe it refuses the key itself: not on its list,
+                        // unpaid. Then no more signatures for it this run.
+                        await run.noteRefusal(server, hash: sha256, status: attempt.status, reason: reason)
+                    } else if batchAuth != nil, attempt.outcome == .copied {
+                        await run.markWantsSingle(server)
+                    }
+                }
+            } else {
+                await signFailed(viaSingle)
+            }
+        }
+
+        for (server, outcome) in results {
+            switch outcome {
+            case .copied: appLog("copy \(tag) to \(server): done")
+            case .failed(let reason): appLog("copy \(tag) to \(server) failed: \(reason)", level: "WARN")
+            case .stopped: appLog("copy \(tag) to \(server): stopped")
+            }
+        }
+        return results
+    }
+
+    /// One PUT, and one more for the failures that tend to pass: a server
+    /// error, a dropped connection, a stall.
+    private func putWithRetry(fileURL: URL, size: Int, sha256: String, contentType: String, server: String, auth: String) async -> CopyAttempt {
+        let attempt = await putStoredBlob(fileURL: fileURL, size: size, sha256: sha256, contentType: contentType, server: server, auth: auth)
+        guard attempt.worthRetry, !Task.isCancelled else { return attempt }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if Task.isCancelled { return CopyAttempt(outcome: .stopped) }
+        return await putStoredBlob(fileURL: fileURL, size: size, sha256: sha256, contentType: contentType, server: server, auth: auth)
+    }
+
+    /// One PUT's result, and whether the failure is the kind that passes.
+    struct CopyAttempt {
+        let outcome: BlobCopyOutcome
+        var worthRetry = false
+        var authRefused = false
+        /// The HTTP status of a refusal, so the run can tell 401 from 403.
+        var status: Int?
+        static let copied = CopyAttempt(outcome: .copied)
+        static func failed(_ reason: String, retry: Bool = false, authRefused: Bool = false, status: Int? = nil) -> CopyAttempt {
+            CopyAttempt(outcome: .failed(reason), worthRetry: retry, authRefused: authRefused, status: status)
+        }
+    }
+
+    private func putStoredBlob(fileURL: URL, size: Int, sha256: String, contentType: String, server: String, auth: String) async -> CopyAttempt {
+        guard var serverURL = URL(string: server) else { return .failed("This server address isn't valid.") }
+        let local = isLocalhost(serverURL)
+        if serverURL.scheme == "http" && !local {
+            var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
+            components?.scheme = "https"
+            if let secure = components?.url { serverURL = secure }
+        }
+        var request = URLRequest(url: serverURL.appendingPathComponent("upload"))
+        request.httpMethod = "PUT"
+        request.setValue("Nostr \(auth)", forHTTPHeaderField: "Authorization")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(String(size), forHTTPHeaderField: "Content-Length")
+        request.setValue(sha256, forHTTPHeaderField: "X-SHA-256")
+        do {
+            let session = local ? Self.copyLocalSession : Self.copySession
+            let (body, response) = try await session.upload(for: request, fromFile: fileURL)
+            guard let http = response as? HTTPURLResponse else { return .failed("The server sent back nothing.", retry: true) }
+            if (200...299).contains(http.statusCode) { return .copied }
+            let why = http.value(forHTTPHeaderField: "X-Reason")
+                ?? String(data: body.prefix(200), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Self.copyFailure(status: http.statusCode, serverSays: why)
+        } catch let error as URLError {
+            return Self.copyFailure(error)
+        } catch {
+            return .failed(error.localizedDescription, retry: true)
+        }
+    }
+
+    static func copyFailure(status: Int, serverSays: String?) -> CopyAttempt {
+        let said = serverSays.flatMap { $0.isEmpty || $0.hasPrefix("<") ? nil : $0 }
+        let suffix = said.map { " It said: \"\($0)\"." } ?? ""
+        switch status {
+        case 401, 403: return .failed("The server turned down your key (HTTP \(status))." + suffix, authRefused: true, status: status)
+        case 402: return .failed("The server wants payment to store files (HTTP 402)." + suffix)
+        case 409: return .failed("The server already has a different file under this name (HTTP 409)." + suffix)
+        case 413: return .failed("Too big for this server (HTTP 413)." + suffix)
+        case 415: return .failed("The server doesn't take this type of file (HTTP 415)." + suffix)
+        // Shown only after the retry two seconds later was turned down too.
+        case 429: return .failed("The server asked us to slow down (HTTP 429). Wait a minute, then tap Retry.", retry: true)
+        case 500...599: return .failed("The server had a problem (HTTP \(status)). Try again later." + suffix, retry: true)
+        default: return .failed("The server said no (HTTP \(status))." + suffix)
+        }
+    }
+
+    static func copyFailure(_ error: URLError) -> CopyAttempt {
+        switch error.code {
+        case .cancelled: return CopyAttempt(outcome: .stopped)
+        case .timedOut: return .failed("The server stopped answering.", retry: true)
+        case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff:
+            return .failed("This phone is offline.")
+        case .cannotFindHost, .dnsLookupFailed: return .failed("Couldn't find the server's address.")
+        case .cannotConnectToHost: return .failed("The server isn't answering.", retry: true)
+        case .networkConnectionLost: return .failed("The connection dropped.", retry: true)
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
+            return .failed("Couldn't make a secure connection to the server.")
+        case .fileDoesNotExist, .noPermissionsToReadFile: return .failed("This file is no longer on this phone.")
+        default: return .failed(error.localizedDescription, retry: true)
+        }
+    }
+
+    /// The type to send, from the file's first bytes: the stored name has no
+    /// extension, and "application/octet-stream" makes some servers serve a
+    /// photo as a download.
+    static func sniffContentType(_ url: URL) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "application/octet-stream" }
+        defer { try? handle.close() }
+        let head = [UInt8]((try? handle.read(upToCount: 16)) ?? Data())
+        func at(_ offset: Int, _ bytes: [UInt8]) -> Bool {
+            head.count >= offset + bytes.count && Array(head[offset..<offset + bytes.count]) == bytes
+        }
+        if at(0, [0xFF, 0xD8, 0xFF]) { return "image/jpeg" }
+        if at(0, [0x89, 0x50, 0x4E, 0x47]) { return "image/png" }
+        if at(0, Array("GIF8".utf8)) { return "image/gif" }
+        if at(0, Array("RIFF".utf8)) && at(8, Array("WEBP".utf8)) { return "image/webp" }
+        if at(4, Array("ftyp".utf8)) {
+            if at(8, Array("qt  ".utf8)) { return "video/quicktime" }
+            if at(8, Array("heic".utf8)) || at(8, Array("heix".utf8)) || at(8, Array("mif1".utf8)) { return "image/heic" }
+            if at(8, Array("avif".utf8)) { return "image/avif" }
+            if at(8, Array("M4A ".utf8)) { return "audio/mp4" }
+            return "video/mp4"
+        }
+        if at(0, [0x1A, 0x45, 0xDF, 0xA3]) { return "video/webm" }
+        if at(0, Array("ID3".utf8)) || at(0, [0xFF, 0xFB]) { return "audio/mpeg" }
+        if at(0, Array("%PDF".utf8)) { return "application/pdf" }
+        return "application/octet-stream"
+    }
+}
