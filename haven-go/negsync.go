@@ -416,6 +416,8 @@ func (s *outboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	if isDeleted(ctx, s.outbox.Store, &ev) {
 		return s.tombs.Add(ev.ID, ev.CreatedAt)
 	}
+	// See processOwnerEvent: a synced kind 5 must remove its targets too.
+	applyImportedDeletion(ctx, s.outbox.Store, &ev)
 	if err := s.outbox.Publish(ctx, ev); err != nil {
 		log.Println("🚫 error importing synced owner event", ev.ID, ":", err)
 		return err
