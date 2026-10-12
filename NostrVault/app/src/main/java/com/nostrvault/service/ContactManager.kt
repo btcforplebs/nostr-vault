@@ -186,16 +186,6 @@ object ContactManager {
     }
 
     /**
-     * Returns true if publishing should be BLOCKED because the contact list
-     * would shrink drastically (prevents accidental wipes from stale data).
-     */
-    fun shouldBlockPublish(currentTagCount: Int, lastFetchedCount: Int): Boolean {
-        if (lastFetchedCount <= 10) return false
-        val ratio = currentTagCount.toDouble() / lastFetchedCount.toDouble()
-        return ratio < 0.5
-    }
-
-    /**
      * Count mutual follows from a kind-3 event's tags, excluding the user's own follows.
      */
     fun countMutualFollows(

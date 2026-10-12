@@ -110,6 +110,28 @@ import com.nostrvault.service.NostrService.Companion.TAG
         }
     }
 
+    /**
+     * The active account can read but not sign: a browse-only Vault, or local
+     * signing with no key stored. Amber and bunkers sign elsewhere, so count as
+     * able. Checks the key is there without decrypting it (no NIP-49 scrypt).
+     */
+    fun NostrService.isReadOnlyAccount(): Boolean {
+        val config = configStore.config.value
+        return isReadOnlySigning(config.activeSigningMode(), hasLocalKey = hasLocalSigningKey())
+    }
+
+    private fun NostrService.hasLocalSigningKey(): Boolean {
+        val config = configStore.config.value
+        val npub = config.activeAccountNpub
+        return if (npub == null) {
+            config.ownerHexKey != null || config.ownerNcryptsec != null ||
+                (ownerHexPubkey.isNotEmpty() && credentialStore.getNsec(ownerHexPubkey) != null)
+        } else {
+            credentialStore.getCredentialHexKey(npub) != null ||
+                com.nostrvault.relay.HavenBridge.decodeNpub(npub)?.let { credentialStore.getNsec(it) } != null
+        }
+    }
+
     /** Signs with the local key of the owner ([forceOwner]) or the active account. */
     internal fun NostrService.signLocally(kind: Int, content: String, tags: List<List<String>>, forceOwner: Boolean): NostrEvent {
         if (!com.nostrvault.relay.HavenBridge.isLoaded) {
@@ -244,3 +266,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
             null
         }
     }
+
+/** Pure part of [isReadOnlyAccount]. */
+internal fun isReadOnlySigning(signingMode: String, hasLocalKey: Boolean): Boolean =
+    signingMode == "browse" || (signingMode == "local" && !hasLocalKey)

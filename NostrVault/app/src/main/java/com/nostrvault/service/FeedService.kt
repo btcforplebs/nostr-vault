@@ -1059,6 +1059,7 @@ class FeedService @Inject constructor(
 
     /** [undo], when given, is offered on the "Followed" pill. */
     fun followUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = true)) return Result.failure(FollowActionError.ReadOnly)
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = true)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -1107,6 +1108,7 @@ class FeedService @Inject constructor(
 
     /** [undo], when given, is offered on the "Unfollowed" pill. */
     fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = false)) return Result.failure(FollowActionError.ReadOnly)
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = false)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -1123,11 +1125,9 @@ class FeedService @Inject constructor(
             listConfirmed = contactListConfirmed,
         )
         return result.fold(
+            // One deliberate unfollow from a list that loaded is always allowed,
+            // even to 0: prepareUnfollow already refuses a list that didn't load.
             onSuccess = { followResult ->
-                if (contactManager.shouldBlockPublish(followResult.pubkeys.size, _followedPubkeys.value.size)) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)), pubkey = pubkey)
-                    return Result.failure(FollowActionError.SafetyCheckFailed)
-                }
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
                 publishContactList(followResult.pubkeys, rollback = previous) {

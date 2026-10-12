@@ -26,4 +26,25 @@ class FollowRollbackTest {
         assertEquals("Couldn't unfollow, try again", followFailedMessage(follow = false))
         assertEquals("Couldn't follow, try again", followFailedMessage(follow = true))
     }
+
+    @Test fun `an account with no key is told it is read-only, not to try again`() {
+        assertEquals(true, isReadOnlySigning("local", hasLocalKey = false))
+        assertEquals(true, isReadOnlySigning("browse", hasLocalKey = false))
+        assertEquals(false, isReadOnlySigning("local", hasLocalKey = true))
+        // Amber and bunkers sign off the phone: no local key needed.
+        assertEquals(false, isReadOnlySigning("amber", hasLocalKey = false))
+        assertEquals(false, isReadOnlySigning("nip46", hasLocalKey = false))
+        assertEquals("This account is read-only. Add its key to follow.", readOnlyFollowMessage(follow = true))
+        assertEquals("This account is read-only. Add its key to unfollow.", readOnlyFollowMessage(follow = false))
+    }
+
+    @Test fun `one deliberate unfollow may empty or halve a list that loaded`() {
+        val me = "m".repeat(64)
+        val last = ContactManager.prepareUnfollow("a", me, listOf(listOf("p", "a")), listOf("a"),
+            hasAttemptedLoad = true, isLoading = false, listConfirmed = true)
+        assertEquals(emptyList<String>(), last.getOrThrow().pubkeys)
+        val half = ContactManager.prepareUnfollow("a", me, listOf(listOf("p", "a"), listOf("p", "b")), listOf("a", "b"),
+            hasAttemptedLoad = true, isLoading = false, listConfirmed = true)
+        assertEquals(listOf("b"), half.getOrThrow().pubkeys)
+    }
 }
