@@ -30,6 +30,16 @@ class VaultDashboardContentsTest {
         assertEquals(0, rows.first { it.group.id == "reactions" }.yours)
     }
 
+    @Test fun `zaps never claim to be yours`() {
+        val rows = c.groupRows(total = 4, byKind = mapOf(9735 to 4), yoursByKind = mapOf(9735 to 4))
+        assertNull(rows.first { it.group.id == "zaps" }.yours)
+    }
+
+    @Test fun `no yours when not counted for this account`() {
+        val rows = c.groupRows(total = 5, byKind = mapOf(1 to 5), yoursByKind = null)
+        assertNull(rows.first { it.group.id == "notes" }.yours)
+    }
+
     @Test fun `messages never claim to be yours`() {
         val rows = c.groupRows(total = 8, byKind = mapOf(4 to 3, 1059 to 5), yoursByKind = mapOf(4 to 3))
         val messages = rows.single { it.group.id == "messages" }

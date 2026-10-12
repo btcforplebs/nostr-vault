@@ -25,7 +25,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -60,7 +63,17 @@ class VaultDashboardViewModel @Inject constructor(
     val history: StateFlow<VaultHistory.Snapshot> = historyStore.state
     val wotPubkeys: StateFlow<Set<String>> = feedService.wotPubkeys
     val kindCounts: StateFlow<Map<Int, Int>> = statsService.kindCounts
-    val yourKindCounts: StateFlow<Map<Int, Int>> = statsService.yourKindCounts
+    /**
+     * The active account's own counts per kind; null when the last "yours"
+     * count belongs to another account (or none has run), so no "yours" shows.
+     */
+    val yourKindCounts: StateFlow<Map<Int, Int>?> = combine(
+        statsService.yourKindCounts,
+        configStore.activeAccountHexPubkey,
+        configStore.config,
+    ) { yours, _, _ ->
+        yours?.takeIf { it.author == nostrService.activeHexPubkey }?.byKind
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     /** Every event in the vault: the `{}` COUNT summed over its relays. */
     val totalEvents: StateFlow<Int> = statsService.loadedEventsCount
 

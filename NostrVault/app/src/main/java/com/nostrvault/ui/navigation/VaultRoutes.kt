@@ -2,6 +2,9 @@ package com.nostrvault.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
@@ -75,9 +78,14 @@ private fun VaultBack(feedService: FeedService) {
     val showsActivity by VaultSection.showsActivity.collectAsState()
     var reopen by remember { mutableIntStateOf(0) }
 
-    // Entering composition is the pop back from a pushed page.
-    LaunchedEffect(Unit) {
-        if (VaultSection.returnToDashboard()) reopen++
+    // Coming back to RESUMED is the pop back from a pushed page. Not entering
+    // composition: predictive back composes this route as the swipe starts,
+    // and a cancelled swipe must keep the trip (and not open the sheet).
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (VaultSection.returnToDashboard()) reopen++
+        }
     }
     LaunchedEffect(reopen) {
         if (reopen == 0) return@LaunchedEffect

@@ -33,7 +33,8 @@ internal object VaultDashboardContents {
         Group("articles", "Articles", listOf(30023, 30024)),
         Group("highlights", "Highlights", listOf(9802)),
         Group("reactions", "Reactions", listOf(7)),
-        Group("zaps", "Zaps", listOf(9734, 9735)),
+        // Receipts are signed by the wallet's server, so none are "yours" (iOS too).
+        Group("zaps", "Zaps", listOf(9734, 9735), countsYours = false),
         Group("messages", "Messages", listOf(4, 1059), countsYours = false),
         Group(
             "profile", "Profile and lists",
@@ -66,13 +67,14 @@ internal object VaultDashboardContents {
     /**
      * The group rows, empty ones left out. "Other" is the total less the
      * named groups: its listed kinds, plus "Kinds not listed" for the rest.
+     * [yoursByKind] null (not counted for this account) shows no "yours".
      */
-    fun groupRows(total: Int, byKind: Map<Int, Int>, yoursByKind: Map<Int, Int>): List<GroupRow> {
+    fun groupRows(total: Int, byKind: Map<Int, Int>, yoursByKind: Map<Int, Int>?): List<GroupRow> {
         val named = groups.map { g ->
             GroupRow(
                 group = g,
                 count = g.kinds.sumOf { byKind[it] ?: 0 },
-                yours = if (g.countsYours) g.kinds.sumOf { yoursByKind[it] ?: 0 } else null,
+                yours = if (g.countsYours && yoursByKind != null) g.kinds.sumOf { yoursByKind[it] ?: 0 } else null,
                 kinds = kindRows(g.kinds, byKind),
             )
         }

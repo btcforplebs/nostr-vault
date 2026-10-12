@@ -95,9 +95,12 @@ class StatsService @Inject constructor(
     private val _kindCounts = MutableStateFlow<Map<Int, Int>>(emptyMap())
     val kindCounts: StateFlow<Map<Int, Int>> = _kindCounts.asStateFlow()
 
-    /** The kinds `fetchCountsByKind` was asked to count for one account (`authors`), summed per kind. */
-    private val _yourKindCounts = MutableStateFlow<Map<Int, Int>>(emptyMap())
-    val yourKindCounts: StateFlow<Map<Int, Int>> = _yourKindCounts.asStateFlow()
+    /** Per-kind counts of one account's own events (`authors`), with that account's hex key. */
+    data class YourCounts(val author: String, val byKind: Map<Int, Int>)
+
+    /** The last [YourCounts] counted; null until a count with an author is published. */
+    private val _yourKindCounts = MutableStateFlow<YourCounts?>(null)
+    val yourKindCounts: StateFlow<YourCounts?> = _yourKindCounts.asStateFlow()
 
     // Baseline tracking
     var baseDbCount = 0
@@ -145,8 +148,10 @@ class StatsService @Inject constructor(
      * endpoint for the real total. Port of iOS `fetchCountsByKind`: when any
      * endpoint does not answer, nothing is published, so the numbers never
      * drop to a partial sum. With [author] (hex), [yourKinds] are also
-     * counted for that account alone, into [yourKindCounts]; without one,
-     * [yourKindCounts] keeps what it had.
+     * counted for that account alone, into [yourKindCounts] tagged with
+     * [author]; without one, [yourKindCounts] is left untouched. Readers
+     * must check its author against the active account: a count that
+     * finishes after an account switch still carries the old author.
      *
      * @return whether every endpoint answered and the counts were published.
      */
@@ -167,7 +172,7 @@ class StatsService @Inject constructor(
             withContext(Dispatchers.Main.immediate) {
                 if (merged != null && yours != null) {
                     _kindCounts.value = merged.filterKeys { it != TOTAL_KEY }
-                    _yourKindCounts.value = if (author != null) yours else emptyMap()
+                    if (author != null) _yourKindCounts.value = YourCounts(author, yours)
                     _loadedEventsCount.value = merged[TOTAL_KEY] ?: 0
                 }
                 _isUpdatingCount.value = false
