@@ -120,6 +120,7 @@ import kotlinx.serialization.json.longOrNull
 import java.text.NumberFormat
 import javax.inject.Inject
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
+import com.nostrvault.ui.components.RevealNewestEffect
 
 /**
  * The Vault tab's first list, "Vault": replies, mentions, likes, zaps,
@@ -422,6 +423,9 @@ internal fun VaultActivityScreen(
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
     }
+    // New lines (a refresh on coming back to the tab, a tick) land above the
+    // top line: show them rather than keep the old top line in place.
+    RevealNewestEffect(listState) { lines.map { it.id } }
 
     GlassScaffold(
         toolbar = {
