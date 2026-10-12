@@ -91,6 +91,7 @@ class NostrService: ObservableObject {
     func enterBackground() {
         profileFlushCancellable?.cancel()
         profileFlushCancellable = nil
+        closeProfileLookupSockets()
         #if DEBUG
         print("NostrService: entering background mode — profile timer paused")
         #endif

@@ -78,7 +78,7 @@ extension NostrService {
         }
         // All tracked before any is sent, so a relay skipped at once can't
         // end the batch while the others are still to be asked.
-        for r in requests { pool.track(subId: r.subId, relay: r.url.absoluteString, batch: batch) }
+        for r in requests { pool.track(subId: r.subId, relay: r.url.absoluteString, authors: r.authors, batch: batch) }
         for r in requests { sendProfileRequest(to: r.url, subId: r.subId, pubkeys: r.authors) }
         // A relay that never answers (or was skipped while cooling down)
         // must not hold the batch open: give up on it after the deadline.
@@ -90,7 +90,7 @@ extension NostrService {
     /// The pubkeys a batch asked for that no relay had are backed off, so
     /// the globe or a feed asking again within minutes stays quiet.
     private func finishProfileBatch(_ batch: Int) {
-        guard let (pubkeys, unanswered, anyAnswered) = Self.profileLookups.endBatch(batch) else { return }
+        guard let (pubkeys, unanswered, answered) = Self.profileLookups.endBatch(batch) else { return }
         // Release what a slow relay still holds open for this batch.
         for (subId, relay) in unanswered {
             guard let client = Self.profileLookups.sockets[relay]?.client,
@@ -100,19 +100,31 @@ extension NostrService {
             client.send(text: close)
         }
         let now = Date()
-        for pubkey in pubkeys where profiles[pubkey] == nil {
+        for pubkey in pubkeys {
+            // Nothing is in flight once the batch ends. A forced refresh that
+            // found the same kind 0 never clears it in processMessage (only a
+            // change does), so leaving found keys here blocked every later
+            // forced refresh of them for the rest of the session.
             profilesInFlight.remove(pubkey)
-            // Only a real "not here" counts as a miss, not every relay down.
-            if anyAnswered { Self.profileLookups.missedAt[pubkey] = now }
+            // Only a real "not here" counts as a miss: a relay that sent EOSE
+            // for this key's own REQ without hitting the event limit, not
+            // every relay down or a truncated answer.
+            if profiles[pubkey] == nil, answered.contains(pubkey) {
+                Self.profileLookups.missedAt[pubkey] = now
+            }
         }
     }
 
     /// Sends one REQ on the long-lived lookup socket for `url`, opening it
     /// if needed. The REQ is CLOSEd when the relay sends EOSE.
     private func sendProfileRequest(to url: URL, subId: String, pubkeys: [String]) {
+        let kinds = [0, 10002, 10050, 10000, 10063]
         let filter: [String: Any] = [
-            "kinds": [0, 10002, 10050, 10000, 10063],
-            "authors": pubkeys
+            "kinds": kinds,
+            "authors": pubkeys,
+            // Room for every replaceable event asked for; a relay's default
+            // limit is often lower than its maximum.
+            "limit": pubkeys.count * kinds.count
         ]
         guard let reqData = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
               let req = String(data: reqData, encoding: .utf8) else { return }
@@ -160,9 +172,14 @@ extension NostrService {
                     queued.forEach { client.send(text: $0) }
                     self.scheduleProfileSocketIdleClose(key: key)
                 case .error:
-                    // Refused (429 and friends), timed out or dropped: leave
-                    // that relay alone for a while instead of redialling it.
-                    pool.cooldownUntil[key] = Date().addingTimeInterval(ProfileLookupPool.cooldownSeconds)
+                    // Refused (429 and friends) or never reached: leave that
+                    // relay alone for a while instead of redialling it. A
+                    // socket that was open and then died (ping failed, the
+                    // app was suspended) is just dropped: the relay was fine,
+                    // and cooling it down would starve lookups on return.
+                    if pool.sockets[key]?.opened != true {
+                        pool.cooldownUntil[key] = Date().addingTimeInterval(ProfileLookupPool.cooldownSeconds)
+                    }
                     self.closeProfileSocket(key: key)
                 case .disconnected:
                     // The relay hung up on an open socket: drop it, so the
@@ -187,6 +204,7 @@ extension NostrService {
               json.count >= 2, let type = json[0] as? String else { return }
         switch type {
         case "EVENT":
+            if let subId = json[1] as? String { Self.profileLookups.countEvent(subId) }
             guard json.count >= 3, let ev = json[2] as? [String: Any],
                   let id = ev["id"] as? String,
                   !Self.profileLookups.alreadyVerified(id),
@@ -226,6 +244,16 @@ extension NostrService {
         guard let socket = Self.profileLookups.sockets.removeValue(forKey: key) else { return }
         socket.idleClose?.cancel()
         socket.client.disconnect()
+    }
+
+    /// Drops every lookup socket and cooldown: going to the background
+    /// (suspension kills them, and a dead one still reads .connected until a
+    /// ping fails), a reset, or an account switch with other Read relays.
+    /// Batches still open end at their deadline.
+    func closeProfileLookupSockets() {
+        let pool = Self.profileLookups
+        for key in Array(pool.sockets.keys) { closeProfileSocket(key: key) }
+        pool.cooldownUntil.removeAll()
     }
 
     func loadProfiles() {
@@ -276,7 +304,8 @@ extension NostrService {
 /// batch that is CLOSEd on EOSE, and a back-off for keys no relay had.
 /// It replaced a fresh socket per relay on every 0.5 s flush, each dropped
 /// after 5 s: on 2026-10-12 opening the WoT tab made 26 of them in 40 s.
-/// Everything but the verified-id set is used on the main thread only.
+/// Everything but the verified-id set and the event counts is used on the
+/// main thread only.
 final class ProfileLookupPool {
     struct Socket {
         let client: WebSocketClient
@@ -288,7 +317,12 @@ final class ProfileLookupPool {
         var opened = false
     }
 
-    static let authorsPerReq = 250
+    /// 100 keys x 5 kinds = a limit of 500, the common relay maximum
+    /// (strfry's default), so a full answer fits in one REQ.
+    static let authorsPerReq = 100
+    /// The lowest default event cap seen on relays: an answer this big may
+    /// have been cut short.
+    static let truncationFloor = 100
     static let idleSeconds: TimeInterval = 30
     static let cooldownSeconds: TimeInterval = 120
     static let batchDeadline: TimeInterval = 10
@@ -302,9 +336,15 @@ final class ProfileLookupPool {
     private var nextBatch = 0
     private var batchPubkeys: [Int: [String]] = [:]
     private var batchOpenSubs: [Int: Int] = [:]
-    private var batchAnswered: Set<Int> = []
     private var subBatch: [String: Int] = [:]
     private var subRelay: [String: String] = [:]
+    private var subAuthors: [String: [String]] = [:]
+    /// Keys a complete answer (EOSE under the event limit) covered, per batch.
+    private var batchAnswered: [Int: Set<String>] = [:]
+
+    /// EVENTs per lookup REQ, counted on processingQueue.
+    private let countLock = NSLock()
+    private var subEventCount: [String: Int] = [:]
 
     private let seenLock = NSLock()
     private var seenIds = Set<String>()
@@ -323,18 +363,40 @@ final class ProfileLookupPool {
         return nextBatch
     }
 
-    func track(subId: String, relay: String, batch: Int) {
+    func track(subId: String, relay: String, authors: [String], batch: Int) {
         subBatch[subId] = batch
         subRelay[subId] = relay
+        subAuthors[subId] = authors
         batchOpenSubs[batch, default: 0] += 1
+    }
+
+    func countEvent(_ subId: String) {
+        countLock.lock(); defer { countLock.unlock() }
+        // A REQ whose relay never sends EOSE is never taken: keep it bounded.
+        if subEventCount.count > 5_000 { subEventCount.removeAll() }
+        subEventCount[subId, default: 0] += 1
+    }
+
+    private func takeEventCount(_ subId: String) -> Int {
+        countLock.lock(); defer { countLock.unlock() }
+        return subEventCount.removeValue(forKey: subId) ?? 0
     }
 
     /// The batch whose last open REQ this was, if any.
     func subscriptionEnded(_ subId: String, answered: Bool) -> Int? {
         subRelay[subId] = nil
+        let authors = subAuthors.removeValue(forKey: subId) ?? []
+        let events = takeEventCount(subId)
         guard let batch = subBatch.removeValue(forKey: subId),
               let open = batchOpenSubs[batch] else { return nil }
-        if answered { batchAnswered.insert(batch) }
+        // An EOSE says "that's all I have" only if the relay didn't stop at a
+        // limit. Its cap may sit below ours, so a REQ that brought back
+        // `truncationFloor` events or more proves nothing about the keys it
+        // didn't return; they are simply asked again next time, in a
+        // smaller batch.
+        if answered, events < Self.truncationFloor {
+            batchAnswered[batch, default: []].formUnion(authors)
+        }
         batchOpenSubs[batch] = open - 1
         return open - 1 <= 0 ? batch : nil
     }
@@ -342,14 +404,17 @@ final class ProfileLookupPool {
     /// Ends a batch once: the pubkeys it asked for, the REQs (with their
     /// relay) still unanswered and whether any relay sent EOSE; nil if it
     /// already ended.
-    func endBatch(_ batch: Int) -> (pubkeys: [String], unanswered: [(subId: String, relay: String)], anyAnswered: Bool)? {
+    func endBatch(_ batch: Int) -> (pubkeys: [String], unanswered: [(subId: String, relay: String)], answered: Set<String>)? {
         guard let pubkeys = batchPubkeys.removeValue(forKey: batch) else { return nil }
-        let anyAnswered = batchAnswered.remove(batch) != nil
+        let answered = batchAnswered.removeValue(forKey: batch) ?? []
         batchOpenSubs[batch] = nil
         let open = subBatch.filter { $0.value == batch }.keys
         let unanswered = open.compactMap { id in subRelay[id].map { (subId: id, relay: $0) } }
-        for id in open { subBatch[id] = nil; subRelay[id] = nil }
-        return (pubkeys, unanswered, anyAnswered)
+        for id in open {
+            subBatch[id] = nil; subRelay[id] = nil; subAuthors[id] = nil
+            _ = takeEventCount(id)
+        }
+        return (pubkeys, unanswered, answered)
     }
 
     /// Every relay asked answers with the same kind 0, so once a copy has

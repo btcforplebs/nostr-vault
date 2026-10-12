@@ -116,6 +116,7 @@ extension NostrService {
         // ping timers are cancelled via the normal disconnectLocked() path.
         for client in temporaryClients { client.disconnect() }
         temporaryClients.removeAll()
+        closeProfileLookupSockets()
         cancellables.removeAll()
         bufferFlushTimer?.invalidate()
         bufferFlushTimer = nil
@@ -150,6 +151,7 @@ extension NostrService {
         // ping timers are cancelled via the normal disconnectLocked() path.
         for client in temporaryClients { client.disconnect() }
         temporaryClients.removeAll()
+        closeProfileLookupSockets()
 
         // Cancel stale connection-state sinks from the previous account's
         // WebSocket clients. Without this, orphaned sinks fire
