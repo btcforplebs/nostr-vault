@@ -79,8 +79,11 @@ final class ProfileFeedLoader: ObservableObject {
     var followerPubkeys = Set<String>()
     var followerPageSubId: String?
     var followerPageToken = 0
-    var followerPageAnswers = 0
-    var followerPageExpected = 0
+    /// Relays that have not answered the follower page in flight.
+    var followerPagePending = Set<Int>()
+    /// The follower page's own connections, apart from the notes'.
+    var followerClients: [WebSocketClient] = []
+    var followerCancellables = Set<AnyCancellable>()
     var followerPageCountBefore = 0
     var quietFollowerPages = 0
     /// created_at of the kind 0 and kind 3 now shown. Each relay answers with

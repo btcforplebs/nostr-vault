@@ -85,6 +85,7 @@ extension ProfileFeedLoader {
 
         var urls: [URL] = []
         var seen = Set<String>()
+        let ownLedger = usesOwnLedger
         // damus and primal answer COUNT; most other popular relays reject it.
         let candidates = ["wss://relay.damus.io", "wss://relay.primal.net"]
             + config.activeFeedRelays.prefix(3)
@@ -93,34 +94,33 @@ extension ProfileFeedLoader {
         }
         let filter: [String: Any] = ["kinds": [3], "#p": [target]]
 
+        // Each answer goes up as it lands. Someone else's opening load
+        // carries no follower lists, so if nobody can count them, a first
+        // page of lists is fetched to stand in for the number.
         Task { [weak self] in
-            guard let count = await NostrService.shared.fetchVertexFollowerCount(target: target),
-                  let self, self.vertexFollowerCount != count else { return }
-            self.vertexFollowerCount = count
-        }
-        for url in urls {
-            Task { [weak self] in
-                guard let count = await NostrService.shared.fetchCount(from: [url], filter: filter) else { return }
-                guard let self, count > (self.relayFollowerCount ?? -1) else { return }
-                self.relayFollowerCount = count
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { @MainActor [weak self] in
+                    guard let count = await NostrService.shared.fetchVertexFollowerCount(target: target),
+                          let self, self.vertexFollowerCount != count else { return }
+                    self.vertexFollowerCount = count
+                }
+                for url in urls {
+                    group.addTask { @MainActor [weak self] in
+                        guard let count = await NostrService.shared.fetchCount(from: [url], filter: filter) else { return }
+                        guard let self, count > (self.relayFollowerCount ?? -1) else { return }
+                        self.relayFollowerCount = count
+                    }
+                }
             }
+            guard !ownLedger, let self, self.vertexFollowerCount == nil,
+                  self.relayFollowerCount == nil, self.followerSeenAt.isEmpty else { return }
+            self.loadMoreFollowers()
         }
     }
 
-    private func fetchAuthorNotes() {
-        guard !isLoadingNotes else { return }
-        isLoadingNotes = true
-        notesLoadStarted = true
-
-        let existing = feedService.notes.filter { $0.pubkey == pubkey }
-        for note in existing {
-            if !seenNoteIds.contains(note.id) {
-                seenNoteIds.insert(note.id)
-                pending.notes.append(note)
-            }
-        }
-        flushPendingNotes()
-
+    /// The relays the profile reads from: your own relay when it is up,
+    /// three of your read relays, and three of this person's outbox relays.
+    var profileRelayURLs: [URL] {
         var relayURLs: [URL] = []
         if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
             if let local = URL(string: config.nostrURL) {
@@ -141,7 +141,24 @@ extension ProfileFeedLoader {
                 }
             }
         }
+        return relayURLs
+    }
 
+    private func fetchAuthorNotes() {
+        guard !isLoadingNotes else { return }
+        isLoadingNotes = true
+        notesLoadStarted = true
+
+        let existing = feedService.notes.filter { $0.pubkey == pubkey }
+        for note in existing {
+            if !seenNoteIds.contains(note.id) {
+                seenNoteIds.insert(note.id)
+                pending.notes.append(note)
+            }
+        }
+        flushPendingNotes()
+
+        let relayURLs = profileRelayURLs
         let pubkey = pubkey
         let notesFilter: [String: Any] = [
             "kinds": [1, 6, 30023, NIP88Poll.kind],
@@ -155,10 +172,16 @@ extension ProfileFeedLoader {
             "#p": [pubkey],
             "limit": 50
         ]
-        // Followers: a sample, for anyone else's list, and for your own when
-        // your relay's ledger is not open.
-        let followersFilter: [String: Any] = ["kinds": [3], "#p": [pubkey], "limit": 100]
-        let filters: [Any] = [notesFilter, profileFilter, contactFilter, followersFilter, taggedFilter]
+        var filters: [Any] = [notesFilter, profileFilter, contactFilter, taggedFilter]
+        // Followers: a sample, for your own list when your relay's ledger is
+        // not open. Anyone else's wait for their Followers list to open
+        // (`loadMoreFollowers`): each one is a whole contact list, and 100 of
+        // them from primal alone came to 7 MB on every open, parsed ahead of
+        // the tagged notes and the end of loading. The header's number comes
+        // from Vertex and COUNT.
+        if usesOwnLedger {
+            filters.append(["kinds": [3], "#p": [pubkey], "limit": 100] as [String: Any])
+        }
 
         openingPending = Set(relayURLs.indices)
         for (relay, url) in relayURLs.enumerated() {
@@ -212,7 +235,7 @@ extension ProfileFeedLoader {
         }
     }
 
-    private func handleProfileNoteMessage(_ message: ProfileRelayMessage, relay: Int) {
+    func handleProfileNoteMessage(_ message: ProfileRelayMessage, relay: Int) {
         switch message {
         case .event(let event):
 
@@ -231,8 +254,8 @@ extension ProfileFeedLoader {
             }
 
             if event.kind == 3 {
-                let pTags = event.tags.filter { $0.count >= 2 && $0[0] == "p" }
                 if event.pubkey == pubkey {
+                    let pTags = event.tags.filter { $0.count >= 2 && $0[0] == "p" }
                     guard event.created_at >= shownContactsAt else { return }
                     shownContactsAt = event.created_at
                     // This user's own contact list → extract following count and followsMe.
@@ -322,10 +345,7 @@ extension ProfileFeedLoader {
             flushPendingNotes()
             if subId.hasPrefix("followers-page-") {
                 guard subId == followerPageSubId else { return }
-                followerPageAnswers += 1
-                if followerPageAnswers >= followerPageExpected {
-                    finishFollowerPage(token: followerPageToken)
-                }
+                followerPageRelayAnswered(relay)
             } else if subId.hasPrefix("older-tagged-") {
                 guard subId == olderTaggedSubId else { return }
                 olderTaggedAnswers += 1
@@ -357,19 +377,29 @@ enum ProfileRelayMessage {
     /// answer.
     case done(subId: String)
 
+    /// One decode straight from the text. Going through JSONSerialization,
+    /// back to data and then JSONDecoder read every event three times.
     init?(_ message: String) {
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json.first as? String else { return nil }
-        if type == "EVENT", json.count >= 3,
-           let eventDict = json[2] as? [String: Any],
-           let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
-           let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
-            self = .event(event)
-        } else if type == "EOSE" || type == "CLOSED" {
-            self = .done(subId: (json.count >= 2 ? json[1] as? String : nil) ?? "")
-        } else {
-            return nil
+        guard let frame = try? JSONDecoder().decode(Frame.self, from: Data(message.utf8)),
+              let parsed = frame.message else { return nil }
+        self = parsed
+    }
+
+    /// `["EVENT", subId, event]`, `["EOSE", subId]` or `["CLOSED", subId, reason]`.
+    private struct Frame: Decodable {
+        let message: ProfileRelayMessage?
+
+        init(from decoder: Decoder) throws {
+            var items = try decoder.unkeyedContainer()
+            switch try items.decode(String.self) {
+            case "EVENT":
+                _ = try items.decode(String.self)
+                message = .event(try items.decode(NostrEvent.self))
+            case "EOSE", "CLOSED":
+                message = .done(subId: items.isAtEnd ? "" : (try? items.decode(String.self)) ?? "")
+            default:
+                message = nil
+            }
         }
     }
 }
