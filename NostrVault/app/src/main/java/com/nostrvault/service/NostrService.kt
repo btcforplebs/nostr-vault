@@ -356,6 +356,8 @@ class NostrService @Inject constructor(
     /**
      * Sign a Nostr event asynchronously (supports NIP-46 remote signing).
      * Throws IllegalStateException with diagnostic info on failure.
+     * With [silentOnly], Amber signs only if it can without its approval
+     * screen (see [AmberSignerService.signEvent]); otherwise this throws.
      */
     suspend fun signEventAsync(
         kind: Int,
@@ -364,11 +366,12 @@ class NostrService @Inject constructor(
         password: String? = null,
         forceOwner: Boolean = false,
         lockedTo: PostingAccount.Lock? = null,
+        silentOnly: Boolean = false,
     ): NostrEvent? {
         // With [lockedTo], refuse to sign unless that account is still the
         // active one, and refuse the result unless it carries its key.
         if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
-        val event = signEventRouted(kind, content, tags, forceOwner)
+        val event = signEventRouted(kind, content, tags, forceOwner, silentOnly)
         if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
         return event
     }

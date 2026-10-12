@@ -116,6 +116,15 @@ class StatsCountAuthTest {
         assertNull(result.await())
     }
 
+    /** Same as iOS: a NOTICE fails the route on every endpoint, not only /private and /chat. */
+    @Test fun `a NOTICE is couldn't count on a route without AUTH too`() = runBlocking {
+        val conn = FakeConnection()
+        val result = count(conn, authRelayTag = null)
+        conn.relay("""["NOTICE","error: count failed"]""")
+        conn.answerCounts()
+        assertNull(result.await())
+    }
+
     @Test fun `routes without AUTH count straight away`() = runBlocking {
         val conn = FakeConnection()
         val result = count(conn, authRelayTag = null)

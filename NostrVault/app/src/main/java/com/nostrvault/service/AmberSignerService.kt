@@ -151,8 +151,12 @@ class AmberSignerService @Inject constructor(
      * @param asOwner signing an owner-forced event (relay AUTH, owner lists)
      *   while another account is active. Amber holds the owner's key, so that
      *   is allowed; the caller still checks the result's pubkey.
+     * @param silentOnly only the silent ContentProvider path is tried; Amber's
+     *   approval screen is never launched and null is returned instead. For
+     *   signs nobody asked for (the dashboard counts' relay AUTH on every
+     *   resume), which would otherwise open Amber again and again.
      */
-    suspend fun signEvent(unsignedEventJson: String, asOwner: Boolean = false): String? {
+    suspend fun signEvent(unsignedEventJson: String, asOwner: Boolean = false, silentOnly: Boolean = false): String? {
         val config = configStore.config.value
         val activeNpub = config.activeAccountNpub
         if (!asOwner && !activeNpub.isNullOrEmpty() && activeNpub != config.ownerNpub) {
@@ -174,6 +178,7 @@ class AmberSignerService @Inject constructor(
             withContext(Dispatchers.IO) {
                 tryContentProviderSign(unsignedEventJson, currentUser)
             }?.let { return@withLock it }
+            if (silentOnly) return@withLock null
 
             // Intent fallback (launches Amber for approval)
             val requestId = UUID.randomUUID().toString()

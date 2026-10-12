@@ -41,6 +41,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
         content: String,
         tags: List<List<String>>,
         forceOwner: Boolean,
+        silentOnly: Boolean = false,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
         if (BuildConfig.DEBUG) Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
@@ -64,7 +65,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
                     kind = kind, content = content,
                     tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
                 )
-                val signed = amberSignerService.signEvent(eventJson, asOwner = true)
+                val signed = amberSignerService.signEvent(eventJson, asOwner = true, silentOnly = silentOnly)
                     ?: throw IllegalStateException("Amber signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber (owner)")
             }
@@ -98,7 +99,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
                     tags = finalTags,
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
-                val signed = amberSignerService.signEvent(eventJson)
+                val signed = amberSignerService.signEvent(eventJson, silentOnly = silentOnly)
                     ?: throw IllegalStateException("Amber signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber")
             }

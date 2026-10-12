@@ -157,7 +157,7 @@ class StatsService @Inject constructor(
                                 if ((parsed.getOrNull(2) as? JsonPrimitive)?.booleanOrNull == true) sendCounts() else finish(null)
                             }
                             // No subscription id, so it can't be tied to one COUNT: the route fails.
-                            "NOTICE" -> if (authRelayTag != null) finish(null)
+                            "NOTICE" -> finish(null)
                             "COUNT" -> {
                                 val subId = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: return@collect
                                 val kind = subIdToKind[subId] ?: yourSubIdToKind[subId] ?: return@collect
@@ -335,6 +335,8 @@ class StatsService @Inject constructor(
                 content = "",
                 tags = listOf(listOf("relay", relayTag), listOf("challenge", challenge)),
                 forceOwner = true,
+                // Runs on every resume: never open Amber's approval screen for it.
+                silentOnly = true,
             )
         } catch (e: Exception) {
             Log.w(TAG, "Counts AUTH not signed: ${e.message}")
