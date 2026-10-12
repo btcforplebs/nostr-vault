@@ -480,4 +480,35 @@ class TrustMapTest {
         assertNull(TrustMap.vouches("""{"pubkeys":{"a":true},"timestamp":1}"""))
         assertNull(TrustMap.vouches("not json"))
     }
+
+    // ── Globe framing (iOS TrustMapTests' framing cases) ──
+
+    /** Width on screen of a shell's outline, at zoom 1. */
+    private fun outline(r: Double, unit: Double): Double {
+        val d = GlobeCamera.DISTANCE
+        return 2 * unit * r / kotlin.math.sqrt(d * d - r * r)
+    }
+
+    @Test
+    fun `on an upright phone the inner globe spans the width`() {
+        for ((w, h) in listOf(1080.0 to 2400.0, 720.0 to 1600.0)) {
+            val span = outline(TrustMap.RING_RADIUS, GlobeCamera.unit(w, h, phone = true)) / w
+            assertTrue("$w px: inner globe spans $span of the width", span in 0.94..0.98)
+        }
+    }
+
+    @Test
+    fun `the phone scale keeps the shells in proportion`() {
+        val old = GlobeCamera.unit(1080.0, 2400.0, phone = false)
+        val new = GlobeCamera.unit(1080.0, 2400.0, phone = true)
+        assertTrue(new > old)
+        val ratio = { u: Double -> outline(TrustMap.OUTER_RADIUS, u) / outline(TrustMap.RING_RADIUS, u) }
+        assertEquals(ratio(old), ratio(new), 1e-9)
+    }
+
+    @Test
+    fun `tablets and a sideways phone keep their framing`() {
+        assertEquals(1600 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(1600.0, 2560.0, phone = false), 1e-9)
+        assertEquals(1080 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(2400.0, 1080.0, phone = true), 1e-9)
+    }
 }

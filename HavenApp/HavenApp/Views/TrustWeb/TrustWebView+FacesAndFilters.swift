@@ -31,7 +31,6 @@ extension TrustWebView {
         return [
             .talk: Set(engagement.keys).intersection(onGlobe),
             .followsBack: followsBack.intersection(myFollows),
-            .new: TrustMap.newcomers(web: web, seen: seenWeb).union(arrivals),
         ]
     }
 
@@ -45,11 +44,9 @@ extension TrustWebView {
     /// for who they leave. `note` shows the tapped filter's line.
     func applyFilters(note tapped: TrustMap.Filter? = nil) {
         let matches = filterMatches
-        // Until the follower ledger is read, Follow you back doesn't dim
-        // anyone; nor does New before there's a last look to compare with.
+        // Until the follower ledger is read, Follow you back doesn't dim anyone.
         var ready = filters
         if followsBackLoaded != true { ready.remove(.followsBack) }
-        if seenWeb == nil, arrivals.isEmpty { ready.remove(.new) }
         let lit = TrustMap.lit(by: ready, matches: matches)
         if lit != filterLit { filterLit = lit }
         if let tapped { showFilterNote(tapped, lit: lit, matches: matches) }
@@ -76,9 +73,6 @@ extension TrustWebView {
             text = "Your relay has no follower list yet"
         } else if on, tapped == .followsBack, followsBackLoaded == nil {
             text = "Checking who follows you back…"
-        } else if filters.count <= 1, on, tapped == .new, seenWeb == nil, arrivals.isEmpty {
-            // Nothing to compare with yet: the first look sets the baseline.
-            text = "New people show from your next visit"
         } else if filters.count <= 1, on {
             text = tapped.count(matches[tapped]?.count ?? 0)
         } else if let lit {
@@ -100,32 +94,6 @@ extension TrustWebView {
             followsBack = followers ?? []
             followsBackLoaded = followers != nil
             applyFilters(note: filters.contains(.followsBack) && filterNote.note != nil ? .followsBack : nil)
-        }
-    }
-
-    /// Where your web as of your last look is kept, per account.
-    private var seenWebURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("wot_seen_\(me).json")
-    }
-
-    func loadSeenWeb() {
-        let url = seenWebURL
-        Task {
-            let seen = await Task.detached(priority: .utility) {
-                (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([String].self, from: $0) }.map(Set.init)
-            }.value
-            seenWeb = seen
-            applyFilters()
-        }
-    }
-
-    /// Leaving the tab: what's here now is what the next look compares with.
-    func saveSeenWeb() {
-        let url = seenWebURL, current = Array(web)
-        guard !current.isEmpty else { return }
-        Task.detached(priority: .utility) {
-            try? JSONEncoder().encode(current).write(to: url, options: .atomic)
         }
     }
 

@@ -51,6 +51,8 @@ import kotlin.math.roundToInt
 internal class GlobeScene(
     /** Draw stars as batched points: the oval paths cost a slow phone a whole frame. */
     private val lite: Boolean = false,
+    /** Upright on a phone the globe fills the width; tablets keep their framing. */
+    private val phone: Boolean = false,
 ) {
     enum class Kind { RING, MUTUAL, HAZE, CLOSE_HAZE, BRIDGE, VIA }
 
@@ -424,10 +426,10 @@ internal class GlobeScene(
     // ── Projection ───────────────────────────────────────────────────
 
     /** One camera's projection, worked out once per frame. */
-    private class Projector(camera: GlobeCamera, w: Float, h: Float) {
+    private class Projector(camera: GlobeCamera, w: Float, h: Float, phone: Boolean) {
         val m = camera.orientation.matrix()
-        val cameraZ = 4.2 / camera.zoom
-        val unit = min(w, h) * 0.40 * 4.2 * 0.92
+        val cameraZ = GlobeCamera.DISTANCE / camera.zoom
+        val unit = GlobeCamera.unit(w.toDouble(), h.toDouble(), phone)
         val midX = w / 2.0
         val midY = h / 2.0
 
@@ -448,7 +450,7 @@ internal class GlobeScene(
 
     /** Closest front-facing face to a tap, within reach of a fingertip. Zoomed in, plain stars can be tapped too. */
     fun hit(at: Offset, w: Float, h: Float, density: Float): String? {
-        val project = Projector(camera, w, h)
+        val project = Projector(camera, w, h, phone)
         var best: String? = null
         var bestDistance = Double.MAX_VALUE
         fun consider(star: Star, reach: Double) {
@@ -550,7 +552,7 @@ internal class GlobeScene(
         val chains = if (traceTarget == null) this.chains else emptyList()
         val faces = if (traceTarget == null) this.faces else traceBridges
         val direct = traceTarget?.let { it in ring } ?: this.direct
-        val project = Projector(camera, w, h)
+        val project = Projector(camera, w, h, phone)
         val zoom = camera.zoom
         val k = min(1.0, min(w, h) / density / 620.0)
         val core = project.of(coreStar) ?: return

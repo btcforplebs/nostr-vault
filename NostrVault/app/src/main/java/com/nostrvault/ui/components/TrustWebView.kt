@@ -25,7 +25,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,7 +48,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.max
 
 @Composable
 internal fun TrustWebContent(
@@ -114,21 +112,11 @@ internal fun TrustWebContent(
     /** The WOT tab's search field is open under the bar. */
     var searchOpen by remember { mutableStateOf(false) }
     /**
-     * People who joined your web since you last looked, for the
-     * "↑ N new people" pill; [webSeen] is the count they're measured from.
-     */
-    var newPeople by remember { mutableIntStateOf(0) }
-    var webSeen by remember { mutableStateOf<Int?>(null) }
-    /**
-     * A relay rebuild seen running from the WOT tab: the people it has found
-     * so far who weren't on the old map, lit as stars while it runs, and how
-     * many of its newcomers the pill was tapped away at. [liveCounted] holds
-     * from its first report until its pill folds away.
+     * A relay rebuild seen running from the WOT tab, and the people it has
+     * found so far who weren't on the old map, lit as stars while it runs.
      */
     var liveRebuild by remember { mutableStateOf(false) }
     var arrivals by remember { mutableStateOf(emptySet<String>()) }
-    var arrivalsDismissed by remember { mutableIntStateOf(0) }
-    var liveCounted by remember { mutableStateOf(false) }
     /**
      * The WOT tab's trust card: who was tapped or searched, and how they
      * reach you (null while it's being traced).
@@ -174,31 +162,12 @@ internal fun TrustWebContent(
         if (layer !in TrustMap.layers(counts != null)) layer = TrustMap.Layer.EVERYONE
     }
 
-    // The web grew: count the newcomers into the pill, which folds away a few
-    // seconds after the last one arrives. The first count is the start.
-    LaunchedEffect(web.size) {
-        if (!isWOTTab) return@LaunchedEffect
-        val seen = webSeen
-        webSeen = web.size
-        // A rebuild the relay reports on counts its own newcomers, live; the
-        // saved web landing afterwards is the same people again.
-        if (liveCounted) return@LaunchedEffect
-        if (seen == null || web.size <= seen) return@LaunchedEffect
-        newPeople += web.size - seen
-        delay(NEW_PEOPLE_SHOWN_MS)
-        newPeople = 0
-    }
-
     // Follows the relay's rebuilds while the WOT tab is open, whoever started
     // them (the daily timer, the boot check or the dropdown): newcomers fade in
-    // as stars and count up in the pill, and the saved web loads when the
-    // rebuild ends. Mirrors iOS.
+    // as stars, and the saved web loads when the rebuild ends. Mirrors iOS.
     LaunchedEffect(isWOTTab) {
         if (!isWOTTab) return@LaunchedEffect
-        // A fold cut short by leaving the tab would leave the pill muted.
-        if (!liveRebuild) liveCounted = false
         var cursor = 0
-        var fade: kotlinx.coroutines.Job? = null
         while (true) {
             val progress = withContext(Dispatchers.IO) {
                 WotRefreshProgress.parse(runCatching { HavenBridge.getWotRefreshProgress() }.getOrNull())
@@ -206,11 +175,8 @@ internal fun TrustWebContent(
             if (progress?.running == true) {
                 if (!liveRebuild) {
                     liveRebuild = true
-                    liveCounted = true
-                    fade?.cancel()
                     cursor = 0
                     arrivals = emptySet()
-                    arrivalsDismissed = 0
                 }
                 val from = cursor
                 // Throws on a library from before the call existed.
@@ -221,7 +187,6 @@ internal fun TrustWebContent(
                     cursor = batch.total
                     if (batch.pubkeys.isNotEmpty()) arrivals = arrivals + batch.pubkeys
                 }
-                newPeople = max(0, (progress.new ?: arrivals.size) - arrivalsDismissed)
             } else if (liveRebuild) {
                 liveRebuild = false
                 cursor = 0
@@ -229,11 +194,6 @@ internal fun TrustWebContent(
                 // old one stays, and the stars that came in fade back out.
                 arrivals = emptySet()
                 trust.reloadTrustGraph()
-                fade = launch {
-                    delay(NEW_PEOPLE_SHOWN_MS)
-                    newPeople = 0
-                    liveCounted = false
-                }
             }
             delay(if (liveRebuild) LIVE_POLL_MS else IDLE_POLL_MS)
         }
@@ -273,7 +233,7 @@ internal fun TrustWebContent(
     fun pictureRenders(pubkey: String): Boolean =
         profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
     // ── Filters (WOT tab only) ──
-    val wotFilters = rememberWotFilters(me, WotFilterInputs(myFollows, web, engagement, arrivals), active = isWOTTab)
+    val wotFilters = rememberWotFilters(me, WotFilterInputs(myFollows, web, engagement))
     val filterLit = if (isWOTTab) wotFilters.lit else null
     /** Matching people worth a picture, most interacted with first. */
     val filterCandidates = remember(filterLit, myFollows, engagement, vouches) {
@@ -676,13 +636,6 @@ internal fun TrustWebContent(
                 crumbRow = { crumbRow(it) },
                 liveRebuild = liveRebuild,
                 mappingWeb = mappingWeb,
-                newPeople = newPeople,
-                onLivePill = {
-                    if (liveRebuild) arrivalsDismissed += newPeople
-                    newPeople = 0
-                    // Who they are, not just how many.
-                    if (TrustMap.Filter.NEW !in wotFilters.on) wotFilters.toggle(TrustMap.Filter.NEW)
-                },
                 filters = wotFilters.on,
                 onFilter = wotFilters::toggle,
                 filterNote = wotFilters.note,
@@ -752,7 +705,5 @@ private val WIDE_WIDTH = 760.dp
 private const val SEARCH_DEBOUNCE_MS = 350L
 /** "Mapping your wider web…" gives up after this; an empty web may just be empty. */
 private const val WEB_WAIT_MS = 15_000L
-/** How long the "↑ N new people" pill stays after the last newcomer. */
-private const val NEW_PEOPLE_SHOWN_MS = 5_000L
 /** Seconds the globe keeps taking in faces' pictures as profiles arrive. */
 private const val PICTURE_WAIT_TICKS = 20

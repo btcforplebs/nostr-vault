@@ -96,25 +96,14 @@ struct TrustWebView: View {
     @State var followsBack: Set<String> = []
     /// The ledger was read (nil before, or false when the relay had none).
     @State var followsBackLoaded: Bool?
-    /// Your web as of your last look, for ✨ New; nil before a first look.
-    @State var seenWeb: Set<String>?
     /// The line under the bar after a filter tap: its name and count.
     @StateObject var filterNote = FilterNoteModel()
     /// The WOT tab's search field is open under the bar.
     @State var searchOpen = false
-    /// People who joined your web since you last looked, for the
-    /// "↑ N new people" pill; `webSeen` is the count they're measured from.
-    @State var newPeople = 0
-    @State var webSeen: Int?
-    @State var newPeopleFade: Task<Void, Never>?
-    /// A relay rebuild seen running from the WOT tab: the people it has found
-    /// so far who weren't on the old map, lit as stars while it runs, and how
-    /// many of its newcomers the pill was tapped away at.
+    /// A relay rebuild seen running from the WOT tab, and the people it has
+    /// found so far who weren't on the old map, lit as stars while it runs.
     @State var liveRebuild = false
     @State var arrivals: Set<String> = []
-    @State var arrivalsDismissed = 0
-    /// Set from a rebuild's first report until its pill folds away.
-    @State var liveCounted = false
     /// The WOT tab's trust card: who was tapped or searched, and how they
     /// reach you (nil while it's being traced).
     @State var card: String?
@@ -185,7 +174,6 @@ struct TrustWebView: View {
         .navigationTitle(centerKey == me ? "Web of Trust" : name(centerKey))
         #endif
         .toolbar { toolbarItems }
-        .onChange(of: web.count) { _, count in countNewPeople(count) }
         .onAppear {
             guard frames[me] == nil else { return }
             crumbs = [me]
@@ -249,14 +237,11 @@ struct TrustWebView: View {
         .onDisappear {
             guard isWOTTab else { return }
             TutorialCenter.shared.setCovered("wot", false)
-            saveSeenWeb()
             filters = []
             applyFilters()
         }
-        .onAppear { if isWOTTab { loadSeenWeb() } }
         .onChange(of: web) { _, _ in if !filters.isEmpty { applyFilters() } }
         .onChange(of: engagement) { _, _ in if !filters.isEmpty { applyFilters() } }
-        .onChange(of: arrivals) { _, _ in if filters.contains(.new) { applyFilters() } }
         .sheet(item: Binding<IdentifiableString?>(
             get: { messagePubkey.map { IdentifiableString(id: $0) } },
             set: { messagePubkey = $0?.id }

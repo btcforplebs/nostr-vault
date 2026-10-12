@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -33,20 +32,17 @@ import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
-import java.text.NumberFormat
-import kotlin.math.max
 
 /**
- * The feed's purple "New Posts" button, for people: a rebuild running
- * ([caption]), or how many joined your web since you looked. Nothing when
- * neither.
+ * The feed's purple "New Posts" pill, for a rebuild running ([caption]) and
+ * how it ended. Nothing when no rebuild is running.
  */
 @Composable
-internal fun WotLivePill(caption: String?, outcome: WotPillOutcome? = null, newPeople: Int, onClick: () -> Unit) {
+internal fun WotLivePill(caption: String?, outcome: WotPillOutcome? = null) {
     val accent = LocalNostrVaultColors.current.primary
     val shape = RoundedCornerShape(50)
     AnimatedVisibility(
-        visible = caption != null || newPeople > 0,
+        visible = caption != null,
         enter = fadeIn(Motion.chrome()),
         exit = fadeOut(Motion.chrome()),
     ) {
@@ -56,12 +52,11 @@ internal fun WotLivePill(caption: String?, outcome: WotPillOutcome? = null, newP
                 .shadow(8.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
                 .clip(shape)
                 .background(accent)
-                .clickable(enabled = newPeople > 0, onClick = onClick)
                 .padding(vertical = 10.dp, horizontal = 20.dp)
                 .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         ) {
             if (outcome != null) {
-                // How the Rebuild button's run ended, over any count.
+                // How the Rebuild button's run ended.
                 Icon(
                     if (outcome == WotPillOutcome.Failed) NostrVaultIcons.ErrorCircle else NostrVaultIcons.CheckCircle,
                     contentDescription = null, tint = PrimaryText, modifier = Modifier.size(13.dp),
@@ -69,11 +64,6 @@ internal fun WotLivePill(caption: String?, outcome: WotPillOutcome? = null, newP
                 Spacer(Modifier.width(8.dp))
                 Text(caption.orEmpty(), color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 300.dp))
-            } else if (newPeople > 0) {
-                Icon(NostrVaultIcons.ArrowUp, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(12.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("${NumberFormat.getIntegerInstance().format(newPeople)} new people",
-                    color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             } else {
                 CircularProgressIndicator(color = PrimaryText, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(8.dp))

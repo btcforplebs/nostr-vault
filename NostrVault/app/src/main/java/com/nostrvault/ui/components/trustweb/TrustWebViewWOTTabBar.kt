@@ -32,8 +32,6 @@ internal fun TrustWebViewWOTTabBar(
     crumbRow: @Composable (Modifier) -> Unit,
     liveRebuild: Boolean,
     mappingWeb: Boolean,
-    newPeople: Int,
-    onLivePill: () -> Unit,
     filters: Set<TrustMap.Filter>,
     onFilter: (TrustMap.Filter) -> Unit,
     filterNote: FilterNoteState,
@@ -71,8 +69,6 @@ internal fun TrustWebViewWOTTabBar(
                 else -> null
             },
             outcome = refreshState?.takeIf { it.done }?.let { if (it.failed) WotPillOutcome.Failed else WotPillOutcome.Saved },
-            newPeople = newPeople,
-            onClick = onLivePill,
         )
         FilterNotePill(filterNote)
     }
