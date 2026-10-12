@@ -250,6 +250,7 @@ extension ProfileFeedLoader {
             client.disconnect()
         }
         profileClients.removeAll()
+        askedRelays.removeAll()
         profileCancellables.removeAll()
     }
 }

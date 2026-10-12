@@ -16,8 +16,13 @@ extension NostrService {
         guard (relayLists[pubkey] == nil || dmRelayLists[pubkey] == nil) && !relaysInFlight.contains(pubkey) else { return }
         relaysInFlight.insert(pubkey)
 
-        // Looking things up is reading: the Read relays
+        // Looking things up is reading: the Read relays, and the profile
+        // index relays, which hold relay lists the read relays often lack
+        // (someone further out in the WoT than anyone you follow).
         var relays = ConfigService.shared.config.readRelays
+        for relay in Self.profileIndexRelays where !relays.contains(relay) {
+            relays.append(relay)
+        }
 
         // Include cached outbox (write) relays for this user — their kind 10002/10050
         // is most likely to be found on their own write relays.
