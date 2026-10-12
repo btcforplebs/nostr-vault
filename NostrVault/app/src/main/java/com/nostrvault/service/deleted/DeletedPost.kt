@@ -52,6 +52,14 @@ data class DeletedPost(
         fun keepsCopy(kind: Int): Boolean =
             !(kind == 0 || kind == 3 || kind in 10000 until 20000 || kind in 30000 until 40000)
 
+        /**
+         * The copy to save once the delete request is signed: [copy] only if
+         * the kind 5 came from the same key, so a delete signed under another
+         * account (switched mid-delete) leaves no copy of a post still live.
+         */
+        fun keptAfterSigning(copy: DeletedPost?, signer: String): DeletedPost? =
+            copy?.takeIf { it.pubkey == signer }
+
         /** Words the Recently Deleted screen shows next to Un-delete. */
         const val UNDELETE_NOTE =
             "Un-delete posts it again as a new post. Likes and replies on the old post don't come back."

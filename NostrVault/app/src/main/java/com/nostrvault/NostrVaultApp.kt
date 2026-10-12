@@ -39,10 +39,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var configStore: com.nostrvault.data.local.ConfigStore
 
+    @Inject
+    lateinit var deletedPostsStore: com.nostrvault.service.deleted.DeletedPostsStore
+
     override fun onCreate() {
         super.onCreate()
         ProfileRepository.init(this)
         com.nostrvault.data.local.DeletedNotesStore.init(this)
+        com.nostrvault.service.deleted.DeletedPostsStore.shared = deletedPostsStore
         com.nostrvault.service.music.MusicPlayer.init(this)
         com.nostrvault.ui.screens.music.MusicFeedState.init(this)
         com.nostrvault.data.model.FeedMenuSettings.init(this)

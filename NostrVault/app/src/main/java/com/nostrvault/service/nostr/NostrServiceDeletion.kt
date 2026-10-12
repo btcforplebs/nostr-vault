@@ -3,6 +3,8 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.data.local.DeletedNotesStore
 import com.nostrvault.service.NostrService.Companion.TAG
+import com.nostrvault.service.deleted.DeletedPost
+import com.nostrvault.service.deleted.DeletedPostsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,12 +23,19 @@ import kotlinx.coroutines.withContext
  */
 fun NostrService.deleteNote(noteId: String) {
     scope.launch(Dispatchers.IO) {
+        val copy = try {
+            copyBeforeDeleting(noteId)
+        } catch (e: Exception) {
+            Log.w(TAG, "deleteNote: no copy for ${noteId.take(8)}: ${e.message}")
+            null
+        }
         val signed = try {
             signEventAsync(kind = 5, content = "", tags = NoteDeletion.requestTags(noteId))
         } catch (e: Exception) {
             Log.e(TAG, "deleteNote: not signed: ${e.message}")
             null
         } ?: return@launch
+        DeletedPost.keptAfterSigning(copy, signed.pubkey)?.let { DeletedPostsStore.shared.save(it) }
         postEvent(signed)
         withContext(Dispatchers.Main) {
             events = NoteDeletion.without(events, noteId)

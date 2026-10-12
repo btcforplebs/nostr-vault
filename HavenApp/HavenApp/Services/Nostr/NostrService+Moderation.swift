@@ -68,12 +68,14 @@ extension NostrService {
     /// alone, like `deleteOwnEvents`.
     func deleteNote(id: String) {
         Task {
+            let copy = await copyBeforeDeleting(id: id)
             guard let signed = await signEventAsync(kind: 5, content: "", tags: NoteDeletion.requestTags(noteId: id)) else {
                 #if DEBUG
                 print("NostrService: Failed to sign deletion event")
                 #endif
                 return
             }
+            if let kept = DeletedPost.keptAfterSigning(copy, signer: signed.pubkey) { DeletedPostsStore.shared.save(kept) }
             postEvent(signed)
             #if DEBUG
             print("NostrService: Posted Kind 5 deletion request for event \(id)")

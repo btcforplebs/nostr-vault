@@ -9,6 +9,7 @@ import kotlinx.serialization.json.long
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -157,6 +158,17 @@ class DeletedPostsStoreTest {
     fun `replaceable and addressable kinds get no copy`() {
         listOf(1, 6, 16, 20, 1068, 1111).forEach { assertTrue("$it", DeletedPost.keepsCopy(it)) }
         listOf(0, 3, 10000, 10002, 19999, 30023, 30402, 39999).forEach { assertFalse("$it", DeletedPost.keepsCopy(it)) }
+    }
+
+    /**
+     * The delete hook saves the copy only when the kind 5 was signed by the
+     * post's own key; an account switched mid-delete leaves no copy.
+     */
+    @Test
+    fun `copy is kept only when the same key signed the delete`() {
+        assertEquals(post(), DeletedPost.keptAfterSigning(post(), me))
+        assertNull(DeletedPost.keptAfterSigning(post(), other))
+        assertNull(DeletedPost.keptAfterSigning(null, me))
     }
 
     @Test

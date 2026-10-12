@@ -44,4 +44,12 @@ struct DeletedPost: Codable, Identifiable, Equatable {
     static func keepsCopy(kind: Int) -> Bool {
         !(kind == 0 || kind == 3 || (10000..<20000).contains(kind) || (30000..<40000).contains(kind))
     }
+
+    /// The copy to save once the delete request is signed: `copy` only if the
+    /// kind 5 came from the same key, so a delete signed under another account
+    /// (switched mid-delete) leaves no copy of a post still live.
+    static func keptAfterSigning(_ copy: DeletedPost?, signer: String) -> DeletedPost? {
+        guard let copy, copy.pubkey == signer else { return nil }
+        return copy
+    }
 }
