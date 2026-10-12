@@ -7,7 +7,7 @@ import org.junit.Test
 
 /** Mirrors iOS FeedOutboxPlanTests (#227). */
 class FeedOutboxPlanTest {
-    private val feed = listOf("wss://relay.primal.net", "wss://nos.lol")
+    private val feed = listOf("wss://relay.primal.net", "wss://nostr-pub.wellorder.net")
     private val fallback = FeedOutboxPlan.FALLBACK_RELAY
 
     /**
@@ -18,7 +18,7 @@ class FeedOutboxPlanTest {
     fun `only follows the feed relays miss are asked elsewhere`() {
         val plan = FeedOutboxPlan.plan(
             follows = listOf("a", "b", "c"),
-            writeRelays = mapOf("a" to listOf("wss://nos.lol/"), "b" to listOf("wss://relay.damus.io"), "c" to emptyList()),
+            writeRelays = mapOf("a" to listOf("wss://nostr-pub.wellorder.net/"), "b" to listOf("wss://relay.damus.io"), "c" to emptyList()),
             feedRelays = feed,
         )
         assertEquals(mapOf("wss://relay.damus.io" to listOf("b"), fallback to listOf("c")), plan)
@@ -79,16 +79,17 @@ class FeedOutboxPlanTest {
     }
 
     /**
-     * nos.lol and nostr.mom were down on 2026-10-04 while feed relays; a
-     * follow reached only through one of them was not reached at all.
+     * nos.lol and nostr.mom were down on 2026-10-04 while feed relays (both
+     * left the defaults on 2026-10-12); a follow reached only through one of
+     * them was not reached at all.
      */
     @Test
     fun `a down feed relay reaches nobody`() {
-        val lists = mapOf("a" to listOf("wss://nos.lol", "wss://relay.damus.io"))
+        val lists = mapOf("a" to listOf("wss://nostr-pub.wellorder.net", "wss://relay.damus.io"))
         assertTrue(FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = lists, feedRelays = feed).isEmpty())
         val plan = FeedOutboxPlan.plan(
             follows = listOf("a"), writeRelays = lists, feedRelays = feed,
-            unreachableRelays = listOf("wss://nos.lol/"),
+            unreachableRelays = listOf("wss://nostr-pub.wellorder.net/"),
         )
         assertEquals(mapOf("wss://relay.damus.io" to listOf("a")), plan)
         val onlyDown = FeedOutboxPlan.plan(

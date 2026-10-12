@@ -11,7 +11,7 @@ import java.io.File
  */
 object RelayConfiguration {
     /** Where features read when the owner has no read relays. */
-    val FALLBACK_RELAYS = listOf("wss://relay.primal.net", "wss://nos.lol")
+    val FALLBACK_RELAYS = listOf("wss://relay.primal.net", "wss://relay.damus.io")
 
     /** Where the owner's events go when there are no write relays: the default broadcast list. */
     val FALLBACK_WRITE_RELAYS = listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social")

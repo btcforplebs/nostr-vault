@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
+import com.nostrvault.relay.DeadRelays
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayConfigApplier
@@ -114,6 +115,10 @@ class ConfigStore @Inject constructor(
         if (liveMirrors.size != loaded.blossomMirrors.size) {
             loaded = loaded.copy(blossomMirrors = liveMirrors)
         }
+
+        // Same for relays that went dark after they were defaults; a saved
+        // list that names them stays saved, so they are removed here, once.
+        loaded = DeadRelays.dropping(loaded)
 
         // Multi-account migration: seed the owner's signing mode so
         // activeSigningMode() is stable for legacy single-owner configs. The

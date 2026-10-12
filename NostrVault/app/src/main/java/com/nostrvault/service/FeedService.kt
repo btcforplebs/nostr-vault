@@ -87,9 +87,9 @@ class FeedService @Inject constructor(
          * nor the author's carry. Same list as iOS FeedService.fallbackNoteRelays,
          * picked by measurement on 2026-10-01; re-measure with
          * `.scratch/roots/probe5.py` in the Buzz nest before changing it.
+         * offchain.pub refused connections on 2026-10-12 and was dropped.
          */
         internal val FALLBACK_NOTE_RELAYS = listOf(
-            "wss://offchain.pub",
             "wss://nostr.wine",
             "wss://nostr.oxtr.dev",
             "wss://nostr.land",
