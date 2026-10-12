@@ -72,6 +72,7 @@ struct MyProfileView: View {
             shopEmptyText: "You haven't listed anything yet",
             canDeleteMedia: true,
             scrollToTopToken: scrollToTopToken,
+            foldsTabBar: true,
             badge: { ProfileActions.badge("YOU", tint: .havenPurple) },
             actions: { _ in actionButtons },
             shopHeader: { sellButton }

@@ -26,6 +26,10 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     var canDeleteMedia = false
     /// Changing it scrolls the page back to the top.
     var scrollToTopToken = 0
+    /// Scrolling folds the tab bar. Only the Profile tab's own page: anyone
+    /// else's is a sheet or a cover over the bar, and folding the hidden bar
+    /// redrew it on every frame of the scroll.
+    var foldsTabBar = false
     @ViewBuilder let badge: () -> Badge
     /// Called with 0, 1, 2: each a tighter row, for when the wider one does
     /// not fit on one line.
@@ -148,7 +152,7 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
             // each relay and are sorted in above it, and while rows above it
             // grow as their media loads. The main feed does the same.
             .scrollPosition(id: $scrolledNoteID)
-            .scrollDirectionTracking(feedService: feedService)
+            .foldsTabBar(foldsTabBar, feedService: feedService)
             .onGeometryChange(for: CGSize.self) { $0.size } action: {
                 viewportHeight = $0.height
                 viewportWidth = $0.width
@@ -269,6 +273,15 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
 }
 
 private extension View {
+    @ViewBuilder
+    func foldsTabBar(_ folds: Bool, feedService: FeedService) -> some View {
+        if folds {
+            self.scrollDirectionTracking(feedService: feedService)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func hiddenTopScrollEdge() -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
