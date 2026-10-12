@@ -1340,16 +1340,6 @@ class FeedService @Inject constructor(
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
-    /**
-     * A user's Retry: forget that [id] was given up on, so the lookup runs now
-     * instead of waiting out [UNAVAILABLE_RETRY_MS]. iOS retryMissingNote.
-     */
-    fun retryMissingNote(id: String) {
-        unavailableSince.remove(id)
-        if (id in _unavailableNoteIds.value) _unavailableNoteIds.update { it - id }
-        fetchMissingNote(id)
-    }
-
     fun fetchMissingNotesBatch(ids: List<String>) {
         // A post that arrived through the feed itself can be the parent (or
         // repost original, or quote) a row is waiting on. Rows read parents
@@ -1357,11 +1347,7 @@ class FeedService @Inject constructor(
         // answered for a note the phone already had (iOS #302). Checked
         // before the in-flight filter: the feed often delivers it mid-lookup.
         val inFeed = adoptFeedNotes(ids)
-        // A deleted post is never asked for again: a relay that ignored the
-        // request would hand it back as a thread root or quote. The card
-        // shows "unavailable" instead of a skeleton.
-        val deleted = ids.filter { isDeleted(it) }
-        if (deleted.isNotEmpty()) _unavailableNoteIds.update { it + deleted }
+        val deleted = markDeletedUnavailable(ids)
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->
             if (id in inFeed || id in deleted) return@filter false

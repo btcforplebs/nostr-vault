@@ -32,6 +32,17 @@ fun FeedService.withoutDeletedNotes(notes: List<FeedNote>): List<FeedNote> =
     DeletedNotes.visible(notes, deletedNoteIds)
 
 /**
+ * The deleted ids among [ids], marked unavailable. A deleted post is never
+ * asked for again: a relay that ignored the request would hand it back as a
+ * thread root or quote. The card shows "unavailable" instead of a skeleton.
+ */
+fun FeedService.markDeletedUnavailable(ids: List<String>): List<String> {
+    val deleted = ids.filter { isDeleted(it) }
+    if (deleted.isNotEmpty()) _unavailableNoteIds.update { it + deleted }
+    return deleted
+}
+
+/**
  * The feed relays' subscription for the owner's own kind-5 requests. The
  * local relay serves the ones your other devices sent once the vault has
  * imported them; the outbox relays serve them directly. No `since`: an

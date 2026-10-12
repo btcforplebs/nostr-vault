@@ -34,6 +34,16 @@ import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
     }
 
     /**
+     * A user's Retry: forget that [id] was given up on, so the lookup runs now
+     * instead of waiting out `UNAVAILABLE_RETRY_MS`. iOS retryMissingNote.
+     */
+    fun FeedService.retryMissingNote(id: String) {
+        unavailableSince.remove(id)
+        if (id in _unavailableNoteIds.value) _unavailableNoteIds.update { it - id }
+        fetchMissingNote(id)
+    }
+
+    /**
      * Two passes, mirroring iOS FeedService.flushNoteFetchRequests:
      *  1. your relays (local, inbox, feed, blastr) for every id, plus each
      *     id's relay hint and its author's write relays;
