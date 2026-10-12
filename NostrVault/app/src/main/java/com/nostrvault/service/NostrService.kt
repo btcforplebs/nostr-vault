@@ -241,7 +241,10 @@ class NostrService @Inject constructor(
     internal val profileFetchAttempts = mutableMapOf<String, Long>()
     internal var profileFlushJob: Job? = null
     internal var profileSaveJob: Job? = null
+    // Epoch millis the latest scheduled save runs at (see saveProfilesThrottled).
     internal var lastProfileSaveTime = 0L
+    // Reading profiles.json; saves wait for it so they never write a partial cache.
+    internal var profileDiskLoad: Job? = null
 
     // ── Profile-map emission batching ─────────────────────────────────
     // Incoming kind-0 profiles are staged here and merged into _profiles in ONE
@@ -324,10 +327,6 @@ class NostrService @Inject constructor(
 
     /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
     internal val replaceableNewest = ConcurrentHashMap<String, Long>()
-
-    // ══════════════════════════════════════════════════════════════════
-    // Fetch watchdog
-    // ══════════════════════════════════════════════════════════════════
 
     // ══════════════════════════════════════════════════════════════════
     // Profile management

@@ -25,20 +25,43 @@ import com.nostrvault.service.NostrService.Companion.PROFILE_UPDATE_DEBOUNCE_MS
 import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
 
     internal fun NostrService.loadProfilesFromDisk() {
-        scope.launch(Dispatchers.IO) {
+        profileDiskLoad = scope.launch(Dispatchers.IO) {
             val loaded = profileRepository.loadProfiles()
             val relays = profileRepository.loadRelayLists()
             val outbox = profileRepository.loadOutboxRelays()
             val dmRelays = profileRepository.loadDMRelayLists()
             val servers = profileRepository.loadServerLists()
+            // Merge, never replace: the metadata pool starts fetching before a
+            // large cache file is parsed, and assigning the file's map threw away
+            // every profile that had arrived meanwhile. Those pubkeys were
+            // already marked as fetched, so they stayed an npub with a letter
+            // avatar for PROFILE_RETRY_TTL_MS after every cold start.
+            _profiles.update { live -> trimProfiles(mergeDiskProfiles(loaded, live)) }
             withContext(Dispatchers.Main.immediate) {
-                _profiles.value = loaded
-                _relayLists.value = relays
-                _outboxRelays.value = outbox
-                _dmRelayLists.value = dmRelays
-                _serverLists.value = servers
+                _relayLists.value = relays + _relayLists.value
+                _outboxRelays.value = outbox + _outboxRelays.value
+                _dmRelayLists.value = dmRelays + _dmRelayLists.value
+                _serverLists.value = servers + _serverLists.value
             }
         }
+    }
+
+    /**
+     * [disk] overlaid with [live], the profiles fetched since launch. A live
+     * entry wins unless the disk copy comes from a newer kind 0: before the
+     * cache is read, nothing stops an older event from being accepted.
+     */
+    internal fun mergeDiskProfiles(
+        disk: Map<String, FeedProfile>,
+        live: Map<String, FeedProfile>,
+    ): Map<String, FeedProfile> {
+        if (live.isEmpty()) return disk
+        val merged = HashMap(disk)
+        for ((pubkey, profile) in live) {
+            val saved = merged[pubkey]
+            if (saved == null || (profile.createdAt ?: 0L) >= (saved.createdAt ?: 0L)) merged[pubkey] = profile
+        }
+        return merged
     }
 
     /**
@@ -252,7 +275,8 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
         }
         // MutableStateFlow.value writes are thread-safe → do the heavy merge/trim
         // here on Default (this runs from a Dispatchers.Default coroutine).
-        _profiles.value = trimProfiles(_profiles.value + snapshot)
+        // update, not read-then-write: loadProfilesFromDisk merges concurrently.
+        _profiles.update { trimProfiles(it + snapshot) }
         notify.forEach { noteProfileUpdated(it) }
         if (notify.isNotEmpty()) saveProfilesThrottled()
     }
@@ -301,13 +325,25 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
         }
     }
 
+    /**
+     * Write the profile cache at most once per [PROFILE_SAVE_THROTTLE_MS], and
+     * always once more after the last change. Returning early inside the window
+     * dropped that trailing save: everything fetched in the last few seconds of
+     * a session never reached disk, so the same profiles were missing again
+     * after every relaunch.
+     */
     fun NostrService.saveProfilesThrottled() {
         val now = System.currentTimeMillis()
-        if (now - lastProfileSaveTime < PROFILE_SAVE_THROTTLE_MS) return
-        lastProfileSaveTime = now
+        // A queued save that hasn't read the maps yet will include this change.
+        if (profileSaveJob?.isActive == true && now < lastProfileSaveTime) return
+        val saveAt = nextProfileSaveAt(now, lastProfileSaveTime)
+        lastProfileSaveTime = saveAt
 
-        profileSaveJob?.cancel()
         profileSaveJob = scope.launch(Dispatchers.IO) {
+            delay(saveAt - now)
+            // Writing before the cache is read would replace the file with only
+            // what arrived since launch.
+            profileDiskLoad?.join()
             profileRepository.saveProfiles(_profiles.value)
             profileRepository.saveRelayLists(_relayLists.value)
             profileRepository.saveOutboxRelays(_outboxRelays.value)
@@ -315,6 +351,10 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
             profileRepository.saveServerLists(_serverLists.value)
         }
     }
+
+    /** When the next throttled save may run: now, or one window after the last. */
+    internal fun nextProfileSaveAt(now: Long, lastSaveAt: Long): Long =
+        maxOf(now, lastSaveAt + PROFILE_SAVE_THROTTLE_MS)
 
     internal fun NostrService.prefetchWhitelistedProfiles() {
         // Cover the whole roster: multi-account (owner + accountNpubs) plus any
