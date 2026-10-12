@@ -1,16 +1,11 @@
 package com.nostrvault.ui.screens
 
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -298,7 +293,8 @@ private val VaultMode.icon: ImageVector
  * The Vault tab's mode picker, built like the Feed tab's `Following ▾`: the
  * mode's icon with the relay's health dot, its name, and a chevron. The menu
  * lists the modes, then the Vault Dashboard, as the feed menu ends with its
- * dashboard. A red dot on the icon means something new in another mode.
+ * dashboard. Lists with something new say "New" in the menu; the bottom
+ * bar's Vault tab carries the dot.
  * Port of iOS VaultModePill.
  */
 @Composable
@@ -328,14 +324,6 @@ internal fun VaultModePill(
         ) {
             Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 Icon(mode.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = newElsewhere,
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut(),
-                    modifier = Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = (-1).dp),
-                ) {
-                    Box(Modifier.size(8.dp).background(ErrorRed, CircleShape))
-                }
             }
             Box(Modifier.chromeFold(leadingGap = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

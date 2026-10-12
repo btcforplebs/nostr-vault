@@ -100,7 +100,7 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
             val known = _feedThreadReplies.value
             val replies = events.mapNotNull { ev ->
                 threadReplyFrom(ev)?.takeIf {
-                    it.id !in known && FeedThreadReplies.admits(it, roots, blocked, trusted) &&
+                    it.id !in known && !isDeleted(it.id) && FeedThreadReplies.admits(it, roots, blocked, trusted) &&
                         HavenBridge.verifyEvent(ev.toString())
                 }
             }

@@ -111,6 +111,13 @@ internal class GlobeScene(
      */
     private var weights = TrustMap.Weights(1.0, 1.0, 1.0)
     private var weightTarget = weights
+    /**
+     * Who the filter icons light, easing from [filterFrom] to [filterTo] as
+     * [filterMix] runs 0 to 1. Null lights everyone.
+     */
+    private var filterFrom: Set<String>? = null
+    private var filterTo: Set<String>? = null
+    private var filterMix = 1.0
     /** Faces drawn with a picture last frame, so they keep their seat. */
     private var seated: Set<String> = emptySet()
     private var direct = false
@@ -316,11 +323,29 @@ internal class GlobeScene(
     /** How brightly [star] is drawn for the picked layer. The core, the author and a traced path are always lit. */
     private fun weight(star: Star): Double {
         if (star.key == center || star.key == author || star.key in traced) return 1.0
+        val lit = filterWeight(star.key)
         return when (star.kind) {
             Kind.HAZE -> weights.further
             Kind.CLOSE_HAZE -> weights.close
             else -> weights.follows
-        }
+        } * lit
+    }
+
+    private fun filterWeight(key: String): Double {
+        fun level(lit: Set<String>?) = if (lit == null || key in lit) 1.0 else FILTERED_OUT
+        val to = level(filterTo)
+        if (filterMix >= 1) return to
+        val from = level(filterFrom)
+        return from + (to - from) * filterMix
+    }
+
+    /** Lights who the filters match and sets the rest back. Nothing is reloaded. iOS `filter(_:)`. */
+    fun filter(lit: Set<String>?) {
+        if (lit == filterTo) return
+        filterFrom = filterTo
+        filterTo = lit
+        filterMix = if (Motion.isReduced) 1.0 else 0.0
+        wake()
     }
 
     /** Lights one layer and hides the rest. Nothing is reloaded. */
@@ -352,8 +377,12 @@ internal class GlobeScene(
         // Turned on mid-spin: stop, or the spin never decays and the clock never sleeps.
         if (reduceMotion) camera.spin = Vec3.ZERO
         camera.step(dt, now, reduceMotion)
-        val fading = weights != weightTarget
-        if (fading) {
+        if (filterMix < 1) {
+            filterMix = min(1.0, filterMix + dt / FILTER_FADE)
+            if (filterMix >= 1) filterFrom = null
+        }
+        val fading = weights != weightTarget || filterMix < 1
+        if (weights != weightTarget) {
             val ease = 1 - exp(-dt * 8)
             fun step(from: Double, to: Double) = if (abs(to - from) < 0.005) to else from + (to - from) * ease
             weights = TrustMap.Weights(
@@ -806,6 +835,10 @@ internal class GlobeScene(
     companion object {
         /** A new globe fades and glides in over this long, then holds still. */
         const val SETTLE_TIME = 1.8
+        /** How bright someone a filter leaves out stays: still there, just back. */
+        const val FILTERED_OUT = 0.08
+        /** Seconds a filter's dimming takes to ease in or out. */
+        const val FILTER_FADE = 0.35
         /**
          * Star brightness is rounded to this many steps, so each kind of star
          * is a handful of fills however many people there are. Fine enough

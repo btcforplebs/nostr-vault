@@ -43,7 +43,8 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
                     // distinctBy: a snapshot written while _notes briefly held a
                     // duplicate id would otherwise crash-loop every launch
                     // (LazyColumn duplicate key on first render).
-                    _notes.value = snapshot.notes.distinctBy { it.id }
+                    // A snapshot saved before a delete still holds the post.
+                    _notes.value = withoutDeletedNotes(snapshot.notes.distinctBy { it.id })
                     _followedPubkeys.value = snapshot.followedPubkeys
                     _noteStats.value = snapshot.noteStats
                     contactListContent = snapshot.contactListContent

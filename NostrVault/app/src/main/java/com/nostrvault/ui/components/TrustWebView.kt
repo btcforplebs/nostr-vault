@@ -272,8 +272,22 @@ internal fun TrustWebContent(
     LaunchedEffect(ringCandidates) { loadPictures(ringCandidates) }
     fun pictureRenders(pubkey: String): Boolean =
         profiles[pubkey]?.pictureURL?.let { "$pubkey $it" in renderedPictures } == true
-    val ringFaces = remember(ringCandidates, renderedPictures) {
-        TrustMap.pickFaces(ringCandidates, ::pictureRenders, if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
+    // ── Filters (WOT tab only) ──
+    val wotFilters = rememberWotFilters(me, WotFilterInputs(myFollows, web, engagement, arrivals), active = isWOTTab)
+    val filterLit = if (isWOTTab) wotFilters.lit else null
+    /** Matching people worth a picture, most interacted with first. */
+    val filterCandidates = remember(filterLit, myFollows, engagement, vouches) {
+        filterFaceCandidates(filterLit, myFollows, engagement, vouches, TrustMap.LAYER_FACES * 3)
+    }
+    LaunchedEffect(filterCandidates) {
+        if (filterCandidates.isEmpty()) return@LaunchedEffect
+        nostrService.fetchMissingProfiles(filterCandidates)
+        loadPictures(filterCandidates)
+    }
+    val ringFaces = remember(ringCandidates, renderedPictures, filterLit) {
+        // With a filter on, only people it lights get a face.
+        TrustMap.pickFaces(ringCandidates, { (filterLit == null || it in filterLit) && pictureRenders(it) },
+            if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
     }
     // The picked layer's faces (Close or Further out), fetched on each pick:
     // the picture loader stops after a while and profiles can arrive late.
@@ -284,9 +298,10 @@ internal fun TrustWebContent(
         loadPictures(pickedLayerCandidates)
     }
     /** Pictures on the outer shell for the picked layer, most vouched first; only ones that loaded. */
-    val layerFaces = remember(isWOTTab, centerKey, pickedLayerCandidates, renderedPictures) {
+    val layerFaces = remember(isWOTTab, centerKey, pickedLayerCandidates, renderedPictures, filterLit, filterCandidates) {
         if (!isWOTTab || centerKey != me) emptyList()
-        else TrustMap.pickFaces(pickedLayerCandidates, ::pictureRenders,
+        // A filter's people take the outer faces first, as long as the layer lights them.
+        else TrustMap.pickFaces(if (filterLit != null) filterCandidates else pickedLayerCandidates, ::pictureRenders,
             if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES)
     }
 
@@ -610,7 +625,7 @@ internal fun TrustWebContent(
         TrustWebViewGlobe(
             modifier = modifier, clip = clip, overlayPadding = overlayPadding,
             frame = frame, centerKey = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
-            closeHaze = closeHaze, lite = lite, ringFaces = ringFaces, layerFaces = layerFaces,
+            closeHaze = closeHaze, lite = lite, ringFaces = ringFaces, layerFaces = layerFaces, filterLit = filterLit,
             showingList = showingList, isWOTTab = isWOTTab, layer = layer, profiles = profiles, name = ::name,
             tapped = ::tapped, card = card, cardPath = cardPath,
             onEmptyTap = { peek = null; closeCard(); if (searchFocused) focusManager.clearFocus() },
@@ -639,8 +654,6 @@ internal fun TrustWebContent(
                     else { peek = null; closeCard() }
                     searchOpen = !searchOpen
                 },
-                showingList = showingList,
-                onGlobe = { showingList = false },
                 onList = { showingList = true },
                 search = {
                     TrustWebViewSearch(
@@ -667,7 +680,12 @@ internal fun TrustWebContent(
                 onLivePill = {
                     if (liveRebuild) arrivalsDismissed += newPeople
                     newPeople = 0
+                    // Who they are, not just how many.
+                    if (TrustMap.Filter.NEW !in wotFilters.on) wotFilters.toggle(TrustMap.Filter.NEW)
                 },
+                filters = wotFilters.on,
+                onFilter = wotFilters::toggle,
+                filterNote = wotFilters.note,
             )
         }
     } else Column(Modifier.fillMaxSize().safeDrawingPadding()) {

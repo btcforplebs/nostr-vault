@@ -465,6 +465,49 @@ object TrustMap {
         }
         return LayerPeople(following, ranked(past))
     }
+
+    /**
+     * The WOT tab's filter icons: what kind of person, on top of the layer's
+     * how far out. Toggles; any mix can be on. iOS `TrustMap.Filter`.
+     */
+    enum class Filter(val title: String) {
+        TALK("Talk with you"), FOLLOWS_BACK("Follow you back"), NEW("New in your web");
+
+        /** "214 talk with you", for the count that shows when it's tapped. */
+        fun count(n: Int): String {
+            if (n == 0) return when (this) {
+                TALK -> "No one here you talk with yet"
+                FOLLOWS_BACK -> "None of your follows follow you back"
+                NEW -> "No one new since your last look"
+            }
+            val people = java.text.NumberFormat.getIntegerInstance().format(n)
+            return when (this) {
+                TALK -> if (n == 1) "1 talks with you" else "$people talk with you"
+                FOLLOWS_BACK -> if (n == 1) "1 follows you back" else "$people follow you back"
+                NEW -> if (n == 1) "1 new in your web" else "$people new in your web"
+            }
+        }
+    }
+
+    /**
+     * Who the filters that are on leave lit: everyone each of them matches,
+     * so two filters narrow it. Null when none is on (nothing dims).
+     */
+    fun lit(filters: Set<Filter>, matches: Map<Filter, Set<String>>): Set<String>? {
+        var lit: Set<String>? = null
+        for (filter in Filter.entries) {
+            if (filter !in filters) continue
+            val match = matches[filter].orEmpty()
+            lit = lit?.intersect(match) ?: match
+        }
+        return lit
+    }
+
+    /**
+     * People in your web now who weren't when you last looked. Nothing on a
+     * first look: there's no "before" yet.
+     */
+    fun newcomers(web: Set<String>, seen: Set<String>?): Set<String> = seen?.let { web - it }.orEmpty()
 }
 
 /** A point or direction in globe space: x right, y up, z toward the viewer. */

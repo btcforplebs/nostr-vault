@@ -23,8 +23,11 @@ import com.nostrvault.service.MarketplaceFeedService
 import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.deleteNote
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.removeNote
+import com.nostrvault.service.retryMissingNote
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers

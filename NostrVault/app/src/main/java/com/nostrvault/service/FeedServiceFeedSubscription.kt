@@ -371,6 +371,13 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
 
         if (BuildConfig.DEBUG) Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
         client.send("[\"REQ\",\"$subId\",$filter]")
+
+        // Your own deletion requests (kind 5), so a post deleted on another
+        // device leaves this one too. Its own subId: the primary's EOSE is
+        // matched exactly, so this one never triggers the auxiliary REQs.
+        if (ownerHex.isNotEmpty()) {
+            client.send("[\"REQ\",\"del-$subId\",${deleteRequestsFilter(ownerHex)}]")
+        }
     }
 
     private fun FeedService.updateFeedConnectionStatus() {

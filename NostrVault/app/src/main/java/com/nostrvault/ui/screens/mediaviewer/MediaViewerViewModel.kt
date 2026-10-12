@@ -11,6 +11,7 @@ import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.deleteEverywhereLeftover
+import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*

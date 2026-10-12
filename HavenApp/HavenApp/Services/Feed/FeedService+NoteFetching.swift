@@ -8,6 +8,9 @@ extension FeedService {
     /// `force` bypasses that throttle, for a user-initiated Retry tap.
     func fetchMissingNote(id: String, force: Bool = false) {
         guard findNote(id: id) == nil else { return }
+        // A deleted post is never asked for again: a relay that ignored the
+        // request would hand it back as a thread root or quote.
+        if isDeleted(id) { unavailableNoteIds.insert(id); return }
         if unavailableNoteIds.contains(id) {
             guard force else { return }
             unavailableNoteIds.remove(id)
@@ -364,6 +367,8 @@ extension FeedService {
         // Use findNote rather than seenIds: a note can be in seenIds but evicted from
         // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
         guard findNote(id: id) == nil else { forgetParentFetchClaim(id); return }
+        // A relay that ignored the deletion request answered anyway.
+        if isDeleted(id) { unavailableNoteIds.insert(id); return }
 
         // Only what was asked for, and only if it is genuine. These come from
         // relay hints and outboxes named in other people's notes, so any of

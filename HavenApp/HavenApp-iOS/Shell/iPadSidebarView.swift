@@ -216,13 +216,10 @@ struct iPadSidebarView: View {
                         HStack {
                             Label("Vault", systemImage: VaultDashboard.symbol)
                             Spacer()
-                            if vaultHasNews {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 8, height: 8)
-                            }
+                            NewsDot(isShown: vaultHasNews, ring: 0)
                         }
                     }
+                    .accessibilityValue(vaultHasNews ? "New activity" : "")
                     NavigationLink(value: SidebarItem.tab(5)) {
                         Label("Settings", systemImage: "gearshape")
                     }

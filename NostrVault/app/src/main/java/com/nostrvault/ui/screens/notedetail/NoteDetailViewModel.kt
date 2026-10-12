@@ -10,9 +10,13 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.FeedNoteRemoval
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.deleteNote
+import com.nostrvault.service.isDeleted
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.removeNote
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -235,7 +239,7 @@ class NoteDetailViewModel @Inject constructor(
         } else null
         nostrService.fetchOtherResponses(rootId, rootCoordinate) { found ->
             _otherResponses.value = found
-                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
+                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) && !feedService.isDeleted(it.id) }
                 .sortedByDescending { it.createdAt }
             nostrService.fetchMissingProfiles(found.map { it.pubkey }.distinct())
         }
@@ -277,7 +281,9 @@ class NoteDetailViewModel @Inject constructor(
         _allReplies.update { replies -> replies.filterNot { it.id == id } }
     }
 
-    private fun mergeReplies(incoming: List<FeedNote>) {
+    private fun mergeReplies(fetched: List<FeedNote>) {
+        // A deleted post never comes back as a parent or a reply.
+        val incoming = fetched.filterNot { feedService.isDeleted(it.id) }
         if (incoming.isEmpty()) return
         _allReplies.value = (_allReplies.value + incoming)
             .distinctBy { it.id }
@@ -402,7 +408,11 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
 
+    /** Deleting a parent or a reply takes it off this screen too; the focused note closes the screen. */
     fun deleteNote(noteId: String) {
+        _parentNotes.value = FeedNoteRemoval.without(_parentNotes.value, noteId)
+        _allReplies.value = FeedNoteRemoval.without(_allReplies.value, noteId)
+        _otherResponses.value = FeedNoteRemoval.without(_otherResponses.value, noteId)
         viewModelScope.launch {
             nostrService.deleteNote(noteId)
             feedService.removeNote(noteId)
