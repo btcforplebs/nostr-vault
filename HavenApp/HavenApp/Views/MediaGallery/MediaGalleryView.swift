@@ -212,7 +212,10 @@ struct MediaGalleryView: View {
             }
             #endif
         }
+        // The Mac hosts it under its own header (compactViewContent).
+        #if os(iOS)
         .filterNoteHost(filterNote)
+        #endif
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
                 let recentlyReconnected: Bool
@@ -413,7 +416,7 @@ struct MediaGalleryView: View {
             }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Under the header, the Mac's toolbar.
+            // Under the header, the Mac's toolbar. The host adds no rise on Mac.
             .filterNoteHost(filterNote)
         }
         #if os(iOS)

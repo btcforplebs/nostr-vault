@@ -269,7 +269,10 @@ struct VaultView: View {
             }
             #endif
         }
+        // The Mac hosts it under its own header (VaultView+Layout).
+        #if os(iOS)
         .filterNoteHost(filterNote)
+        #endif
         .onChange(of: displayPass) { _, _ in filterListLanded() }
         .onChange(of: activityFilter) { _, _ in
             maxDisplayedItems = 50

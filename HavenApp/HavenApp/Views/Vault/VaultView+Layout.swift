@@ -131,7 +131,7 @@ extension VaultView {
                             refreshAll(.incremental)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // Under the header, the Mac's toolbar.
+                        // Under the header, the Mac's toolbar. The host adds no rise on Mac.
                         .filterNoteHost(filterNote)
                     }
                     .clipped()
