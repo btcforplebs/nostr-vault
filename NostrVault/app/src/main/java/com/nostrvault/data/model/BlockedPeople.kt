@@ -1,5 +1,7 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.relay.HavenConfig
+
 /**
  * What a block means for direct messages. A gift-wrapped DM is signed by a
  * throwaway key, so neither the relay nor the notification marker can tell who
@@ -28,4 +30,23 @@ object BlockedPeople {
      */
     fun mayAlert(sender: String, isFromMe: Boolean, blocked: Set<String>): Boolean =
         !isFromMe && !isBlocked(sender, blocked)
+
+    /**
+     * [npub] unblocked for the active account. The page lists
+     * [HavenConfig.blockedForActiveAccount], which falls back to the legacy flat
+     * list while the account has no list of its own, so the unblock starts from
+     * that same list. For the owner the legacy list is cleared of [npub] too:
+     * the relay's blacklist unions it in, so a leftover entry kept the relay
+     * blocking someone the page no longer shows, and it was saved that way.
+     * iOS: ConfigService.unblockProfile.
+     */
+    fun unblock(config: HavenConfig, npub: String): HavenConfig {
+        val key = config.activeOrOwnerNpub()
+        val rest = config.blockedFor(key).filter { it != npub }
+        val legacy = config.blockedNpubs
+        return config.copy(
+            blockedNpubsPerAccount = config.blockedNpubsPerAccount + (key to rest),
+            blockedNpubs = if (key == config.ownerNpub && legacy != null) legacy.filter { it != npub } else legacy,
+        )
+    }
 }
