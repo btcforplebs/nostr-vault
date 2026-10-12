@@ -59,9 +59,7 @@ extension FeedView {
             .transition(.opacity)
             .animation(Motion.fade, value: configService.activeAccountHexPubkey)
         }
-        .overlay(alignment: .top) {
-            FilterNoteView(model: toolbarNote).padding(.top, 8)
-        }
+        .filterNoteHost(toolbarNote)
         .background {
             if feedService.feedMode == .music {
                 MusicToolbarNoteObserver(model: toolbarNote)

@@ -295,46 +295,53 @@ struct FeedToolbarState: Equatable {
         let feed = mode.displayName
         if followingScope != old.followingScope, let following = followingScope {
             return following
-                ? FilterNote(icon: "person.2.fill", text: "\(feed) · Following")
-                : FilterNote(icon: "globe", text: "\(feed) · Global · \(trustText)")
+                ? FilterNote(icon: "person.2.fill", title: feed, setting: "Following")
+                : FilterNote(icon: "globe", title: feed, setting: "Global")
         }
         if everyone != old.everyone {
-            return FilterNote(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", text: "\(feed) · \(trustText)")
+            return FilterNote(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", title: feed, setting: everyone ? "Everyone" : "Web of Trust on")
         }
         if languages != old.languages {
             return FilterNote(icon: languages.isEmpty ? "character.bubble" : "character.bubble.fill",
-                              text: "Languages · \(LanguageFilterMenuItems.summary(languages))")
+                              title: "Languages", setting: LanguageFilterMenuItems.summary(languages))
         }
         if autoLoad != old.autoLoad {
-            return FilterNote(icon: autoLoad ? "bolt.circle.fill" : "bolt.circle",
-                              text: "Auto-load new posts \(autoLoad ? "on" : "off")")
+            return autoLoad
+                ? FilterNote(icon: "bolt.circle.fill", title: "Auto-load", setting: "on")
+                : .off("Auto-load", icon: "bolt.circle.fill")
         }
         if reposts != old.reposts {
-            return FilterNote(icon: "arrow.2.squarepath", text: "Reposts \(reposts ? "shown" : "hidden")")
+            return Self.shownOrHidden("Reposts", icon: "arrow.2.squarepath", shown: reposts)
         }
         if replies != old.replies {
-            return FilterNote(icon: replies ? "message.fill" : "message", text: "Replies \(replies ? "shown" : "hidden")")
+            return Self.shownOrHidden("Replies", icon: "message.fill", shown: replies)
         }
         if layout != old.layout {
-            return FilterNote(icon: layout.symbolName, text: "Layout · \(layout.displayName)")
+            return FilterNote(icon: layout.symbolName, title: "Layout", setting: layout.shortName)
         }
         if pollStatus != old.pollStatus {
-            return FilterNote(icon: pollStatus.symbolName, text: "Polls · \(pollStatus == .all ? "Open and closed" : "\(pollStatus.rawValue) only")")
+            return FilterNote(icon: pollStatus.symbolName, title: "Polls", setting: pollStatus == .all ? "Open and closed" : "\(pollStatus.rawValue) only")
         }
         if popular != old.popular {
             switch popular {
-            case .all: return FilterNote(icon: "flame", text: "Popular · Everyone")
-            case .follows: return FilterNote(icon: "person.2.fill", text: "Popular · People you follow only")
-            case .nonFollows: return FilterNote(icon: "globe.americas.fill", text: "Popular · People you don't follow only")
+            case .all: return FilterNote(icon: "flame", title: "Popular", setting: "Everyone")
+            case .follows: return FilterNote(icon: "person.2.fill", title: "Popular", setting: "People you follow only")
+            case .nonFollows: return FilterNote(icon: "globe.americas.fill", title: "Popular", setting: "People you don't follow only")
             }
         }
         if engagement != old.engagement {
-            return FilterNote(icon: engagement ? "chart.bar.fill" : "chart.bar", text: "Engagement scores \(engagement ? "shown" : "hidden")")
+            return Self.shownOrHidden("Engagement scores", icon: "chart.bar.fill", shown: engagement)
         }
         return nil
     }
 
-    private var trustText: String { everyone ? "Everyone" : "Web of Trust on" }
+    /// A show/hide toggle: "Reposts · shown", or "Reposts · hidden" with
+    /// the button's own icon dimmed, as `FilterNote.off` does.
+    private static func shownOrHidden(_ title: String, icon: String, shown: Bool) -> FilterNote {
+        shown
+            ? FilterNote(icon: icon, title: title, setting: "shown")
+            : FilterNote(icon: icon, text: "\(title) · hidden", dimmed: true)
+    }
 }
 
 extension FeedView {
@@ -384,9 +391,20 @@ struct MusicToolbarNoteObserver: View {
 
     private var note: FilterNote {
         switch feed.scope {
-        case .trending: return FilterNote(icon: "flame.fill", text: "Music · Trending \(feed.trendingWindow.title.lowercased())")
-        case .artist(let artist): return FilterNote(icon: "person.crop.circle.fill", text: "Music · \(artist.name)")
-        case .following: return FilterNote(icon: "person.2.fill", text: "Music · Artists you follow")
+        case .trending: return FilterNote(icon: "flame.fill", title: "Music", setting: "Trending \(feed.trendingWindow.title.lowercased())")
+        case .artist(let artist): return FilterNote(icon: "person.crop.circle.fill", title: "Music", setting: artist.name)
+        case .following: return FilterNote(icon: "person.2.fill", title: "Music", setting: "Artists you follow")
+        }
+    }
+}
+
+private extension FeedLayoutMode {
+    /// "Threaded", for the toolbar note; `displayName` adds " View".
+    var shortName: String {
+        switch self {
+        case .expanded: return "Expanded"
+        case .condensed: return "Compact"
+        case .threaded: return "Threaded"
         }
     }
 }
