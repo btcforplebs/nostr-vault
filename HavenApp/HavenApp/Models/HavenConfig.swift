@@ -53,7 +53,7 @@ struct HavenConfig: Codable, Equatable {
     /// Lines of text a thread's root shows in Threaded View; replies show one fewer.
     var threadedLineLimit: Int = HavenConfig.defaultThreadedLineLimit
     static let defaultCompactLineLimit = 3
-    static let defaultThreadedLineLimit = 3
+    static let defaultThreadedLineLimit = 5
     static let lineLimitRange = 1...12
     /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
     var globalFeedLanguages: [String] = []
