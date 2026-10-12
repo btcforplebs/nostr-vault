@@ -11,6 +11,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.deleteNote
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.components.*

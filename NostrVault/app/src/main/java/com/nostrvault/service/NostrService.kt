@@ -650,11 +650,6 @@ class NostrService @Inject constructor(
         signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
     }
 
-    fun deleteNote(noteId: String) {
-        val tags = listOf(listOf("e", noteId))
-        signAndPost(kind = 5, content = "", tags = tags)
-    }
-
     /** Your own loaded posts that link the blob [referencingBlob]; see [BlobPostDeletion.referencing]. */
     fun ownEvents(referencingBlob: String): List<NostrEvent> =
         BlobPostDeletion.referencing(events, activeHexPubkey, referencingBlob)
