@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,9 +124,12 @@ internal fun TrustWebViewGlobe(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                 )
         }
+        val followed by feedService.followedPubkeys.collectAsState()
         val shown = card
         if (shown != null) {
-            val following = shown in myFollows
+            // FeedService's list, the same one the card's path line is traced
+            // from, so the button and "You follow them" can never disagree.
+            val following = shown in followed
             var blocked by remember(shown) { mutableStateOf(feedService.isBlocked(shown)) }
             TrustCard(
                 pubkey = shown,

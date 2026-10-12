@@ -1078,7 +1078,7 @@ class FeedService @Inject constructor(
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
                 publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the follow"))
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
                 }
                 // Re-filter so already-loaded notes from the newly-followed author
                 // surface immediately in the Following feed.
@@ -1125,12 +1125,13 @@ class FeedService @Inject constructor(
         return result.fold(
             onSuccess = { followResult ->
                 if (contactManager.shouldBlockPublish(followResult.pubkeys.size, _followedPubkeys.value.size)) {
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)), pubkey = pubkey)
                     return Result.failure(FollowActionError.SafetyCheckFailed)
                 }
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
                 publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the unfollow"))
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
                 }
                 // Re-filter so the unfollowed author's notes disappear from the
                 // Following feed immediately (the filter excludes non-follows).
