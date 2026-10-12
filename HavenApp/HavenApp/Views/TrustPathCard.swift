@@ -7,7 +7,10 @@ struct TrustPathCard: View {
     let author: String
     @EnvironmentObject var nostrService: NostrService
 
-    @State private var path: TrustPath?
+    /// Traces again when your web changes, so following them here or
+    /// anywhere else folds them in while the card is up.
+    @StateObject private var trust = LiveTrustPath()
+    private var path: TrustPath? { trust.path }
     /// iPad: the globe opens full screen instead of inside Event Info's sheet.
     @State private var showingWeb = false
 
@@ -34,10 +37,9 @@ struct TrustPathCard: View {
                 card(chevron: false)
             }
         }
-        .task(id: author) {
-            let found = await TrustPathService.shared.path(for: author)
-            nostrService.fetchMissingProfiles(for: [me, author] + found.bridges)
-            path = found
+        .task(id: author) { trust.track(author) }
+        .onChange(of: path?.bridges) { _, bridges in
+            nostrService.fetchMissingProfiles(for: [me, author] + (bridges ?? []))
         }
     }
 

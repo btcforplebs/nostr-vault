@@ -9,11 +9,16 @@ struct TrustWebSheet: View {
     let author: String
     @Environment(\.dismiss) private var dismiss
 
-    @State private var path: TrustPath?
+    /// The caller's path, if it had one, until the live one lands.
+    private let initialPath: TrustPath?
+    /// Traces again when your web changes, so a follow made with the globe
+    /// open (from its card, or the profile under it) folds them in.
+    @StateObject private var trust = LiveTrustPath()
+    private var path: TrustPath? { trust.path ?? initialPath }
 
     init(author: String, path: TrustPath? = nil) {
         self.author = author
-        _path = State(initialValue: path)
+        initialPath = path
     }
 
     /// iPad: the globe gets the whole screen, where a sheet would box it in.
@@ -51,10 +56,7 @@ struct TrustWebSheet: View {
         // A Mac sheet sizes to its content, and the globe has none of its own.
         .frame(minWidth: 820, minHeight: 600)
         #endif
-        .task(id: author) {
-            guard path == nil else { return }
-            path = await TrustPathService.shared.path(for: author)
-        }
+        .task(id: author) { trust.track(author) }
     }
 }
 
