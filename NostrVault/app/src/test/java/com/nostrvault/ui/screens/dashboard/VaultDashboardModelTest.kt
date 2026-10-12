@@ -114,16 +114,6 @@ class VaultDashboardModelTest {
     }
 
     @Test
-    fun `tile counts wait for the counts to load`() {
-        assertNull(m.messagesCount(emptyMap()))
-        assertNull(m.kindCount(emptyMap(), 1))
-        assertEquals(5, m.messagesCount(mapOf(4 to 2, 1059 to 3, 1 to 9)))
-        assertEquals(0, m.messagesCount(mapOf(1 to 9)))
-        assertEquals(0, m.kindCount(mapOf(1 to 9), 30023))
-        assertEquals(9, m.kindCount(mapOf(1 to 9), 1))
-    }
-
-    @Test
     fun `storage split takes media out of the relay folder`() {
         val split = m.storageSplit(relayDataBytes = 1000, blossomBytes = 300, cacheBytes = 50, thumbnailBytes = 25)
         assertEquals(700, split.notes)

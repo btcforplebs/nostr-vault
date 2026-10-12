@@ -2,6 +2,7 @@ package com.nostrvault.ui.navigation
 
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -67,5 +68,41 @@ class VaultSectionTest {
         VaultSection.restore(media = true)
         VaultSection.restore(media = false)
         assertTrue(VaultSection.showsMedia.value)
+    }
+
+    // ── Back to the Vault Dashboard ────────────────────────────
+
+    @Test fun `back from a page the dashboard opened returns to it`() {
+        VaultSection.show(media = true)
+        VaultSection.leaveDashboardForPage()
+        assertTrue(VaultSection.returnToDashboard())
+        assertTrue(VaultSection.showsMedia.value)
+        assertFalse(VaultSection.showsActivity.value)
+        assertNull(VaultSection.dashboardTrip.value)
+    }
+
+    @Test fun `leaving media yourself ends the trip`() {
+        VaultSection.leaveDashboardForPage()
+        VaultSection.leaveMedia()
+        assertFalse(VaultSection.returnToDashboard())
+    }
+
+    @Test fun `picking another list yourself ends the trip`() {
+        VaultSection.leaveDashboardForPage()
+        VaultSection.show(media = true)
+        assertNull(VaultSection.dashboardTrip.value)
+        assertFalse(VaultSection.returnToDashboard())
+    }
+
+    @Test fun `returning twice only reopens once`() {
+        VaultSection.leaveDashboardForPage()
+        assertTrue(VaultSection.returnToDashboard())
+        assertFalse(VaultSection.returnToDashboard())
+        assertTrue(VaultSection.showsActivity.value)
+    }
+
+    @Test fun `with no trip, back does what it would`() {
+        assertFalse(VaultSection.returnToDashboard())
+        assertTrue(VaultSection.showsActivity.value)
     }
 }

@@ -38,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.nostrvault.data.model.VaultMode
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
@@ -71,18 +69,17 @@ import kotlinx.coroutines.delay
  * complete? Relay internals, mirrors and raw logs sit under Advanced.
  * Port of iOS `VaultDashboardView`.
  *
- * Rows that open a settings page close the sheet and open it (iOS pushes it
- * inside the sheet); Relay details and Media server details are pages inside
- * the sheet, as on iOS.
+ * Rows that open a settings page close the sheet and open it on the Vault
+ * tab, and back comes home to the dashboard (iOS pushes it inside the
+ * sheet). "In your vault" opens in place; Relay details and Media server
+ * details are pages inside the sheet, as on iOS.
  */
 @Composable
 internal fun VaultDashboardContent(
     vaultViewModel: DashboardViewModel,
     logStore: LogStore,
-    /** Close the sheet and open [Screen]. */
+    /** Close the sheet and open [Screen] on the Vault tab; back reopens the dashboard. */
     onOpenScreen: (Screen) -> Unit,
-    /** Close the sheet and switch the Vault tab to [VaultMode]. */
-    onOpenMode: (VaultMode) -> Unit,
     onOpenRelayDetails: () -> Unit,
     onOpenMediaDetails: () -> Unit,
     viewModel: VaultDashboardViewModel = hiltViewModel(),
@@ -96,16 +93,10 @@ internal fun VaultDashboardContent(
     val logs by logStore.logs.collectAsState()
     val history by viewModel.history.collectAsState()
     val wot by viewModel.wotPubkeys.collectAsState()
-    val kindCounts by viewModel.kindCounts.collectAsState()
-    val mediaCount by viewModel.mediaCount.collectAsState()
     val macSync by viewModel.macSync.collectAsState()
     val followSavedAt by viewModel.followListSavedAt.collectAsState()
     val hasLocalKey by viewModel.hasLocalKey.collectAsState()
     val startedAt by viewModel.relayStartedAt.collectAsState()
-    val storageSize by viewModel.statsService.storageSize.collectAsState()
-    val blossomSize by viewModel.statsService.blossomSize.collectAsState()
-    val cacheSize by viewModel.statsService.cacheSize.collectAsState()
-    val thumbnailSize by viewModel.statsService.thumbnailSize.collectAsState()
     val isImporting by vaultViewModel.isImporting.collectAsState()
     val importProgress by vaultViewModel.importProgress.collectAsState()
     val importStatus by vaultViewModel.importStatusMessage.collectAsState()
@@ -148,8 +139,6 @@ internal fun VaultDashboardContent(
     val macConfigured = cfg.macRelayURL.isNotBlank()
     val exportBusy = exportingNotes || exportingMedia
     val actionsEnabled = running || isImporting
-
-    var showStorageBreakdown by remember { mutableStateOf(false) }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -273,35 +262,7 @@ internal fun VaultDashboardContent(
         }
 
         // ── In your vault ──────────────────────────────────────
-        DashSection(title = "In your vault", framed = false) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OwnedTile(NostrVaultIcons.Document, "Notes", VaultDashboardModel.kindCount(kindCounts, 1), Modifier.weight(1f)) {
-                        onOpenMode(VaultMode.NOTES)
-                    }
-                    OwnedTile(NostrVaultIcons.Articles, "Articles", VaultDashboardModel.kindCount(kindCounts, 30023), Modifier.weight(1f)) {
-                        onOpenMode(VaultMode.ARTICLES)
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OwnedTile(NostrVaultIcons.TabMedia, "Media", mediaCount, Modifier.weight(1f)) {
-                        onOpenMode(VaultMode.MEDIA)
-                    }
-                    OwnedTile(NostrVaultIcons.DMs, "Messages", VaultDashboardModel.messagesCount(kindCounts), Modifier.weight(1f)) {
-                        onOpenScreen(Screen.DMInbox)
-                    }
-                }
-            }
-        }
-
-        // ── Storage ────────────────────────────────────────────
-        val split = VaultDashboardModel.storageSplit(storageSize, blossomSize, cacheSize, thumbnailSize)
-        DashSection(title = "Storage", detail = VaultDashboardModel.size(split.total)) {
-            StorageBar(split = split, onClick = { showStorageBreakdown = true })
-        }
-        if (showStorageBreakdown) {
-            StorageBreakdownSheet(statsService = viewModel.statsService, onDismiss = { showStorageBreakdown = false })
-        }
+        VaultDashboardContentsSection(viewModel)
 
         // ── Keep it full ───────────────────────────────────────
         DashSection(title = "Keep it full") {
@@ -402,7 +363,7 @@ internal fun VaultDashboardContent(
                 onOpenScreen(Screen.BlossomSettings)
             }
             DashDivider()
-            SettingLink(Icons.Filled.Laptop, "Sync with Mac", if (macConfigured) "On" else "Off") {
+            SettingLink(Icons.Filled.Laptop, "Sync with Vault on Mac", if (macConfigured) "On" else "Off") {
                 onOpenScreen(Screen.HavenRelaySettings)
             }
             DashDivider()

@@ -31,6 +31,41 @@ class StatsService @Inject constructor(
         private val PNG_MAGIC = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
         private val GIF_MAGIC = "GIF8".toByteArray()
         private val WEBP_MAGIC = "RIFF".toByteArray()
+
+        /** The relay's real total in a counts map, alongside the kinds (iOS key -1). */
+        const val TOTAL_KEY = -1
+
+        /**
+         * The kinds counted one by one: the "In your vault" groups and the
+         * kinds "Other" names (iOS `VaultContents.countedKinds`).
+         */
+        val COUNTED_KINDS = listOf(
+            0, 1, 3, 4, 5, 6, 7, 8, 9, 16, 20, 21, 22,
+            1059, 1063, 1068, 1111, 1311, 1808,
+            9734, 9735, 9802,
+            10000, 10001, 10002, 10003, 10005, 10006, 10015, 10030, 10050, 10063,
+            30000, 30001, 30002, 30003, 30008, 30009, 30023, 30024, 30030, 30078,
+        )
+
+        /**
+         * Every endpoint the vault stores events on. An external relay folds
+         * them onto one URL, so it is asked (and counted) once.
+         */
+        internal fun countEndpoints(config: com.nostrvault.relay.HavenConfig): List<String> =
+            listOfNotNull(
+                config.nostrURL,
+                config.localRelayURL("inbox"),
+                config.localRelayURL("private"),
+                config.localRelayURL("chat"),
+            ).distinct()
+
+        /** Each endpoint's counts summed per key; null when there were none, or one did not answer. */
+        internal fun mergeEndpointCounts(perEndpoint: List<Map<Int, Int>?>): Map<Int, Int>? {
+            if (perEndpoint.isEmpty() || perEndpoint.any { it == null }) return null
+            val merged = HashMap<Int, Int>()
+            for (counts in perEndpoint) for ((kind, count) in counts!!) merged[kind] = (merged[kind] ?: 0) + count
+            return merged
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -59,6 +94,13 @@ class StatsService @Inject constructor(
     // Per-kind counts
     private val _kindCounts = MutableStateFlow<Map<Int, Int>>(emptyMap())
     val kindCounts: StateFlow<Map<Int, Int>> = _kindCounts.asStateFlow()
+
+    /** Per-kind counts of one account's own events (`authors`), with that account's hex key. */
+    data class YourCounts(val author: String, val byKind: Map<Int, Int>)
+
+    /** The last [YourCounts] counted; null until a count with an author is published. */
+    private val _yourKindCounts = MutableStateFlow<YourCounts?>(null)
+    val yourKindCounts: StateFlow<YourCounts?> = _yourKindCounts.asStateFlow()
 
     // Baseline tracking
     var baseDbCount = 0
@@ -101,111 +143,121 @@ class StatsService @Inject constructor(
     }
 
     /**
-     * Fetch event counts by kind from relay endpoints.
+     * Fetch event counts by kind from every endpoint the vault stores events
+     * on (outbox, `/inbox`, `/private`, `/chat`), plus one `{}` COUNT per
+     * endpoint for the real total. Port of iOS `fetchCountsByKind`: when any
+     * endpoint does not answer, nothing is published, so the numbers never
+     * drop to a partial sum. With [author] (hex), [yourKinds] are also
+     * counted for that account alone, into [yourKindCounts] tagged with
+     * [author]; without one, [yourKindCounts] is left untouched. Readers
+     * must check its author against the active account: a count that
+     * finishes after an account switch still carries the old author.
+     *
+     * @return whether every endpoint answered and the counts were published.
      */
-    suspend fun fetchCountsByKind() {
+    suspend fun fetchCountsByKind(author: String? = null, yourKinds: Collection<Int> = emptyList()): Boolean {
         _isUpdatingCount.value = true
 
-        withContext(Dispatchers.IO) {
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.localInboxURL?.let { add(it) }
-            }.distinct()
-
-            if (relayUrls.isEmpty()) {
-                withContext(Dispatchers.Main.immediate) {
-                    _isUpdatingCount.value = false
-                }
-                return@withContext
+        return withContext(Dispatchers.IO) {
+            val relayUrls = countEndpoints(configStore.config.value)
+            val perEndpoint = coroutineScope {
+                relayUrls.map { url ->
+                    async { fetchKindCounts(url, COUNTED_KINDS, author?.let { it to yourKinds.toList() }) }
+                }.awaitAll()
             }
-
-            val kinds = listOf(
-                0, 1, 3, 4, 5, 6, 7, 9, 11, 12, 16,
-                1059, 1063, 9735,
-                10000, 10002, 10050, 10063,
-                30023, 30078,
-                39000, 39001, 39002,
-            )
-
-            val allCounts = ConcurrentHashMap<Int, Int>()
-            var totalEvents = 0
-
-            for (relayUrl in relayUrls) {
-                val counts = fetchKindCounts(relayUrl, kinds)
-                for ((kind, count) in counts) {
-                    allCounts[kind] = (allCounts[kind] ?: 0) + count
-                    totalEvents += count
-                }
-            }
+            val merged = mergeEndpointCounts(perEndpoint.map { it?.first })
+            val yours = mergeEndpointCounts(perEndpoint.map { it?.second })
+            if (merged == null) Log.w(TAG, "Not every endpoint answered the counts; keeping the last ones")
 
             withContext(Dispatchers.Main.immediate) {
-                _kindCounts.value = allCounts.toMap()
-                _loadedEventsCount.value = totalEvents
+                if (merged != null && yours != null) {
+                    _kindCounts.value = merged.filterKeys { it != TOTAL_KEY }
+                    if (author != null) _yourKindCounts.value = YourCounts(author, yours)
+                    _loadedEventsCount.value = merged[TOTAL_KEY] ?: 0
+                }
                 _isUpdatingCount.value = false
             }
+            merged != null && yours != null
         }
     }
 
-    private suspend fun fetchKindCounts(relayUrl: String, kinds: List<Int>): Map<Int, Int> {
+    /**
+     * One COUNT per kind plus one `{}` total (under [TOTAL_KEY]) over a
+     * single connection, and with [yours] (author hex, kinds) one more per
+     * kind for that account (the second map). Null unless every request was
+     * answered in time.
+     */
+    private suspend fun fetchKindCounts(
+        relayUrl: String,
+        kinds: List<Int>,
+        yours: Pair<String, List<Int>>?,
+    ): Pair<Map<Int, Int>, Map<Int, Int>>? {
+        val author = yours?.first
         val results = ConcurrentHashMap<Int, Int>()
+        val yourResults = ConcurrentHashMap<Int, Int>()
+        val tag = UUID.randomUUID().toString().take(6)
+        val subIdToKind = buildMap {
+            put("count-total-$tag", TOTAL_KEY)
+            for (kind in kinds) put("count-k$kind-$tag", kind)
+        }
+        val yourSubIdToKind = yours?.second.orEmpty().associateBy { "count-a$it-$tag" }
 
         return suspendCancellableCoroutine { cont ->
             val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
-            val pendingKinds = kinds.toMutableSet()
+            val pending = ConcurrentHashMap.newKeySet<String>().apply {
+                addAll(subIdToKind.keys)
+                addAll(yourSubIdToKind.keys)
+            }
             val completed = AtomicBoolean(false)
+            var listener: Job? = null
+            var timeout: Job? = null
 
-            scope.launch {
+            fun finish(answer: Pair<Map<Int, Int>, Map<Int, Int>>?) {
+                if (!completed.compareAndSet(false, true)) return
+                listener?.cancel()
+                timeout?.cancel()
+                client.disconnect()
+                cont.resume(answer) { _, _, _ -> }
+            }
+
+            // Undispatched so it subscribes before connect(): the flow keeps no
+            // replay, and a reply that lands first would be dropped.
+            listener = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 client.messages.collect { msg ->
                     try {
                         val parsed = json.parseToJsonElement(msg).jsonArray
-                        val type = parsed[0].jsonPrimitive.contentOrNull
-
-                        when (type) {
-                            "COUNT" -> {
-                                if (parsed.size >= 3) {
-                                    val subId = parsed[1].jsonPrimitive.contentOrNull ?: ""
-                                    val countObj = parsed[2].jsonObject
-                                    val count = countObj["count"]?.jsonPrimitive?.intOrNull ?: 0
-
-                                    // Extract kind from subscription ID
-                                    val kindStr = subId.removePrefix("count-")
-                                    val kind = kindStr.toIntOrNull()
-                                    if (kind != null) {
-                                        results[kind] = count
-                                        pendingKinds.remove(kind)
-                                    }
-
-                                    if (pendingKinds.isEmpty() && completed.compareAndSet(false, true)) {
-                                        client.disconnect()
-                                        cont.resume(results.toMap()) { _, _, _ -> }
-                                    }
-                                }
-                            }
-                        }
+                        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "COUNT") return@collect
+                        val subId = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
+                        val into = if (subId in yourSubIdToKind) yourResults else results
+                        val kind = subIdToKind[subId] ?: yourSubIdToKind[subId] ?: return@collect
+                        val count = (parsed[2].jsonObject["count"] as? JsonPrimitive)?.let {
+                            it.intOrNull ?: it.doubleOrNull?.toInt() ?: it.contentOrNull?.toIntOrNull()
+                        } ?: 0
+                        into[kind] = count
+                        pending.remove(subId)
+                        if (pending.isEmpty()) finish(results.toMap() to yourResults.toMap())
                     } catch (_: Exception) {}
                 }
             }
 
             client.connect()
 
-            // Send COUNT requests for each kind
-            for (kind in kinds) {
-                val subId = "count-$kind"
-                val filter = """{"kinds":[$kind]}"""
+            for ((subId, kind) in subIdToKind) {
+                val filter = if (kind == TOTAL_KEY) "{}" else """{"kinds":[$kind]}"""
                 client.send("[\"COUNT\",\"$subId\",$filter]")
             }
+            for ((subId, kind) in yourSubIdToKind) {
+                client.send("[\"COUNT\",\"$subId\",{\"kinds\":[$kind],\"authors\":[\"$author\"]}]")
+            }
 
-            // Timeout
-            scope.launch {
-                delay(10_000)
-                if (completed.compareAndSet(false, true)) {
-                    client.disconnect()
-                    cont.resume(results.toMap()) { _, _, _ -> }
-                }
+            timeout = scope.launch {
+                delay(20_000)
+                finish(null)
             }
 
             cont.invokeOnCancellation {
+                listener?.cancel()
+                timeout?.cancel()
                 client.disconnect()
             }
         }
