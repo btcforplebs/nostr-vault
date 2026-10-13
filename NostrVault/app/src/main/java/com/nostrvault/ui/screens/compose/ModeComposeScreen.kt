@@ -64,6 +64,53 @@ fun ModeComposeScreen(
         ModeComposerKind.LISTING, ModeComposerKind.POLL -> false
     }
 
+    // Saved drafts, for articles and recipes (a diVine has none).
+    val drafts = viewModel.drafts
+    var showingDrafts by remember { mutableStateOf(false) }
+    var confirmingCancel by remember { mutableStateOf(false) }
+    val isRecipe = kind == ModeComposerKind.RECIPE
+    val currentDraft = ComposerDraft(
+        kind = if (isRecipe) ComposerDraft.Kind.RECIPE else ComposerDraft.Kind.ARTICLE,
+        title = title,
+        summary = summary,
+        body = body,
+        coverMime = viewModel.currentCoverMime(),
+        prepTime = if (isRecipe) prepTime else "",
+        cookTime = if (isRecipe) cookTime else "",
+        servings = if (isRecipe) servings else "",
+        ingredients = if (isRecipe) ingredients else "",
+        directions = if (isRecipe) directions else "",
+        categories = if (isRecipe) categories else "",
+    )
+    if (drafts != null) AutosaveComposerDraft(drafts, currentDraft, viewModel.coverFile)
+
+    fun openDraft(saved: ComposerDraft) {
+        val keeper = drafts ?: return
+        keeper.saveNow(currentDraft, viewModel.coverFile)
+        viewModel.showDraftCover(keeper.open(saved), saved.coverMime)
+        title = saved.title
+        summary = saved.summary
+        body = saved.body
+        prepTime = saved.prepTime
+        cookTime = saved.cookTime
+        servings = saved.servings
+        ingredients = saved.ingredients
+        directions = saved.directions
+        categories = saved.categories
+    }
+
+    // Cancel asks to keep anything typed; an untouched form just closes.
+    fun cancelTapped() {
+        val keeper = drafts ?: return onDone()
+        if (currentDraft.hasContent || cover != null) {
+            confirmingCancel = true
+        } else {
+            keeper.finish()
+            onDone()
+        }
+    }
+    BackHandler(enabled = !busy && drafts != null) { cancelTapped() }
+
     fun submit() {
         when (kind) {
             ModeComposerKind.DIVINE -> viewModel.postDivine(title, body, onDone)
@@ -93,7 +140,7 @@ fun ModeComposeScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onDone, enabled = !busy) {
+                    IconButton(onClick = { cancelTapped() }, enabled = !busy) {
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
                     }
                 },
@@ -140,6 +187,7 @@ fun ModeComposeScreen(
                     Field(body, { body = it }, "Caption (optional) — #tags work", minLines = 2)
                 }
             } else {
+                drafts?.let { ComposerDraftsRow(it) { showingDrafts = true } }
                 CoverPicker(cover = cover, onPicked = viewModel::setCover)
                 Field(title, { title = it }, "Title")
                 Field(summary, { summary = it },
@@ -164,6 +212,27 @@ fun ModeComposeScreen(
             }
             error?.let { Text(it, color = Color(0xFFFF453A), fontSize = 13.sp) }
         }
+    }
+
+    if (drafts != null && showingDrafts) {
+        ComposerDraftsSheet(drafts, viewModel.draftStore, onSelect = ::openDraft, onDismiss = { showingDrafts = false })
+    }
+    if (drafts != null && confirmingCancel) {
+        SaveComposerDraftPrompt(
+            noun = if (isRecipe) "recipe" else "article",
+            editsSavedDraft = drafts.editsSavedDraft,
+            onSave = {
+                confirmingCancel = false
+                drafts.saveNow(currentDraft, viewModel.coverFile)
+                onDone()
+            },
+            onDiscard = {
+                confirmingCancel = false
+                drafts.discard()
+                onDone()
+            },
+            onKeepEditing = { confirmingCancel = false },
+        )
     }
 }
 

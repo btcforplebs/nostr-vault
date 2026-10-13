@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -148,5 +149,22 @@ class PendingPostManagerTest {
         assertEquals(1, second.published)
         assertEquals(0, second.kept)
         assertEquals(listOf("e1"), withdrawn)
+    }
+
+    /** A send started from a composer outlives it: leaving mid-send must not cancel the post. */
+    @Test fun aSendOutlivesTheScreenThatStartedIt() = runTest(dispatcher) {
+        val m = manager()
+        val screen = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job() + dispatcher)
+        var sent = false
+        screen.launch {
+            m.launchSend {
+                kotlinx.coroutines.delay(5_000) // the upload
+                sent = true
+            }
+        }
+        advanceTimeBy(1_000)
+        screen.cancel() // the composer closes mid-upload
+        advanceUntilIdle()
+        assertTrue(sent)
     }
 }

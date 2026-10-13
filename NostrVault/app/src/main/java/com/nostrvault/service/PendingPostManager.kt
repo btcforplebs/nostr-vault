@@ -91,6 +91,14 @@ class PendingPostManager @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /**
+     * Runs a post's send (upload, signing, hand-off to the countdown) on this
+     * app-lifetime scope, so leaving the composer mid-send does not cancel it.
+     * iOS gets the same from an unstructured Task plus background time in
+     * ComposeView.postNote.
+     */
+    fun launchSend(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block)
+
     private val _isShowing = MutableStateFlow(false)
     val isShowing: StateFlow<Boolean> = _isShowing.asStateFlow()
 

@@ -75,6 +75,13 @@ class ComposeNoteViewModel @Inject constructor(
     private val draftId: String = resumeDraftId ?: java.util.UUID.randomUUID().toString()
     private var autoSaveJob: Job? = null
 
+    /**
+     * True once the composer screen is gone. A send keeps running after that
+     * (see [publish]), but must not pop whatever screen is showing now, and
+     * reports a failure as a banner since nobody sees this screen's error.
+     */
+    @Volatile private var screenGone = false
+
     private val _content = MutableStateFlow("")
     val content = _content.asStateFlow()
 
@@ -357,7 +364,9 @@ class ComposeNoteViewModel @Inject constructor(
 
     /** Leaving without posting: drafts keep only text, so the GIF copies have no further use. */
     override fun onCleared() {
-        deleteGifCopies(_attachments.value)
+        screenGone = true
+        // A send still running reads these; it deletes them when it ends.
+        if (!_isPublishing.value) deleteGifCopies(_attachments.value)
         super.onCleared()
     }
 
@@ -512,7 +521,24 @@ class ComposeNoteViewModel @Inject constructor(
         // account can change in between (see PostingAccount).
         val lock = nostrService.lockPostingAccount()
 
-        viewModelScope.launch {
+        // On disk before the send starts, so a crash or a killed app during
+        // the upload leaves the text in Drafts. The draft goes once the post
+        // does (iOS ComposeView.postNote does the same).
+        autoSaveJob?.cancel()
+        if (text.isNotBlank()) {
+            draftService.saveDraft(
+                Draft(
+                    id = draftId,
+                    content = convertMentionsToNostr(text),
+                    replyToId = replyToNoteId,
+                    quoteId = quoteCitedId(),
+                )
+            )
+        }
+
+        // Not viewModelScope: leaving the composer mid-send would cancel the
+        // upload and the post with it. iOS keeps going after its sheet closes.
+        pendingPostManager.launchSend {
             _isPublishing.value = true
             _error.value = null
             try {
@@ -536,9 +562,9 @@ class ComposeNoteViewModel @Inject constructor(
 
                     when (result) {
                         is AttachmentUploadResult.Failed -> {
-                            _error.value = result.message
-                            _isPublishing.value = false
-                            return@launch
+                            reportSendError(result.message)
+                            finishSend()
+                            return@launchSend
                         }
                         is AttachmentUploadResult.Done -> {
                             queuedMedia = result.media
@@ -613,11 +639,11 @@ class ComposeNoteViewModel @Inject constructor(
                         ),
                         ErrorStyle.WARNING,
                     )
-                    _isPublishing.value = false
                     // Posted or queued: the upload kept its own copy, so the GIF copies go.
                     deleteGifCopies(_attachments.value)
-                    onPublished()
-                    return@launch
+                    finishSend()
+                    if (!screenGone) onPublished()
+                    return@launchSend
                 }
 
                 // 2b. Add p-tags for inline @mentions (nostr:npub/nprofile refs).
@@ -683,10 +709,12 @@ class ComposeNoteViewModel @Inject constructor(
                     }
                     // Posted or queued: the upload kept its own copy, so the GIF copies go.
                     deleteGifCopies(_attachments.value)
-                    onPublished()
+                    finishSend()
+                    if (!screenGone) onPublished()
+                    return@launchSend
                 } else {
                     Log.e("ComposeNote", "signEventAsync returned null for kind=$eventKind")
-                    _error.value = "Failed to sign note"
+                    reportSendError("Failed to sign note")
                 }
             } catch (e: PostingAccount.AccountChangedException) {
                 // Keep the note: save it as a draft now (the debounced autosave
@@ -707,10 +735,23 @@ class ComposeNoteViewModel @Inject constructor(
                 _error.value = message
             } catch (e: Exception) {
                 Log.e("ComposeNote", "publish failed", e)
-                _error.value = e.message ?: "Failed to publish"
+                reportSendError(e.message ?: "Failed to publish")
             }
-            _isPublishing.value = false
+            finishSend()
         }
+    }
+
+    /** On the screen if it is still open, otherwise as a banner over whatever is. */
+    private fun reportSendError(message: String) {
+        _error.value = message
+        if (screenGone) notificationManager.showError(message)
+    }
+
+    /** The send is over; the GIF copies [onCleared] left for it go now. */
+    private fun finishSend() {
+        _isUploading.value = false
+        _isPublishing.value = false
+        if (screenGone) deleteGifCopies(_attachments.value)
     }
 
     /** How the attachments of one post ended up. */
