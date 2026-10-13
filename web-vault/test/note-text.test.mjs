@@ -61,13 +61,15 @@ test("an https link of exactly 56 characters shows in full, no ellipsis", () => 
   assert.equal([parts(url)[0].children].flat().join(""), url.slice(8))
 })
 
-test.todo("BUG: an http link of 56 characters loses its last character with no ellipsis", () => {
-  // The label is cut at 48 after removing the scheme, but the ellipsis checks the full length (> 56).
-  // "http://" is 7 characters, so a 56-character http URL is cut to 48 of its 49 and shows no "…".
+test("an http link is cut at the same 48 characters plus an ellipsis", () => {
   const url = "http://example.com/" + "a".repeat(37)
   assert.equal(url.length, 56)
-  const label = [parts(url)[0].children].flat().join("")
-  assert.ok(label === url.slice(7) || label.endsWith("…"), `label "${label}" drops a character silently`)
+  assert.equal([parts(url)[0].children].flat().join(""), url.slice(7, 55) + "…")
+})
+
+test("an http link of 48 characters after the scheme shows in full", () => {
+  const url = "http://example.com/" + "a".repeat(36)
+  assert.equal([parts(url)[0].children].flat().join(""), url.slice(7))
 })
 
 test("image links become lazy inline images", () => {
@@ -119,16 +121,37 @@ test("links stop at whitespace, quotes and angle brackets", () => {
   }
 })
 
-test.todo("BUG: punctuation after a link becomes part of the link", () => {
-  // "see https://x.com/pic.png." — the trailing "." is kept, so the href is wrong and the image shows as a link.
-  for (const [input, href] of [
-    ["see https://x.com/page.", "https://x.com/page"],
-    ["(https://x.com/page)", "https://x.com/page"],
-    ["https://x.com/page, then", "https://x.com/page"],
+test("punctuation after a link stays in the text", () => {
+  for (const [input, href, tail] of [
+    ["see https://x.com/page.", "https://x.com/page", "."],
+    ["(https://x.com/page)", "https://x.com/page", ")"],
+    ["https://x.com/page, then", "https://x.com/page", ", then"],
+    ["wow https://x.com/page!?", "https://x.com/page", "!?"],
+    ["https://x.com/page;", "https://x.com/page", ";"],
+    ["at https://x.com/page:", "https://x.com/page", ":"],
+    ["(see https://x.com/page).", "https://x.com/page", ")."],
   ]) {
-    assert.equal(parts(input).find(p => typeof p !== "string").href, href, JSON.stringify(input))
+    const out = parts(input)
+    const i = out.findIndex(p => typeof p !== "string")
+    assert.equal(out[i].href, href, JSON.stringify(input))
+    assert.equal(out[i + 1], tail, JSON.stringify(input))
   }
-  assert.equal(parts("look https://x.com/pic.png.").find(p => typeof p !== "string").type, "img")
+})
+
+test("an image link at the end of a sentence is still an image", () => {
+  const img = parts("look https://x.com/pic.png.").find(p => typeof p !== "string")
+  assert.equal(img.type, "img")
+  assert.equal(img.src, "https://x.com/pic.png")
+})
+
+test("a link keeps a ) that closes its own (", () => {
+  const url = "https://en.wikipedia.org/wiki/Bitcoin_(currency)"
+  assert.equal(parts(url)[0].href, url)
+  assert.equal(parts(`(${url})`).find(p => typeof p !== "string").href, url)
+})
+
+test("punctuation inside a link is kept", () => {
+  assert.equal(parts("https://x.com/a.b?q=1,2!x")[0].href, "https://x.com/a.b?q=1,2!x")
 })
 
 test("a nostr: npub shows as a short mention", () => {
