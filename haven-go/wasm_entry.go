@@ -119,10 +119,12 @@ func havenStart(cfg js.Value) error {
 			os.Setenv(k, env.Get(k).String())
 		}
 	}
-	storePrefix = jsString(cfg.Get("storePrefix"))
-	if storePrefix != "" && !storePrefixRe.MatchString(storePrefix) {
-		return fmt.Errorf("havenStart: storePrefix %q may only hold letters, digits, - and _", storePrefix)
+	// Checked before it is set, so a rejected start doesn't leave a bad prefix behind for the next one.
+	prefix := jsString(cfg.Get("storePrefix"))
+	if prefix != "" && !storePrefixRe.MatchString(prefix) {
+		return fmt.Errorf("havenStart: storePrefix %q may only hold 1 to 64 letters, digits, - and _", prefix)
 	}
+	storePrefix = prefix
 	ownerNpub := jsString(cfg.Get("ownerNpub"))
 	if nPubToPubkey("ownerNpub", ownerNpub) == "" {
 		return fmt.Errorf("havenStart: ownerNpub %q is not a valid npub", ownerNpub)

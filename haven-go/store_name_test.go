@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStoreNamePerAccount(t *testing.T) {
 	for _, c := range []struct{ prefix, path, want string }{
@@ -13,9 +16,14 @@ func TestStoreNamePerAccount(t *testing.T) {
 			t.Errorf("storeName(%q, %q) = %q, want %q", c.prefix, c.path, got, c.want)
 		}
 	}
-	for _, bad := range []string{"a:b", "a b", "../x", string(make([]byte, 65))} {
+	for _, bad := range []string{"a:b", "a b", "../x", strings.Repeat("a", 65), ""} {
 		if storePrefixRe.MatchString(bad) {
 			t.Errorf("storePrefix %q accepted", bad)
+		}
+	}
+	for _, good := range []string{"a", strings.Repeat("a", 64), strings.Repeat("0f", 32), "A-b_9"} {
+		if !storePrefixRe.MatchString(good) {
+			t.Errorf("storePrefix %q rejected", good)
 		}
 	}
 }
