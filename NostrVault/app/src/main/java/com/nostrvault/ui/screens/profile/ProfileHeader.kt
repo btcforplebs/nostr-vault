@@ -27,58 +27,67 @@ internal fun ProfileHeader(
     followsMe: Boolean,
 ) {
     val colors = LocalNostrVaultColors.current
+    val awaiting = ProfileMetadataWait.awaiting(profile, rememberMetadataWaitOver(pubkey))
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        AvatarImage(
-            url = profile?.pictureURL,
-            pubkey = profile?.pubkey ?: pubkey,
-            size = 72.dp,
-            displayName = profile?.bestName,
+    Column {
+        Row(
             modifier = Modifier
-                // Half over the banner; the name column stays below it.
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    val overlap = ProfileBannerStyle.avatarOverlap.roundToPx()
-                    layout(placeable.width, placeable.height - overlap) { placeable.place(0, -overlap) }
-                }
-                // A ring in the page color lifts the avatar off the banner.
-                .background(WindowBackground, CircleShape)
-                .padding(3.dp),
-        )
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            AvatarImage(
+                url = profile?.pictureURL,
+                pubkey = profile?.pubkey ?: pubkey,
+                size = 72.dp,
+                displayName = profile?.bestName,
+                modifier = Modifier
+                    // Half over the banner; the name column stays below it.
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val overlap = ProfileBannerStyle.avatarOverlap.roundToPx()
+                        layout(placeable.width, placeable.height - overlap) { placeable.place(0, -overlap) }
+                    }
+                    // A ring in the page color lifts the avatar off the banner.
+                    .background(WindowBackground, CircleShape)
+                    .padding(3.dp),
+            )
 
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = profile?.bestName ?: "${pubkey.take(8)}…",
-                    color = PrimaryText,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (!profile?.nip05.isNullOrBlank()) {
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        NostrVaultIcons.Verified,
-                        contentDescription = null,
-                        tint = colors.primary,
-                        modifier = Modifier.size(14.dp),
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = profile?.bestName ?: "${pubkey.take(8)}…",
+                        color = PrimaryText,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (!profile?.nip05.isNullOrBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            NostrVaultIcons.Verified,
+                            contentDescription = null,
+                            tint = colors.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    StatusBadge(isOwnProfile, isFollowing, followsMe)
                 }
-                Spacer(Modifier.weight(1f))
-                StatusBadge(isOwnProfile, isFollowing, followsMe)
-            }
 
-            profile?.nip05?.takeIf { it.isNotBlank() }?.let {
-                Text(text = it, color = SecondaryText, fontSize = 12.sp, maxLines = 1)
+                val nip05 = profile?.nip05?.takeIf { it.isNotBlank() }
+                if (nip05 != null) {
+                    Text(text = nip05, color = SecondaryText, fontSize = 12.sp, maxLines = 1)
+                } else if (awaiting) {
+                    Nip05Placeholder()
+                }
             }
         }
+        // The bio is the next item on the page; until the kind 0 says whether
+        // there is one, keep its space here.
+        if (awaiting) BioPlaceholder()
     }
 }
 
