@@ -34,7 +34,17 @@ final class LiveFeedService: ObservableObject {
     private var collected: [String: LiveStream] = [:]
     private var loadTimeout: Timer?
 
-    private init() {}
+    /// Kept apart from `cancellables`, which every load clears.
+    private var webChange: AnyCancellable?
+
+    private init() {
+        // Global's gate is your web, follows included, read once per load.
+        // After a follow or unfollow the next visit loads again instead of
+        // reusing a grid drawn from the old web.
+        webChange = TrustPathService.webChanged.sink { [weak self] in
+            self?.lastLoadedAt = nil
+        }
+    }
 
     func setScope(_ newScope: RecipeScope) {
         guard newScope != scope else { return }
