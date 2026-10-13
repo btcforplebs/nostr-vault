@@ -35,12 +35,17 @@ object TrustMap {
 
     /**
      * Radius of each shell: whoever is in the middle at 0, their follows on
-     * the unit sphere, and people further out on a faint outer shell.
+     * the unit sphere, the Vouched people ([CLOSE_VOUCHES]) on their own shell
+     * just past them, and everyone further out on a faint outer shell.
      */
     const val RING_RADIUS = 1.0
+    const val CLOSE_RADIUS = 1.3
     const val OUTER_RADIUS = 1.62
-    /** The author sits between the two shells, so their threads stay short. */
-    const val AUTHOR_RADIUS = 1.32
+    /**
+     * The author sits between your follows and the Vouched shell, so their
+     * threads stay short and their face never lands among Vouched's stars.
+     */
+    const val AUTHOR_RADIUS = 1.15
     /**
      * Outer-shell people drawn per globe. Your follows' follows run to tens of
      * thousands; past this the shell reads the same and only costs frames.
@@ -360,7 +365,7 @@ object TrustMap {
      * `TrustMap.Layer`.
      */
     enum class Layer(val title: String) {
-        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Close"), FURTHER_OUT("Further out"),
+        EVERYONE("Everyone"), FOLLOWING("Following"), CLOSE("Vouched"), FURTHER_OUT("Further out"),
     }
 
     /**
@@ -408,12 +413,25 @@ object TrustMap {
 
     /** People past your follows worth a profile fetch for a layer's faces. Many further out have no profile, so the pool is wide. */
     const val LAYER_FACE_CANDIDATES = 400
-    /** Faces on the outer shell when Close or Further out is picked; faces that would cover another stay stars ([seatFaces]). */
+    /** Faces on the outer shell when Vouched or Further out is picked; faces that would cover another stay stars ([seatFaces]). */
     const val LAYER_FACES = 100
+    /** With Everyone picked, a few small, dim faces past your follows, so the shells aren't faceless; your follows' faces still lead. */
+    const val EVERYONE_FACES = 15
+
+    /** Faces past your follows for [layer]; Following has none. iOS `faceCount(for:)`. */
+    fun faceCount(layer: Layer): Int = when (layer) {
+        Layer.EVERYONE -> EVERYONE_FACES
+        Layer.FOLLOWING -> 0
+        Layer.CLOSE, Layer.FURTHER_OUT -> LAYER_FACES
+    }
+
+    /** Profiles fetched for [layer]'s faces: a wide pool, since many people further out have no picture. */
+    fun faceCandidateCount(layer: Layer): Int =
+        if (layer == Layer.EVERYONE) EVERYONE_FACES * 8 else LAYER_FACE_CANDIDATES
 
     /**
      * The people past your follows [layer] shows as faces, most vouched first.
-     * Everyone and Following show your follows' faces instead. Ties don't go
+     * Following shows your follows' faces only. Ties don't go
      * in key order as in [layerPeople]: a key's leading digits are its
      * longitude, so taking the first few hundred of thousands tied at the
      * same count would put every face on one side of the globe. iOS
@@ -427,7 +445,7 @@ object TrustMap {
         vouches: Map<String, Int>? = null,
         count: Int = LAYER_FACE_CANDIDATES,
     ): List<String> {
-        if (layer != Layer.CLOSE && layer != Layer.FURTHER_OUT) return emptyList()
+        if (layer == Layer.FOLLOWING) return emptyList()
         return layerPeople(layer, me, follows, web, vouches).web
             .sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { fraction(it, 16) }.thenBy { it })
             .take(count)

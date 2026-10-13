@@ -105,8 +105,10 @@ internal class GlobeScene(
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
-    /** Faces on the outer shell for the picked layer: drawn in the shell's colour. */
+    /** Faces on the outer shells for the picked layer: drawn in the shell's colour. */
     private var layerFaceSet: Set<String> = emptySet()
+    /** With Everyone picked the shells' faces are a small, dim few that give way to your follows' faces. */
+    private var dimLayerFaces = false
     /**
      * How brightly your follows, the Close shell and the rest of the shell
      * are drawn, easing toward the picked layer's ([TrustMap.layerWeights]).
@@ -168,9 +170,10 @@ internal class GlobeScene(
         // Every star's shell and look for this core.
         val bridgeSet = frame.bridges.toSet()
         val want = HashMap<String, Pair<Kind, Double>>()
-        if (frame.center == me) for (key in haze) {
-            want[key] = (if (key in closeHaze) Kind.CLOSE_HAZE else Kind.HAZE) to TrustMap.OUTER_RADIUS
-        }
+        // Vouched people sit on their own shell, nearer than the rest.
+        fun shell(close: Boolean) =
+            if (close) Kind.CLOSE_HAZE to TrustMap.CLOSE_RADIUS else Kind.HAZE to TrustMap.OUTER_RADIUS
+        if (frame.center == me) for (key in haze) want[key] = shell(key in closeHaze)
         for (key in frame.ring) {
             val kind = when {
                 key in bridgeSet -> Kind.BRIDGE
@@ -190,8 +193,7 @@ internal class GlobeScene(
         tracedStar?.let { if (it !in want) want[it] = Kind.BRIDGE to TrustMap.OUTER_RADIUS }
         // A layer's face may be past the shell's cap: it still gets its star.
         if (frame.center == me) {
-            val kind = if (layer == TrustMap.Layer.CLOSE) Kind.CLOSE_HAZE else Kind.HAZE
-            for (key in layerFaces) if (key !in want) want[key] = kind to TrustMap.OUTER_RADIUS
+            for (key in layerFaces) if (key !in want) want[key] = shell(layer == TrustMap.Layer.CLOSE || key in closeHaze)
         }
 
         for (star in stars) {
@@ -230,6 +232,7 @@ internal class GlobeScene(
         val layerShown = HashSet<String>()
         if (frame.center == me) for (key in layerFaces) if (taken.add(key)) { shown += key; layerShown += key }
         layerFaceSet = layerShown
+        dimLayerFaces = layer == TrustMap.Layer.EVERYONE
         faces = shown
         seatFaces()
 
@@ -635,12 +638,15 @@ internal class GlobeScene(
         }
 
         // Faces, back to front: bridges, chain steps and the author.
-        class Drawn(val key: String, val p: Projected, val tint: Color, val size: Double)
+        class Drawn(val key: String, val p: Projected, val tint: Color, val size: Double, val dim: Boolean = false)
         val drawn = ArrayList<Drawn>()
+        // A filter's matches are the point of the filter, so they never dim.
+        val dimLayer = dimLayerFaces && filterTo == null
         for (key in faces) {
             val p = index[key]?.let { project.of(it) } ?: continue
             drawn += when {
-                traceTarget == null && key in layerFaceSet -> Drawn(key, p, HazeColor, 14.0)
+                traceTarget == null && key in layerFaceSet ->
+                    Drawn(key, p, HazeColor, if (dimLayer) 10.0 else 14.0, dimLayer)
                 center == author && traceTarget == null -> Drawn(key, p, RingColor, 15.0)
                 else -> Drawn(key, p, GlobeAccent, 15.0)
             }
@@ -651,13 +657,16 @@ internal class GlobeScene(
         drawn.sortBy { it.p.depth }
 
         // Seats: a face only where it covers no other face and not the core;
-        // the rest stay stars until the globe turns them some room.
+        // the rest stay stars until the globe turns them some room. Dim faces
+        // are seated last and hold no seat, so they never push out a bright one.
         val faceR = { d: Drawn -> d.size * k * d.p.scale * min(zoom, 1.8) * density }
+        val front = drawn.asReversed().filter { it.p.depth >= -0.1 || it.key == author }
+        val dimKeys = drawn.filter { it.dim }.mapTo(HashSet()) { it.key }
         val seats = TrustMap.seatFaces(
-            drawn.asReversed().filter { it.p.depth >= -0.1 || it.key == author }
+            (front.filter { !it.dim } + front.filter { it.dim })
                 .map { TrustMap.FaceSpot(it.key, it.p.x, it.p.y, faceR(it)) },
             always = setOf(author),
-            kept = seated,
+            kept = seated - dimKeys,
             blocked = listOf(TrustMap.FaceSpot(center, core.x, core.y, coreR)),
         )
         seated = seats
@@ -674,7 +683,7 @@ internal class GlobeScene(
         val showLabel = HashSet<String>()
         val labelCap = if (zoom < 1.5) 9 else 40
         for (face in drawn.asReversed()) {
-            if (face.p.depth <= 0.15 || face.key !in seats || showLabel.size >= labelCap) continue
+            if (face.p.depth <= 0.15 || face.dim || face.key !in seats || showLabel.size >= labelCap) continue
             val r = face.size * k * face.p.scale * min(zoom, 1.8) * density
             val box = Rect((face.p.x - 46 * density).toFloat(), (face.p.y + r + 2 * density).toFloat(),
                 (face.p.x + 46 * density).toFloat(), (face.p.y + r + 18 * density).toFloat())
@@ -686,7 +695,7 @@ internal class GlobeScene(
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
             val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
-            val dim = (0.35 + 0.65 * face.p.front) * a
+            val dim = (0.35 + 0.65 * face.p.front) * a * (if (face.dim) DIM_FACE else 1.0)
             val behind = face.p.depth < -0.1 && face.key != author
             // No room for its picture here: a bright star in its colour.
             val held = !behind && face.key !in seats
@@ -841,6 +850,8 @@ internal class GlobeScene(
         const val FILTERED_OUT = 0.08
         /** Seconds a filter's dimming takes to ease in or out. */
         const val FILTER_FADE = 0.35
+        /** How bright Everyone's few faces past your follows are drawn. */
+        const val DIM_FACE = 0.55
         /**
          * Star brightness is rounded to this many steps, so each kind of star
          * is a handful of fills however many people there are. Fine enough
