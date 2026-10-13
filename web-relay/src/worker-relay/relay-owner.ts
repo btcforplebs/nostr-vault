@@ -2,6 +2,7 @@ import { type DbLock, dbLockName, type RequestDbLockOptions, requestDbLock } fro
 import { debugLog } from "./debug"
 import { NoLeaderError, RelayChannel, relayChannelName } from "./relay-channel"
 import { SqliteRelay } from "./sqlite/sqlite-relay"
+import { rejectReason } from "./verify"
 import type { NostrEvent, OkResponse, RelayHandler, WorkerMessage, WorkerMessageCommand } from "./types"
 
 const log = (msg: string, ...args: Array<any>) => debugLog("RelayOwner", msg, ...args)
@@ -141,6 +142,8 @@ export class RelayOwner {
       return undefined
     }
     if (msg.cmd === "event") {
+      const reason = rejectReason(msg.args as NostrEvent)
+      if (reason) return { ok: false, id: (msg.args as NostrEvent)?.id ?? "", relay: "", message: reason, event: msg.args } as OkResponse
       // Matches the leader's own optimistic reply: the write is confirmed to the
       // caller before it reaches the database.
       channel.notify(msg)

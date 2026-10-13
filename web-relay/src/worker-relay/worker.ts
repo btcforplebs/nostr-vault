@@ -3,6 +3,7 @@
 import { setLogging } from "./debug"
 import { getForYouFeed } from "./forYouFeed"
 import { RelayOwner } from "./relay-owner"
+import { rejectReason } from "./verify"
 import type {
   EventMetadata,
   NostrEvent,
@@ -64,6 +65,8 @@ async function executeCommand(msg: WorkerMessage<any>, relay: RelayHandler): Pro
   switch (msg.cmd) {
     case "event": {
       const ev = msg.args as NostrEvent
+      const reason = rejectReason(ev)
+      if (reason) return { ok: false, id: ev?.id ?? "", relay: "", message: reason, event: ev } as OkResponse
       // Reply immediately (optimistic ok) so the caller is not blocked waiting
       // for the DB flush. Events are accumulated and written in a single
       // SQLite transaction once the BATCH_WINDOW_MS timer fires.
