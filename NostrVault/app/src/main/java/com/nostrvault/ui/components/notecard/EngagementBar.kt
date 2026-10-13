@@ -153,14 +153,15 @@ internal fun EngagementBar(
             )
         }
 
-        // Zap
-        if (onZap != null) Box(Modifier.zapFlightTarget(noteId)) {
+        // Zap, unless ⚡️ was taken out of Appearance → Post buttons.
+        val zapAction = onZap?.takeIf { LocalShowZapButton.current }
+        if (zapAction != null) Box(Modifier.zapFlightTarget(noteId)) {
             EngagementButton(
                 icon = if (isZapped) NostrVaultIcons.Zap else NostrVaultIcons.ZapOutline,
                 isActive = isZapped,
                 activeColor = ZapOrange,
                 contentDescription = if (isZapped) "Zapped" else "Zap",
-                onClick = { onZap.invoke(noteId) },
+                onClick = { zapAction.invoke(noteId) },
                 onLongClick = onLongPressZap?.let { longPress -> { longPress(noteId) } },
                 dimmed = zapDimmed && !isZapped,
                 count = engagement?.let { label(it.zapSats) },

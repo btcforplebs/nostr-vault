@@ -195,6 +195,14 @@ data class HavenConfig(
      * default. Mirrors iOS HavenConfig.showNewPostsPill.
      */
     val showNewPostsPill: Boolean = true,
+    /**
+     * Appearance → Post buttons: the emoji the action bar under a post shows.
+     * Only ⚡️ is read: with it, posts get a zap button. Mirrors iOS
+     * `postButtons`, except the default: iOS ships it empty (zaps off, for App
+     * Review), but Android has always shown the zap button, so the default
+     * keeps it and existing installs look the same.
+     */
+    val postButtons: String = DEFAULT_POST_BUTTONS,
     /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
@@ -286,6 +294,11 @@ data class HavenConfig(
             com.nostrvault.data.model.FeedMode.HASHTAGS,
             com.nostrvault.data.model.FeedMode.POPULAR,
         ).associate { it.name to com.nostrvault.data.model.FeedLayoutMode.THREADED.storageKey }
+
+        const val DEFAULT_POST_BUTTONS = "⚡️"
+
+        /** Whether [postButtons] holds ⚡️ (the emoji keyboard sends U+26A1 U+FE0F; a bare ⚡ counts too). */
+        fun postButtonsShowZap(value: String): Boolean = value.contains('\u26A1')
 
         /** The config for an install with none saved yet (or just reset). */
         fun newInstall(): HavenConfig = HavenConfig(feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS)

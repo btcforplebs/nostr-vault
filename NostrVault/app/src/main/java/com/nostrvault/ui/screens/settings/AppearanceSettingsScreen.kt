@@ -114,6 +114,14 @@ class AppearanceViewModel @Inject constructor(
         configStore.update { it.copy(showNewPostsPill = on) }
     }
 
+    val postButtons = configStore.config
+        .map { it.postButtons }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.postButtons)
+
+    fun setPostButtons(value: String) {
+        configStore.update { it.copy(postButtons = value) }
+    }
+
     init {
         val config = configStore.config.value
         _compactLines.value = config.compactLineLimit.coerceIn(FeedLineLimits.RANGE)
@@ -184,6 +192,7 @@ fun AppearanceSettingsScreen(
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
+    val postButtons by viewModel.postButtons.collectAsState()
     val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
 
     Scaffold(
@@ -284,6 +293,10 @@ fun AppearanceSettingsScreen(
                     ),
                 )
             }
+
+            Spacer(Modifier.height(32.dp))
+
+            PostButtonsSection(postButtons, viewModel::setPostButtons)
 
             Spacer(Modifier.height(32.dp))
 

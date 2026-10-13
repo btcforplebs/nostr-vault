@@ -187,6 +187,7 @@ class MainActivity : FragmentActivity() {
                     LocalNoteTranslation provides noteTranslation,
                     com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
                     LocalNotificationManager provides notificationManager,
+                    com.nostrvault.ui.components.LocalShowZapButton provides com.nostrvault.relay.HavenConfig.postButtonsShowZap(config.postButtons),
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
