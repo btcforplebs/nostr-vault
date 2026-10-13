@@ -3,11 +3,16 @@
 
 /**
  * @param conn  a havenConn(...) handle: { write(Uint8Array), onData(cb), onClose(cb), close() }
+ * @param auth  optional (challenge) => Promise<signed kind 22242 event>. When set, a REQ or COUNT Haven closes
+ *              with "auth-required:" is answered with NIP-42 AUTH once and sent again.
  */
 export class HavenClient {
-  constructor(conn, { timeoutMs = 15_000 } = {}) {
+  constructor(conn, { timeoutMs = 15_000, auth } = {}) {
     this.conn = conn
     this.timeoutMs = timeoutMs
+    this.auth = auth
+    this.challenge = undefined
+    this.authed = undefined
     this.pending = new Map()
     this.buf = ""
     this.dec = new TextDecoder()
@@ -25,14 +30,43 @@ export class HavenClient {
 
   /** filters: one filter object or an array of them -> events[] */
   query(filters) {
-    const id = `q${++this.n}`
-    return this.#ask(id, ["REQ", id, ...[filters].flat()])
+    return this.#authRetry(() => {
+      const id = `q${++this.n}`
+      return this.#ask(id, ["REQ", id, ...[filters].flat()])
+    })
   }
 
   /** -> number. Haven's khatru answers COUNT on the routes that allow it. */
   count(filters) {
-    const id = `c${++this.n}`
-    return this.#ask(id, ["COUNT", id, ...[filters].flat()])
+    return this.#authRetry(() => {
+      const id = `c${++this.n}`
+      return this.#ask(id, ["COUNT", id, ...[filters].flat()])
+    })
+  }
+
+  async #authRetry(send) {
+    try {
+      return await send()
+    } catch (e) {
+      if (!this.auth || !String(e.message).startsWith("auth-required")) throw e
+      await this.#authenticate()
+      return send()
+    }
+  }
+
+  // One AUTH per challenge, shared by every request that hit auth-required at the same time.
+  #authenticate() {
+    if (this.authed?.challenge === this.challenge) return this.authed.done
+    const challenge = this.challenge
+    const done = (async () => {
+      if (!challenge) throw new Error("auth-required, but Haven sent no AUTH challenge")
+      const ev = await this.auth(challenge)
+      const r = await this.#ask(ev.id, ["AUTH", ev])
+      if (!r.ok) throw new Error(`haven refused AUTH: ${r.message}`)
+    })()
+    this.authed = { challenge, done }
+    done.catch(() => { if (this.authed?.done === done) this.authed = undefined })
+    return done
   }
 
   close() {
@@ -78,6 +112,9 @@ export class HavenClient {
     if (!Array.isArray(m)) return
     const p = this.pending.get(m[1])
     switch (m[0]) {
+      case "AUTH":
+        this.challenge = m[1]
+        return
       case "OK":
         return this.#settle(m[1], undefined, { ok: !!m[2], message: m[3] ?? "" })
       case "EVENT":

@@ -55,6 +55,11 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 		if _, ok := config.WhitelistedPubKeys[evt.PubKey]; ok {
 			return false, ""
 		}
+		// The browser build's owner streams: the page itself caching its
+		// follows' notes into /feed, which natively feedsync writes directly.
+		if ws := khatru.GetConnection(ctx); ws != nil && ws.Request != nil && ownerConn(ws.Request) {
+			return false, ""
+		}
 		return inner(ctx, evt)
 	}
 }
