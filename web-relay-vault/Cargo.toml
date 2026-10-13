@@ -1,0 +1,23 @@
+[package]
+name = "web-relay-vault"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Vault side of the browser relay: NIP-01 over TCP/FIPS to a nostrvault.app/relay/ page on FSP port 7447"
+
+# Standalone: not a member of fips-bridge's workspace.
+[workspace]
+
+[features]
+default = ["native"]
+# The jmcorgan v0.5.2 native datagram API client. Its socket hand-off builds on
+# Linux, FreeBSD and macOS only (not Android, not iOS), so it is an adapter
+# behind a feature and the core builds without it.
+native = ["dep:fips"]
+
+[dependencies]
+# Pinned: the TS ⇄ Rust interop run (24/24) was against 0.2.5.
+nvpn-fips-tcp = "=0.2.5"
+serde_json = "1"
+fips = { git = "https://github.com/jmcorgan/fips", tag = "v0.5.2", optional = true }
