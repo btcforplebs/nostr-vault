@@ -155,8 +155,8 @@ internal fun TrustWebContent(
         if (isWOTTab) {
             val follows = myFollows
             layerCandidates = withContext(Dispatchers.Default) {
-                listOf(TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
-                    TrustMap.layerFaceCandidates(it, me, follows, graph, counts)
+                listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
+                    TrustMap.layerFaceCandidates(it, me, follows, graph, counts, TrustMap.faceCandidateCount(it))
                 }
             }
         }
@@ -254,7 +254,7 @@ internal fun TrustWebContent(
         TrustMap.pickFaces(ringCandidates, { (filterLit == null || it in filterLit) && pictureRenders(it) },
             if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
     }
-    // The picked layer's faces (Close or Further out), fetched on each pick:
+    // The picked layer's faces past your follows, fetched on each pick:
     // the picture loader stops after a while and profiles can arrive late.
     val pickedLayerCandidates = layerCandidates[layer].orEmpty()
     LaunchedEffect(layer, pickedLayerCandidates) {
@@ -262,12 +262,14 @@ internal fun TrustWebContent(
         nostrService.fetchMissingProfiles(pickedLayerCandidates)
         loadPictures(pickedLayerCandidates)
     }
-    /** Pictures on the outer shell for the picked layer, most vouched first; only ones that loaded. */
-    val layerFaces = remember(isWOTTab, centerKey, pickedLayerCandidates, renderedPictures, filterLit, filterCandidates) {
+    /** Pictures past your follows for the picked layer, most vouched first: a few for Everyone, many for Vouched or Further out. Only ones that loaded. */
+    val layerFaces = remember(isWOTTab, centerKey, layer, pickedLayerCandidates, renderedPictures, filterLit, filterCandidates) {
         if (!isWOTTab || centerKey != me) emptyList()
         // A filter's people take the outer faces first, as long as the layer lights them.
-        else TrustMap.pickFaces(if (filterLit != null) filterCandidates else pickedLayerCandidates, ::pictureRenders,
+        else if (filterLit != null) TrustMap.pickFaces(filterCandidates, ::pictureRenders,
             if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES)
+        else TrustMap.pickFaces(pickedLayerCandidates, ::pictureRenders,
+            minOf(TrustMap.faceCount(layer), if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES))
     }
 
     fun jump(index: Int) {

@@ -409,9 +409,27 @@ class TrustMapTest {
         assertEquals(listOf(key(2), key(3), key(5)), faces(TrustMap.Layer.CLOSE))
         assertEquals(listOf(key(2), key(3)), faces(TrustMap.Layer.CLOSE, count = 2))
         assertEquals(listOf(key(6), key(4)), faces(TrustMap.Layer.FURTHER_OUT))
-        // Everyone and Following keep your follows' faces.
-        assertEquals(emptyList<String>(), faces(TrustMap.Layer.EVERYONE))
+        // Everyone draws from everyone past your follows; Following keeps your follows' faces only.
+        assertEquals(listOf(key(2), key(3), key(5), key(6), key(4)), faces(TrustMap.Layer.EVERYONE))
         assertEquals(emptyList<String>(), faces(TrustMap.Layer.FOLLOWING))
+    }
+
+    @Test
+    fun everyoneShowsAFewFacesAndFollowingNone() {
+        assertEquals(15, TrustMap.faceCount(TrustMap.Layer.EVERYONE))
+        assertEquals(0, TrustMap.faceCount(TrustMap.Layer.FOLLOWING))
+        assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.CLOSE))
+        assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.FURTHER_OUT))
+        assertTrue(TrustMap.faceCandidateCount(TrustMap.Layer.EVERYONE) > TrustMap.EVERYONE_FACES)
+        assertEquals(TrustMap.LAYER_FACE_CANDIDATES, TrustMap.faceCandidateCount(TrustMap.Layer.CLOSE))
+    }
+
+    @Test
+    fun vouchedHasItsOwnShellBetweenFollowsAndTheRest() {
+        assertEquals("Vouched", TrustMap.Layer.CLOSE.title)
+        assertTrue(TrustMap.RING_RADIUS < TrustMap.CLOSE_RADIUS && TrustMap.CLOSE_RADIUS < TrustMap.OUTER_RADIUS)
+        // The author sits inside the Vouched shell, so their face never lands among its stars.
+        assertTrue(TrustMap.RING_RADIUS < TrustMap.AUTHOR_RADIUS && TrustMap.AUTHOR_RADIUS < TrustMap.CLOSE_RADIUS)
     }
 
     @Test
