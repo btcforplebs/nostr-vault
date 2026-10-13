@@ -199,38 +199,16 @@ extension FeedView {
                     trustScopeButton
                 }
             } else if feedService.feedMode == .popular {
-                // My Follows filter
-                Button(action: {
-                    feedService.popularFilter = feedService.popularFilter == .follows ? .all : .follows
-                    feedService.recomputeFilteredNotes()
-                }) {
-                    Image(systemName: feedService.popularFilter == .follows ? "person.2.fill" : "person.2")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.popularFilter == .follows ? Color.havenPurple : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help(feedService.popularFilter == .follows ? String(localized: "feed.help.showingFollowsOnly") : String(localized: "feed.help.filterToFollows"))
+                PopularAudienceMenu(selected: feedService.popularFilter, color: .havenPurple, onSelect: setPopularFilter)
 
-                // Non-Follows filter
-                Button(action: {
-                    feedService.popularFilter = feedService.popularFilter == .nonFollows ? .all : .nonFollows
-                    feedService.recomputeFilteredNotes()
-                }) {
-                    Image(systemName: feedService.popularFilter == .nonFollows ? "globe.americas.fill" : "globe.americas")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(feedService.popularFilter == .nonFollows ? Color.havenPurple : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help(feedService.popularFilter == .nonFollows ? String(localized: "feed.help.showingNonFollowsOnly") : String(localized: "feed.help.filterToNonFollows"))
-
-                // Engagement stats toggle
+                // Rank line above each post
                 Button(action: { feedService.showPopularEngagement.toggle() }) {
-                    Image(systemName: feedService.showPopularEngagement ? "chart.bar.fill" : "chart.bar")
+                    Image(systemName: feedService.showPopularEngagement ? "flame.fill" : "flame")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(feedService.showPopularEngagement ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help(feedService.showPopularEngagement ? String(localized: "feed.help.hideEngagementStats") : String(localized: "feed.help.showEngagementStats"))
+                .help(feedService.showPopularEngagement ? "Hide ranks" : "Show ranks")
             } else {
                 // Auto-load new posts
                 Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {

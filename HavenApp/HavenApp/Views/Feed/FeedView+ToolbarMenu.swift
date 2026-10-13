@@ -114,22 +114,12 @@ extension FeedView {
                     trustScopeMenuItems
                 }
             } else if feedService.feedMode == .popular {
-                Button {
-                    feedService.popularFilter = feedService.popularFilter == .follows ? .all : .follows
-                    feedService.recomputeFilteredNotes()
-                } label: {
-                    Label("Follows", systemImage: "person.2.fill")
-                }
-                Button {
-                    feedService.popularFilter = feedService.popularFilter == .nonFollows ? .all : .nonFollows
-                    feedService.recomputeFilteredNotes()
-                } label: {
-                    Label("Non-Follows", systemImage: "globe.americas")
-                }
+                PopularAudienceMenuItems(selected: feedService.popularFilter, onSelect: setPopularFilter)
+                Divider()
                 Button {
                     feedService.showPopularEngagement.toggle()
                 } label: {
-                    Label("Engagement", systemImage: "chart.bar")
+                    Label(feedService.showPopularEngagement ? "Hide ranks" : "Show ranks", systemImage: "flame")
                 }
             } else {
                 Button {
