@@ -106,9 +106,25 @@ class DraftService @Inject constructor(
      * those edits are newer work, not the post. Null deletes whatever is there.
      */
     fun deleteSentDraft(draftId: String, sentVersion: Long?) {
-        val current = findDraft(draftId)
-        if (current != null && sentVersion != null && current.updatedAt > sentVersion) return
+        if (savedSince(draftId, sentVersion)) return
         deleteDraft(draftId)
+    }
+
+    /**
+     * A post was taken back before it went out (Cancel, Edit, or a newer
+     * post): put [sent] back as its draft, unless the draft was saved again
+     * after [sentVersion]. Edits made in the undo window are newer than the
+     * post and stay, the same rule as [deleteSentDraft]. Null puts it back.
+     */
+    fun restoreWithdrawnDraft(sent: Draft, sentVersion: Long?) {
+        if (savedSince(sent.id, sentVersion)) return
+        saveDraft(sent)
+    }
+
+    /** True when the draft on disk was saved after [version]. */
+    private fun savedSince(draftId: String, version: Long?): Boolean {
+        val current = findDraft(draftId) ?: return false
+        return version != null && current.updatedAt > version
     }
 
     /**
