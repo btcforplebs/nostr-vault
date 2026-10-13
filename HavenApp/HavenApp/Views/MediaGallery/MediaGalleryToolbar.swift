@@ -96,7 +96,7 @@ extension MediaGalleryView {
     var trailingToolbarMenu: some View {
         Menu {
             Button {
-                withAnimation { mediaLayoutMode = mediaLayoutMode == .grid ? .list : .grid }
+                toggleMediaLayout()
             } label: {
                 Label(
                     mediaLayoutMode == .grid ? "List View" : "Grid View",
@@ -144,6 +144,7 @@ extension MediaGalleryView {
         ForEach(MediaSortOption.allCases) { option in
             Button {
                 withAnimation(Motion.toggle) { sortOption = option }
+                filterNote.show(FilterNote(icon: "arrow.up.arrow.down", title: "Sort", setting: option.label.lowercased()))
             } label: {
                 // A checkmark on the active row rather than a separate
                 // indicator: this is a one-of-many choice, not a set of toggles.
@@ -181,8 +182,16 @@ extension MediaGalleryView {
             isSelected: false,
             color: .havenPurple
         ) {
-            withAnimation { mediaLayoutMode = mediaLayoutMode == .grid ? .list : .grid }
+            toggleMediaLayout()
         }
+    }
+
+    /// Grid or list, and the note saying which.
+    func toggleMediaLayout() {
+        withAnimation { mediaLayoutMode = mediaLayoutMode == .grid ? .list : .grid }
+        filterNote.show(FilterNote(
+            icon: mediaLayoutMode == .grid ? "square.grid.2x2.fill" : "list.bullet",
+            title: "Layout", setting: mediaLayoutMode == .grid ? "grid" : "list"))
     }
 
     // MARK: - Media Type Filters
@@ -209,6 +218,7 @@ extension MediaGalleryView {
                         } else {
                             mediaTypeFilter.insert(typeFilter)
                         }
+                        noteMediaTypes()
                     }
                 }
             }
@@ -286,6 +296,7 @@ extension MediaGalleryView {
                 mediaTypeFilter.insert(filter)
             }
         }
+        noteMediaTypes()
     }
 
     /// Select all media type filters.
@@ -293,6 +304,16 @@ extension MediaGalleryView {
         withAnimation(Motion.toggle) {
             mediaTypeFilter = Set(MediaTypeFilter.allCases)
         }
+        noteMediaTypes()
+    }
+
+    /// "Media type · all", or the types left on: "Media type · photos, GIFs".
+    func noteMediaTypes() {
+        let all = mediaTypeFilter.count == MediaTypeFilter.allCases.count
+        let names: [MediaTypeFilter: String] = [.photo: "photos", .video: "videos", .gif: "GIFs", .other: "other"]
+        let picked = MediaTypeFilter.allCases.filter(mediaTypeFilter.contains).compactMap { names[$0] }
+        filterNote.show(FilterNote(icon: all ? "circle.grid.2x2" : "circle.grid.2x2.fill",
+                                   title: "Media type", setting: all ? "all" : picked.joined(separator: ", ")))
     }
 
     /// Set the location filter, toggling back to `.all` if the same filter is tapped again.

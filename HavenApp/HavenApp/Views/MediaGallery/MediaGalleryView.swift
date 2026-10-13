@@ -22,6 +22,8 @@ struct MediaGalleryView: View {
     // MARK: - State
 
     @State var navigationPath = NavigationPath()
+    /// The line under the toolbar after a type, sort or layout tap.
+    @StateObject var filterNote = FilterNoteModel()
     /// Scroll target for tapping the Media tab again.
     static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
@@ -210,6 +212,10 @@ struct MediaGalleryView: View {
             }
             #endif
         }
+        // The Mac hosts it under its own header (compactViewContent).
+        #if os(iOS)
+        .filterNoteHost(filterNote)
+        #endif
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
                 let recentlyReconnected: Bool
@@ -410,6 +416,8 @@ struct MediaGalleryView: View {
             }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Under the header, the Mac's toolbar. The host adds no rise on Mac.
+            .filterNoteHost(filterNote)
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {

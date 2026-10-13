@@ -189,14 +189,21 @@ extension VaultView {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    /// The Mac header's labelled filters: the pick, then the same note.
+    func tapFilter(_ choice: VaultFilterChoice, _ isSelected: Bool, _ pick: () -> Void) {
+        pick()
+        noteFilterTap(choice, changed: !isSelected)
+    }
+
     // MARK: - Filter note
 
-    /// A filter tap's note. A list rebuilt off the main thread is counted
-    /// when it lands; "checking…" shows only if that takes a moment.
+    /// A filter tap's note: what it shows and that it's on, straight away.
+    /// A list rebuilt off the main thread adds its count when it lands, if
+    /// the note is still up.
     func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
         if choice == .recipes && !recipesOnly {
             pendingFilterNote = nil
-            filterNote.show(.off("Recipes"))
+            filterNote.show(.off(choice.name(scope: noteScope), icon: choice.icon))
             return
         }
         guard changed, choice.waitsForList else {
@@ -208,28 +215,24 @@ extension VaultView {
         // A rebuild already running for the old pick must not land as this
         // one's count; onChange schedules the new rebuild.
         updateGeneration += 1
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard pendingFilterNote == choice else { return }
-            filterNote.show(FilterNote(icon: choice.icon, text: "\(choice.name(scope: noteScope)) · checking…"))
-        }
+        filterNote.show(FilterNote(icon: choice.icon, title: choice.name(scope: noteScope), setting: "on"))
     }
 
-    /// A rebuilt list landed: the waiting note can count it now.
+    /// A rebuilt list landed: the note, if still showing, gets its count.
+    /// One that has faded stays gone.
     func filterListLanded() {
         guard let choice = pendingFilterNote else { return }
         pendingFilterNote = nil
-        filterNote.show(filterNoteText(choice))
+        filterNote.update(filterNoteText(choice))
     }
 
-    /// "Mentions · 18", or "No mentions yet" rather than a 0. A list that
-    /// stopped at its page size says so with a "+".
+    /// What the filter shows, that it's on, then how many: "Mentions · on ·
+    /// 18", "none yet" rather than a 0. A list that stopped at its page size
+    /// says so with a "+".
     func filterNoteText(_ choice: VaultFilterChoice) -> FilterNote {
         let (count, capped) = filterCount(choice)
-        let text = count == 0
-            ? choice.emptyText(scope: noteScope)
-            : "\(choice.name(scope: noteScope)) · \(count.formatted())\(capped ? "+" : "")"
-        return FilterNote(icon: choice.icon, text: text)
+        let tally = count == 0 ? "none yet" : "\(count.formatted())\(capped ? "+" : "")"
+        return FilterNote(icon: choice.icon, title: choice.name(scope: noteScope), setting: "on", count: tally)
     }
 
     private func filterCount(_ choice: VaultFilterChoice) -> (Int, Bool) {
@@ -311,6 +314,10 @@ extension VaultView {
             withAnimation(Motion.toggle) {
                 noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
             }
+            pendingFilterNote = nil
+            filterNote.show(noteLayoutMode == .compact
+                ? FilterNote(icon: "rectangle.compress.vertical", title: "Condensed view", setting: "on")
+                : .off("Condensed view", icon: "rectangle.compress.vertical"))
         }
     }
 
@@ -400,19 +407,19 @@ extension VaultView {
     var filterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
-                contentFilter = .all
+                tapFilter(.notes(.all), contentFilter == .all) { contentFilter = .all }
             }
             FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
-                contentFilter = .mine
+                tapFilter(.notes(.mine), contentFilter == .mine) { contentFilter = .mine }
             }
             FilterButton(title: "Tagged", color: Color.havenVerified, isSelected: contentFilter == .tagged) {
-                contentFilter = .tagged
+                tapFilter(.notes(.tagged), contentFilter == .tagged) { contentFilter = .tagged }
             }
             FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
-                contentFilter = .whitelist
+                tapFilter(.notes(.whitelist), contentFilter == .whitelist) { contentFilter = .whitelist }
             }
             FilterButton(title: "Outside Network", color: .orange, isSelected: contentFilter == .outside) {
-                contentFilter = .outside
+                tapFilter(.notes(.outside), contentFilter == .outside) { contentFilter = .outside }
             }
         }
         .padding(4)
@@ -424,10 +431,10 @@ extension VaultView {
     var likesFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: likesFilter == .onMyNotes) {
-                likesFilter = .onMyNotes
+                tapFilter(.likes(.onMyNotes), likesFilter == .onMyNotes) { likesFilter = .onMyNotes }
             }
             FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
-                likesFilter = .myLikes
+                tapFilter(.likes(.myLikes), likesFilter == .myLikes) { likesFilter = .myLikes }
             }
         }
         .padding(4)
@@ -439,10 +446,10 @@ extension VaultView {
     var followersFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
-                followersFilter = .new
+                tapFilter(.followers(.new), followersFilter == .new) { followersFilter = .new }
             }
             FilterButton(title: "All", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .all) {
-                followersFilter = .all
+                tapFilter(.followers(.all), followersFilter == .all) { followersFilter = .all }
             }
         }
         .padding(4)
@@ -454,10 +461,10 @@ extension VaultView {
     var zapsFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: zapsFilter == .onMyNotes) {
-                zapsFilter = .onMyNotes
+                tapFilter(.zaps(.onMyNotes), zapsFilter == .onMyNotes) { zapsFilter = .onMyNotes }
             }
             FilterButton(title: "My Zaps", icon: "bolt", color: .yellow, isSelected: zapsFilter == .myZaps) {
-                zapsFilter = .myZaps
+                tapFilter(.zaps(.myZaps), zapsFilter == .myZaps) { zapsFilter = .myZaps }
             }
         }
         .padding(4)
