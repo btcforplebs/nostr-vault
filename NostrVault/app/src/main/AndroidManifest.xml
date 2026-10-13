@@ -227,6 +227,20 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_mosaic_info" />
         </receiver>
+
+        <!-- The one-cell widget: the stand-in for the iPhone Lock Screen
+             widget, one number from the vault. -->
+        <receiver
+            android:name=".widget.VaultGlanceReceiver"
+            android:exported="true"
+            android:label="@string/widget_glance_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_glance_info" />
+        </receiver>
     </application>
 
 </manifest>
