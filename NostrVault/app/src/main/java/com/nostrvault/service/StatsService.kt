@@ -71,15 +71,23 @@ class StatsService @Inject constructor(
          * `RelayCounter.ownerCanAuth`, not the "browse" setup marker, which
          * settings can overwrite with "local" for an owner who still has no
          * key (disconnecting a signer, adding the owner's own npub as
-         * view-only). [storedNsec]: the owner's nsec in CredentialStore, the
-         * last place `resolveSecretKey` looks; only asked when nothing else
-         * gave a key.
+         * view-only). The sources are the ones `resolveSecretKey` tries:
+         * [ncryptsecPassword], whether the keychain password that decrypts
+         * `ownerNcryptsec` is stored (an ncryptsec without it can't sign), and
+         * [storedNsec], the owner's nsec in CredentialStore. Each is asked
+         * only when nothing before it gave a key.
          */
-        internal fun ownerIsWatchOnly(config: com.nostrvault.relay.HavenConfig, storedNsec: () -> Boolean): Boolean {
+        internal fun ownerIsWatchOnly(
+            config: com.nostrvault.relay.HavenConfig,
+            ncryptsecPassword: () -> Boolean,
+            storedNsec: () -> Boolean,
+        ): Boolean {
             when (config.effectiveSigningMode(config.ownerNpub)) {
                 "amber", "nip46" -> return false
             }
-            return config.ownerHexKey.isNullOrEmpty() && config.ownerNcryptsec.isNullOrEmpty() && !storedNsec()
+            if (!config.ownerHexKey.isNullOrEmpty()) return false
+            if (!config.ownerNcryptsec.isNullOrEmpty() && ncryptsecPassword()) return false
+            return !storedNsec()
         }
 
         /** Shown where the counts would be for a watch-only owner (iOS `RelayCountSession.publicOnlyNote`). */
@@ -284,13 +292,21 @@ class StatsService @Inject constructor(
         }
     }
 
-    /** [Companion.ownerIsWatchOnly] for [config], with the owner's stored nsec looked up. */
+    /** [Companion.ownerIsWatchOnly] for [config], with the owner's keychain password and stored nsec looked up. */
     fun ownerIsWatchOnly(config: com.nostrvault.relay.HavenConfig): Boolean =
-        Companion.ownerIsWatchOnly(config) {
-            runCatching {
-                nostrService.ownerHexPubkey.isNotEmpty() && CredentialStore.getNsec(nostrService.ownerHexPubkey) != null
-            }.getOrDefault(false)
-        }
+        Companion.ownerIsWatchOnly(
+            config,
+            ncryptsecPassword = {
+                runCatching {
+                    config.ownerNpub.isNotEmpty() && CredentialStore.getKeychainPassword(config.ownerNpub) != null
+                }.getOrDefault(false)
+            },
+            storedNsec = {
+                runCatching {
+                    nostrService.ownerHexPubkey.isNotEmpty() && CredentialStore.getNsec(nostrService.ownerHexPubkey) != null
+                }.getOrDefault(false)
+            },
+        )
 
     /**
      * Fetch event counts by kind from every endpoint the vault stores events

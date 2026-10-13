@@ -31,23 +31,29 @@ class StatsCountEndpointsTest {
     @Test fun `watch-only means no key material, whatever the signing mode says`() {
         val none = { false }
         // Set up from an npub alone.
-        assertTrue(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "browse"), none))
+        assertTrue(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "browse"), none, none))
         // Keyless but marked "local": a disconnected signer, or the owner's own npub added as view-only.
-        assertTrue(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "local"), none))
+        assertTrue(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "local"), none, none))
         assertTrue(
             StatsService.ownerIsWatchOnly(
                 HavenConfig(ownerNpub = owner, signingMode = "browse", accountSigningModes = mapOf(owner to "local")),
+                none,
                 none,
             ),
         )
     }
 
+    @Test fun `an ncryptsec without its keychain password is not a key`() {
+        val config = HavenConfig(ownerNpub = owner, ownerNcryptsec = "ncryptsec1x")
+        assertTrue(StatsService.ownerIsWatchOnly(config, ncryptsecPassword = { false }, storedNsec = { false }))
+    }
+
     @Test fun `an owner with a key or a signer is not watch-only`() {
         val none = { false }
-        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, ownerHexKey = "ab"), none))
-        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, ownerNcryptsec = "ncryptsec1x"), none))
-        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "amber"), none))
-        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner), storedNsec = { true }))
+        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, ownerHexKey = "ab"), none, none))
+        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, ownerNcryptsec = "ncryptsec1x"), ncryptsecPassword = { true }, storedNsec = none))
+        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner, signingMode = "amber"), none, none))
+        assertFalse(StatsService.ownerIsWatchOnly(HavenConfig(ownerNpub = owner), ncryptsecPassword = none, storedNsec = { true }))
     }
 
     @Test fun `an external relay is asked once, not four times`() {
