@@ -11,6 +11,11 @@ final class DeletedNotesStore {
     private let directory: URL
     private let lock = NSLock()
     private var loaded: [String: Set<String>] = [:]
+    /// In memory only: the ids this run has taken off the feed, per account,
+    /// and the kind-5 events already handled. A relay replays your requests
+    /// on every subscription; these make a replay cost a set lookup.
+    private var appliedToFeed: [String: Set<String>] = [:]
+    private var handledRequests: Set<String> = []
 
     init(directory: URL) {
         self.directory = directory
@@ -39,6 +44,29 @@ final class DeletedNotesStore {
         if let data = try? JSONEncoder().encode(merged.sorted()) {
             try? data.write(to: url, options: .atomic)
         }
+    }
+
+    /// Claims the kind-5 event `requestId` and returns the posts it names
+    /// that are not off the feed yet. Empty when nothing is left to do: the
+    /// event was claimed before (another relay sent it too), or every post it
+    /// names was already taken off. Call `releaseRequest` if the claimed
+    /// event turns out not to count, so a genuine copy can still apply.
+    func claimRequest(_ requestId: String, naming targets: Set<String>, account: String) -> Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        guard handledRequests.insert(requestId).inserted else { return [] }
+        return targets.subtracting(appliedToFeed[account] ?? [])
+    }
+
+    func releaseRequest(_ requestId: String) {
+        lock.lock(); defer { lock.unlock() }
+        handledRequests.remove(requestId)
+    }
+
+    /// Records that the feed no longer shows `ids` for `account`.
+    func markAppliedToFeed(_ ids: Set<String>, account: String) {
+        guard !ids.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        appliedToFeed[account, default: []].formUnion(ids)
     }
 
     func fileURL(forAccount account: String) -> URL {
