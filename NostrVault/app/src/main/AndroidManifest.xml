@@ -53,9 +53,15 @@
          is still opt-in at targetSdk 35 and default-on only from 36, so without
          it the app gets no back animation at all — the closest Android has to
          the interactive edge-swipe-back iOS gives every push for free. -->
+    <!-- Backups stay on (settings and drafts survive a new phone) but the
+         rules files are allow-lists: keys, passwords, the NWC/bunker/S3
+         secrets in the config JSON and the relay DB never leave the phone,
+         to Google or by device-to-device transfer. See res/xml/backup_rules.xml. -->
     <application
         android:name=".NostrVaultApp"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"

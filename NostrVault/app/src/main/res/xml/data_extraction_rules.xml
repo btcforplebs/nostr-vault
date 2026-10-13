@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup rules for Android 12+ (dataExtractionRules). Covers both Google cloud
+  backup and device-to-device transfer. Android 11 and below use
+  backup_rules.xml; keep the two files in step and read the comment there for
+  why each secret-bearing file is kept out.
+
+  Allow-list: once one <include> exists only listed items leave the phone.
+  disableIfNoEncryptionCapabilities: skip the cloud backup entirely on a
+  transport that cannot encrypt it end to end.
+-->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <include domain="sharedpref" path="pow_preferences.xml" />
+        <include domain="sharedpref" path="reels_preferences.xml" />
+        <include domain="sharedpref" path="relay_followers.xml" />
+        <include domain="sharedpref" path="avatar_prefetch.xml" />
+        <include domain="sharedpref" path="media_cache_404.xml" />
+        <include domain="sharedpref" path="relay_lifecycle.xml" />
+        <include domain="file" path="drafts.json" />
+
+        <exclude domain="sharedpref" path="nostrvault_credentials.xml" />
+        <exclude domain="file" path="nostrvault_config.json" />
+        <exclude domain="file" path="relay_data" />
+        <exclude domain="file" path="nostrvault_data" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="pow_preferences.xml" />
+        <include domain="sharedpref" path="reels_preferences.xml" />
+        <include domain="sharedpref" path="relay_followers.xml" />
+        <include domain="sharedpref" path="avatar_prefetch.xml" />
+        <include domain="sharedpref" path="media_cache_404.xml" />
+        <include domain="sharedpref" path="relay_lifecycle.xml" />
+        <include domain="file" path="drafts.json" />
+
+        <exclude domain="sharedpref" path="nostrvault_credentials.xml" />
+        <exclude domain="file" path="nostrvault_config.json" />
+        <exclude domain="file" path="relay_data" />
+        <exclude domain="file" path="nostrvault_data" />
+    </device-transfer>
+</data-extraction-rules>
