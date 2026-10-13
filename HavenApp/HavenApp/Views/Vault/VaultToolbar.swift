@@ -314,6 +314,7 @@ extension VaultView {
             withAnimation(Motion.toggle) {
                 noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
             }
+            pendingFilterNote = nil
             filterNote.show(noteLayoutMode == .compact
                 ? FilterNote(icon: "rectangle.compress.vertical", title: "Condensed view", setting: "on")
                 : .off("Condensed view", icon: "rectangle.compress.vertical"))
