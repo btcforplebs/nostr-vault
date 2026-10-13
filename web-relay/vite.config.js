@@ -2,6 +2,5 @@
 // `npm run build` writes there; commit the output with the source change.
 export default {
   base: "/relay/",
-  worker: { format: "es" },
   build: { outDir: "../website/relay", emptyOutDir: true },
 }

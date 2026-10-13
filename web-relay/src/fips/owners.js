@@ -36,3 +36,32 @@ export function isOwner(owners, peerKey) {
   const k = xOnly(peerKey)
   return k !== undefined && owners.has(k)
 }
+
+const OWNERS_ITEM = "fips-owners"
+
+/**
+ * The saved owner set, after applying a pairing link (nostrvault.app/relay/#owner=npub1...; a fragment never
+ * reaches the server). Haven is configured with these at start, so call this before starting it.
+ */
+export function loadOwners({ storage = localStorage, log = () => {} } = {}) {
+  let owners = new Set()
+  try {
+    owners = parseOwners(storage.getItem(OWNERS_ITEM) ?? "")
+  } catch {}
+  const frag = new URLSearchParams(location.hash.slice(1)).get("owner")
+  if (frag) {
+    try {
+      owners = parseOwners(frag)
+      saveOwners(owners, storage)
+      log("fips-owner-paired", { owners: owners.size })
+    } catch (e) {
+      log("fips-owner-error", { err: String(e) })
+    }
+    history.replaceState(null, "", location.pathname)
+  }
+  return owners
+}
+
+export function saveOwners(owners, storage = localStorage) {
+  storage.setItem(OWNERS_ITEM, [...owners].join(" "))
+}
