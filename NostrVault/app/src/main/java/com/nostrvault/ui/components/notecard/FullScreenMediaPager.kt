@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -178,8 +177,7 @@ internal fun FullScreenMediaPager(
 
     BackHandler(onBack = close)
 
-    // Drag-to-dismiss, fed by ZoomableImage on a photo and by a drag detector
-    // on a video or audio page.
+    // Drag-to-dismiss, fed by the page's ZoomableBox (photo, video or audio).
     val onVerticalDrag: (Float) -> Unit = { deltaY ->
         if (currentScale <= 1.05f && !closing) {
             accumulatedDragY += deltaY
@@ -256,19 +254,21 @@ internal fun FullScreenMediaPager(
             ) { page ->
                 val url = urls[page]
                 if (isVideoUrl(url) || isAudioUrl(url)) {
-                    Box(
-                        Modifier
+                    // The same gestures as a photo (iOS): drag to close,
+                    // long-press for the delete bar, and pinch / double-tap
+                    // zoom on a video. The player keeps its own taps.
+                    ZoomableBox(
+                        zoomable = isVideoUrl(url) && !isInPiP,
+                        contentTakesTaps = true,
+                        onScaleChanged = { currentScale = it },
+                        onVerticalDrag = onVerticalDrag,
+                        onVerticalDragEnd = { onVerticalDragEnd() },
+                        onLongPress = {
+                            if (!closing && !deleting && viewModel.canDelete(url)) showDeleteBar = !showDeleteBar
+                        },
+                        modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black)
-                            .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragEnd = onVerticalDragEnd,
-                                    onDragCancel = onVerticalDragEnd,
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    onVerticalDrag(dragAmount)
-                                }
-                            },
+                            .background(Color.Black),
                     ) {
                         // Only the visible page gets a player, to keep memory at one instance.
                         if (page == pagerState.currentPage) {

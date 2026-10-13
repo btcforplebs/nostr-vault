@@ -67,6 +67,29 @@ import kotlinx.coroutines.launch
 // Status card
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * The line under the status title. iOS `VaultDashboardView.statusSubtitle`:
+ * the boot step while starting, "Updating who can reach you…" while the
+ * trust list is being built, then "Up 2h 5m · 3 connections".
+ */
+internal fun statusSubtitle(
+    runState: RunState,
+    isExternal: Boolean,
+    importStatus: String,
+    bootStatus: String,
+    wotSyncing: Boolean,
+    uptime: String?,
+    connections: Int,
+): String? = when {
+    isExternal -> "On your external relay"
+    runState == RunState.IMPORTING -> importStatus.ifEmpty { "Importing your notes…" }
+    runState == RunState.STARTING -> bootStatus.ifBlank { null }
+    runState == RunState.RUNNING && wotSyncing -> "Updating who can reach you…"
+    runState == RunState.RUNNING ->
+        listOfNotNull(uptime, if (connections == 1) "1 connection" else "$connections connections").joinToString(" · ")
+    else -> null
+}
+
 @Composable
 internal fun StatusCard(
     runState: RunState,
@@ -75,6 +98,8 @@ internal fun StatusCard(
     port: Int,
     address: String?,
     subtitle: String?,
+    /** Running, but still updating who can reach you: orange, as on iOS. */
+    syncing: Boolean = false,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
@@ -89,7 +114,7 @@ internal fun StatusCard(
     var menuOpen by remember { mutableStateOf(false) }
 
     val problem = if (isExternal) null else VaultDashboardModel.problemText(runState, isPortConflict, port)
-    val statusColor = if (runState == RunState.RUNNING) SuccessGreen else ZapOrange
+    val statusColor = if (runState == RunState.RUNNING && !syncing) SuccessGreen else ZapOrange
     val background by animateColorAsState(
         if (problem == null) SecondaryGroupedBg else ZapOrange.copy(alpha = 0.08f),
         animationSpec = Motion.toggle(), label = "statusBg",

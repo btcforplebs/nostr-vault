@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +50,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.nostrvault.data.model.WotRefreshProgress
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
@@ -61,7 +64,9 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * The Vault Dashboard (v2): one page that answers four questions about the
@@ -134,6 +139,24 @@ internal fun VaultDashboardContent(
         isLocked = isLocked,
         isPortConflict = isPortConflict,
     )
+    // The status line's live parts (iOS): open connections, the boot step,
+    // and whether the trust list is still being built. The relay reports
+    // the last only when asked, so ask every couple of seconds while up.
+    val connections by RelayForegroundService.connections.collectAsState()
+    val bootStatus by logStore.bootStatusMessage.collectAsState()
+    var wotSyncing by remember { mutableStateOf(false) }
+    LaunchedEffect(running, isExternal) {
+        if (!running || isExternal) {
+            wotSyncing = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            wotSyncing = withContext(Dispatchers.IO) {
+                WotRefreshProgress.parse(runCatching { HavenBridge.getWotRefreshProgress() }.getOrNull())?.running == true
+            }
+            delay(2_000)
+        }
+    }
     val usesSigner = viewModel.usesSigner(cfg)
     val keyOk = hasLocalKey || usesSigner
     val macConfigured = cfg.macRelayURL.isNotBlank()
@@ -166,12 +189,16 @@ internal fun VaultDashboardContent(
             isPortConflict = isPortConflict,
             port = cfg.relayPort,
             address = cfg.nostrURL,
-            subtitle = when {
-                isExternal -> "On your external relay"
-                runState == RunState.IMPORTING -> importStatus.ifEmpty { "Importing your notes…" }
-                runState == RunState.RUNNING -> VaultDashboardModel.uptime(startedAt, now)
-                else -> null
-            },
+            subtitle = statusSubtitle(
+                runState = runState,
+                isExternal = isExternal,
+                importStatus = importStatus,
+                bootStatus = bootStatus,
+                wotSyncing = wotSyncing,
+                uptime = VaultDashboardModel.uptime(startedAt, now),
+                connections = connections,
+            ),
+            syncing = wotSyncing && !isExternal,
             onStart = { RelayForegroundService.start(context) },
             onStop = { RelayForegroundService.stop(context) },
             onRestart = {
