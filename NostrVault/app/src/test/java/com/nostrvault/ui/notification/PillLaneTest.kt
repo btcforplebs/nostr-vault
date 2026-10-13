@@ -68,4 +68,25 @@ class PillLaneTest {
         lane.leave("nope")
         assertEquals(setOf("r"), lane.visible.value)
     }
+
+    @Test fun countsOnlyTheTimeAPillActuallyDrew() {
+        var now = 0L
+        val lane = PillLane { now }
+        lane.enter("r1", PillLevel.RESULT)
+        lane.enter("r2", PillLevel.RESULT)
+        now = 1_000
+        // Two errors push both results out of the two-pill lane.
+        lane.enter("e1", PillLevel.ERROR)
+        lane.enter("e2", PillLevel.ERROR)
+        now = 5_000
+        assertEquals(1_000L, lane.drawnFor("r1"))
+        assertEquals(0L, lane.drawnFor("e3"))
+        lane.leave("e1")
+        now = 5_400
+        // r2 is back (newest result), r1 still held back.
+        assertEquals(1_400L, lane.drawnFor("r2"))
+        assertEquals(1_000L, lane.drawnFor("r1"))
+        lane.leave("r2")
+        assertEquals(0L, lane.drawnFor("r2"))
+    }
 }

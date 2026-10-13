@@ -35,9 +35,16 @@ enum class PillLevel {
  * newest feedback pill, and ambient pills only when nothing else is up.
  * Android counterpart of iOS `PillLane`.
  */
-class PillLane {
+class PillLane(private val now: () -> Long = { System.nanoTime() / 1_000_000 }) {
 
-    private data class Entry(val level: PillLevel, val since: Long)
+    private data class Entry(
+        val level: PillLevel,
+        val since: Long,
+        /** When it last started to draw; null while held back. */
+        var drawnSince: Long? = null,
+        /** How long it drew before that, in ms. */
+        var drawnBefore: Long = 0,
+    )
 
     private val lock = Any()
     private val entries = LinkedHashMap<String, Entry>()
@@ -64,6 +71,16 @@ class PillLane {
         recompute()
     }
 
+    /**
+     * How long [id] has drawn so far in total, in ms; 0 once it has left the
+     * lane. Ask before the pill goes. Whether an arrival pill counts as read
+     * ([com.nostrvault.service.InAppBanners]). iOS `PillLane.drawnFor`.
+     */
+    fun drawnFor(id: String): Long = synchronized(lock) {
+        val entry = entries[id] ?: return 0
+        entry.drawnBefore + (entry.drawnSince?.let { now() - it } ?: 0)
+    }
+
     fun leave(id: String) = synchronized(lock) {
         if (entries.remove(id) != null) recompute()
     }
@@ -82,6 +99,16 @@ class PillLane {
                 ?.let { next += it.key }
         }
         val hides = next.any { entries[it]?.level != PillLevel.AMBIENT }
+        val t = now()
+        for ((id, entry) in entries) {
+            val since = entry.drawnSince
+            if (id in next && since == null) {
+                entry.drawnSince = t
+            } else if (id !in next && since != null) {
+                entry.drawnBefore += t - since
+                entry.drawnSince = null
+            }
+        }
         if (next != _visible.value) _visible.value = next
         if (hides != _hidesAmbient.value) _hidesAmbient.value = hides
     }

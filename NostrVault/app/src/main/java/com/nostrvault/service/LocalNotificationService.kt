@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.PendingIntent
 import android.content.Context
@@ -26,6 +27,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.PushPrefs
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.NotificationTarget
@@ -138,6 +140,8 @@ class LocalNotificationService @Inject constructor(
         private const val FOLDED_FOLLOWERS_KEY = "nv_folded_followers"
         private const val FOLDED_FOLLOWER_COUNT_KEY = "nv_folded_follower_count"
         private const val FOLD_FILED_TIMEOUT_MS = 1_000L
+        /** The quiet channel a pill that went unread is filed in: no sound, no heads-up. */
+        private const val FILED_CHANNEL_ID = "nv_missed_while_open"
 
         /** A follower key as the relay marker should carry it: 64 hex characters. */
         fun isPubkeyHex(s: String): Boolean = s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
@@ -171,8 +175,30 @@ class LocalNotificationService @Inject constructor(
         }
     }
 
-    /** True while the app is on screen. Set by MainActivity's onStart/onStop. */
+    /**
+     * True while the app is on screen. Set by MainActivity's onStart/onStop.
+     * Going to the background takes the banner showing with it, filed in the
+     * tray unless it was read.
+     */
     @Volatile var appInForeground: Boolean = false
+        set(value) {
+            field = value
+            if (!value) InAppBannerBus.hostLost()
+        }
+
+    /** One tray entry per event, keyed by its id ([NotificationTray]). */
+    @SuppressLint("MissingPermission") // postNow checks POST_NOTIFICATIONS before posting
+    private val tray = NotificationTray(object : NotificationTray.Platform<Notification> {
+        override fun notify(tag: String, id: Int, notification: Notification) =
+            NotificationManagerCompat.from(context).notify(tag, id, notification)
+        override fun cancel(tag: String, id: Int) = NotificationManagerCompat.from(context).cancel(tag, id)
+    })
+
+    init {
+        // A banner read in the app takes its tray entry with it; one that went
+        // unread is filed there quietly, so it isn't lost. iOS markRead/fileMissed.
+        InAppBannerBus.onEnd = { banner, read -> if (read) tray.markRead(banner.id) else fileMissed(banner) }
+    }
 
     // Dedup guard. The Go relay only logs NOTIFY for genuinely new events (it
     // skips duplicates before publishing), but a service restart could re-emit;
@@ -287,24 +313,7 @@ class LocalNotificationService @Inject constructor(
             ?: config.activeOrOwnerNpub()
         val prefs = config.pushPrefsFor(npub)
 
-        val allowed = when (type) {
-            "mention" -> prefs.mentions
-            "reply" -> prefs.replies
-            // A quote of your note is a mention of you, so the Mentions switch governs it.
-            "quote" -> prefs.mentions
-            "dm", "giftwrap" -> prefs.dms
-            "zap" -> prefs.zaps
-            "reaction" -> prefs.reactions
-            "repost" -> prefs.reposts
-            "follow" -> prefs.follows
-            // The catch-up backlog count spans every type, so no per-type
-            // preference governs it — but turning all of them off must still
-            // silence it. It is also meaningless while the app is open: it
-            // announces activity you missed, and you missed nothing.
-            "summary" -> prefs.wantsAnything && !appInForeground
-            else -> false
-        }
-        if (!allowed) {
+        if (!wants(prefs, type)) {
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' disabled in per-account prefs")
             return
         }
@@ -343,6 +352,46 @@ class LocalNotificationService @Inject constructor(
             val carried = carriedNotes(type, id)
             post(id, title, text, type, author, npub, profile?.pictureURL, carried)
         }
+    }
+
+    /** Whether [prefs] let a [type] marker through. */
+    private fun wants(prefs: PushPrefs, type: String): Boolean = when (type) {
+        "mention" -> prefs.mentions
+        "reply" -> prefs.replies
+        // A quote of your note is a mention of you, so the Mentions switch governs it.
+        "quote" -> prefs.mentions
+        "dm", "giftwrap" -> prefs.dms
+        "zap" -> prefs.zaps
+        "reaction" -> prefs.reactions
+        "repost" -> prefs.reposts
+        "follow" -> prefs.follows
+        // The catch-up backlog count spans every type, so no per-type
+        // preference governs it — but turning all of them off must still
+        // silence it. It is also meaningless while the app is open: it
+        // announces activity you missed, and you missed nothing.
+        "summary" -> prefs.wantsAnything && !appInForeground
+        else -> false
+    }
+
+    /**
+     * A banner that went unread, filed quietly in the tray so it can still be
+     * found: a DM with its generic line only, never the sender or the text.
+     * Only where phone notifications would have been allowed: a DM banner
+     * also shows with them switched off, and then nothing is filed.
+     */
+    private fun fileMissed(banner: InAppBanner) {
+        val config = configStore.config.value
+        if (!config.enablePushNotifications || !wants(config.pushPrefsFor(banner.npub), banner.type)) return
+        post(
+            id = banner.id,
+            title = InAppBanners.filedTitle(banner.type, banner.title),
+            text = InAppBanners.filedText(banner.type, banner.text),
+            type = banner.type,
+            author = banner.author,
+            npub = banner.npub,
+            pictureUrl = null,
+            filedPill = true,
+        )
     }
 
     /**
@@ -432,14 +481,16 @@ class LocalNotificationService @Inject constructor(
     private suspend fun awaitFiled(id: String) {
         val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return
         withTimeoutOrNull(FOLD_FILED_TIMEOUT_MS) {
-            while (mgr.activeNotifications.none { it.id == id.hashCode() }) delay(25)
+            while (mgr.activeNotifications.none { it.tag == id }) delay(25)
         }
     }
 
     /** What the folded alert still on screen already counts. */
     private fun foldedFollowersShowing(id: String): FoldedFollowers {
         val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return FoldedFollowers()
-        val extras = mgr.activeNotifications.firstOrNull { it.id == id.hashCode() }
+        // Before alerts were tagged by event, the folded one was keyed by its hash alone.
+        val extras = (mgr.activeNotifications.firstOrNull { it.tag == id }
+            ?: mgr.activeNotifications.firstOrNull { it.tag == null && it.id == id.hashCode() })
             ?.notification?.extras ?: return FoldedFollowers()
         val members = extras.getStringArray(FOLDED_FOLLOWERS_KEY)?.toList() ?: emptyList()
         return FoldedFollowers(members, extras.getInt(FOLDED_FOLLOWER_COUNT_KEY, members.size))
@@ -486,6 +537,9 @@ class LocalNotificationService @Inject constructor(
             // system notification, as on iOS.
             if (appInForeground) {
                 InAppBannerBus.show(InAppBanner(id, title, body, routeType, routeAuthor, npub))
+                // The app may have left between the check and the show: the
+                // banner would sit unseen, so it goes the way any banner up then does.
+                if (!appInForeground) InAppBannerBus.hostLost()
             } else {
                 post(id, title, body, routeType, routeAuthor, npub, profile?.pictureURL)
             }
@@ -567,14 +621,29 @@ class LocalNotificationService @Inject constructor(
         npub: String,
         pictureUrl: String?,
         carried: Map<String, String> = emptyMap(),
+        filedPill: Boolean = false,
     ) {
-        scope.launch { postNow(id, title, text, type, author, npub, pictureUrl, carried = carried) }
+        scope.launch { postNow(id, title, text, type, author, npub, pictureUrl, carried = carried, filedPill = filedPill) }
+    }
+
+    /** The quiet channel unread pills are filed in (idempotent). */
+    private fun ensureFiledChannel(): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return FILED_CHANNEL_ID
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return FILED_CHANNEL_ID
+        if (mgr.getNotificationChannel(FILED_CHANNEL_ID) == null) {
+            mgr.createNotificationChannel(
+                NotificationChannel(FILED_CHANNEL_ID, "Missed while open", SystemNotificationManager.IMPORTANCE_LOW)
+                    .apply { description = "Messages and activity that arrived in the app while you weren't looking" },
+            )
+        }
+        return FILED_CHANNEL_ID
     }
 
     private suspend fun postNow(
         id: String, title: String, text: String, type: String, author: String, npub: String,
         pictureUrl: String?, extras: Bundle? = null, alertOnce: Boolean = false,
         carried: Map<String, String> = emptyMap(),
+        filedPill: Boolean = false,
     ) {
         ensureChannel()
 
@@ -599,6 +668,10 @@ class LocalNotificationService @Inject constructor(
             putExtra("notif_npub", npub)
             // The post itself, so the tap opens it with nothing to fetch.
             carried.forEach { (key, value) -> putExtra(key, value) }
+            // Extras don't tell two PendingIntents apart, and the request code
+            // below is a hash that can collide: the identifier keeps a tap on
+            // one event from opening another's.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) identifier = id
         }
         val pending = PendingIntent.getActivity(
             context,
@@ -615,7 +688,7 @@ class LocalNotificationService @Inject constructor(
         val largeIcon = loadAvatar(pictureUrl)
         // Resolved after the avatar fetch: a sound picked meanwhile has
         // retired the channel that was current when this started.
-        val channelId = ensureChannel()
+        val channelId = if (filedPill) ensureFiledChannel() else ensureChannel()
         val notification = NotificationCompat.Builder(context, channelId)
             // Status-bar icons are drawn from alpha only, so use the
             // purpose-built 24dp silhouette rather than the full-colour
@@ -633,8 +706,10 @@ class LocalNotificationService @Inject constructor(
             .setOnlyAlertOnce(alertOnce)
             .build()
 
-        // Stable per-event notification id so the same event never double-posts.
-        NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+        // One entry per event, so the same event never double-posts.
+        if (!tray.post(id, notification, filedPill)) return
+        // The folded alert from before tagging, if still up, would sit beside this one.
+        if (type == "followers") NotificationManagerCompat.from(context).cancel(id.hashCode())
         if (BuildConfig.DEBUG) Log.i(TAG, "posted notification: \"$title\"")
     }
 

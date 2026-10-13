@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.nostrvault.service.InAppBanner
 import com.nostrvault.service.InAppBannerBus
+import com.nostrvault.service.PillEnd
 import com.nostrvault.ui.navigation.DeepLinkRouter
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -180,7 +181,7 @@ fun ActivityPill(banner: InAppBanner) {
         onClick = {
             DeepLinkRouter.fromNotification(banner.type, banner.id, banner.author, banner.npub)
                 ?.let { PendingDeepLink.post(it) }
-            InAppBannerBus.dismiss(banner.id)
+            InAppBannerBus.dismiss(banner.id, PillEnd.TAPPED)
         },
     )
 }
