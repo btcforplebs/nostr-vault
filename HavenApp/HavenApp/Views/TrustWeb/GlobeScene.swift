@@ -578,12 +578,14 @@ final class GlobeScene: ObservableObject {
 
         // Faces, back to front: bridges, chain steps and the author.
         var drawn: [(key: String, p: Projected, tint: Color, size: Double, dim: Bool)] = []
+        // A filter's matches are the point of the filter, so they never dim.
+        let dimLayer = dimLayerFaces && filterTo == nil
         for key in faces {
             guard let p = position(key, project) else { continue }
             if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
-                drawn.append((key, p, Self.hazeColor, dimLayerFaces ? 10 : 14, dimLayerFaces))
+                drawn.append((key, p, Self.hazeColor, dimLayer ? 10 : 14, dimLayer))
             } else {
                 drawn.append((key, p, accent, 15, false))
             }
