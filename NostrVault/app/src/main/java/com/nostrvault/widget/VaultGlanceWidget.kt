@@ -29,7 +29,12 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.ZapsToday
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 
 // ── Vault glance ───────────────────────────────────────────────────────
 
@@ -69,21 +74,33 @@ data class GlanceReading(val value: String, val label: String, val live: Boolean
 /**
  * [metric] read off [snapshot], in iOS `LockScreenView`'s words: "Live" or
  * "Off" for the vault, otherwise a count. Mentions count the snapshot's list,
- * which holds at most a widget's worth. Zaps count only for the day that
- * started at [todayStart] (local midnight, epoch seconds), so yesterday's
- * number never shows after midnight.
+ * which holds at most a widget's worth. Zaps count only for [account] (the
+ * active account's hex pubkey) and the day that started at [todayStart]
+ * (local midnight, epoch seconds), so yesterday's number never shows after
+ * midnight, and another account's never shows after a switch whose 0 didn't
+ * reach the file (a failed write, or the process dying first).
  */
 fun glanceReading(
     metric: GlanceMetric,
     snapshot: VaultSnapshot,
+    account: String,
     todayStart: Long = ZapsToday.startOfDay(System.currentTimeMillis()),
 ): GlanceReading = when (metric) {
     GlanceMetric.RELAY -> GlanceReading(if (snapshot.relay.running) "Live" else "Off", "vault", live = snapshot.relay.running)
     GlanceMetric.MENTIONS -> GlanceReading("${snapshot.mentions.size}", "mentions")
     GlanceMetric.DMS -> GlanceReading("${snapshot.unreadDMs}", "messages")
     GlanceMetric.EVENTS -> GlanceReading(compactCount(snapshot.relay.eventsStored), "events")
-    GlanceMetric.ZAPS -> GlanceReading(compactCount(snapshot.zapsToday.on(todayStart)), "zaps today")
+    GlanceMetric.ZAPS -> GlanceReading(compactCount(zapsFor(snapshot.zapsToday, account, todayStart)), "zaps today")
 }
+
+/**
+ * [zaps] when they were counted for [account]; 0 for anyone else, as for
+ * another day. An [account] of "" is unknown, not a mismatch: the widget's
+ * 30-minute redraw runs in a fresh process before anything has loaded the
+ * config, and the file is then the best word on whose count it holds.
+ */
+private fun zapsFor(zaps: VaultSnapshot.ZapCount, account: String, todayStart: Long): Int =
+    if (account.isEmpty() || zaps.account == account) zaps.on(todayStart) else 0
 
 /** 950, 1.2k, 34k, 1.2M: a count that fits one cell. iOS `NV.compactCount`. */
 fun compactCount(n: Int): String = when {
@@ -101,12 +118,25 @@ private fun trimmed(x: Double): String {
 }
 
 class VaultGlanceWidget : GlanceAppWidget() {
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface GlanceEntryPoint {
+        fun configStore(): ConfigStore
+    }
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val snapshot = WidgetSnapshotStore.read(context)
+        // "" before anything has loaded the config (the periodic redraw in a
+        // fresh process): the file's count is trusted then. Not reload() here:
+        // it does JNI and keystore reads, and can save.
+        val account = EntryPointAccessors
+            .fromApplication(context.applicationContext, GlanceEntryPoint::class.java)
+            .configStore()
+            .activeAccountHexPubkey.value
         provideContent {
             GlanceTheme {
                 val metric = GlanceMetric.from(currentState<Preferences>().asLookup())
-                GlanceContent(context, metric, glanceReading(metric, snapshot))
+                GlanceContent(context, metric, glanceReading(metric, snapshot, account))
             }
         }
     }
