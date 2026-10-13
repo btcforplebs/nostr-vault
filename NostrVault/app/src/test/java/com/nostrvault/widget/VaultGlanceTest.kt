@@ -79,4 +79,19 @@ class VaultGlanceTest {
         // A new day: 0, for the new day.
         assertEquals(VaultSnapshot.ZapCount(account = "alice", dayStart = today + 86_400, count = 0), alice.heldFor("alice", today + 86_400))
     }
+
+    @Test fun aCountForAnotherAccountOrDayNeverLands() {
+        val today = 1_760_400_000L
+        // Switched to bob: his 0 is held while alice's count was still running.
+        val held = VaultSnapshot.ZapCount(account = "alice", dayStart = today, count = 7).heldFor("bob", today)
+        val lateForAlice = VaultSnapshot.ZapCount(account = "alice", dayStart = today, count = 9)
+        assertEquals(held, held.accept(lateForAlice))
+        assertEquals("0", glanceReading(GlanceMetric.ZAPS, snapshot.copy(zapsToday = held.accept(lateForAlice)), todayStart = today).value)
+        // Yesterday's count landing after midnight's 0.
+        val yesterdays = VaultSnapshot.ZapCount(account = "bob", dayStart = today - 86_400, count = 4)
+        assertEquals(held, held.accept(yesterdays))
+        // Bob's own count for today does land.
+        val bobs = VaultSnapshot.ZapCount(account = "bob", dayStart = today, count = 3)
+        assertEquals(bobs, held.accept(bobs))
+    }
 }

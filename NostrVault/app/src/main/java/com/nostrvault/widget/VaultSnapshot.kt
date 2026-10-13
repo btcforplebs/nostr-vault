@@ -56,6 +56,15 @@ data class VaultSnapshot(
          */
         fun heldFor(account: String, todayStart: Long): ZapCount =
             if (account == this.account && dayStart == todayStart) this else ZapCount(account, todayStart, 0)
+
+        /**
+         * [fresh] when it was counted for the account and day held now,
+         * otherwise this. A count still running when the account (or the
+         * day) changed lands after [heldFor] has put the new one's 0 in
+         * place; it must not replace that 0 with the old account's number.
+         */
+        fun accept(fresh: ZapCount): ZapCount =
+            if (fresh.account == account && fresh.dayStart == dayStart) fresh else this
     }
 
     @Serializable
