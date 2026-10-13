@@ -124,8 +124,13 @@ import com.nostrvault.service.FeedService.Companion.CONTACT_NEWEST_GRACE_MS
                         contactListConfirmed = true
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
-                        if (_followedPubkeys.value.isNotEmpty()) {
-                            publishContactList(_followedPubkeys.value)
+                        // Not over a relay copy more than twice its size: the
+                        // local list may be an old cached one, not a fresh edit.
+                        val local = _followedPubkeys.value
+                        if (ContactManager.mayRepublish(local.size, relaySize = result.first.size)) {
+                            publishContactList(local)
+                        } else {
+                            Log.w(TAG, "loadContactList: not re-publishing ${local.size} local follows over ${result.first.size} on relays")
                         }
                     }
                 } else {
