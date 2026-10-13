@@ -463,19 +463,20 @@ fun ProfileScreen(
             } else if (isLoading && filteredNotes.isEmpty()) {
                 item { CenteredSpinner(colors.primary) }
             } else if (filteredNotes.isEmpty()) {
-                item {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(40.dp),
-                    ) {
-                        Text(
-                            text = "No ${selectedSection.displayName.lowercase()} yet",
-                            color = SecondaryText,
-                            fontSize = 15.sp,
-                        )
+                val section = selectedSection
+                item(key = "empty-${section.name}") {
+                    // Not a flow of its own: it changes only with these collected values.
+                    val canPageOlder = remember(section, hasMoreNotes, hasMoreTagged, counts, isLoading, isLoadingOlder) {
+                        viewModel.canPageOlder(section)
                     }
+                    ProfileEmptySection(
+                        section = section,
+                        opening = isLoading,
+                        pagingNow = isLoadingOlder,
+                        canPageOlder = canPageOlder,
+                        onAutoPage = { viewModel.autoPageEmptyTab(section) },
+                        onLookFurther = { viewModel.loadOlder(section) },
+                    )
                 }
             } else if (selectedSection == ProfileSection.MEDIA) {
                 // 3-column media grid as chunked rows (nested-scroll-safe).

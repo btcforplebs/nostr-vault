@@ -94,7 +94,7 @@ internal fun ProfileSectionTabs(
 }
 
 /** The feed types' own icons, so a tab reads the same as the feed it matches. */
-private val ProfileSection.icon: androidx.compose.ui.graphics.vector.ImageVector
+internal val ProfileSection.icon: androidx.compose.ui.graphics.vector.ImageVector
     get() = when (this) {
         ProfileSection.NOTES -> NostrVaultIcons.Chat
         ProfileSection.MEDIA -> NostrVaultIcons.Media
