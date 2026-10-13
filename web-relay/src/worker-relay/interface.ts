@@ -1,0 +1,162 @@
+import { v4 as uuid } from "uuid"
+import { setLogging } from "./debug"
+import type { EventMetadata, NostrEvent, OkResponse, ReqCommand, WorkerMessage, WorkerMessageCommand } from "./types"
+
+export interface InitAargs {
+  /**
+   * OPFS file path for the database
+   */
+  databasePath: string
+}
+
+export class WorkerRelayInterface {
+  #worker: Worker
+  #commandQueue: Map<string, (v: unknown, ports: ReadonlyArray<MessagePort>) => void> = new Map()
+
+  // Command timeout
+  timeout: number = 30_000
+
+  static isInstance(obj: unknown): obj is WorkerRelayInterface {
+    return (
+      obj instanceof WorkerRelayInterface ||
+      (typeof obj === "object" && obj !== null && "timeout" in obj && "forYouFeed" in obj)
+    )
+  }
+
+  /**
+   * Interface wrapper for worker relay
+   * @param scriptPath Path to worker script or Worker script object
+   */
+  constructor(scriptPath?: string | URL | Worker) {
+    if (scriptPath instanceof Worker) {
+      this.#worker = scriptPath
+    } else {
+      const sp = scriptPath ? scriptPath : new URL("@snort/worker-relay/dist/esm/worker.mjs", import.meta.url)
+      this.#worker = new Worker(sp, { type: "module" })
+    }
+    this.#worker.onerror = e => {
+      console.error("Worker Error:", e)
+    }
+    this.#worker.onmessageerror = e => {
+      console.error(e)
+    }
+    this.#worker.onmessage = e => {
+      const cmd = e.data as WorkerMessage<any>
+      if (cmd.cmd === "reply") {
+        const q = this.#commandQueue.get(cmd.id)
+        q?.(cmd, e.ports)
+        this.#commandQueue.delete(cmd.id)
+      }
+    }
+  }
+
+  async init(args: InitAargs) {
+    return await this.#workerRpc<InitAargs, boolean>("init", args)
+  }
+
+  async event(ev: NostrEvent) {
+    return await this.#workerRpc<NostrEvent, OkResponse>("event", ev)
+  }
+
+  async query(req: ReqCommand) {
+    return await this.#workerRpc<ReqCommand, Array<NostrEvent>>("req", req)
+  }
+
+  async count(req: ReqCommand) {
+    return await this.#workerRpc<ReqCommand, number>("count", req)
+  }
+
+  async delete(req: ReqCommand) {
+    return await this.#workerRpc<ReqCommand, Array<string>>("delete", req)
+  }
+
+  async summary() {
+    return await this.#workerRpc<void, Record<string, number>>("summary")
+  }
+
+  async close(id: string) {
+    return await this.#workerRpc<string, boolean>("close", id)
+  }
+
+  async dump() {
+    return await this.#workerRpc<void, Uint8Array>("dumpDb")
+  }
+
+  async wipe() {
+    return await this.#workerRpc<void, boolean>("wipe")
+  }
+
+  async forYouFeed(pubkey: string) {
+    return await this.#workerRpc<string, Array<NostrEvent>>("forYouFeed", pubkey)
+  }
+
+  setEventMetadata(id: string, _meta: EventMetadata) {
+    // Fire-and-forget: post directly without UUID/promise/reply to avoid the
+    // per-note RPC round-trip cost. The worker batches these via microtask.
+    this.#worker.postMessage({ id: "", cmd: "setSeenAt", args: id } as WorkerMessage<string>)
+  }
+
+  async debug(v: string) {
+    setLogging(true)
+    return await this.#workerRpc<string, boolean>("debug", v)
+  }
+
+  configureSearchIndex(config: Record<number, Array<string>>) {
+    return this.#workerRpc<Record<number, Array<string>>, void>("configureSearchIndex", config)
+  }
+
+  /**
+   * Sync-state storage capability (CacheRelay.syncState).
+   * Backed by a KV table in the same database as the events, so state and
+   * events share one lifetime (wiped together) — required for watermark
+   * correctness. State is stored as opaque JSON.
+   */
+  readonly syncState = {
+    // biome-ignore lint/suspicious/noExplicitAny: opaque JSON payload, typed by the consumer (@snort/system QuerySyncState)
+    get: async (key: string): Promise<any> => {
+      try {
+        const rsp = await this.#workerRpc<string, { value: string | null }>("kvGet", key)
+        return rsp.value ? JSON.parse(rsp.value) : undefined
+      } catch {
+        return undefined
+      }
+    },
+    set: async (key: string, state: object): Promise<void> => {
+      await this.#workerRpc<{ key: string; value: string }, boolean>("kvSet", {
+        key,
+        value: JSON.stringify(state),
+      })
+    },
+  }
+
+  async #workerRpc<T, R>(cmd: WorkerMessageCommand, args?: T) {
+    const id = uuid()
+    const msg = {
+      id,
+      cmd,
+      args,
+    } as WorkerMessage<T>
+    //const start = unixNowMs();
+    return await new Promise<R>((resolve, reject) => {
+      this.#worker.postMessage(msg)
+      const t = setTimeout(() => {
+        this.#commandQueue.delete(id)
+        reject(
+          new Error(`Timeout executing ${cmd} ${JSON.stringify(args)}`, {
+            cause: msg,
+          }),
+        )
+      }, this.timeout)
+      this.#commandQueue.set(id, (v, port) => {
+        clearTimeout(t)
+        const cmdReply = v as WorkerMessage<R & { error?: any }>
+        if (cmdReply.args.error) {
+          reject(cmdReply.args.error)
+          return
+        }
+        //debugLog("interface", `${cmd} took ${(unixNowMs() - start).toFixed(1)}ms`, args);
+        resolve(cmdReply.args)
+      })
+    })
+  }
+}
