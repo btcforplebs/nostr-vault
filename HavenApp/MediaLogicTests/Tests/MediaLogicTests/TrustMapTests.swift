@@ -351,6 +351,11 @@ final class TrustMapTests: XCTestCase {
         XCTAssertGreaterThan(TrustMap.faceCandidateCount(for: .everyone), TrustMap.everyoneFaceCount)
     }
 
+    func testCloseLayerReadsVouched() {
+        // 10+ of your follows vouch for them; they're outside your follows, so not "Close".
+        XCTAssertEqual(TrustMap.Layer.close.title, "Vouched")
+    }
+
     func testCloseHasItsOwnShellBetweenYourFollowsAndFurtherOut() {
         XCTAssertGreaterThan(TrustMap.closeRadius, TrustMap.ringRadius)
         XCTAssertLessThan(TrustMap.closeRadius, TrustMap.outerRadius)
