@@ -86,6 +86,7 @@ struct MenuBarView: View {
                 ZapNotificationBanner()
                 FollowNotificationBanner()
                 ActionToastBanner()
+                FilterNoteBanner()
                 MediaUploadNotificationBanner()
                 ErrorNotificationBanner()
             }

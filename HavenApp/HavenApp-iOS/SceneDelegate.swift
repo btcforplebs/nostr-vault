@@ -330,6 +330,8 @@ struct AppBannerStack: View {
             MediaUploadNotificationBanner().bannerHitRegion("upload")
             RelayActivityBanner().bannerHitRegion("relayActivity")
             ActionToastBanner().bannerHitRegion("toast")
+            // Takes no taps, so no hit region: a touch on it reaches the app.
+            FilterNoteBanner()
             ErrorNotificationBanner().bannerHitRegion("error")
             ImportRunningPill()
             Spacer(minLength: 0)
