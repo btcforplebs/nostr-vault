@@ -134,27 +134,49 @@ enum NotificationPolicy {
         appInForeground && (type == "dm" || type == "giftwrap")
     }
 
-    /// The one key an event is shown under, whichever way it arrives: the
-    /// relay's `🔔NOTIFY|` marker (`id`) or an APNs push (`event_id`). Both
-    /// carry the event id, so the same mention cannot make two pills.
+    /// The key an event is shown under: its id, trimmed and lowercased, so
+    /// the relay marker for one event makes one pill.
     static func dedupKey(eventId: String) -> String {
         eventId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// The marker type an APNs push stands for, from its `event_kind`, so a
-    /// push shown in the app gets the same pill as the marker would. Nil for
-    /// a kind the relay never raises a marker for.
-    static func markerType(forEventKind kind: Int) -> String? {
-        switch kind {
-        case 4, 1059: return "dm"
-        case 1:       return "mention"
-        case 7:       return "reaction"
-        case 6, 16:   return "repost"
-        case 9735:    return "zap"
-        case 3:       return "follow"
-        default:      return nil
+    // MARK: - Arrival pills that were not read
+
+    /// How an arrival pill (a mention, DM, reply, zap) left the lane.
+    enum PillEnd {
+        /// Its lifetime ran out.
+        case timedOut
+        /// A newer arrival pushed it out of the manager's queue.
+        case trimmed
+        /// The user tapped it.
+        case tapped
+        /// Its surface went away under it: the Mac window closed, or the app
+        /// left the front.
+        case hostLost
+    }
+
+    /// How long a pill must be on screen before it counts as read.
+    static let pillReadableAfter: TimeInterval = 1.5
+
+    /// Whether an arrival pill must be filed in Notification Center, so it can
+    /// still be found. The lane shows two pills at most, so in a burst one can
+    /// wait its whole life unseen, or draw for a moment before it goes.
+    /// - Parameter drawnFor: how long the lane drew it in total.
+    static func filesPill(end: PillEnd, drawnFor: TimeInterval) -> Bool {
+        switch end {
+        case .tapped:              return false
+        case .hostLost:            return true
+        case .timedOut, .trimmed:  return drawnFor < pillReadableAfter
         }
     }
+
+    /// The body a filed pill carries. A DM's decrypted text never leaves the
+    /// app this way, only the generic line.
+    static func filedPillBody(type: String, body: String) -> String {
+        type == "dm" || type == "giftwrap" ? dmFiledBody : body
+    }
+
+    static let dmFiledBody = "You have a new encrypted message"
 
     /// A decrypted DM as notification text: one line, cut to fit a banner.
     /// Nil when there is nothing to read (an empty message), so the caller

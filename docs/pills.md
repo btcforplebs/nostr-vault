@@ -22,10 +22,15 @@ pill: it hides while the lane shows anything (see below).
 ## Four levels
 
 The most important level wins. At most **two** pills show at once: the two
-most important, newest first within a level. A pill that times out while
-it was held back is not shown late. An arrival (mention, DM, reply, zap)
-that times out unseen is filed in Notification Center instead, so a burst
-never loses one.
+most important, newest first within a level. A held-back pill draws when a
+place frees up, if its lifetime has not run out; once it has, it is gone.
+
+An arrival from the relay (mention, reply, DM, zap, like, repost, follow) is
+filed quietly in Notification Center when it was not read: it timed out or
+was pushed out after drawing for less than 1.5 s in total, or its surface
+went away while it was up (the app left the front, or the Mac window
+closed). A filed DM carries the generic line, never its text. Rules and
+tests: `NotificationPolicy.filesPill`.
 
 | Level | What | Examples | Size | Lifetime |
 |---|---|---|---|---|
@@ -68,11 +73,12 @@ banner is only for when the app is in the background.
 
 - "In front": iOS, the scene is active. Mac, the app is active **and** the
   main window is open. A menu bar app with no window still banners.
-- A system alert that reaches the open app (filed just as it went to the
-  background, or an APNs push) becomes the pill and is listed in
-  Notification Center (`[.list]`), never dropped (`[]`).
-- The relay marker and the APNs push for one event share one key (the event
-  id), so it makes one pill.
+- A system alert that reaches the open app is listed in Notification Center
+  (`[.list]`), never dropped (`[]`). A relay alert filed just as the app went
+  to the background also becomes its pill.
+- An APNs push draws no pill of its own. The relay marker for the same event
+  draws it, after every check (push off, per-type settings, blocks, Web of
+  Trust).
 - With push notifications off, only DMs show while the app is open. Other
   types are dropped before routing.
 

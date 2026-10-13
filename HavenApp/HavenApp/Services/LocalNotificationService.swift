@@ -83,8 +83,6 @@ final class LocalNotificationService {
         guard type == "summary" || !rawId.isEmpty else { return }
         let id = rawId.isEmpty ? "summary-\(Int(Date().timeIntervalSince1970))" : rawId
 
-        // Keyed like an APNs push for the same event (showPush), so the
-        // two paths show it once between them.
         guard markSeen(NotificationPolicy.dedupKey(eventId: id)) else { return }
 
         // The inbox is shared across every whitelisted account on this device, so the
@@ -417,7 +415,7 @@ final class LocalNotificationService {
                     preview.isEmpty ? "Tap to view the quote" : preview)
         case "dm", "giftwrap":
             return (name != nil ? "Message from \(who)" : "New message",
-                    preview.isEmpty ? "You have a new encrypted message" : preview)
+                    preview.isEmpty ? NotificationPolicy.dmFiledBody : preview)
         case "zap":
             return ("⚡ New zap",
                     name != nil ? "\(who) zapped you" : "You received a zap")
@@ -445,16 +443,18 @@ final class LocalNotificationService {
                         fileIfMissed: carried)
     }
 
-    /// - Parameter fileIfMissed: when the lane never draws the pill (two are
-    ///   already up and it times out), the alert is filed quietly in
-    ///   Notification Center with these userInfo extras. Nil when the alert
-    ///   is already there.
+    /// - Parameter fileIfMissed: when the pill is not read (see
+    ///   `NotificationPolicy.filesPill`), the alert is filed quietly in
+    ///   Notification Center with these userInfo extras; a DM with its
+    ///   generic line only. Nil when the alert is already there.
     private func showInAppBanner(id: String, type: String, title: String, body: String, npub: String,
                                  carried: [AnyHashable: Any] = [:], fileIfMissed: [String: Any]?) {
         let (icon, color) = iconAndColor(for: type)
         let onMissed: (() -> Void)? = fileIfMissed.map { extra in
             { [weak self] in
-                self?.post(id: id, type: type, title: title, body: body, npub: npub, extra: extra, quiet: true)
+                self?.post(id: id, type: type, title: title,
+                           body: NotificationPolicy.filedPillBody(type: type, body: body),
+                           npub: npub, extra: extra, quiet: true)
             }
         }
         RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color, onTap: {
@@ -467,8 +467,10 @@ final class LocalNotificationService {
 
     /// What a system alert may do on screen (the delegates' `willPresent`).
     /// While the app is in front the lane is the only on-screen surface
-    /// (`docs/pills.md`): the alert becomes a pill and goes to Notification
-    /// Center only. Never `[]`: a marker alert is filed as the app goes to the
+    /// (`docs/pills.md`): the alert goes to Notification Center only. A relay
+    /// marker's alert, which passed every gate in `handle()`, also becomes
+    /// its pill. An APNs push draws none: the marker for the same event
+    /// comes through `handle()` and draws it, gated. Never `[]`: a marker alert is filed as the app goes to the
     /// background and may be presented after it is back (`post()` waits
     /// 0.1 s, a DM up to 15 s to decrypt), and with no banner and no list it
     /// would be lost from both surfaces. A quiet alert only updates the one
@@ -492,16 +494,6 @@ final class LocalNotificationService {
         #else
         [.list]
         #endif
-    }
-
-    /// An APNs push for an event, arriving while the app is in front: the pill
-    /// its relay marker would show, unless the marker already showed it.
-    /// Listed in Notification Center by `presentation(of:)`.
-    func showPush(eventId: String, kind: Int, title: String, body: String, onTap: @escaping () -> Void) {
-        guard markSeen(NotificationPolicy.dedupKey(eventId: eventId)) else { return }
-        let (icon, color) = iconAndColor(for: NotificationPolicy.markerType(forEventKind: kind) ?? "")
-        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color, onTap: onTap)
-        playSound()
     }
 
     private func playSound() {

@@ -125,22 +125,43 @@ final class NotificationPolicyTests: XCTestCase {
         }
     }
 
-    /// A marker and a push for the same event share one key, so it shows once.
-    func testDedupKeyIsSharedByMarkerAndPush() {
+    /// One event is one key, however its id is written.
+    func testDedupKeyNormalisesTheEventId() {
         let id = "ab12CD34" + String(repeating: "0", count: 56)
         XCTAssertEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: " \(id.lowercased())\n"))
         XCTAssertNotEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: "other"))
     }
 
-    /// A push gets the pill its marker would have had.
-    func testPushKindMapsToMarkerType() {
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 1059), "dm")
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 4), "dm")
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 1), "mention")
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 7), "reaction")
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 16), "repost")
-        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 9735), "zap")
-        XCTAssertNil(NotificationPolicy.markerType(forEventKind: 30023))
+    /// An arrival pill that times out without ever drawing is filed.
+    func testPillTimedOutUndrawnIsFiled() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .timedOut, drawnFor: 0))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .trimmed, drawnFor: 0))
+    }
+
+    /// Drawn for a moment is not read: still filed.
+    func testPillDrawnTooBrieflyIsFiled() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .timedOut, drawnFor: 0.1))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .trimmed, drawnFor: NotificationPolicy.pillReadableAfter - 0.01))
+    }
+
+    /// Losing the window or the foreground files it, however long it drew.
+    func testPillHostLostIsFiled() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 0))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 10))
+    }
+
+    /// Read or tapped: nothing to file.
+    func testPillShownOrTappedIsNotFiled() {
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .timedOut, drawnFor: NotificationPolicy.pillReadableAfter))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .trimmed, drawnFor: 3))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .tapped, drawnFor: 0))
+    }
+
+    /// A filed DM carries the generic line, never its decrypted text.
+    func testFiledDMIsGeneric() {
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "giftwrap", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "dm", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "mention", body: "gm"), "gm")
     }
 
     /// A decrypted DM becomes one readable banner line.

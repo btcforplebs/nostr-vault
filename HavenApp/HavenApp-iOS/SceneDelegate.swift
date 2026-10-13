@@ -175,6 +175,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillResignActive(_ scene: UIScene) {
         // Back to system push notifications once the app leaves the foreground.
         LocalNotificationService.shared.appInForeground = false
+        // The lane is off screen now: file the pills still up.
+        RelayActivityNotificationManager.shared.hostLost()
 
         // The absence starts now — recorded on the way out as well as on the way
         // in, so a long session doesn't read as a long absence.

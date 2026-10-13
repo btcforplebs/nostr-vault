@@ -101,6 +101,8 @@ class AppDelegate: NSObject, ObservableObject {
             MainActor.assumeIsolated {
                 // The absence starts now — same bookkeeping as iOS.
                 NotificationActivityLog.recordForeground()
+                // The lane is off screen now: file the pills still up.
+                RelayActivityNotificationManager.shared.hostLost()
                 // Pause the feed to reduce background CPU/memory from relay
                 // traffic and note accumulation.
                 FeedService.shared.pauseFeed()
