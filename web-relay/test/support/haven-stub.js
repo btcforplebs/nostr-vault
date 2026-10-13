@@ -31,27 +31,34 @@ export function havenStub() {
       writers = new Set([c.ownerNpub, ...(c.whitelist ?? [])].map(xOnly))
       evs.clear()
     },
+    // stall: while true, written bytes queue in buffered() instead of reaching the session.
+    stall: false,
     havenConn: (id, opts = {}) => {
-      if (!cfg) throw new Error("haven not started")
       const mode = opts.mode ?? "nip01", route = opts.route ?? "/"
-      if (mode !== "nip01" || route !== "/") throw new Error(`stub supports nip01 on / only, got ${mode} ${route}`)
-      let onData = () => {}, onClose = () => {}, closed = false, chain = Promise.resolve()
+      // Like Haven's refuse(): a working, already-closed stream with `error`, never a throw.
+      const why = !cfg ? "havenConn: relay is not running"
+        : mode !== "nip01" || route !== "/" ? `stub supports nip01 on / only, got ${mode} ${route}`
+        : undefined
+      let onData = () => {}, onClose = () => {}, closed = false, chain = Promise.resolve(), queued = []
       const enc = new TextEncoder()
-      const session = new Nip01Session(store, line => queueMicrotask(() => !closed && onData(enc.encode(line))), () => conn.close())
-      live.add(session)
+      const session = why ? undefined : new Nip01Session(store, line => queueMicrotask(() => !closed && onData(enc.encode(line))), () => conn.close())
+      if (session) live.add(session)
+      // Serialise: Nip01Session.onBytes is async and keeps a partial-line buffer.
+      const drain = () => { if (api.stall) return; for (const b of queued.splice(0)) chain = chain.then(() => session.onBytes(b)) }
       const conn = {
-        // Serialise: Nip01Session.onBytes is async and keeps a partial-line buffer.
-        write: b => { if (!closed) chain = chain.then(() => session.onBytes(b.slice())) },
+        write: b => { if (!closed) { queued.push(b.slice()); drain() } },
+        buffered: () => { drain(); return queued.reduce((n, b) => n + b.length, 0) },
         onData: cb => (onData = cb),
-        onClose: cb => (onClose = cb),
+        onClose: cb => { onClose = cb; if (why) queueMicrotask(() => onClose(why)) },
         close: () => {
           if (closed) return
           closed = true
-          session.close()
+          session?.close()
           live.delete(session)
-          queueMicrotask(onClose)
+          queueMicrotask(() => onClose("closed"))
         },
       }
+      if (why) { closed = true; conn.error = why }
       api.conns.push({ id, opts, conn })
       return conn
     },
