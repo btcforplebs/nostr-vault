@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.data.remote.RelayConnection
 import com.nostrvault.data.remote.WebSocketClient
@@ -52,15 +53,45 @@ class StatsService @Inject constructor(
 
         /**
          * Every endpoint the vault stores events on. An external relay folds
-         * them onto one URL, so it is asked (and counted) once.
+         * them onto one URL, so it is asked (and counted) once. A watch-only
+         * owner can't AUTH, so /private and /chat are left out and the
+         * counts cover the public endpoints (iOS `RelayCountSession.countable`).
          */
-        internal fun countEndpoints(config: com.nostrvault.relay.HavenConfig): List<String> =
+        internal fun countEndpoints(config: com.nostrvault.relay.HavenConfig, watchOnly: Boolean): List<String> =
             listOfNotNull(
                 config.nostrURL,
                 config.localRelayURL("inbox"),
-                config.localRelayURL("private"),
-                config.localRelayURL("chat"),
+                config.localRelayURL("private").takeUnless { watchOnly },
+                config.localRelayURL("chat").takeUnless { watchOnly },
             ).distinct()
+
+        /**
+         * The owner has nothing to sign the counts AUTH with: not Amber, no
+         * bunker, no local key. Asks about key material, like iOS
+         * `RelayCounter.ownerCanAuth`, not the "browse" setup marker, which
+         * settings can overwrite with "local" for an owner who still has no
+         * key (disconnecting a signer, adding the owner's own npub as
+         * view-only). The sources are the ones `resolveSecretKey` tries:
+         * [ncryptsecPassword], whether the keychain password that decrypts
+         * `ownerNcryptsec` is stored (an ncryptsec without it can't sign), and
+         * [storedNsec], the owner's nsec in CredentialStore. Each is asked
+         * only when nothing before it gave a key.
+         */
+        internal fun ownerIsWatchOnly(
+            config: com.nostrvault.relay.HavenConfig,
+            ncryptsecPassword: () -> Boolean,
+            storedNsec: () -> Boolean,
+        ): Boolean {
+            when (config.effectiveSigningMode(config.ownerNpub)) {
+                "amber", "nip46" -> return false
+            }
+            if (!config.ownerHexKey.isNullOrEmpty()) return false
+            if (!config.ownerNcryptsec.isNullOrEmpty() && ncryptsecPassword()) return false
+            return !storedNsec()
+        }
+
+        /** Shown where the counts would be for a watch-only owner (iOS `RelayCountSession.publicOnlyNote`). */
+        const val PUBLIC_ONLY_NOTE = "Public events only. Add your key to count private ones."
 
         /** Each endpoint's counts summed per key; null when there were none, or one did not answer. */
         internal fun mergeEndpointCounts(perEndpoint: List<Map<Int, Int>?>): Map<Int, Int>? {
@@ -261,6 +292,22 @@ class StatsService @Inject constructor(
         }
     }
 
+    /** [Companion.ownerIsWatchOnly] for [config], with the owner's keychain password and stored nsec looked up. */
+    fun ownerIsWatchOnly(config: com.nostrvault.relay.HavenConfig): Boolean =
+        Companion.ownerIsWatchOnly(
+            config,
+            ncryptsecPassword = {
+                runCatching {
+                    config.ownerNpub.isNotEmpty() && CredentialStore.getKeychainPassword(config.ownerNpub) != null
+                }.getOrDefault(false)
+            },
+            storedNsec = {
+                runCatching {
+                    nostrService.ownerHexPubkey.isNotEmpty() && CredentialStore.getNsec(nostrService.ownerHexPubkey) != null
+                }.getOrDefault(false)
+            },
+        )
+
     /**
      * Fetch event counts by kind from every endpoint the vault stores events
      * on (outbox, `/inbox`, `/private`, `/chat`), plus one `{}` COUNT per
@@ -278,7 +325,8 @@ class StatsService @Inject constructor(
         _isUpdatingCount.value = true
 
         return withContext(Dispatchers.IO) {
-            val relayUrls = countEndpoints(configStore.config.value)
+            val config = configStore.config.value
+            val relayUrls = countEndpoints(config, ownerIsWatchOnly(config))
             val perEndpoint = coroutineScope {
                 relayUrls.map { url ->
                     async { fetchKindCounts(url, COUNTED_KINDS, author?.let { it to yourKinds.toList() }) }

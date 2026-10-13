@@ -143,6 +143,6 @@ class StatsCountAuthTest {
 
     @Test fun `an external relay is never asked for AUTH`() {
         val config = HavenConfig(ownerNpub = "npub1test", useExternalRelay = true, externalRelayURL = "wss://relay.example.com")
-        StatsService.countEndpoints(config).forEach { assertNull(StatsService.authRelayTag(config, it)) }
+        StatsService.countEndpoints(config, watchOnly = false).forEach { assertNull(StatsService.authRelayTag(config, it)) }
     }
 }

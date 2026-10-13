@@ -24,8 +24,12 @@ extension HavenConfig {
     /// Respects explicit user preference in accountSigningModes if set,
     /// otherwise falls back to auto-detection based on available credentials.
     func activeSigningMode() -> String {
-        let activeNpub = activeAccountNpub.isEmpty ? ownerNpub : activeAccountNpub
+        signingMode(for: activeAccountNpub.isEmpty ? ownerNpub : activeAccountNpub)
+    }
 
+    /// The signing mode `activeNpub` would sign with if it were active: the
+    /// same rules as activeSigningMode(), for any account.
+    func signingMode(for activeNpub: String) -> String {
         // Check explicit user preference first
         if let preferred = accountSigningModes[activeNpub] {
             // Validate the preference is still usable

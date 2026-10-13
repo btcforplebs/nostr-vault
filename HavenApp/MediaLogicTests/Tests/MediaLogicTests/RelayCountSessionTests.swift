@@ -21,6 +21,13 @@ final class RelayCountSessionTests: XCTestCase {
         XCTAssertTrue(RelayCountSession.needsAuth(base.appendingPathComponent("chat")))
     }
 
+    func testWatchOnlyCountsOnlyThePublicRoutes() {
+        let base = URL(string: "wss://127.0.0.1:3355")!
+        let all = ["", "inbox", "private", "chat"].map { $0.isEmpty ? base : base.appendingPathComponent($0) }
+        XCTAssertEqual(RelayCountSession.countable(all, canSignAsOwner: true), all)
+        XCTAssertEqual(RelayCountSession.countable(all, canSignAsOwner: false), Array(all.prefix(2)))
+    }
+
     func testOpenRouteCountsOnConnectAndFinishes() {
         var s = session(needsAuth: false)
         XCTAssertEqual(s.connected(), .sendCounts)

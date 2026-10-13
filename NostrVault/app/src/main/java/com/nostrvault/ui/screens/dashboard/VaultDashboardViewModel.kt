@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,6 +84,11 @@ class VaultDashboardViewModel @Inject constructor(
     /** The last count did not get an answer from every relay; the old numbers stay up. */
     private val _countFailed = MutableStateFlow(false)
     val countFailed: StateFlow<Boolean> = _countFailed.asStateFlow()
+
+    /** The owner has no key, so /private and /chat are left out of the counts. */
+    val countsPublicOnly: StateFlow<Boolean> = configStore.config
+        .map { statsService.ownerIsWatchOnly(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, statsService.ownerIsWatchOnly(configStore.config.value))
 
     /** The files in the Blossom folder, by type; null until scanned. */
     private val _media = MutableStateFlow<VaultDashboardContents.Media?>(null)
