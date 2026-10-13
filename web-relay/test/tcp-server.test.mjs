@@ -1,13 +1,15 @@
-// TCP/FIPS NIP-01 server: real @fips/tcp on both ends, an in-memory datagram fabric (with loss),
-// the relay's real signature check behind an in-memory store. Run: node --test test/
+// TCP/FIPS NIP-01 server: real @fips/tcp on both ends, an in-memory datagram fabric (with loss), and a stub
+// of Haven's JS entry point (test/support/haven-stub.js) behind it. Run: node --test test/
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { FipsTcpEndpoint } from "@fips/tcp"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { matchFilters } from "nostr-tools/filter"
+import { npubEncode } from "nostr-tools/nip19"
 import { TcpFipsRelayServer, RELAY_SERVICE_PORT } from "../src/fips/tcp-server.js"
 import { parseOwners } from "../src/fips/owners.js"
-import { rejectReason } from "../src/worker-relay/verify.ts"
+import { wrap } from "../src/haven/haven.js"
+import { HavenClient } from "../src/haven/client.js"
+import { havenStub } from "./support/haven-stub.js"
 
 const P = RELAY_SERVICE_PORT
 const compressed = sk => "02" + getPublicKey(sk) // even-parity form, like FIPS reports
@@ -31,16 +33,6 @@ function fabric(loss = 0, seed = 7) {
   return { endpoint, deliver }
 }
 
-function memStore() {
-  const evs = new Map()
-  return {
-    evs,
-    event: async ev => { const r = rejectReason(ev); if (r) return { ok: false, message: r }; evs.set(ev.id, ev); return { ok: true } },
-    query: async fs => [...evs.values()].filter(e => matchFilters(fs, e)),
-    count: async fs => [...evs.values()].filter(e => matchFilters(fs, e)).length,
-  }
-}
-
 async function setup({ loss = 0, clientIsOwner = true } = {}) {
   const net = fabric(loss)
   const relaySk = generateSecretKey(), vaultSk = generateSecretKey(), strangerSk = generateSecretKey()
@@ -49,9 +41,13 @@ async function setup({ loss = 0, clientIsOwner = true } = {}) {
   // FipsTcpEndpoint stamps inbound segments with Date.now(), so the simulated clock must be Date.now itself.
   let now = 1_760_000_000_000
   Date.now = () => now
-  const store = memStore()
+  const stub = havenStub()
+  const haven = wrap(stub)
+  await haven.start({ ownerNpub: npubEncode(getPublicKey(vaultSk)) })
+  // The page's own stream: how events get into Haven other than over FIPS.
+  const page = new HavenClient(haven.conn("page", { mode: "nip01", route: "/" }))
   const owners = parseOwners(getPublicKey(vaultSk))
-  const server = new TcpFipsRelayServer(net.endpoint(relayKey), store, () => owners, { clock: () => now })
+  const server = new TcpFipsRelayServer(net.endpoint(relayKey), haven, () => owners, { clock: () => now })
   const client = new FipsTcpEndpoint(net.endpoint(compressed(clientSk)), P)
   const id = await client.connect(relayKey, now)
   const step = async () => { now += 10; await client.poll(now); await server.tick(); await net.deliver() }
@@ -66,7 +62,7 @@ async function setup({ loss = 0, clientIsOwner = true } = {}) {
   }
   const send = async msg => { const b = Buffer.from(JSON.stringify(msg) + "\n"); let off = 0; while (off < b.length) { off += await client.write(id, b.subarray(off), now); await pump() } }
   const until = async (pred, max = 3000) => { for (let k = 0; k < max; k++) { if (pred()) return true; await pump() } return pred() }
-  return { server, client, id, store, send, until, lines, pump, vaultSk, relayKey, step, state: () => client.state(id) }
+  return { server, client, id, stub, page, send, until, lines, pump, vaultSk, relayKey, step, state: () => client.state(id) }
 }
 
 const note = (sk, content) => finalizeEvent({ kind: 1, created_at: 1760000000, tags: [], content }, sk)
@@ -93,8 +89,7 @@ test("owner: EVENT, forged EVENT, REQ+EOSE, live EVENT, COUNT", async () => {
   await t.send(["REQ", "live", { kinds: [1], authors: [getPublicKey(t.vaultSk)] }])
   assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "live")))
   const later = note(t.vaultSk, "inserted by the page")
-  await t.store.event(later)
-  t.server.notify(later)
+  assert.deepEqual(await t.page.event(later), { ok: true, message: "" })
   assert.ok(await t.until(() => t.lines.some(l => l[0] === "EVENT" && l[1] === "live" && l[2].id === later.id)), "live event forwarded")
 
   await t.send(["COUNT", "c", { kinds: [1] }])
@@ -113,7 +108,7 @@ test("stranger: SYN is dropped, never accepted, no reply", async () => {
 for (const loss of [0, 0.15]) test(`owner over a lossy link (${loss * 100}% loss): REQ still answered`, async () => {
   const t = await setup({ loss })
   const evs = Array.from({ length: 40 }, (_, i) => note(t.vaultSk, "n" + i + " " + "x".repeat(900)))
-  for (const e of evs) await t.store.event(e)
+  for (const e of evs) assert.ok((await t.page.event(e)).ok)
   assert.ok(await t.until(() => t.server.stats.accepted === 1, 6000))
   await t.send(["REQ", "all", { kinds: [1] }])
   assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE"), 20000), "EOSE arrived")
@@ -148,4 +143,20 @@ test("a closed connection does not wedge the server: the next one is served", as
     if (!sent && (await t.client.state(id2)) === "established") { await t.client.write(id2, Buffer.from(JSON.stringify(["REQ", "b", { kinds: [1] }]) + "\n"), Date.now()); sent = true }
   }
   assert.ok(buf.includes('"EOSE","b"'), "second connection got EOSE")
+})
+
+test("each TCP connection is its own Haven stream, nip01 on the outbox route", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  const fips = t.stub.conns.filter(c => c.id !== "page")
+  assert.equal(fips.length, 1)
+  assert.match(fips[0].id, /^fips-/)
+  assert.deepEqual(fips[0].opts, { mode: "nip01", route: "/" })
+})
+
+test("Haven hanging up closes the TCP connection", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  t.stub.conns.find(c => c.id !== "page").conn.close()
+  assert.ok(await t.until(() => t.server.stats.open === 0 && t.server.conns.size === 0, 6000))
 })

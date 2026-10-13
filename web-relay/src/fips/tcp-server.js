@@ -1,13 +1,17 @@
-// NIP-01 over TCP/FIPS on one FSP service port. Only owner identities get past the datagram gate,
-// so a stranger's SYN is dropped before the TCP stack sees it (no SYN-ACK, no RST).
+// NIP-01 over TCP/FIPS on one FSP service port, served by Haven. Only owner identities get past the
+// datagram gate, so a stranger's SYN is dropped before the TCP stack sees it (no SYN-ACK, no RST).
+// Wire: NDJSON, one NIP-01 JSON array per "\n"-terminated line. Each TCP connection becomes one Haven
+// stream in "nip01" mode on the outbox route; the page picks the route, the stream can't.
 import { FipsTcpEndpoint } from "@fips/tcp"
-import { Nip01Session } from "./nip01.js"
 import { isOwner } from "./owners.js"
 
 export const RELAY_SERVICE_PORT = 7447
 const POLL_MS = 50
 const READ_CHUNK = 64 * 1024
 const MAX_PENDING_OUT = 4 * 1024 * 1024
+export const HAVEN_ROUTE = "/"
+// After we close our side, a peer that never finishes its own close is reset after this long.
+const CLOSE_GRACE_MS = 5_000
 
 /** Wrap a FIPS datagram endpoint so service handlers only ever see datagrams from owners. */
 export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}) {
@@ -25,14 +29,14 @@ export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}) {
 export class TcpFipsRelayServer {
   /**
    * @param endpoint  FipsNode (or any FipsDatagramEndpoint)
-   * @param store     see Nip01Session
+   * @param haven     { conn(id, opts) -> { write, onData, onClose, close } }, see src/haven/haven.js
    * @param getOwners () => Set<x-only hex>
    * clock must be Date.now-based: FipsTcpEndpoint stamps inbound segments with Date.now() itself.
    */
-  constructor(endpoint, store, getOwners, { port = RELAY_SERVICE_PORT, clock = () => Date.now(), tcpConfig } = {}) {
-    this.stats = { rejectedDatagrams: 0, accepted: 0, open: 0, lastReqAt: 0 }
+  constructor(endpoint, haven, getOwners, { port = RELAY_SERVICE_PORT, clock = () => Date.now(), tcpConfig } = {}) {
+    this.stats = { rejectedDatagrams: 0, accepted: 0, open: 0, lastInAt: 0 }
     this.clock = clock
-    this.store = store
+    this.haven = haven
     this.conns = new Map()
     const gated = ownerGatedEndpoint(endpoint, getOwners, () => this.stats.rejectedDatagrams++)
     this.tcp = new FipsTcpEndpoint(gated, port, tcpConfig)
@@ -47,14 +51,9 @@ export class TcpFipsRelayServer {
   async stop() {
     clearInterval(this.timer)
     this.timer = undefined
-    for (const c of this.conns.values()) c.session.close()
+    for (const c of this.conns.values()) c.stream.close()
     this.conns.clear()
     await this.tcp.dispose()
-  }
-
-  /** Forward an event the page stored (generator, another session) to live subscriptions. */
-  notify(ev) {
-    for (const c of this.conns.values()) c.session.notify(ev)
   }
 
   /** One pump: timers, new connections, reads, writes, teardown. Safe to call directly in tests. */
@@ -80,37 +79,25 @@ export class TcpFipsRelayServer {
   }
 
   #add(id) {
-    const c = { id, out: [], outBytes: 0, enc: new TextEncoder(), session: undefined }
-    c.session = new Nip01Session(
-      this.#trackedStore(),
-      line => {
-        const b = c.enc.encode(line)
-        c.out.push(b)
-        c.outBytes += b.length
-      },
-      () => (c.fatal = true),
-    )
+    const c = { id, out: [], outBytes: 0, stream: undefined, havenClosed: false }
+    // A distinct id per TCP connection, so Haven can tell streams apart (rate limits, logs).
+    c.stream = this.haven.conn(`fips-${id}`, { mode: "nip01", route: HAVEN_ROUTE })
+    c.stream.onData(b => {
+      c.out.push(b)
+      c.outBytes += b.length
+    })
+    c.stream.onClose(() => (c.havenClosed = true))
     this.conns.set(id, c)
     this.stats.accepted++
-  }
-
-  #trackedStore() {
-    const s = this.store
-    return {
-      event: async ev => {
-        const r = await s.event(ev)
-        if (r.ok) this.notify(ev)
-        return r
-      },
-      query: f => ((this.stats.lastReqAt = this.clock()), s.query(f)),
-      count: f => s.count(f),
-    }
   }
 
   async #pump(c, now) {
     // The stack forgets a connection once its close completes; reading it after that throws.
     if ((await this.tcp.state(c.id)) === undefined) return this.#drop(c, false)
-    for (let chunk; (chunk = await this.tcp.read(c.id, READ_CHUNK, now)).length; ) await c.session.onBytes(chunk)
+    for (let chunk; (chunk = await this.tcp.read(c.id, READ_CHUNK, now)).length; ) {
+      this.stats.lastInAt = this.clock()
+      c.stream.write(chunk)
+    }
     while (c.out.length) {
       const head = c.out[0]
       const n = await this.tcp.write(c.id, head, now)
@@ -122,16 +109,19 @@ export class TcpFipsRelayServer {
       c.out.shift()
     }
     const state = await this.tcp.state(c.id)
-    if (c.fatal || c.outBytes > MAX_PENDING_OUT) return this.#drop(c, true)
+    if (c.outBytes > MAX_PENDING_OUT) return this.#drop(c, true)
     if (state === undefined) return this.#drop(c, false)
-    if (!c.out.length && (await this.tcp.isReadClosed(c.id)) && !c.closing) {
-      c.closing = true
+    // Close our side once everything is flushed and either the vault finished sending or Haven hung up.
+    if (c.closingAt !== undefined) {
+      if (now - c.closingAt > CLOSE_GRACE_MS) return this.#drop(c, true)
+    } else if (!c.out.length && (c.havenClosed || (await this.tcp.isReadClosed(c.id)))) {
+      c.closingAt = now
       await this.tcp.close(c.id, now)
     }
   }
 
   async #drop(c, abort) {
-    c.session.close()
+    c.stream.close()
     this.conns.delete(c.id)
     if (abort) await this.tcp.abort(c.id)
   }

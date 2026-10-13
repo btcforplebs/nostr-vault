@@ -22,11 +22,11 @@ export async function loadRelayIdentity(storage = localStorage) {
 }
 
 /**
- * @param store      { event, query, count } over the worker relay
+ * @param haven      Haven's entry point handle (src/haven/haven.js), already started
  * @param getOwners  () => Set<x-only hex>
  * @param onStatus   (status) => void, called on every change
  */
-export async function startFipsRelay({ store, getOwners, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
+export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
   const identity = await loadRelayIdentity()
   const status = { npub: encodeNpub(identity.xOnlyPubkey), seeds: new Map(), owners: new Map(), sessions: new Map(), server: undefined, errors: 0, lastError: "" }
   const emit = () => onStatus(status)
@@ -56,7 +56,7 @@ export async function startFipsRelay({ store, getOwners, onStatus = () => {}, se
     emit()
   })
 
-  const server = new TcpFipsRelayServer(node, store, getOwners)
+  const server = new TcpFipsRelayServer(node, haven, getOwners)
   status.server = server.stats
   await node.start()
   server.start()
@@ -93,12 +93,3 @@ export async function startFipsRelay({ store, getOwners, onStatus = () => {}, se
   }
 }
 
-/** NIP-01 store over the worker relay. */
-export function workerRelayStore(relay) {
-  let n = 0
-  return {
-    event: async ev => relay.event(ev),
-    query: filters => relay.query(["REQ", `fips-${++n}`, ...filters]),
-    count: filters => relay.count(["REQ", `fips-${++n}`, ...filters]),
-  }
-}

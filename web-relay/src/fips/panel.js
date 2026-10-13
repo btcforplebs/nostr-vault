@@ -1,30 +1,16 @@
 // FIPS section of the page: owner pairing, start/stop, and status (seed link, owner path, streams).
-import { parseOwners } from "./owners.js"
+import { parseOwners, saveOwners } from "./owners.js"
 import { RELAY_SERVICE_PORT } from "./tcp-server.js"
-import { startFipsRelay, workerRelayStore } from "./node.js"
+import { startFipsRelay } from "./node.js"
 
-const OWNERS_ITEM = "fips-owners"
 const $ = id => document.getElementById(id)
 
-export function mountFipsPanel({ relay, log, onInsertHook }) {
-  let owners = new Set()
+/**
+ * @param haven   Haven's started entry point, or undefined when it isn't running (no owner yet, or it failed)
+ * @param owners  Set<x-only hex> Haven was started with
+ */
+export function mountFipsPanel({ haven, owners, log }) {
   let running
-  try {
-    owners = parseOwners(localStorage.getItem(OWNERS_ITEM) ?? "")
-  } catch {}
-
-  // Pairing link: nostrvault.app/relay/#owner=npub1...  (a fragment never reaches the server)
-  const frag = new URLSearchParams(location.hash.slice(1)).get("owner")
-  if (frag) {
-    try {
-      owners = parseOwners(frag)
-      localStorage.setItem(OWNERS_ITEM, [...owners].join(" "))
-      log("fips-owner-paired", { owners: owners.size })
-    } catch (e) {
-      log("fips-owner-error", { err: String(e) })
-    }
-    history.replaceState(null, "", location.pathname)
-  }
   $("fipsOwners").value = [...owners].join("\n")
 
   const render = s => {
@@ -35,18 +21,22 @@ export function mountFipsPanel({ relay, log, onInsertHook }) {
     $("fipsStatus").textContent = running
       ? [`relay ${s.npub}`, `port ${RELAY_SERVICE_PORT}`, `seed: ${seeds}`, `owner session: ${sessions || "none"}`, `owner path: ${paths || "relayed via seed (no direct link)"}`,
          `streams open ${sv.open ?? 0}, accepted ${sv.accepted ?? 0}, stranger datagrams dropped ${sv.rejectedDatagrams ?? 0}`,
-         `last REQ ${sv.lastReqAt ? new Date(sv.lastReqAt).toISOString() : "never"}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
-      : owners.size ? "FIPS off" : "FIPS off: add your vault's npub first"
+         `last request from an owner ${sv.lastInAt ? new Date(sv.lastInAt).toISOString() : "never"}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
+      : !owners.size ? "FIPS off: add your vault's npub first"
+      : !haven ? "FIPS off: Haven is not running"
+      : "FIPS off"
     const seedUp = [...(s?.seeds?.values() ?? [])].includes("connected")
     $("sfips").textContent = running ? `FIPS ${seedUp ? "seed up" : "seed DOWN"} · streams ${sv.open ?? 0}` : ""
   }
 
+  // Haven takes its owner at start, so a changed owner set means a restart: reload the page.
   $("fipsSave").onclick = () => {
     try {
-      owners = parseOwners($("fipsOwners").value)
-      localStorage.setItem(OWNERS_ITEM, [...owners].join(" "))
-      log("fips-owners-saved", { owners: owners.size })
-      render(running?.status)
+      const next = parseOwners($("fipsOwners").value)
+      saveOwners(next)
+      log("fips-owners-saved", { owners: next.size })
+      const same = next.size === owners.size && [...next].every(k => owners.has(k))
+      if (!same) location.reload()
     } catch (e) {
       $("fipsStatus").textContent = String(e)
     }
@@ -59,10 +49,9 @@ export function mountFipsPanel({ relay, log, onInsertHook }) {
       log("fips-stop")
       return render()
     }
-    if (!owners.size) return render()
+    if (!owners.size || !haven) return render()
     try {
-      running = await startFipsRelay({ store: workerRelayStore(relay), getOwners: () => owners, onStatus: render })
-      onInsertHook(ev => running?.server.notify(ev))
+      running = await startFipsRelay({ haven, getOwners: () => owners, onStatus: render })
       $("fipsStart").textContent = "Stop FIPS"
       log("fips-start", { npub: running.status.npub })
     } catch (e) {

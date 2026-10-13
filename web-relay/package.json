@@ -16,10 +16,7 @@
     "@fips/transport-websocket": "https://github.com/mmalmi/fips-ts/releases/download/runtime-v0.0.56/fips-transport-websocket-0.0.10.tgz",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
-    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
-    "eventemitter3": "^5.0.4",
-    "nostr-tools": "^2.25.2",
-    "uuid": "^14.0.3"
+    "nostr-tools": "^2.25.2"
   },
   "private": true,
   "license": "MIT",
