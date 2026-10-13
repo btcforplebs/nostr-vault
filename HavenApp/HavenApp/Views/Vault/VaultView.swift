@@ -115,9 +115,6 @@ struct VaultView: View {
     }
     @State var showingProfilePubkey: String?
     @State var maxDisplayedItems: Int = 100
-    #if os(iOS)
-    @State var saveToPhotosMessage: String?
-    #endif
     @State var isCopied = false
     @State var requestedMissingIds = Set<String>()
     @State var requestedMissingZapNoteIds = Set<String>()
