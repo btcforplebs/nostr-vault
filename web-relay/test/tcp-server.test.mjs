@@ -155,10 +155,18 @@ test("oversized line: the server aborts before Haven sees more than MAX_LINE_IN 
 test("one vault gets at most MAX_CONNECTIONS_PER_PEER connections", async () => {
   const t = await setup()
   assert.ok(await t.until(() => t.server.stats.accepted === 1))
-  for (let i = 1; i < MAX_CONNECTIONS_PER_PEER + 2; i++) await t.client.connect(t.relayKey, Date.now())
+  const extra = []
+  for (let i = 1; i < MAX_CONNECTIONS_PER_PEER + 2; i++) extra.push(await t.client.connect(t.relayKey, Date.now()))
+  const t0 = Date.now()
   await t.until(() => false, 400)
   assert.equal(t.server.stats.accepted, MAX_CONNECTIONS_PER_PEER)
-  assert.ok(t.server.stats.droppedSegments > 0, "the extra SYNs were dropped at the gate, not thrown")
+  assert.ok(t.server.stats.refusedSyns > 0, "the extra SYNs were refused at the gate, not thrown")
+  assert.equal(t.server.stats.lastDropError, "connection limit reached")
+  // Refused with an RST: the vault's connect fails within the run, not after minutes of SYN retries.
+  const gone = []
+  for (const id of extra) if ((await t.client.state(id)) === undefined) gone.push(id)
+  assert.equal(gone.length, 2, "both over-cap connects were reset")
+  assert.ok(Date.now() - t0 < 10_000, `reset took ${Date.now() - t0} ms of simulated clock`)
   // The connections it does hold are still served.
   await t.send(["REQ", "after", { kinds: [1] }])
   assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "after")))

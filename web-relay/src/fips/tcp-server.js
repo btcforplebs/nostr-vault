@@ -2,7 +2,7 @@
 // datagram gate, so a stranger's SYN is dropped before the TCP stack sees it (no SYN-ACK, no RST).
 // Wire: NDJSON, one NIP-01 JSON array per "\n"-terminated line. Each TCP connection becomes one Haven
 // stream in "nip01" mode on the outbox route; the page picks the route, the stream can't.
-import { FipsTcpEndpoint } from "@fips/tcp"
+import { FipsTcpEndpoint, Segment, FlagSet, Flags } from "@fips/tcp"
 import { isOwner, xOnly } from "./owners.js"
 
 export const RELAY_SERVICE_PORT = 7447
@@ -12,9 +12,10 @@ const MAX_PENDING_OUT = 4 * 1024 * 1024
 // Inbound bytes without a "\n" before the stream is aborted. Haven's own 512000-byte message cap sits on
 // its ws conn, below the NDJSON reassembly, so it never sees an unterminated line; this is that cap here.
 export const MAX_LINE_IN = 512_000
-// One owner device must not hold every slot and starve the owner's others.
-export const MAX_CONNECTIONS_PER_PEER = 4
-const MAX_CONNECTIONS = 64
+// Every owner device runs the same nsec, so one peer key is the owner's whole fleet (phone, Mac, iPad).
+// The cap stops a runaway client from taking every slot, with room for the fleet working at once.
+export const MAX_CONNECTIONS_PER_PEER = 16
+const MAX_CONNECTIONS = 128
 export const HAVEN_ROUTE = "/"
 // After we close our side, a peer that never finishes its own close is reset after this long.
 const CLOSE_GRACE_MS = 5_000
@@ -25,12 +26,15 @@ export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}, onD
     registerService(port, handler) {
       return endpoint.registerService(port, async ctx => {
         if (!isOwner(getOwners(), ctx.src)) return onReject(ctx)
-        // The TCP stack throws on a segment it refuses (an owner's SYN past the connection limits). Drop it
-        // here: @fips/core doesn't catch service handler errors.
+        // The TCP stack throws on a segment it refuses (an owner's SYN past the connection limits) instead of
+        // resetting it, and @fips/core doesn't catch service handler errors. Drop it here, and answer a
+        // refused SYN with the RST the stack skipped, so the vault fails at once instead of retrying for minutes.
         try {
           await handler(ctx)
         } catch (e) {
-          onDrop(ctx, e)
+          const rst = synReset(ctx.payload)
+          onDrop(ctx, e, rst !== undefined)
+          if (rst) await endpoint.sendDatagram({ dst: ctx.src, srcPort: port, dstPort: port, payload: rst }).catch(() => {})
         }
       })
     },
@@ -38,19 +42,45 @@ export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}, onD
   }
 }
 
+/** RST|ACK bytes answering a bare SYN (RFC 9293 3.10.7.1), or undefined for any other segment. */
+export function synReset(payload) {
+  let seg
+  try {
+    seg = Segment.decode(payload)
+  } catch {
+    return undefined
+  }
+  const f = seg.flags
+  if (!f.has(Flags.Syn) || f.has(Flags.Ack) || f.has(Flags.Rst)) return undefined
+  const ack = (seg.seq + seg.sequenceLength()) >>> 0
+  return new Segment({ srcPort: seg.dstPort, dstPort: seg.srcPort, seq: 0, ack, flags: new FlagSet(Flags.Rst | Flags.Ack), window: 0 }).encode()
+}
+
 export class TcpFipsRelayServer {
   /**
    * @param endpoint  FipsNode (or any FipsDatagramEndpoint)
    * @param haven     { conn(id, opts) -> { write, onData, onClose, close } }, see src/haven/haven.js
    * @param getOwners () => Set<x-only hex>
+   * log        (msg) => void; each distinct dropped-segment error is logged once
    * clock must be Date.now-based: FipsTcpEndpoint stamps inbound segments with Date.now() itself.
    */
-  constructor(endpoint, haven, getOwners, { port = RELAY_SERVICE_PORT, clock = () => Date.now(), tcpConfig } = {}) {
-    this.stats = { rejectedDatagrams: 0, droppedSegments: 0, accepted: 0, open: 0, lastInAt: 0 }
+  constructor(endpoint, haven, getOwners, { port = RELAY_SERVICE_PORT, clock = () => Date.now(), tcpConfig, log = m => console.warn(m) } = {}) {
+    this.stats = { rejectedDatagrams: 0, droppedSegments: 0, refusedSyns: 0, lastDropError: "", accepted: 0, open: 0, lastInAt: 0 }
     this.clock = clock
     this.haven = haven
     this.conns = new Map()
-    const gated = ownerGatedEndpoint(endpoint, getOwners, () => this.stats.rejectedDatagrams++, () => this.stats.droppedSegments++)
+    const logged = new Set()
+    const onDrop = (ctx, e, refusedSyn) => {
+      this.stats.droppedSegments++
+      if (refusedSyn) this.stats.refusedSyns++
+      const msg = String(e?.message ?? e).slice(0, 160)
+      this.stats.lastDropError = msg
+      if (logged.size < 32 && !logged.has(msg)) {
+        logged.add(msg)
+        log(`tcp/fips: dropped a segment from ${xOnly(ctx.src)?.slice(0, 12) ?? "?"}${refusedSyn ? " (SYN refused, RST sent)" : ""}: ${msg}`)
+      }
+    }
+    const gated = ownerGatedEndpoint(endpoint, getOwners, () => this.stats.rejectedDatagrams++, onDrop)
     this.tcp = new FipsTcpEndpoint(gated, port, { maxConnections: MAX_CONNECTIONS, maxConnectionsPerPeer: MAX_CONNECTIONS_PER_PEER, ...tcpConfig })
     this.timer = undefined
     this.busy = false
@@ -75,7 +105,15 @@ export class TcpFipsRelayServer {
     try {
       const now = this.clock()
       await this.tcp.poll(now)
-      for (let id; (id = await this.tcp.accept()) !== undefined; ) await this.#add(id)
+      for (let id; (id = await this.tcp.accept()) !== undefined; ) {
+        try {
+          await this.#add(id)
+        } catch {
+          this.conns.get(id)?.stream?.close()
+          this.conns.delete(id)
+          await this.tcp.abort(id).catch(() => {})
+        }
+      }
       for (const c of [...this.conns.values()]) {
         // One connection's failure must not stop the pump for the others.
         try {
