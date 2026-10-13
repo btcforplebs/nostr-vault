@@ -62,15 +62,22 @@ extension FeedService {
         guard isFollowSetMode || (feedMode == .media && mediaFeedMode == .following),
               !followedPubkeys.isEmpty else {
             outboxPlan = [:]
+            outboxPlanInputs = nil
             return
         }
-        requestRelayLists(for: Set(followedPubkeys))
-        outboxPlan = FeedOutboxPlan.plan(
+        let inputs = FeedOutboxPlan.Inputs(
             follows: followedPubkeys,
             writeRelays: NostrService.shared.outboxRelays,
             feedRelays: externalRelayURLs.map(\.absoluteString),
-            unreachableRelays: Array(downRelayKeys)
+            unreachableRelays: downRelayKeys
         )
+        // Every reconcile lands here (each load round, older page and relay
+        // drop), mostly with nothing changed, and the plan is built on the
+        // main thread while the feed scrolls.
+        guard inputs != outboxPlanInputs else { return }
+        outboxPlanInputs = inputs
+        requestRelayLists(for: Set(followedPubkeys))
+        outboxPlan = FeedOutboxPlan.plan(inputs)
     }
 
     /// Every relay the feed subscribes to: the local relay, its inbox and feed

@@ -65,7 +65,11 @@ class FeedService: ObservableObject {
             self.referencedNoteUpdates = ReferencedNoteSignal(generation: self.referencedNoteGeneration, ids: batch)
         }
     }
-    @Published var followedPubkeys: [String] = []
+    @Published var followedPubkeys: [String] = [] {
+        didSet { followedPubkeySet = Set(followedPubkeys) }
+    }
+    /// `followedPubkeys` for membership checks; feed rows ask once each.
+    private(set) var followedPubkeySet: Set<String> = []
     @Published var extendedNetworkPubkeys: [String] = []
     /// When the extended network was last computed. Used to skip re-fetching within 1 hour.
     var extendedNetworkComputedAt: Date?
@@ -273,6 +277,8 @@ class FeedService: ObservableObject {
     /// Follows the feed relays don't reach, asked on their own write relays:
     /// extra relay URL → the follows to ask it for. See `FeedOutboxPlan`.
     var outboxPlan: [String: [String]] = [:]
+    /// What `outboxPlan` was last built from; see `refreshOutboxPlan`.
+    var outboxPlanInputs: FeedOutboxPlan.Inputs?
 
     /// Relays that gave up on connecting (three errors) and have not connected
     /// since. Kept across load rounds, unlike `relayErrorCounts`, so the plan
