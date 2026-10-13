@@ -467,7 +467,11 @@ fun ProfileScreen(
             } else if (filteredNotes.isEmpty()) {
                 val section = selectedSection
                 item(key = "empty-${section.name}") {
-                    val canPageOlder = if (section == ProfileSection.TAGGED) canPageOlderTagged else canPageOlderNotes
+                    val canPageOlder = when {
+                        section == ProfileSection.TAGGED -> canPageOlderTagged
+                        section.isNoteList -> canPageOlderNotes
+                        else -> false
+                    }
                     ProfileEmptySection(
                         section = section,
                         opening = isLoading,

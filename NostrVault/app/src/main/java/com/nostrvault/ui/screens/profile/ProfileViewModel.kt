@@ -300,7 +300,7 @@ class ProfileViewModel @Inject constructor(
 
     /** Drops the stream and everything it loaded, for a fresh load. */
     private fun resetLoadedState() {
-        stream?.close(); stream = null
+        stream?.close(); stream = null; _streamOpen.value = false
         pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
         relayFollowerCount = null
@@ -450,6 +450,7 @@ class ProfileViewModel @Inject constructor(
             olderPage?.onEose(subId)
         }
         stream = s
+        _streamOpen.value = true
         s.start()
         askOutboxWhenKnown(pk, s)
     }
@@ -510,10 +511,13 @@ class ProfileViewModel @Inject constructor(
     /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
     private val emptyTabPaging = ProfileEmptyTabPaging()
 
+    /** A stream is open to page on (see [canPageOlder]). */
+    private val _streamOpen = MutableStateFlow(false)
+
     /** [canPageOlder] for the note tabs and for Tagged, for the screen to follow. */
-    val canPageOlderNotes: StateFlow<Boolean> = combine(_hasMoreNotes, _profileNotes) { more, notes -> more && notes.isNotEmpty() }
+    val canPageOlderNotes: StateFlow<Boolean> = combine(_streamOpen, _hasMoreNotes, _profileNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val canPageOlderTagged: StateFlow<Boolean> = combine(_hasMoreTagged, _taggedNotes) { more, notes -> more && notes.isNotEmpty() }
+    val canPageOlderTagged: StateFlow<Boolean> = combine(_streamOpen, _hasMoreTagged, _taggedNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /**
@@ -547,6 +551,7 @@ class ProfileViewModel @Inject constructor(
         val s = stream ?: return
         if (_isLoadingOlder.value) return
         val tagged = section == ProfileSection.TAGGED
+        if (!tagged && !section.isNoteList) return
         val list = if (tagged) _taggedNotes else _profileNotes
         val hasMore = if (tagged) _hasMoreTagged else _hasMoreNotes
         if (!hasMore.value) return
@@ -554,12 +559,12 @@ class ProfileViewModel @Inject constructor(
         _isLoadingOlder.value = true
         val before = list.value.size
         // Listening before the REQ goes out, so a fast EOSE can't be missed.
-        val page = ProfileOlderPage(tagged).also { olderPage = it }
+        val page = ProfileOlderPage().also { olderPage = it }
         val until = oldest.createdAt.time / 1000
-        if (tagged) s.loadOlderTagged(until) else s.loadOlder(until)
+        val req = if (tagged) s.loadOlderTagged(until) else s.loadOlder(until)
         val token = pageToken
         viewModelScope.launch {
-            val outcome = page.await(before, size = { list.value.size })
+            val outcome = page.await(req.subId, req.relays, before, size = { list.value.size })
             if (olderPage === page) olderPage = null
             if (token != pageToken) return@launch
             if (outcome == ProfileOlderPage.Outcome.EMPTY) hasMore.value = false

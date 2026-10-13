@@ -860,16 +860,15 @@ class NostrService @Inject constructor(
             return "[\"REQ\",\"$initialSubId\",$notes,$meta,$contacts,$followers,$tagged]"
         }
 
-        fun loadOlder(until: Long) {
-            val subId = "older-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"until":$until,"limit":50}"""
-            clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
-        }
+        /** Pages [pubkey]'s notes older than [until]; see [OlderRequest]. */
+        fun loadOlder(until: Long) = askOlder("older-", """"authors":["$pubkey"]""", until)
+        /** Pages notes that p-tag [pubkey], older than [until]; see [OlderRequest]. */
+        fun loadOlderTagged(until: Long) = askOlder("older-tagged-", """"#p":["$pubkey"]""", until)
 
-        fun loadOlderTagged(until: Long) {
-            val subId = "older-tagged-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"until":$until,"limit":50}"""
-            clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
+        private fun askOlder(prefix: String, who: String, until: Long): OlderRequest {
+            val subId = prefix + UUID.randomUUID().toString().take(6)
+            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],$who,"until":$until,"limit":50}"""
+            return OlderRequest(subId, clients.count { it.send("[\"REQ\",\"$subId\",$filter]") })
         }
 
         fun close() {
