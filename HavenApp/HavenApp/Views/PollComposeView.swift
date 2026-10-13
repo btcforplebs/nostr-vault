@@ -51,7 +51,7 @@ struct PollComposeView: View {
 
     /// The form as a saved draft.
     private var currentDraft: ComposerDraft {
-        var d = ComposerDraft(kind: .poll)
+        var d = ComposerDraft.snapshot(.poll)
         d.question = draft.question
         d.options = draft.options
         d.multipleChoice = draft.type == .multiple
@@ -188,8 +188,8 @@ struct PollComposeView: View {
                 drafts.saveNow(currentDraft, cover: nil)
                 onDismiss()
             }
-            Button("Discard", role: .destructive) {
-                drafts.finish()
+            Button(drafts.editsSavedDraft ? "Discard Changes" : "Discard", role: .destructive) {
+                drafts.discard()
                 onDismiss()
             }
             Button("Keep Editing", role: .cancel) {}

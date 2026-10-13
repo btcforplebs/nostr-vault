@@ -32,6 +32,9 @@ struct LongFormComposeView: View {
     @StateObject private var drafts: ComposerDraftKeeper
     @State private var showingDrafts = false
     @State private var confirmingCancel = false
+    /// Bumped when another draft is opened, so a photo still loading for the
+    /// previous one is dropped instead of landing on the new one.
+    @State private var coverLoad = 0
 
     init(flavor: Flavor, onDismiss: @escaping () -> Void) {
         self.flavor = flavor
@@ -43,7 +46,7 @@ struct LongFormComposeView: View {
 
     /// Everything typed so far, in the shape drafts are saved in.
     private var currentDraft: ComposerDraft {
-        var d = ComposerDraft(kind: isRecipe ? .recipe : .article)
+        var d = ComposerDraft.snapshot(isRecipe ? .recipe : .article)
         d.title = title
         d.summary = summary
         d.body = body_
@@ -60,6 +63,7 @@ struct LongFormComposeView: View {
 
     private func open(_ draft: ComposerDraft) {
         drafts.saveNow(currentDraft, cover: coverData)
+        coverLoad += 1
         coverData = drafts.open(draft)
         coverItem = nil
         title = draft.title
@@ -189,11 +193,13 @@ struct LongFormComposeView: View {
         }
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
+            let load = coverLoad
             Task {
                 // iPhone photos come as HEIC, which browsers and Android
                 // readers of the post can't show; send a JPEG instead.
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let jpeg = Self.coverJPEG(from: data) {
+                let data = try? await item.loadTransferable(type: Data.self)
+                guard load == coverLoad else { return }
+                if let data, let jpeg = Self.coverJPEG(from: data) {
                     coverData = jpeg
                 } else {
                     error = "Couldn't read that photo."
@@ -210,8 +216,8 @@ struct LongFormComposeView: View {
                 drafts.saveNow(currentDraft, cover: coverData)
                 onDismiss()
             }
-            Button("Discard", role: .destructive) {
-                drafts.finish()
+            Button(drafts.editsSavedDraft ? "Discard Changes" : "Discard", role: .destructive) {
+                drafts.discard()
                 onDismiss()
             }
             Button("Keep Editing", role: .cancel) {}

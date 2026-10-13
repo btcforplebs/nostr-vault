@@ -50,6 +50,15 @@ struct ComposerDraft: Codable, Identifiable, Equatable {
         if kind == .poll { options = ["", ""] }
     }
 
+    /// A form's content with no id or save time yet, so two snapshots of the
+    /// same form compare equal (`ComposerDraftKeeper` stamps both on save).
+    static func snapshot(_ kind: Kind) -> ComposerDraft {
+        var d = ComposerDraft(kind: kind)
+        d.id = ""
+        d.updatedAt = .distantPast
+        return d
+    }
+
     /// Whether there is anything worth keeping. A poll's closing choice alone,
     /// or a form the user opened and left, is not a draft.
     var hasContent: Bool {

@@ -15,6 +15,9 @@ final class ComposerDraftKeeper: ObservableObject {
     private var lastSaved: ComposerDraft?
     private var lastCover: Data?
     private var pending: Task<Void, Never>?
+    /// The draft as it was when picked from the list, so Discard can put it
+    /// back instead of deleting work saved in an earlier session.
+    private var opened: (draft: ComposerDraft, cover: Data?)?
     /// Set after publish or discard, so a late autosave or the sheet's
     /// disappearance cannot bring the draft back.
     private var finished = false
@@ -63,20 +66,33 @@ final class ComposerDraftKeeper: ObservableObject {
         draftId = draft.id
         lastSaved = draft
         lastCover = cover
+        opened = (draft, cover)
         refreshOthers()
         return cover
     }
+
+    /// True when the composer is editing a draft that was saved before.
+    var editsSavedDraft: Bool { opened != nil }
 
     func delete(_ draft: ComposerDraft) {
         store.delete(id: draft.id, account: account)
         refreshOthers()
     }
 
-    /// The user chose Discard, or the post went out: drop the draft.
+    /// The post went out: drop the draft.
     func finish() {
         pending?.cancel()
         finished = true
         if let draftId { store.delete(id: draftId, account: account) }
+    }
+
+    /// The user chose Discard: a new draft goes away, and one picked from the
+    /// list goes back to how it was when it was opened.
+    func discard() {
+        guard let opened else { return finish() }
+        pending?.cancel()
+        finished = true
+        store.save(opened.draft, cover: opened.cover, account: account)
     }
 
     func refreshOthers() {
