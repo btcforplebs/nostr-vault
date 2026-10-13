@@ -51,5 +51,17 @@ class NotificationTray<N>(private val system: Platform<N>) {
         /** The fixed number every tagged entry uses; the tag tells them apart. */
         const val ID = 1
         private const val MAX_READ = 500
+
+        /**
+         * The data URI on an entry's tap intent. Extras don't tell two
+         * PendingIntents apart and the request code is a hash that can
+         * collide, so this is what keeps a tap on one event from opening
+         * another's: `Intent.filterEquals` compares data on every API level
+         * (the intent's `identifier` only exists from API 29; minSdk is 26).
+         * The tap intent has no action, so the app's deep-link routing,
+         * which only reads data on ACTION_VIEW, never sees it.
+         */
+        fun tapUri(eventId: String): String =
+            "nostrvault://notification/" + java.net.URLEncoder.encode(eventId, "UTF-8")
     }
 }

@@ -668,10 +668,8 @@ class LocalNotificationService @Inject constructor(
             putExtra("notif_npub", npub)
             // The post itself, so the tap opens it with nothing to fetch.
             carried.forEach { (key, value) -> putExtra(key, value) }
-            // Extras don't tell two PendingIntents apart, and the request code
-            // below is a hash that can collide: the identifier keeps a tap on
-            // one event from opening another's.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) identifier = id
+            // Tells this tap apart from another event's on every API level.
+            data = Uri.parse(NotificationTray.tapUri(id))
         }
         val pending = PendingIntent.getActivity(
             context,

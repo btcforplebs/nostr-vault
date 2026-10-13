@@ -30,6 +30,19 @@ class NotificationTrayTest {
         assertEquals(listOf("bob"), system.shown)
     }
 
+    @Test fun twoIdsThatHashAlikeOpenTheirOwnEvent() {
+        // The tap intents share a component and a request code ("Aa".hashCode()
+        // == "BB".hashCode()), carry no action, type or category, and extras
+        // don't count, so the data URI is the only part of Intent.filterEquals
+        // left to tell them apart. Equal data would let FLAG_UPDATE_CURRENT
+        // point both entries at the second event.
+        assertEquals("Aa".hashCode(), "BB".hashCode())
+        assertTrue(NotificationTray.tapUri("Aa") != NotificationTray.tapUri("BB"))
+        // Any id survives as a valid, distinct URI path.
+        assertTrue(NotificationTray.tapUri("a/b c") != NotificationTray.tapUri("a/b+c"))
+        assertEquals("nostrvault://notification/a%2Fb+c", NotificationTray.tapUri("a/b c"))
+    }
+
     @Test fun readingAPillRemovesItsEntry() {
         val system = FakeTray()
         val tray = NotificationTray(system)
