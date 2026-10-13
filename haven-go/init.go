@@ -219,6 +219,9 @@ func relayServiceURL(path string) string {
 	return scheme + "://" + host + path
 }
 
+// feedReadPolicy is /feed's read policy where no localhost bind protects it.
+var feedReadPolicy []func(ctx context.Context, filter nostr.Filter) (bool, string)
+
 func initRelays(ctx context.Context) error {
 	// Re-create relay instances on each call so their internal HTTP muxes are fresh.
 	// This prevents "pattern already registered" panics when the relay is restarted
@@ -644,6 +647,10 @@ func initRelays(ctx context.Context) error {
 			outboxRelayLimits.ConnectionRateLimiterMaxTokens,
 		)),
 	)
+
+	// Natively the bind address is the read policy. Builds without one add
+	// theirs here (the browser build: wasm_entry.go).
+	feedRelay.RejectFilter = append(feedRelay.RejectFilter, feedReadPolicy...)
 
 	feedRelay.StoreEvent = append(feedRelay.StoreEvent, feedDB.SaveEvent)
 	// Queries (plain and NIP-50 search) and counts; see search.go.

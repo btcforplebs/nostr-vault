@@ -99,7 +99,7 @@ type havenUnderTest struct {
 
 func startHaven(t *testing.T) *havenUnderTest {
 	t.Helper()
-	t.Chdir(t.TempDir())
+	isolateTestStores(t)
 
 	ownerSK := nostr.GeneratePrivateKey()
 	owner, _ := nostr.GetPublicKey(ownerSK)

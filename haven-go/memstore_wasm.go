@@ -17,18 +17,14 @@ import (
 )
 
 // The wasm build cannot use LMDB (cgo) or Badger (mmap is "not implemented
-// on js"), so every database falls back to this in-memory store until a
-// browser-persistent eventstore (OPFS/IndexedDB) replaces it. Nothing here
-// survives a page reload.
+// on js"). In a browser every database is an idbstore (store_wasm.go); this
+// in-memory store serves only under node, where the test suite runs. Nothing
+// here survives a restart.
 //
 // eventstore/slicestore is not used as-is: it locks only ReplaceEvent (Save,
 // Delete and the query goroutine race each other) and it clamps an
 // over-limit filter down to MaxLimit. This store keeps Badger's semantics
 // instead, so routes answer exactly as they do on the phones.
-const fallbackBackendName = "the in-memory store"
-
-func fallbackBackend(path string) DBBackend { return newMemBackend(path) }
-
 func newMemBackend(string) DBBackend { return &memStore{} }
 
 type memStore struct {

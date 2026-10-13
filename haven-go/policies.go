@@ -24,6 +24,9 @@ import (
 // storm that pins CPU and janks the UI.
 func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *http.Request) bool {
 	return func(r *http.Request) bool {
+		if ownerConn(r) {
+			return false // the browser build's owner streams, by identity
+		}
 		host := r.RemoteAddr
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
@@ -35,6 +38,12 @@ func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *
 		return inner(r)
 	}
 }
+
+// ownerConn reports whether r arrived on a connection the host marked as the
+// owner's own. Only the browser build sets it (wasm_entry.go): its streams
+// have no loopback address to bypass on, and a synthetic loopback address
+// would hand the bypass to every caller.
+var ownerConn = func(*http.Request) bool { return false }
 
 // whitelistBypassEventRateLimiter wraps EventIPRateLimiter so that events from
 // whitelisted pubkeys (the owner and any allowed accounts) are never rate-limited.
