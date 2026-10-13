@@ -13,7 +13,7 @@ import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
 import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
 import { RelayScreen } from "./src/screens/RelayScreen.jsx"
-import { TabBar } from "./src/components/TabBar.jsx"
+import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import "./src/styles/app.css"
 
 const ROUTES = ["feed", "compose", "profile", "relay"]
@@ -72,7 +72,8 @@ function App() {
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {route === "profile" && <ProfileScreen ctx={ctx} />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
-      <TabBar route={route} />
+      {(route === "feed" || route === "profile") && <PostButton />}
+      <TabBar route={route} pubkey={session.pubkey} />
     </div>
   )
 }

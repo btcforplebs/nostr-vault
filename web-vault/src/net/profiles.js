@@ -11,7 +11,14 @@ const inflight = new Set()
 export const getProfile = pk => cache.get(pk)
 export function onProfiles(cb) { listeners.add(cb); return () => listeners.delete(cb) }
 
+/** Store one kind 0 and tell the screens (main.jsx's own-profile path). Batches use store() + one changed(). */
 export function putProfile(ev) {
+  const stored = store(ev)
+  if (stored) changed()
+  return stored
+}
+
+function store(ev) {
   if (ev?.kind !== 0) return false
   const have = cache.get(ev.pubkey)
   if (have && have.created_at >= ev.created_at) return false
@@ -40,7 +47,7 @@ export async function fetchProfiles(pubkeys, relays, { force = false } = {}) {
   try {
     for (let i = 0; i < want.length; i += 200) {
       const evs = await pool.querySync(uniq([...relays, ...PROFILE_RELAYS]), { kinds: [0], authors: want.slice(i, i + 200) }, { maxWait: 6000 })
-      if (evs.map(putProfile).some(Boolean)) changed()
+      if (evs.map(store).some(Boolean)) changed()
     }
   } finally {
     want.forEach(pk => inflight.delete(pk))
