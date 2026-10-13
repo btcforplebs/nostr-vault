@@ -1284,10 +1284,24 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 		}
 	}()
 
+	// A background login has no screen and no caller waiting on an error:
+	// nip46LastError and nip46PendingAuthURL describe the ACTIVE account's
+	// last request, and a 60 s background timeout written there would read
+	// as "the signer did not answer" for a post the active account just made.
 	if !background {
 		nip46PendingAuthURL.Store("")
+		nip46LastError.Store("")
 	}
-	nip46LastError.Store("")
+	storeError := func(msg string) {
+		if !background {
+			nip46LastError.Store(msg)
+		}
+	}
+	recordError := func(ctx context.Context, err error) {
+		if !background {
+			recordNIP46Error(ctx, err)
+		}
+	}
 
 	onAuth := func(authURL string) {
 		log.Printf("NIP-46: auth challenge: %s", authURL)
@@ -1302,7 +1316,7 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 	parsed, err := url.Parse(goURL)
 	if err != nil {
 		slog.Error("NIP46ConnectC: invalid bunker URL", "error", err)
-		nip46LastError.Store("error:invalid bunker link")
+		storeError("error:invalid bunker link")
 		return nil
 	}
 	targetPubkey := parsed.Host
@@ -1311,12 +1325,12 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 
 	if !nostr.IsValidPublicKey(targetPubkey) {
 		slog.Error("NIP46ConnectC: invalid target pubkey", "pubkey", targetPubkey)
-		nip46LastError.Store("error:invalid signer key in bunker link")
+		storeError("error:invalid signer key in bunker link")
 		return nil
 	}
 	if len(relays) == 0 {
 		slog.Error("NIP46ConnectC: no relay in bunker URL")
-		nip46LastError.Store("error:no relay in bunker link")
+		storeError("error:no relay in bunker link")
 		return nil
 	}
 
@@ -1349,7 +1363,7 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 	result, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret, nip46Perms, nip46ClientMetadata})
 	if err != nil {
 		slog.Error("NIP46ConnectC: connect RPC failed", "error", err)
-		recordNIP46Error(connectCtx, err)
+		recordError(connectCtx, err)
 		cancel()
 		return nil
 	}
@@ -1368,13 +1382,13 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 	pubkey, err := bunker.GetPublicKey(pkCtx)
 	if err != nil {
 		slog.Error("NIP46ConnectC: GetPublicKey failed", "error", err)
-		recordNIP46Error(pkCtx, err)
+		recordError(pkCtx, err)
 		cancel()
 		return nil
 	}
 
 	stillActive := nip46StoreSession(targetPubkey, &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
-		signer: targetPubkey, relays: relays, clientSK: goSK}, myGen)
+		signer: targetPubkey, relays: relays, clientSK: goSK}, myGen, background)
 
 	if stillActive {
 		log.Printf("NIP-46: connected to signer %s", pubkey[:8])

@@ -62,16 +62,27 @@ func nip46ClaimLogin(target string, background bool) (live *nip46Session, gen ui
 	return nil, nip46ActiveGen
 }
 
-// nip46StoreSession files a finished login under `target`, closing a session
-// for the same signer that finished first. Reports whether `s` is now the
-// active session: only a foreground login whose generation nobody has
-// moved past since nip46ClaimLogin; a background login never is.
-func nip46StoreSession(target string, s *nip46Session, gen uint64) bool {
+// nip46StoreSession files a finished login under `target`.
+//
+// A foreground login replaces whatever is filed there (a session for the
+// same signer that finished first is closed) and reports whether it is now
+// the active session: only when nobody has moved past its generation since
+// nip46ClaimLogin. A background login never replaces a live session: if one
+// landed under the key meanwhile (the account switched to, logging in in the
+// foreground, or another background login), it is kept and `s` is closed
+// instead, so a login that started before an account switch cannot cancel
+// the session the active account is signing through. A background login
+// never reports itself active, whatever key it landed on.
+func nip46StoreSession(target string, s *nip46Session, gen uint64, background bool) bool {
 	nip46Mu.Lock()
 	defer nip46Mu.Unlock()
 	if old := nip46Sessions[target]; old != nil && old != s {
+		if background && old.ctx.Err() == nil {
+			s.cancel()
+			return false
+		}
 		old.cancel()
 	}
 	nip46Sessions[target] = s
-	return nip46Active == target && nip46ActiveGen == gen
+	return !background && nip46Active == target && nip46ActiveGen == gen
 }
