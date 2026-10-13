@@ -29,6 +29,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.nostrvault.service.ZapsToday
 
 // ── Vault glance ───────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ import androidx.glance.unit.ColorProvider
  * What the one-cell widget shows: the Android stand-in for the iPhone Lock
  * Screen widget (iOS `LockMetric`), which shows one number from the vault.
  * Phones have no lock-screen slot, so it is the smallest home-screen widget
- * instead. iOS's "Zaps today" is left out: the snapshot carries no zap count.
+ * instead.
  */
 enum class GlanceMetric(
     /** In the picker. */
@@ -47,7 +48,8 @@ enum class GlanceMetric(
     RELAY("Vault status", "relay"),
     MENTIONS("Mentions", "mentions"),
     DMS("Unread messages", "dms"),
-    EVENTS("Events stored", "relay");
+    EVENTS("Events stored", "relay"),
+    ZAPS("Zaps today", "wallet");
 
     companion object {
         const val KEY = "glance.metric"
@@ -67,13 +69,20 @@ data class GlanceReading(val value: String, val label: String, val live: Boolean
 /**
  * [metric] read off [snapshot], in iOS `LockScreenView`'s words: "Live" or
  * "Off" for the vault, otherwise a count. Mentions count the snapshot's list,
- * which holds at most a widget's worth.
+ * which holds at most a widget's worth. Zaps count only for the day that
+ * started at [todayStart] (local midnight, epoch seconds), so yesterday's
+ * number never shows after midnight.
  */
-fun glanceReading(metric: GlanceMetric, snapshot: VaultSnapshot): GlanceReading = when (metric) {
+fun glanceReading(
+    metric: GlanceMetric,
+    snapshot: VaultSnapshot,
+    todayStart: Long = ZapsToday.startOfDay(System.currentTimeMillis()),
+): GlanceReading = when (metric) {
     GlanceMetric.RELAY -> GlanceReading(if (snapshot.relay.running) "Live" else "Off", "vault", live = snapshot.relay.running)
     GlanceMetric.MENTIONS -> GlanceReading("${snapshot.mentions.size}", "mentions")
     GlanceMetric.DMS -> GlanceReading("${snapshot.unreadDMs}", "messages")
     GlanceMetric.EVENTS -> GlanceReading(compactCount(snapshot.relay.eventsStored), "events")
+    GlanceMetric.ZAPS -> GlanceReading(compactCount(snapshot.zapsToday.on(todayStart)), "zaps today")
 }
 
 /** 950, 1.2k, 34k, 1.2M: a count that fits one cell. iOS `NV.compactCount`. */

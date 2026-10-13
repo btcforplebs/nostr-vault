@@ -45,7 +45,7 @@ class VaultGlanceTest {
 
     @Test fun theChoiceFallsBackOnVaultStatus() {
         assertEquals(GlanceMetric.RELAY, GlanceMetric.from { null })
-        assertEquals(GlanceMetric.RELAY, GlanceMetric.from { "ZAPS" })
+        assertEquals(GlanceMetric.RELAY, GlanceMetric.from { "WEATHER" })
         val saved = GlanceMetric.toEntries(GlanceMetric.DMS)
         assertEquals(GlanceMetric.DMS, GlanceMetric.from { saved[it] })
     }
@@ -55,5 +55,15 @@ class VaultGlanceTest {
         assertEquals("mentions", GlanceMetric.MENTIONS.destination)
         assertEquals("dms", GlanceMetric.DMS.destination)
         assertEquals("relay", GlanceMetric.EVENTS.destination)
+        assertEquals("wallet", GlanceMetric.ZAPS.destination)
+    }
+
+    @Test fun zapsShowTodaysCountAndZeroOnceTheDayHasChanged() {
+        val today = 1_760_400_000L
+        val counted = snapshot.copy(zapsToday = VaultSnapshot.ZapCount(account = "me", dayStart = today, count = 7))
+        assertEquals(GlanceReading("7", "zaps today"), glanceReading(GlanceMetric.ZAPS, counted, todayStart = today))
+        // Drawn after midnight, before the next count: yesterday's 7 is not today's.
+        assertEquals(GlanceReading("0", "zaps today"), glanceReading(GlanceMetric.ZAPS, counted, todayStart = today + 86_400))
+        assertEquals("0", glanceReading(GlanceMetric.ZAPS, VaultSnapshot(), todayStart = today).value)
     }
 }
