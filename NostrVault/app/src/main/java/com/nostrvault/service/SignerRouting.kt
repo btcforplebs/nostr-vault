@@ -39,7 +39,10 @@ object SignerRouting {
         val ownerNpub = config.ownerNpub
         return when (config.effectiveSigningMode(ownerNpub)) {
             "nip46" -> {
-                val signer = config.bunkerConfig(ownerNpub)?.signerPubkey.orEmpty()
+                // Looked up by the key the Go core files the session under: the
+                // bunker link's host (the remote signer), not the account's own
+                // signerPubkey, which differs for bunkers such as Clave.
+                val signer = config.bunkerConfig(ownerNpub)?.let(NIP46Service::signerKey).orEmpty()
                 if (signer.isEmpty()) SignerRoute.Unavailable("The owner's bunker has no signer key")
                 else SignerRoute.BunkerSession(signer)
             }

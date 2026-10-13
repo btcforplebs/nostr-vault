@@ -50,10 +50,26 @@ class SignerRoutingTest {
 
     @Test fun ownerBunkerWithoutSignerKeyFailsClosed() {
         val cfg = config("nip46").let {
-            it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://x?relay=wss://r")))
+            it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://?relay=wss://r")))
         }
         val route = SignerRouting.route(cfg, forceOwner = true, ownerHex = ownerHex, activeHex = otherHex)
         assertTrue(route is SignerRoute.Unavailable)
+    }
+
+    /**
+     * The Go core files a bunker session under the link's host, the remote
+     * signer's key. For bunkers such as Clave that is not the account's own
+     * `signerPubkey`, so the owner's session must be looked up by the host or
+     * the lookup misses and the owner's AUTH dies as "not connected".
+     */
+    @Test fun ownerBunkerSessionIsKeyedByTheBunkerHostNotTheAccountKey() {
+        val remoteSigner = "3".repeat(64)
+        val cfg = config("nip46").let {
+            it.copy(accountBunkerConfigs = it.accountBunkerConfigs +
+                (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://$remoteSigner?relay=wss://r", signerPubkey = ownerSigner)))
+        }
+        val route = SignerRouting.route(cfg, forceOwner = true, ownerHex = ownerHex, activeHex = otherHex)
+        assertEquals(SignerRoute.BunkerSession(remoteSigner), route)
     }
 
     @Test fun normalEventUsesTheActiveAccountsBunker() {
