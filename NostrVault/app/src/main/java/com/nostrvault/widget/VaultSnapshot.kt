@@ -46,6 +46,16 @@ data class VaultSnapshot(
     ) {
         /** The count for the day that started at [todayStart]: 0 once the day has changed. */
         fun on(todayStart: Long): Int = if (dayStart == todayStart) count else 0
+
+        /**
+         * This count when it is [account]'s for the day that started at
+         * [todayStart]; otherwise a 0 for them. Written the moment the
+         * account or the day changes, so the widget never shows another
+         * account's zaps or yesterday's while the next count is pending, or
+         * when the relay can't give one.
+         */
+        fun heldFor(account: String, todayStart: Long): ZapCount =
+            if (account == this.account && dayStart == todayStart) this else ZapCount(account, todayStart, 0)
     }
 
     @Serializable

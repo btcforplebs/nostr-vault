@@ -77,6 +77,10 @@ object ZapsToday {
     fun startOfDay(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
         Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toEpochSecond()
 
+    /** The next local midnight after [nowMs], in epoch seconds (a 23- or 25-hour day included). */
+    fun nextStartOfDay(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
+        Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toEpochSecond()
+
     /** Receipts made out to [me] at or after [since], each counted once. */
     fun count(receipts: List<Receipt>, me: String, since: Long): Int =
         receipts.asSequence()

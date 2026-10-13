@@ -66,4 +66,17 @@ class VaultGlanceTest {
         assertEquals(GlanceReading("0", "zaps today"), glanceReading(GlanceMetric.ZAPS, counted, todayStart = today + 86_400))
         assertEquals("0", glanceReading(GlanceMetric.ZAPS, VaultSnapshot(), todayStart = today).value)
     }
+
+    @Test fun aCountIsHeldOnlyForItsAccountAndDay() {
+        val today = 1_760_400_000L
+        val alice = VaultSnapshot.ZapCount(account = "alice", dayStart = today, count = 7)
+        // Same account, same day: kept while the next count runs.
+        assertEquals(alice, alice.heldFor("alice", today))
+        // Another account: 0 for them, never alice's 7.
+        val bob = alice.heldFor("bob", today)
+        assertEquals(VaultSnapshot.ZapCount(account = "bob", dayStart = today, count = 0), bob)
+        assertEquals("0", glanceReading(GlanceMetric.ZAPS, snapshot.copy(zapsToday = bob), todayStart = today).value)
+        // A new day: 0, for the new day.
+        assertEquals(VaultSnapshot.ZapCount(account = "alice", dayStart = today + 86_400, count = 0), alice.heldFor("alice", today + 86_400))
+    }
 }

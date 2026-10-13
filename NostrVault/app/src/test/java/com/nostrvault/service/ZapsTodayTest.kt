@@ -62,4 +62,12 @@ class ZapsTodayTest {
         val notAZap = Json.parseToJsonElement("""{"id":"r2","pubkey":"pub","kind":7,"created_at":1,"tags":[]}""").jsonObject
         assertNull(ZapsToday.Receipt.from(notAZap))
     }
+
+    @Test fun theNextMidnightIsTomorrowsEvenOnALongDay() {
+        val evening = at("2026-10-13T22:44:00").toInstant().toEpochMilli()
+        assertEquals(at("2026-10-14T00:00:00").toEpochSecond(), ZapsToday.nextStartOfDay(evening, zone))
+        // 2026-11-01 is 25 hours long in New York.
+        val morning = at("2026-11-01T00:30:00").toInstant().toEpochMilli()
+        assertEquals(at("2026-11-02T00:00:00").toEpochSecond(), ZapsToday.nextStartOfDay(morning, zone))
+    }
 }

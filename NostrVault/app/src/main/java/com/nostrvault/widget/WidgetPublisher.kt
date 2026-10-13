@@ -17,9 +17,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
@@ -155,12 +158,25 @@ class WidgetPublisher @Inject constructor(
 
     /**
      * Zaps today, counted again whenever something lands in your relay's
-     * inbox or the account changes; the settle delay folds a burst of
-     * arrivals into one count. A count the relay could not answer leaves
-     * the last one in place.
+     * inbox, the account changes, or the day turns over; the settle delay
+     * folds a burst of arrivals into one count. Before any count, a change
+     * of account or day puts a 0 in place at once ([VaultSnapshot.ZapCount.heldFor]),
+     * so the widget never shows another account's or yesterday's number,
+     * even when the relay can't answer. A count it can't get leaves that in place.
      */
     private fun CoroutineScope.watchZapsToday() = launch(Dispatchers.IO) {
-        combine(RelayForegroundService.inboxActivityTick, configStore.activeAccountHexPubkey) { _, me -> me }
+        combine(
+            RelayForegroundService.inboxActivityTick,
+            configStore.activeAccountHexPubkey,
+            midnights(),
+        ) { _, me, _ -> me }
+            .onEach { me ->
+                val todayStart = ZapsToday.startOfDay(System.currentTimeMillis())
+                val changed = WidgetSnapshotStore.update(context) {
+                    it.copy(zapsToday = it.zapsToday.heldFor(me, todayStart))
+                }
+                if (changed) redraw(context)
+            }
             .debounce(3_000)
             .collectLatest { me ->
                 val now = System.currentTimeMillis()
@@ -169,6 +185,15 @@ class WidgetPublisher @Inject constructor(
                 val changed = WidgetSnapshotStore.update(context) { it.copy(zapsToday = today) }
                 if (changed) redraw(context)
             }
+    }
+
+    /** Now, then each local midnight (a second after, so the new day has begun). */
+    private fun midnights() = flow {
+        while (true) {
+            emit(Unit)
+            val now = System.currentTimeMillis()
+            delay(ZapsToday.nextStartOfDay(now) * 1_000 - now + 1_000)
+        }
     }
 
     /**
