@@ -16,9 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerInputChange
-import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
@@ -79,13 +76,15 @@ fun ZoomableImage(
  * - Releases horizontal gestures to HorizontalPager at 1.0x scale
  * - Releases horizontal gestures at zoom-pan edge for pager page change
  * - Reports vertical drag offset when at 1.0x for drag-to-dismiss
- * - [onLongPress], when given
+ * - [onTap] and [onLongPress], when given
  *
- * A video page's player takes single taps itself (they show its controls),
- * which would cancel the usual double-tap detector; with [contentTakesTaps]
- * the double tap is read from the raw touches instead, so it works over the
- * player too. Zoom resets when [zoomable] turns false (a video going into
- * picture-in-picture must not carry the zoom into the window).
+ * The box is the page's one reader of taps: [onTap] fires only once a tap is
+ * known not to be the first of a double tap, and a long press is never also
+ * a tap. So [content] must not take taps of its own over its whole area (a
+ * video page hands the player's controls toggle up as [onTap]); its buttons
+ * and seek bar consume theirs, so they never count here. Zoom resets when
+ * [zoomable] turns false (a video going into picture-in-picture must not
+ * carry the zoom into the window).
  *
  * All transforms are GPU-composited via graphicsLayer (zero extra bitmap allocation).
  */
@@ -93,14 +92,15 @@ fun ZoomableImage(
 fun ZoomableBox(
     modifier: Modifier = Modifier,
     zoomable: Boolean = true,
-    contentTakesTaps: Boolean = false,
     onScaleChanged: ((Float) -> Unit)? = null,
     onVerticalDrag: ((Float) -> Unit)? = null,
     onVerticalDragEnd: ((Float) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    onTap: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val currentOnTap by rememberUpdatedState(onTap)
     val scope = rememberCoroutineScope()
 
     var scale by remember { mutableFloatStateOf(1f) }
@@ -187,20 +187,13 @@ fun ZoomableBox(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .onSizeChanged { containerSize = it }
-            // Double-tap to zoom
-            // Keyed so a viewer without a long-press action never detects one.
-            .pointerInput(onLongPress != null, zoomable, contentTakesTaps) {
-                if (contentTakesTaps) return@pointerInput
+            // Tap, double-tap to zoom and long press. Keyed so a page without
+            // a long-press or tap action never waits on one.
+            .pointerInput(onLongPress != null, onTap != null, zoomable) {
                 detectTapGestures(
                     onLongPress = if (onLongPress != null) { _ -> currentOnLongPress?.invoke() } else null,
-                    onDoubleTap = if (zoomable && !contentTakesTaps) { tapOffset -> toggleZoom(tapOffset) } else null,
-                )
-            }
-            .pointerInput(contentTakesTaps, zoomable, onLongPress != null) {
-                if (!contentTakesTaps) return@pointerInput
-                detectTapsOverContent(
-                    onDoubleTap = if (zoomable) { offset -> toggleZoom(offset) } else null,
-                    onLongPress = if (onLongPress != null) { { currentOnLongPress?.invoke() } } else null,
+                    onDoubleTap = if (zoomable) { tapOffset -> toggleZoom(tapOffset) } else null,
+                    onTap = if (onTap != null) { _ -> currentOnTap?.invoke() } else null,
                 )
             }
             // Pinch-to-zoom and pan
@@ -311,66 +304,5 @@ fun ZoomableBox(
             },
     ) {
         content()
-    }
-}
-
-/**
- * Taps over content that consumes them itself (a video player's own tap
- * handler consumes every one), read on the final pass whether or not a child
- * consumed them: [onDoubleTap] for two quick taps close together,
- * [onLongPress] once a finger has been held still past the long-press time.
- * A drag is neither.
- */
-private suspend fun PointerInputScope.detectTapsOverContent(
-    onDoubleTap: ((Offset) -> Unit)?,
-    onLongPress: (() -> Unit)?,
-) {
-    var lastUpAt = 0L
-    var lastUpPosition = Offset.Zero
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
-        var moved = false
-        var longPressed = false
-        var up: PointerInputChange? = null
-        val untilLongPress = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-            while (up == null && !moved) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                val change = event.changes.firstOrNull { it.id == down.id }
-                if (change == null || event.changes.size > 1 ||
-                    (change.position - down.position).getDistance() > viewConfiguration.touchSlop
-                ) {
-                    moved = true
-                } else if (!change.pressed) {
-                    up = change
-                }
-            }
-        }
-        if (untilLongPress == null && onLongPress != null) {
-            // Held still past the timeout.
-            longPressed = true
-            onLongPress()
-        }
-        // Wait out the rest of the gesture.
-        while (up == null) {
-            val event = awaitPointerEvent(PointerEventPass.Final)
-            if (event.changes.none { it.pressed }) up = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
-        }
-        val release = up ?: return@awaitEachGesture
-        if (onDoubleTap == null || moved || longPressed ||
-            release.uptimeMillis - down.uptimeMillis > viewConfiguration.longPressTimeoutMillis
-        ) {
-            lastUpAt = 0L
-            return@awaitEachGesture
-        }
-        val isSecond = lastUpAt != 0L &&
-            down.uptimeMillis - lastUpAt <= viewConfiguration.doubleTapTimeoutMillis &&
-            (down.position - lastUpPosition).getDistance() <= viewConfiguration.touchSlop * 4
-        if (isSecond) {
-            lastUpAt = 0L
-            onDoubleTap(release.position)
-        } else {
-            lastUpAt = release.uptimeMillis
-            lastUpPosition = release.position
-        }
     }
 }
