@@ -22,8 +22,16 @@ struct OwnerSessionWarmup {
     /// (that login has to reach the signer and may need an approval the
     /// background cannot show, like `performConnect`'s fresh pairing), the
     /// owner's client key is stored, and no login is already running.
-    mutating func start(config: HavenConfig, ownerHex: String) -> Login? {
+    ///
+    /// `activeSessionKey`: the Go session key of the active account's bunker
+    /// (`NIP46Service.activeSignerKey()`), nil when it signs locally. When the
+    /// owner's bunker shares that key (both paired to one host), Go holds one
+    /// session for both: the owner's login and the active account's connect
+    /// would drop each other's session, and a post could go out through the
+    /// owner's. Nothing a background login does helps there, so it never starts.
+    mutating func start(config: HavenConfig, ownerHex: String, activeSessionKey: String?) -> Login? {
         guard !inFlight, config.ownerNeedsBackgroundSession, !config.ownerPairingPending,
+              config.ownerSessionKey != activeSessionKey,
               !ownerHex.isEmpty, let link = config.ownerBunkerLink,
               let clientSK = config.accountBunkerConfigs[config.ownerNpub]?.clientSecretKey,
               !clientSK.isEmpty else { return nil }
@@ -38,6 +46,16 @@ struct OwnerSessionWarmup {
     mutating func finished(_ login: Login, pubkey: String?) -> Bool {
         inFlight = false
         return pubkey == login.ownerHex
+    }
+}
+
+/// A remote signer's reply is used only when it is signed by the key it was
+/// asked to sign as. One bunker session can answer for another account (two
+/// accounts paired to one host share it); without this its signature would be
+/// published as the account that asked.
+enum SignerReplyCheck {
+    static func accepts(signedPubkey: String, askedFor: String) -> Bool {
+        !askedFor.isEmpty && signedPubkey.lowercased() == askedFor.lowercased()
     }
 }
 

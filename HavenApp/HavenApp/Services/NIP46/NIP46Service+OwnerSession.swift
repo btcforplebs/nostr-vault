@@ -20,7 +20,10 @@ extension NIP46Service {
     func connectOwnerInBackgroundIfNeeded() {
         let config = ConfigService.shared.config
         let ownerHex = Bech32.decode(config.ownerNpub)?.hexString ?? ""
-        guard let login = Self.ownerWarmup.start(config: config, ownerHex: ownerHex) else { return }
+        let activeKey = config.activeSigningMode() == "nip46" ? Self.activeSignerKey() : nil
+        guard let login = Self.ownerWarmup.start(
+            config: config, ownerHex: ownerHex, activeSessionKey: activeKey
+        ) else { return }
         Task {
             // Blocking in Go (the signer has to answer): off the main actor.
             let pubkey: String? = await Task.detached {
