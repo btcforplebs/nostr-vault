@@ -40,4 +40,45 @@ final class DeletedNotesStoreTests: XCTestCase {
         store.markDeleted([], account: "acct")
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.fileURL(forAccount: "acct").path))
     }
+
+    // A replayed kind 5 costs a lookup, not a signature check and a purge.
+
+    func testARequestIsClaimedOnce() {
+        let store = DeletedNotesStore(directory: directory)
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "acct"), ["a1"])
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "acct"), [])
+    }
+
+    func testPostsAlreadyOffTheFeedAreNotReturned() {
+        let store = DeletedNotesStore(directory: directory)
+        store.markAppliedToFeed(["a1"], account: "acct")
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "acct"), [])
+        XCTAssertEqual(store.claimRequest("r2", naming: ["a1", "b2"], account: "acct"), ["b2"])
+    }
+
+    func testAppliedPostsStayWithTheirAccount() {
+        let store = DeletedNotesStore(directory: directory)
+        store.markAppliedToFeed(["a1"], account: "one")
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "two"), ["a1"])
+    }
+
+    func testAReleasedRequestCanBeClaimedAgain() {
+        let store = DeletedNotesStore(directory: directory)
+        _ = store.claimRequest("r1", naming: ["a1"], account: "acct")
+        store.releaseRequest("r1")
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "acct"), ["a1"])
+    }
+
+    /// Marking deleted on disk (a delete made on this device) does not take
+    /// the post off the feed, so the relay's echo of that request still does.
+    func testMarkedDeletedIsNotAppliedToFeed() {
+        let store = DeletedNotesStore(directory: directory)
+        store.markDeleted(["a1"], account: "acct")
+        XCTAssertEqual(store.claimRequest("r1", naming: ["a1"], account: "acct"), ["a1"])
+    }
+
+    func testAppliedIdsAreNotWrittenToDisk() {
+        DeletedNotesStore(directory: directory).markAppliedToFeed(["a1"], account: "acct")
+        XCTAssertEqual(DeletedNotesStore(directory: directory).claimRequest("r1", naming: ["a1"], account: "acct"), ["a1"])
+    }
 }
