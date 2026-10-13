@@ -66,7 +66,7 @@ async function setup({ loss = 0, clientIsOwner = true } = {}) {
   }
   const send = async msg => { const b = Buffer.from(JSON.stringify(msg) + "\n"); let off = 0; while (off < b.length) { off += await client.write(id, b.subarray(off), now); await pump() } }
   const until = async (pred, max = 3000) => { for (let k = 0; k < max; k++) { if (pred()) return true; await pump() } return pred() }
-  return { server, client, id, store, send, until, lines, pump, vaultSk, state: () => client.state(id) }
+  return { server, client, id, store, send, until, lines, pump, vaultSk, relayKey, step, state: () => client.state(id) }
 }
 
 const note = (sk, content) => finalizeEvent({ kind: 1, created_at: 1760000000, tags: [], content }, sk)
@@ -127,4 +127,25 @@ test("oversized line: NOTICE then the stream is aborted", async () => {
   let off = 0
   while (off < huge.length && (await t.state()) === "established") { try { off += await t.client.write(t.id, huge.subarray(off), Date.now()) } catch { break } await t.pump() }
   assert.ok(await t.until(() => t.server.stats.open === 0 && t.server.conns.size === 0))
+})
+
+test("a closed connection does not wedge the server: the next one is served", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  await t.send(["REQ", "a", { kinds: [1] }])
+  assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "a")))
+  // Graceful close from the vault: CLOSE, FIN, the server closes back, the stack forgets the connection.
+  await t.send(["CLOSE", "a"])
+  await t.client.close(t.id, Date.now())
+  assert.ok(await t.until(() => t.server.stats.open === 0, 6000), "server let go of the closed connection")
+  // A second connection from the same vault gets its REQ answered.
+  const id2 = await t.client.connect(t.relayKey, Date.now())
+  let buf = ""
+  const got = async () => { for (let b; (b = await t.client.read(id2, 65536, Date.now())).length; ) buf += Buffer.from(b).toString(); return buf.includes('"EOSE","b"') }
+  let sent = false
+  for (let k = 0; k < 3000 && !(await got()); k++) {
+    await t.step()
+    if (!sent && (await t.client.state(id2)) === "established") { await t.client.write(id2, Buffer.from(JSON.stringify(["REQ", "b", { kinds: [1] }]) + "\n"), Date.now()); sent = true }
+  }
+  assert.ok(buf.includes('"EOSE","b"'), "second connection got EOSE")
 })

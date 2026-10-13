@@ -65,7 +65,14 @@ export class TcpFipsRelayServer {
       const now = this.clock()
       await this.tcp.poll(now)
       for (let id; (id = await this.tcp.accept()) !== undefined; ) this.#add(id)
-      for (const c of [...this.conns.values()]) await this.#pump(c, now)
+      for (const c of [...this.conns.values()]) {
+        // One connection's failure must not stop the pump for the others.
+        try {
+          await this.#pump(c, now)
+        } catch {
+          await this.#drop(c, true).catch(() => {})
+        }
+      }
       this.stats.open = this.conns.size
     } finally {
       this.busy = false
@@ -101,6 +108,8 @@ export class TcpFipsRelayServer {
   }
 
   async #pump(c, now) {
+    // The stack forgets a connection once its close completes; reading it after that throws.
+    if ((await this.tcp.state(c.id)) === undefined) return this.#drop(c, false)
     for (let chunk; (chunk = await this.tcp.read(c.id, READ_CHUNK, now)).length; ) await c.session.onBytes(chunk)
     while (c.out.length) {
       const head = c.out[0]
