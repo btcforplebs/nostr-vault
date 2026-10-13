@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
@@ -113,6 +113,7 @@ fun NoteCard(
     var showMoreMenu by remember { mutableStateOf(false) }
     val menuContext = LocalContext.current
     val menuClipboard = LocalClipboardManager.current
+    val menuLane = LocalNotificationManager.current
     val moreActions = buildList {
         // Share and Broadcast live here rather than in the action row: neither
         // carries a count, both are secondary to Reply/Repost/Like/Zap, and the
@@ -132,7 +133,7 @@ fun NoteCard(
                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                         ?: note.effectiveEventId
                     menuClipboard.setText(AnnotatedString(threadLink(nevent)))
-                    Toast.makeText(menuContext, "Link copied", Toast.LENGTH_SHORT).show()
+                    menuLane.showFeedback("Link copied", NostrVaultIcons.LinkIcon)
                 },
             ),
         )
@@ -143,7 +144,7 @@ fun NoteCard(
             add(
                 NoteAction(NostrVaultIcons.Copy, "Copy text") {
                     menuClipboard.setText(AnnotatedString(NostrMentions.toPlainText(note.content, profiles).trim()))
-                    Toast.makeText(menuContext, "Text copied", Toast.LENGTH_SHORT).show()
+                    menuLane.showFeedback("Text copied", NostrVaultIcons.Copy)
                 },
             )
         }

@@ -70,6 +70,5 @@ internal fun TrustWebViewWOTTabBar(
             },
             outcome = refreshState?.takeIf { it.done }?.let { if (it.failed) WotPillOutcome.Failed else WotPillOutcome.Saved },
         )
-        FilterNotePill(filterNote)
     }
 }

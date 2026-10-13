@@ -29,10 +29,8 @@ import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AccountInfo
 import com.nostrvault.ui.components.buildAccountInfos
-import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.components.PendingPostBanner
-import com.nostrvault.ui.notification.NotificationOverlay
 import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -80,7 +78,6 @@ fun NostrVaultNavHost(
     logStore: LogStore,
     dmUnreadCount: StateFlow<Int>,
     hasNewRelayActivity: StateFlow<Boolean>,
-    notificationManager: NotificationManager,
     pendingPostManager: PendingPostManager,
 ) {
     val navController = rememberNavController()
@@ -338,12 +335,6 @@ fun NostrVaultNavHost(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = if (showBottomBar) 80.dp else 0.dp),
-        )
-
-        // Notification pill overlay at top
-        NotificationOverlay(
-            notificationManager = notificationManager,
-            modifier = Modifier.align(Alignment.TopCenter),
         )
 
         // Hold-the-Feed-tab list: over everything, the bar included.

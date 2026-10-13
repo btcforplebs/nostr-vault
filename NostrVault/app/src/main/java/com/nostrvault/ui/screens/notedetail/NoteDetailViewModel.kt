@@ -51,6 +51,7 @@ class NoteDetailViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val zapSendService: ZapSendService,
     private val pendingPostManager: PendingPostManager,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     val noteId: String = savedStateHandle["noteId"] ?: ""
@@ -103,8 +104,6 @@ class NoteDetailViewModel @Inject constructor(
     val expandedEngagement: StateFlow<Boolean> = _expandedEngagement.asStateFlow()
 
     // Zap state: transient user-facing messages + in-flight guard
-    private val _zapMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
-    val zapMessage: SharedFlow<String> = _zapMessage
     private val _isZapping = MutableStateFlow(false)
     val isZapping: StateFlow<Boolean> = _isZapping.asStateFlow()
 
@@ -355,24 +354,23 @@ class NoteDetailViewModel @Inject constructor(
 
     /**
      * Real NIP-57 zap of [note] (effective id handles kind-6 reposts).
-     * Result is surfaced through [zapMessage]; engagement re-fetches after a
-     * delay so the kind-9735 receipt has time to propagate (iOS parity).
+     * The zap pill reports the result (docs/pills.md); engagement re-fetches
+     * after a delay so the kind-9735 receipt has time to propagate (iOS parity).
      */
     fun zapNote(note: FeedNote, amountSats: Int) {
         if (_isZapping.value) return
         viewModelScope.launch {
             _isZapping.value = true
-            val result = zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats)
+            val result = notificationManager.zapping(
+                com.nostrvault.ui.screens.feed.zapRecipientName(profiles.value, note.effectiveAuthor),
+                amountSats,
+            ) { zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats) }
             _isZapping.value = false
-            result.fold(
-                onSuccess = {
-                    ZapFlight.launch(note.effectiveEventId)
-                    _zapMessage.emit("Zapped $amountSats sats")
-                    kotlinx.coroutines.delay(3_000)
-                    fetchEngagement(note.effectiveEventId)
-                },
-                onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
-            )
+            result.onSuccess {
+                ZapFlight.launch(note.effectiveEventId)
+                kotlinx.coroutines.delay(3_000)
+                fetchEngagement(note.effectiveEventId)
+            }
         }
     }
 

@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -39,9 +38,6 @@ fun ArticleReaderScreen(
     var showZapSheet by remember { mutableStateOf(false) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    LaunchedEffect(Unit) {
-        viewModel.message.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-    }
     val isLoading by viewModel.isLoading.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val highlights by viewModel.highlights.collectAsState()

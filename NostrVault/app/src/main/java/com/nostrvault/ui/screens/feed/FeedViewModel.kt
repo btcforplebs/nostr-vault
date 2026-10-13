@@ -154,8 +154,6 @@ class FeedViewModel @Inject constructor(
     fun cacheNote(note: FeedNote) = feedService.cacheNote(note)
 
     // Zap result feedback for the UI (toast)
-    private val _zapMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
-    val zapMessage: SharedFlow<String> = _zapMessage
 
     // ── Feed state ───────────────────────────────────────────────
 
@@ -653,18 +651,15 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             val note = feedService.findNote(noteId)
             if (note == null) {
-                _zapMessage.emit("Note not found")
+                notificationManager.showError("Note not found")
                 return@launch
             }
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
-            zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount).fold(
-                onSuccess = {
-                    ZapFlight.launch(note.effectiveEventId)
-                    _zapMessage.emit("Zapped $amount sats")
-                },
-                onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
-            )
+            // The zap pill reports it (docs/pills.md).
+            notificationManager.zapping(zapRecipientName(nostrService.profiles.value, note.effectiveAuthor), amount) {
+                zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount)
+            }.onSuccess { ZapFlight.launch(note.effectiveEventId) }
         }
     }
 

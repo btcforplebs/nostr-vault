@@ -13,7 +13,7 @@ All pills live in **one lane**, top-centre, just under the navigation bar:
 |---|---|---|
 | iPhone / iPad | `AppBannerStack` in the banner window (`HavenApp-iOS/SceneDelegate.swift`), above sheets | nav bar + 4 pt (48 pt iPhone, 54 pt iPad) |
 | Mac | `PillLaneStack` overlay on the main window (`MenuBarView`) | 4 pt |
-| Android | `NotificationOverlay` in `NavGraph` | status bar + 64 dp |
+| Android | `NotificationOverlay` in `MainActivity`, above the full-screen media viewer | status bar + 64 dp |
 
 Nothing else draws a pill in that band. A screen that has its own pill (the
 Feed's New Posts, the WoT rebuild pill) keeps drawing it, but as a level-4

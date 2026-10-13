@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.feed
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -185,7 +183,6 @@ fun FeedScreen(
     // compare — dozens of times while a page of replies streams in. Each row
     // subscribes to just its own entries in FeedFullNoteRow instead.
     val listState = rememberLazyListState()
-    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
@@ -256,13 +253,6 @@ fun FeedScreen(
     var zapNoteId by remember { mutableStateOf<String?>(null) }
     var showNoLightningAddress by remember { mutableStateOf(false) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // Zap result feedback
-    LaunchedEffect(Unit) {
-        viewModel.zapMessage.collect { msg ->
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
 
     // More menu / delete confirmation state
     var deleteNoteId by remember { mutableStateOf<String?>(null) }

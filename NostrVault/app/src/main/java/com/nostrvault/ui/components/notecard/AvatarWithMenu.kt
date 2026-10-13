@@ -9,7 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
+import com.nostrvault.ui.notification.PillTone
 import androidx.compose.ui.semantics.contentDescription
 import com.nostrvault.ui.theme.*
 
@@ -61,7 +62,7 @@ internal fun AvatarWithMenu(
         return
     }
     var expanded by remember { mutableStateOf(false) }
-    val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     Box {
         content(Modifier.clickable(onClickLabel = "Actions for $displayName") { expanded = true })
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -98,7 +99,8 @@ internal fun AvatarWithMenu(
                 onClick = {
                     expanded = false
                     menu.onBlock(pubkey)
-                    Toast.makeText(context, "Blocked $displayName", Toast.LENGTH_SHORT).show()
+                    // Hidden from you now: grey, not green (docs/pills.md).
+                    lane.showToast("Blocked $displayName", PillTone.NEUTRAL)
                 },
             )
         }

@@ -68,6 +68,7 @@ class ProfileViewModel @Inject constructor(
     private val blossomService: com.nostrvault.service.BlossomService,
     private val mediaCacheService: com.nostrvault.service.MediaCacheService,
     private val mediaSaveService: com.nostrvault.service.MediaSaveService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
     dmService: com.nostrvault.service.DMService,
 ) : ViewModel() {
 
@@ -211,8 +212,6 @@ class ProfileViewModel @Inject constructor(
     val hasMoreTagged: StateFlow<Boolean> = _hasMoreTagged.asStateFlow()
 
     /** Transient user-facing message (zap / block result). */
-    private val _toast = MutableStateFlow<String?>(null)
-    val toast: StateFlow<String?> = _toast.asStateFlow()
 
     /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
     val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
@@ -596,7 +595,7 @@ class ProfileViewModel @Inject constructor(
     fun saveMediaToPhotos(url: String) {
         viewModelScope.launch {
             val result = mediaSaveService.saveToGallery(url, com.nostrvault.service.MediaSaveService.mimeTypeForExtension(url))
-            _toast.value = if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery"
+            if (result.isSuccess) notificationManager.showToast("Saved to gallery") else notificationManager.showError("Couldn't save to gallery")
         }
     }
 
@@ -611,12 +610,12 @@ class ProfileViewModel @Inject constructor(
             try {
                 val saved = blossomService.mirrorUrlToLocal(url)
                 if (saved == null) {
-                    _toast.value = "Could not save to your vault"
+                    notificationManager.showError("Could not save to your vault")
                     return@launch
                 }
                 val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
                     pushMissing(saved).let { it == null || it is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted }
-                _toast.value = if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone"
+                notificationManager.showToast(if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone")
             } finally {
                 _mediaBusyUrl.value = null
             }
@@ -630,9 +629,13 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _mediaBusyUrl.value = url
             try {
-                _toast.value = when (val result = pushMissing(sha)) {
-                    null -> "Already on all your Blossom servers"
-                    else -> result.message
+                // The same lines and tones as the gallery (MediaGalleryViewModel.mirrorMissing).
+                when (val result = pushMissing(sha)) {
+                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
+                    is com.nostrvault.service.BlossomService.MirrorPushResult.Partial ->
+                        notificationManager.showError(result.message, com.nostrvault.ui.notification.ErrorStyle.WARNING)
+                    else -> notificationManager.showError(result.message)
                 }
             } finally {
                 _mediaBusyUrl.value = null
@@ -685,28 +688,20 @@ class ProfileViewModel @Inject constructor(
             // A profile zap has no note: an empty id leaves out the `e` tag,
             // so the request carries only `p` (NIP-57) instead of naming the
             // pubkey as an event id.
-            val result = zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
-            _toast.value = result.fold(
-                onSuccess = { "Zapped $amount sats" },
-                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
-            )
+            // The zap pill reports the result (docs/pills.md).
+            notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, pk), amount) {
+                zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
+            }
         }
     }
 
-    fun clearToast() { _toast.value = null }
-
-    /** Zap a post (default amount) — feedback via [toast]. */
+    /** Zap a post (default amount); the zap pill reports the result. */
     fun zapNote(noteId: String, notePubkey: String) {
         val amount = defaultZapSats
         viewModelScope.launch {
-            val result = zapSendService.zapNote(noteId, notePubkey, amount)
-            _toast.value = result.fold(
-                onSuccess = {
-                    ZapFlight.launch(noteId)
-                    "Zapped $amount sats"
-                },
-                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
-            )
+            notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, notePubkey), amount) {
+                zapSendService.zapNote(noteId, notePubkey, amount)
+            }.onSuccess { ZapFlight.launch(noteId) }
         }
     }
 

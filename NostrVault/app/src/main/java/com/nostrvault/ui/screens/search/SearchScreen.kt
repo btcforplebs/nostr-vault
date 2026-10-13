@@ -23,8 +23,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
-import androidx.compose.ui.platform.LocalContext
-import android.widget.Toast
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.navigation.HashtagLink
@@ -64,7 +62,6 @@ fun SearchScreen(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
     // The post bar's Web of Trust button: the author whose map is open.
     var trustWebAuthor by remember { mutableStateOf<String?>(null) }
@@ -77,7 +74,6 @@ fun SearchScreen(
     val showNotes = SearchResultSections.shows(resultFilter, SearchResultFilter.NOTES) && results.notes.isNotEmpty()
     val showHashtags = SearchResultSections.shows(resultFilter, SearchResultFilter.HASHTAGS) && hashtagResults.isNotEmpty()
     val showLinks = SearchResultSections.shows(resultFilter, SearchResultFilter.LINKS) && linkResults.isNotEmpty()
-    val context = LocalContext.current
     val openHashtag = LocalOpenHashtag.current
     val keyboard = LocalSoftwareKeyboardController.current
     val namedPeople = remember(recommendedPeople, profiles) { namedRecommendedPeople(recommendedPeople, profiles) }
@@ -110,13 +106,6 @@ fun SearchScreen(
         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
     }
 
-    // Zap feedback, the same way the profile timeline reports it.
-    LaunchedEffect(toast) {
-        toast?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearToast()
-        }
-    }
 
     // Fetch embedded quoted notes (nostr:note1.../nevent1...) in search results
     // plus their authors' profiles, so they resolve instead of spinning forever.

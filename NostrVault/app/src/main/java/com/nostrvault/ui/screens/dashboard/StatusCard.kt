@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens.dashboard
 
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -82,6 +82,7 @@ internal fun StatusCard(
 ) {
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var didCopy by remember { mutableStateOf(false) }
@@ -98,7 +99,7 @@ internal fun StatusCard(
     fun copyAddress() {
         val text = address ?: return
         clipboard.setText(AnnotatedString(text))
-        Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
+        lane.showFeedback("Address copied", NostrVaultIcons.Copy)
         didCopy = true
         scope.launch {
             delay(1_600)
