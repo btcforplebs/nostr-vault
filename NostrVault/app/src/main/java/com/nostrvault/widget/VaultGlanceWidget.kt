@@ -93,9 +93,14 @@ fun glanceReading(
     GlanceMetric.ZAPS -> GlanceReading(compactCount(zapsFor(snapshot.zapsToday, account, todayStart)), "zaps today")
 }
 
-/** [zaps] when they were counted for [account]; 0 for anyone else, as for another day. */
+/**
+ * [zaps] when they were counted for [account]; 0 for anyone else, as for
+ * another day. An [account] of "" is unknown, not a mismatch: the widget's
+ * 30-minute redraw runs in a fresh process before anything has loaded the
+ * config, and the file is then the best word on whose count it holds.
+ */
 private fun zapsFor(zaps: VaultSnapshot.ZapCount, account: String, todayStart: Long): Int =
-    if (zaps.account == account) zaps.on(todayStart) else 0
+    if (account.isEmpty() || zaps.account == account) zaps.on(todayStart) else 0
 
 /** 950, 1.2k, 34k, 1.2M: a count that fits one cell. iOS `NV.compactCount`. */
 fun compactCount(n: Int): String = when {
@@ -121,8 +126,9 @@ class VaultGlanceWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val snapshot = WidgetSnapshotStore.read(context)
-        // "" before the app has loaded its config (a widget drawn in a fresh
-        // process): zaps then read 0 until the publisher writes and redraws.
+        // "" before anything has loaded the config (the periodic redraw in a
+        // fresh process): the file's count is trusted then. Not reload() here:
+        // it does JNI and keystore reads, and can save.
         val account = EntryPointAccessors
             .fromApplication(context.applicationContext, GlanceEntryPoint::class.java)
             .configStore()

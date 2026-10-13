@@ -101,8 +101,10 @@ class VaultGlanceTest {
         // process died first): the file still holds alice's count for today.
         val alices = snapshot.copy(zapsToday = VaultSnapshot.ZapCount(account = "alice", dayStart = today, count = 7))
         assertEquals(GlanceReading("0", "zaps today"), glanceReading(GlanceMetric.ZAPS, alices, "bob", todayStart = today))
-        // No account loaded yet: nobody's count.
-        assertEquals("0", glanceReading(GlanceMetric.ZAPS, alices, "", todayStart = today).value)
+        // No account loaded yet (the 30-minute redraw in a fresh process, which
+        // never loads the config): unknown, not a mismatch, so the file is
+        // trusted. Reading 0 here would blank the real count until the app opens.
+        assertEquals("7", glanceReading(GlanceMetric.ZAPS, alices, "", todayStart = today).value)
         // Alice still sees her own.
         assertEquals("7", glanceReading(GlanceMetric.ZAPS, alices, "alice", todayStart = today).value)
     }
