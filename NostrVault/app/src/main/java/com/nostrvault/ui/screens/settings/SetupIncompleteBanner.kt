@@ -53,13 +53,6 @@ internal fun settingsTopItems(config: HavenConfig): List<SettingsTopItem> = buil
 internal val SETUP_INCOMPLETE_DESTINATION: Screen = Screen.SetupWizard
 
 /**
- * Whether a finished wizard goes back to where it was opened from: only to
- * Settings, which opened it from the banner. On first run the wizard is the
- * start of the app (nothing, or only the graph, behind it) and goes to the Feed.
- */
-internal fun setupWizardReturnsToSettings(previousRoute: String?): Boolean = previousRoute == Screen.Settings.route
-
-/**
  * "Setup Incomplete" at the top of Settings. Tapping it opens the setup
  * wizard. Twin of the banner in iOS SettingsView.iOSBody.
  */

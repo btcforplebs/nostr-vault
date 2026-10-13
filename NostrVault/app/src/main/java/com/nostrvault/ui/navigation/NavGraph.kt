@@ -97,7 +97,14 @@ fun NostrVaultNavHost(
         Screen.Profile.route,
     )
 
-    val startDestination = if (isSetupComplete) Screen.Feed.route else Screen.SetupWizard.route
+    // Fixed at first composition, never the live flag (see setupStartRoute).
+    val startDestination = remember { setupStartRoute(isSetupComplete) }
+    // So a config reset mid-run opens the wizard itself.
+    var setupWasComplete by remember { mutableStateOf(isSetupComplete) }
+    LaunchedEffect(isSetupComplete) {
+        openSetupWizardIfReset(navController, setupWasComplete, isSetupComplete)
+        setupWasComplete = isSetupComplete
+    }
 
     // Account switcher state
     var showAccountSwitcher by remember { mutableStateOf(false) }

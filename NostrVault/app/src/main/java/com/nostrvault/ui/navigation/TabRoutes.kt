@@ -27,18 +27,7 @@ internal fun NavGraphBuilder.tabRoutes(
     // ── Setup ─────────────────────────────────────────────
     composable(Screen.SetupWizard.route) {
         SetupWizardScreen(
-            onComplete = {
-                // Opened from Settings' "Setup Incomplete" banner: back to
-                // Settings, as iOS dismisses its wizard sheet. First run: the Feed.
-                val from = navController.previousBackStackEntry?.destination?.route
-                if (com.nostrvault.ui.screens.settings.setupWizardReturnsToSettings(from)) {
-                    navController.popBackStack()
-                } else {
-                    navController.navigate(Screen.Feed.route) {
-                        popUpTo(Screen.SetupWizard.route) { inclusive = true }
-                    }
-                }
-            },
+            onComplete = { finishSetupWizard(navController) },
         )
     }
 

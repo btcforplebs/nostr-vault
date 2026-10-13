@@ -3,7 +3,6 @@ package com.nostrvault.ui.screens.settings
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.ui.navigation.Screen
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,12 +30,5 @@ class SetupIncompleteBannerTest {
 
     @Test fun opensTheSetupWizard() {
         assertEquals(Screen.SetupWizard, SETUP_INCOMPLETE_DESTINATION)
-    }
-
-    @Test fun aWizardOpenedFromSettingsGoesBackThere() {
-        assertTrue(setupWizardReturnsToSettings(Screen.Settings.route))
-        // First run: the wizard is where the app starts.
-        assertFalse(setupWizardReturnsToSettings(null))
-        assertFalse(setupWizardReturnsToSettings(Screen.Feed.route))
     }
 }
