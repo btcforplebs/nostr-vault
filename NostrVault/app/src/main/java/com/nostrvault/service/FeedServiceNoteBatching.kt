@@ -98,6 +98,9 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
 
         // Comments on videos, articles and other kinds are not note threads.
         if (kind == NIP10Thread.COMMENT_KIND && !NIP10Thread.isNoteComment(kind, tags)) return
+        // A generic repost of a kind the timeline cannot draw (a video, a
+        // live stream) would show as a bare text body.
+        if (kind == GenericRepost.KIND && !GenericRepost.isShown(tags, content)) return
 
         when (kind) {
             // Your own deletion requests, from this device or another.

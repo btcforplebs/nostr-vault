@@ -268,11 +268,13 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
      * Amethyst reach the timeline; accumulateEvent keeps only those on kind 1
      * notes. Articles mode gains nothing from them, so it does not ask. NIP-88
      * polls (1068) draw as a card in the row; their votes are fetched per poll.
+     * Generic reposts (16), pictures (20) and highlights (9802) are drawn too
+     * ([FeedNote.TIMELINE_KINDS]), the set the relay's feed cache holds.
      */
     internal fun FeedService.primaryFeedKinds(): String = when (_feedMode.value) {
         FeedMode.ARTICLES -> "1,6,30023"
         FeedMode.POLLS -> "${NIP88Poll.KIND}"
-        else -> "1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}"
+        else -> FeedNote.TIMELINE_KINDS.joinToString(",")
     }
 
     /**
@@ -429,7 +431,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isEmpty()) return
-        val mentionFilter = """{"kinds":[1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}],"#p":["$ownerHex"],"limit":50}"""
+        val mentionFilter = """{"kinds":[${FeedNote.TIMELINE_KINDS.joinToString(",")}],"#p":["$ownerHex"],"limit":50}"""
         client.send("[\"REQ\",\"feed-mentions\",$mentionFilter]")
     }
 

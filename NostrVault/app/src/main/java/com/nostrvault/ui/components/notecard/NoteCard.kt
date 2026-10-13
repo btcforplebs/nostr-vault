@@ -28,6 +28,7 @@ import android.widget.Toast
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedHighlight
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.PostEngagement
 import com.nostrvault.data.model.poll
@@ -448,6 +449,8 @@ fun NoteCard(
                     note = note,
                     onClick = { (onArticleClick ?: onNoteClick)(note.effectiveEventId) },
                 )
+            } else if (note.displayKind == FeedHighlight.KIND) {
+                HighlightInlineBody(note = note, isFocused = isFocused)
             } else if (poll != null) {
                 // A NIP-88 poll's question is its content and its options are
                 // tags, so the text path drew the question with nothing to

@@ -71,10 +71,12 @@ data class FeedNote(
      * A bare repost is never noise: the empty-content rule threw it away, but
      * it is valid NIP-18 and its row fetches the note it points at. 2 of the 9
      * notes missing from two hours of a Following feed on 2026-10-04 were
-     * these (iOS #227).
+     * these (iOS #227). Nor is a picture post (NIP-68): its pictures are in
+     * `imeta` tags and its caption may well be empty.
      */
     val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        !isBareRepost && Companion.isNoiseOrSpam(content, tags)
+        !isBareRepost && !(displayKind == PICTURE_KIND && mediaURLs.isNotEmpty()) &&
+            Companion.isNoiseOrSpam(content, tags)
     }
 
     /** A kind 6 repost that only points at the original: empty content plus an `e` tag. */
@@ -107,7 +109,12 @@ data class FeedNote(
      * Used to fetch the whole thread subtree when a mid-thread reply is opened.
      */
     val threadRootId: String
-        get() = NIP10Thread.rootEventId(kind, tags) ?: effectiveEventId
+        get() = if (displayKind == FeedHighlight.KIND) {
+            // Its `e` tag names the passage's source, not a thread root.
+            effectiveEventId
+        } else {
+            NIP10Thread.rootEventId(kind, tags) ?: effectiveEventId
+        }
 
     /**
      * The event id engagement and replies actually target: for a kind-6
@@ -156,6 +163,19 @@ data class FeedNote(
 
     companion object {
         const val MAX_LINK_CARDS = 3
+
+        /** NIP-68 picture post. */
+        const val PICTURE_KIND = 20
+
+        /**
+         * Every kind the timelines (Following, Discovery, Global, Popular) ask
+         * for and draw as a card. The relay's feed cache holds the same set
+         * (`haven-go/feedsync.go` `feedKinds`). iOS `FeedNote.timelineKinds`.
+         */
+        val TIMELINE_KINDS: List<Int> = listOf(
+            1, 6, ArticleMeta.KIND, NIP10Thread.COMMENT_KIND, NIP88Poll.KIND,
+            GenericRepost.KIND, PICTURE_KIND, FeedHighlight.KIND,
+        )
 
         /**
          * Every event id these notes can ask the referenced-note cache for:
@@ -244,19 +264,26 @@ data class FeedNote(
             kind: Int,
             repostedBy: String? = null,
         ): FeedNote {
+            // A generic repost (16) is a repost of anything but a text note.
+            // Every repost rule (reposter-follows membership, the reposts
+            // toggle, the original fetched and drawn as its own kind) is the
+            // same, so it is held as a 6 from here on. iOS FeedNote.init.
+            val isGenericRepost = kind == GenericRepost.KIND
+            val feedKind = if (isGenericRepost) 6 else kind
+
             // NIP-18: kind 6 repost -- extract reposted event ID from outer e-tags
             val outerETags = tags.filter { it.size >= 2 && it[0] == "e" }
-            val outerRepostedEventId = if (kind == 6) outerETags.firstOrNull()?.get(1) else null
+            val outerRepostedEventId = if (feedKind == 6) outerETags.firstOrNull()?.get(1) else null
 
             var resolvedPubkey = pubkey
             var resolvedContent = content
             var resolvedTags = tags
-            var resolvedRepostedBy = repostedBy
+            var resolvedRepostedBy = if (isGenericRepost) repostedBy ?: pubkey else repostedBy
             var originalCreatedAtSecs: Long? = null
             var originalKind: Int? = null
 
             // Kind 6: swap to inner event if content is stringified JSON
-            if (kind == 6) {
+            if (feedKind == 6) {
                 try {
                     val inner = Json.decodeFromString<JsonObject>(content)
                     val innerContent = inner["content"]?.jsonPrimitive?.contentOrNull
@@ -287,12 +314,14 @@ data class FeedNote(
             val nonMentionETags = eTags.filter { tag ->
                 tag.size < 4 || tag[3] != "mention"
             }
-            val isReply = kind != 6 && nonMentionETags.isNotEmpty()
-            val replyToPubkey = if (kind != 6) {
+            // A highlight's `e`/`p` name its source, not a thread it replies in.
+            val threads = feedKind != 6 && feedKind != FeedHighlight.KIND
+            val isReply = threads && nonMentionETags.isNotEmpty()
+            val replyToPubkey = if (threads) {
                 resolvedTags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
             } else null
-            val parentEventId = if (kind != 6) {
-                NIP10Thread.parentEventId(kind, resolvedTags)
+            val parentEventId = if (threads) {
+                NIP10Thread.parentEventId(feedKind, resolvedTags)
             } else null
 
             // Parse media URLs from content + imeta tags
@@ -306,7 +335,11 @@ data class FeedNote(
             val mediaURLs = (contentMediaUrls + imetaUrls).filter { seen.add(it) }
 
             val linkURLs = parseLinkURLs(resolvedContent, mediaURLs.toSet())
-            val quotedEventIds = parseQuotedEventIds(resolvedContent)
+            // A highlight's source rides the quote path: fetched, drawn and
+            // opened like a quoted note, under the passage.
+            val shownKind = if (feedKind == 6) originalKind else feedKind
+            val highlightSource = if (shownKind == FeedHighlight.KIND) FeedHighlight.sourceReference(resolvedTags) else null
+            val quotedEventIds = parseQuotedEventIds(resolvedContent) + listOfNotNull(highlightSource)
 
             return FeedNote(
                 id = id,
@@ -314,7 +347,7 @@ data class FeedNote(
                 content = resolvedContent,
                 createdAt = createdAt,
                 tags = resolvedTags,
-                kind = kind,
+                kind = feedKind,
                 repostedBy = resolvedRepostedBy,
                 isReply = isReply,
                 replyToPubkey = replyToPubkey,

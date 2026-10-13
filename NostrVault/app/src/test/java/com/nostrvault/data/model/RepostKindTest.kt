@@ -57,4 +57,40 @@ class RepostKindTest {
         assertTrue(bare.isBareRepost)
         assertEquals(1, bare.effectiveKind)
     }
+
+    @Test fun `a generic repost is held as a repost credited to the reposter`() {
+        val bare = FeedNote.fromEvent(
+            repostId, reposter, "",
+            listOf(listOf("e", originalId), listOf("p", author), listOf("k", "30023")),
+            1_700_000_000L, GenericRepost.KIND,
+        )
+        assertEquals(6, bare.kind)
+        assertEquals(reposter, bare.repostedBy)
+        assertEquals(originalId, bare.repostedEventId)
+        assertTrue(bare.isBareRepost)
+        val article = FeedNote.fromEvent(originalId, author, "# Body", listOf(listOf("d", "x"), listOf("title", "Hello")), 1_600_000_000L, ArticleMeta.KIND)
+        assertEquals(ArticleMeta.KIND, bare.withRepostedOriginal(article).displayKind)
+    }
+
+    @Test fun `a generic repost embedding an article draws the article`() {
+        val inner = """{"id":"$originalId","pubkey":"$author","created_at":1600000000,"kind":30023,""" +
+            """"tags":[["d","x"],["title","Hello"]],"content":"# Body","sig":""}"""
+        val note = FeedNote.fromEvent(repostId, reposter, inner, listOf(listOf("e", originalId)), 1_700_000_000L, GenericRepost.KIND)
+        assertEquals(6, note.kind)
+        assertEquals(ArticleMeta.KIND, note.displayKind)
+        assertEquals(author, note.pubkey)
+        assertEquals(reposter, note.repostedBy)
+    }
+
+    @Test fun `a generic repost of a kind the timeline cannot draw is not shown`() {
+        assertTrue(GenericRepost.isShown(listOf(listOf("k", "30023")), ""))
+        assertTrue(GenericRepost.isShown(listOf(listOf("k", "9802")), ""))
+        org.junit.Assert.assertFalse(GenericRepost.isShown(listOf(listOf("k", "34235")), ""))
+        val video = """{"id":"$originalId","pubkey":"$author","kind":34235,"tags":[],"content":""}"""
+        org.junit.Assert.assertFalse(GenericRepost.isShown(emptyList(), video))
+        assertEquals(34235, GenericRepost.embeddedKind(video))
+        assertEquals(1, GenericRepost.embeddedKind("""{"pubkey":"$author","content":"hi"}"""))
+        assertEquals(null, GenericRepost.embeddedKind("not json"))
+        assertTrue(GenericRepost.isShown(emptyList(), ""))
+    }
 }
