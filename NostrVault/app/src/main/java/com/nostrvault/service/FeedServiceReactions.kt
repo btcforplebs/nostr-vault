@@ -67,7 +67,7 @@ import com.nostrvault.service.FeedService.Companion.TAG
             // A like signed by a remote signer takes a round trip; with
             // nothing on screen there was no telling one that went out
             // from one the signer never answered (iOS #295).
-            notificationManager.showToast(likedToastMessage(content))
+            notificationManager.showFeedback(likedToastMessage(content), com.nostrvault.ui.theme.NostrVaultIcons.HeartFilled)
         }
     }
 

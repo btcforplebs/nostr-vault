@@ -31,8 +31,9 @@ class HashtagFeedViewModel @Inject constructor(
     configStore: ConfigStore,
     feedService: FeedService,
     zapSendService: ZapSendService,
+    notificationManager: com.nostrvault.ui.notification.NotificationManager,
     private val interestListService: InterestListService,
-) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService) {
+) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService, notificationManager) {
 
     val tag: String = HashtagLink.normalize(savedStateHandle.get<String>("tag").orEmpty()).orEmpty()
 

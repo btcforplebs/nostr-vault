@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens
 
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -71,6 +71,7 @@ internal fun HeroNoteCard(
     var showMoreMenu by remember { mutableStateOf(false) }
     val heroContext = LocalContext.current
     val heroClipboard = LocalClipboardManager.current
+    val heroLane = LocalNotificationManager.current
     val cardShape = RoundedCornerShape(12.dp)
 
     // iOS mainNoteLayout: the same card as a focused feed row — 14pt padding,
@@ -191,7 +192,7 @@ internal fun HeroNoteCard(
                                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                                         ?: note.effectiveEventId
                                     heroClipboard.setText(AnnotatedString(threadLink(nevent)))
-                                    Toast.makeText(heroContext, "Link copied", Toast.LENGTH_SHORT).show()
+                                    heroLane.showFeedback("Link copied", NostrVaultIcons.LinkIcon)
                                 },
                             )
                             // Same as every other note's menu (NoteCard).
@@ -201,7 +202,7 @@ internal fun HeroNoteCard(
                                         heroClipboard.setText(AnnotatedString(
                                             com.nostrvault.ui.components.NostrMentions.toPlainText(note.content, profiles).trim()
                                         ))
-                                        Toast.makeText(heroContext, "Text copied", Toast.LENGTH_SHORT).show()
+                                        heroLane.showFeedback("Text copied", NostrVaultIcons.Copy)
                                     },
                                 )
                             }

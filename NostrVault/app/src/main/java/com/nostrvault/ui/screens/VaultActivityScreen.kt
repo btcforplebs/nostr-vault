@@ -3,7 +3,6 @@ package com.nostrvault.ui.screens
 import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.components.countNote
 import com.nostrvault.ui.components.VaultRightPill
-import com.nostrvault.ui.components.FilterNotePill
 import com.nostrvault.data.model.VaultActivityFilter
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -462,8 +461,6 @@ internal fun VaultActivityScreen(
                         )
                     }
                 }
-                // Hangs below the bar without moving the list.
-                FilterNotePill(filterNote, Modifier.align(Alignment.BottomCenter).offset(y = 40.dp))
             }
         },
         floatingActionButton = {

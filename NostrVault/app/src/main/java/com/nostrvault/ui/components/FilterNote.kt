@@ -2,22 +2,13 @@ package com.nostrvault.ui.components
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -28,25 +19,27 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nostrvault.ui.theme.LocalNostrVaultColors
-import com.nostrvault.ui.theme.LocalOledMode
+import com.nostrvault.ui.notification.LocalNotificationManager
+import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.notification.PillSize
+import com.nostrvault.ui.notification.PillStyle
+import com.nostrvault.ui.notification.PillTone
+import com.nostrvault.ui.notification.pillCapsule
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * The line a filter tap leaves under the toolbar, in one grammar for every
@@ -88,30 +81,45 @@ data class FilterNote(
 }
 
 /**
- * Holds the showing note. [show] is a tap: the text replaces cleanly and the
+ * Holds the showing note and times it, posting it to the lane as feedback
+ * under one id per screen. [show] is a tap: the text replaces cleanly and the
  * one 2 s timer restarts. [update] is a late result (a count that landed): it
  * changes the text only while the note is still showing, keeps the time left
  * (raised to a short floor so the count is readable, never past a cap after
  * the tap), and is a no-op once the note has gone, so the pill never pops
- * back and a repeating signal can't pin it. iOS `FilterNoteModel`.
+ * back and a repeating signal can't pin it. The note goes with its [scope]:
+ * leaving the screen hides it at once. iOS `FilterNoteModel`.
  */
 @Stable
-class FilterNoteState internal constructor(private val scope: CoroutineScope) {
-    var note: FilterNote? by mutableStateOf(null)
-        private set
+class FilterNoteState internal constructor(
+    private val scope: CoroutineScope,
+    private val manager: NotificationManager,
+    private val id: String = "filter-note:" + UUID.randomUUID(),
+) {
+    /** The note this state has up; null once it has gone or another feedback replaced it. */
+    val note: FilterNote? get() = shown?.takeIf { manager.isShowing(id) }
+    private var shown: FilterNote? by mutableStateOf(null)
     private var fade: Job? = null
     private var shownAt = 0L
     private var hidesAt = 0L
 
+    init {
+        // The screen's scope ends with the screen; the pill must not outlive it,
+        // or "Mentions · on" sits over the next screen and hides its ambient pills.
+        scope.coroutineContext[Job]?.invokeOnCompletion { hide() }
+    }
+
     fun show(note: FilterNote) {
-        this.note = note
+        shown = note
+        manager.showFilterNote(id, note)
         shownAt = SystemClock.elapsedRealtime()
         hideAt(shownAt + DURATION_MS)
     }
 
     fun update(note: FilterNote) {
         if (this.note == null) return
-        this.note = note
+        shown = note
+        manager.updateFilterNote(id, note)
         // Keep the time left, extended to the floor, within the cap.
         val floor = minOf(SystemClock.elapsedRealtime() + UPDATE_FLOOR_MS, shownAt + MAX_DURATION_MS)
         if (floor > hidesAt) hideAt(floor)
@@ -120,7 +128,8 @@ class FilterNoteState internal constructor(private val scope: CoroutineScope) {
     fun hide() {
         fade?.cancel()
         fade = null
-        note = null
+        shown = null
+        manager.dismiss(id)
     }
 
     private fun hideAt(at: Long) {
@@ -128,7 +137,8 @@ class FilterNoteState internal constructor(private val scope: CoroutineScope) {
         fade?.cancel()
         fade = scope.launch {
             delay(at - SystemClock.elapsedRealtime())
-            this@FilterNoteState.note = null
+            shown = null
+            manager.dismiss(id)
         }
     }
 
@@ -142,10 +152,12 @@ class FilterNoteState internal constructor(private val scope: CoroutineScope) {
     }
 }
 
+/** A screen's filter note, drawn by the lane ([LocalNotificationManager]). */
 @Composable
 fun rememberFilterNoteState(): FilterNoteState {
     val scope = rememberCoroutineScope()
-    return remember(scope) { FilterNoteState(scope) }
+    val manager = LocalNotificationManager.current
+    return remember(scope, manager) { FilterNoteState(scope, manager) }
 }
 
 /**
@@ -191,122 +203,61 @@ private fun FilterNoteLine(content: @Composable () -> Unit) {
     }
 }
 
-/** The pill's side margins: it never gets wider than the host minus these. */
-private val FilterNoteMargin = 16.dp
-
 /** The dimmed (off) look, the same on iOS. */
 private const val FilterNoteDimmedAlpha = 0.55f
 
 /**
- * Where the pill's bottom edge sits, below the top of the scaffold padding,
- * at every font scale: the same 12 dp as iOS, where a 26 dp pill at 100%
- * reaches 4 dp into the bar and ends 6 dp above the first post. A bigger
- * pill grows upward behind the bar, never down over the post. Those are
- * iPhone numbers; the Android gap has not been measured yet, so check it on
- * a device when the Android lanes start and change this constant if needed.
- */
-private val FilterNoteBottomEdge = 12.dp
-
-/**
- * Hosts a screen's filter note around the [GlassScaffold] content: the pill
- * is drawn at the top centre with its bottom edge [FilterNoteBottomEdge]
- * below the top of [padding], so it stays above the first post at every font
- * scale and overlaps the bottom of the toolbar, outside the bar that folds
- * on scroll. Never in the layout flow, so a tap moves nothing; when the list
- * is scrolled it may sit over content, and still takes no taps. Wrap the
- * scaffold's content once per screen, never the toolbar slot.
- */
-@Composable
-fun FilterNoteHost(
-    state: FilterNoteState,
-    padding: PaddingValues,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Box(modifier.fillMaxSize()) {
-        content()
-        FilterNotePill(
-            state,
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = padding.calculateTopPadding())
-                // A slot of fixed height; the pill is aligned to its bottom
-                // and overflows upward when it is taller.
-                .height(FilterNoteBottomEdge)
-                .wrapContentHeight(Alignment.Bottom, unbounded = true),
-        )
-    }
-}
-
-/**
- * The glass capsule for [state]'s note; nothing when none. One line that hugs
- * its text up to the host's width minus [FilterNoteMargin] each side, so it
- * follows the font scale; past that the title is cut with "…" down to
- * [FilterNoteTitleFloor], then the setting and count are cut the same way,
- * so neither half vanishes. Takes no taps, so it can sit over the content.
- * Fades in with a slight scale from its top edge, not a slide from under
- * the bar; Reduce Motion gets the fade alone. A second tap crossfades
+ * The lane's small capsule for a filter note: accent while a filter is on,
+ * grey when it was turned off, with the icon and text dimmed. One line that
+ * hugs its text up to the lane's width; past that the title is cut with "…"
+ * down to [FilterNoteTitleFloor], then the setting and count are cut the
+ * same way, so neither half vanishes. Takes no taps. A second tap crossfades
  * the text in place. TalkBack reads each new note, since it's the only text
  * the tap leaves.
  */
 @Composable
-fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
-    // Kept while fading out, so the text doesn't blank mid-fade.
-    var last by remember { mutableStateOf<FilterNote?>(null) }
-    state.note?.let { last = it }
-    AnimatedVisibility(
-        visible = state.note != null,
-        enter = if (Motion.isReduced) fadeIn(Motion.fade())
-            else fadeIn(Motion.fade()) + scaleIn(Motion.fade(), initialScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 0f)),
-        exit = fadeOut(Motion.fade()),
-        modifier = modifier,
-    ) {
-        val note = last ?: return@AnimatedVisibility
-        AnimatedContent(
-            targetState = note,
-            transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
-            label = "filterNote",
-        ) { shown ->
-            val tint = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalNostrVaultColors.current.primary
-            val textColor = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalContentColor.current
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                modifier = Modifier
-                    .padding(horizontal = FilterNoteMargin)
-                    .glassPillBackground(isOled = LocalOledMode.current)
-                    .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-                    // 26 dp tall: fits the gap between the toolbar and the first post.
-                    .padding(vertical = 5.dp, horizontal = 14.dp),
-            ) {
-                Icon(
-                    imageVector = shown.icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(14.dp),
+fun FilterNoteContent(note: FilterNote) {
+    AnimatedContent(
+        targetState = note,
+        transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
+        label = "filterNote",
+    ) { shown ->
+        val tone = if (shown.dimmed) PillTone.NEUTRAL else PillTone.ACCENT
+        val content = if (shown.dimmed) PillStyle.textColor.copy(alpha = FilterNoteDimmedAlpha) else PillStyle.textColor
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
+            modifier = Modifier
+                .pillCapsule(tone, PillSize.SMALL)
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        ) {
+            Icon(
+                imageVector = shown.icon,
+                contentDescription = null,
+                tint = content,
+                modifier = Modifier.size(PillSize.SMALL.icon),
+            )
+            FilterNoteLine {
+                Text(
+                    text = shown.title,
+                    color = content,
+                    fontSize = PillSize.SMALL.font,
+                    fontWeight = PillSize.SMALL.weight,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                FilterNoteLine {
+                shown.detail?.let { detail ->
                     Text(
-                        text = shown.title,
-                        color = textColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = " · $detail",
+                        color = content,
+                        fontSize = PillSize.SMALL.font,
+                        fontWeight = PillSize.SMALL.weight,
                         maxLines = 1,
                         softWrap = false,
+                        // "…" as on iOS; the default clips mid-glyph.
                         overflow = TextOverflow.Ellipsis,
                     )
-                    shown.detail?.let { detail ->
-                        Text(
-                            text = " · $detail",
-                            color = textColor,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false,
-                            // "…" as on iOS; the default clips mid-glyph.
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
             }
         }

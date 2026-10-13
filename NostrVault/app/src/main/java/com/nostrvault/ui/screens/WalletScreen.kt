@@ -331,13 +331,13 @@ fun WalletScreen(
     var selectedTab by remember { mutableStateOf(WalletTab.LIGHTNING) }
     val error by viewModel.error.collectAsState()
     val message by viewModel.message.collectAsState()
-    val snackbarHost = remember { SnackbarHostState() }
-
+    // Payments report in the lane, not a Snackbar (docs/pills.md).
+    val lane = com.nostrvault.ui.notification.LocalNotificationManager.current
     LaunchedEffect(error, message) {
-        (error ?: message)?.let {
-            snackbarHost.showSnackbar(it)
-            viewModel.clearMessages()
-        }
+        if (error == null && message == null) return@LaunchedEffect
+        error?.let { lane.showError(it) }
+        message?.let { lane.showToast(it) }
+        viewModel.clearMessages()
     }
 
     Scaffold(
@@ -356,7 +356,6 @@ fun WalletScreen(
                 ),
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = WindowBackground,
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {

@@ -27,6 +27,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
     private val mediaCacheService: MediaCacheService,
     private val mediaSaveService: MediaSaveService,
     private val nostrService: com.nostrvault.service.NostrService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     enum class SaveState { Idle, Saving, Saved }
@@ -39,10 +40,10 @@ class FeedMediaMirrorViewModel @Inject constructor(
 
     /**
      * Save the media on screen to the device gallery (MediaStore, no storage
-     * permission on Android 10+). [onMessage] gets one short line for a toast.
+     * permission on Android 10+). The lane gets one short line for it.
      * Port of iOS FeedMediaViewer.saveToPhotosTapped().
      */
-    fun saveToGallery(url: String, onMessage: (String) -> Unit) {
+    fun saveToGallery(url: String) {
         if (_saveState.value != SaveState.Idle) return
         viewModelScope.launch {
             _saveState.value = SaveState.Saving
@@ -53,7 +54,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
             if (openUrl == url) {
                 _saveState.value = if (result.isSuccess) SaveState.Saved else SaveState.Idle
             }
-            onMessage(if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery")
+            if (result.isSuccess) notificationManager.showToast("Saved to gallery") else notificationManager.showError("Couldn't save to gallery")
         }
     }
 
@@ -109,18 +110,22 @@ class FeedMediaMirrorViewModel @Inject constructor(
     /**
      * Delete from the long-press bar. Port of iOS FeedMediaViewer
      * deleteFromMirrorsTapped / deleteEverywhereTapped, with Android's
-     * per-server report: [onMessage] names anything left behind, and
-     * [onAllGone] runs only when Delete everywhere left nothing, so the
-     * viewer closes then and stays open otherwise.
+     * per-server report: the lane names anything left behind, [onDone] runs
+     * once the result is in, and [onAllGone] runs only when Delete everywhere
+     * left nothing, so the viewer closes then and stays open otherwise.
      */
     fun delete(
         url: String,
         scope: DeleteScope,
         deletePosts: Boolean,
-        onMessage: (String) -> Unit,
+        onDone: () -> Unit,
         onAllGone: () -> Unit,
     ) {
-        val sha = extractSha256(url) ?: return onMessage("Could not extract hash from URL")
+        fun onMessage(message: String, ok: Boolean) {
+            if (ok) notificationManager.showToast(message) else notificationManager.showError(message)
+            onDone()
+        }
+        val sha = extractSha256(url) ?: return onMessage("Could not extract hash from URL", ok = false)
         if (_deleting.value) return
         viewModelScope.launch {
             _deleting.value = true
@@ -129,19 +134,17 @@ class FeedMediaMirrorViewModel @Inject constructor(
                     DeleteScope.MIRRORS -> {
                         val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(sha) }
                         refreshCloudBadges(sha)
-                        onMessage(
-                            when {
-                                report.allDeleted -> "Deleted from mirrors"
-                                report.failed.isEmpty() -> "No mirrors to delete from"
-                                else -> deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!
-                            },
-                        )
+                        when {
+                            report.allDeleted -> onMessage("Deleted from mirrors", ok = true)
+                            report.failed.isEmpty() -> onMessage("No mirrors to delete from", ok = true)
+                            else -> onMessage(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, ok = false)
+                        }
                     }
                     DeleteScope.EVERYWHERE -> {
                         // Posts first: if they can't be deleted (signing failed),
                         // keep the file too rather than leave them broken.
                         if (deletePosts && nostrService.deleteOwnEvents(referencingBlob = sha) == 0) {
-                            onMessage("Couldn't delete the post, so the file was kept. Try again.")
+                            onMessage("Couldn't delete the post, so the file was kept. Try again.", ok = false)
                             return@launch
                         }
                         val (localOk, report) = withContext(Dispatchers.IO) {
@@ -151,7 +154,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
                         }
                         refreshCloudBadges(sha)
                         val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
-                        onMessage(leftover ?: "Deleted everywhere")
+                        onMessage(leftover ?: "Deleted everywhere", ok = leftover == null)
                         if (leftover == null) onAllGone()
                     }
                 }

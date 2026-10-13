@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -110,7 +110,6 @@ fun ProfileScreen(
     LaunchedEffect(selectedSection, noteIds) {
         viewModel.loadEngagement()
     }
-    val toast by viewModel.toast.collectAsState()
     val shopListings by viewModel.shopListings.collectAsState()
     val shopLoading by viewModel.shopLoading.collectAsState()
     val articles by viewModel.articles.collectAsState()
@@ -138,6 +137,7 @@ fun ProfileScreen(
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     val clipboard = LocalClipboardManager.current
 
     // Derived from the collected `profile` so they recompose when it loads.
@@ -153,13 +153,6 @@ fun ProfileScreen(
     val website = remember(profile) { profile?.website?.takeIf { it.isNotBlank() } }
     val canZap = viewModel.hasWallet && lightningAddress != null
 
-    // Transient action feedback (zap / block).
-    LaunchedEffect(toast) {
-        toast?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearToast()
-        }
-    }
 
     // The Media tab's urls, in grid order; a tap opens the app's full-screen
     // viewer on them (video, audio, drag to close; iOS MediaItemRenderer).
@@ -340,7 +333,7 @@ fun ProfileScreen(
                     onTrustWeb = { trustWebAuthor = pubkey },
                     onCopyNpub = {
                         copyNpub()
-                        Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
+                        lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
                     },
                 )
                 // One rule above the tabs instead of one between every block.

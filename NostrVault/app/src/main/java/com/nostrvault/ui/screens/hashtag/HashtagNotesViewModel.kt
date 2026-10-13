@@ -60,6 +60,7 @@ abstract class HashtagNotesViewModel(
     protected val configStore: ConfigStore,
     protected val feedService: FeedService,
     private val zapSendService: ZapSendService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     companion object {
@@ -120,8 +121,6 @@ abstract class HashtagNotesViewModel(
     val noteStats = feedService.noteStats
     val quotedNotesCache = feedService.quotedNotes
 
-    private val _toast = MutableStateFlow<String?>(null)
-    val toast = _toast.asStateFlow()
 
     val hasAccount: StateFlow<Boolean> = configStore.activeAccountHexPubkey
         .map { it.isNotEmpty() }
@@ -640,7 +639,6 @@ abstract class HashtagNotesViewModel(
 
     // ── Engagement (same services as the feed, search and profile) ────────
 
-    fun clearToast() { _toast.value = null }
 
     /** Your own notes have no trust path, so they get no Web of Trust button. */
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
@@ -660,14 +658,10 @@ abstract class HashtagNotesViewModel(
         viewModelScope.launch {
             // The Wallet default, same figure the feed and profile use.
             val sats = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
-            val result = zapSendService.zapNote(noteId, notePubkey, sats)
-            _toast.value = result.fold(
-                onSuccess = {
-                    ZapFlight.launch(noteId)
-                    "Zapped $sats sats"
-                },
-                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
-            )
+            // The zap pill reports the result (docs/pills.md).
+            notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, notePubkey), sats) {
+                zapSendService.zapNote(noteId, notePubkey, sats)
+            }.onSuccess { ZapFlight.launch(noteId) }
         }
     }
 

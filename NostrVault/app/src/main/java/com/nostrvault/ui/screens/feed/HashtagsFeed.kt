@@ -1,7 +1,6 @@
 package com.nostrvault.ui.screens.feed
 
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,7 +21,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -96,8 +94,9 @@ class HashtagsFeedViewModel @Inject constructor(
     configStore: ConfigStore,
     feedService: FeedService,
     zapSendService: ZapSendService,
+    notificationManager: com.nostrvault.ui.notification.NotificationManager,
     private val interestListService: InterestListService,
-) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService) {
+) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService, notificationManager) {
 
     companion object {
         private const val TAG = "HashtagsFeed"
@@ -319,14 +318,12 @@ internal fun HashtagsFeed(
     val repostedIds by viewModel.repostedEventIds.collectAsState()
     // Read per row through derivedStateOf: one note's stats recompose one row.
     val statsState = viewModel.noteStats.collectAsState()
-    val toast by viewModel.toast.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val suggestionsLoading by viewModel.suggestionsLoading.collectAsState()
     val saving by viewModel.saving.collectAsState()
     val hasAccount by viewModel.hasAccount.collectAsState()
     val followFailed by viewModel.followFailed.collectAsState()
     val colors = LocalNostrVaultColors.current
-    val context = LocalContext.current
 
     // The subscription runs only while this feed is showing.
     DisposableEffect(viewModel) {
@@ -334,12 +331,6 @@ internal fun HashtagsFeed(
         onDispose { viewModel.setActive(false) }
     }
 
-    LaunchedEffect(toast) {
-        toast?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearToast()
-        }
-    }
 
     // Embedded quoted notes (nostr:note1.../nevent1...) and their authors.
     LaunchedEffect(notes) {

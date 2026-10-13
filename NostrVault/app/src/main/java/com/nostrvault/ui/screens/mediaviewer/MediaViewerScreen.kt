@@ -3,7 +3,7 @@ package com.nostrvault.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -52,6 +52,7 @@ fun MediaViewerScreen(
 ) {
     val items = remember { MediaGalleryBridge.currentItems }
     val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
@@ -246,7 +247,7 @@ fun MediaViewerScreen(
                     val url = viewModel.blossomLink(menuItem)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", url))
-                    Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                    lane.showFeedback("Link copied", NostrVaultIcons.LinkIcon)
                 }) {
                     Icon(NostrVaultIcons.Copy, contentDescription = "Copy link", tint = Color.White)
                 }

@@ -53,6 +53,7 @@ class ArticleReaderViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val zapSendService: ZapSendService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 
     val noteId: String = savedStateHandle["noteId"] ?: ""
@@ -73,8 +74,6 @@ class ArticleReaderViewModel @Inject constructor(
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val likedEventIds: StateFlow<Set<String>> = feedService.likedEventIds
 
-    private val _message = MutableSharedFlow<String>(extraBufferCapacity = 4)
-    val message: SharedFlow<String> = _message
 
     private val _zapped = MutableStateFlow(false)
     val zapped: StateFlow<Boolean> = _zapped.asStateFlow()
@@ -100,14 +99,15 @@ class ArticleReaderViewModel @Inject constructor(
     fun zap(note: FeedNote, amountSats: Int) {
         viewModelScope.launch {
             val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
-            zapSendService.zapNote(note.id, note.pubkey, amountSats, addressTag = coordinate).fold(
-                onSuccess = {
+            // The zap pill reports the result (docs/pills.md).
+            notificationManager.zapping(
+                com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, note.pubkey),
+                amountSats,
+            ) { zapSendService.zapNote(note.id, note.pubkey, amountSats, addressTag = coordinate) }
+                .onSuccess {
                     _zapped.value = true
                     _zappedSats.update { it + amountSats }
-                    _message.emit("Zapped $amountSats sats")
-                },
-                onFailure = { e -> _message.emit(e.message ?: "Zap failed") },
-            )
+                }
         }
     }
 
@@ -121,11 +121,11 @@ class ArticleReaderViewModel @Inject constructor(
             }.getOrNull()
             if (event != null) {
                 nostrService.postEvent(event)
-                _message.emit("Highlight published")
+                notificationManager.showToast("Highlight published")
                 // Show it among everyone else's once a relay has it.
                 loadHighlights(note)
             } else {
-                _message.emit("Highlight not signed")
+                notificationManager.showError("Highlight not signed")
             }
         }
     }

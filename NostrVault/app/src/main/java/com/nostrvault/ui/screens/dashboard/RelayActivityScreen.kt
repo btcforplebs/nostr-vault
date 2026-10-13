@@ -1,6 +1,6 @@
 package com.nostrvault.ui.screens.dashboard
 
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -40,6 +40,7 @@ fun RelayActivityScreen(
     onOpenFullLogs: () -> Unit,
 ) {
     val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     val scope = rememberCoroutineScope()
     val colors = LocalNostrVaultColors.current
     var issuesOnly by remember { mutableStateOf(false) }
@@ -61,11 +62,7 @@ fun RelayActivityScreen(
                     context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null
                 }.getOrDefault(false)
             }
-            Toast.makeText(
-                context,
-                if (ok) "Report saved" else "Couldn't save the report",
-                Toast.LENGTH_SHORT,
-            ).show()
+            if (ok) lane.showToast("Report saved") else lane.showError("Couldn't save the report")
         }
     }
 
@@ -88,7 +85,7 @@ fun RelayActivityScreen(
                     IconButton(
                         onClick = {
                             RelayActivityReport.copy(context, items)
-                            Toast.makeText(context, "Report copied", Toast.LENGTH_SHORT).show()
+                            lane.showFeedback("Report copied", NostrVaultIcons.Copy)
                         },
                         enabled = items.isNotEmpty(),
                     ) {

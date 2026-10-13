@@ -1,59 +1,52 @@
 package com.nostrvault.ui.notification
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.nostrvault.ui.theme.ErrorRed
-import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.service.InAppBanner
+import com.nostrvault.service.InAppBannerBus
+import com.nostrvault.ui.navigation.DeepLinkRouter
+import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.theme.NostrVaultIcons
-import com.nostrvault.ui.theme.SuccessGreen
-import com.nostrvault.ui.theme.ZapOrange
 
 /**
- * Individual notification pill composables matching the iOS Capsule-based
- * notification banners. Each renders a solid-color pill with icon + text.
+ * The pills the lane draws. Every one is a [pillCapsule]: colour says the
+ * outcome, the icon says the type, size says whether it takes taps
+ * (`docs/pills.md`).
  */
-
-private val PillShape = RoundedCornerShape(50)
 
 // ── Zap ──────────────────────────────────────────────────────────
 
+/** Sending and sent time out; a failed zap is an error and stays until tapped. */
 @Composable
-fun ZapPill(notification: ZapNotification) {
-    val bgColor = when (notification.status) {
-        ZapStatus.SENDING -> ZapOrange
-        ZapStatus.SUCCESS -> SuccessGreen
-        is ZapStatus.FAILED -> ErrorRed.copy(alpha = 0.85f)
+fun ZapPill(notification: ZapNotification, onTap: () -> Unit = {}) {
+    val status = notification.status
+    val tone = when (status) {
+        ZapStatus.SENDING -> PillTone.ACCENT
+        ZapStatus.SUCCESS -> PillTone.SUCCESS
+        is ZapStatus.FAILED -> PillTone.ERROR
     }
-    val label = when (notification.status) {
+    val label = when (status) {
         ZapStatus.SENDING -> "Zapping ${notification.recipientName}"
         ZapStatus.SUCCESS -> "Zapped ${notification.recipientName}"
-        is ZapStatus.FAILED -> "Zap failed"
+        is ZapStatus.FAILED -> status.message.ifBlank { "Zap failed" }
     }
     BasePill(
-        icon = NostrVaultIcons.Zap,
+        icon = if (status is ZapStatus.FAILED) NostrVaultIcons.Alert else NostrVaultIcons.Zap,
         label = label,
-        trailingText = "${notification.amountSats} sats",
-        backgroundColor = bgColor,
+        tone = tone,
+        trailingText = if (status is ZapStatus.FAILED) null else "${notification.amountSats} sats",
+        maxLines = if (status is ZapStatus.FAILED) 2 else 1,
+        onClick = if (status is ZapStatus.FAILED) onTap else null,
     )
 }
 
@@ -63,16 +56,14 @@ fun ZapPill(notification: ZapNotification) {
 fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
     val kind = notification.kind
     if (kind is FollowKind.PENDING) {
-        PendingFollowPill(
-            label = (if (kind.follow) "Following " else "Unfollowing ") + notification.recipientName + "…",
-        )
+        PendingPill(label = (if (kind.follow) "Following " else "Unfollowing ") + notification.recipientName + "…")
         return
     }
-    val bgColor = when (kind) {
-        FollowKind.FOLLOWED -> SuccessGreen
-        FollowKind.UNFOLLOWED -> Color(0xFF595959)
-        is FollowKind.FAILED -> ErrorRed.copy(alpha = 0.85f)
-        is FollowKind.PENDING -> Color(0xFF595959)
+    val tone = when (kind) {
+        FollowKind.FOLLOWED -> PillTone.SUCCESS
+        FollowKind.UNFOLLOWED -> PillTone.NEUTRAL
+        is FollowKind.FAILED -> PillTone.ERROR
+        is FollowKind.PENDING -> PillTone.NEUTRAL
     }
     val icon = when (kind) {
         FollowKind.FOLLOWED -> NostrVaultIcons.PersonAdd
@@ -86,32 +77,20 @@ fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
         is FollowKind.FAILED -> kind.reason
         is FollowKind.PENDING -> notification.recipientName
     }
-    if (notification.undo == null) {
-        BasePill(icon = icon, label = label, backgroundColor = bgColor)
+    val undo = notification.undo
+    if (undo == null) {
+        BasePill(icon = icon, label = label, tone = tone)
         return
     }
+    // The 44 dp Undo button sets the height; the capsule adds no vertical padding.
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = PillShape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .background(bgColor, PillShape)
-            .clip(PillShape)
-            .padding(vertical = 6.dp, horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
+        modifier = Modifier.pillCapsule(tone, vertical = 0.dp),
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        androidx.compose.material3.TextButton(
-            onClick = onUndo,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        ) {
-            Text(text = "Undo", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        }
+        PillIcon(icon)
+        PillText(label)
+        PillButton("Undo", onClick = onUndo)
     }
 }
 
@@ -120,52 +99,89 @@ fun FollowPill(notification: FollowNotification, onUndo: () -> Unit = {}) {
  * on grey, since it is not an error. iOS `FollowPill` `.pending`.
  */
 @Composable
-private fun PendingFollowPill(label: String) {
+private fun PendingPill(label: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
         modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = PillShape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .background(Color(0xFF595959), PillShape)
-            .clip(PillShape)
-            .semantics { liveRegion = LiveRegionMode.Polite }
-            .padding(vertical = 10.dp, horizontal = 20.dp),
+            .pillCapsule(PillTone.NEUTRAL)
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        CircularProgressIndicator(color = Color.White, strokeWidth = 1.5.dp, modifier = Modifier.size(14.dp))
-        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        CircularProgressIndicator(color = PillStyle.textColor, strokeWidth = 1.5.dp, modifier = Modifier.size(PillSize.REGULAR.icon))
+        PillText(label)
     }
 }
 
 // ── Error ────────────────────────────────────────────────────────
 
+/** An error stays until tapped; a warning times out. Either goes on a tap. */
 @Composable
-fun ErrorPill(notification: ErrorNotification) {
-    val bgColor = when (notification.style) {
-        ErrorStyle.ERROR -> ErrorRed.copy(alpha = 0.85f)
-        ErrorStyle.WARNING -> ZapOrange.copy(alpha = 0.85f)
+fun ErrorPill(notification: ErrorNotification, onTap: () -> Unit = {}) {
+    val tone = when (notification.style) {
+        ErrorStyle.ERROR -> PillTone.ERROR
+        ErrorStyle.WARNING -> PillTone.WARNING
     }
     BasePill(
         icon = NostrVaultIcons.Alert,
         label = notification.message,
-        backgroundColor = bgColor,
+        tone = tone,
         maxLines = 2,
+        onClick = onTap,
     )
 }
 
-// ── Action toast ─────────────────────────────────────────────────
+// ── Result ───────────────────────────────────────────────────────
 
 @Composable
 fun ActionToastPill(toast: ActionToast) {
-    val colors = LocalNostrVaultColors.current
+    BasePill(icon = NostrVaultIcons.Check, label = toast.message, tone = toast.tone, maxLines = 2)
+}
+
+// ── Feedback ─────────────────────────────────────────────────────
+
+/** Small, information only: "Link copied", "Liked". */
+@Composable
+fun FeedbackPill(feedback: FeedbackNotification) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
+        modifier = Modifier
+            .pillCapsule(feedback.tone, PillSize.SMALL)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+    ) {
+        feedback.icon?.let { PillIcon(it, PillSize.SMALL) }
+        PillText(feedback.message, PillSize.SMALL)
+    }
+}
+
+// ── Activity that arrived while the app was open ─────────────────
+
+/**
+ * A mention, reply, zap, reaction, follow or DM that arrived while the app
+ * was on screen: one regular pill, in place of the system banner. Tap opens
+ * the same place the notification would. iOS `RelayActivityBanner`.
+ */
+@Composable
+fun ActivityPill(banner: InAppBanner) {
+    val icon = when (banner.type) {
+        "dm", "giftwrap" -> NostrVaultIcons.Messages
+        "mention" -> NostrVaultIcons.At
+        "reply" -> NostrVaultIcons.Reply
+        "zap" -> NostrVaultIcons.Zap
+        "reaction", "like" -> NostrVaultIcons.HeartFilled
+        "follow", "followers" -> NostrVaultIcons.PersonAdd
+        else -> NostrVaultIcons.Notifications
+    }
+    val label = if (banner.text.isBlank()) banner.title else "${banner.title} · ${banner.text}"
     BasePill(
-        icon = NostrVaultIcons.Check,
-        label = toast.message,
-        backgroundColor = toast.color ?: colors.primary,
+        icon = icon,
+        label = label,
+        tone = PillTone.ACCENT,
+        onClick = {
+            DeepLinkRouter.fromNotification(banner.type, banner.id, banner.author, banner.npub)
+                ?.let { PendingDeepLink.post(it) }
+            InAppBannerBus.dismiss(banner.id)
+        },
     )
 }
 
@@ -173,10 +189,10 @@ fun ActionToastPill(toast: ActionToast) {
 
 @Composable
 fun UploadPill(notification: UploadNotification) {
-    val bgColor = when (notification.status) {
-        UploadStatus.UPLOADING -> LocalNostrVaultColors.current.primary
-        UploadStatus.SUCCESS -> SuccessGreen
-        is UploadStatus.FAILED -> ErrorRed.copy(alpha = 0.85f)
+    val tone = when (notification.status) {
+        UploadStatus.UPLOADING -> PillTone.ACCENT
+        UploadStatus.SUCCESS -> PillTone.SUCCESS
+        is UploadStatus.FAILED -> PillTone.ERROR
     }
     val icon = when (notification.status) {
         UploadStatus.UPLOADING -> NostrVaultIcons.UploadIcon
@@ -188,52 +204,24 @@ fun UploadPill(notification: UploadNotification) {
         UploadStatus.SUCCESS -> "Uploaded ${notification.filename}"
         is UploadStatus.FAILED -> "Upload failed"
     }
-    BasePill(icon = icon, label = label, backgroundColor = bgColor)
+    BasePill(icon = icon, label = label, tone = tone)
 }
 
 // ── Unlike countdown ────────────────────────────────────────────
 
+/** "Reaction removed · Undo": undone, so grey, not red (iOS #322). */
 @Composable
 fun UnlikeCountdownPill(notification: UnlikeCountdown, onUndo: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = PillShape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .background(ErrorRed.copy(alpha = 0.85f), PillShape)
-            .clip(PillShape)
-            .padding(vertical = 6.dp, horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
+        modifier = Modifier.pillCapsule(PillTone.NEUTRAL, vertical = 0.dp),
     ) {
-        Icon(
-            imageVector = NostrVaultIcons.HeartFilled,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            // The reaction is already off the note; the deletion goes out
-            // when this runs out (iOS #322).
-            text = "Reaction removed",
-            color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        androidx.compose.material3.TextButton(
-            onClick = onUndo,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        ) {
-            Text(
-                text = "Undo",
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+        PillIcon(NostrVaultIcons.HeartFilled)
+        // The reaction is already off the note; the deletion goes out
+        // when this runs out.
+        PillText("Reaction removed")
+        PillButton("Undo", onClick = onUndo)
     }
 }
 
@@ -243,44 +231,18 @@ fun UnlikeCountdownPill(notification: UnlikeCountdown, onUndo: () -> Unit) {
 private fun BasePill(
     icon: ImageVector,
     label: String,
-    backgroundColor: Color,
+    tone: PillTone,
     trailingText: String? = null,
     maxLines: Int = 1,
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = PillShape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .background(backgroundColor, PillShape)
-            .clip(PillShape)
-            .padding(vertical = 10.dp, horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
+        modifier = Modifier.pillCapsule(tone, onClick = onClick),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = maxLines,
-        )
-        if (trailingText != null) {
-            Text(
-                text = trailingText,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+        PillIcon(icon)
+        PillText(label, maxLines = maxLines)
+        if (trailingText != null) PillText(trailingText)
     }
 }

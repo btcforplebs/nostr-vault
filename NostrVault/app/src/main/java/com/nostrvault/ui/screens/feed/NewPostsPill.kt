@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.feed
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
@@ -19,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.notification.PillSize
+import com.nostrvault.ui.notification.PillStyle
+import com.nostrvault.ui.notification.rememberHidesAmbient
 import com.nostrvault.ui.theme.*
 
 // ── New posts pill ──────────────────────────────────────────────
@@ -32,13 +36,16 @@ internal fun NewPostsPill(
     compact: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
-    // Mirrors iOS: Capsule fill(havenPurple/theme primary), white content,
-    // soft offset drop shadow (black 40%, radius 8, y+4), 10/20 padding,
-    // arrow.up size 12 bold + "N New Posts" size 13 bold. Compact: 5/10
-    // padding, radius 4 / y+2 shadow, arrow 11 + count 12 (99+ at most).
-    val shape = RoundedCornerShape(50)
+    // An ambient pill (docs/pills.md): the lane's accent capsule, regular
+    // size since it takes taps, hidden while the lane shows an error, result
+    // or feedback pill. Compact: 5/10 padding, radius 4 / y+2 shadow, arrow
+    // 11 + count 12 (99+ at most), in the folded bar's row.
+    val shape = PillStyle.shape
+    val size = if (compact) PillSize.SMALL else PillSize.REGULAR
     // Tapped anywhere in the box, rippled on the capsule.
     val interaction = remember { MutableInteractionSource() }
+    val (pillEnter, pillExit) = Motion.pillTransition
+    AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit) {
     Box(
         modifier = modifier
             .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
@@ -59,23 +66,24 @@ internal fun NewPostsPill(
                 .background(colors.primary)
                 .indication(interaction, LocalIndication.current)
                 .padding(
-                    vertical = if (compact) 5.dp else 10.dp,
-                    horizontal = if (compact) 10.dp else 20.dp,
+                    vertical = if (compact) 5.dp else size.vertical,
+                    horizontal = if (compact) 10.dp else size.horizontal,
                 ),
         ) {
             Icon(
                 imageVector = NostrVaultIcons.ArrowUp,
                 contentDescription = null,
-                tint = PrimaryText,
-                modifier = Modifier.size(if (compact) 11.dp else 12.dp),
+                tint = PillStyle.textColor,
+                modifier = Modifier.size(size.icon),
             )
-            Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
+            Spacer(Modifier.width(if (compact) 4.dp else PillStyle.innerGap))
             Text(
                 text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
                 fontWeight = FontWeight.Bold,
-                fontSize = if (compact) 12.sp else 13.sp,
-                color = PrimaryText,
+                fontSize = size.font,
+                color = PillStyle.textColor,
             )
         }
+    }
     }
 }

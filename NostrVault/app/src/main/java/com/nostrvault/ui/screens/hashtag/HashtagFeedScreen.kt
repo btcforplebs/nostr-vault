@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,7 +14,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -55,21 +53,13 @@ fun HashtagFeedScreen(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val toast by viewModel.toast.collectAsState()
     val isFollowingTag by viewModel.isFollowingTag.collectAsState()
     val hasAccount by viewModel.hasAccount.collectAsState()
     val followSaving by viewModel.followSaving.collectAsState()
     val followFailed by viewModel.followFailed.collectAsState()
     val colors = LocalNostrVaultColors.current
-    val context = LocalContext.current
     val tag = viewModel.tag
 
-    LaunchedEffect(toast) {
-        toast?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-            viewModel.clearToast()
-        }
-    }
 
     // Embedded quoted notes (nostr:note1.../nevent1...) and their authors.
     LaunchedEffect(notes) {

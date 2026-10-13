@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.ui.screens.DeleteBlobConfirmDialog
 import com.nostrvault.ui.screens.DeleteScope
 import androidx.compose.ui.semantics.contentDescription
@@ -81,6 +81,7 @@ internal fun FullScreenMediaPager(
     var pendingDelete by remember { mutableStateOf<DeleteScope?>(null) }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val lane = LocalNotificationManager.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -333,7 +334,7 @@ internal fun FullScreenMediaPager(
                         IconButton(
                             onClick = {
                                 clipboard.setText(AnnotatedString(currentUrl))
-                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                lane.showFeedback("Link copied", NostrVaultIcons.LinkIcon)
                             },
                             modifier = Modifier
                                 .size(36.dp)
@@ -347,9 +348,7 @@ internal fun FullScreenMediaPager(
                         SaveToGalleryPill(
                             state = saveState,
                             onSave = {
-                                viewModel.saveToGallery(currentUrl) { message ->
-                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                }
+                                viewModel.saveToGallery(currentUrl)
                             },
                         )
                     }
@@ -388,10 +387,7 @@ internal fun FullScreenMediaPager(
                         url = url,
                         scope = scope,
                         deletePosts = deletePosts,
-                        onMessage = {
-                            showDeleteBar = false
-                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-                        },
+                        onDone = { showDeleteBar = false },
                         onAllGone = close,
                     )
                 }

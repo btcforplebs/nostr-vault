@@ -4,7 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
-import android.widget.Toast
+import com.nostrvault.ui.notification.LocalNotificationManager
+import com.nostrvault.ui.theme.NostrVaultIcons
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -40,6 +41,7 @@ internal fun BlossomMediaPickerSheet(
     loadItems: suspend () -> List<BlossomMediaItem>,
 ) {
     val context = LocalContext.current
+    val lane = LocalNotificationManager.current
     val colors = LocalNostrVaultColors.current
     var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -196,7 +198,7 @@ internal fun BlossomMediaPickerSheet(
                                                 onLongClick = {
                                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                     clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.displayUrl))
-                                                    Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                                    lane.showFeedback("Link copied", NostrVaultIcons.LinkIcon)
                                                 }
                                             )
                                     ) {

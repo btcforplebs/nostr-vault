@@ -18,7 +18,6 @@ import androidx.compose.ui.semantics.selected
 import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.components.countNote
 import com.nostrvault.ui.components.VaultRightPill
-import com.nostrvault.ui.components.FilterNotePill
 import com.nostrvault.ui.components.FilterNote
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -381,8 +380,6 @@ fun DashboardScreen(
                         }
                     }
                 }
-                // Hangs below the bar without moving the list.
-                FilterNotePill(filterNote, Modifier.align(Alignment.BottomCenter).offset(y = 40.dp))
             }
         },
         floatingActionButton = {

@@ -42,7 +42,6 @@ import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
-import com.nostrvault.ui.components.InAppBannerHost
 import com.nostrvault.ui.components.LocalNoteTranslation
 import com.nostrvault.ui.components.NoteTranslationContext
 import com.nostrvault.ui.components.deviceLanguageTags
@@ -52,7 +51,9 @@ import com.nostrvault.ui.navigation.DeepLinkRouter
 import com.nostrvault.ui.navigation.NostrVaultNavHost
 import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.PendingDeepLink
+import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.notification.NotificationOverlay
 import com.nostrvault.ui.theme.AppTheme
 import com.nostrvault.ui.theme.FeedLineLimits
 import com.nostrvault.ui.theme.NostrVaultTheme
@@ -185,6 +186,7 @@ class MainActivity : FragmentActivity() {
                 CompositionLocalProvider(
                     LocalNoteTranslation provides noteTranslation,
                     com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
+                    LocalNotificationManager provides notificationManager,
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
@@ -199,24 +201,25 @@ class MainActivity : FragmentActivity() {
                                 logStore = logStore,
                                 dmUnreadCount = dmService.totalUnreadCountFlow,
                                 hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                                notificationManager = notificationManager,
                                 pendingPostManager = pendingPostManager,
                             )
                             // Full-screen media viewer overlay — lives in the activity window
                             // (not a Dialog) so Picture-in-Picture can capture the video.
                             FullScreenMediaHost()
-                            // DMs that arrive while the app is open.
-                            InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
-                            // An import still running after setup, or started in Settings.
-                            com.nostrvault.setup.ImportRunningPill(
-                                isImporting = relayImportService.isImporting,
-                                statusMessage = relayImportService.importStatusMessage,
-                                hasCompletedSetup = config.hasCompletedSetup,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .statusBarsPadding()
-                                    .padding(top = 60.dp),
-                            )
+                            // The lane: every pill, over the media viewer too
+                            // (docs/pills.md). Activity that arrives while the
+                            // app is open shows here, and the import still
+                            // running after setup rides along as ambient.
+                            NotificationOverlay(
+                                notificationManager = notificationManager,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                            ) {
+                                com.nostrvault.setup.ImportRunningPill(
+                                    isImporting = relayImportService.isImporting,
+                                    statusMessage = relayImportService.importStatusMessage,
+                                    hasCompletedSetup = config.hasCompletedSetup,
+                                )
+                            }
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }
