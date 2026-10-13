@@ -182,7 +182,9 @@ class WidgetPublisher @Inject constructor(
                 val now = System.currentTimeMillis()
                 val count = zapsTodayCounter.count(me, now) ?: return@collectLatest
                 val today = VaultSnapshot.ZapCount(account = me, dayStart = ZapsToday.startOfDay(now), count = count)
-                val changed = WidgetSnapshotStore.update(context) { it.copy(zapsToday = today) }
+                // Only onto the account and day it was counted for: the
+                // store is synchronized, so a switch can't slip in between.
+                val changed = WidgetSnapshotStore.update(context) { it.copy(zapsToday = it.zapsToday.accept(today)) }
                 if (changed) redraw(context)
             }
     }
