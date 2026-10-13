@@ -64,7 +64,6 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
     @State var selectedMedia: MediaItem? = nil
     @State var dragOffset: CGSize = .zero
     #if os(iOS)
-    @State var saveToPhotosMessage: String? = nil
     #endif
     #if os(macOS)
     @State var keyMonitor: Any? = nil

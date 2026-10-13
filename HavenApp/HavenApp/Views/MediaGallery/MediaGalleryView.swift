@@ -99,7 +99,6 @@ struct MediaGalleryView: View {
     @State var activeUploadTasks: [Task<Void, Never>] = []
 
     #if os(iOS)
-    @State var saveToPhotosMessage: String?
     #endif
     @State var isCopied = false
 
