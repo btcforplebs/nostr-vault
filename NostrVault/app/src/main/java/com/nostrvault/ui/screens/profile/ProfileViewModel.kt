@@ -220,7 +220,11 @@ class ProfileViewModel @Inject constructor(
         _profileNotes,
         _taggedNotes,
         _selectedSection,
-    ) { notes, tagged, section ->
+    ) { notes, tagged, section -> sectionNotes(section, notes, tagged) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The notes [section] lists, out of the profile's own notes and the tagged ones. */
+    private fun sectionNotes(section: ProfileSection, notes: List<FeedNote>, tagged: List<FeedNote>): List<FeedNote> =
         when (section) {
             // Matches iOS ProfileView sections: reposts have their own tab,
             // Media is this person's own media whether posted or replied with.
@@ -234,7 +238,6 @@ class ProfileViewModel @Inject constructor(
             // Not notes either; these tabs read [extras].
             ProfileSection.ARTICLES, ProfileSection.DIVINES, ProfileSection.MUSIC -> emptyList()
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val counts: StateFlow<ProfileCounts> = combine(
         _profileNotes,
@@ -311,6 +314,7 @@ class ProfileViewModel @Inject constructor(
         _hasMoreNotes.value = true
         _hasMoreTagged.value = true
         _isLoadingOlder.value = false
+        emptyTabPaging.reset()
     }
 
     /** Set once your own follower ledger supplied the FOLLOWERS count. */
@@ -499,11 +503,33 @@ class ProfileViewModel @Inject constructor(
     /** Bumped when a stream is replaced so an older page's check can't end paging. */
     private var pageToken = 0
 
+    /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
+    private val emptyTabPaging = ProfileEmptyTabPaging()
+
+    /**
+     * More may be older AND there is a note to page back from. A profile
+     * with nothing at all has no anchor, so it has nothing to look back for.
+     */
+    fun canPageOlder(section: ProfileSection): Boolean = stream != null && when {
+        section == ProfileSection.TAGGED -> _hasMoreTagged.value && _taggedNotes.value.isNotEmpty()
+        section.isNoteList -> _hasMoreNotes.value && _profileNotes.value.isNotEmpty()
+        else -> false
+    }
+
+    /**
+     * An empty tab is on screen with nothing in flight: page back for it, up
+     * to [ProfileEmptyTabPaging.AUTO_PAGE_CAP] pages (iOS autoPageEmptyTab).
+     */
+    fun autoPageEmptyTab(section: ProfileSection) {
+        val empty = sectionNotes(section, _profileNotes.value, _taggedNotes.value).isEmpty()
+        if (emptyTabPaging.claim(section, empty, canPageOlder(section), _isLoadingOlder.value)) loadOlder(section)
+    }
+
     /** Infinite-scroll: page older notes (or tagged) on the open stream sockets. */
-    fun loadOlder() {
+    fun loadOlder(section: ProfileSection = _selectedSection.value) {
         val s = stream ?: return
         if (_isLoadingOlder.value) return
-        if (_selectedSection.value == ProfileSection.TAGGED) {
+        if (section == ProfileSection.TAGGED) {
             if (!_hasMoreTagged.value) return
             val oldest = _taggedNotes.value.lastOrNull() ?: return
             _isLoadingOlder.value = true
