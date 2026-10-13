@@ -22,8 +22,19 @@ pill: it hides while the lane shows anything (see below).
 ## Four levels
 
 The most important level wins. At most **two** pills show at once: the two
-most important, newest first within a level. A pill that times out while
-it was held back is not shown late.
+most important, newest first within a level. A held-back pill draws when a
+place frees up, if its lifetime has not run out; once it has, it is gone.
+
+An arrival from the relay (mention, reply, DM, zap, like, repost, follow) is
+filed quietly in Notification Center when it was not read: it drew for less
+than 1.5 s in total before it timed out, was pushed out, or lost its surface
+(the app went to the background, the Mac window closed or went to the
+Dock). A filed DM carries the generic title and line, never the sender or
+the text. Rules and tests: `NotificationPolicy.filesPill`.
+
+One event is one entry. A pill that was read or tapped removes the APNs push
+for the same event (`event_id`) from Notification Center, and the badge
+clears. An unread pill is not filed when that push is already there.
 
 | Level | What | Examples | Size | Lifetime |
 |---|---|---|---|---|
@@ -63,6 +74,20 @@ between pills, 16 pt side margins, `Motion.pillTransition` in and out.
 While the app is in front, the system banner does **not** show. The same
 event shows once, as a level-2 pill in the lane (tap opens it). The system
 banner is only for when the app is in the background.
+
+- "In front": iOS, the scene is active. Mac, the app is active **and** the
+  main window is open and visible (not in the Dock, not fully covered). A
+  menu bar app with no window still banners. Pills already up are filed by
+  the read rule only when the iOS app goes to the background, not when
+  Control Center or an alert covers it.
+- A system alert that reaches the open app is listed in Notification Center
+  (`[.list]`), never dropped (`[]`). A relay alert filed just as the app went
+  to the background also becomes its pill.
+- An APNs push draws no pill of its own. The relay marker for the same event
+  draws it, after every check (push off, per-type settings, blocks, Web of
+  Trust). A push with no matching relay marker is list-only.
+- With push notifications off, only DMs show while the app is open. Other
+  types are dropped before routing.
 
 ## Not pills
 

@@ -28,11 +28,15 @@ final class PillLane: ObservableObject {
     static let maxVisible = 2
 
     private struct Entry {
-        let level: PillLevel
+        var level: PillLevel
         let since: Date
         /// How many hosts draw this pill (the Mac's main window and an open
         /// sheet both do); it leaves the lane when the last one goes.
         var hosts: Int
+        /// When it last started drawing, while it draws.
+        var drawnSince: Date?
+        /// How long it drew before that.
+        var drawnBefore: TimeInterval = 0
     }
 
     private var entries: [String: Entry] = [:]
@@ -42,6 +46,14 @@ final class PillLane: ObservableObject {
     /// screen draws itself (the Feed's New Posts, the WoT rebuild pill) are
     /// ambient: hide them while this is true.
     @Published private(set) var hidesAmbient = false
+    /// How long `id` has drawn so far, in total; 0 once it has left the lane
+    /// or if it never entered. A manager asks this before it removes an
+    /// arrival, to tell one that was read from one that must be filed
+    /// (`NotificationPolicy.filesPill`).
+    func drawnFor(_ id: String, now: Date = Date()) -> TimeInterval {
+        guard let entry = entries[id] else { return 0 }
+        return entry.drawnBefore + (entry.drawnSince.map { now.timeIntervalSince($0) } ?? 0)
+    }
 
     func enter(_ id: String, _ level: PillLevel) {
         if var entry = entries[id] {
@@ -60,8 +72,9 @@ final class PillLane: ObservableObject {
 
     /// The pill changed level (a send that failed), keeping its place in time.
     func relevel(_ id: String, _ level: PillLevel) {
-        guard let entry = entries[id], entry.level != level else { return }
-        entries[id] = Entry(level: level, since: entry.since, hosts: entry.hosts)
+        guard var entry = entries[id], entry.level != level else { return }
+        entry.level = level
+        entries[id] = entry
         recompute()
     }
 
@@ -87,6 +100,16 @@ final class PillLane: ObservableObject {
             next.insert(ambient)
         }
         let hides = next.contains { entries[$0]?.level != .ambient }
+        let now = Date()
+        for (id, entry) in entries {
+            let draws = next.contains(id)
+            if draws, entry.drawnSince == nil {
+                entries[id]?.drawnSince = now
+            } else if !draws, let since = entry.drawnSince {
+                entries[id]?.drawnBefore += now.timeIntervalSince(since)
+                entries[id]?.drawnSince = nil
+            }
+        }
         if next != visible { visible = next }
         if hides != hidesAmbient { hidesAmbient = hides }
     }

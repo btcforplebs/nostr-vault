@@ -125,6 +125,62 @@ final class NotificationPolicyTests: XCTestCase {
         }
     }
 
+    /// One event is one key, however its id is written.
+    func testDedupKeyNormalisesTheEventId() {
+        let id = "ab12CD34" + String(repeating: "0", count: 56)
+        XCTAssertEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: " \(id.lowercased())\n"))
+        XCTAssertNotEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: "other"))
+    }
+
+    /// An arrival pill that times out without ever drawing is filed.
+    func testPillTimedOutUndrawnIsFiled() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .timedOut, drawnFor: 0))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .trimmed, drawnFor: 0))
+    }
+
+    /// Drawn for a moment is not read: still filed.
+    func testPillDrawnTooBrieflyIsFiled() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .timedOut, drawnFor: 0.1))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .trimmed, drawnFor: NotificationPolicy.pillReadableAfter - 0.01))
+    }
+
+    /// Losing the window or the foreground follows the read rule: a pill
+    /// that only flashed is filed, one that was read is not filed again.
+    func testPillHostLostFollowsTheReadRule() {
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 0))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: NotificationPolicy.pillReadableAfter - 0.01))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .hostLost, drawnFor: NotificationPolicy.pillReadableAfter))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 10))
+    }
+
+    /// A push and the relay's alert for one event share a key.
+    func testEventKeyMatchesPushAndMarker() {
+        let id = "AB12" + String(repeating: "0", count: 60)
+        let push: [AnyHashable: Any] = ["event_id": id, "event_kind": 1]
+        let marker: [AnyHashable: Any] = ["notif_id": id.lowercased(), "notif_type": "mention"]
+        XCTAssertEqual(NotificationPolicy.eventKey(of: push), NotificationPolicy.eventKey(of: marker))
+        XCTAssertEqual(NotificationPolicy.eventKey(of: push), NotificationPolicy.dedupKey(eventId: id))
+        XCTAssertNil(NotificationPolicy.eventKey(of: ["nv_deeplink": "nostrvault://shareinbox"]))
+        XCTAssertNil(NotificationPolicy.eventKey(of: ["notif_id": ""]))
+    }
+
+    /// Read or tapped: nothing to file.
+    func testPillShownOrTappedIsNotFiled() {
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .timedOut, drawnFor: NotificationPolicy.pillReadableAfter))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .trimmed, drawnFor: 3))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .tapped, drawnFor: 0))
+    }
+
+    /// A filed DM carries the generic line, never its decrypted text.
+    func testFiledDMIsGeneric() {
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "dm", title: "Message from Alice"), NotificationPolicy.dmFiledTitle)
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "giftwrap", title: "Message from Alice"), NotificationPolicy.dmFiledTitle)
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "mention", title: "Alice mentioned you"), "Alice mentioned you")
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "giftwrap", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "dm", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.filedPillBody(type: "mention", body: "gm"), "gm")
+    }
+
     /// A decrypted DM becomes one readable banner line.
     func testDMPreviewIsOneLine() {
         XCTAssertEqual(NotificationPolicy.dmPreview("hey\n\n  are you  around?\t"), "hey are you around?")

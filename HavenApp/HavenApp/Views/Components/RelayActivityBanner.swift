@@ -15,6 +15,15 @@ struct RelayActivityNotification: Identifiable {
     let body: String
     let color: Color
     let onTap: () -> Void
+    /// Runs once the pill leaves read: tapped, or drawn long enough
+    /// (`NotificationPolicy.filesPill`).
+    let onRead: () -> Void
+    /// Runs if the pill leaves unread, to file the alert in Notification
+    /// Center instead. Nil when it is already there.
+    let onMissed: (() -> Void)?
+
+    /// The pill's id in the lane.
+    var laneId: String { "relayActivity-\(id)" }
 }
 
 // MARK: - Relay Activity Notification Manager
@@ -26,26 +35,52 @@ final class RelayActivityNotificationManager: ObservableObject {
 
     @Published var notifications: [RelayActivityNotification] = []
 
-    func show(icon: String, title: String, body: String, color: Color, onTap: @escaping () -> Void) {
-        let notification = RelayActivityNotification(icon: icon, title: title, body: body, color: color, onTap: onTap)
+    func show(icon: String, title: String, body: String, color: Color,
+              onTap: @escaping () -> Void, onRead: @escaping () -> Void = {},
+              onMissed: (() -> Void)? = nil) {
+        let notification = RelayActivityNotification(icon: icon, title: title, body: body, color: color,
+                                                     onTap: onTap, onRead: onRead, onMissed: onMissed)
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
         // Cap at 3 visible so a burst of activity doesn't fill the screen.
         if notifications.count > 3 {
+            notifications.dropFirst(3).forEach { fileIfUnread($0, end: .trimmed) }
             withAnimation(Motion.bannerOut) {
                 notifications = Array(notifications.prefix(3))
             }
         }
         let id = notification.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
-            self?.dismiss(id)
+            self?.dismiss(id, end: .timedOut)
         }
     }
 
-    func dismiss(_ id: UUID) {
+    func dismiss(_ id: UUID, end: NotificationPolicy.PillEnd) {
+        notifications.filter { $0.id == id }.forEach { fileIfUnread($0, end: end) }
         withAnimation(Motion.bannerOut) {
             notifications.removeAll { $0.id == id }
+        }
+    }
+
+    /// The surface these pills draw on went away: the app went to the
+    /// background, or the Mac's main window closed or went to the Dock. Every
+    /// pill still up is cleared; the unread ones are filed, so none is lost
+    /// with the window.
+    func hostLost() {
+        guard !notifications.isEmpty else { return }
+        notifications.forEach { fileIfUnread($0, end: .hostLost) }
+        notifications.removeAll()
+    }
+
+    /// The lane shows two pills at most, so in a burst an arrival can time
+    /// out unseen or draw only for a moment. Those go to Notification Center.
+    /// Asked before removal, while the lane still knows how long it drew.
+    private func fileIfUnread(_ notification: RelayActivityNotification, end: NotificationPolicy.PillEnd) {
+        if NotificationPolicy.filesPill(end: end, drawnFor: PillLane.shared.drawnFor(notification.laneId)) {
+            notification.onMissed?()
+        } else {
+            notification.onRead()
         }
     }
 }
@@ -58,9 +93,9 @@ struct RelayActivityBanner: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                PillSlot("relayActivity-\(notification.id)", level: .result) {
+                PillSlot(notification.laneId, level: .result) {
                     RelayActivityPill(notification: notification) {
-                        manager.dismiss(notification.id)
+                        manager.dismiss(notification.id, end: .tapped)
                     }
                 }
             }
