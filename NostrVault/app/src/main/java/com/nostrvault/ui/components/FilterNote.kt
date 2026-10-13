@@ -1,14 +1,23 @@
 package com.nostrvault.ui.components
 
+import android.os.SystemClock
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -19,11 +28,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -36,34 +49,96 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * The line a filter tap leaves under the toolbar: the filter's icon and what
- * it did ("Mentions · 18", "Mentions off"). Icon-only filters say what you
- * picked here instead of beside the icon. iOS `FilterNote`.
+ * The line a filter tap leaves under the toolbar, in one grammar for every
+ * screen: "what it does · current setting [· count]", e.g.
+ * "Global · Web of Trust on", "Mentions · on · 214+". A filter turned off
+ * keeps its own icon, dimmed, so the "what it does" half still reads. When
+ * the line is too long for the screen, the title is what gets cut; the
+ * setting and count always show whole. iOS `FilterNote`.
  */
-data class FilterNote(val icon: ImageVector, val text: String) {
+data class FilterNote(
+    val icon: ImageVector,
+    /** What the button does. The only part that truncates. */
+    val title: String,
+    /** "setting [· count]", kept whole after the title. */
+    val detail: String? = null,
+    /** An off setting: the icon and text drop to secondary. */
+    val dimmed: Boolean = false,
+) {
+    /** The whole line, as read out. */
+    val text: String get() = detail?.let { "$title · $it" } ?: title
+
     companion object {
-        /** A filter turned back off. */
+        /** "Title · setting", with an optional count last ("Mentions · on · 18"). */
+        fun setting(icon: ImageVector, title: String, setting: String, count: String? = null): FilterNote {
+            val parts = listOfNotNull(setting, count?.takeIf { it.isNotEmpty() })
+            return FilterNote(icon, title, parts.joinToString(" · "))
+        }
+
+        /** A filter turned back off: "Title · off" with the button's own icon. */
+        fun off(title: String, icon: ImageVector) = FilterNote(icon, title, "off", dimmed = true)
+
+        /** A filter turned back off, without its icon. */
+        @Deprecated(
+            "Pass the button's own icon: off(title, icon)",
+            ReplaceWith("FilterNote.off(title, NostrVaultIcons.FilterOff)", "com.nostrvault.ui.theme.NostrVaultIcons"),
+        )
         fun off(title: String) = FilterNote(NostrVaultIcons.FilterOff, "$title off")
     }
 }
 
 /**
- * Holds the showing note. A new one replaces the last; each goes after 2 s.
- * iOS `FilterNoteModel`.
+ * Holds the showing note. [show] is a tap: the text replaces cleanly and the
+ * one 2 s timer restarts. [update] is a late result (a count that landed): it
+ * changes the text only while the note is still showing, keeps the time left
+ * (raised to a short floor so the count is readable, never past a cap after
+ * the tap), and is a no-op once the note has gone, so the pill never pops
+ * back and a repeating signal can't pin it. iOS `FilterNoteModel`.
  */
 @Stable
 class FilterNoteState internal constructor(private val scope: CoroutineScope) {
     var note: FilterNote? by mutableStateOf(null)
         private set
     private var fade: Job? = null
+    private var shownAt = 0L
+    private var hidesAt = 0L
 
     fun show(note: FilterNote) {
         this.note = note
+        shownAt = SystemClock.elapsedRealtime()
+        hideAt(shownAt + DURATION_MS)
+    }
+
+    fun update(note: FilterNote) {
+        if (this.note == null) return
+        this.note = note
+        // Keep the time left, extended to the floor, within the cap.
+        val floor = minOf(SystemClock.elapsedRealtime() + UPDATE_FLOOR_MS, shownAt + MAX_DURATION_MS)
+        if (floor > hidesAt) hideAt(floor)
+    }
+
+    fun hide() {
+        fade?.cancel()
+        fade = null
+        note = null
+    }
+
+    private fun hideAt(at: Long) {
+        hidesAt = at
         fade?.cancel()
         fade = scope.launch {
-            delay(2_000)
+            delay(at - SystemClock.elapsedRealtime())
             this@FilterNoteState.note = null
         }
+    }
+
+    private companion object {
+        /** `show()` gives the pill this long. */
+        const val DURATION_MS = 2_000L
+        /** `update()` leaves at least this long, so a late count is readable… */
+        const val UPDATE_FLOOR_MS = 800L
+        /** …but never past this long after `show()`, so a repeating signal cannot pin the pill. */
+        const val MAX_DURATION_MS = 6_000L
     }
 }
 
@@ -74,9 +149,105 @@ fun rememberFilterNoteState(): FilterNoteState {
 }
 
 /**
- * The glass capsule for [state]'s note; nothing when none. Takes no taps, so
- * it can sit over the content. TalkBack reads each new note, since it's the
- * only text the tap leaves.
+ * The least width the title keeps once both halves can't fit, as on iOS. In
+ * sp, so it follows the font scale and holds the same glyphs at every size;
+ * [FilterNoteLine] caps it at half the line, so the detail can never be the
+ * half that vanishes on a narrow host.
+ */
+private val FilterNoteTitleFloor = 72.sp
+
+/**
+ * Lays the title and the "· setting · count" detail on one line. When they
+ * fit, each takes its natural width. When they don't, the title gives way
+ * first, down to [FilterNoteTitleFloor] or its full text, whichever is less;
+ * past that the detail is what gets cut. So "Lan… · English, Spanish,
+ * Portuguese, German" becomes "Languages · English, Spanish, Portu…", and
+ * nothing shrinks to a bare "L". With one child it just hugs it. iOS
+ * `FilterNoteLine`.
+ */
+@Composable
+private fun FilterNoteLine(content: @Composable () -> Unit) {
+    Layout(content = content) { measurables, constraints ->
+        val available = constraints.maxWidth
+        val ideal = measurables.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+        val widths = if (measurables.size == 2 && available != Constraints.Infinity && ideal.sum() > available) {
+            val floor = minOf(ideal[0], FilterNoteTitleFloor.roundToPx(), available / 2)
+            val title = minOf(available, maxOf(available - ideal[1], floor))
+            listOf(title, maxOf(available - title, 0))
+        } else {
+            ideal.map { minOf(it, available) }
+        }
+        val placeables = measurables.mapIndexed { i, m ->
+            m.measure(constraints.copy(minWidth = 0, maxWidth = widths[i]))
+        }
+        val height = placeables.maxOfOrNull { it.height } ?: 0
+        layout(placeables.sumOf { it.width }, height) {
+            var x = 0
+            placeables.forEach { p ->
+                p.placeRelative(x, (height - p.height) / 2)
+                x += p.width
+            }
+        }
+    }
+}
+
+/** The pill's side margins: it never gets wider than the host minus these. */
+private val FilterNoteMargin = 16.dp
+
+/** The dimmed (off) look, the same on iOS. */
+private const val FilterNoteDimmedAlpha = 0.55f
+
+/**
+ * Where the pill's bottom edge sits, below the top of the scaffold padding,
+ * at every font scale: the same 12 dp as iOS, where a 26 dp pill at 100%
+ * reaches 4 dp into the bar and ends 6 dp above the first post. A bigger
+ * pill grows upward behind the bar, never down over the post. Those are
+ * iPhone numbers; the Android gap has not been measured yet, so check it on
+ * a device when the Android lanes start and change this constant if needed.
+ */
+private val FilterNoteBottomEdge = 12.dp
+
+/**
+ * Hosts a screen's filter note around the [GlassScaffold] content: the pill
+ * is drawn at the top centre with its bottom edge [FilterNoteBottomEdge]
+ * below the top of [padding], so it stays above the first post at every font
+ * scale and overlaps the bottom of the toolbar, outside the bar that folds
+ * on scroll. Never in the layout flow, so a tap moves nothing; when the list
+ * is scrolled it may sit over content, and still takes no taps. Wrap the
+ * scaffold's content once per screen, never the toolbar slot.
+ */
+@Composable
+fun FilterNoteHost(
+    state: FilterNoteState,
+    padding: PaddingValues,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier.fillMaxSize()) {
+        content()
+        FilterNotePill(
+            state,
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = padding.calculateTopPadding())
+                // A slot of fixed height; the pill is aligned to its bottom
+                // and overflows upward when it is taller.
+                .height(FilterNoteBottomEdge)
+                .wrapContentHeight(Alignment.Bottom, unbounded = true),
+        )
+    }
+}
+
+/**
+ * The glass capsule for [state]'s note; nothing when none. One line that hugs
+ * its text up to the host's width minus [FilterNoteMargin] each side, so it
+ * follows the font scale; past that the title is cut with "…" down to
+ * [FilterNoteTitleFloor], then the setting and count are cut the same way,
+ * so neither half vanishes. Takes no taps, so it can sit over the content.
+ * Fades in with a slight scale from its top edge, not a slide from under
+ * the bar; Reduce Motion gets the fade alone. A second tap crossfades
+ * the text in place. TalkBack reads each new note, since it's the only text
+ * the tap leaves.
  */
 @Composable
 fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
@@ -85,26 +256,59 @@ fun FilterNotePill(state: FilterNoteState, modifier: Modifier = Modifier) {
     state.note?.let { last = it }
     AnimatedVisibility(
         visible = state.note != null,
-        enter = if (Motion.isReduced) fadeIn(Motion.fade()) else fadeIn(Motion.fade()) + slideInVertically(Motion.fade()) { -it / 2 },
+        enter = if (Motion.isReduced) fadeIn(Motion.fade())
+            else fadeIn(Motion.fade()) + scaleIn(Motion.fade(), initialScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 0f)),
         exit = fadeOut(Motion.fade()),
         modifier = modifier,
     ) {
         val note = last ?: return@AnimatedVisibility
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            modifier = Modifier
-                .glassPillBackground(isOled = LocalOledMode.current)
-                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-                .padding(vertical = 7.dp, horizontal = 14.dp),
-        ) {
-            Icon(
-                imageVector = note.icon,
-                contentDescription = null,
-                tint = LocalNostrVaultColors.current.primary,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(text = note.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        AnimatedContent(
+            targetState = note,
+            transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
+            label = "filterNote",
+        ) { shown ->
+            val tint = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalNostrVaultColors.current.primary
+            val textColor = if (shown.dimmed) LocalContentColor.current.copy(alpha = FilterNoteDimmedAlpha) else LocalContentColor.current
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier
+                    .padding(horizontal = FilterNoteMargin)
+                    .glassPillBackground(isOled = LocalOledMode.current)
+                    .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+                    // 26 dp tall: fits the gap between the toolbar and the first post.
+                    .padding(vertical = 5.dp, horizontal = 14.dp),
+            ) {
+                Icon(
+                    imageVector = shown.icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(14.dp),
+                )
+                FilterNoteLine {
+                    Text(
+                        text = shown.title,
+                        color = textColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    shown.detail?.let { detail ->
+                        Text(
+                            text = " · $detail",
+                            color = textColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            // "…" as on iOS; the default clips mid-glyph.
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
         }
     }
 }
