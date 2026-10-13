@@ -183,6 +183,7 @@
 		270AF3B7649E919B87BC94ED /* LiveFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */; };
 		27414B230CC3AA23BA86C684 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
 		27501A57652E5103F7832F81 /* FeedDashboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4081F45635AA7AA7E02B86BD /* FeedDashboardStore.swift */; };
+		2781CECEBC6411CB2C55082D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		27BBFB192439FAD50AEB34EC /* PendingPostManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665772231EE1D4B0755E95C3 /* PendingPostManager.swift */; };
 		27FA2D5AA1F2368CB224F74F /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
 		290070DB5FE8F74CE49EEB08 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A6C2A292B935922711F19B /* Motion.swift */; };
@@ -993,6 +994,7 @@
 		D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
 		D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */; };
+		D836F792618248C8A0771D7D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		D8539D3F01467070FA9F195D /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
 		D8ECF7A788BE7549276AF043 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB6A6872532B023E705FC6C /* RelayListEditor.swift */; };
@@ -1371,6 +1373,7 @@
 		412B53053D0F6CC69B7152AC /* HTMLEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLEntities.swift; sourceTree = "<group>"; };
 		41589AE9C7065360D4094FD1 /* MediaViewerPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViewerPhoto.swift; sourceTree = "<group>"; };
 		4168C64C489FA112F2FA740A /* SearchView+EmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchView+EmptyState.swift"; sourceTree = "<group>"; };
+		4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+OwnerSession.swift"; sourceTree = "<group>"; };
 		41A8E188B7B23F83A3EA49AA /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		41AFE9F84C0F2592990C1224 /* BlossomDashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardModels.swift; sourceTree = "<group>"; };
 		427E36EC7A40E85FF4710BBD /* InterestListService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestListService.swift; sourceTree = "<group>"; };
@@ -2197,6 +2200,7 @@
 				1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */,
 				5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */,
 				0223D84738942A0EB44A1364 /* NIP46Service+NostrConnect.swift */,
+				4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */,
 				551F03CBB7840B853EDD301A /* SignerRequestGate.swift */,
 			);
 			path = NIP46;
@@ -3426,6 +3430,7 @@
 				5890AB991E6BEBF46F9B5B34 /* NIP46Service+Bridge.swift in Sources */,
 				838C819BE2CDC266568308E9 /* NIP46Service+Methods.swift in Sources */,
 				854D4FE2870B12708A04B068 /* NIP46Service+NostrConnect.swift in Sources */,
+				D836F792618248C8A0771D7D /* NIP46Service+OwnerSession.swift in Sources */,
 				DB41813EABB4EE98C342A4CC /* NIP46Service.swift in Sources */,
 				587441300839972EAF70AF41 /* NIP49Service.swift in Sources */,
 				D47FD58EF3569746FD224EFE /* NIP88Poll.swift in Sources */,
@@ -4032,6 +4037,7 @@
 				81168E8CEF8F8FF779C822DC /* NIP46Service+Bridge.swift in Sources */,
 				84CEF5ED3CC7EB657B8046A1 /* NIP46Service+Methods.swift in Sources */,
 				3C3F1D061206D96B9D766B56 /* NIP46Service+NostrConnect.swift in Sources */,
+				2781CECEBC6411CB2C55082D /* NIP46Service+OwnerSession.swift in Sources */,
 				52A8B3EDB9A6DFCDB8496805 /* NIP46Service.swift in Sources */,
 				68B07631D12BD4CAFDE6AF86 /* NIP49Service.swift in Sources */,
 				FB11668DBEB4020E1CEDBFEA /* NIP88Poll.swift in Sources */,

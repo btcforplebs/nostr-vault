@@ -52,7 +52,7 @@ extension NIP46Service {
     }
 
     static func signerKey(bunkerURI: String, signerPubkey: String) -> String {
-        URLComponents(string: bunkerURI)?.host ?? signerPubkey
+        HavenConfig.signerSessionKey(bunkerURI: bunkerURI, signerPubkey: signerPubkey)
     }
 
     /// Closes one signer's Go session, e.g. when its account is paired again

@@ -34,6 +34,7 @@ extension DMService {
                             #endif
                             let wasAuthenticated = self.isAuthenticated
                             self.isAuthenticated = true
+                            self.pendingAuthChallenge = nil
                             if let client = self.inboxClient {
                                 self.sendInboxSubscription(to: client)
                             }
@@ -74,7 +75,17 @@ extension DMService {
         }
     }
 
-    private func handleAuthChallenge(_ challenge: String) {
+    /// Signs the /chat AUTH challenge again once the owner's signer can answer
+    /// (the owner's bunker just connected in the background).
+    func retryPendingAuth() {
+        guard !isAuthenticated, let challenge = pendingAuthChallenge else { return }
+        handleAuthChallenge(challenge, isRetry: true)
+    }
+
+    /// `isRetry`: this challenge already waited for the owner's signer once.
+    /// A retry that fails does not log the owner in again, or a signer that
+    /// keeps refusing would loop.
+    private func handleAuthChallenge(_ challenge: String, isRetry: Bool = false) {
         guard let client = inboxClient else { return }
 
         // Watch-only: no owner key to sign NIP-42 AUTH. Skip the attempt (the
@@ -104,12 +115,19 @@ extension DMService {
             ["challenge", challenge]
         ]
 
+        // Kept until the relay accepts an AUTH, so it can be signed again once
+        // the owner's signer is reachable (retryPendingAuth).
+        pendingAuthChallenge = challenge
+
         Task {
             // Always sign AUTH with owner's key since the local relay is owned by the owner account
             guard let authEvent = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags, forceOwner: true) else {
                 #if DEBUG
                 print("Failed to sign NIP-42 AUTH event")
                 #endif
+                // After a restart with another account active, a bunker owner
+                // has no signer session yet: open one, then retry this AUTH.
+                if !isRetry { NIP46Service.shared.connectOwnerInBackgroundIfNeeded() }
                 return
             }
 
