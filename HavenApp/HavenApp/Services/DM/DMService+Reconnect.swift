@@ -36,7 +36,7 @@ extension DMService {
         clearSignerWaiting()
         injectedDmIds.removeAll()
         isAuthenticated = false
-        pendingAuthChallenge = nil
+        authRetry.reset()
 
         // Tear down injection clients from previous account
         disconnectInjectionClients()

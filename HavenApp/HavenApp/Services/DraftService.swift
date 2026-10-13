@@ -303,7 +303,12 @@ class DraftService: ObservableObject {
                                 kind: 22242, content: "",
                                 tags: [["relay", config.nostrURL + "/private"], ["challenge", challenge]],
                                 forceOwner: true
-                            ) else { return }
+                            ) else {
+                                // A bunker owner with no session yet (restart with
+                                // another account active): log it in for next time.
+                                NIP46Service.shared.connectOwnerInBackgroundIfNeeded()
+                                return
+                            }
                             let msg: [Any] = ["AUTH", self.eventToDict(authEvent)]
                             if let msgData = try? JSONSerialization.data(withJSONObject: msg),
                                let msgStr = String(data: msgData, encoding: .utf8) {

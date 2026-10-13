@@ -147,7 +147,12 @@ extension NostrService {
                 // login just for this.
                 let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr, withSigner: ownerSigner)
                 guard let data = signedJSON.data(using: .utf8) else { return nil }
-                return try JSONDecoder().decode(NostrEvent.self, from: data)
+                let event = try JSONDecoder().decode(NostrEvent.self, from: data)
+                guard SignerReplyCheck.accepts(signedPubkey: event.pubkey, askedFor: ownerHexPubkey) else {
+                    RelayProcessManager.shared.addLog("NIP-46: Owner's signer signed as \(event.pubkey.prefix(8))…, not the owner — dropped", level: "ERROR")
+                    return nil
+                }
+                return event
             } catch {
                 #if DEBUG
                 print("NostrService: owner-signed kind \(kind) skipped — no live session for the owner's signer: \(error)")
@@ -197,6 +202,11 @@ extension NostrService {
                 #if DEBUG
                 print("NostrService: NIP-46 signed event id=\(event.id.prefix(8)) pubkey=\(event.pubkey.prefix(8)) sig=\(event.sig.prefix(8))")
                 #endif
+                // Never publish a signature from another account's key as this one.
+                guard SignerReplyCheck.accepts(signedPubkey: event.pubkey, askedFor: signingPubkey) else {
+                    RelayProcessManager.shared.addLog("NIP-46: Signer signed as \(event.pubkey.prefix(8))…, asked for \(signingPubkey.prefix(8))… — dropped", level: "ERROR")
+                    return nil
+                }
                 return event
             } catch {
                 #if DEBUG

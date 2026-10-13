@@ -24,7 +24,7 @@ extension DMService {
         connectionCancellables.removeAll()
         inboxClient?.disconnect()
         isAuthenticated = false
-        pendingAuthChallenge = nil
+        authRetry.reset()
 
         let client = WebSocketClient()
         inboxClient = client

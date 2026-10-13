@@ -9,36 +9,32 @@ import Foundation
 /// the owner in beside it (`NIP46ConnectBackgroundC`), never making it the
 /// active signer, then lets DM retry the AUTH it could not sign.
 extension NIP46Service {
-    /// A background owner login in flight, so a burst of AUTH challenges or
-    /// switches starts only one.
-    private static var ownerLoginInFlight = false
+    /// The background owner login's state (`OwnerSessionWarmup`): one at a time.
+    private static var ownerWarmup = OwnerSessionWarmup()
 
-    /// Logs the owner's bunker in without making it active, when the owner
-    /// signs with a bunker and another account is active. A session that is
-    /// already live is left alone. On success the DM /chat AUTH is retried.
+    /// Logs the owner's bunker in without making it active, when
+    /// `OwnerSessionWarmup.start` says so. A session that is already live is
+    /// left alone. Called on account switch and whenever an owner-forced AUTH
+    /// (DM /chat, drafts /private, the Vault counts) could not be signed; on
+    /// success the DM /chat AUTH is retried, the others on their next run.
     func connectOwnerInBackgroundIfNeeded() {
         let config = ConfigService.shared.config
-        guard config.ownerNeedsBackgroundSession, !Self.ownerLoginInFlight,
-              let link = config.ownerBunkerLink,
-              let clientSK = config.accountBunkerConfigs[config.ownerNpub]?.clientSecretKey,
-              !clientSK.isEmpty else { return }
         let ownerHex = Bech32.decode(config.ownerNpub)?.hexString ?? ""
-        Self.ownerLoginInFlight = true
+        let activeKey = config.activeSigningMode() == "nip46" ? Self.activeSignerKey() : nil
+        guard let login = Self.ownerWarmup.start(
+            config: config, ownerHex: ownerHex, activeSessionKey: activeKey
+        ) else { return }
         Task {
             // Blocking in Go (the signer has to answer): off the main actor.
             let pubkey: String? = await Task.detached {
                 guard let cStr = NIP46ConnectBackgroundC(
-                    UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String),
-                    UnsafeMutablePointer(mutating: (link as NSString).utf8String)
+                    UnsafeMutablePointer(mutating: (login.clientSecretKey as NSString).utf8String),
+                    UnsafeMutablePointer(mutating: (login.link as NSString).utf8String)
                 ) else { return nil as String? }
                 defer { free(cStr) }
                 return String(cString: cStr)
             }.value
-            Self.ownerLoginInFlight = false
-            // A session answering for another account is not dropped here: two
-            // accounts on one signer share its session, and dropping it would
-            // log the active account out.
-            guard let pubkey, !ownerHex.isEmpty, pubkey == ownerHex else {
+            guard Self.ownerWarmup.finished(login, pubkey: pubkey) else {
                 RelayProcessManager.shared.addLog("NIP-46: Owner's signer not connected in the background", level: "ERROR")
                 return
             }

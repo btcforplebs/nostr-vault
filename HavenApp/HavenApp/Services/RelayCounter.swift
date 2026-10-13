@@ -100,6 +100,9 @@ final class RelayCounter {
             tags: [["relay", relay], ["challenge", challenge]],
             forceOwner: true
         ) else {
+            // A bunker owner with no session yet (restart with another account
+            // active): log it in, so the next count can AUTH.
+            NIP46Service.shared.connectOwnerInBackgroundIfNeeded()
             apply(session.authUnavailable())
             return
         }
