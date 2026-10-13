@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,8 +28,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.DMConversation
 import com.nostrvault.service.DMService
@@ -53,6 +54,8 @@ import javax.inject.Inject
 class DMInboxViewModel @Inject constructor(
     private val dmService: DMService,
     private val nostrService: NostrService,
+    private val configStore: ConfigStore,
+    savedState: SavedStateHandle,
 ) : ViewModel() {
 
     val conversations: StateFlow<List<DMConversation>> = dmService.conversations
@@ -74,6 +77,10 @@ class DMInboxViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val paneSelection = DMPaneSelection(savedState) { configStore.activeAccountHexPubkey.value }
+    val paneSelectionChanges: StateFlow<String?> = paneSelection.changes
+    val activeAccount: StateFlow<String> = configStore.activeAccountHexPubkey
+
     init {
         viewModelScope.launch {
             dmService.loadConversations()
@@ -83,6 +90,10 @@ class DMInboxViewModel @Inject constructor(
             val pubkeys = conversations.value.map { it.id }.distinct()
             nostrService.fetchMissingProfiles(pubkeys)
         }
+        // Switching back to an account doesn't reopen what it had open.
+        viewModelScope.launch {
+            configStore.accountSwitches.collect { paneSelection.clear() }
+        }
         // While the inbox is open, drain queued (Amber) decrypts as they arrive —
         // this is the only place background DMs get decrypted in Amber mode, so it
         // never hammers the signer when you're elsewhere in the app.
@@ -91,6 +102,11 @@ class DMInboxViewModel @Inject constructor(
             dmService.pendingDecryptCount.collect { if (it > 0) dmService.decryptPending() }
         }
     }
+
+    fun selectConversation(pubkey: String) = paneSelection.select(pubkey)
+
+    /** Read live, so a pane picked under the previous account never opens under this one. */
+    fun selectedConversation(): String? = paneSelection.current()
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
 
@@ -120,12 +136,15 @@ fun DMInboxScreen(
     onProfileClick: (String) -> Unit = {},
     viewModel: DMInboxViewModel = hiltViewModel(),
 ) {
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    // Both collected so a pick or an account switch recomposes; the value is read live.
+    viewModel.paneSelectionChanges.collectAsState().value
+    viewModel.activeAccount.collectAsState().value
+    val selected = viewModel.selectedConversation()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (dmUsesTwoPane(maxWidth)) {
             DMTwoPane(selected = selected, onProfileClick = onProfileClick) { listModifier ->
                 DMInboxList(
-                    onConversationClick = { selected = it },
+                    onConversationClick = viewModel::selectConversation,
                     onNewMessage = onNewMessage,
                     viewModel = viewModel,
                     selected = selected,
