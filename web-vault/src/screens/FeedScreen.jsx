@@ -43,7 +43,7 @@ export function FeedScreen({ ctx }) {
   useEffect(() => {
     if (!notes?.length) return
     const authors = notes.flatMap(n => { if (n.kind !== 6) return [n.pubkey]; try { return [n.pubkey, JSON.parse(n.content).pubkey] } catch { return [n.pubkey] } })
-    fetchProfiles(authors.filter(Boolean), relays).catch(() => {})
+    fetchProfiles(vault, authors.filter(Boolean), relays).catch(() => {})
   }, [notes])
 
   return (

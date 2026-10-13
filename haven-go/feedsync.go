@@ -55,9 +55,14 @@ var rareFeedKinds = []int{nostr.KindArticle, KindPoll, nostr.KindGenericRepost, 
 
 var feedKinds = slices.Concat(commonFeedKinds, rareFeedKinds)
 
-// OnlyFeedKinds restricts writes on the /feed route to feed note kinds.
+// OnlyFeedKinds restricts writes on the /feed route to feed note kinds. The
+// browser build's owner streams may also cache kind 0, the names and pictures
+// of the people in the feed, which natively the apps keep themselves.
 func OnlyFeedKinds(ctx context.Context, event *nostr.Event) (bool, string) {
 	if slices.Contains(feedKinds, event.Kind) {
+		return false, ""
+	}
+	if event.Kind == nostr.KindProfileMetadata && ownerStream(ctx) {
 		return false, ""
 	}
 	return true, fmt.Sprintf("restricted: this relay only accepts feed notes (kinds %v)", feedKinds)

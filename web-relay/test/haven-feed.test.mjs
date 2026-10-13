@@ -44,7 +44,17 @@ test("real Haven /feed: owner stream caches past the event limiter, device key A
   let ok = 0
   for (let i = 0; i < 150; i++) ok += (await page.event(note(follow, `follow ${i}`, t0 + i))).ok
   assert.equal(ok, 150, "every note the page caches is stored")
-  assert.equal((await page.event(finalizeEvent({ kind: 0, created_at: now(), tags: [], content: "{}" }, follow))).ok, false, "only feed kinds")
+  assert.equal((await page.event(finalizeEvent({ kind: 7, created_at: now(), tags: [], content: "+" }, follow))).ok, false, "only feed kinds")
+
+  // The page caches its follows' names and pictures (kind 0) here too, newest wins.
+  const profile = (name, at) => finalizeEvent({ kind: 0, created_at: at, tags: [], content: JSON.stringify({ name }) }, follow)
+  assert.equal((await page.event(profile("old", now() - 60))).ok, true, "owner stream caches kind 0")
+  assert.equal((await page.event(profile("new", now()))).ok, true)
+  const names = await page.query({ kinds: [0], authors: [getPublicKey(follow)] })
+  assert.deepEqual(names.map(e => JSON.parse(e.content).name), ["new"], "kind 0 is replaced, not piled up")
+  const fresh = new HavenClient(h.conn("fresh-feed", { mode: "nip01", route: "/feed" }))
+  assert.equal((await fresh.event(profile("stranger", now()))).ok, false, "kind 0 only from the owner's streams")
+  fresh.close()
 
   const got = await page.query({ kinds: [1], authors: [getPublicKey(follow)], limit: 20 })
   assert.equal(got.length, 20)

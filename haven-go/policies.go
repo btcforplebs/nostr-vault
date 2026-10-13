@@ -45,6 +45,12 @@ func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *
 // would hand the bypass to every caller.
 var ownerConn = func(*http.Request) bool { return false }
 
+// ownerStream is ownerConn for the connection an event or filter arrived on.
+func ownerStream(ctx context.Context) bool {
+	ws := khatru.GetConnection(ctx)
+	return ws != nil && ws.Request != nil && ownerConn(ws.Request)
+}
+
 // whitelistBypassEventRateLimiter wraps EventIPRateLimiter so that events from
 // whitelisted pubkeys (the owner and any allowed accounts) are never rate-limited.
 // This prevents the relay's own sync and heavy publishing from being blocked by
@@ -57,7 +63,7 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 		}
 		// The browser build's owner streams: the page itself caching its
 		// follows' notes into /feed, which natively feedsync writes directly.
-		if ws := khatru.GetConnection(ctx); ws != nil && ws.Request != nil && ownerConn(ws.Request) {
+		if ownerStream(ctx) {
 			return false, ""
 		}
 		return inner(ctx, evt)
