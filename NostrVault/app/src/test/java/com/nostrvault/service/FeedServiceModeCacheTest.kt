@@ -1,6 +1,5 @@
 package com.nostrvault.service
 
-import android.content.Context
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.DeletedNotesStore
 import com.nostrvault.data.model.FeedMode
@@ -8,6 +7,8 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.relay.HavenConfig
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,8 +42,11 @@ class FeedServiceModeCacheTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(StandardTestDispatcher())
-        // restoreModeCache drops deleted posts; none are deleted here.
-        DeletedNotesStore.init(mockk<Context> { every { filesDir } returns tmp.root })
+        // restoreModeCache drops deleted posts; none are deleted here. The
+        // process-wide store is stubbed, never replaced, so no other test sees it.
+        val deleted = DeletedNotesStore(tmp.root)
+        mockkObject(DeletedNotesStore.Companion)
+        every { DeletedNotesStore.shared } returns deleted
         val nostr = mockk<NostrService>(relaxed = true)
         every { nostr.activeHexPubkey } answers { account }
         feed = FeedService(
@@ -63,7 +67,10 @@ class FeedServiceModeCacheTest {
     }
 
     @After
-    fun tearDown() = Dispatchers.resetMain()
+    fun tearDown() {
+        unmockkObject(DeletedNotesStore.Companion)
+        Dispatchers.resetMain()
+    }
 
     private fun showFeed(vararg notes: FeedNote) {
         feed._notes.value = notes.toList()
