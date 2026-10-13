@@ -46,7 +46,7 @@ class FeedModeCachesTest {
     fun `what was on screen is kept even when it is older than the newest raw notes`() {
         val shown = note("shown", 1)
         val pending = note("pending", 500)
-        val raw = (0 until 300).map { note("raw$it", 1_000L - it) }
+        val raw = (0 until 300).map { note("raw-$it-", 1_000L - it) }
         val kept = FeedModeCaches.notesToKeep(listOf(shown), listOf(pending), raw + shown)
         assertTrue(shown in kept)
         assertTrue(pending in kept)
