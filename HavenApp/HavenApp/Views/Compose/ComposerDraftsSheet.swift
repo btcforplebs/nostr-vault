@@ -6,6 +6,8 @@ struct ComposerDraftsSheet: View {
     @ObservedObject var keeper: ComposerDraftKeeper
     let onSelect: (ComposerDraft) -> Void
     @Environment(\.dismiss) private var dismiss
+    /// The draft whose delete is waiting for a yes.
+    @State private var pendingDelete: ComposerDraft?
 
     var body: some View {
         NavigationStack {
@@ -32,14 +34,14 @@ struct ComposerDraftsSheet: View {
                             .buttonStyle(.plain)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    keeper.delete(draft)
+                                    pendingDelete = draft
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
                             .contextMenu {
                                 Button(role: .destructive) {
-                                    keeper.delete(draft)
+                                    pendingDelete = draft
                                 } label: {
                                     Label("Delete Draft", systemImage: "trash")
                                 }
@@ -63,6 +65,18 @@ struct ComposerDraftsSheet: View {
                     Button("Close") { dismiss() }
                 }
             }
+        }
+        .confirmationDialog("Delete this draft?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), titleVisibility: .visible, presenting: pendingDelete) { draft in
+            Button("Delete", role: .destructive) {
+                keeper.delete(draft)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { _ in
+            Text("It's only on this device, so it can't be recovered.")
         }
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 420)
