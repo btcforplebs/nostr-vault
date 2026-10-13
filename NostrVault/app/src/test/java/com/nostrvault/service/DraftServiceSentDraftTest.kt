@@ -50,4 +50,31 @@ class DraftServiceSentDraftTest {
         drafts.deleteSentDraft("d", null)
         assertNull(drafts.findDraft("d"))
     }
+
+    /** Cancel on the countdown puts the post back as its draft, with its media lines. */
+    @Test fun cancelPutsTheSentVersionBack() {
+        val drafts = service()
+        val sent = drafts.saveDraft(Draft(id = "d", content = "Hello"))
+        drafts.restoreWithdrawnDraft(Draft(id = "d", content = "Hello\nhttps://cdn/x.jpg"), sent.updatedAt)
+        assertEquals("Hello\nhttps://cdn/x.jpg", drafts.findDraft("d")?.content)
+    }
+
+    /** ...but not over edits made to the reopened draft during the undo window. */
+    @Test fun cancelKeepsEditsMadeDuringTheCountdown() {
+        val drafts = service()
+        val sent = drafts.saveDraft(Draft(id = "d", content = "Hello"))
+        Thread.sleep(5)
+        drafts.saveDraft(Draft(id = "d", content = "Hello, edited"))
+        drafts.restoreWithdrawnDraft(Draft(id = "d", content = "Hello\nhttps://cdn/x.jpg"), sent.updatedAt)
+        assertEquals("Hello, edited", drafts.findDraft("d")?.content)
+    }
+
+    /** A post deleted from Drafts during the countdown comes back on Cancel: it is the user's text. */
+    @Test fun cancelBringsBackADraftThatIsGone() {
+        val drafts = service()
+        val sent = drafts.saveDraft(Draft(id = "d", content = "Hello"))
+        drafts.deleteDraft("d")
+        drafts.restoreWithdrawnDraft(Draft(id = "d", content = "Hello"), sent.updatedAt)
+        assertEquals("Hello", drafts.findDraft("d")?.content)
+    }
 }

@@ -713,7 +713,7 @@ class ComposeNoteViewModel @Inject constructor(
                         draftId = draftId,
                         replyToId = replyToNoteId,
                         quoteToId = quoteToNoteId,
-                        onWithdrawn = { draftService.saveDraft(keptDraft) },
+                        onWithdrawn = { draftService.restoreWithdrawnDraft(keptDraft, sentVersion) },
                     ) { evt, onOutcome ->
                         nostrService.postEvent(evt, onBroadcastOutcome = onOutcome)
                         // Out the door: its draft (an autosave, or one kept by
