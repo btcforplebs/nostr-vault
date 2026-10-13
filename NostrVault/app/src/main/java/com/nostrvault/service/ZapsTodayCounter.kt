@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -23,10 +24,23 @@ import javax.inject.Singleton
  * uses ([ZapValidationService.isValidReceipt]), so the two agree.
  */
 @Singleton
-class ZapsTodayCounter @Inject constructor(
+class ZapsTodayCounter internal constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
+    /** Whether a raw event's id and signature check out. A test hands in its own. */
+    private val verify: (String) -> Boolean,
+    /** Whether a receipt's publisher may speak for the recipient. A test hands in its own. */
+    private val isValidReceipt: suspend (publisher: String, recipient: String, profiles: Map<String, FeedProfile>) -> Boolean,
 ) {
+    @Inject constructor(nostrService: NostrService, configStore: ConfigStore) : this(
+        nostrService,
+        configStore,
+        verify = HavenBridge::verifyEvent,
+        isValidReceipt = { publisher, recipient, profiles ->
+            ZapValidationService.isValidReceipt(publisher, recipient, profiles)
+        },
+    )
+
     /** Today's count for [me], or null when your relay could not be asked. */
     suspend fun count(me: String, nowMs: Long = System.currentTimeMillis()): Int? {
         if (me.isEmpty()) return 0
@@ -42,8 +56,8 @@ class ZapsTodayCounter @Inject constructor(
         if (!answered && events.isEmpty()) return null
         val receipts = events.mapNotNull { event ->
             val receipt = ZapsToday.Receipt.from(event) ?: return@mapNotNull null
-            val trusted = HavenBridge.verifyEvent(event.toString()) &&
-                ZapValidationService.isValidReceipt(receipt.publisher, me, nostrService.profiles.value)
+            val trusted = verify(event.toString()) &&
+                isValidReceipt(receipt.publisher, me, nostrService.profiles.value)
             receipt.takeIf { trusted }
         }
         return ZapsToday.count(receipts, me, since)
