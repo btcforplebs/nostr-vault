@@ -33,8 +33,9 @@ export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}, onD
           await handler(ctx)
         } catch (e) {
           const rst = synReset(ctx.payload)
-          onDrop(ctx, e, rst !== undefined)
-          if (rst) await endpoint.sendDatagram({ dst: ctx.src, srcPort: port, dstPort: port, payload: rst }).catch(() => {})
+          let reset = false
+          if (rst) reset = await endpoint.sendDatagram({ dst: ctx.src, srcPort: port, dstPort: port, payload: rst }).then(() => true, () => false)
+          onDrop(ctx, e, reset)
         }
       })
     },
@@ -70,6 +71,7 @@ export class TcpFipsRelayServer {
     this.haven = haven
     this.conns = new Map()
     const logged = new Set()
+    // refusedSyn: a reset for the dropped SYN was actually handed to the endpoint.
     const onDrop = (ctx, e, refusedSyn) => {
       this.stats.droppedSegments++
       if (refusedSyn) this.stats.refusedSyns++
@@ -109,7 +111,7 @@ export class TcpFipsRelayServer {
         try {
           await this.#add(id)
         } catch {
-          this.conns.get(id)?.stream?.close()
+          // #add closed any Haven stream it opened; only the TCP side is left.
           this.conns.delete(id)
           await this.tcp.abort(id).catch(() => {})
         }
@@ -135,13 +137,20 @@ export class TcpFipsRelayServer {
     if (!peer) return this.tcp.abort(id)
     const c = { id, out: [], outBytes: 0, lineBytes: 0, stream: undefined, havenClosed: false }
     // A distinct id per TCP connection, so Haven can tell streams apart (logs).
-    c.stream = this.haven.conn(`fips-${id}`, { mode: "nip01", route: HAVEN_ROUTE, peer })
-    c.stream.onData(b => {
-      c.out.push(b)
-      c.outBytes += b.length
-    })
-    c.stream.onClose(() => (c.havenClosed = true))
-    this.conns.set(id, c)
+    const stream = this.haven.conn(`fips-${id}`, { mode: "nip01", route: HAVEN_ROUTE, peer })
+    try {
+      c.stream = stream
+      stream.onData(b => {
+        c.out.push(b)
+        c.outBytes += b.length
+      })
+      stream.onClose(() => (c.havenClosed = true))
+      this.conns.set(id, c)
+    } catch (e) {
+      // Not in this.conns yet, so nothing else would ever close it.
+      stream.close()
+      throw e
+    }
     this.stats.accepted++
   }
 
