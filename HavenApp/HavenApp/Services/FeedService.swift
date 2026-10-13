@@ -273,6 +273,8 @@ class FeedService: ObservableObject {
     /// Follows the feed relays don't reach, asked on their own write relays:
     /// extra relay URL → the follows to ask it for. See `FeedOutboxPlan`.
     var outboxPlan: [String: [String]] = [:]
+    /// What `outboxPlan` was last built from; see `refreshOutboxPlan`.
+    var outboxPlanInputs: FeedOutboxPlan.Inputs?
 
     /// Relays that gave up on connecting (three errors) and have not connected
     /// since. Kept across load rounds, unlike `relayErrorCounts`, so the plan
