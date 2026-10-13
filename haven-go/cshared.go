@@ -156,34 +156,7 @@ func ActiveConnectionsC() C.int {
 }
 
 // NIP-46 remote signer state (independent of relay lifecycle).
-//
-// One live session per signer, so switching between accounts that each sign
-// with their own bunker is instant: the session for the account switched to
-// is still connected, and nothing has to log in again. Only one session is
-// active (the one requests go to); the others stay connected in the
-// background. nip46Mu guards the map and the active key only; it is never
-// held across a network round trip, so a slow login cannot block signing
-// on another session or freeze the caller.
-type nip46Session struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	pool   *nostr.SimplePool
-	client *nip46.BunkerClient
-	userPubkey string
-	// What signReplyRecovery needs to read the signer's replies itself.
-	signer   string
-	relays   []string
-	clientSK string
-}
-
 var (
-	nip46Sessions = map[string]*nip46Session{} // keyed by signer (bunker) pubkey
-	nip46Active   string
-	// Bumped on every activation, so a login that finishes after the user
-	// moved to another account is kept but does not take over.
-	nip46ActiveGen uint64
-	nip46Mu        sync.RWMutex
-
 	nip46PendingAuthURL atomic.Value // stores string
 
 	// nip46LastError records why the most recent NIP-46 call returned nil, so
@@ -1287,21 +1260,42 @@ func SweepToAddressC(nsecHex *C.char, destAddr *C.char, feeRateSatsPerVB C.int) 
 
 //export NIP46ConnectC
 func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
+	return nip46Login(C.GoString(clientSK), C.GoString(bunkerURL), false)
+}
+
+// NIP46ConnectBackgroundC logs in to the signer in `bunkerURL` and files its
+// session under the link's host exactly like NIP46ConnectC, but never makes
+// it the active signer: the owner's bunker while another account is active,
+// so the owner's relay AUTH (NIP46SignEventWithC) has a session to sign
+// through after a restart. A session for that signer that is already live is
+// left alone and its user pubkey returned. Returns the user pubkey, or nil.
+//
+//export NIP46ConnectBackgroundC
+func NIP46ConnectBackgroundC(clientSK *C.char, bunkerURL *C.char) *C.char {
+	return nip46Login(C.GoString(clientSK), C.GoString(bunkerURL), true)
+}
+
+// nip46Login is the one login path. `background` decides whether the new
+// session becomes the active signer (see nip46ClaimLogin).
+func nip46Login(goSK, goURL string, background bool) *C.char {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("NIP46ConnectC: recovered from panic: %v", r)
 		}
 	}()
 
-	goSK := C.GoString(clientSK)
-	goURL := C.GoString(bunkerURL)
-
-	nip46PendingAuthURL.Store("")
+	if !background {
+		nip46PendingAuthURL.Store("")
+	}
 	nip46LastError.Store("")
 
 	onAuth := func(authURL string) {
 		log.Printf("NIP-46: auth challenge: %s", authURL)
-		nip46PendingAuthURL.Store(authURL)
+		// A background login belongs to no screen: its challenge is not
+		// shown over whatever the active account is doing.
+		if !background {
+			nip46PendingAuthURL.Store(authURL)
+		}
 	}
 
 	// Parse the bunker URL to extract relay(s), target pubkey, and secret.
@@ -1326,18 +1320,14 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 		return nil
 	}
 
-	// Claim the active slot for this signer and drop any previous session for
-	// it (this is a fresh login, e.g. after a dead socket). Other signers'
-	// sessions are left alone.
-	nip46Mu.Lock()
-	if old := nip46Sessions[targetPubkey]; old != nil {
-		old.cancel()
-		delete(nip46Sessions, targetPubkey)
+	// Foreground: claim the active slot for this signer and drop any previous
+	// session for it (a fresh login, e.g. after a dead socket). Background: a
+	// live session already is the answer, and the active signer is not touched.
+	// Other signers' sessions are left alone either way.
+	live, myGen := nip46ClaimLogin(targetPubkey, background)
+	if live != nil {
+		return C.CString(live.userPubkey)
 	}
-	nip46Active = targetPubkey
-	nip46ActiveGen++
-	myGen := nip46ActiveGen
-	nip46Mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	pool := nostr.NewSimplePool(ctx)
@@ -1352,7 +1342,7 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 
 	// The connect RPC itself gets a timeout so we don't block forever when
 	// the signer is offline. No lock is held while waiting.
-	log.Printf("NIP46ConnectC: sending connect RPC to %s via %v (secret=%d chars)", targetPubkey[:8], relays, len(secret))
+	log.Printf("NIP46ConnectC: sending connect RPC to %s via %v (secret=%d chars, background=%v)", targetPubkey[:8], relays, len(secret), background)
 	connectCtx, connectCancel := context.WithTimeout(ctx, 60*time.Second)
 	defer connectCancel()
 
@@ -1383,19 +1373,13 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 		return nil
 	}
 
-	nip46Mu.Lock()
-	if old := nip46Sessions[targetPubkey]; old != nil {
-		old.cancel() // a second login for the same signer finished first
-	}
-	nip46Sessions[targetPubkey] = &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
-		signer: targetPubkey, relays: relays, clientSK: goSK}
-	stillActive := nip46ActiveGen == myGen
-	nip46Mu.Unlock()
+	stillActive := nip46StoreSession(targetPubkey, &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
+		signer: targetPubkey, relays: relays, clientSK: goSK}, myGen)
 
 	if stillActive {
 		log.Printf("NIP-46: connected to signer %s", pubkey[:8])
 	} else {
-		log.Printf("NIP-46: connected to signer %s, kept in the background (another account became active)", pubkey[:8])
+		log.Printf("NIP-46: connected to signer %s, kept in the background", pubkey[:8])
 	}
 	return C.CString(pubkey)
 }
