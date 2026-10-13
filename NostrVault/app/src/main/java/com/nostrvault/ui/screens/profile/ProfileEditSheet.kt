@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.NostrService
@@ -52,6 +53,7 @@ class ProfileEditViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     /** Runs the publish, so leaving the profile page right after a save does not cancel it. */
     @ApplicationScope private val appScope: CoroutineScope,
+    private val photoUploader: ProfilePhotoUploader,
 ) : ViewModel() {
 
     private val _displayName = MutableStateFlow("")
@@ -77,6 +79,14 @@ class ProfileEditViewModel @Inject constructor(
 
     private val _website = MutableStateFlow("")
     val website = _website.asStateFlow()
+
+    /** The field a photo from Photos is being uploaded for, or null. */
+    private val _uploading = MutableStateFlow<ProfilePhotoTarget?>(null)
+    val uploading = _uploading.asStateFlow()
+
+    /** Why the last photo did not upload, shown under the photo buttons. */
+    private val _uploadError = MutableStateFlow<String?>(null)
+    val uploadError = _uploadError.asStateFlow()
 
     /** Whose profile this is, for the preview's placeholder avatar. */
     val pubkey: String get() = configStore.activeAccountHexPubkey.value
@@ -105,6 +115,7 @@ class ProfileEditViewModel @Inject constructor(
         _website.value = profile.website ?: ""
         initialFields = formFields()
         unsavedDraft?.let(::applyFields)
+        _uploadError.value = null
         isOpen = true
     }
 
@@ -144,6 +155,31 @@ class ProfileEditViewModel @Inject constructor(
     fun setNip05(v: String) { _nip05.value = v }
     fun setLud16(v: String) { _lud16.value = v }
     fun setWebsite(v: String) { _website.value = v }
+
+    /**
+     * Uploads a photo from Photos and puts its URL in the picture or banner
+     * field, as if pasted. Nothing is published until the sheet saves.
+     */
+    fun uploadPhoto(uri: android.net.Uri, target: ProfilePhotoTarget) {
+        if (_uploading.value != null) return
+        _uploading.value = target
+        _uploadError.value = null
+        viewModelScope.launch {
+            try {
+                val url = photoUploader.upload(uri, target)
+                when (target) {
+                    ProfilePhotoTarget.PICTURE -> _pictureUrl.value = url
+                    ProfilePhotoTarget.BANNER -> _bannerUrl.value = url
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uploadError.value = (e as? ProfilePhotoUploadException)?.message ?: ProfilePhotoUploader.UPLOAD_FAILED
+            } finally {
+                _uploading.value = null
+            }
+        }
+    }
 
     /**
      * The sheet went away. Unless [discard], changed fields show on the page
@@ -225,26 +261,41 @@ fun ProfileEditSheet(
     val nip05 by viewModel.nip05.collectAsState()
     val lud16 by viewModel.lud16.collectAsState()
     val website by viewModel.website.collectAsState()
+    val uploading by viewModel.uploading.collectAsState()
+    val uploadError by viewModel.uploadError.collectAsState()
     val hasChanges = remember(displayName, name, about, pictureUrl, bannerUrl, nip05, lud16, website) {
         viewModel.hasChanges()
     }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // While a photo uploads the sheet stays open, as iOS: closing would save
+    // the other edits and the photo would land in a form that is gone.
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || viewModel.uploading.value == null },
+    )
     val scope = rememberCoroutineScope()
     // Done and Discard slide the sheet away first; a swipe or Back has
     // already moved it by the time onDismissRequest runs.
     fun dismiss(discard: Boolean) {
+        if (viewModel.uploading.value != null) return
         viewModel.close(discard)
         scope.launch { sheetState.hide() }.invokeOnCompletion { onClose() }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { viewModel.close(discard = false); onClose() },
+        onDismissRequest = {
+            if (viewModel.uploading.value == null) {
+                viewModel.close(discard = false)
+                onClose()
+            }
+        },
         sheetState = sheetState,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = uploading == null),
         containerColor = WindowBackground,
         dragHandle = { BottomSheetDefaults.DragHandle(color = SecondaryText) },
     ) {
         EditSheetHeader(
             hasChanges = hasChanges,
+            uploading = uploading != null,
             onDiscard = { dismiss(discard = true) },
             onDone = { dismiss(discard = false) },
         )
@@ -268,6 +319,7 @@ fun ProfileEditSheet(
             ProfileField("Display Name", displayName, viewModel::setDisplayName)
             ProfileField("Username", name, viewModel::setName)
             ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)
+            ProfilePhotoButtons(uploading, uploadError, viewModel::uploadPhoto)
             ProfileField("Profile Picture URL", pictureUrl, viewModel::setPictureUrl)
             ProfileField("Banner URL", bannerUrl, viewModel::setBannerUrl)
             ProfileField("NIP-05 Identifier", nip05, viewModel::setNip05)
@@ -283,7 +335,7 @@ fun ProfileEditSheet(
  * will do, and Done. iOS ProfileEditView.autosaveHeader.
  */
 @Composable
-private fun EditSheetHeader(hasChanges: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
+private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
     val colors = LocalNostrVaultColors.current
     Column {
         Row(
@@ -293,24 +345,28 @@ private fun EditSheetHeader(hasChanges: Boolean, onDiscard: () -> Unit, onDone: 
                 .padding(horizontal = 4.dp)
                 .padding(bottom = 4.dp),
         ) {
-            TextButton(onClick = onDiscard, enabled = hasChanges) {
-                Text("Discard", color = if (hasChanges) ErrorRed else SecondaryText)
+            TextButton(onClick = onDiscard, enabled = hasChanges && !uploading) {
+                Text("Discard", color = if (hasChanges && !uploading) ErrorRed else SecondaryText)
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Edit Profile", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Crossfade(targetState = hasChanges, label = "edit-subtitle") { changed ->
+                Crossfade(targetState = uploading to hasChanges, label = "edit-subtitle") { (busy, changed) ->
                     Text(
-                        if (changed) "Swipe down to save" else "Swipe down to close",
+                        when {
+                            busy -> "Uploading photo…"
+                            changed -> "Swipe down to save"
+                            else -> "Swipe down to close"
+                        },
                         color = SecondaryText,
                         fontSize = 11.sp,
                     )
                 }
             }
-            TextButton(onClick = onDone) {
-                Text("Done", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            TextButton(onClick = onDone, enabled = !uploading) {
+                Text("Done", color = if (uploading) SecondaryText else colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), thickness = 0.5.dp)
