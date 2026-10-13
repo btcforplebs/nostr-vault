@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens
 
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.components.CustomZapSheet
+import com.nostrvault.ui.components.LocalShowZapButton
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -296,7 +297,8 @@ fun LiveStreamScreen(
                             )
                         }
                     }
-                    Button(
+                    // Hidden when ⚡️ is out of Appearance → Post buttons (iOS LiveStreamPlayerView).
+                    if (LocalShowZapButton.current) Button(
                         onClick = { showZapSheet = true },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                     ) { Text("Zap", color = PrimaryText, fontWeight = FontWeight.SemiBold) }
