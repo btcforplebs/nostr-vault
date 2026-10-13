@@ -66,6 +66,10 @@ extension FeedNoteRow {
             // title lives in a tag and its body is markdown, so the plain-text
             // path below drew the whole article raw and untitled.
             ArticleInlineBody(note: bodySource, isFocused: isFocused)
+        } else if bodySource.kind == FeedNote.highlightKind {
+            // The plain path drew the passage as if the highlighter wrote it,
+            // with nothing saying where it came from.
+            HighlightInlineBody(note: bodySource, isFocused: isFocused)
         } else if let poll = bodySource.poll {
             // A NIP-88 poll's question is its content and its options are
             // tags, so the plain-text path drew the question with nothing

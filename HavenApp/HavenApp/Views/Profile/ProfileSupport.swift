@@ -14,32 +14,61 @@ final class ProfileExtrasLoader: ObservableObject {
     @Published private(set) var articles: [FeedNote] = []
     @Published private(set) var reels: [Reel] = []
     @Published private(set) var tracks: [WavlakeTrack] = []
-    /// True until both the events and the music lookups have answered.
+    /// True until every lookup in flight (events, music) has answered.
     @Published private(set) var isLoading = false
     private var loadedPubkey: String?
     private var generation = 0
+    private var inFlight = 0
+    /// Relays already asked for this person, so a later call asks only the
+    /// new ones.
+    private var askedRelays: Set<String> = []
+    /// Every article and video event received for this person, across passes.
+    private var received: [FeedNote] = []
 
-    /// `force` fetches again for the person already shown, keeping their
-    /// tabs on screen until the new answers replace them.
+    /// A call for the person already shown asks only the relays not asked
+    /// yet, and adds what they hold. Most people's articles are on their own
+    /// outbox relays, which are often learned only after the page opens: one
+    /// load at open asked the few common relays, found few or none, and never
+    /// asked again (Logen, 2026-10-13). `force` asks every relay again,
+    /// keeping the tabs on screen until the new answers replace them.
     func load(pubkey: String, relays: [URL], force: Bool = false) {
+        var toAsk = relays
         if loadedPubkey == pubkey {
-            guard force else { return }
+            if !force {
+                toAsk = relays.filter { !askedRelays.contains(Self.relayKey($0)) }
+                guard !toAsk.isEmpty else { return }
+            }
         } else {
             articles = []; reels = []; tracks = []
+            received = []; askedRelays = []
+            generation += 1
+            inFlight = 0
         }
+        let firstPass = loadedPubkey != pubkey || force
         loadedPubkey = pubkey
-        generation += 1
+        askedRelays.formUnion(toAsk.map(Self.relayKey))
         let thisLoad = generation
+        inFlight += 1
         isLoading = true
         Task {
-            async let events: Void = loadEvents(pubkey: pubkey, relays: relays)
-            async let music: Void = loadMusic(pubkey: pubkey)
-            _ = await (events, music)
-            if generation == thisLoad { isLoading = false }
+            if firstPass {
+                async let events: Void = loadEvents(pubkey: pubkey, relays: toAsk, replacing: force)
+                async let music: Void = loadMusic(pubkey: pubkey)
+                _ = await (events, music)
+            } else {
+                await loadEvents(pubkey: pubkey, relays: toAsk, replacing: false)
+            }
+            guard generation == thisLoad else { return }
+            inFlight -= 1
+            if inFlight == 0 { isLoading = false }
         }
     }
 
-    private func loadEvents(pubkey: String, relays: [URL]) async {
+    private static func relayKey(_ url: URL) -> String {
+        ProfileFeedLoader.relayKey(url.absoluteString)
+    }
+
+    private func loadEvents(pubkey: String, relays: [URL], replacing: Bool) async {
         let filters: [[String: Any]] = [
             ["kinds": [30023], "authors": [pubkey], "limit": 100],
             ["kinds": ReelsFeedService.videoKinds, "authors": [pubkey], "limit": 100],
@@ -56,10 +85,11 @@ final class ProfileExtrasLoader: ObservableObject {
             return FeedNote(id: id, pubkey: pubkey, content: event["content"] as? String ?? "",
                             createdAt: Date(timeIntervalSince1970: created), tags: tags, kind: kind)
         }
+        received = replacing ? notes : received + notes
         // Addressable: keep the newest version of each, newest first.
-        articles = FeedFilterEngine.dedupeAddressable(notes.filter { $0.kind == 30023 })
+        articles = FeedFilterEngine.dedupeAddressable(received.filter { $0.kind == 30023 })
         var seenVideos = Set<URL>()
-        reels = FeedFilterEngine.dedupeAddressable(notes.filter { ReelsFeedService.videoKinds.contains($0.kind) })
+        reels = FeedFilterEngine.dedupeAddressable(received.filter { ReelsFeedService.videoKinds.contains($0.kind) })
             .compactMap { Reel(note: $0, createdAt: Int64($0.createdAt.timeIntervalSince1970)) }
             .filter { seenVideos.insert($0.videoURL).inserted }
             .sorted(by: Reel.newestFirst)
