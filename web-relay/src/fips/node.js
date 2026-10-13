@@ -5,10 +5,11 @@ import { FipsNode, identityFromSecretKey, encodeNpub, toHex } from "@fips/core"
 import { WebSocketTransport } from "@fips/transport-websocket"
 import { WebRtcTransport } from "@fips/transport-webrtc"
 import { isOwner, xOnly } from "./owners.js"
-import { TcpFipsRelayServer } from "./tcp-server.js"
+import { TcpFipsRelayServer, RELAY_SERVICE_PORT } from "./tcp-server.js"
 
 export const PUBLIC_SEEDS = ["wss://fips1.iris.to/fips", "wss://fips2.iris.to/fips"]
 const KEY_ITEM = "fips-relay-key"
+const OWNER_DIAL_MS = 30_000
 
 /** The relay's own FIPS identity (never the owner's key), kept on this device. */
 export async function loadRelayIdentity(storage = localStorage) {
@@ -60,6 +61,20 @@ export async function startFipsRelay({ store, getOwners, onStatus = () => {}, se
   await node.start()
   server.start()
   const statsTimer = setInterval(emit, 1000)
+  // The page opens the FIPS session to each owner, not the other way round. A jmcorgan v0.5.2 vault
+  // can't find or open a session to the page by itself: its lookups go to tree peers only, its native
+  // API doesn't seed the identity cache the lookup proof is checked against, and a session it initiates
+  // to fips-ts fails AEAD on the page ("invalid tag"). A page-initiated session is the G1-proven
+  // direction. The vault's 7447 flow then rides it. An empty datagram to 7447 is not a TCP/FIPS segment
+  // and is dropped there; it exists to open and keep the session.
+  const dialOwners = () => {
+    for (const owner of getOwners()) {
+      node.sendDatagram({ dst: "02" + owner, srcPort: RELAY_SERVICE_PORT, dstPort: RELAY_SERVICE_PORT, payload: new Uint8Array(0) })
+        .catch(e => { status.errors++; status.lastError = "dial owner: " + String(e?.message ?? e).slice(0, 140); emit() })
+    }
+  }
+  dialOwners()
+  const dialTimer = setInterval(dialOwners, OWNER_DIAL_MS)
   emit()
 
   return {
@@ -71,6 +86,7 @@ export async function startFipsRelay({ store, getOwners, onStatus = () => {}, se
     goDirect: owner => node.connect({ transport: "webrtc", addr: "02" + owner }),
     stop: async () => {
       clearInterval(statsTimer)
+      clearInterval(dialTimer)
       await server.stop()
       await node.stop()
     },
