@@ -34,6 +34,8 @@ object NIP46Service {
         fun activate(signerPubkey: String): String?
         fun drop(signerPubkey: String)
         fun ping(): Int
+        /** Signs through [signerPubkey]'s live session; null when there is none. */
+        fun signWith(signerPubkey: String, eventJson: String): String?
     }
 
     private object NativeBridge : Bridge {
@@ -42,6 +44,7 @@ object NIP46Service {
         override fun activate(signerPubkey: String) = HavenBridge.nip46Activate(signerPubkey)
         override fun drop(signerPubkey: String) = HavenBridge.nip46Drop(signerPubkey)
         override fun ping() = HavenBridge.nip46Ping()
+        override fun signWith(signerPubkey: String, eventJson: String) = HavenBridge.nip46SignEventWith(signerPubkey, eventJson)
     }
 
     @Volatile internal var bridge: Bridge = NativeBridge
@@ -52,6 +55,15 @@ object NIP46Service {
      * held across a sign request: one hung bunker must not freeze every sign.
      */
     private val connectMutex = Mutex()
+
+    /**
+     * Serialises background logins ([connectInBackground]) among themselves
+     * only. They stay off [connectMutex]: a sleeping owner signer used to hold
+     * it for the whole login (up to 90 s), stalling the active account's
+     * connect, and with it its bunker signs, DM decrypts and account switches.
+     * The Go core keeps a background login from touching the active session.
+     */
+    private val backgroundConnectMutex = Mutex()
 
     /** The user pubkey the active session answers for, when connected. */
     @Volatile var connectedPubkey: String? = null
@@ -155,12 +167,15 @@ object NIP46Service {
      * Opens [cfg]'s bunker session in the background: the owner's bunker while
      * another account is active, so the owner's relay AUTH ([signEventWith])
      * has a session to sign through after a restart. The session never
-     * becomes the active signer and [isConnected] / [connectedPubkey] are
-     * untouched; a live session is a no-op. A signer answering for any key
-     * but [expectedPubkey] is dropped. True when the session is live.
+     * becomes the active signer and [isConnected] / [connectedPubkey] /
+     * [lastError] are untouched; a live session is a no-op. A signer
+     * answering for any key but [expectedPubkey] is dropped, unless that is
+     * the active account's own session: when the owner and the active account
+     * share one bunker host, the live session answers as the active account
+     * and must stay. True when the session is live for [expectedPubkey].
      */
     suspend fun connectInBackground(cfg: AccountBunkerConfig, expectedPubkey: String): Boolean =
-        connectMutex.withLock {
+        backgroundConnectMutex.withLock {
             withContext(Dispatchers.IO) {
                 val signer = signerKey(cfg)
                 val pubkey = try {
@@ -170,13 +185,9 @@ object NIP46Service {
                     null
                 }
                 when {
-                    pubkey == null -> {
-                        _lastError.value = "Could not reach the bunker"
-                        false
-                    }
+                    pubkey == null -> false
                     pubkey != expectedPubkey -> {
-                        if (signer.isNotEmpty()) bridge.drop(signer)
-                        _lastError.value = "This bunker signs as ${pubkey.take(8)}…, not this account"
+                        if (signer.isNotEmpty() && signer != activeSignerKey) bridge.drop(signer)
                         Log.e(TAG, "NIP-46 background connect rejected: signer answered as ${pubkey.take(8)}, expected ${expectedPubkey.take(8)}")
                         false
                     }
@@ -184,6 +195,26 @@ object NIP46Service {
                 }
             }
         }
+
+    /**
+     * [signEventWith], opening the session first when it is not there: every
+     * owner-forced sign while another account is active (relay AUTH for
+     * /chat, /private and counts, Blossom auth, the 10050 / 10006 / 10063
+     * lists) goes through here, so after a restart the first of them logs the
+     * owner's bunker in instead of failing "not connected". [warm] is
+     * [SignerRouting.ownerBunkerToWarm]'s answer; null means nothing to open.
+     * One login and one retry, so a refusing signer cannot loop.
+     */
+    suspend fun signEventWithWarmUp(
+        signerPubkey: String,
+        eventJson: String,
+        warm: AccountBunkerConfig?,
+        expectedPubkey: String,
+    ): String? {
+        signEventWith(signerPubkey, eventJson)?.let { return it }
+        if (warm == null || !connectInBackground(warm, expectedPubkey)) return null
+        return signEventWith(signerPubkey, eventJson)
+    }
 
     /** Resets state between unit tests (no native call). */
     internal fun disconnectForTest() {
@@ -286,7 +317,7 @@ object NIP46Service {
     suspend fun signEventWith(signerPubkey: String, eventJson: String): String? =
         withContext(Dispatchers.IO) {
             try {
-                HavenBridge.nip46SignEventWith(signerPubkey, eventJson)
+                bridge.signWith(signerPubkey, eventJson)
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-46 signWith failed: ${e.message}")
                 null
