@@ -49,8 +49,19 @@ extension HavenConfig {
         return key.isEmpty ? nil : key
     }
 
+    /// A pairing secret for the owner's bunker is still pending: the signer
+    /// has not accepted this client yet. That login must reach the signer and
+    /// may need an approval, so it is never made in the background.
+    var ownerPairingPending: Bool {
+        guard let cfg = accountBunkerConfigs[ownerNpub] else { return false }
+        if !cfg.secret.isEmpty { return true }
+        return URLComponents(string: cfg.bunkerURI)?.queryItems?
+            .contains { $0.name == "secret" && !($0.value ?? "").isEmpty } ?? false
+    }
+
     /// The owner's bunker link as the Go login takes it, built from the signer
-    /// key and relay when no link was stored (as NIP46Service.performConnect does).
+    /// key and relay when no link was stored. No secret: a pending pairing is
+    /// never logged in from here (`ownerPairingPending`).
     var ownerBunkerLink: String? {
         guard let cfg = accountBunkerConfigs[ownerNpub] else { return nil }
         if !cfg.bunkerURI.isEmpty { return cfg.bunkerURI }

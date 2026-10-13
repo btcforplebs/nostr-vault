@@ -73,7 +73,8 @@ class DMService: ObservableObject {
     }
     var dmUpdateSubject = PassthroughSubject<Void, Never>()
     let processingQueue = DispatchQueue(label: "com.haven.dm-processing", qos: .userInitiated)
-    var pendingAuthChallenge: String?
+    /// The /chat AUTH challenge kept for one retry once the owner's bunker connects.
+    var authRetry = PendingAuthRetry()
     var isAuthenticated = false
     var loadedAccountPubkey: String = ""
     var switchGeneration: UInt64 = 0 // incremented on each account switch to invalidate stale callbacks
