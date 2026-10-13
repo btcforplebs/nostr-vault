@@ -16,8 +16,9 @@ export function RelayScreen({ ctx, log }) {
   const follows = useRef(ctx.account.follows)
   follows.current = ctx.account.follows
 
-  useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log }) }, [])
-  // The relay's FIPS address is the npub of its own key (made once, kept in this browser), never the user's key.
+  useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log, account: session.pubkey }) }, [])
+  // The relay's mesh address is the npub of its own FIPS key (made once, kept in this browser), never the user's key.
+  // The FIPS card shows only mesh addresses, never the account: FIPS is not tied to who is signed in.
   // The site has no server: this address over FIPS is the only way to reach the relay.
   useEffect(() => { loadRelayIdentity().then(id => setAddress(npubEncode(bytesToHex(id.xOnlyPubkey)))) }, [])
   const copy = async () => {
@@ -51,23 +52,24 @@ export function RelayScreen({ ctx, log }) {
           <div><div class="k">feed cache</div><div class="v">{counts.feed ?? "–"}</div></div>
           <div><div class="k">storage</div><div class="v">{storage.usageMB ?? "–"} MB</div></div>
         </div>
-        <div class="muted small">owner {npubEncode(session.pubkey).slice(0, 20)}… · storage {storage.persisted ? "persistent" : "may be cleared by the browser"} · started in {vault.loadMs + vault.startMs} ms</div>
+        <div class="muted small">storage {storage.persisted ? "persistent" : "may be cleared by the browser"} · started in {vault.loadMs + vault.startMs} ms</div>
       </section>
       <section class="card">
         <h3>FIPS</h3>
-        <p class="muted small">NIP-01 on port 7447, for your paired vaults only.</p>
-        <div class="k">Your relay's FIPS address</div>
+        <p class="muted small">NIP-01 on port 7447, only for the vaults listed below. FIPS uses this relay's own mesh key, not your Nostr account.</p>
+        <div class="k">This relay's mesh address</div>
         <pre class="fips-address">{address || "…"}</pre>
         <div class="row"><button onClick={copy} disabled={!address}>{copied ? "Copied" : "Copy address"}</button></div>
-        <p class="muted small">To reach this relay from Nostr Vault, add your vault's npub below and start FIPS. Your vault then connects to this address on port 7447.</p>
-        <textarea id="fipsOwners" rows={2} placeholder="Your vault's npub (one per line)" />
+        <div class="k">Who can reach this relay</div>
+        <p class="muted small">Add each vault's mesh address, from Mesh settings in Nostr Vault. It's the vault's own FIPS key, not your account. Then start FIPS, and the vault connects to this relay's mesh address on port 7447.</p>
+        <textarea id="fipsOwners" rows={2} placeholder="Vault mesh address (one per line)" />
         <div class="row"><button id="fipsSave">Save vaults</button><button id="fipsStart" class="primary">Start FIPS</button></div>
         <pre id="fipsStatus" />
         <span id="sfips" hidden />
       </section>
       <section class="card">
         <h3>Account</h3>
-        <div class="muted small">Signed in with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
+        <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
         <button onClick={ctx.signOut}>Sign out</button>
       </section>
     </main>

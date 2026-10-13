@@ -1,6 +1,7 @@
 // The in-page Haven, started for the signed-in user. The UI talks to it in process: one NIP-01 stream per
-// route (havenConn, no socket). Its owner is the user; the page's device key and paired FIPS vaults are
-// whitelisted. /feed reads need NIP-42 AUTH from a whitelisted key, answered with the device key, so
+// route (havenConn, no socket). Its owner is the user and the page's device key is whitelisted. Paired FIPS vaults
+// are not: their mesh keys are network identities, gated by the FIPS layer (web-relay/src/fips), and never go
+// into Haven as Nostr identities. /feed reads need NIP-42 AUTH from a whitelisted key, answered with the device key, so
 // reading the local cache never asks the user's signer and works offline.
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
@@ -24,14 +25,14 @@ export function deviceKey(storage = localStorage) {
 }
 
 export async function startVault({ pubkey, log = () => {} }) {
-  const owners = loadOwners({ log })
+  const owners = loadOwners({ log, account: pubkey })
   const sk = deviceKey()
   const t0 = Date.now()
   const haven = await loadHaven(WASM)
   const loadMs = Date.now() - t0
   await haven.start({
     ownerNpub: npubEncode(pubkey),
-    whitelist: [getPublicKey(sk), ...owners].map(k => npubEncode(k)),
+    whitelist: [npubEncode(getPublicKey(sk))],
     env: { RELAY_URL: RELAY_HOST },
     // One set of stores per account, so a second account on this browser never opens the first one's data.
     storePrefix: pubkey,

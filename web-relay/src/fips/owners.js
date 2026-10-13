@@ -1,4 +1,5 @@
-// The owner set: the vault identities allowed to open TCP/FIPS streams to this relay.
+// The owner set: the vaults allowed to open TCP/FIPS streams to this relay, by each vault's mesh address (the
+// npub of its own per-install FIPS key, as the native apps show it). A mesh address is never a Nostr account.
 // Stored as x-only pubkey hex. FIPS reports peers as 33-byte compressed keys, so compare with xOnly().
 import { decode, npubEncode } from "nostr-tools/nip19"
 
@@ -21,12 +22,18 @@ export function xOnly(key) {
   return undefined
 }
 
-/** Parse a comma/space/newline separated list of npubs or hex keys. Throws on any entry that isn't a key. */
-export function parseOwners(text) {
+export const ACCOUNT_NOT_MESH = "That's your Nostr account, not a vault's mesh address. In Nostr Vault, open Mesh settings and copy the vault's own mesh address."
+
+/**
+ * Parse a comma/space/newline separated list of mesh addresses (npub-encoded or hex keys). Throws on any entry that
+ * isn't a key, or that is `account` (the signed-in user's pubkey): a FIPS peer is never the person's identity.
+ */
+export function parseOwners(text, { account } = {}) {
   const out = new Set()
   for (const part of String(text).split(/[\s,]+/).filter(Boolean)) {
     const k = xOnly(part)
-    if (!k) throw new Error(`not an npub or pubkey: ${part.slice(0, 20)}`)
+    if (!k) throw new Error(`not a mesh address: ${part.slice(0, 20)}`)
+    if (account && k === account) throw new Error(ACCOUNT_NOT_MESH)
     out.add(k)
   }
   return out
@@ -44,8 +51,11 @@ const OWNERS_ITEM = "fips-owners"
  * reaches the server). Haven is configured with these at start, so call this before starting it.
  * A link only ever adds owners, and only once the person at this browser confirms each new one: anyone can
  * send a link, and an owner can write to this relay and gets dialed by it.
+ * `account` (the signed-in user's pubkey, where there is one) is never an owner: it's dropped from what was saved
+ * and refused from a link.
  */
 export function loadOwners({
+  account,
   storage = localStorage,
   log = () => {},
   confirm = msg => globalThis.confirm(msg),
@@ -56,14 +66,18 @@ export function loadOwners({
   try {
     owners = parseOwners(storage.getItem(OWNERS_ITEM) ?? "")
   } catch {}
+  if (account && owners.delete(account)) {
+    saveOwners(owners, storage)
+    log("fips-owner-account-dropped")
+  }
   const frag = new URLSearchParams(String(hash).slice(1)).get("owner")
   if (frag) {
     try {
       // One prompt per key: Haven's owner is the first saved key, so a batch prompt would let a link put a
       // stranger's key ahead of the reader's own and have both accepted with one OK.
-      const fresh = [...parseOwners(frag)].filter(k => !owners.has(k))
-      const added = fresh.filter(k => confirm(`This link wants to add an owner to this relay:\n\n  ${npubEncode(k)}\n\n` +
-        "An owner can write to this relay and read everything on it. Only continue if this is your own vault."))
+      const fresh = [...parseOwners(frag, { account })].filter(k => !owners.has(k))
+      const added = fresh.filter(k => confirm(`This link wants to let a vault reach this relay over FIPS. Its mesh address:\n\n  ${npubEncode(k)}\n\n` +
+        "That vault can write to this relay and read everything on it. Only continue if this is your own vault."))
       if (added.length) {
         owners = new Set([...owners, ...added])
         saveOwners(owners, storage)

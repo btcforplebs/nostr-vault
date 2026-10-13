@@ -3,7 +3,7 @@ import { test, beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { loadOwners } from "../src/fips/owners.js"
+import { loadOwners, parseOwners } from "../src/fips/owners.js"
 
 const key = () => getPublicKey(generateSecretKey())
 let store, prompts
@@ -74,4 +74,20 @@ test("hash and scrub can be injected (no location/history globals needed)", () =
   const owners = loadOwners({ storage, hash: "#owner=" + npubEncode(k), confirm: () => true, scrub: () => scrubbed++ })
   assert.deepEqual([...owners], [k])
   assert.equal(scrubbed, 1)
+})
+
+test("the signed-in account is never a mesh address: refused when typed, from a link, and dropped if saved", () => {
+  const account = key(), vault = key()
+  assert.throws(() => parseOwners(npubEncode(account), { account }), /your Nostr account, not a vault's mesh address/)
+  assert.deepEqual([...parseOwners(npubEncode(vault), { account })], [vault])
+  // Saved before this check existed.
+  store.set("fips-owners", [account, vault].join(" "))
+  at("")
+  assert.deepEqual([...loadOwners({ storage, account, confirm: () => true })], [vault])
+  assert.equal(store.get("fips-owners"), vault)
+  // A link naming the account adds nothing and asks nothing.
+  at("#owner=" + npubEncode(account))
+  assert.deepEqual([...loadOwners({ storage, account, confirm: m => (prompts.push(m), true) })], [vault])
+  assert.equal(prompts.length, 0)
+  assert.equal(location.hash, "", "fragment scrubbed")
 })
