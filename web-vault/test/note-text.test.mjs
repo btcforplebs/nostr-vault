@@ -1,0 +1,161 @@
+// NoteText splits a note into text, links, inline images/video and short nostr: references.
+// Node can't load .jsx, so a load hook compiles it with Vite's Oxc transform via rolldown (same JSX settings as vite.config.js).
+import test from "node:test"
+import assert from "node:assert/strict"
+import { registerHooks } from "node:module"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { transformSync } from "rolldown/utils" // Vite 8's own transformer
+import { npubEncode } from "nostr-tools/nip19"
+
+registerHooks({
+  load(url, context, next) {
+    if (!url.endsWith(".jsx")) return next(url, context)
+    const path = fileURLToPath(url)
+    const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
+    if (errors.length) throw new Error(errors.map(e => e.message).join("\n"))
+    return { format: "module", source: code, shortCircuit: true }
+  },
+})
+const { NoteText } = await import("../src/components/NoteText.jsx")
+
+// The rendered parts: strings stay strings, elements become { type, ...props }.
+function parts(content) {
+  const children = [NoteText({ content }).props.children].flat()
+  return children
+    .filter(c => c !== "")
+    .map(c => (typeof c === "string" ? c : { type: c.type, ...c.props }))
+}
+
+test("plain text is one text part", () => {
+  assert.deepEqual(parts("gm nostr"), ["gm nostr"])
+})
+
+test("a link opens in a new tab and shows without its scheme", () => {
+  const [before, a, after] = parts("see https://example.com/page now")
+  assert.equal(before, "see ")
+  assert.equal(after, " now")
+  assert.equal(a.type, "a")
+  assert.equal(a.href, "https://example.com/page")
+  assert.equal(a.target, "_blank")
+  assert.equal(a.rel, "noopener noreferrer")
+  assert.deepEqual([a.children].flat().join(""), "example.com/page")
+})
+
+test("http links are recognised too", () => {
+  const [a] = parts("http://example.com")
+  assert.equal(a.type, "a")
+  assert.equal(a.href, "http://example.com")
+})
+
+test("a long https link is cut to 48 characters plus an ellipsis", () => {
+  const url = "https://example.com/" + "a".repeat(60)
+  const [a] = parts(url)
+  assert.equal(a.href, url)
+  assert.equal([a.children].flat().join(""), url.slice(8, 56) + "…")
+})
+
+test("an https link of exactly 56 characters shows in full, no ellipsis", () => {
+  const url = "https://example.com/" + "a".repeat(36)
+  assert.equal(url.length, 56)
+  assert.equal([parts(url)[0].children].flat().join(""), url.slice(8))
+})
+
+test.todo("BUG: an http link of 56 characters loses its last character with no ellipsis", () => {
+  // The label is cut at 48 after removing the scheme, but the ellipsis checks the full length (> 56).
+  // "http://" is 7 characters, so a 56-character http URL is cut to 48 of its 49 and shows no "…".
+  const url = "http://example.com/" + "a".repeat(37)
+  assert.equal(url.length, 56)
+  const label = [parts(url)[0].children].flat().join("")
+  assert.ok(label === url.slice(7) || label.endsWith("…"), `label "${label}" drops a character silently`)
+})
+
+test("image links become lazy inline images", () => {
+  for (const ext of ["png", "jpg", "jpeg", "gif", "webp", "avif", "PNG", "JPG"]) {
+    const url = `https://cdn.example.com/pic.${ext}`
+    const [img] = parts(url)
+    assert.equal(img.type, "img", ext)
+    assert.equal(img.src, url)
+    assert.equal(img.class, "note-media")
+    assert.equal(img.loading, "lazy")
+    assert.equal(img.alt, "")
+  }
+})
+
+test("an image link with a query string is still an image", () => {
+  const [img] = parts("https://cdn.example.com/pic.jpg?w=600&h=400")
+  assert.equal(img.type, "img")
+  assert.equal(img.src, "https://cdn.example.com/pic.jpg?w=600&h=400")
+})
+
+test("video links become inline video with controls", () => {
+  for (const ext of ["mp4", "webm", "mov", "MP4"]) {
+    const url = `https://cdn.example.com/clip.${ext}`
+    const [video] = parts(url)
+    assert.equal(video.type, "video", ext)
+    assert.equal(video.src, url)
+    assert.equal(video.controls, true)
+    assert.equal(video.preload, "metadata")
+  }
+})
+
+test("an extension in the middle of a path is not media", () => {
+  assert.equal(parts("https://example.com/pic.png/view")[0].type, "a")
+  assert.equal(parts("https://example.com/file.svg")[0].type, "a")
+})
+
+test("several links, images and text keep their order", () => {
+  const out = parts("a https://x.com/1.png b https://y.com c")
+  assert.deepEqual(out.map(p => (typeof p === "string" ? p : p.type)), ["a ", "img", " b ", "a", " c"])
+})
+
+test("links stop at whitespace, quotes and angle brackets", () => {
+  for (const [input, href] of [
+    ["https://x.com/a\nnext", "https://x.com/a"],
+    ['"https://x.com/a"', "https://x.com/a"],
+    ["<https://x.com/a>", "https://x.com/a"],
+  ]) {
+    assert.equal(parts(input).find(p => p.type === "a").href, href, JSON.stringify(input))
+  }
+})
+
+test.todo("BUG: punctuation after a link becomes part of the link", () => {
+  // "see https://x.com/pic.png." — the trailing "." is kept, so the href is wrong and the image shows as a link.
+  for (const [input, href] of [
+    ["see https://x.com/page.", "https://x.com/page"],
+    ["(https://x.com/page)", "https://x.com/page"],
+    ["https://x.com/page, then", "https://x.com/page"],
+  ]) {
+    assert.equal(parts(input).find(p => typeof p !== "string").href, href, JSON.stringify(input))
+  }
+  assert.equal(parts("look https://x.com/pic.png.").find(p => typeof p !== "string").type, "img")
+})
+
+test("a nostr: npub shows as a short mention", () => {
+  const npub = "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m"
+  const [before, m] = parts(`hi nostr:${npub}`)
+  assert.equal(before, "hi ")
+  assert.equal(m.type, "span")
+  assert.equal(m.class, "mention")
+  assert.equal(m.children, npub.slice(0, 12) + "…")
+})
+
+test("a nostr: hex pubkey is shown as a short npub", () => {
+  const hex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
+  const [m] = parts(`nostr:${hex}`)
+  assert.equal(m.children, npubEncode(hex).slice(0, 12) + "…")
+})
+
+test("other nostr: references (note, nevent) are shortened as they are", () => {
+  const ref = "note1fntxtkcy9pjwucqwa9mddn7v03wwwsu9j330jj350nvhpky2tuaspk6nqc"
+  assert.equal(parts(`nostr:${ref}`)[0].children, ref.slice(0, 12) + "…")
+})
+
+test("a bare npub without nostr: stays plain text", () => {
+  const text = "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m"
+  assert.deepEqual(parts(text), [text])
+})
+
+test("non-string content is shown as text", () => {
+  assert.deepEqual(parts(42), ["42"])
+})
