@@ -551,7 +551,7 @@ class ProfileViewModel @Inject constructor(
         val s = stream ?: return
         if (_isLoadingOlder.value) return
         val tagged = section == ProfileSection.TAGGED
-        if (!tagged && !section.isNoteList) return
+        if (!section.isNoteList) return
         val list = if (tagged) _taggedNotes else _profileNotes
         val hasMore = if (tagged) _hasMoreTagged else _hasMoreNotes
         if (!hasMore.value) return
