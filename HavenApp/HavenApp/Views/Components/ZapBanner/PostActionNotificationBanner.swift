@@ -6,8 +6,9 @@ struct PostActionNotificationBanner: View {
     @ObservedObject private var manager = PendingPostManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             if manager.isShowing, let actionType = manager.actionType {
+                PillSlot("postAction", level: .result) {
                 PostActionPill(
                     actionType: actionType,
                     timeRemaining: manager.timeRemaining,
@@ -16,15 +17,13 @@ struct PostActionNotificationBanner: View {
                     onEdit: actionType.canEdit ? { manager.requestEdit() } : nil,
                     onDismiss: { manager.dismissBanner() }
                 )
-                .transition(Motion.pillTransition)
+                }
             } else if let confirmation = manager.confirmation {
-                PostConfirmationPill(confirmation: confirmation)
-                    .transition(Motion.pillTransition)
+                PillSlot("postConfirmation-\(confirmation.id)", level: .result) {
+                    PostConfirmationPill(confirmation: confirmation)
+                }
             }
         }
-        .padding(.top, manager.isShowing || manager.confirmation != nil ? 12 : 0)
-        .animation(Motion.bannerIn, value: manager.isShowing)
-        .animation(Motion.bannerIn, value: manager.confirmation?.id)
     }
 }
 
@@ -44,20 +43,12 @@ struct PostConfirmationPill: View {
                     .tint(.white)
             } else {
                 Image(systemName: confirmation.state == .confirmed ? "checkmark" : "clock")
-                    .font(.appSystem(size: 12, weight: .bold))
+                    .font(PillSize.regular.iconFont)
             }
             Text(label)
-                .font(.appSystem(size: 13, weight: .bold))
                 .lineLimit(1)
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(color)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
+        .pillCapsule(tone)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
@@ -70,12 +61,11 @@ struct PostConfirmationPill: View {
         }
     }
 
-    private var color: Color {
+    private var tone: PillTone {
         switch confirmation.state {
-        case .sending:     return confirmation.actionType.themedColor
-        // Same green as "Followed".
-        case .confirmed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
-        case .unconfirmed: return Color(white: 0.35)
+        case .sending:     return .accent
+        case .confirmed:   return .success
+        case .unconfirmed: return .neutral
         }
     }
 }
@@ -100,10 +90,10 @@ struct PostActionPill: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: actionType.icon)
-                .font(.appSystem(size: 14, weight: .bold))
+                .font(PillSize.regular.iconFont)
 
             Text("\(actionType.label) in \(max(1, Int(ceil(timeRemaining))))s")
-                .font(.appSystem(size: 14, weight: .bold))
+                .monospacedDigit()
 
             // Progress bar
             GeometryReader { geo in
@@ -118,21 +108,13 @@ struct PostActionPill: View {
             .frame(width: 60, height: 4)
 
             if let onEdit {
-                pillButton("Edit", horizontalPadding: 10, action: onEdit)
+                PillButton("Edit", action: onEdit)
             }
 
-            pillButton("Undo", horizontalPadding: 12, action: onUndo)
+            PillButton("Undo", action: onUndo)
         }
-        // The buttons carry the other 10 pt of the pill's vertical padding.
-        .padding(.vertical, 2)
-        .padding(.horizontal, 24)
-        .background(
-            Capsule()
-                .fill(actionType.themedColor)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
-        .buttonStyle(.plain)
+        // The buttons set the height.
+        .pillCapsule(.accent, vertical: 0)
         .offset(y: dragOffset)
         .opacity(onDismiss == nil ? 1 : 1 - Double(min(1, abs(dragOffset) / 80)) * 0.6)
         // .gesture (not .highPriorityGesture) so Undo/Edit taps still win —
@@ -157,21 +139,6 @@ struct PostActionPill: View {
         .accessibilityLabel("\(actionType.label) in \(max(1, Int(ceil(timeRemaining)))) seconds")
         .accessibilityHint(onDismiss == nil ? "" : "Swipe up to hide. The \(actionType.label.lowercased()) still completes.")
         .accessibilityAction(named: "Hide") { onDismiss?() }
-    }
-
-    /// The capsule and the pill's height above and below it are all inside the
-    /// label, so a tap anywhere on the capsule (or just off it) lands. Padding
-    /// outside a plain Button draws but takes no taps.
-    private func pillButton(_ title: String, horizontalPadding: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.appSystem(size: 13, weight: .bold))
-                .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.25), in: Capsule())
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-        }
     }
 }
 

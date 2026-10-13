@@ -121,9 +121,9 @@ extension TrustWebView {
             }
             if crumbs.count > 1 { crumbRow }
             livePill
-            FilterNoteView(model: filterNote)
         }
         .padding(.top, 8)
+        .filterNoteHost(filterNote)
         .transition(.opacity)
     }
 

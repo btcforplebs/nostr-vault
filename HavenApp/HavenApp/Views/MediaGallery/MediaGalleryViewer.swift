@@ -118,6 +118,7 @@ extension MediaGalleryView {
                                 withAnimation(Motion.snapBack) {
                                     isCopied = true
                                 }
+                                ActionToastManager.shared.show(icon: "link", message: "Link copied", tone: .success)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                                     withAnimation(Motion.fade) {
                                         isCopied = false
@@ -218,22 +219,11 @@ extension MediaGalleryView {
                         }
                         .buttonStyle(.plain)
                     }
-                    #if os(iOS)
-                    if let message = saveToPhotosMessage {
-                        Text(message)
-                            .font(.appCaption)
-                            .foregroundColor(message.contains("Saved") ? .green : .red)
-                            .transition(.opacity)
-                    }
-                    #endif
-                    if isCopied {
-                        Text("Link copied to clipboard")
-                            .font(.appCaption)
-                            .foregroundColor(.green)
-                            .transition(.opacity)
-                    }
                 }
                 .padding()
+                #if os(iOS)
+                .keepsPillLaneBelow()
+                #endif
                 .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
 
                 Spacer()

@@ -174,9 +174,9 @@ enum MediaBackupActions {
         case .failed:
             ErrorNotificationManager.shared.show(String(localized: "media.mirror.failed"), icon: "exclamationmark.icloud.fill")
         case .savedOnly:
-            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault on this phone", color: Color.havenVerified)
+            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault on this phone", tone: .success)
         case .savedAndBackedUp:
-            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault and your Blossom", color: Color.havenVerified)
+            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault and your Blossom", tone: .success)
         }
     }
 
@@ -189,13 +189,13 @@ enum MediaBackupActions {
         // ask again so they stop showing the pre-delete count.
         await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
         if report.allDeleted {
-            ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+            ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", tone: .success)
         } else if report.failed.isEmpty {
-            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", color: .red.opacity(0.85))
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", tone: .error)
         } else {
             ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
                                            message: "Still on " + ListFormatter.localizedString(byJoining: report.failedHosts),
-                                           color: .red.opacity(0.85), seconds: 6)
+                                           tone: .error, seconds: 6)
         }
     }
 
@@ -212,16 +212,16 @@ enum MediaBackupActions {
         await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
         if let leftover {
             ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: leftover,
-                                           color: .orange.opacity(0.85), seconds: 6)
+                                           tone: .warning, seconds: 6)
         } else {
-            ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
+            ActionToastManager.shared.show(icon: "trash", message: "Deleted", tone: .success)
         }
         return localOk
     }
 
     static func announceMirror(_ ok: Bool) {
         if ok {
-            ActionToastManager.shared.show(icon: "icloud.and.arrow.up.fill", message: String(localized: "media.push.succeeded"), color: Color.havenVerified)
+            ActionToastManager.shared.show(icon: "icloud.and.arrow.up.fill", message: String(localized: "media.push.succeeded"), tone: .success)
         } else {
             ErrorNotificationManager.shared.show(String(localized: "media.push.failed"), icon: "exclamationmark.icloud.fill")
         }

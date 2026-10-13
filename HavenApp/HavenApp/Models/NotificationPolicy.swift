@@ -134,6 +134,68 @@ enum NotificationPolicy {
         appInForeground && (type == "dm" || type == "giftwrap")
     }
 
+    /// The key an event is shown under: its id, trimmed and lowercased, so
+    /// the relay marker for one event makes one pill.
+    static func dedupKey(eventId: String) -> String {
+        eventId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    // MARK: - Arrival pills that were not read
+
+    /// How an arrival pill (a mention, DM, reply, zap) left the lane.
+    enum PillEnd {
+        /// Its lifetime ran out.
+        case timedOut
+        /// A newer arrival pushed it out of the manager's queue.
+        case trimmed
+        /// The user tapped it.
+        case tapped
+        /// Its surface went away under it: the Mac window closed or went to
+        /// the Dock, or the app went to the background.
+        case hostLost
+    }
+
+    /// How long a pill must be on screen before it counts as read.
+    static let pillReadableAfter: TimeInterval = 1.5
+
+    /// Whether an arrival pill must be filed in Notification Center, so it can
+    /// still be found. The lane shows two pills at most, so in a burst one can
+    /// wait its whole life unseen, or draw for a moment before it goes.
+    /// Losing its surface is no different: one that was read stays read, and
+    /// one that only flashed (a window closed under it) is filed.
+    /// - Parameter drawnFor: how long the lane drew it in total.
+    static func filesPill(end: PillEnd, drawnFor: TimeInterval) -> Bool {
+        switch end {
+        case .tapped:                         return false
+        case .timedOut, .trimmed, .hostLost:  return drawnFor < pillReadableAfter
+        }
+    }
+
+    /// The title a filed pill carries. A DM's sender stays in the app too.
+    static func filedPillTitle(type: String, title: String) -> String {
+        isDM(type) ? dmFiledTitle : title
+    }
+
+    /// The body a filed pill carries. A DM's decrypted text never leaves the
+    /// app this way, only the generic line.
+    static func filedPillBody(type: String, body: String) -> String {
+        isDM(type) ? dmFiledBody : body
+    }
+
+    private static func isDM(_ type: String) -> Bool { type == "dm" || type == "giftwrap" }
+
+    static let dmFiledTitle = "New message"
+    static let dmFiledBody = "You have a new encrypted message"
+
+    /// The event a delivered alert is about, keyed like `dedupKey`: an APNs
+    /// push names it `event_id`, a relay marker's alert `notif_id`. Nil for
+    /// an alert about no single event.
+    static func eventKey(of userInfo: [AnyHashable: Any]) -> String? {
+        guard let id = userInfo["event_id"] as? String ?? userInfo["notif_id"] as? String,
+              !id.isEmpty else { return nil }
+        return dedupKey(eventId: id)
+    }
+
     /// A decrypted DM as notification text: one line, cut to fit a banner.
     /// Nil when there is nothing to read (an empty message), so the caller
     /// keeps the generic line.

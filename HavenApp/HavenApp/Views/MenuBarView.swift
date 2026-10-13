@@ -81,15 +81,8 @@ struct MenuBarView: View {
             processKillAlertOverlay
         }
         .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                ActionToastBanner()
-                MediaUploadNotificationBanner()
-                ErrorNotificationBanner()
-            }
-            .padding(.top, 4)
+            PillLaneStack()
+                .padding(.top, 4)
         }
         .overlay { ZapFlightStage() }
         .hashtagLinks()
@@ -202,6 +195,8 @@ struct MenuBarView: View {
         .onDisappear {
             #if os(macOS)
             MacWindow.isMainWindowMounted = false
+            // The pills went with the window: file the ones still up.
+            RelayActivityNotificationManager.shared.hostLost()
             #endif
         }
         // Service pausing/resuming on focus change is owned by

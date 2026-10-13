@@ -17,14 +17,12 @@ extension MediaGalleryView {
 
     #if os(iOS)
     func saveMediaToPhotos(item: MediaItem) {
-        saveToPhotosMessage = nil
-
         Task {
             // Request photo library permission
             let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
             guard status == .authorized || status == .limited else {
                 await MainActor.run {
-                    saveToPhotosMessage = "Photo library access denied"
+                    ErrorNotificationManager.shared.show("Photo library access denied")
                 }
                 return
             }
@@ -51,15 +49,11 @@ extension MediaGalleryView {
                 }
 
                 await MainActor.run {
-                    withAnimation { saveToPhotosMessage = "Saved to Photos" }
-                    Task {
-                        try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        await MainActor.run { withAnimation { saveToPhotosMessage = nil } }
-                    }
+                    ActionToastManager.shared.show(icon: "photo.on.rectangle", message: "Saved to Photos", tone: .success)
                 }
             } catch {
                 await MainActor.run {
-                    saveToPhotosMessage = "Failed to save"
+                    ErrorNotificationManager.shared.show("Failed to save")
                 }
                 print("Save to Photos error: \(error.localizedDescription)")
             }

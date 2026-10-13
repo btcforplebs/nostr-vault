@@ -99,7 +99,6 @@ struct MediaGalleryView: View {
     @State var activeUploadTasks: [Task<Void, Never>] = []
 
     #if os(iOS)
-    @State var saveToPhotosMessage: String?
     #endif
     @State var isCopied = false
 
@@ -416,7 +415,7 @@ struct MediaGalleryView: View {
             }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Under the header, the Mac's toolbar. The host adds no rise on Mac.
+            // Feeds the filter-note bubble in the banner stack.
             .filterNoteHost(filterNote)
         }
         #if os(iOS)

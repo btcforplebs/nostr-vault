@@ -69,25 +69,31 @@ struct ZapNotificationBanner: View {
     @ObservedObject private var unlikeManager = UnlikeNotificationManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             if unlikeManager.isShowing {
-                UnlikePill(timeRemaining: unlikeManager.timeRemaining) {
-                    unlikeManager.cancel()
+                PillSlot("unlike", level: .result) {
+                    UnlikePill(timeRemaining: unlikeManager.timeRemaining) {
+                        unlikeManager.cancel()
+                    }
                 }
-                .transition(Motion.pillTransition)
             }
             ForEach(zapManager.notifications) { notification in
-                ZapPill(notification: notification)
-                    .transition(Motion.pillTransition)
+                PillSlot("zap-\(notification.id)", level: notification.pillLevel) {
+                    ZapPill(notification: notification)
+                }
             }
         }
-        .padding(.top, (unlikeManager.isShowing || !zapManager.notifications.isEmpty) ? 12 : 0)
-        .animation(Motion.bannerIn, value: zapManager.notifications.map(\.id))
-        .animation(Motion.bannerIn, value: unlikeManager.isShowing)
     }
 }
 
-// MARK: - Zap Pill (matches "New Posts" capsule style)
+extension ZapNotification {
+    var pillLevel: PillLevel {
+        if case .failed = status { return .error }
+        return .result
+    }
+}
+
+// MARK: - Zap Pill
 
 struct ZapPill: View {
     let notification: ZapNotification
@@ -100,20 +106,12 @@ struct ZapPill: View {
 
             // Label
             Text(pillLabel)
-                .font(.appSystem(size: 13, weight: .bold))
 
             // Sats amount
             Text("\(notification.amountSats) sats")
-                .font(.appSystem(size: 13, weight: .bold, design: .monospaced))
+                .monospacedDigit()
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(pillColor)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
+        .pillCapsule(tone)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(pillLabel), \(notification.amountSats) sats")
     }
@@ -123,7 +121,7 @@ struct ZapPill: View {
         switch notification.status {
         case .sending:
             Image(systemName: "bolt.fill")
-                .font(.appSystem(size: 12, weight: .bold))
+                .font(PillSize.regular.iconFont)
                 .opacity(pulseOpacity)
                 .onAppear {
                     // Same reason as the feed skeleton: without the guard the
@@ -133,10 +131,10 @@ struct ZapPill: View {
                 }
         case .success:
             Image(systemName: "bolt.fill")
-                .font(.appSystem(size: 12, weight: .bold))
+                .font(PillSize.regular.iconFont)
         case .failed:
             Image(systemName: "xmark")
-                .font(.appSystem(size: 12, weight: .bold))
+                .font(PillSize.regular.iconFont)
         }
     }
 
@@ -148,11 +146,11 @@ struct ZapPill: View {
         }
     }
 
-    private var pillColor: Color {
+    private var tone: PillTone {
         switch notification.status {
-        case .sending: return .orange
-        case .success: return Color(red: 0.2, green: 0.8, blue: 0.6)
-        case .failed:  return .red.opacity(0.85)
+        case .sending: return .accent
+        case .success: return .success
+        case .failed:  return .error
         }
     }
 }

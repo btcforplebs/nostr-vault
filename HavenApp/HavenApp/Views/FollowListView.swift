@@ -106,7 +106,10 @@ struct FollowListView: View {
                 }
                 .background(Color.platformWindowBackground.ignoresSafeArea())
         }
-        .overlay(alignment: .top) { FollowNotificationBanner() }
+        #if os(macOS)
+        // On iPhone and iPad the lane is drawn above every sheet already.
+        .overlay(alignment: .top) { PillLaneStack() }
+        #endif
         .onAppear(perform: loadTrust)
     }
 

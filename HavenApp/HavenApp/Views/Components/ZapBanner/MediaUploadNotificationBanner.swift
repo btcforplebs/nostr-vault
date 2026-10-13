@@ -75,14 +75,20 @@ struct MediaUploadNotificationBanner: View {
     @ObservedObject private var manager = MediaUploadNotificationManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                UploadPill(notification: notification)
-                    .transition(Motion.pillTransition)
+                PillSlot("upload-\(notification.id)", level: notification.pillLevel) {
+                    UploadPill(notification: notification)
+                }
             }
         }
-        .padding(.top, manager.notifications.isEmpty ? 0 : 12)
-        .animation(Motion.bannerIn, value: manager.notifications.map(\.id))
+    }
+}
+
+extension MediaUploadNotification {
+    var pillLevel: PillLevel {
+        if case .failed = status { return .error }
+        return .result
     }
 }
 
@@ -99,30 +105,17 @@ struct UploadPill: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.appSystem(size: 13, weight: .bold))
                     .lineLimit(1)
                 
                 if notification.status == .uploading {
                     Text("\(Int(notification.progress * 100))%")
-                        .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
+                        .font(.appSystem(size: 10, weight: .bold))
+                        .monospacedDigit()
                         .foregroundColor(.white.opacity(0.8))
                 }
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: gradientColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
+        .pillCapsule(tone)
     }
 
     @ViewBuilder
@@ -134,10 +127,10 @@ struct UploadPill: View {
                 .tint(.white)
         case .success:
             Image(systemName: "checkmark.circle.fill")
-                .font(.appSystem(size: 14, weight: .bold))
+                .font(PillSize.regular.iconFont)
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.appSystem(size: 14, weight: .bold))
+                .font(PillSize.regular.iconFont)
         }
     }
 
@@ -146,20 +139,17 @@ struct UploadPill: View {
         case .uploading:
             return "Uploading \(notification.filename)"
         case .success:
-            return "Successfully Uploaded \(notification.filename)"
+            return "Uploaded \(notification.filename)"
         case .failed(let reason):
             return "Upload failed: \(reason)"
         }
     }
 
-    private var gradientColors: [Color] {
+    private var tone: PillTone {
         switch notification.status {
-        case .uploading:
-            return [Color.havenPurple, Color.havenPurpleLight]
-        case .success:
-            return [Color(red: 0.2, green: 0.8, blue: 0.6), Color(red: 0.1, green: 0.6, blue: 0.4)]
-        case .failed:
-            return [Color.red.opacity(0.85), Color.red.opacity(0.6)]
+        case .uploading: return .accent
+        case .success:   return .success
+        case .failed:    return .error
         }
     }
 }

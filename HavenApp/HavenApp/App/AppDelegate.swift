@@ -13,6 +13,7 @@ class AppDelegate: NSObject, ObservableObject {
     // Focus observers are owned for the lifetime of the app, not of a window.
     private var focusResignObserver: NSObjectProtocol?
     private var focusActivateObserver: NSObjectProtocol?
+    private var miniaturizeObserver: NSObjectProtocol?
     #endif
 
     @MainActor
@@ -101,6 +102,8 @@ class AppDelegate: NSObject, ObservableObject {
             MainActor.assumeIsolated {
                 // The absence starts now — same bookkeeping as iOS.
                 NotificationActivityLog.recordForeground()
+                // The lane is off screen now: file the pills still up.
+                RelayActivityNotificationManager.shared.hostLost()
                 // Pause the feed to reduce background CPU/memory from relay
                 // traffic and note accumulation.
                 FeedService.shared.pauseFeed()
@@ -126,6 +129,19 @@ class AppDelegate: NSObject, ObservableObject {
                 NetworkSyncService.shared.start()
                 RelayProcessManager.shared.enterForeground()
                 NostrService.shared.enterForeground()
+            }
+        }
+
+        // A window sent to the Dock stays mounted, so its pills would keep
+        // drawing unseen and pass as read.
+        miniaturizeObserver = center.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            MainActor.assumeIsolated {
+                guard let window = note.object as? NSWindow, MacWindow.isMainWindow(window) else { return }
+                RelayActivityNotificationManager.shared.hostLost()
             }
         }
     }
@@ -212,20 +228,18 @@ extension AppDelegate: NSApplicationDelegate {}
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
     /// macOS suppresses notifications for the frontmost app unless the delegate
-    /// asks for them. LocalNotificationService only posts these when the app is
-    /// not foregrounded on iOS; on macOS `appInForeground` is never set, and the
-    /// in-app banner (RelayActivityBanner) is only hosted by the iOS view tree —
-    /// so this is the only way a message that arrives while the app is active is
-    /// visible at all.
+    /// asks for them. While the main window is up the alert shows as a pill
+    /// in its lane instead (PillLaneStack); with no window it banners, since
+    /// nothing else would show it. See `LocalNotificationService.presentation(of:)`.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // A quiet replacement only updates the count already in Notification
-        // Center (LocalNotificationService.announceFoldedFollow).
-        let quiet = notification.request.content.userInfo[LocalNotificationService.quietKey] as? Bool ?? false
-        completionHandler(quiet ? [.list] : [.banner, .sound])
+        let content = notification.request.content
+        Task { @MainActor in
+            completionHandler(LocalNotificationService.shared.presentation(of: content))
+        }
     }
 
     nonisolated func userNotificationCenter(

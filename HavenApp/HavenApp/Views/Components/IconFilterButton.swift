@@ -291,49 +291,60 @@ struct FilterNoteLine: Layout {
     }
 }
 
-/// The glass capsule for a `FilterNoteModel`'s note; nothing when none.
-/// One line that hugs its text up to the host's width minus 16 pt margins,
-/// so it follows the text-size setting; past that the title is cut with
-/// "…" down to `FilterNoteLine.titleFloor`, then the setting and count are
-/// cut the same way, so neither half vanishes. Never takes taps, so it can
-/// sit over the content. Fades in with a slight scale from its top edge,
-/// not a slide from under the bar; Reduce Motion gets the fade alone.
-struct FilterNoteView: View {
-    @ObservedObject var model: FilterNoteModel
-    /// The dimmed (off) look, the same on Android.
-    static let dimmedOpacity = 0.55
-    /// Where the pill's bottom edge sits, below the host's top edge (plus
-    /// any `topInset`), at every text size. On an iPhone the content starts
-    /// about 10 pt under the bar and the first post about 18 pt under that,
-    /// so the bottom lands 6 pt above the post; at 100% the 26 pt pill then
-    /// reaches 4 pt into the glass. A bigger pill grows upward behind the
-    /// bar, where it is hidden, never down over the post. On macOS the
-    /// header is in the content, not above it, so there the pill has a
-    /// slot of its own instead (see `filterNoteHost`).
-    static let bottomEdge: CGFloat = 12
+/// The one filter note on screen, whichever screen's model showed it last.
+/// Screens keep their own `FilterNoteModel` (and its timer); `filterNoteHost`
+/// forwards each change here, and `FilterNoteBanner` draws it with the
+/// app's notification banners, over everything.
+@MainActor
+final class FilterNoteCenter: ObservableObject {
+    static let shared = FilterNoteCenter()
+    @Published private(set) var note: FilterNote?
+    /// Bumped by each tap's note, so the lane sees a new feedback pill
+    /// (one that replaces a toast) rather than an old one coming back.
+    private(set) var tap = 0
+    /// The model whose note is showing, so a screen clearing its own note
+    /// (or going away) can't wipe a note another screen just showed.
+    private var owner: ObjectIdentifier?
+
+    func publish(_ note: FilterNote?, from model: FilterNoteModel) {
+        let id = ObjectIdentifier(model)
+        if let note {
+            if self.note == nil || owner != id { tap += 1 }
+            owner = id
+            self.note = note
+        } else if owner == id {
+            owner = nil
+            self.note = nil
+        }
+    }
+}
+
+/// The filter note as a small, feedback-level pill in the lane (see
+/// `docs/pills.md`): purple when the setting is on, grey when off.
+/// One line that hugs its text up to the lane's width; past that the title
+/// is cut with "…" down to `FilterNoteLine.titleFloor`, then the setting
+/// and count. Never takes taps.
+struct FilterNoteBanner: View {
+    @ObservedObject private var center = FilterNoteCenter.shared
 
     var body: some View {
-        if let note = model.note {
-            Self.capsule(for: note)
-                // A second tap swaps the text in place, not mid-transition.
-                .contentTransition(.opacity)
-                .animation(Motion.fade, value: note)
-                .transition(Motion.isReduced
-                    ? .opacity
-                    : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+        if let note = center.note {
+            PillSlot("filterNote-\(center.tap)", level: .feedback) {
+                Self.bubble(for: note)
+                    // A second tap swaps the text in place, not mid-transition.
+                    .contentTransition(.opacity)
+                    .animation(Motion.fade, value: note)
+                    .allowsHitTesting(false)
+                    // `FilterNoteModel` announces each note; as an element it would be read twice.
+                    .accessibilityHidden(true)
+            }
         }
     }
 
-    /// The capsule for `note`, with its margins, at the current text size.
-    /// Also the shape of `template`, so a slot sized by it fits any note.
-    static func capsule(for note: FilterNote) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: note.icon).font(.appSystem(size: 12, weight: .bold))
-                // Symbols differ in height (square.stack is 4 pt taller than
-                // circle at 160%); pinned to the text's line so the text sets
-                // the pill's height and every note is as tall as `template`.
-                .frame(height: Self.lineHeight)
-                .foregroundColor(note.dimmed ? .primary.opacity(dimmedOpacity) : .havenPurple)
+    static func bubble(for note: FilterNote) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: note.icon)
+                .font(PillSize.small.iconFont)
             FilterNoteLine(textScale: CGFloat(ConfigService.shared.config.textSizeScale)) {
                 Text(note.title)
                     .lineLimit(1)
@@ -345,85 +356,19 @@ struct FilterNoteView: View {
                 }
             }
             .monospacedDigit()
-            .foregroundColor(note.dimmed ? .primary.opacity(dimmedOpacity) : .primary)
         }
-        .font(.appSystem(size: 13, weight: .semibold))
-        // 26 pt tall: fits the gap between the toolbar and the first post.
-        .padding(.vertical, 5)
-        .padding(.horizontal, 14)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-        .shadow(color: .black.opacity(0.4), radius: 10, y: 3)
-        // The margins: the capsule never gets wider than the host minus these.
-        .padding(.horizontal, 16)
-        .allowsHitTesting(false)
-        // Announced when shown; as an element it would be read twice.
-        .accessibilityHidden(true)
+        .pillCapsule(note.dimmed ? .neutral : .accent, size: .small)
     }
-
-    /// The line height of the pill's text at the current text size; the
-    /// icon is pinned to it, so the text alone sets the pill's height.
-    static var lineHeight: CGFloat {
-        let size = 13 * CGFloat(ConfigService.shared.config.textSizeScale)
-        #if canImport(UIKit)
-        return UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
-        #else
-        return NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: size, weight: .semibold))
-        #endif
-    }
-
-    #if os(macOS)
-    /// An invisible one-line pill, as tall as any note at the current text
-    /// size: every note is one line in the same font, with its icon pinned
-    /// to that line. `filterNoteHost` on macOS sizes its permanent slot by it.
-    static var template: some View {
-        capsule(for: FilterNote(icon: "circle", text: "Ag")).hidden()
-    }
-    /// The gap on macOS between the slot's pill and the content under it.
-    static let macSlotMargin: CGFloat = 4
-    #endif
 }
 
 extension View {
-    /// Hosts a screen's filter note: an overlay pinned to the top edge of
-    /// the content, with the pill's bottom edge `FilterNoteView.bottomEdge`
-    /// below it, so the bottom stays above the first post at every text
-    /// size and the top overlaps the toolbar glass, more so as the text
-    /// grows. Never in the layout flow, so a tap moves nothing; when the
-    /// list is scrolled it may sit over content, and still takes no taps.
-    /// Apply once per screen, on the content view under the toolbar. When
-    /// the screen draws its own header inside that content, pass the
-    /// header's height as `topInset`, so the slot starts under it.
-    ///
-    /// On macOS the header is in flow and the content starts right under
-    /// it, so there is no gap to draw into: the host instead reserves a
-    /// permanent slot at the top of the content, as tall as a pill at the
-    /// current text size plus `FilterNoteView.macSlotMargin`, whether or
-    /// not a note shows, and draws the pill in it. Always there, so the
-    /// content never jumps; sized by the text, so the pill never reaches
-    /// the first row. A scroll view's content passes under it like a
-    /// safe area, and its pinned headers stick below it. Apply it to the
-    /// content under the header and leave `topInset` 0 (the Mac Vault does):
-    /// on macOS the inset pads the slot's content, so a header height there
-    /// is a blank band of that height above the slot.
-    func filterNoteHost(_ model: FilterNoteModel, topInset: CGFloat = 0) -> some View {
-        #if os(macOS)
-        safeAreaInset(edge: .top, spacing: 0) {
-            FilterNoteView.template
-                .padding(.bottom, FilterNoteView.macSlotMargin)
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .top) { FilterNoteView(model: model) }
-                .padding(.top, topInset)
-                .allowsHitTesting(false)
-        }
-        #else
-        overlay(alignment: .top) {
-            FilterNoteView(model: model)
-                // A slot of fixed height; the pill is aligned to its bottom
-                // and overflows upward when it is taller.
-                .frame(height: FilterNoteView.bottomEdge, alignment: .bottom)
-                .padding(.top, topInset)
-        }
-        #endif
+    /// Hosts a screen's filter note: each change to `model.note` goes to
+    /// `FilterNoteCenter`, and the bubble shows in the banner stack (the
+    /// banner window on iOS, the main window's banner overlay on macOS),
+    /// never in this screen's layout, so a tap moves nothing. Leaving the
+    /// screen takes its note with it. Apply once per screen.
+    func filterNoteHost(_ model: FilterNoteModel) -> some View {
+        onReceive(model.$note) { FilterNoteCenter.shared.publish($0, from: model) }
+            .onDisappear { FilterNoteCenter.shared.publish(nil, from: model) }
     }
 }

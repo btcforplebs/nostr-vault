@@ -252,6 +252,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        // The lane is off screen now: file the pills still up. Not on resign
+        // active: Control Center, the app switcher or an alert leaves the
+        // app on screen, and a pill being read there is not lost.
+        RelayActivityNotificationManager.shared.hostLost()
+
         // The NIP-46 signer session is deliberately kept: approving a request
         // means switching to the signer app, and disconnecting here killed the
         // request the moment the user left to approve it. Outstanding requests
@@ -320,22 +325,62 @@ private extension View {
     }
 }
 
-/// Every in-app banner, top-centred below the navigation bar.
+/// Where the top button row of an open full-screen media viewer ends, in
+/// window coordinates. The lane drops below it so a pill never sits over a
+/// button there (an error pill stays until tapped).
+@MainActor
+final class PillLaneFloor: ObservableObject {
+    static let shared = PillLaneFloor()
+    @Published fileprivate(set) var y: CGFloat?
+}
+
+extension View {
+    /// Keeps the pill lane below this view while it is on screen.
+    func keepsPillLaneBelow() -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+            PillLaneFloor.shared.y = $0
+        }
+        .onDisappear { PillLaneFloor.shared.y = nil }
+    }
+}
+
+/// The pill lane (`docs/pills.md`), top-centred below the navigation bar:
+/// the same list as the Mac's `PillLaneStack`, each banner reporting where
+/// it is so the window takes taps on it and nowhere else.
 struct AppBannerStack: View {
+    @ObservedObject private var floor = PillLaneFloor.shared
+    /// The top of the safe area, in window coordinates.
+    @State private var safeTop: CGFloat = 0
+
+    /// Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over
+    /// its buttons; below a media viewer's button row while one is open.
+    private var laneTop: CGFloat {
+        let navBar: CGFloat = 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44)
+        guard let y = floor.y else { return navBar }
+        return max(navBar, y - safeTop)
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
+            ErrorNotificationBanner().bannerHitRegion("error")
             PostActionNotificationBanner().bannerHitRegion("postAction")
             ZapNotificationBanner().bannerHitRegion("zap")
             FollowNotificationBanner().bannerHitRegion("follow")
             MediaUploadNotificationBanner().bannerHitRegion("upload")
             RelayActivityBanner().bannerHitRegion("relayActivity")
-            ActionToastBanner().bannerHitRegion("toast")
-            ErrorNotificationBanner().bannerHitRegion("error")
+            // Feedback and ambient pills take no taps, so no hit region:
+            // a touch on them reaches the app.
+            ActionToastBanner()
+            FilterNoteBanner()
             ImportRunningPill()
             Spacer(minLength: 0)
         }
-        // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
-        .padding(.top, 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44))
+        .padding(.top, PillStyle.gap)
+        .padding(.top, laneTop)
+        .animation(Motion.bannerIn, value: laneTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+            safeTop = $0
+        }
     }
 }

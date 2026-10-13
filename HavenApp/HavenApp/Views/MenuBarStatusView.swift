@@ -472,6 +472,17 @@ enum MacWindow {
     /// exists answers a different question than "is anyone listening".
     @MainActor static var isMainWindowMounted = false
 
+    /// True while the main window is mounted and someone can see it: not in
+    /// the Dock, not fully covered.
+    @MainActor static var isMainWindowOnScreen: Bool {
+        guard isMainWindowMounted, let window = mainWindow() else { return false }
+        return !window.isMiniaturized && window.occlusionState.contains(.visible)
+    }
+
+    @MainActor static func isMainWindow(_ window: NSWindow) -> Bool {
+        window === mainWindow()
+    }
+
     /// `openWindow` captured from a mounted view, so AppKit-side callers — a
     /// notification tap arrives at the app delegate, which has no SwiftUI
     /// environment — can still open the window scene.

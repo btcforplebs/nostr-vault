@@ -325,6 +325,7 @@ extension FeedView {
                         #endif
                     }
                     .padding(.top, 12)
+                    .ambientPill()
                     // Drops out from under the top bar rather than sliding in
                     // from off-screen above it.
                     .transition(.asymmetric(
