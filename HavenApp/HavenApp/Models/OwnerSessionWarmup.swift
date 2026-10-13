@@ -17,6 +17,15 @@ struct OwnerSessionWarmup {
 
     private(set) var inFlight = false
 
+    /// How long after a failed login no new one starts. With the owner's
+    /// signer asleep each login waits out the Go connect timeout (up to 60 s),
+    /// and every count refresh or AUTH challenge would otherwise start another.
+    static let failureCooldown: TimeInterval = 120
+
+    /// When the last login failed (no answer, or an answer for another
+    /// account); nil after a success.
+    private(set) var lastFailure: Date?
+
     /// The background login to start now, or nil: the owner signs with a
     /// bunker and another account is active, no pairing secret is pending
     /// (that login has to reach the signer and may need an approval the
@@ -29,7 +38,10 @@ struct OwnerSessionWarmup {
     /// session for both: the owner's login and the active account's connect
     /// would drop each other's session, and a post could go out through the
     /// owner's. Nothing a background login does helps there, so it never starts.
-    mutating func start(config: HavenConfig, ownerHex: String, activeSessionKey: String?) -> Login? {
+    ///
+    /// Nor within `failureCooldown` of a failed login.
+    mutating func start(config: HavenConfig, ownerHex: String, activeSessionKey: String?, now: Date = Date()) -> Login? {
+        if let lastFailure, now.timeIntervalSince(lastFailure) < Self.failureCooldown { return nil }
         guard !inFlight, config.ownerNeedsBackgroundSession, !config.ownerPairingPending,
               config.ownerSessionKey != activeSessionKey,
               !ownerHex.isEmpty, let link = config.ownerBunkerLink,
@@ -43,9 +55,12 @@ struct OwnerSessionWarmup {
     /// session answers for the owner, so what could not be signed is retried.
     /// A session answering for another account is left alone, not dropped:
     /// two accounts on one signer share it.
-    mutating func finished(_ login: Login, pubkey: String?) -> Bool {
+    /// A failure starts the cooldown; a success clears it.
+    mutating func finished(_ login: Login, pubkey: String?, now: Date = Date()) -> Bool {
         inFlight = false
-        return pubkey == login.ownerHex
+        let ok = pubkey == login.ownerHex
+        lastFailure = ok ? nil : now
+        return ok
     }
 }
 

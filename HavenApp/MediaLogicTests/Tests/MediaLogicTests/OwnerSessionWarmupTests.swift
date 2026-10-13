@@ -59,8 +59,41 @@ final class OwnerSessionWarmupTests: XCTestCase {
         let config = bunkerOwner(active: other)
         let login = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil)!
         XCTAssertNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil))
-        _ = warmup.finished(login, pubkey: nil)
+        _ = warmup.finished(login, pubkey: ownerHex)
         XCTAssertNotNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil))
+    }
+
+    /// A sleeping owner signer: after a failed login, count refreshes and AUTH
+    /// challenges start no new login until the cooldown has passed.
+    func testFailedLoginCoolsDownBeforeTheNextOne() {
+        var warmup = OwnerSessionWarmup()
+        let config = bunkerOwner(active: other)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let login = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil, now: t0)!
+        _ = warmup.finished(login, pubkey: nil, now: t0)
+        XCTAssertNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil, now: t0 + 10))
+        XCTAssertNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil,
+                                  now: t0 + OwnerSessionWarmup.failureCooldown - 1))
+        let again = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil,
+                                 now: t0 + OwnerSessionWarmup.failureCooldown)
+        XCTAssertNotNil(again)
+        // A wrong-account answer counts as a failure too.
+        _ = warmup.finished(again!, pubkey: String(repeating: "b", count: 64), now: t0 + 200)
+        XCTAssertNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil, now: t0 + 201))
+    }
+
+    /// A success clears the cooldown: a later loss of the session can heal at once.
+    func testSuccessClearsTheCooldown() {
+        var warmup = OwnerSessionWarmup()
+        let config = bunkerOwner(active: other)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let first = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil, now: t0)!
+        _ = warmup.finished(first, pubkey: nil, now: t0)
+        let second = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil,
+                                  now: t0 + OwnerSessionWarmup.failureCooldown)!
+        _ = warmup.finished(second, pubkey: ownerHex, now: t0 + 130)
+        XCTAssertNil(warmup.lastFailure)
+        XCTAssertNotNil(warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil, now: t0 + 131))
     }
 
     /// The owner and the active account paired to one bunker host share one
@@ -103,8 +136,10 @@ final class OwnerSessionWarmupTests: XCTestCase {
         var warmup = OwnerSessionWarmup()
         let config = bunkerOwner(active: other)
         let login = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil)!
-        XCTAssertFalse(warmup.finished(login, pubkey: String(repeating: "b", count: 64)))
-        let again = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil)!
+        let t0 = Date()
+        XCTAssertFalse(warmup.finished(login, pubkey: String(repeating: "b", count: 64), now: t0))
+        let again = warmup.start(config: config, ownerHex: ownerHex, activeSessionKey: nil,
+                                 now: t0 + OwnerSessionWarmup.failureCooldown)!
         XCTAssertFalse(warmup.finished(again, pubkey: nil))
     }
 
