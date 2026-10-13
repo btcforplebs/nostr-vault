@@ -47,6 +47,7 @@ class NIP46SessionReuseTest {
             pings++
             return pingResult
         }
+        override fun signWith(signerPubkey: String, eventJson: String): String? = null
     }
 
     private fun cfg(signer: String, stored: String = signer) =

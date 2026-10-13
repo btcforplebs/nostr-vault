@@ -100,6 +100,7 @@ class SignerRoutingTest {
         override fun activate(signerPubkey: String): String? = null
         override fun drop(signerPubkey: String) { dropped += signerPubkey }
         override fun ping() = 0
+        override fun signWith(signerPubkey: String, eventJson: String): String? = null
     }
 
     @After fun resetBridge() { NIP46Service.disconnectForTest() }

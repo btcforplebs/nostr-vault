@@ -56,8 +56,16 @@ import com.nostrvault.service.NostrService.Companion.TAG
                     kind = kind, content = content,
                     tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
                 )
-                val signed = gatedIfBackground(kind) { NIP46Service.signEventWith(route.signerPubkey, eventJson) }
-                    ?: throw IllegalStateException("The owner's signer is not connected")
+                // After a restart with another account active only that
+                // account's bunker has a session; the first owner sign opens
+                // the owner's in the background and tries once more.
+                val signed = gatedIfBackground(kind) {
+                    NIP46Service.signEventWithWarmUp(
+                        route.signerPubkey, eventJson,
+                        warm = SignerRouting.ownerBunkerToWarm(configStore.config.value, ownerHexPubkey, activeHexPubkey),
+                        expectedPubkey = ownerHexPubkey,
+                    )
+                } ?: throw IllegalStateException("The owner's signer is not connected")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer (owner)")
             }
             is SignerRoute.Amber -> if (route.asOwner) {
