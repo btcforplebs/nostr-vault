@@ -315,6 +315,7 @@ class ProfileViewModel @Inject constructor(
         _hasMoreTagged.value = true
         _isLoadingOlder.value = false
         emptyTabPaging.reset()
+        olderPage = null
     }
 
     /** Set once your own follower ledger supplied the FOLLOWERS count. */
@@ -443,9 +444,10 @@ class ProfileViewModel @Inject constructor(
             }
         }
         s.onEose = { subId ->
-            // Initial combined REQ finished → drop the spinner. Pagination uses
-            // its own timed checks (see loadOlder).
+            // Initial combined REQ finished → drop the spinner. An older
+            // page's EOSE ends that page (see loadOlder).
             if (subId.startsWith("profile-")) _isLoading.value = false
+            olderPage?.onEose(subId)
         }
         stream = s
         s.start()
@@ -481,6 +483,7 @@ class ProfileViewModel @Inject constructor(
         }
         _profileNotes.value = (_profileNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
+        olderPage?.onArrival()
     }
 
     @Synchronized
@@ -498,6 +501,7 @@ class ProfileViewModel @Inject constructor(
         }
         _taggedNotes.value = (_taggedNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
+        olderPage?.onArrival()
     }
 
     /** Bumped when a stream is replaced so an older page's check can't end paging. */
@@ -505,6 +509,12 @@ class ProfileViewModel @Inject constructor(
 
     /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
     private val emptyTabPaging = ProfileEmptyTabPaging()
+
+    /** [canPageOlder] for the note tabs and for Tagged, for the screen to follow. */
+    val canPageOlderNotes: StateFlow<Boolean> = combine(_hasMoreNotes, _profileNotes) { more, notes -> more && notes.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val canPageOlderTagged: StateFlow<Boolean> = combine(_hasMoreTagged, _taggedNotes) { more, notes -> more && notes.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /**
      * More may be older AND there is a note to page back from. A profile
@@ -525,36 +535,35 @@ class ProfileViewModel @Inject constructor(
         if (emptyTabPaging.claim(section, empty, canPageOlder(section), _isLoadingOlder.value)) loadOlder(section)
     }
 
-    /** Infinite-scroll: page older notes (or tagged) on the open stream sockets. */
+    /** The older page in flight, fed the stream's EOSEs and notes. */
+    @Volatile private var olderPage: ProfileOlderPage? = null
+
+    /**
+     * Infinite-scroll: page older notes (or tagged) on the open stream
+     * sockets. The page ends when the relays answer ([ProfileOlderPage]), and
+     * only an answer with nothing new ends paging for good.
+     */
     fun loadOlder(section: ProfileSection = _selectedSection.value) {
         val s = stream ?: return
         if (_isLoadingOlder.value) return
-        if (section == ProfileSection.TAGGED) {
-            if (!_hasMoreTagged.value) return
-            val oldest = _taggedNotes.value.lastOrNull() ?: return
-            _isLoadingOlder.value = true
-            val before = _taggedNotes.value.size
-            s.loadOlderTagged(oldest.createdAt.time / 1000)
-            val token = pageToken
-            viewModelScope.launch {
-                delay(5000)
-                if (token != pageToken) return@launch
-                if (_taggedNotes.value.size == before) _hasMoreTagged.value = false
-                _isLoadingOlder.value = false
-            }
-        } else {
-            if (!_hasMoreNotes.value) return
-            val oldest = _profileNotes.value.lastOrNull() ?: return
-            _isLoadingOlder.value = true
-            val before = _profileNotes.value.size
-            s.loadOlder(oldest.createdAt.time / 1000)
-            val token = pageToken
-            viewModelScope.launch {
-                delay(5000)
-                if (token != pageToken) return@launch
-                if (_profileNotes.value.size == before) _hasMoreNotes.value = false
-                _isLoadingOlder.value = false
-            }
+        val tagged = section == ProfileSection.TAGGED
+        val list = if (tagged) _taggedNotes else _profileNotes
+        val hasMore = if (tagged) _hasMoreTagged else _hasMoreNotes
+        if (!hasMore.value) return
+        val oldest = list.value.lastOrNull() ?: return
+        _isLoadingOlder.value = true
+        val before = list.value.size
+        // Listening before the REQ goes out, so a fast EOSE can't be missed.
+        val page = ProfileOlderPage(tagged).also { olderPage = it }
+        val until = oldest.createdAt.time / 1000
+        if (tagged) s.loadOlderTagged(until) else s.loadOlder(until)
+        val token = pageToken
+        viewModelScope.launch {
+            val outcome = page.await(before, size = { list.value.size })
+            if (olderPage === page) olderPage = null
+            if (token != pageToken) return@launch
+            if (outcome == ProfileOlderPage.Outcome.EMPTY) hasMore.value = false
+            _isLoadingOlder.value = false
         }
     }
 

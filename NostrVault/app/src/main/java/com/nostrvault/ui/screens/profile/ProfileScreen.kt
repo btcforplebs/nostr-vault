@@ -97,6 +97,8 @@ fun ProfileScreen(
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val hasMoreNotes by viewModel.hasMoreNotes.collectAsState()
     val hasMoreTagged by viewModel.hasMoreTagged.collectAsState()
+    val canPageOlderNotes by viewModel.canPageOlderNotes.collectAsState()
+    val canPageOlderTagged by viewModel.canPageOlderTagged.collectAsState()
     val followersCount by viewModel.followersCount.collectAsState()
     val followingCount by viewModel.followingCount.collectAsState()
     val allProfiles by viewModel.profiles.collectAsState()
@@ -465,10 +467,7 @@ fun ProfileScreen(
             } else if (filteredNotes.isEmpty()) {
                 val section = selectedSection
                 item(key = "empty-${section.name}") {
-                    // Not a flow of its own: it changes only with these collected values.
-                    val canPageOlder = remember(section, hasMoreNotes, hasMoreTagged, counts, isLoading, isLoadingOlder) {
-                        viewModel.canPageOlder(section)
-                    }
+                    val canPageOlder = if (section == ProfileSection.TAGGED) canPageOlderTagged else canPageOlderNotes
                     ProfileEmptySection(
                         section = section,
                         opening = isLoading,
