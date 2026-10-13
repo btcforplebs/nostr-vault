@@ -337,9 +337,31 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(faces(.close), [key(2), key(3), key(5)])
         XCTAssertEqual(faces(.close, count: 2), [key(2), key(3)])
         XCTAssertEqual(faces(.furtherOut), [key(6), key(4)])
-        // Everyone and Following keep your follows' faces.
-        XCTAssertEqual(faces(.everyone), [])
+        // Everyone draws a few from the whole web past your follows; Following keeps your follows' faces.
+        XCTAssertEqual(faces(.everyone), [key(2), key(3), key(5), key(6), key(4)])
         XCTAssertEqual(faces(.following), [])
+    }
+
+    func testEveryoneShowsAFewFacesAndFollowingNone() {
+        XCTAssertEqual(TrustMap.faceCount(for: .everyone), TrustMap.everyoneFaceCount)
+        XCTAssertLessThan(TrustMap.faceCount(for: .everyone), TrustMap.faceCount(for: .close))
+        XCTAssertEqual(TrustMap.faceCount(for: .close), TrustMap.layerFaceCount)
+        XCTAssertEqual(TrustMap.faceCount(for: .furtherOut), TrustMap.layerFaceCount)
+        XCTAssertEqual(TrustMap.faceCount(for: .following), 0)
+        XCTAssertGreaterThan(TrustMap.faceCandidateCount(for: .everyone), TrustMap.everyoneFaceCount)
+    }
+
+    func testCloseLayerReadsVouched() {
+        // 10+ of your follows vouch for them; they're outside your follows, so not "Close".
+        XCTAssertEqual(TrustMap.Layer.close.title, "Vouched")
+    }
+
+    func testCloseHasItsOwnShellBetweenYourFollowsAndFurtherOut() {
+        XCTAssertGreaterThan(TrustMap.closeRadius, TrustMap.ringRadius)
+        XCTAssertLessThan(TrustMap.closeRadius, TrustMap.outerRadius)
+        // The author's face stays clear of the Close shell's stars.
+        XCTAssertGreaterThan(TrustMap.authorRadius, TrustMap.ringRadius)
+        XCTAssertGreaterThan(abs(TrustMap.authorRadius - TrustMap.closeRadius), 0.1)
     }
 
     func testLayerFacesSpreadAroundTheGlobe() {

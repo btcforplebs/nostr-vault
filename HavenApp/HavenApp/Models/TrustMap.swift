@@ -19,11 +19,14 @@ enum TrustMap {
     static let shownChains = 12
 
     /// Radius of each shell: whoever is in the middle at 0, their follows on
-    /// the unit sphere, and people further out on a faint outer shell.
+    /// the unit sphere, the Close people (`closeVouches`) on their own shell
+    /// just past them, and everyone further out on a faint outer shell.
     static let ringRadius = 1.0
+    static let closeRadius = 1.3
     static let outerRadius = 1.62
-    /// The author sits between the two shells, so their threads stay short.
-    static let authorRadius = 1.32
+    /// The author sits between your follows and the Close shell, so their
+    /// threads stay short and their face never lands among Close's stars.
+    static let authorRadius = 1.15
     /// Outer-shell people drawn per globe. Your follows' follows run to tens
     /// of thousands; past this the shell reads the same and only costs frames.
     static let hazeCap = 2_500
@@ -302,7 +305,7 @@ enum TrustMap {
             switch self {
             case .everyone: "Everyone"
             case .following: "Following"
-            case .close: "Close"
+            case .close: "Vouched"
             case .furtherOut: "Further out"
             }
         }
@@ -408,16 +411,34 @@ enum TrustMap {
     /// Faces on the outer shell when Close or Further out is picked; faces
     /// that would cover another stay stars (`seatFaces`).
     static let layerFaceCount = 100
+    /// With Everyone picked, a few small, dim faces past your follows, so the
+    /// shells aren't faceless; your follows' faces still lead.
+    static let everyoneFaceCount = 15
+
+    /// Faces past your follows for `layer`; Following has none.
+    static func faceCount(for layer: Layer) -> Int {
+        switch layer {
+        case .everyone: everyoneFaceCount
+        case .following: 0
+        case .close, .furtherOut: layerFaceCount
+        }
+    }
+
+    /// Profiles fetched for `layer`'s faces: a wide pool, since many people
+    /// further out have no picture.
+    static func faceCandidateCount(for layer: Layer) -> Int {
+        layer == .everyone ? everyoneFaceCount * 8 : layerFaceCandidateCount
+    }
 
     /// The people past your follows a layer shows as faces, most vouched
-    /// first. Everyone and Following show your follows' faces instead.
+    /// first. Following shows your follows' faces only.
     /// Ties don't go in key order as in `layerPeople`: a key's leading digits
     /// are its longitude, so taking the first few hundred of thousands tied
     /// at the same count would put every face on one side of the globe.
     static func layerFaceCandidates(_ layer: Layer, me: String, follows: Set<String>, web: Set<String>,
                                     vouches: [String: Int]? = nil,
                                     count: Int = layerFaceCandidateCount) -> [String] {
-        guard layer == .close || layer == .furtherOut else { return [] }
+        guard layer != .following else { return [] }
         let people = layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web
         let ranked = people.map { (vouches: vouches?[$0] ?? 0, rank: fraction($0, from: 16), key: $0) }
             .sorted { ($1.vouches, $0.rank, $0.key) < ($0.vouches, $1.rank, $1.key) }
