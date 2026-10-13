@@ -8,13 +8,14 @@ img { max-width: 100%; }
 :focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
 
 /* Buttons: capsules; primary is the accent gradient. Press = scale .96 (iOS PressScaleButtonStyle). */
-button, .post-button, .chip {
+button, a.button, .post-button, .chip {
   font: var(--t-sub); font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 999px;
   border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer;
   transition: transform var(--press), opacity var(--press);
 }
 button:active:not(:disabled), .post-button:active, .chip:active { transform: scale(.96); }
-button.primary { background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 700; }
+button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 700; }
+a.button { display: inline-flex; align-items: center; text-decoration: none; }
 button:disabled { background: var(--s3); border-color: transparent; color: var(--text-3); cursor: default; }
 button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weight: 600; }
 .muted { color: var(--text-2); } .small { font: var(--t-foot); } .mono { font: 12px var(--mono); }

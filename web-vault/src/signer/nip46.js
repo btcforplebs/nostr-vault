@@ -5,8 +5,8 @@ import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { checkedPubkey } from "../session.js"
 
-// The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only open web
-// pages. noopener also matters: without it a javascript: URL would run in this page.
+// The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only web pages
+// are shown. The scheme check is what keeps a javascript: URL out; noopener only cuts the new page off from this one.
 export function safeAuthUrl(url) {
   try {
     const u = new URL(url)
@@ -15,7 +15,10 @@ export function safeAuthUrl(url) {
     return null
   }
 }
-const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) window.open(safe, "_blank", "noopener") }
+// Shown as a link the user taps (AuthPrompt), not opened here: this runs in a relay callback with no user gesture,
+// so a popup blocker would eat it and the sign-in would hang until the timeout.
+export const authUrls = new EventTarget()
+const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) authUrls.dispatchEvent(new CustomEvent("url", { detail: safe })) }
 
 export async function bunkerSignIn(input, pool) {
   const bp = await parseBunkerInput(String(input).trim())
@@ -43,14 +46,24 @@ export function bunkerSigner(session, pool) {
 // approve on their signer, then say so instead of leaving the button spinning.
 const ANSWER_TIMEOUT_MS = 60_000
 
-function answered(promise) {
+function answered(promise, ms = ANSWER_TIMEOUT_MS) {
   let timer
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Your signer didn't answer within a minute. Check that your bunker app is open and online, then try again.")), ANSWER_TIMEOUT_MS) })
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Your signer didn't answer within a minute. Check that your bunker app is open and online, then try again.")), ms) })
   // The pool rejects with an AggregateError when no bunker relay took the request.
   const reached = promise.catch(e => { throw e instanceof AggregateError ? new Error("Couldn't reach your signer's relay. Check your connection, then try again.") : e })
   return Promise.race([reached, timeout]).finally(() => clearTimeout(timer))
 }
 
+// NIP-46 "logout" asks the bunker to drop this client's grant. Not every bunker supports it, so don't wait long;
+// the sign-out screen also tells the user to revoke the connection in their bunker app.
+const LOGOUT_TIMEOUT_MS = 3000
+
 function wrap(b) {
-  return { method: "nip46", signEvent: t => answered(b.signEvent(t)), close: () => b.close() }
+  return {
+    method: "nip46",
+    signEvent: t => answered(b.signEvent(t)),
+    close: () => b.close(),
+    /** -> true if the bunker confirmed it dropped the grant. Always closes the signer. */
+    revoke: () => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()),
+  }
 }

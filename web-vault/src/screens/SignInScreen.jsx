@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks"
 import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
 import { pool } from "../net/pool.js"
+import { AuthPrompt } from "../components/AuthPrompt.jsx"
 
 export function SignInScreen({ onSignedIn }) {
   const [hasExt, setHasExt] = useState(false)
@@ -29,6 +30,7 @@ export function SignInScreen({ onSignedIn }) {
       <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
+      <AuthPrompt />
       {err && <p class="error">{err}</p>}
     </main>
   )

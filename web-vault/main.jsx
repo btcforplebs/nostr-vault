@@ -4,7 +4,7 @@ import { render } from "preact"
 import { useEffect, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
-import { startVault, forgetThisBrowser } from "./src/haven/vault.js"
+import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
@@ -17,6 +17,7 @@ import { SearchScreen } from "./src/screens/SearchScreen.jsx"
 import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
 import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
+import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
 
 const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread"]
@@ -44,6 +45,7 @@ function App() {
   const [account, setAccount] = useState(null)
   const [error, setError] = useState("")
   const [{ route, arg }, setRoute] = useState(routeOf)
+  const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
 
   useEffect(() => { const f = () => setRoute(routeOf()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
@@ -68,14 +70,33 @@ function App() {
   }, [session?.pubkey])
 
   const onSignedIn = ({ signer, session }) => { saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
-  const signOut = async () => {
-    signer?.close?.()
+  const restart = () => location.replace(location.pathname)
+
+  // Another tab signed out (or in as someone else): stop this tab's Haven so that tab's deletes can finish, and
+  // don't write anything back.
+  useEffect(() => session && onSignedOutElsewhere(session.pubkey, async () => {
     logging = false
+    await vault?.haven.stop().catch(() => {})
+    signer?.close?.()
+    restart()
+  }), [session?.pubkey, vault, signer])
+
+  const signOut = async () => {
+    setLeaving({ busy: true })
+    logging = false
+    // A bunker is asked to drop this browser's grant; null means there was no grant to drop (extension).
+    const revoked = signer?.revoke ? await signer.revoke() : (signer?.close?.(), null)
     const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
-    if (failed.length) console.warn("sign-out: couldn't delete", failed)
-    location.replace(location.pathname)
+    if (failed.length || revoked === false) setLeaving({ failed, revoked })
+    else restart()
+  }
+  const retryWipe = async () => {
+    setLeaving(l => ({ ...l, busy: true }))
+    const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
+    setLeaving(l => ({ ...l, busy: false, failed }))
   }
 
+  if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
   if (!session) return <SignInScreen onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
   if (!vault || !account) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Starting your relay…</p></main>
@@ -92,7 +113,26 @@ function App() {
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {(route === "feed" || route === "profile") && <PostButton />}
       <TabBar route={route} pubkey={session.pubkey} />
+      <AuthPrompt />
     </div>
+  )
+}
+
+// Sign-out says plainly what it couldn't do: a store still open (another tab) or a bunker grant still live.
+function SignOutScreen({ busy, failed = [], revoked, onRetry, onDone }) {
+  if (busy && !failed.length) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Signing out…</p></main>
+  return (
+    <main class="screen">
+      <h2>Signing out</h2>
+      {failed.length > 0 && <>
+        <p class="error">{failed.length} of this browser's stores weren't deleted, so your relay's data is still here. This usually means Nostr Vault is open in another tab or window. Close it, then try again.</p>
+        <pre class="muted small">{failed.join("\n")}</pre>
+        <button class="primary" disabled={busy} onClick={onRetry}>{busy ? "Deleting…" : "Try again"}</button>
+      </>}
+      {revoked === false && <p class="muted">Your bunker didn't confirm it dropped this browser's connection. To be sure, revoke it in your bunker app.</p>}
+      {!failed.length && <p class="muted">Everything this browser kept for your account is deleted.</p>}
+      <button disabled={busy} onClick={onDone}>{failed.length ? "Leave it and go to sign-in" : "Done"}</button>
+    </main>
   )
 }
 

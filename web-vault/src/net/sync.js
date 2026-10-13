@@ -1,5 +1,6 @@
 // Network -> in-page Haven. Every event that comes in is written to Haven (the user's own events to the
 // outbox route, follows' notes to /feed); the screens read only from Haven.
+import { verifyEvent } from "nostr-tools/pure"
 import { pool, relayLists, uniq } from "./pool.js"
 
 export const FEED_KINDS = [1, 6]
@@ -77,9 +78,26 @@ export async function readOwn(vault, pubkey, kinds, limit = 100) {
   return evs.sort((a, b) => b.created_at - a.created_at)
 }
 
+/**
+ * What the signer sent back must be the event asked for, validly signed by the signed-in account. Haven doesn't
+ * check the author on its own: the outbox connection is authed with the whitelisted device key, so an event from
+ * another key (an extension switched to another account mid-session) would be stored and published as this one's.
+ */
+export function checkSigned(event, template, pubkey) {
+  if (event?.pubkey !== pubkey) throw new Error("Your signer signed with a different account than the one signed in here. Switch it back, or sign out and sign in again.")
+  if (event.kind !== template.kind || event.content !== template.content || event.created_at !== template.created_at || JSON.stringify(event.tags) !== JSON.stringify(template.tags))
+    throw new Error("Your signer changed the note before signing it, so it wasn't posted.")
+  // A fresh copy: verifyEvent trusts a "verified" flag a signed event object carries, and that flag survives a spread.
+  const { id, created_at, kind, tags, content, sig } = event
+  const copy = { id, pubkey, created_at, kind, tags, content, sig }
+  if (!verifyEvent(copy)) throw new Error("Your signer sent back a note with a bad signature, so it wasn't posted.")
+  return copy
+}
+
 /** Sign, store in Haven's outbox, then send to the write relays. -> { event, local, relays: [{url, ok, message}] } */
-export async function publishNote(vault, signer, content, writeRelays) {
-  const event = await signer.signEvent({ kind: 1, created_at: now(), tags: [], content })
+export async function publishNote(vault, signer, pubkey, content, writeRelays) {
+  const template = { kind: 1, created_at: now(), tags: [], content }
+  const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
   if (!local.ok) throw new Error(`Haven refused the note: ${local.message}`)
   const urls = uniq(writeRelays)

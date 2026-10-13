@@ -11,7 +11,7 @@ export function ComposeScreen({ ctx }) {
   const post = async () => {
     setBusy(true); setErr(""); setResult(null)
     try {
-      setResult(await publishNote(ctx.vault, ctx.signer, text.trim(), ctx.account.relays.write))
+      setResult(await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, text.trim(), ctx.account.relays.write))
       setText("")
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }

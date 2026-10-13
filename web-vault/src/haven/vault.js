@@ -44,23 +44,51 @@ export async function startVault({ pubkey, log = () => {} }) {
 
 // Haven's route databases (haven-go/store_wasm.go), per account since storePrefix. The unprefixed ones are from
 // before that, when every account on this browser shared them; this page has its own origin, so they're its own.
+// Sign-out deletes every "haven:" database the browser lists, so a route added in Go is wiped too; this list is the
+// fallback for browsers without indexedDB.databases() (Firefox before 126).
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed"]
-const storeNames = pubkey => ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
+export async function storeNames(pubkey, idb = indexedDB) {
+  const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
+  const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => /^haven:/.test(n ?? "")) : []
+  return [...new Set([...known, ...listed])]
+}
 // Everything else this page keeps: the device key, the FIPS relay key and paired vaults, and the activity log.
 const LOCAL_KEYS = [DEVICE_KEY, "fips-relay-key", "fips-owners", "nv-log"]
+const SESSION_KEY = "nv-session"
 
 /** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys and the log. -> { failed } */
 export async function forgetThisBrowser({ vault, pubkey, storage = localStorage, idb = indexedDB, waitMs = 5000 }) {
   await vault?.haven.stop().catch(() => {})
+  // Removing the session is also what tells this page's other tabs to stop (see onSignedOutElsewhere).
   clearSession(storage)
   for (const k of LOCAL_KEYS) storage.removeItem(k)
   const failed = []
-  await Promise.all(storeNames(pubkey).map(name => new Promise(resolve => {
-    // "blocked" means a connection is still open; the delete finishes when it closes, so wait a little for that.
+  await Promise.all((await storeNames(pubkey, idb)).map(name => new Promise(resolve => {
+    // "blocked" means a connection is still open (another tab still stopping); the delete finishes when it closes.
     const timer = setTimeout(() => { failed.push(name); resolve() }, waitMs)
     const req = idb.deleteDatabase(name)
     req.onsuccess = () => { clearTimeout(timer); resolve() }
     req.onerror = () => { clearTimeout(timer); failed.push(name); resolve() }
   })))
-  return { failed }
+  // Another tab that was still running while the stores were deleted may have written a key back; drop it again.
+  for (const k of LOCAL_KEYS) storage.removeItem(k)
+  return { failed: failed.sort() }
+}
+
+/**
+ * Calls `onGone` once when another tab of this page signs out, or signs in as someone else, so this tab can stop
+ * Haven (letting that tab's deletes finish) and reload instead of re-creating what was deleted. -> unsubscribe
+ */
+export function onSignedOutElsewhere(pubkey, onGone, target = globalThis) {
+  let fired = false
+  const f = e => {
+    if (fired || (e.key !== SESSION_KEY && e.key !== null)) return // key null: storage.clear()
+    let next = null
+    try { next = JSON.parse(e.newValue ?? "null")?.pubkey ?? null } catch {}
+    if (next === pubkey) return
+    fired = true
+    onGone()
+  }
+  target.addEventListener("storage", f)
+  return () => target.removeEventListener("storage", f)
 }
