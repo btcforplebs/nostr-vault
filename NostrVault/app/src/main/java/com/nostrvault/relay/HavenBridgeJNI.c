@@ -79,6 +79,7 @@ extern char* DeriveTaprootAddressC(const char* hexPubKey);
 extern char* FetchFeeEstimatesC(void);
 extern char* SweepToAddressC(const char* nsecHex, const char* destAddr, int feeRate);
 extern char* NIP46ConnectC(const char* clientSK, const char* bunkerURL);
+extern char* NIP46ConnectBackgroundC(const char* clientSK, const char* bunkerURL);
 extern void NIP46DisconnectC(void);
 extern char* NIP46SignEventC(const char* eventJSON);
 extern char* NIP46GetPublicKeyC(void);
@@ -360,6 +361,17 @@ Java_com_nostrvault_relay_HavenBridge_nip46Connect(JNIEnv *env, jobject thiz,
     const char *cSk = GET_CSTR(env, clientSecretKey);
     const char *cUrl = GET_CSTR(env, bunkerUrl);
     char *result = NIP46ConnectC((char*)cSk, (char*)cUrl);
+    REL_CSTR(env, clientSecretKey, cSk);
+    REL_CSTR(env, bunkerUrl, cUrl);
+    return goStringToJstring(env, result);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46ConnectBackground(JNIEnv *env, jobject thiz,
+        jstring clientSecretKey, jstring bunkerUrl) {
+    const char *cSk = GET_CSTR(env, clientSecretKey);
+    const char *cUrl = GET_CSTR(env, bunkerUrl);
+    char *result = NIP46ConnectBackgroundC((char*)cSk, (char*)cUrl);
     REL_CSTR(env, clientSecretKey, cSk);
     REL_CSTR(env, bunkerUrl, cUrl);
     return goStringToJstring(env, result);

@@ -29,6 +29,8 @@ object NIP46Service {
     /** The bunker calls this service makes, so tests can stand in for the native bridge. */
     interface Bridge {
         fun connect(clientSecretKey: String, bunkerUrl: String): String?
+        /** Logs in without making the session active; a live one is a no-op. */
+        fun connectBackground(clientSecretKey: String, bunkerUrl: String): String?
         fun activate(signerPubkey: String): String?
         fun drop(signerPubkey: String)
         fun ping(): Int
@@ -36,6 +38,7 @@ object NIP46Service {
 
     private object NativeBridge : Bridge {
         override fun connect(clientSecretKey: String, bunkerUrl: String) = HavenBridge.nip46Connect(clientSecretKey, bunkerUrl)
+        override fun connectBackground(clientSecretKey: String, bunkerUrl: String) = HavenBridge.nip46ConnectBackground(clientSecretKey, bunkerUrl)
         override fun activate(signerPubkey: String) = HavenBridge.nip46Activate(signerPubkey)
         override fun drop(signerPubkey: String) = HavenBridge.nip46Drop(signerPubkey)
         override fun ping() = HavenBridge.nip46Ping()
@@ -144,6 +147,40 @@ object NIP46Service {
                         null
                     }
                     else -> accept(pubkey, signer)
+                }
+            }
+        }
+
+    /**
+     * Opens [cfg]'s bunker session in the background: the owner's bunker while
+     * another account is active, so the owner's relay AUTH ([signEventWith])
+     * has a session to sign through after a restart. The session never
+     * becomes the active signer and [isConnected] / [connectedPubkey] are
+     * untouched; a live session is a no-op. A signer answering for any key
+     * but [expectedPubkey] is dropped. True when the session is live.
+     */
+    suspend fun connectInBackground(cfg: AccountBunkerConfig, expectedPubkey: String): Boolean =
+        connectMutex.withLock {
+            withContext(Dispatchers.IO) {
+                val signer = signerKey(cfg)
+                val pubkey = try {
+                    bridge.connectBackground(cfg.clientSecretKey, cfg.bunkerURI)
+                } catch (e: Exception) {
+                    Log.e(TAG, "NIP-46 background connect failed: ${e.message}")
+                    null
+                }
+                when {
+                    pubkey == null -> {
+                        _lastError.value = "Could not reach the bunker"
+                        false
+                    }
+                    pubkey != expectedPubkey -> {
+                        if (signer.isNotEmpty()) bridge.drop(signer)
+                        _lastError.value = "This bunker signs as ${pubkey.take(8)}…, not this account"
+                        Log.e(TAG, "NIP-46 background connect rejected: signer answered as ${pubkey.take(8)}, expected ${expectedPubkey.take(8)}")
+                        false
+                    }
+                    else -> true
                 }
             }
         }

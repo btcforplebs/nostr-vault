@@ -24,13 +24,19 @@ class NIP46SessionReuseTest {
         val sessions: MutableMap<String, String> = mutableMapOf(),
         var pingResult: Int = 0,
         val connectAnswersAs: String? = null,
+        val backgroundAnswersAs: String? = null,
     ) : NIP46Service.Bridge {
         val dropped = mutableListOf<String>()
         var connects = 0
+        var backgroundConnects = 0
         var pings = 0
         override fun connect(clientSecretKey: String, bunkerUrl: String): String? {
             connects++
             return connectAnswersAs
+        }
+        override fun connectBackground(clientSecretKey: String, bunkerUrl: String): String? {
+            backgroundConnects++
+            return backgroundAnswersAs
         }
         override fun activate(signerPubkey: String): String? = sessions[signerPubkey]
         override fun drop(signerPubkey: String) {
@@ -57,6 +63,34 @@ class NIP46SessionReuseTest {
         assertEquals(0, fake.pings)
         assertEquals(0, fake.connects)
         assertTrue(fake.dropped.isEmpty())
+    }
+
+    /**
+     * After a restart with another account active, the owner's bunker is
+     * opened in the background for the owner's relay AUTH: the active
+     * account's signer stays the active one, and the owner never goes
+     * through the foreground login that would have taken it over.
+     */
+    @Test fun ownerConnectedInTheBackgroundLeavesTheActiveSignerActive() = runBlocking {
+        val fake = FakeBridge(connectAnswersAs = otherHex, backgroundAnswersAs = ownerHex)
+        NIP46Service.bridge = fake
+        assertEquals(otherHex, NIP46Service.connectForAccount(cfg(otherSigner), expectedPubkey = otherHex))
+
+        assertTrue(NIP46Service.connectInBackground(cfg(ownerSigner), expectedPubkey = ownerHex))
+        assertEquals(1, fake.backgroundConnects)
+        assertEquals(1, fake.connects)
+        assertTrue(NIP46Service.isConnected.value)
+        assertEquals(otherHex, NIP46Service.connectedPubkey)
+        assertEquals(otherSigner, NIP46Service.activeSignerKey)
+        assertTrue(fake.dropped.isEmpty())
+    }
+
+    @Test fun backgroundOwnerSignerAnsweringForAnotherKeyIsDropped() = runBlocking {
+        val fake = FakeBridge(backgroundAnswersAs = otherHex)
+        NIP46Service.bridge = fake
+        assertFalse(NIP46Service.connectInBackground(cfg(ownerSigner), expectedPubkey = ownerHex))
+        assertEquals(listOf(ownerSigner), fake.dropped)
+        assertFalse(NIP46Service.isConnected.value)
     }
 
     @Test fun sessionIsFoundByTheBunkerHostNotTheAccountKey() = runBlocking {

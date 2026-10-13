@@ -201,6 +201,15 @@ object HavenBridge {
     /** Connect to a NIP-46 bunker. Returns the signer's public key hex, or null on failure. */
     external fun nip46Connect(clientSecretKey: String, bunkerUrl: String): String?
 
+    /**
+     * Logs in to a bunker and keeps its session in the background, without
+     * making it the active signer: the owner's bunker while another account
+     * is active, so the owner's relay AUTH ([nip46SignEventWith]) has a
+     * session to sign through. A live session for that signer is a no-op.
+     * Returns its user pubkey, or null on failure.
+     */
+    external fun nip46ConnectBackground(clientSecretKey: String, bunkerUrl: String): String?
+
     /** Disconnect from the NIP-46 bunker. */
     external fun nip46Disconnect()
 
