@@ -2,6 +2,7 @@ import { WorkerRelayInterface } from "./src/worker-relay"
 import WorkerVite from "./src/worker-relay/worker.ts?worker"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
+import { mountFipsPanel } from "./src/fips/panel.js"
 
 const $ = id => document.getElementById(id)
 const LS = localStorage
@@ -36,12 +37,15 @@ if (!skHex) { skHex = bytesToHex(generateSecretKey()); LS.setItem("sk", skHex) }
 const sk = hexToBytes(skHex), pk = getPublicKey(sk)
 
 const relay = new WorkerRelayInterface(new WorkerVite())
+// Events the page stores itself, forwarded to live FIPS subscriptions once FIPS is running.
+let onInsert = () => {}
 let count = 0, seq = Number(LS.getItem("seq") || 0)
 
 async function addEvent(tag = "gen") {
   const ev = finalizeEvent({ kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [["t", "nv-web-relay"]], content: `${tag} #${++seq} ${new Date().toISOString()}` }, sk)
   LS.setItem("seq", seq)
-  await relay.event(ev)
+  const r = await relay.event(ev)
+  if (r.ok) onInsert(ev)
 }
 async function refreshCount() { count = await relay.count(["REQ", "c", { kinds: [1], authors: [pk] }]); $("count").textContent = $("scount").textContent = count }
 
@@ -125,6 +129,7 @@ async function info() {
     log("selftest", st)
     log("boot", { initMs: Date.now() - t, count, persistGranted, quotaMB: i.quotaMB, usageMB: i.usageMB, prev: i.prevSession })
     $("status").textContent = "relay ready"
+    mountFipsPanel({ relay, log, onInsertHook: f => (onInsert = f) })
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
   } catch (e) { $("status").textContent = "INIT FAILED: " + e; log("init-error", { err: String(e) }); return }
 
