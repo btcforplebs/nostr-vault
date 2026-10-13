@@ -175,8 +175,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillResignActive(_ scene: UIScene) {
         // Back to system push notifications once the app leaves the foreground.
         LocalNotificationService.shared.appInForeground = false
-        // The lane is off screen now: file the pills still up.
-        RelayActivityNotificationManager.shared.hostLost()
 
         // The absence starts now — recorded on the way out as well as on the way
         // in, so a long session doesn't read as a long absence.
@@ -254,6 +252,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        // The lane is off screen now: file the pills still up. Not on resign
+        // active: Control Center, the app switcher or an alert leaves the
+        // app on screen, and a pill being read there is not lost.
+        RelayActivityNotificationManager.shared.hostLost()
+
         // The NIP-46 signer session is deliberately kept: approving a request
         // means switching to the signer app, and disconnecting here killed the
         // request the moment the user left to approve it. Outstanding requests

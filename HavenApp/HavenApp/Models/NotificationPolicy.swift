@@ -150,8 +150,8 @@ enum NotificationPolicy {
         case trimmed
         /// The user tapped it.
         case tapped
-        /// Its surface went away under it: the Mac window closed, or the app
-        /// left the front.
+        /// Its surface went away under it: the Mac window closed or went to
+        /// the Dock, or the app went to the background.
         case hostLost
     }
 
@@ -161,22 +161,40 @@ enum NotificationPolicy {
     /// Whether an arrival pill must be filed in Notification Center, so it can
     /// still be found. The lane shows two pills at most, so in a burst one can
     /// wait its whole life unseen, or draw for a moment before it goes.
+    /// Losing its surface is no different: one that was read stays read, and
+    /// one that only flashed (a window closed under it) is filed.
     /// - Parameter drawnFor: how long the lane drew it in total.
     static func filesPill(end: PillEnd, drawnFor: TimeInterval) -> Bool {
         switch end {
-        case .tapped:              return false
-        case .hostLost:            return true
-        case .timedOut, .trimmed:  return drawnFor < pillReadableAfter
+        case .tapped:                         return false
+        case .timedOut, .trimmed, .hostLost:  return drawnFor < pillReadableAfter
         }
+    }
+
+    /// The title a filed pill carries. A DM's sender stays in the app too.
+    static func filedPillTitle(type: String, title: String) -> String {
+        isDM(type) ? dmFiledTitle : title
     }
 
     /// The body a filed pill carries. A DM's decrypted text never leaves the
     /// app this way, only the generic line.
     static func filedPillBody(type: String, body: String) -> String {
-        type == "dm" || type == "giftwrap" ? dmFiledBody : body
+        isDM(type) ? dmFiledBody : body
     }
 
+    private static func isDM(_ type: String) -> Bool { type == "dm" || type == "giftwrap" }
+
+    static let dmFiledTitle = "New message"
     static let dmFiledBody = "You have a new encrypted message"
+
+    /// The event a delivered alert is about, keyed like `dedupKey`: an APNs
+    /// push names it `event_id`, a relay marker's alert `notif_id`. Nil for
+    /// an alert about no single event.
+    static func eventKey(of userInfo: [AnyHashable: Any]) -> String? {
+        guard let id = userInfo["event_id"] as? String ?? userInfo["notif_id"] as? String,
+              !id.isEmpty else { return nil }
+        return dedupKey(eventId: id)
+    }
 
     /// A decrypted DM as notification text: one line, cut to fit a banner.
     /// Nil when there is nothing to read (an empty message), so the caller

@@ -13,6 +13,7 @@ class AppDelegate: NSObject, ObservableObject {
     // Focus observers are owned for the lifetime of the app, not of a window.
     private var focusResignObserver: NSObjectProtocol?
     private var focusActivateObserver: NSObjectProtocol?
+    private var miniaturizeObserver: NSObjectProtocol?
     #endif
 
     @MainActor
@@ -128,6 +129,19 @@ class AppDelegate: NSObject, ObservableObject {
                 NetworkSyncService.shared.start()
                 RelayProcessManager.shared.enterForeground()
                 NostrService.shared.enterForeground()
+            }
+        }
+
+        // A window sent to the Dock stays mounted, so its pills would keep
+        // drawing unseen and pass as read.
+        miniaturizeObserver = center.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            MainActor.assumeIsolated {
+                guard let window = note.object as? NSWindow, MacWindow.isMainWindow(window) else { return }
+                RelayActivityNotificationManager.shared.hostLost()
             }
         }
     }

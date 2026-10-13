@@ -15,8 +15,11 @@ struct RelayActivityNotification: Identifiable {
     let body: String
     let color: Color
     let onTap: () -> Void
-    /// Runs if the pill leaves without the lane ever drawing it, to file the
-    /// alert in Notification Center instead. Nil when it is already there.
+    /// Runs once the pill leaves read: tapped, or drawn long enough
+    /// (`NotificationPolicy.filesPill`).
+    let onRead: () -> Void
+    /// Runs if the pill leaves unread, to file the alert in Notification
+    /// Center instead. Nil when it is already there.
     let onMissed: (() -> Void)?
 
     /// The pill's id in the lane.
@@ -33,9 +36,10 @@ final class RelayActivityNotificationManager: ObservableObject {
     @Published var notifications: [RelayActivityNotification] = []
 
     func show(icon: String, title: String, body: String, color: Color,
-              onTap: @escaping () -> Void, onMissed: (() -> Void)? = nil) {
+              onTap: @escaping () -> Void, onRead: @escaping () -> Void = {},
+              onMissed: (() -> Void)? = nil) {
         let notification = RelayActivityNotification(icon: icon, title: title, body: body, color: color,
-                                                     onTap: onTap, onMissed: onMissed)
+                                                     onTap: onTap, onRead: onRead, onMissed: onMissed)
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
@@ -59,9 +63,10 @@ final class RelayActivityNotificationManager: ObservableObject {
         }
     }
 
-    /// The surface these pills draw on went away: the app left the front, or
-    /// the Mac's main window closed. Every pill still up is filed, read or
-    /// not, and cleared, so none is lost with the window.
+    /// The surface these pills draw on went away: the app went to the
+    /// background, or the Mac's main window closed or went to the Dock. Every
+    /// pill still up is cleared; the unread ones are filed, so none is lost
+    /// with the window.
     func hostLost() {
         guard !notifications.isEmpty else { return }
         notifications.forEach { fileIfUnread($0, end: .hostLost) }
@@ -72,10 +77,11 @@ final class RelayActivityNotificationManager: ObservableObject {
     /// out unseen or draw only for a moment. Those go to Notification Center.
     /// Asked before removal, while the lane still knows how long it drew.
     private func fileIfUnread(_ notification: RelayActivityNotification, end: NotificationPolicy.PillEnd) {
-        guard let onMissed = notification.onMissed,
-              NotificationPolicy.filesPill(end: end, drawnFor: PillLane.shared.drawnFor(notification.laneId))
-        else { return }
-        onMissed()
+        if NotificationPolicy.filesPill(end: end, drawnFor: PillLane.shared.drawnFor(notification.laneId)) {
+            notification.onMissed?()
+        } else {
+            notification.onRead()
+        }
     }
 }
 

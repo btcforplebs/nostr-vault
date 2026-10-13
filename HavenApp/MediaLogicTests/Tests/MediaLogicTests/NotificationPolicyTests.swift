@@ -144,10 +144,24 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertTrue(NotificationPolicy.filesPill(end: .trimmed, drawnFor: NotificationPolicy.pillReadableAfter - 0.01))
     }
 
-    /// Losing the window or the foreground files it, however long it drew.
-    func testPillHostLostIsFiled() {
+    /// Losing the window or the foreground follows the read rule: a pill
+    /// that only flashed is filed, one that was read is not filed again.
+    func testPillHostLostFollowsTheReadRule() {
         XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 0))
-        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 10))
+        XCTAssertTrue(NotificationPolicy.filesPill(end: .hostLost, drawnFor: NotificationPolicy.pillReadableAfter - 0.01))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .hostLost, drawnFor: NotificationPolicy.pillReadableAfter))
+        XCTAssertFalse(NotificationPolicy.filesPill(end: .hostLost, drawnFor: 10))
+    }
+
+    /// A push and the relay's alert for one event share a key.
+    func testEventKeyMatchesPushAndMarker() {
+        let id = "AB12" + String(repeating: "0", count: 60)
+        let push: [AnyHashable: Any] = ["event_id": id, "event_kind": 1]
+        let marker: [AnyHashable: Any] = ["notif_id": id.lowercased(), "notif_type": "mention"]
+        XCTAssertEqual(NotificationPolicy.eventKey(of: push), NotificationPolicy.eventKey(of: marker))
+        XCTAssertEqual(NotificationPolicy.eventKey(of: push), NotificationPolicy.dedupKey(eventId: id))
+        XCTAssertNil(NotificationPolicy.eventKey(of: ["nv_deeplink": "nostrvault://shareinbox"]))
+        XCTAssertNil(NotificationPolicy.eventKey(of: ["notif_id": ""]))
     }
 
     /// Read or tapped: nothing to file.
@@ -159,6 +173,9 @@ final class NotificationPolicyTests: XCTestCase {
 
     /// A filed DM carries the generic line, never its decrypted text.
     func testFiledDMIsGeneric() {
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "dm", title: "Message from Alice"), NotificationPolicy.dmFiledTitle)
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "giftwrap", title: "Message from Alice"), NotificationPolicy.dmFiledTitle)
+        XCTAssertEqual(NotificationPolicy.filedPillTitle(type: "mention", title: "Alice mentioned you"), "Alice mentioned you")
         XCTAssertEqual(NotificationPolicy.filedPillBody(type: "giftwrap", body: "meet at 6"), NotificationPolicy.dmFiledBody)
         XCTAssertEqual(NotificationPolicy.filedPillBody(type: "dm", body: "meet at 6"), NotificationPolicy.dmFiledBody)
         XCTAssertEqual(NotificationPolicy.filedPillBody(type: "mention", body: "gm"), "gm")
