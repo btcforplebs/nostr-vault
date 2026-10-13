@@ -12,8 +12,9 @@ extension TrustWebView {
         return TrustMap.pickFaces(candidates) { filterLit?.contains($0) != false && pictureRenders($0) }
     }
 
-    /// Pictures on the outer shell for the picked layer (Close or Further
-    /// out), most vouched first. Only pictures that have loaded.
+    /// Pictures past your follows for the picked layer, most vouched first:
+    /// a few for Everyone, many for Close or Further out. Only pictures that
+    /// have loaded.
     var layerFaces: [String] {
         guard isWOTTab, frame?.center == me else { return [] }
         // A filter's people take the outer faces first, as long as the layer lights them.
@@ -21,7 +22,7 @@ extension TrustWebView {
             return TrustMap.pickFaces(filterCandidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
         }
         guard let candidates = layerCandidates[layer] else { return [] }
-        return TrustMap.pickFaces(candidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
+        return TrustMap.pickFaces(candidates, renders: pictureRenders, count: TrustMap.faceCount(for: layer))
     }
 
     // MARK: - Filters
@@ -195,9 +196,10 @@ extension TrustWebView {
             let close = counts.map { v in Set(shell.filter { (v[$0] ?? 0) >= TrustMap.closeVouches }) } ?? []
             var layerFaces: [TrustMap.Layer: [String]] = [:]
             if wot {
-                for layer in [TrustMap.Layer.close, .furtherOut] {
+                for layer in [TrustMap.Layer.everyone, .close, .furtherOut] {
                     layerFaces[layer] = TrustMap.layerFaceCandidates(layer, me: me, follows: follows,
-                                                                     web: graph, vouches: counts)
+                                                                     web: graph, vouches: counts,
+                                                                     count: TrustMap.faceCandidateCount(for: layer))
                 }
             }
             await MainActor.run {

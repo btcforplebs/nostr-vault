@@ -40,8 +40,11 @@ final class GlobeScene: ObservableObject {
     private var faces: [String] = []
     /// Faces that are follows on someone's own globe: drawn in the ring's colour.
     private var ringFaceSet: Set<String> = []
-    /// Faces on the outer shell for the picked layer: drawn in the shell's colour.
+    /// Faces on the outer shells for the picked layer: drawn in the shell's colour.
     private var layerFaceSet: Set<String> = []
+    /// With Everyone picked the shells' faces are a small, dim few that give
+    /// way to your follows' faces.
+    private var dimLayerFaces = false
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
@@ -103,7 +106,11 @@ final class GlobeScene: ObservableObject {
         // its direction, so re-centering only glides people in or out.
         let bridgeSet = Set(frame.bridges)
         var want: [String: (Kind, Double)] = [:]
-        for key in haze { want[key] = (closeHaze.contains(key) ? .closeHaze : .haze, TrustMap.outerRadius) }
+        // Close people sit on their own shell, nearer than the rest.
+        func shell(close: Bool) -> (Kind, Double) {
+            close ? (.closeHaze, TrustMap.closeRadius) : (.haze, TrustMap.outerRadius)
+        }
+        for key in haze { want[key] = shell(close: closeHaze.contains(key)) }
         if frame.center != me {
             for key in myFollows { want[key] = (.haze, TrustMap.outerRadius) }
             want[me] = (.bridge, TrustMap.outerRadius)
@@ -124,8 +131,9 @@ final class GlobeScene: ObservableObject {
         if let tracedStar, want[tracedStar] == nil { want[tracedStar] = (.bridge, TrustMap.outerRadius) }
         // A layer's face may be past the shell's cap: it still gets its star.
         if frame.center == me {
-            let kind: Kind = layer == .close ? .closeHaze : .haze
-            for key in layerFaces where want[key] == nil { want[key] = (kind, TrustMap.outerRadius) }
+            for key in layerFaces where want[key] == nil {
+                want[key] = shell(close: layer == .close || closeHaze.contains(key))
+            }
         }
 
         for i in keys.indices where want[keys[i]] == nil {
@@ -173,6 +181,7 @@ final class GlobeScene: ObservableObject {
             ringFaceSet.insert(key)
         }
         layerFaceSet = []
+        dimLayerFaces = layer == .everyone
         if frame.center == me {
             for key in layerFaces where taken.insert(key).inserted {
                 shown.append(key)
@@ -430,6 +439,8 @@ final class GlobeScene: ObservableObject {
     private static let hazeColor = Color(red: 0.62, green: 0.55, blue: 0.9)
     /// Warm amber for the threads, lighter than the glow behind them.
     private static let threadColor = Color(red: 1, green: 0.66, blue: 0.3)
+    /// How bright Everyone's few faces past your follows are drawn.
+    private static let dimFace = 0.55
     /// Star brightness is rounded to this many steps, so each kind of star
     /// is a handful of fills however many people there are. Fine enough that
     /// the faint haze keeps its front-to-back depth.
@@ -566,29 +577,32 @@ final class GlobeScene: ObservableObject {
         fill(.hot, accent)
 
         // Faces, back to front: bridges, chain steps and the author.
-        var drawn: [(key: String, p: Projected, tint: Color, size: Double)] = []
+        var drawn: [(key: String, p: Projected, tint: Color, size: Double, dim: Bool)] = []
         for key in faces {
             guard let p = position(key, project) else { continue }
             if traceTarget == nil, ringFaceSet.contains(key) {
-                drawn.append((key, p, Self.ringColor, 14))
+                drawn.append((key, p, Self.ringColor, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
-                drawn.append((key, p, Self.hazeColor, 14))
+                drawn.append((key, p, Self.hazeColor, dimLayerFaces ? 10 : 14, dimLayerFaces))
             } else {
-                drawn.append((key, p, accent, 15))
+                drawn.append((key, p, accent, 15, false))
             }
         }
-        if let authorP { drawn.append((author, authorP, .yellow, 24)) }
+        if let authorP { drawn.append((author, authorP, .yellow, 24, false)) }
         // Faces the picked layer hides take no seat, so the lit ones get the room.
         drawn = drawn.filter { face in index[face.key].map { alpha[$0] * weight($0) > 0.02 } ?? true }
         drawn.sort { $0.p.depth < $1.p.depth }
 
         // Seats: a face only where it covers no other face and not the core;
-        // the rest stay stars until the globe turns them some room.
-        let spots = drawn.reversed().filter { $0.p.depth >= -0.1 || $0.key == author }.map {
+        // the rest stay stars until the globe turns them some room. Dim faces
+        // are seated last and hold no seat, so they never push out a bright one.
+        let front = drawn.reversed().filter { $0.p.depth >= -0.1 || $0.key == author }
+        let spots = (front.filter { !$0.dim } + front.filter(\.dim)).map {
             TrustMap.FaceSpot(key: $0.key, x: $0.p.point.x, y: $0.p.point.y,
                               r: $0.size * k * $0.p.scale * min(zoom, 1.8))
         }
-        let seats = TrustMap.seatFaces(spots, always: [author], kept: seated,
+        let dimKeys = Set(drawn.filter(\.dim).map(\.key))
+        let seats = TrustMap.seatFaces(spots, always: [author], kept: seated.subtracting(dimKeys),
                                        blocked: [TrustMap.FaceSpot(key: center, x: core.point.x, y: core.point.y, r: coreR)])
         seated = seats
 
@@ -598,7 +612,7 @@ final class GlobeScene: ObservableObject {
             + spots.filter { seats.contains($0.key) }.map { CGRect(x: $0.x - $0.r, y: $0.y - $0.r, width: 2 * $0.r, height: 2 * $0.r) }
         var showLabel = Set<String>()
         let labelCap = zoom < 1.5 ? 9 : 40
-        for face in drawn.reversed() where face.p.depth > 0.15 && seats.contains(face.key) && showLabel.count < labelCap {
+        for face in drawn.reversed() where face.p.depth > 0.15 && !face.dim && seats.contains(face.key) && showLabel.count < labelCap {
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             let box = CGRect(x: face.p.point.x - 46, y: face.p.point.y + r + 2, width: 92, height: 16)
             if face.key == author || !placed.contains(where: { $0.intersects(box) }) {
@@ -608,7 +622,7 @@ final class GlobeScene: ObservableObject {
         }
         for face in drawn {
             let a = min(1, alpha[index[face.key] ?? centerIndex] * weight(index[face.key] ?? centerIndex))
-            let dim = (0.35 + 0.65 * face.p.front) * a
+            let dim = (0.35 + 0.65 * face.p.front) * a * (face.dim ? Self.dimFace : 1)
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             if face.p.depth < -0.1 && face.key != author {
                 // Behind the globe: a warm ember, not a face.
