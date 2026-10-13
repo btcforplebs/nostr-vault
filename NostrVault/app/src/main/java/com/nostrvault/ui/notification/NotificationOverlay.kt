@@ -39,7 +39,9 @@ fun NotificationOverlay(
     val notifications by notificationManager.notifications.collectAsState()
     val banner by InAppBannerBus.current.collectAsState()
 
-    LaunchedEffect(banner?.id) {
+    // Keyed by the whole banner: a folded followers' pill whose count went
+    // up in place gets its full time again.
+    LaunchedEffect(banner) {
         val id = banner?.id ?: return@LaunchedEffect
         delay(ACTIVITY_VISIBLE_MS)
         InAppBannerBus.dismiss(id, PillEnd.TIMED_OUT)

@@ -16,6 +16,7 @@ import com.nostrvault.service.InAppBanner
 import com.nostrvault.service.InAppBannerBus
 import com.nostrvault.service.PillEnd
 import com.nostrvault.ui.navigation.DeepLinkRouter
+import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.theme.NostrVaultIcons
 
@@ -166,10 +167,11 @@ fun FeedbackPill(feedback: FeedbackNotification) {
 fun ActivityPill(banner: InAppBanner) {
     val icon = when (banner.type) {
         "dm", "giftwrap" -> NostrVaultIcons.Messages
-        "mention" -> NostrVaultIcons.At
+        "mention", "quote" -> NostrVaultIcons.At
         "reply" -> NostrVaultIcons.Reply
         "zap" -> NostrVaultIcons.Zap
         "reaction", "like" -> NostrVaultIcons.HeartFilled
+        "repost" -> NostrVaultIcons.Repost
         "follow", "followers" -> NostrVaultIcons.PersonAdd
         else -> NostrVaultIcons.Notifications
     }
@@ -179,8 +181,12 @@ fun ActivityPill(banner: InAppBanner) {
         label = label,
         tone = PillTone.ACCENT,
         onClick = {
-            DeepLinkRouter.fromNotification(banner.type, banner.id, banner.author, banner.npub)
-                ?.let { PendingDeepLink.post(it) }
+            DeepLinkRouter.fromNotification(
+                banner.type, banner.id, banner.author, banner.npub,
+                // The post itself, as the tray entry carries it: opens with nothing to fetch.
+                event = banner.carried[NotificationNote.EVENT_EXTRA],
+                target = banner.carried[NotificationNote.TARGET_EXTRA],
+            )?.let { PendingDeepLink.post(it) }
             InAppBannerBus.dismiss(banner.id, PillEnd.TAPPED)
         },
     )
