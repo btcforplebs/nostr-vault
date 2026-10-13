@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>idbstore test</title>
+<script src="wasm_exec.js"></script>
+<script>
+  // Driven by chrome_exec.mjs: it sets window.__run, then reads window.__exit.
+  window.__run = async ({ args, env }) => {
+    const phase = new URLSearchParams(location.hash.slice(1)).get("phase") || "1";
+    const go = new Go();
+    go.argv = ["test.wasm", ...args];
+    go.env = { ...env, IDBSTORE_PHASE: phase };
+    go.exit = (code) => { window.__exit = code; };
+    const t0 = performance.now();
+    const { instance } = await WebAssembly.instantiateStreaming(fetch("test.wasm"), go.importObject);
+    window.__instantiateMs = performance.now() - t0;
+    await go.run(instance);
+    if (window.__exit === undefined) window.__exit = 0;
+  };
+</script>

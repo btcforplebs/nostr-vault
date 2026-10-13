@@ -1,0 +1,3 @@
+#!/bin/sh
+# go test -exec target: runs a GOOS=js GOARCH=wasm test binary in headless Chrome.
+exec node "$(dirname "$0")/chrome_exec.mjs" "$@"
