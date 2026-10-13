@@ -179,6 +179,12 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
             installKeyMonitor()
             #endif
         }
+        // Their outbox relays, once found, are where most people's articles
+        // are: ask those too.
+        .onReceive(nostrService.$outboxRelays.map { [pubkey] in $0[pubkey] }.removeDuplicates()) { outbox in
+            guard outbox != nil else { return }
+            extras.load(pubkey: pubkey, relays: loader.extrasRelays)
+        }
         .onChange(of: extras.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.isLoading) { _, _ in revealLateSections() }
         .onChange(of: shop.listings.isEmpty) { _, _ in revealLateSections() }

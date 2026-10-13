@@ -125,14 +125,17 @@ extension FeedService {
 
         // FeedNote.init handles kind 6 JSON embedding internally: it swaps to the inner
         // author/content/tags and sets repostedBy. Passing the raw event through is enough.
+        // It also holds a generic repost (16) as a 6.
+        if kind == GenericRepost.kind && !GenericRepost.isShown(tags: tags, content: content) { return }
+        let feedKind = kind == GenericRepost.kind ? 6 : kind
         let note = FeedNote(
             id: id,
             pubkey: pubkey,
             content: content,
             createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
             tags: tags,
-            kind: kind,
-            repostedBy: kind == 6 ? pubkey : nil
+            kind: feedKind,
+            repostedBy: feedKind == 6 ? pubkey : nil
         )
 
         // Filter out obvious spam/noise from being processed. A repost that
@@ -149,13 +152,14 @@ extension FeedService {
         // For kind 1/30023: serialize the full event dict (includes sig).
         // For kind 6 with embedded content: the content IS the inner event's JSON.
         var rawEntries: [(id: String, json: String)] = []
-        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind
+            || kind == FeedNote.pictureKind || kind == FeedNote.highlightKind {
             if let data = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let json = String(data: data, encoding: .utf8) {
                 rawEntries.append((id: id, json: json))
             }
         }
-        if kind == 6, !content.isEmpty,
+        if feedKind == 6, !content.isEmpty,
            let innerData = content.data(using: .utf8),
            let inner = try? JSONSerialization.jsonObject(with: innerData) as? [String: Any],
            let innerId = inner["id"] as? String {
@@ -172,8 +176,8 @@ extension FeedService {
             // Fetch their profile too so the reposted card renders with the right name/avatar.
             if note.pubkey != pubkey { acc.profiles.append(note.pubkey) }
 
-            // Track engagement: reposts (kind 6)
-            if kind == 6 {
+            // Track engagement: reposts (kind 6 and 16)
+            if feedKind == 6 {
                 if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
                     acc.repostTargets.append(targetId)
                 }

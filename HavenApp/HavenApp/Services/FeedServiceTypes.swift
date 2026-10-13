@@ -53,13 +53,18 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     /// event. `createdAt` stays the repost's own time, which orders the feed.
     let originalCreatedAt: Date?
 
-    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int, repostedBy: String? = nil) {
+    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind rawKind: Int, repostedBy: String? = nil) {
+        // A generic repost (16) is a repost of anything but a text note.
+        // Every repost rule in the app (reposter-follows membership, the
+        // reposts toggle, the original fetched and drawn as its own kind)
+        // is the same, so it is held as a 6 from here on.
+        let kind = rawKind == GenericRepost.kind ? 6 : rawKind
+        let repostedBy = rawKind == GenericRepost.kind ? (repostedBy ?? pubkey) : repostedBy
         // NIP-18: a kind 6 repost SHOULD embed the full original event as stringified JSON
         // in `content`. When present, swap to the inner author/content/tags so the UI renders
         // the reposted note directly. The outer pubkey becomes `repostedBy`.
         // Always compute `repostedEventId` from the OUTER e-tag before any swap.
-        let outerETags = tags.filter { $0.count >= 2 && $0[0] == "e" }
-        let outerRepostedEventId = kind == 6 ? outerETags.first?[1] : nil
+        let outerRepostedEventId = kind == 6 ? GenericRepost.target(tags: tags) : nil
 
         var resolvedPubkey = pubkey
         var resolvedContent = content
@@ -67,7 +72,14 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         var resolvedRepostedBy = repostedBy
         var resolvedOriginalCreatedAt: Date?
 
-        if kind == 6,
+        // An embedded event of any other kind (an article, picture, poll or
+        // highlight carried by a generic repost) is not a text note: it must
+        // be drawn as its own kind, so the wrapper stays bare and the row
+        // fetches the original, verified, like any bare repost.
+        let embedsOtherKind = kind == 6 && (GenericRepost.embeddedKind(content: content) ?? 1) != 1
+        if embedsOtherKind { resolvedContent = "" }
+
+        if kind == 6, !embedsOtherKind,
            let data = content.data(using: .utf8),
            let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let innerContent = inner["content"] as? String,
@@ -121,7 +133,10 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         var seen = Set<String>()
         self.mediaURLs = (contentURLs + imetaURLs).filter { seen.insert($0.absoluteString).inserted }
         self.linkURLs = Self.parseLinkURLs(from: resolvedContent, excludingMedia: self.mediaURLs)
-        self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent)
+        // A highlight's source rides the quote path: fetched, drawn and
+        // opened like a quoted note.
+        let highlightSource = kind == Self.highlightKind ? FeedHighlight.sourceReference(tags: resolvedTags) : nil
+        self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent) + [highlightSource].compactMap { $0 }
         MediaHints.shared.register(tags: resolvedTags)
     }
 
@@ -649,4 +664,17 @@ final class MediaHints: @unchecked Sendable {
         guard let url, hint != MediaHint() else { return nil }
         return (url, hint)
     }
+}
+
+extension FeedNote {
+    /// NIP-68 picture post.
+    static let pictureKind = 20
+    /// NIP-84 highlight: a passage someone marked in an article or page.
+    static let highlightKind = 9802
+
+    /// Every kind the timelines (Following, Discovery, Global, Popular)
+    /// ask for and draw as a card. The relay's feed cache holds the same set
+    /// (`haven-go/feedsync.go` `feedKinds`).
+    static let timelineKinds = [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind,
+                                GenericRepost.kind, pictureKind, highlightKind]
 }

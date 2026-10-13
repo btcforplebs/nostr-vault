@@ -60,10 +60,10 @@ extension FeedService {
 
     /// Injects an external event into the local relay. Safe to call from any
     /// context — hops to MainActor internally. Filters to feed-relevant kinds
-    /// (1, 6, 7, 30023, 9735) and deduplicates via the shared injectedEventIds set.
+    /// (`FeedNote.timelineKinds`, 7, 9735) and deduplicates via the shared injectedEventIds set.
     nonisolated func injectExternalEvent(_ eventDict: [String: Any], eventId: String) {
         guard let kind = eventDict["kind"] as? Int,
-              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
+              (FeedNote.timelineKinds + [7, 9735]).contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(eventDict, eventId: eventId)
@@ -82,7 +82,7 @@ extension FeedService {
 
         // Only inject feed-relevant event kinds (notes, reactions, reposts, zaps)
         guard let kind = ev["kind"] as? Int,
-              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
+              (FeedNote.timelineKinds + [7, 9735]).contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(ev, eventId: eventId)

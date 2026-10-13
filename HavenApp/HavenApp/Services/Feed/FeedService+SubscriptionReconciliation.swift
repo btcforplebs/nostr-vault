@@ -25,7 +25,7 @@ extension FeedService {
         switch feedMode {
         case .articles: return [30023]
         case .polls: return [NIP88Poll.kind]
-        default: return [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind]
+        default: return FeedNote.timelineKinds
         }
     }
 

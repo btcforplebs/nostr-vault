@@ -37,7 +37,7 @@ extension FeedService {
     }
 
     /// Fetches an addressable event by its naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
-    private func fetchMissingNoteByNaddr(coordinate: String) {
+    private func fetchMissingNoteByNaddr(coordinate: String, afterRelayList: Bool = false) {
         guard let (kind, pubkey, dTag) = QuoteReference.parseCoordinate(coordinate) else { return }
 
         let filter: [String: Any] = ["kinds": [kind], "authors": [pubkey], "#d": [dTag], "limit": 1]
@@ -49,6 +49,22 @@ extension FeedService {
         var candidates: [URL] = []
         if let local = localRelayURL { candidates.append(local) }
         candidates.append(contentsOf: externalRelayURLs)
+        // The author's own relays: most articles are only there (of 25
+        // article writers followed on 2026-10-13, most had nearly all their
+        // articles on their outbox and few on the common relays). Not known
+        // yet: look it up, then ask those once it has come.
+        if let outbox = NostrService.shared.outboxRelays[pubkey] {
+            candidates.append(contentsOf: outbox.prefix(3).compactMap { URL(string: $0) })
+        } else if !afterRelayList {
+            requestRelayLists(for: [pubkey])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                guard let self, self.findNote(id: coordinate) == nil,
+                      NostrService.shared.outboxRelays[pubkey] != nil else { return }
+                self.fetchMissingNoteByNaddr(coordinate: coordinate, afterRelayList: true)
+            }
+        }
+        var seenRelays = Set<String>()
+        candidates = candidates.filter { seenRelays.insert(Self.normalizeRelayKey($0.absoluteString) ?? $0.absoluteString).inserted }
 
         for url in candidates {
             if let activeClient = feedClients[url.absoluteString],
