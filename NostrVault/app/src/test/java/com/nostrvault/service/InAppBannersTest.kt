@@ -30,7 +30,12 @@ class InAppBannersTest {
                 if (read) trayEntries.markRead(b.id)
                 else trayEntries.post(b.id, InAppBanners.filedTitle(b.type, b.title), filedPill = true)
             }
+            onShow = { b -> trayEntries.unread(b.id) }
         }
+        var foreground = true
+        /** As LocalNotificationService.deliver: the pill in front, the tray (a real alert) behind. */
+        fun deliver(b: InAppBanner) =
+            banners.deliver(b, { foreground }) { trayEntries.post(it.id, "alert: ${it.title}") }
     }
 
     @Test fun aTrimmedUnreadPillIsFiledQuietly() {
@@ -92,6 +97,45 @@ class InAppBannersTest {
         rig.banners.hostLost()
         assertEquals(listOf("a" to true, "b" to false), rig.ends)
         assertEquals(setOf("b"), rig.tray.keys)
+    }
+
+    @Test fun aNonDmKindInTheForegroundBecomesAPillNotATrayPost() {
+        val rig = Rig(mapOf("activity:m" to 3_000L))
+        for (type in listOf("mention", "reply", "quote", "zap", "reaction", "repost", "follow", "followers")) {
+            rig.deliver(banner("m", type))
+            assertEquals(type, "m", rig.banners.current.value?.id)
+            assertTrue(type, rig.tray.isEmpty())
+            // Read on screen: still nothing in the tray.
+            rig.banners.dismiss("m", PillEnd.TIMED_OUT)
+            assertTrue(type, rig.tray.isEmpty())
+        }
+    }
+
+    @Test fun aNonDmKindInTheBackgroundGoesToTheTrayAndDrawsNoPill() {
+        val rig = Rig()
+        rig.foreground = false
+        rig.deliver(banner("m", "mention"))
+        assertNull(rig.banners.current.value)
+        assertEquals(mapOf("m" to "alert: Message from Alice"), rig.tray)
+        assertTrue(rig.ends.isEmpty())
+    }
+
+    @Test fun aMentionPillLeftUnreadIsFiledWithItsOwnText() {
+        val rig = Rig()
+        rig.deliver(banner("m", "mention"))
+        rig.deliver(banner("n", "reply"))
+        // The mention keeps its title; only a DM is reduced to the generic line.
+        assertEquals(mapOf("m" to "Message from Alice"), rig.tray)
+    }
+
+    @Test fun anIdThatComesBackIsFiledAgainAfterARead() {
+        // The folded followers' alert and a returning named follower reuse their id.
+        val rig = Rig()
+        rig.deliver(banner("followers-npub1x", "followers"))
+        rig.banners.dismiss("followers-npub1x", PillEnd.TAPPED)
+        rig.deliver(banner("followers-npub1x", "followers"))
+        rig.banners.hostLost()
+        assertEquals(setOf("followers-npub1x"), rig.tray.keys)
     }
 
     @Test fun theRule() {

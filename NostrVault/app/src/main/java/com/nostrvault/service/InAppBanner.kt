@@ -13,6 +13,12 @@ data class InAppBanner(
     val type: String,
     val author: String,
     val npub: String,
+    /** The sender's picture, for the tray entry if it is filed. */
+    val pictureUrl: String? = null,
+    /** The post itself as intent extras ([com.nostrvault.ui.navigation.NotificationNote]), so a tap opens it at once. */
+    val carried: Map<String, String> = emptyMap(),
+    /** The folded "N new followers" alert this pill stands for, so a filing keeps the count. */
+    val folded: LocalNotificationService.FoldedFollowers? = null,
 ) {
     /** The banner's id in the lane ([PillLane]). */
     val laneId: String get() = "activity:$id"
@@ -46,8 +52,25 @@ open class InAppBanners(private val drawnFor: (laneId: String) -> Long) {
      */
     @Volatile var onEnd: ((banner: InAppBanner, read: Boolean) -> Unit)? = null
 
+    /** Told as each banner goes up, before the one it replaces ends. */
+    @Volatile var onShow: ((banner: InAppBanner) -> Unit)? = null
+
+    /**
+     * Where an announced event goes: the pill while the app is open, the
+     * system tray otherwise, never both. A pill that then goes unread is
+     * filed in the tray by [onEnd]. iOS `LocalNotificationService.deliver`.
+     */
+    fun deliver(banner: InAppBanner, appInForeground: () -> Boolean, toTray: (InAppBanner) -> Unit) {
+        if (!appInForeground()) return toTray(banner)
+        show(banner)
+        // The app may have left between the check and the show: the banner
+        // would sit unseen, so it goes the way any banner up then does.
+        if (!appInForeground()) hostLost()
+    }
+
     /** A new banner replaces whatever is showing; that one ends trimmed. */
     fun show(banner: InAppBanner) {
+        onShow?.invoke(banner)
         _current.getAndUpdate { banner }?.takeIf { it.id != banner.id }?.let { end(it, PillEnd.TRIMMED) }
     }
 

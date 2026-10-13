@@ -47,6 +47,13 @@ class NotificationTray<N>(private val system: Platform<N>) {
         system.cancel(key, ID)
     }
 
+    /**
+     * A new pill for [key] went up: it may be filed again. Ids repeat — the
+     * folded followers' alert, a named follower who comes back — and a read
+     * from last time must not swallow this one.
+     */
+    fun unread(key: String) = synchronized(lock) { read.remove(key) }
+
     companion object {
         /** The fixed number every tagged entry uses; the tag tells them apart. */
         const val ID = 1
