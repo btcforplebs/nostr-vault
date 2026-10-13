@@ -56,16 +56,15 @@ struct RelayActivityBanner: View {
     @ObservedObject private var manager = RelayActivityNotificationManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                RelayActivityPill(notification: notification) {
-                    manager.dismiss(notification.id)
+                PillSlot("relayActivity-\(notification.id)", level: .result) {
+                    RelayActivityPill(notification: notification) {
+                        manager.dismiss(notification.id)
+                    }
                 }
-                .transition(Motion.pillTransition)
             }
         }
-        .padding(.top, manager.notifications.isEmpty ? 0 : 12)
-        .animation(Motion.bannerIn, value: manager.notifications.map(\.id))
     }
 }
 
@@ -82,11 +81,10 @@ struct RelayActivityPill: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: notification.icon)
-                    .font(.appSystem(size: 15, weight: .bold))
+                    .font(PillSize.regular.iconFont)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(notification.title)
-                        .font(.appSystem(size: 13, weight: .bold))
                         .lineLimit(1)
                     if !notification.body.isEmpty {
                         Text(notification.body)
@@ -98,15 +96,9 @@ struct RelayActivityPill: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: 340)
-            .background(
-                Capsule()
-                    .fill(notification.color)
-                    .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-            )
-            .foregroundColor(.white)
+            .frame(maxWidth: 300)
+            // The icon says what arrived; the colour is the lane's accent.
+            .pillCapsule(.accent)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)

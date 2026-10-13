@@ -41,11 +41,10 @@ extension FeedView {
 
     /// The floating "New Posts" button is up: unloaded posts, and either
     /// auto-load is off or the user has scrolled away from the top. Never
-    /// when it's switched off in Appearance settings, and stepped aside
-    /// while a toolbar note shows, which sits in the same spot.
+    /// when it's switched off in Appearance settings. It is an ambient pill
+    /// (`docs/pills.md`): `.ambientPill()` hides it while the lane is busy.
     var showsNewPostsButton: Bool {
         configService.config.showNewPostsPill
-            && toolbarNote.note == nil
             && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
@@ -63,6 +62,7 @@ extension FeedView {
             // Centred on the bar's top edge, then down to its circles' centre.
             .frame(height: 0)
             .offset(y: 22)
+            .ambientPill()
             .transition(.opacity)
         }
     }

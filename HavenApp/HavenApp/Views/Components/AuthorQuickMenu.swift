@@ -40,7 +40,7 @@ struct AuthorQuickMenu: View {
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",
                     message: "Blocked \(displayName)",
-                    color: .red
+                    tone: .neutral
                 )
                 dismiss()
             }

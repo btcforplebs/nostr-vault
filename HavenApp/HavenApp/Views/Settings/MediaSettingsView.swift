@@ -82,7 +82,7 @@ struct MediaSettingsView: View {
             let result = await Task.detached(priority: .userInitiated) { MediaCacheService.shared.clearCache() }.value
             let freed = ByteCountFormatter.string(fromByteCount: result.bytesFreed, countStyle: .file)
             if result.filesFailed == 0 {
-                ActionToastManager.shared.show(icon: "trash.fill", message: "Cleared \(freed) of temporary copies", color: Color.havenVerified)
+                ActionToastManager.shared.show(icon: "trash.fill", message: "Cleared \(freed) of temporary copies", tone: .success)
             } else {
                 ErrorNotificationManager.shared.show("Cleared \(freed), but \(result.filesFailed) files could not be removed", icon: "exclamationmark.triangle.fill", style: .warning)
             }

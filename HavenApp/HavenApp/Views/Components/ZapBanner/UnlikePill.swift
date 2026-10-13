@@ -66,28 +66,17 @@ struct UnlikePill: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "heart.slash.fill")
-                .font(.appSystem(size: 12, weight: .bold))
+                .font(PillSize.regular.iconFont)
 
             Text("Reaction removed")
-                .font(.appSystem(size: 13, weight: .bold))
 
-            Button("Undo") { onUndo() }
-                .font(.appSystem(size: 12, weight: .bold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.25))
-                .clipShape(Capsule())
+            PillButton("Undo", action: onUndo)
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(Color.red.opacity(0.85))
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
-        .buttonStyle(.plain)
+        // The 44 pt Undo sets the height.
+        .pillCapsule(.neutral, vertical: 0)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Reaction removed")
+        .accessibilityAction(named: "Undo", onUndo)
     }
 }
 

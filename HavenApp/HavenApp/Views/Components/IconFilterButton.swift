@@ -299,6 +299,9 @@ struct FilterNoteLine: Layout {
 final class FilterNoteCenter: ObservableObject {
     static let shared = FilterNoteCenter()
     @Published private(set) var note: FilterNote?
+    /// Bumped by each tap's note, so the lane sees a new feedback pill
+    /// (one that replaces a toast) rather than an old one coming back.
+    private(set) var tap = 0
     /// The model whose note is showing, so a screen clearing its own note
     /// (or going away) can't wipe a note another screen just showed.
     private var owner: ObjectIdentifier?
@@ -306,6 +309,7 @@ final class FilterNoteCenter: ObservableObject {
     func publish(_ note: FilterNote?, from model: FilterNoteModel) {
         let id = ObjectIdentifier(model)
         if let note {
+            if self.note == nil || owner != id { tap += 1 }
             owner = id
             self.note = note
         } else if owner == id {
@@ -315,35 +319,32 @@ final class FilterNoteCenter: ObservableObject {
     }
 }
 
-/// The filter note as a small notification bubble: the same solid capsule,
-/// white text and shadow as the follow and toast banners, a size down.
-/// One line that hugs its text up to the host's width minus 16 pt margins;
-/// past that the title is cut with "…" down to `FilterNoteLine.titleFloor`,
-/// then the setting and count. Never takes taps, so it can sit over the
-/// content and the toolbar.
+/// The filter note as a small, feedback-level pill in the lane (see
+/// `docs/pills.md`): purple when the setting is on, grey when off.
+/// One line that hugs its text up to the lane's width; past that the title
+/// is cut with "…" down to `FilterNoteLine.titleFloor`, then the setting
+/// and count. Never takes taps.
 struct FilterNoteBanner: View {
     @ObservedObject private var center = FilterNoteCenter.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let note = center.note {
+        if let note = center.note {
+            PillSlot("filterNote-\(center.tap)", level: .feedback) {
                 Self.bubble(for: note)
                     // A second tap swaps the text in place, not mid-transition.
                     .contentTransition(.opacity)
-                    .transition(Motion.pillTransition)
+                    .animation(Motion.fade, value: note)
+                    .allowsHitTesting(false)
+                    // `FilterNoteModel` announces each note; as an element it would be read twice.
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.top, center.note == nil ? 0 : 12)
-        .animation(Motion.bannerIn, value: center.note)
-        .allowsHitTesting(false)
-        // `FilterNoteModel` announces each note; as an element it would be read twice.
-        .accessibilityHidden(true)
     }
 
     static func bubble(for note: FilterNote) -> some View {
         HStack(spacing: 5) {
             Image(systemName: note.icon)
-                .font(.appSystem(size: 11, weight: .bold))
+                .font(PillSize.small.iconFont)
             FilterNoteLine(textScale: CGFloat(ConfigService.shared.config.textSizeScale)) {
                 Text(note.title)
                     .lineLimit(1)
@@ -356,18 +357,7 @@ struct FilterNoteBanner: View {
             }
             .monospacedDigit()
         }
-        .font(.appSystem(size: 12, weight: .semibold))
-        .foregroundColor(.white)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 14)
-        .background(
-            Capsule()
-                // On: the app's purple. Off: the grey the unfollow banner uses.
-                .fill(note.dimmed ? Color(white: 0.35) : Color.havenPurple)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        // The margins: the bubble never gets wider than the host minus these.
-        .padding(.horizontal, 16)
+        .pillCapsule(note.dimmed ? .neutral : .accent, size: .small)
     }
 }
 

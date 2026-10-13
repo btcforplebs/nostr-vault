@@ -101,14 +101,20 @@ struct FollowNotificationBanner: View {
     @ObservedObject private var manager = FollowNotificationManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                FollowPill(notification: notification)
-                    .transition(Motion.pillTransition)
+                PillSlot("follow-\(notification.id)", level: notification.pillLevel) {
+                    FollowPill(notification: notification)
+                }
             }
         }
-        .padding(.top, manager.notifications.isEmpty ? 0 : 12)
-        .animation(Motion.bannerIn, value: manager.notifications.map(\.id))
+    }
+}
+
+extension FollowNotification {
+    var pillLevel: PillLevel {
+        if case .failed = kind { return .error }
+        return .result
     }
 }
 
@@ -125,31 +131,18 @@ struct FollowPill: View {
                     .tint(.white)
             } else {
                 Image(systemName: iconName)
-                    .font(.appSystem(size: 12, weight: .bold))
+                    .font(PillSize.regular.iconFont)
             }
 
             Text(label)
-                .font(.appSystem(size: 13, weight: .bold))
                 .lineLimit(1)
 
             if notification.undo != nil {
-                Button("Undo") { FollowNotificationManager.shared.undo(notification.id) }
-                    .font(.appSystem(size: 13, weight: .heavy))
-                    .underline()
-                    .buttonStyle(.plain)
-                    .padding(.leading, 6)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                PillButton("Undo") { FollowNotificationManager.shared.undo(notification.id) }
             }
         }
-        .padding(.vertical, notification.undo == nil ? 10 : 0)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(pillColor)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
+        // With Undo, the 44 pt button sets the height.
+        .pillCapsule(tone, vertical: notification.undo == nil ? nil : 0)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityActions {
@@ -177,12 +170,12 @@ struct FollowPill: View {
         }
     }
 
-    private var pillColor: Color {
+    private var tone: PillTone {
         switch notification.kind {
-        case .followed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
-        case .unfollowed: return Color(white: 0.35)
-        case .pending:    return Color(white: 0.35)
-        case .failed:     return .red.opacity(0.85)
+        case .followed:   return .success
+        case .unfollowed: return .neutral
+        case .pending:    return .neutral
+        case .failed:     return .error
         }
     }
 }

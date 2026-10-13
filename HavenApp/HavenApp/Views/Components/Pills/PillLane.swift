@@ -30,6 +30,9 @@ final class PillLane: ObservableObject {
     private struct Entry {
         let level: PillLevel
         let since: Date
+        /// How many hosts draw this pill (the Mac's main window and an open
+        /// sheet both do); it leaves the lane when the last one goes.
+        var hosts: Int
     }
 
     private var entries: [String: Entry] = [:]
@@ -41,16 +44,31 @@ final class PillLane: ObservableObject {
     @Published private(set) var hidesAmbient = false
 
     func enter(_ id: String, _ level: PillLevel) {
-        if level == .feedback {
-            // Feedback never stacks: the newest replaces the rest.
-            entries = entries.filter { $0.value.level != .feedback }
+        if var entry = entries[id] {
+            // Another host of the same pill.
+            entry.hosts += 1
+            entries[id] = entry
+        } else {
+            if level == .feedback {
+                // Feedback never stacks: the newest replaces the rest.
+                entries = entries.filter { $0.value.level != .feedback }
+            }
+            entries[id] = Entry(level: level, since: Date(), hosts: 1)
         }
-        entries[id] = Entry(level: level, since: Date())
+        recompute()
+    }
+
+    /// The pill changed level (a send that failed), keeping its place in time.
+    func relevel(_ id: String, _ level: PillLevel) {
+        guard let entry = entries[id], entry.level != level else { return }
+        entries[id] = Entry(level: level, since: entry.since, hosts: entry.hosts)
         recompute()
     }
 
     func leave(_ id: String) {
-        guard entries.removeValue(forKey: id) != nil else { return }
+        guard var entry = entries[id] else { return }
+        entry.hosts -= 1
+        entries[id] = entry.hosts > 0 ? entry : nil
         recompute()
     }
 
@@ -103,5 +121,27 @@ struct PillSlot<Content: View>: View {
         .animation(Motion.bannerIn, value: lane.visible.contains(id))
         .onAppear { lane.enter(id, level) }
         .onDisappear { lane.leave(id) }
+        // A sending pill that fails moves up to an error.
+        .onChange(of: level) { _, new in lane.relevel(id, new) }
     }
+}
+
+/// A pill a screen draws itself (the Feed's New Posts, the WoT rebuild
+/// pill): level 4, ambient. It fades out while the lane shows anything
+/// above it and comes back after, keeping its place so nothing jumps.
+struct AmbientPill: ViewModifier {
+    @ObservedObject private var lane = PillLane.shared
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(lane.hidesAmbient ? 0 : 1)
+            .allowsHitTesting(!lane.hidesAmbient)
+            .accessibilityHidden(lane.hidesAmbient)
+            .animation(Motion.fade, value: lane.hidesAmbient)
+    }
+}
+
+extension View {
+    /// Makes this an ambient pill; see `AmbientPill`.
+    func ambientPill() -> some View { modifier(AmbientPill()) }
 }

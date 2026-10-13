@@ -13,7 +13,7 @@ enum PillTone {
     /// Off, hidden, undone, pending.
     case neutral
 
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
         case .error:   return Color.red.opacity(0.85)
         case .warning: return Color.orange.opacity(0.85)
@@ -25,13 +25,14 @@ enum PillTone {
 }
 
 /// Regular: anything you can tap, and every error and result pill.
+/// Both sizes put the icon on `iconFont` and the text on `font`.
 /// Small: information only.
 enum PillSize {
     case regular
     case small
 
-    var font: Font { self == .regular ? .appSystem(size: 13, weight: .bold) : .appSystem(size: 12, weight: .semibold) }
-    var iconFont: Font { self == .regular ? .appSystem(size: 12, weight: .bold) : .appSystem(size: 11, weight: .bold) }
+    @MainActor var font: Font { self == .regular ? .appSystem(size: 13, weight: .bold) : .appSystem(size: 12, weight: .semibold) }
+    @MainActor var iconFont: Font { self == .regular ? .appSystem(size: 12, weight: .bold) : .appSystem(size: 11, weight: .bold) }
     var vertical: CGFloat { self == .regular ? 10 : 6 }
     var horizontal: CGFloat { self == .regular ? 20 : 14 }
 }
@@ -61,8 +62,11 @@ extension View {
     }
 }
 
-/// The text button inside a regular pill (Undo, Edit): 13 pt bold,
-/// underlined, at least 44 pt tall to tap.
+/// The button inside a regular pill (Undo, Edit): 13 pt bold on a light
+/// capsule. The pill's height above and below it is inside the label, so a
+/// tap anywhere on the capsule, or just off it, lands; padding outside a
+/// plain Button draws but takes no taps. Put the pill on
+/// `.pillCapsule(_, vertical: 0)` so this sets its height.
 struct PillButton: View {
     let title: String
     let action: () -> Void
@@ -73,12 +77,16 @@ struct PillButton: View {
     }
 
     var body: some View {
-        Button(title, action: action)
-            .font(.appSystem(size: 13, weight: .bold))
-            .underline()
-            .buttonStyle(.plain)
-            .padding(.horizontal, 6)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+        Button(action: action) {
+            Text(title)
+                .font(.appSystem(size: 13, weight: .bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.25), in: Capsule())
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -320,22 +320,26 @@ private extension View {
     }
 }
 
-/// Every in-app banner, top-centred below the navigation bar.
+/// The pill lane (`docs/pills.md`), top-centred below the navigation bar:
+/// the same list as the Mac's `PillLaneStack`, each banner reporting where
+/// it is so the window takes taps on it and nowhere else.
 struct AppBannerStack: View {
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
+            ErrorNotificationBanner().bannerHitRegion("error")
             PostActionNotificationBanner().bannerHitRegion("postAction")
             ZapNotificationBanner().bannerHitRegion("zap")
             FollowNotificationBanner().bannerHitRegion("follow")
             MediaUploadNotificationBanner().bannerHitRegion("upload")
             RelayActivityBanner().bannerHitRegion("relayActivity")
-            ActionToastBanner().bannerHitRegion("toast")
-            // Takes no taps, so no hit region: a touch on it reaches the app.
+            // Feedback and ambient pills take no taps, so no hit region:
+            // a touch on them reaches the app.
+            ActionToastBanner()
             FilterNoteBanner()
-            ErrorNotificationBanner().bannerHitRegion("error")
             ImportRunningPill()
             Spacer(minLength: 0)
         }
+        .padding(.top, PillStyle.gap)
         // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
         .padding(.top, 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

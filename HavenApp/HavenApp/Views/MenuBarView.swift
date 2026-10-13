@@ -81,16 +81,8 @@ struct MenuBarView: View {
             processKillAlertOverlay
         }
         .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                ActionToastBanner()
-                FilterNoteBanner()
-                MediaUploadNotificationBanner()
-                ErrorNotificationBanner()
-            }
-            .padding(.top, 4)
+            PillLaneStack()
+                .padding(.top, 4)
         }
         .overlay { ZapFlightStage() }
         .hashtagLinks()

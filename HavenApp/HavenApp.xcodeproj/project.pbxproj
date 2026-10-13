@@ -87,6 +87,7 @@
 		11A377144BA3CEF7D2C5298E /* ProfileFeedLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6681C0D9B8CB71534CDED28F /* ProfileFeedLoader.swift */; };
 		11CA2627A013602A67310A7D /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
 		11E4220F9DFF75F3F0989C5F /* RelayMatrixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */; };
+		11FCE41B6A363ED194E8ADEC /* PillLaneStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */; };
 		12144F9EE4AE61920792462D /* NewPostsFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB1418A113C8C037133410C /* NewPostsFold.swift */; };
 		1254B31953A9E00640351FFC /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
 		127B91BA16381F88B2B1FCAE /* FeedView+ModeFeeds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32F57B930134EBFB88685E90 /* FeedView+ModeFeeds.swift */; };
@@ -644,6 +645,7 @@
 		8BDF1857A949D5DF277197DE /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		8C353599FEBE2E147C2A8EEE /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		8C3BD71D4EE345968FB81D1E /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
+		8C3BF4FDAC2B63C3E4DD8E39 /* PillLaneStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */; };
 		8C418FB5341BAAE9D24F35FC /* VaultActivityList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CECEAC5DA37BC34F9B495F6 /* VaultActivityList.swift */; };
 		8C4F67BE1DD0C21EC3D711EA /* HavenConfig+MacRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C33761D243B306C9D6A5A1 /* HavenConfig+MacRelay.swift */; };
 		8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
@@ -1839,6 +1841,7 @@
 		F5274A812424C7D0CF407E92 /* ComposeView+RelayMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+RelayMedia.swift"; sourceTree = "<group>"; };
 		F58012CD7192B288A68542B7 /* ProfileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSection.swift; sourceTree = "<group>"; };
 		F5C28F31699E930265306429 /* MenuBarView+Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarView+Sidebar.swift"; sourceTree = "<group>"; };
+		F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillLaneStack.swift; sourceTree = "<group>"; };
 		F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NWCService+PayInvoice.swift"; sourceTree = "<group>"; };
 		F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryGrid.swift; sourceTree = "<group>"; };
 		F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncStatusView.swift; sourceTree = "<group>"; };
@@ -2875,6 +2878,7 @@
 			isa = PBXGroup;
 			children = (
 				F3D2013AEB38F680462597BB /* PillLane.swift */,
+				F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */,
 				F140CAA9372DB2C56C2E9F7B /* PillStyle.swift */,
 			);
 			path = Pills;
@@ -3516,6 +3520,7 @@
 				E9D274D706419EC3343C6F38 /* PersonProfileView.swift in Sources */,
 				7C227BD34B8AB5B7878BE831 /* PiPManager.swift in Sources */,
 				C3E34CBBE3F92F5C5A725EAE /* PillLane.swift in Sources */,
+				8C3BF4FDAC2B63C3E4DD8E39 /* PillLaneStack.swift in Sources */,
 				982211CB29D402F793095E7A /* PillStyle.swift in Sources */,
 				BB0F85C63A35B8A9EC209A91 /* PlainLog.swift in Sources */,
 				53D20A98943D467A4CA6030B /* PlatformCompat.swift in Sources */,
@@ -4118,6 +4123,7 @@
 				4106C6045599C6DAD5BE65A4 /* PersonProfileView.swift in Sources */,
 				3B4E633BA61CFF38AAD71471 /* PiPManager.swift in Sources */,
 				18D7DEFB0B0D1452FD4DFB83 /* PillLane.swift in Sources */,
+				11FCE41B6A363ED194E8ADEC /* PillLaneStack.swift in Sources */,
 				2029A3F8E908516C5CAE8D37 /* PillStyle.swift in Sources */,
 				390F0EEE3B50133FDFB613A5 /* PlainLog.swift in Sources */,
 				6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */,

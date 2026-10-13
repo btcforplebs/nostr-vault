@@ -11,21 +11,18 @@ struct ImportRunningPill: View {
 
     var body: some View {
         if relayManager.isImporting && configService.config.hasCompletedSetup {
-            let stage = ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false)
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small).tint(.white)
-                Text("Importing · \(Self.shortText(stage))")
-                    .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+            // Ambient: shows only while nothing else is in the lane.
+            PillSlot("importRunning", level: .ambient) {
+                let stage = ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false)
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini).tint(.white)
+                    Text("Importing · \(Self.shortText(stage))")
+                        .lineLimit(1)
+                }
+                .pillCapsule(.accent, size: .small)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color.black.opacity(0.75)))
-            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            .allowsHitTesting(false)
-            .accessibilityElement(children: .combine)
-            .transition(.opacity)
         }
     }
 

@@ -242,12 +242,8 @@ struct ProfileContent<Badge: View, Actions: View, ShopHeader: View>: View {
         // cover one; the Mac still draws them over the sheet itself.
         .overlay(alignment: .top) {
             if dismissAction != nil {
-                VStack(spacing: 6) {
-                    FollowNotificationBanner()
-                    ZapNotificationBanner()
-                    ErrorNotificationBanner()
-                }
-                .padding(.top, 4)
+                PillLaneStack()
+                    .padding(.top, 4)
                 .allowsHitTesting(true)
             }
         }

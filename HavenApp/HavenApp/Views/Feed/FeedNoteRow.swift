@@ -184,7 +184,7 @@ struct FeedNoteRow: View {
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",
                     message: "Blocked \(rowData.displayProfile?.bestName ?? "user")",
-                    color: .red
+                    tone: .neutral
                 )
             }
             Button("Cancel", role: .cancel) { }
