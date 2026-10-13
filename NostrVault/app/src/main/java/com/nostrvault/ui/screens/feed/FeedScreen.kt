@@ -43,7 +43,7 @@ import com.nostrvault.ui.navigation.FeedTabPicker
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
-import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.RankedCompactNoteCard
 import com.nostrvault.ui.components.CondensedEngagement
 import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.components.FeedThreadCard
@@ -906,7 +906,7 @@ fun FeedScreen(
                                     )
                                 }
                             }
-                            CompactNoteCard(
+                            RankedCompactNoteCard(viewModel.popularRanks, rankId = note.id,
                                 note = shownNote,
                                 profile = cardProfiles[shownNote.pubkey],
                                 profiles = cardProfiles,
