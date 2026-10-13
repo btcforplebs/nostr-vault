@@ -81,7 +81,7 @@ class DraftService @Inject constructor(
      * Save or update a draft. If a draft with the same ID exists it is replaced.
      * Persists to disk immediately.
      */
-    fun saveDraft(draft: Draft) {
+    fun saveDraft(draft: Draft): Draft {
         val owner = draft.pubkey.ifEmpty { configStore.activeAccountHexPubkey.value }
         val updated = draft.copy(pubkey = owner, updatedAt = System.currentTimeMillis())
         val current = _drafts.value.toMutableList()
@@ -96,6 +96,19 @@ class DraftService @Inject constructor(
         persistToDisk(current)
         pendingSyncQueue.add(updated.id)
         trySyncDraft(updated)
+        return updated
+    }
+
+    /**
+     * A post went out: delete its draft, unless the draft was saved again
+     * after [sentVersion] (the `updatedAt` of the copy that was sent). It can
+     * be reopened from Drafts and edited while the post is still sending, and
+     * those edits are newer work, not the post. Null deletes whatever is there.
+     */
+    fun deleteSentDraft(draftId: String, sentVersion: Long?) {
+        val current = findDraft(draftId)
+        if (current != null && sentVersion != null && current.updatedAt > sentVersion) return
+        deleteDraft(draftId)
     }
 
     /**
