@@ -89,12 +89,20 @@ struct PollComposeView: View {
         return d
     }
 
-    /// Why Post is off, when the reason is not plain from the form.
-    private var hint: String? {
+    /// Why Post is off, shown under the options (just below what you are
+    /// typing, so the keyboard doesn't hide it). A fresh form stays quiet.
+    private var optionsHint: String? {
         let labels = draft.filledOptions
+        if currentDraft.hasContent {
+            if draft.trimmedQuestion.isEmpty { return "Add a question to post." }
+            if labels.count < PollDraft.minOptions { return "Fill in at least two options to post." }
+        }
         if Set(labels.map { $0.lowercased() }).count != labels.count { return "Two options are the same." }
-        if closes == .custom, customEnd <= Date() { return "Pick a closing time that's still ahead." }
         return nil
+    }
+
+    private var closingHint: String? {
+        closes == .custom && customEnd <= Date() ? "Pick a closing time that's still ahead." : nil
     }
 
     /// The relays the poll names for its votes: your outside Write relays,
@@ -129,7 +137,11 @@ struct PollComposeView: View {
                 } header: {
                     Text("Options")
                 } footer: {
-                    Text("At least two, up to \(PollDraft.maxOptions).")
+                    if let optionsHint {
+                        Text(optionsHint).foregroundColor(.secondary)
+                    } else {
+                        Text("At least two, up to \(PollDraft.maxOptions).")
+                    }
                 }
 
                 Section {
@@ -153,7 +165,7 @@ struct PollComposeView: View {
                     Text("Results show to everyone who has voted, and to all once voting closes.")
                 }
 
-                if let message = error ?? hint {
+                if let message = error ?? closingHint {
                     Section {
                         Text(message).foregroundColor(error == nil ? .secondary : .red)
                     }

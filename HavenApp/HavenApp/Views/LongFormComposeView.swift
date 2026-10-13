@@ -35,6 +35,7 @@ struct LongFormComposeView: View {
     /// Bumped when another draft is opened, so a photo still loading for the
     /// previous one is dropped instead of landing on the new one.
     @State private var coverLoad = 0
+    @State private var previewing = false
 
     init(flavor: Flavor, onDismiss: @escaping () -> Void) {
         self.flavor = flavor
@@ -95,6 +96,24 @@ struct LongFormComposeView: View {
         return hasTitle && !body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Why Publish is off, once there is something in the form. An empty
+    /// form says nothing: a fresh editor should not open on a complaint.
+    private var publishHint: String? {
+        guard !canPost, currentDraft.hasContent || coverData != nil else { return nil }
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Add a title to publish." }
+        guard isRecipe else { return "Write the article to publish." }
+        return Self.lines(ingredients).isEmpty ? "Add at least one ingredient to publish." : "Add at least one step to publish."
+    }
+
+    /// The post as it will go out, without the cover upload.
+    private var previewDraft: LongFormDraft {
+        LongFormDraft(
+            title: title, summary: summary, body: body_, imageURL: nil,
+            recipe: isRecipe ? .init(prepTime: prepTime, cookTime: cookTime, servings: servings,
+                                     ingredients: ingredients, directions: directions,
+                                     categories: categories) : nil)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -105,8 +124,24 @@ struct LongFormComposeView: View {
                         .font(.headline)
                     TextField(isRecipe ? "Short description" : "Summary (optional)", text: $summary, axis: .vertical)
                         .lineLimit(1...3)
+                } footer: {
+                    if let publishHint { Text(publishHint) }
                 }
-                if isRecipe {
+                Section {
+                    Picker("Mode", selection: $previewing) {
+                        Text("Write").tag(false)
+                        Text("Preview").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                if previewing {
+                    LongFormPreviewSection(
+                        title: title, summary: summary,
+                        // A recipe's body is assembled from its fields, so its
+                        // preview shows the whole post, not just the notes.
+                        markdown: isRecipe ? previewDraft.content() : body_)
+                } else if isRecipe {
                     Section("Details") {
                         TextField("Prep time, e.g. 15 min", text: $prepTime)
                         TextField("Cook time, e.g. 30 min", text: $cookTime)
@@ -154,10 +189,13 @@ struct LongFormComposeView: View {
                     Section {
                         TextEditor(text: $body_)
                             .frame(minHeight: 280)
+                            .overlay(alignment: .topLeading) {
+                                Self.placeholder("Write your article…", showing: body_.isEmpty)
+                            }
                     } header: {
                         Text("Article")
                     } footer: {
-                        Text("Markdown works: # headings, **bold**, - lists, > quotes.")
+                        Text("Markdown works: # headings, **bold**, - lists, > quotes. Preview shows how it reads.")
                     }
                 }
                 if let status {
@@ -263,6 +301,28 @@ struct LongFormComposeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(coverData == nil ? "Add a cover photo" : "Change cover photo")
+        // Beside the picker, not inside its label: a button nested in the
+        // picker's label would never get the tap.
+        .overlay(alignment: .topTrailing) {
+            if coverData != nil {
+                Button {
+                    coverLoad += 1
+                    coverData = nil
+                    coverItem = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.appSystem(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .padding(8)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove cover photo")
+            }
+        }
     }
 
     /// Decodes any image format, applies its orientation, caps it at a
