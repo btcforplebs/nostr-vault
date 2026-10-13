@@ -26,7 +26,8 @@ export function RelayScreen({ ctx, log }) {
     const tick = async () => {
       const [own, feed] = await Promise.all([
         vault.outbox.count({ authors: [session.pubkey] }).catch(() => "?"),
-        vault.feed.count({ kinds: [1, 6] }).catch(() => "?"),
+        // Only follows: the thread view also caches other people's notes in /feed.
+        ctx.account.follows.length ? vault.feed.count({ kinds: [1, 6], authors: ctx.account.follows }).catch(() => "?") : 0,
       ])
       const est = await navigator.storage?.estimate?.()
       setCounts({ own, feed })
@@ -63,7 +64,7 @@ export function RelayScreen({ ctx, log }) {
       </section>
       <section class="card">
         <h3>Account</h3>
-        <div class="muted small">Signed in with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}. Your secret key isn't stored here.</div>
+        <div class="muted small">Signed in with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
         <button onClick={ctx.signOut}>Sign out</button>
       </section>
     </main>

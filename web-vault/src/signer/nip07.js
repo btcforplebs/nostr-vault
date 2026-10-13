@@ -1,4 +1,5 @@
 // NIP-07: a browser extension (Alby, nos2x, ...) holds the key and signs.
+import { checkedPubkey } from "../session.js"
 
 /** The extension's window.nostr, waiting briefly because some extensions inject after the page loads. */
 export async function findExtension(waitMs = 1500) {
@@ -9,7 +10,7 @@ export async function findExtension(waitMs = 1500) {
 export async function extensionSignIn() {
   const ext = await findExtension()
   if (!ext) throw new Error("No Nostr extension found in this browser")
-  const pubkey = await ext.getPublicKey()
+  const pubkey = checkedPubkey(await ext.getPublicKey())
   return { signer: extensionSigner(), session: { method: "nip07", pubkey } }
 }
 

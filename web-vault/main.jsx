@@ -2,9 +2,9 @@
 // Every screen reads from Haven; the network only fills Haven. See PLANS/NV_WEB_CLIENT.md.
 import { render } from "preact"
 import { useEffect, useState } from "preact/hooks"
-import { loadSession, saveSession, clearSession } from "./src/session.js"
+import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
-import { startVault } from "./src/haven/vault.js"
+import { startVault, forgetThisBrowser } from "./src/haven/vault.js"
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
@@ -59,7 +59,12 @@ function App() {
   }, [session?.pubkey])
 
   const onSignedIn = ({ signer, session }) => { saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
-  const signOut = () => { signer?.close?.(); clearSession(); log("signed-out"); location.replace(location.pathname) }
+  const signOut = async () => {
+    signer?.close?.()
+    const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
+    if (failed.length) console.warn("sign-out: couldn't delete", failed)
+    location.replace(location.pathname)
+  }
 
   if (!session) return <SignInScreen onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"strings"
 	"syscall/js"
 
 	"github.com/barrydeen/haven/idbstore"
@@ -24,7 +23,7 @@ func fallbackBackend(path string) DBBackend {
 	if runningUnderNode() {
 		return newMemBackend(path)
 	}
-	return &idbstore.IDBBackend{Name: "haven:" + strings.TrimPrefix(path, "db/")}
+	return &idbstore.IDBBackend{Name: storeName(storePrefix, path)}
 }
 
 func runningUnderNode() bool {

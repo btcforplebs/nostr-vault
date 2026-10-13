@@ -3,8 +3,19 @@
 import { BunkerSigner, parseBunkerInput } from "nostr-tools/nip46"
 import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
+import { checkedPubkey } from "../session.js"
 
-const openAuthUrl = url => window.open(url, "_blank", "noopener")
+// The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only open web
+// pages. noopener also matters: without it a javascript: URL would run in this page.
+export function safeAuthUrl(url) {
+  try {
+    const u = new URL(url)
+    return u.protocol === "https:" || u.protocol === "http:" ? u.href : null
+  } catch {
+    return null
+  }
+}
+const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) window.open(safe, "_blank", "noopener") }
 
 export async function bunkerSignIn(input, pool) {
   const bp = await parseBunkerInput(String(input).trim())
@@ -12,10 +23,12 @@ export async function bunkerSignIn(input, pool) {
   if (!bp.relays.length) throw new Error("The bunker link has no relay")
   const clientSk = generateSecretKey()
   const signer = BunkerSigner.fromBunker(clientSk, bp, { pool, onauth: openAuthUrl })
+  // On any failure close the signer, so a timed-out sign-in doesn't leave its subscription and grant open.
+  let pubkey
   try {
     await answered(signer.connect())
+    pubkey = checkedPubkey(await answered(signer.getPublicKey()))
   } catch (e) { signer.close(); throw e }
-  const pubkey = await answered(signer.getPublicKey())
   // The connect secret is single-use; don't keep it.
   const session = { method: "nip46", pubkey, bunker: { pubkey: bp.pubkey, relays: bp.relays, secret: null }, clientSk: bytesToHex(clientSk) }
   return { signer: wrap(signer), session }

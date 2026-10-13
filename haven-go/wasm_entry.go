@@ -33,7 +33,9 @@ import (
 //
 //	havenStart(cfg) -> Promise<void>
 //	  cfg = { ownerNpub, whitelist?: [npub], blacklist?: [npub],
-//	          wot?: [hex], env?: {KEY: value} }
+//	          wot?: [hex], env?: {KEY: value}, storePrefix?: string }
+//	  storePrefix names the IndexedDB stores "haven:<prefix>:<route>"
+//	             (letters, digits, - and _), e.g. per account.
 //	havenConn(id, opts?) -> { write(Uint8Array), onData(cb), onClose(cb), close() }
 //	  id         string or number, unique among open streams.
 //	  opts.mode  "nip01" (default): NDJSON, one NIP-01 array per "\n" line in
@@ -116,6 +118,10 @@ func havenStart(cfg js.Value) error {
 			k := keys.Index(i).String()
 			os.Setenv(k, env.Get(k).String())
 		}
+	}
+	storePrefix = jsString(cfg.Get("storePrefix"))
+	if storePrefix != "" && !storePrefixRe.MatchString(storePrefix) {
+		return fmt.Errorf("havenStart: storePrefix %q may only hold letters, digits, - and _", storePrefix)
 	}
 	ownerNpub := jsString(cfg.Get("ownerNpub"))
 	if nPubToPubkey("ownerNpub", ownerNpub) == "" {
