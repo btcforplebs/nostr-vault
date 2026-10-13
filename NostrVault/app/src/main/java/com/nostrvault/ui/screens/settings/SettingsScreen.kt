@@ -73,8 +73,15 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // Is the relay on this phone running, and where (iOS RelayStatusCard).
-            item { RelayStatusCard() }
+            settingsTopItems(config).forEach { top ->
+                when (top) {
+                    SettingsTopItem.SETUP_INCOMPLETE -> item {
+                        SetupIncompleteBanner(onClick = { onNavigate(SETUP_INCOMPLETE_DESTINATION) })
+                    }
+                    // Is the relay on this phone running, and where (iOS RelayStatusCard).
+                    SettingsTopItem.RELAY_STATUS -> item { RelayStatusCard() }
+                }
+            }
 
             SETTINGS_GROUPS.forEach { group ->
                 item { SettingsSectionHeader(group.title) }

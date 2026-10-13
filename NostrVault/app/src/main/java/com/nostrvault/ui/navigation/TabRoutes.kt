@@ -27,11 +27,7 @@ internal fun NavGraphBuilder.tabRoutes(
     // ── Setup ─────────────────────────────────────────────
     composable(Screen.SetupWizard.route) {
         SetupWizardScreen(
-            onComplete = {
-                navController.navigate(Screen.Feed.route) {
-                    popUpTo(Screen.SetupWizard.route) { inclusive = true }
-                }
-            },
+            onComplete = { finishSetupWizard(navController) },
         )
     }
 
