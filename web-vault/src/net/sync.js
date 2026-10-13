@@ -43,6 +43,9 @@ export async function readFeed(vault, follows, { limit = 100, until } = {}) {
 /** Pull follows' notes since the newest one cached (or the last two days) into Haven /feed. -> notes stored */
 export async function syncFeed(vault, follows, relays, { onProgress = () => {} } = {}) {
   if (!follows.length) return 0
+  // querySync treats a relay it can't reach as an empty answer, so check that at least one relay is up first.
+  const up = await Promise.allSettled(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 })))
+  if (!up.some(r => r.status === "fulfilled")) throw new Error("no relay reachable")
   const top = (await readFeed(vault, follows, { limit: 1 }))[0]
   const since = top ? top.created_at - 600 : now() - 2 * 86400
   let stored = 0

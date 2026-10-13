@@ -22,7 +22,7 @@ export function FeedScreen({ ctx }) {
       const n = await syncFeed(vault, follows, relays, { onProgress: p => setStatus(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`) })
       await reload()
       setStatus(n ? `${n} notes saved to your relay` : "Up to date")
-    } catch (e) { setStatus("Sync failed: " + (e?.message ?? e)) }
+    } catch (e) { setStatus(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
   }
   const older = async () => {
     const until = notes.at(-1)?.created_at - 1
