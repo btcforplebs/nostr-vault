@@ -4,6 +4,7 @@ import { render } from "preact"
 import { useEffect, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
+import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
@@ -69,7 +70,8 @@ function App() {
     return () => { live = false }
   }, [session?.pubkey])
 
-  const onSignedIn = ({ signer, session }) => { saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
+  // An approval link the user never tapped (they approved in the bunker app) is done with once sign-in succeeds.
+  const onSignedIn = ({ signer, session }) => { clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
   const restart = () => location.replace(location.pathname)
 
   // Another tab signed out (or in as someone else): stop this tab's Haven so that tab's deletes can finish, and
