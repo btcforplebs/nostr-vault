@@ -88,3 +88,18 @@ test("real Haven over TCP/FIPS: owner REQ gets EVENT + EOSE, a stranger's SYN ge
   page.close()
   await h.stop()
 })
+
+test("real Haven: a stream reports buffered() and closes on a line over the Go cap", { skip: !built && "public/haven.wasm not built" }, async () => {
+  const h = await boot()
+  await h.start({ ownerNpub: npubEncode(getPublicKey(generateSecretKey())) })
+  const s = h.conn("cap", { mode: "nip01", route: "/" })
+  assert.equal(typeof s.buffered, "function", "the page's read backpressure needs buffered()")
+  assert.equal(typeof s.buffered(), "number")
+  const closed = new Promise(r => s.onClose(r))
+  s.write(new Uint8Array(300_000).fill(0x61))
+  assert.equal(s.buffered(), 300_000, "an unterminated line counts as buffered")
+  s.write(new Uint8Array(300_000).fill(0x61))
+  assert.equal(await closed, "line too long")
+  assert.equal(s.buffered(), 0)
+  await h.stop()
+})
