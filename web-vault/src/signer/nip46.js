@@ -17,8 +17,11 @@ export function safeAuthUrl(url) {
 }
 // Shown as a link the user taps (AuthPrompt), not opened here: this runs in a relay callback with no user gesture,
 // so a popup blocker would eat it and the sign-in would hang until the timeout.
+// The last one is kept so a prompt mounted later (after the boot splash or sign-out screen) still shows it.
 export const authUrls = new EventTarget()
-const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) authUrls.dispatchEvent(new CustomEvent("url", { detail: safe })) }
+export let lastAuthUrl = ""
+export const clearAuthUrl = () => { lastAuthUrl = "" } // once tapped, a later prompt shouldn't show it again
+const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) { lastAuthUrl = safe; authUrls.dispatchEvent(new CustomEvent("url", { detail: safe })) } }
 
 export async function bunkerSignIn(input, pool) {
   const bp = await parseBunkerInput(String(input).trim())

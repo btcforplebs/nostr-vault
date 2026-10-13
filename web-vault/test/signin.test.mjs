@@ -69,11 +69,14 @@ test("a store that won't delete is reported, and sign-out still finishes", async
 
 test("a store the browser lists is deleted even if the route list doesn't know it; other databases are left", async () => {
   const pk = "d".repeat(64)
-  const idb = fakeIdb([], [`haven:${pk}:newroute`, `haven:${pk}:feed`, "someone-else"])
+  const other = "0".repeat(64)
+  const idb = fakeIdb([], [`haven:${pk}:newroute`, `haven:${pk}:feed`, "haven:newlegacy", `haven:${other}:feed`, `haven:${other}:private`, "someone-else"])
   const { failed } = await forgetThisBrowser({ vault: null, pubkey: pk, storage: memStorage(), idb })
   assert.deepEqual(failed, [])
   assert.ok(idb.deleted.includes(`haven:${pk}:newroute`))
-  assert.ok(!idb.deleted.includes("someone-else"))
+  assert.ok(idb.deleted.includes("haven:newlegacy"))
+  // Another account's vault on this browser is left alone, and so is anything that isn't Haven's.
+  assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
   assert.equal((await storeNames(pk, fakeIdb())).length, 12)
 })

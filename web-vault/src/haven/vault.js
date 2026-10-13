@@ -44,12 +44,14 @@ export async function startVault({ pubkey, log = () => {} }) {
 
 // Haven's route databases (haven-go/store_wasm.go), per account since storePrefix. The unprefixed ones are from
 // before that, when every account on this browser shared them; this page has its own origin, so they're its own.
-// Sign-out deletes every "haven:" database the browser lists, so a route added in Go is wiped too; this list is the
-// fallback for browsers without indexedDB.databases() (Firefox before 126).
+// Sign-out deletes every database the browser lists for this account ("haven:<pubkey>:<route>") and the legacy
+// shared ones ("haven:<route>"), so a route added in Go is wiped too. Never another account's: its stores are
+// "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed"]
 export async function storeNames(pubkey, idb = indexedDB) {
   const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
-  const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => /^haven:/.test(n ?? "")) : []
+  const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
+  const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => mine.test(n ?? "")) : []
   return [...new Set([...known, ...listed])]
 }
 // Everything else this page keeps: the device key, the FIPS relay key and paired vaults, and the activity log.

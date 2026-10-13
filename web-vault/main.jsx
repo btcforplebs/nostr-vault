@@ -81,19 +81,29 @@ function App() {
     restart()
   }), [session?.pubkey, vault, signer])
 
+  // Anything that throws lands on the sign-out screen with its buttons, never on a splash with none.
   const signOut = async () => {
     setLeaving({ busy: true })
     logging = false
-    // A bunker is asked to drop this browser's grant; null means there was no grant to drop (extension).
-    const revoked = signer?.revoke ? await signer.revoke() : (signer?.close?.(), null)
-    const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
-    if (failed.length || revoked === false) setLeaving({ failed, revoked })
-    else restart()
+    let revoked = null
+    try {
+      // A bunker is asked to drop this browser's grant; null means there was no grant to drop (extension).
+      revoked = signer?.revoke ? await signer.revoke() : (signer?.close?.(), null)
+      const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
+      if (failed.length || revoked === false) setLeaving({ failed, revoked })
+      else restart()
+    } catch (e) {
+      setLeaving({ failed: [], revoked, error: String(e?.message ?? e) })
+    }
   }
   const retryWipe = async () => {
-    setLeaving(l => ({ ...l, busy: true }))
-    const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
-    setLeaving(l => ({ ...l, busy: false, failed }))
+    setLeaving(l => ({ ...l, busy: true, error: "" }))
+    try {
+      const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
+      setLeaving(l => ({ ...l, busy: false, failed }))
+    } catch (e) {
+      setLeaving(l => ({ ...l, busy: false, error: String(e?.message ?? e) }))
+    }
   }
 
   if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
@@ -119,7 +129,7 @@ function App() {
 }
 
 // Sign-out says plainly what it couldn't do: a store still open (another tab) or a bunker grant still live.
-function SignOutScreen({ busy, failed = [], revoked, onRetry, onDone }) {
+function SignOutScreen({ busy, failed = [], revoked, error, onRetry, onDone }) {
   if (busy && !failed.length) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Signing out…</p></main>
   return (
     <main class="screen">
@@ -129,9 +139,13 @@ function SignOutScreen({ busy, failed = [], revoked, onRetry, onDone }) {
         <pre class="muted small">{failed.join("\n")}</pre>
         <button class="primary" disabled={busy} onClick={onRetry}>{busy ? "Deleting…" : "Try again"}</button>
       </>}
+      {error && <>
+        <p class="error">Sign-out stopped partway: {error}. Some of this browser's data may still be here.</p>
+        <button class="primary" disabled={busy} onClick={onRetry}>{busy ? "Deleting…" : "Try again"}</button>
+      </>}
       {revoked === false && <p class="muted">Your bunker didn't confirm it dropped this browser's connection. To be sure, revoke it in your bunker app.</p>}
-      {!failed.length && <p class="muted">Everything this browser kept for your account is deleted.</p>}
-      <button disabled={busy} onClick={onDone}>{failed.length ? "Leave it and go to sign-in" : "Done"}</button>
+      {!failed.length && !error && <p class="muted">Everything this browser kept for your account is deleted.</p>}
+      <button disabled={busy} onClick={onDone}>{failed.length || error ? "Leave it and go to sign-in" : "Done"}</button>
     </main>
   )
 }
