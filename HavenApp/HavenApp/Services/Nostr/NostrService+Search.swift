@@ -113,10 +113,21 @@ extension NostrService {
     /// because no local store holds anyone else's kind 0. A note matches on its
     /// text OR on its author's profile, so searching a person's name finds what
     /// they wrote and not just their profile card.
-    func localRelaySearch(query: String, relayURL: URL, completion: @escaping (GlobalSearchResults) -> Void) {
+    ///
+    /// - Parameters:
+    ///   - noteKinds: the note kinds to read. Kind 1 by default; the Vault's
+    ///     search adds articles, highlights and media.
+    ///   - allTerms: every word must appear, in any order, and an article's
+    ///     title and summary count — Global search's matching. Off by
+    ///     default: one phrase, as typed, in the text.
+    func localRelaySearch(query: String,
+                          relayURL: URL,
+                          noteKinds: [Int] = [1],
+                          allTerms: Bool = false,
+                          completion: @escaping (GlobalSearchResults) -> Void) {
         cancelLocalRelaySearch()
 
-        guard let matcher = LocalSearchMatcher(query: query) else {
+        guard let matcher = allTerms ? LocalSearchMatcher(allTermsOf: query) : LocalSearchMatcher(query: query) else {
             completion(GlobalSearchResults())
             return
         }
@@ -124,7 +135,7 @@ extension NostrService {
         let base = relayURL.absoluteString
         let routes = [base, base + "/feed", base + "/inbox"].compactMap { URL(string: $0) }
 
-        let session = LocalRelaySearchSession(matcher: matcher, routes: routes) { [weak self] results in
+        let session = LocalRelaySearchSession(matcher: matcher, routes: routes, noteKinds: noteKinds) { [weak self] results in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 for profile in results.profiles where self.profiles[profile.pubkey] == nil {

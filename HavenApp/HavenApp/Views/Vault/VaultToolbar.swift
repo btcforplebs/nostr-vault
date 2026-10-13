@@ -39,7 +39,7 @@ extension VaultView {
     /// end is always on screen, so loading older pages on sight would walk
     /// the whole relay; they page by button instead.
     var sparseNotesScope: Bool {
-        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && searchScope != .profiles
+        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && !isSearchActive
     }
 
     /// Gone once a page comes back empty: there is nothing older to load.
@@ -122,7 +122,8 @@ extension VaultView {
     // Zaps. Whitelisted notes already show in All, and the phone has no
     // layout switch (`rowLayoutMode`).
     /// The right pill: Messages, a line, then this mode's filters as bare
-    /// icons. A filter tap says what it picked in the note under the bar.
+    /// icons, then search at the right end. A filter tap says what it picked
+    /// in the note under the bar.
     /// On a narrow phone (an SE in Articles has ✉️ and five filters) the
     /// buttons narrow before the bar would fold the pill into "•••".
     var trailingToolbarInline: some View {
@@ -140,6 +141,8 @@ extension VaultView {
                 Divider().frame(height: 20).padding(.horizontal, 2)
                 trailingFilters(spacing: spacing)
             }
+            Divider().frame(height: 20).padding(.horizontal, 2)
+            searchToggleButton
         }
         .environment(\.filterButtonWidth, buttonWidth)
     }
@@ -323,85 +326,60 @@ extension VaultView {
 
     // MARK: - Search
 
-    /// The one control that opens the pane's search — `committedSearch` and
-    /// `searchScope` already drove real filtering (`applySearchFilter`,
-    /// `profileSearchResults`) with nothing anywhere in the UI that could set
-    /// them.
+    /// The magnifying glass at the right end of the Vault's toolbar. It opens
+    /// `VaultSearchBar`, which grows out of this spot; on the Mac it sits in
+    /// the header and the bar opens under it.
     var searchToggleButton: some View {
         IconFilterButton(
             icon: isSearchActive ? "xmark" : "magnifyingglass",
-            tooltip: isSearchActive ? "Close Search" : "Search",
+            tooltip: isSearchActive ? "Close Search" : "Search your Vault",
             isSelected: isSearchActive,
             color: .havenPurple
         ) {
-            withAnimation(Motion.toggle) {
-                isSearchActive.toggle()
-                if !isSearchActive {
-                    searchQueryDraft = ""
-                    committedSearch = ""
-                }
-            }
+            if isSearchActive { closeVaultSearch() } else { openVaultSearch() }
         }
+        .keyboardShortcut("f", modifiers: .command)
+        .accessibilityLabel(isSearchActive ? "Close search" : "Search your Vault")
+    }
+
+    func openVaultSearch() {
+        pendingFilterNote = nil
+        filterNote.hide()
+        // No animation here: the toolbar steps aside at once, and the bar's
+        // own expand out of the icon is the one motion. Animated, the
+        // toolbar slid up while the bar grew under it.
+        isSearchActive = true
+    }
+
+    /// Ends the search: the results give way to the list the Vault was on.
+    /// The bar has already folded itself back into the icon when it calls this.
+    func closeVaultSearch() {
+        vaultSearch.cancel(nostrService: nostrService)
+        searchQueryDraft = ""
+        withAnimation(Motion.toggle) { isSearchActive = false }
+    }
+
+    func runVaultSearch(now: Bool = false) {
+        vaultSearch.search(searchQueryDraft, now: now,
+                           nostrService: nostrService, feedService: feedService,
+                           blocked: configService.activeAccountBlockedHexPubkeys)
     }
 
     @ViewBuilder
     var searchBar: some View {
         if isSearchActive {
-            HStack(spacing: 8) {
-                Menu {
-                    ForEach(SearchScope.allCases, id: \.self) { scope in
-                        Button {
-                            searchScope = scope
-                        } label: {
-                            Label(scope.label, systemImage: scope.icon)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: searchScope.icon)
-                        Image(systemName: "chevron.down")
-                            .font(.appSystem(size: 8, weight: .bold))
-                    }
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
-                    .contentShape(Rectangle())
-                }
-                #if os(macOS)
-                // .borderlessButton flattens the label's modifiers on macOS and adds a
-                // second chevron beside the drawn one.
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                #endif
-                .fixedSize()
-                .accessibilityLabel("Search scope: \(searchScope.label)")
-
-                TextField("Search \(searchScope.label.lowercased())", text: $searchQueryDraft)
-                    .textFieldStyle(.plain)
-                    .font(.appSystem(size: 14))
-                    .onSubmit {
-                        committedSearch = searchQueryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-
-                if !searchQueryDraft.isEmpty {
-                    Button {
-                        searchQueryDraft = ""
-                        committedSearch = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            VaultSearchBar(text: $searchQueryDraft,
+                           onSubmit: { runVaultSearch(now: true) },
+                           onClose: closeVaultSearch)
+                .onChange(of: searchQueryDraft) { _, _ in runVaultSearch() }
         }
+    }
+
+    var vaultSearchResults: some View {
+        VaultSearchResults(model: vaultSearch,
+                           onProfile: { showingProfilePubkey = $0 },
+                           onNote: { openNote($0) })
+            .environment(\.openURL, nostrLinkAction)
     }
 
     var filterView: some View {

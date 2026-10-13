@@ -116,6 +116,10 @@ enum Motion {
     /// Choosing an item in a grid or a media viewer.
     static var pick: Animation { spring(0.26, 0.8) }
 
+    /// A control opening out of its icon, or folding back into it — the
+    /// Vault's search bar. Slower than `pick`: it crosses the whole bar.
+    static var expand: Animation { spring(0.38, 0.84) }
+
     // MARK: - Feedback
 
     /// Tap feedback on like / repost / zap.

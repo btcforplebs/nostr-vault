@@ -77,8 +77,6 @@ extension VaultView {
             viewMode: viewMode,
             likesFilter: likesFilter,
             zapsFilter: zapsFilter,
-            committedSearch: committedSearch,
-            searchScope: searchScope,
             contentFilter: contentFilter,
             noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
