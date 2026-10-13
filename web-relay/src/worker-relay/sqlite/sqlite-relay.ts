@@ -1,6 +1,7 @@
 import sqlite3InitModule, { type Database, type SAHPoolUtil, type Sqlite3Static } from "@sqlite.org/sqlite-wasm"
 import { EventEmitter } from "eventemitter3"
 import { debugLog } from "../debug"
+import { rejectReason } from "../verify"
 import {
   type EventMetadata,
   type NostrEvent,
@@ -210,6 +211,12 @@ export class SqliteRelay extends EventEmitter<RelayHandlerEvents> implements Rel
 
   #insertEvent(db: Database, ev: NostrEvent) {
     if (this.#seenInserts.has(ev.id)) return false
+    // Every write path ends here, so this is the backstop: nothing unsigned reaches the database.
+    const reason = rejectReason(ev)
+    if (reason) {
+      this.#log(`Rejected ${ev?.id}: ${reason}`)
+      return false
+    }
 
     const legacyReplaceableKinds = [0, 3, 41]
 

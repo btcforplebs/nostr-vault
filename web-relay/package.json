@@ -1,0 +1,24 @@
+{
+  "name": "nostr-vault-web-relay",
+  "version": "0.1.0",
+  "description": "Nostr relay that runs in a browser page (PWA), served from nostrvault.app/relay/",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "npm run build && PORT=8787 node server.mjs"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
+    "eventemitter3": "^5.0.4",
+    "nostr-tools": "^2.25.2",
+    "uuid": "^14.0.3"
+  },
+  "private": true,
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^8.3.4"
+  }
+}

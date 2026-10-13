@@ -27,13 +27,9 @@ export class WorkerRelayInterface {
    * Interface wrapper for worker relay
    * @param scriptPath Path to worker script or Worker script object
    */
-  constructor(scriptPath?: string | URL | Worker) {
-    if (scriptPath instanceof Worker) {
-      this.#worker = scriptPath
-    } else {
-      const sp = scriptPath ? scriptPath : new URL("@snort/worker-relay/dist/esm/worker.mjs", import.meta.url)
-      this.#worker = new Worker(sp, { type: "module" })
-    }
+  constructor(scriptPath: string | URL | Worker) {
+    // No default script: the upstream prebuilt worker does not verify signatures.
+    this.#worker = scriptPath instanceof Worker ? scriptPath : new Worker(scriptPath, { type: "module" })
     this.#worker.onerror = e => {
       console.error("Worker Error:", e)
     }
