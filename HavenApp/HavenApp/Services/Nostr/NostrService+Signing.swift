@@ -132,9 +132,9 @@ extension NostrService {
         // to that signer. Route them to the owner's own signer instead.
         if forceOwner, !ownerHexPubkey.isEmpty, ownerHexPubkey != activeHexPubkey {
             let ownerNpub = config.ownerNpub
-            let ownerUsesBunker = config.accountSigningModes[ownerNpub] == "nip46"
-                && ConfigService.shared.hasBunkerConfig(forNpub: ownerNpub)
-            guard ownerUsesBunker, let ownerSigner = config.accountBunkerConfigs[ownerNpub]?.signerPubkey, !ownerSigner.isEmpty else {
+            // The owner's own signing mode, explicit or found from its bunker
+            // config: a wizard-made bunker has no accountSigningModes entry.
+            guard config.ownerSignsWithBunker, let ownerSigner = config.accountBunkerConfigs[ownerNpub]?.signerPubkey, !ownerSigner.isEmpty else {
                 return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true)
             }
             let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)

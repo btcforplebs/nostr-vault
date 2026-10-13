@@ -80,7 +80,10 @@ extension DMService {
         // Watch-only: no owner key to sign NIP-42 AUTH. Skip the attempt (the
         // chat relay simply stays unauthenticated — nothing to read there anyway)
         // and warn once instead of logging a signing failure per AUTH challenge.
-        guard canSignAsOwner() else {
+        // Asks about the owner, not the active account: the AUTH is owner-forced.
+        guard ConfigService.shared.config.ownerCanSign(
+            hasNcryptsecPassword: NIP49Service.getPasswordFromKeychain() != nil
+        ) else {
             if !warnedAuthUnavailable {
                 warnedAuthUnavailable = true
                 #if DEBUG
