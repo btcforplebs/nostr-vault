@@ -92,6 +92,11 @@ struct PollComposeView: View {
     /// Why Post is off, when the reason is not plain from the form.
     private var hint: String? {
         let labels = draft.filledOptions
+        // Say what is missing once something is typed; a fresh form stays quiet.
+        if currentDraft.hasContent {
+            if draft.trimmedQuestion.isEmpty { return "Add a question to post." }
+            if labels.count < PollDraft.minOptions { return "Fill in at least two options to post." }
+        }
         if Set(labels.map { $0.lowercased() }).count != labels.count { return "Two options are the same." }
         if closes == .custom, customEnd <= Date() { return "Pick a closing time that's still ahead." }
         return nil
