@@ -26,8 +26,9 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 
 // ── Zap ──────────────────────────────────────────────────────────
 
+/** Sending and sent time out; a failed zap is an error and stays until tapped. */
 @Composable
-fun ZapPill(notification: ZapNotification) {
+fun ZapPill(notification: ZapNotification, onTap: () -> Unit = {}) {
     val status = notification.status
     val tone = when (status) {
         ZapStatus.SENDING -> PillTone.ACCENT
@@ -45,6 +46,7 @@ fun ZapPill(notification: ZapNotification) {
         tone = tone,
         trailingText = if (status is ZapStatus.FAILED) null else "${notification.amountSats} sats",
         maxLines = if (status is ZapStatus.FAILED) 2 else 1,
+        onClick = if (status is ZapStatus.FAILED) onTap else null,
     )
 }
 

@@ -78,7 +78,7 @@ fun NotificationOverlay(
 @Composable
 private fun NotificationPill(notification: AppNotification, notificationManager: NotificationManager) {
     when (notification) {
-        is ZapNotification -> ZapPill(notification)
+        is ZapNotification -> ZapPill(notification) { notificationManager.dismiss(notification.id) }
         is FollowNotification -> FollowPill(notification) {
             notificationManager.dismiss(notification.id)
             notification.undo?.invoke()

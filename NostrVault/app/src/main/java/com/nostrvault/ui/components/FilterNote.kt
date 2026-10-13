@@ -87,7 +87,8 @@ data class FilterNote(
  * changes the text only while the note is still showing, keeps the time left
  * (raised to a short floor so the count is readable, never past a cap after
  * the tap), and is a no-op once the note has gone, so the pill never pops
- * back and a repeating signal can't pin it. iOS `FilterNoteModel`.
+ * back and a repeating signal can't pin it. The note goes with its [scope]:
+ * leaving the screen hides it at once. iOS `FilterNoteModel`.
  */
 @Stable
 class FilterNoteState internal constructor(
@@ -101,6 +102,12 @@ class FilterNoteState internal constructor(
     private var fade: Job? = null
     private var shownAt = 0L
     private var hidesAt = 0L
+
+    init {
+        // The screen's scope ends with the screen; the pill must not outlive it,
+        // or "Mentions · on" sits over the next screen and hides its ambient pills.
+        scope.coroutineContext[Job]?.invokeOnCompletion { hide() }
+    }
 
     fun show(note: FilterNote) {
         shown = note

@@ -1,12 +1,17 @@
 package com.nostrvault.ui.notification
 
 import com.nostrvault.ui.components.FilterNote
+import com.nostrvault.ui.components.FilterNoteState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import com.nostrvault.ui.theme.NostrVaultIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -83,5 +88,25 @@ class NotificationLevelsTest {
         val failed = manager.notifications.value.first() as ZapNotification
         assertEquals(ZapStatus.FAILED("No wallet"), failed.status)
         assertEquals(PillLevel.ERROR, failed.level)
+
+        // The success times out at 3 s; the failure is an error and stays until tapped.
+        advanceTimeBy(10_000)
+        assertEquals(listOf(failed.id), manager.notifications.value.map { it.id })
+        manager.dismiss(failed.id)
+        assertTrue(manager.notifications.value.isEmpty())
+    }
+
+    @Test fun filterNoteGoesWithItsScreen() = runTest(dispatcher) {
+        val manager = NotificationManager()
+        val screen = CoroutineScope(SupervisorJob() + dispatcher)
+        val state = FilterNoteState(screen, manager, "fn")
+        state.show(FilterNote(NostrVaultIcons.At, "Mentions", "on"))
+        assertTrue(manager.isShowing("fn"))
+
+        screen.cancel() // leaving the screen, as rememberCoroutineScope does
+        runCurrent() // the 2 s timer's cancellation lands on the next dispatch
+        assertFalse(manager.isShowing("fn"))
+        advanceTimeBy(3_000)
+        assertFalse(manager.isShowing("fn"))
     }
 }

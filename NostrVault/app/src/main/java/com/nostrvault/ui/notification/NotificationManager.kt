@@ -54,9 +54,10 @@ class NotificationManager @Inject constructor() {
         scheduleDismiss(id, 3_000L)
     }
 
+    /** A failed zap is an error: it stays until tapped (`docs/pills.md`). */
     fun markZapFailed(id: String, message: String) {
+        dismissJobs.remove(id)?.cancel()
         updateNotification<ZapNotification>(id) { it.copy(status = ZapStatus.FAILED(message)) }
-        scheduleDismiss(id, 5_000L)
     }
 
     /**
