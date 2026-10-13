@@ -60,8 +60,17 @@ struct NVWidgetSnapshot: Codable, Equatable {
 
     struct Wallet: Codable, Equatable {
         var lightningSats: Int?
+        /// Zaps received since local midnight; see NVZapsTodayCounter.
         var zapsReceived24h: Int
         var btcPriceUSD: Double?
+        /// Local midnight `zapsReceived24h` was counted from. Nil in snapshots
+        /// written before the count existed.
+        var zapsDayStart: Date? = nil
+
+        /// Zaps today as of `date`: 0 once the counted day is over.
+        func zapsToday(at date: Date) -> Int {
+            NVZapsToday.shown(count: zapsReceived24h, dayStart: zapsDayStart, at: date)
+        }
     }
 
     struct MediaTile: Codable, Equatable, Identifiable {
