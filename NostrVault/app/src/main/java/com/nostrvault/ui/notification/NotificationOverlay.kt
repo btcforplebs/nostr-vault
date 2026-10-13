@@ -12,6 +12,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.nostrvault.service.InAppBannerBus
+import com.nostrvault.service.PillEnd
 import kotlinx.coroutines.delay
 
 /** How long a mention, reply or DM that arrived stays up: a result, 3 s (`docs/pills.md`). */
@@ -41,7 +42,7 @@ fun NotificationOverlay(
     LaunchedEffect(banner?.id) {
         val id = banner?.id ?: return@LaunchedEffect
         delay(ACTIVITY_VISIBLE_MS)
-        InAppBannerBus.dismiss(id)
+        InAppBannerBus.dismiss(id, PillEnd.TIMED_OUT)
     }
 
     Column(
@@ -63,8 +64,8 @@ fun NotificationOverlay(
             }
             if (level == PillLevel.RESULT) {
                 banner?.let { current ->
-                    key("activity:${current.id}") {
-                        PillSlot("activity:${current.id}", PillLevel.RESULT) {
+                    key(current.laneId) {
+                        PillSlot(current.laneId, PillLevel.RESULT) {
                             ActivityPill(current)
                         }
                     }

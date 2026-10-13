@@ -23,9 +23,9 @@ class InAppDmAlertTest {
         val second = first.copy(id = "b")
         InAppBannerBus.show(first)
         InAppBannerBus.show(second)
-        InAppBannerBus.dismiss("a")
+        InAppBannerBus.dismiss("a", PillEnd.TIMED_OUT)
         assertEquals(second, InAppBannerBus.current.value)
-        InAppBannerBus.dismiss("b")
+        InAppBannerBus.dismiss("b", PillEnd.TIMED_OUT)
         assertNull(InAppBannerBus.current.value)
     }
 
