@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 import { FipsTcpEndpoint } from "@fips/tcp"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { TcpFipsRelayServer, RELAY_SERVICE_PORT, MAX_LINE_IN, MAX_CONNECTIONS_PER_PEER } from "../src/fips/tcp-server.js"
+import { TcpFipsRelayServer, RELAY_SERVICE_PORT, MAX_LINE_IN, MAX_QUEUED_IN, MAX_CONNECTIONS_PER_PEER } from "../src/fips/tcp-server.js"
 import { parseOwners } from "../src/fips/owners.js"
 import { wrap } from "../src/haven/haven.js"
 import { HavenClient } from "../src/haven/client.js"
@@ -15,7 +15,7 @@ import { fabric } from "./support/fabric.js"
 const P = RELAY_SERVICE_PORT
 const compressed = sk => "02" + getPublicKey(sk) // even-parity form, like FIPS reports
 
-async function setup({ loss = 0, clientIsOwner = true } = {}) {
+async function setup({ loss = 0, clientIsOwner = true, start = true } = {}) {
   const net = fabric(loss)
   const relaySk = generateSecretKey(), vaultSk = generateSecretKey(), strangerSk = generateSecretKey()
   const relayKey = compressed(relaySk)
@@ -28,6 +28,7 @@ async function setup({ loss = 0, clientIsOwner = true } = {}) {
   await haven.start({ ownerNpub: npubEncode(getPublicKey(vaultSk)) })
   // The page's own stream: how events get into Haven other than over FIPS.
   const page = new HavenClient(haven.conn("page", { mode: "nip01", route: "/" }))
+  if (!start) await haven.stop()
   const owners = parseOwners(getPublicKey(vaultSk))
   const server = new TcpFipsRelayServer(net.endpoint(relayKey), haven, () => owners, { clock: () => now })
   const client = new FipsTcpEndpoint(net.endpoint(compressed(clientSk)), P)
@@ -170,6 +171,43 @@ test("one vault gets at most MAX_CONNECTIONS_PER_PEER connections", async () => 
   // The connections it does hold are still served.
   await t.send(["REQ", "after", { kinds: [1] }])
   assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "after")))
+})
+
+test("a refused havenConn (returned with error, not thrown) aborts the TCP connection and keeps the reason", async () => {
+  const t = await setup({ start: false })
+  await t.until(() => false, 300)
+  assert.equal(t.server.stats.accepted, 0)
+  assert.ok(t.server.stats.refusedStreams > 0)
+  assert.equal(t.server.stats.lastDropError, "havenConn: relay is not running")
+  assert.equal(t.server.conns.size, 0)
+  assert.notEqual(await t.state(), "established")
+})
+
+test("backpressure: while Haven consumes nothing, reads stop and Haven's backlog stays bounded", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  const fips = t.stub.conns.find(c => c.id !== "page").conn
+  t.stub.stall = true
+  const line = Buffer.from(JSON.stringify(["CLOSE", "x".repeat(1000)]) + "\n")
+  let peak = 0, sent = 0, rest = line
+  for (let k = 0; k < 4000 && sent < 8 * MAX_QUEUED_IN; k++) {
+    if ((await t.state()) !== "established") break
+    // Keep the stream whole: a short write leaves the rest of this line for next time.
+    const n = await t.client.write(t.id, rest, Date.now())
+    sent += n
+    rest = n < rest.length ? rest.subarray(n) : line
+    await t.pump()
+    peak = Math.max(peak, fips.buffered())
+  }
+  assert.equal(await t.state(), "established", "a slow Haven is not a reason to drop the vault")
+  assert.ok(t.server.stats.backpressured > 0)
+  assert.ok(peak <= MAX_QUEUED_IN + 64 * 1024, `Haven held ${peak} bytes`)
+  assert.ok(sent < 4 * MAX_QUEUED_IN, `the window closed: the vault got ${sent} bytes in`)
+  // Haven catches up and the connection carries on.
+  t.stub.stall = false
+  if (rest !== line) { let off = 0; while (off < rest.length) { off += await t.client.write(t.id, rest.subarray(off), Date.now()); await t.pump() } }
+  await t.send(["REQ", "later", { kinds: [1] }])
+  assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "later"), 20000))
 })
 
 test("Haven hanging up closes the TCP connection", async () => {

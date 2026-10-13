@@ -1,5 +1,7 @@
 // Loads Haven (haven-go built for js/wasm) into the page and exposes its JS entry point:
-//   start(cfg) -> Promise, conn(id, opts) -> { write, onData, onClose, close }, stop() -> Promise
+//   start(cfg) -> Promise, conn(id, opts) -> { write, onData, onClose, close, buffered?, error? }, stop() -> Promise
+// A refused conn doesn't throw: it comes back already closed, with `error` set. buffered() is the bytes
+// written but not yet consumed by Haven.
 // Contract: Ted's integration branch, haven-go wasm entry point (havenStart / havenConn / havenStop).
 const READY_MS = 30_000
 

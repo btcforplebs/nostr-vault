@@ -1,6 +1,6 @@
 // The owner set: the vault identities allowed to open TCP/FIPS streams to this relay.
 // Stored as x-only pubkey hex. FIPS reports peers as 33-byte compressed keys, so compare with xOnly().
-import { decode } from "nostr-tools/nip19"
+import { decode, npubEncode } from "nostr-tools/nip19"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const HEX66 = /^0[23][0-9a-f]{64}$/
@@ -42,8 +42,10 @@ const OWNERS_ITEM = "fips-owners"
 /**
  * The saved owner set, after applying a pairing link (nostrvault.app/relay/#owner=npub1...; a fragment never
  * reaches the server). Haven is configured with these at start, so call this before starting it.
+ * A link only ever adds owners, and only once the person at this browser confirms each new one: anyone can
+ * send a link, and an owner can write to this relay and gets dialed by it.
  */
-export function loadOwners({ storage = localStorage, log = () => {} } = {}) {
+export function loadOwners({ storage = localStorage, log = () => {}, confirm = msg => globalThis.confirm(msg) } = {}) {
   let owners = new Set()
   try {
     owners = parseOwners(storage.getItem(OWNERS_ITEM) ?? "")
@@ -51,9 +53,19 @@ export function loadOwners({ storage = localStorage, log = () => {} } = {}) {
   const frag = new URLSearchParams(location.hash.slice(1)).get("owner")
   if (frag) {
     try {
-      owners = parseOwners(frag)
-      saveOwners(owners, storage)
-      log("fips-owner-paired", { owners: owners.size })
+      const fresh = [...parseOwners(frag)].filter(k => !owners.has(k))
+      if (fresh.length) {
+        const list = fresh.map(k => "  " + npubEncode(k)).join("\n")
+        const msg = `This link wants to add ${fresh.length === 1 ? "an owner" : fresh.length + " owners"} to this relay:\n\n${list}\n\n` +
+          "An owner can write to this relay and read everything on it. Only continue if this is your own vault."
+        if (confirm(msg)) {
+          owners = new Set([...owners, ...fresh])
+          saveOwners(owners, storage)
+          log("fips-owner-paired", { added: fresh.length, owners: owners.size })
+        } else {
+          log("fips-owner-declined", { offered: fresh.length })
+        }
+      }
     } catch (e) {
       log("fips-owner-error", { err: String(e) })
     }
