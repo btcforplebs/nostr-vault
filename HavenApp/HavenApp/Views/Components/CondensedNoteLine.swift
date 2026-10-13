@@ -163,7 +163,7 @@ struct CondensedNoteLine: View, Equatable {
                         AuthorQuickMenu(
                             pubkey: authorPubkey,
                             displayName: displayName,
-                            isFollowed: FeedService.shared.followedPubkeys.contains(authorPubkey),
+                            isFollowed: FeedService.shared.followedPubkeySet.contains(authorPubkey),
                             expanded: menuExpanded,
                             onWebOfTrust: { showingTrustWeb = true },
                             dismiss: dismissUserMenu

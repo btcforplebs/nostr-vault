@@ -65,7 +65,11 @@ class FeedService: ObservableObject {
             self.referencedNoteUpdates = ReferencedNoteSignal(generation: self.referencedNoteGeneration, ids: batch)
         }
     }
-    @Published var followedPubkeys: [String] = []
+    @Published var followedPubkeys: [String] = [] {
+        didSet { followedPubkeySet = Set(followedPubkeys) }
+    }
+    /// `followedPubkeys` for membership checks; feed rows ask once each.
+    private(set) var followedPubkeySet: Set<String> = []
     @Published var extendedNetworkPubkeys: [String] = []
     /// When the extended network was last computed. Used to skip re-fetching within 1 hour.
     var extendedNetworkComputedAt: Date?

@@ -437,8 +437,8 @@ struct FeedNoteRowData: Equatable {
             reposterName: note.repostedBy.flatMap { nostrService.profiles[$0]?.bestName },
             replyToName: note.replyToPubkey.flatMap { nostrService.profiles[$0]?.bestName },
             isOwnNote: note.pubkey == nostrService.activeHexPubkey,
-            isFollowed: feedService.followedPubkeys.contains(displayPubkey),
-            isParentFollowed: parentNote.map { feedService.followedPubkeys.contains($0.pubkey) } ?? false,
+            isFollowed: feedService.followedPubkeySet.contains(displayPubkey),
+            isParentFollowed: parentNote.map { feedService.followedPubkeySet.contains($0.pubkey) } ?? false,
             stats: feedService.noteStats[original.id] ?? NoteStats()
         )
     }
