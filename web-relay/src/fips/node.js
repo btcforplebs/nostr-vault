@@ -40,6 +40,22 @@ export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, se
   })
   const node = new FipsNode({ identity, transports: [ws, rtc], forwarding: false })
 
+  // Once an owner's session is up, ask its vault for a direct WebRTC link. The offer rides that session
+  // (FSP port 257), and after it connects the 7447 stream no longer needs the seed. Retried on the dial
+  // tick until it holds, so a dropped link or a vault without WebRTC costs one attempt per tick.
+  const directing = new Set()
+  // FIPS maps an x-only key to its canonical even-parity compressed form, hence "02".
+  const goDirect = owner => node.connect({ transport: "webrtc", addr: "02" + owner })
+  const upgradeOwners = () => {
+    for (const owner of getOwners()) {
+      const o = status.owners.get(owner)
+      if (status.sessions.get(owner) !== "established" || directing.has(owner) || (o?.transport === "webrtc" && o.state === "connected")) continue
+      directing.add(owner)
+      goDirect(owner)
+        .catch(e => { status.errors++; status.lastError = "direct to owner: " + String(e?.message ?? e).slice(0, 140); emit() })
+        .finally(() => directing.delete(owner))
+    }
+  }
   node.on("peer", p => {
     const owner = isOwner(getOwners(), p.remotePubkey)
     if (p.remoteAddr?.transport === "websocket") status.seeds.set(p.remoteAddr.addr, p.state)
@@ -49,6 +65,7 @@ export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, se
   node.on("session", s => {
     if (isOwner(getOwners(), s.remotePubkey)) status.sessions.set(xOnly(s.remotePubkey), s.state)
     emit()
+    upgradeOwners()
   })
   node.on("error", e => {
     status.errors++
@@ -74,7 +91,7 @@ export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, se
     }
   }
   dialOwners()
-  const dialTimer = setInterval(dialOwners, OWNER_DIAL_MS)
+  const dialTimer = setInterval(() => { dialOwners(); upgradeOwners() }, OWNER_DIAL_MS)
   emit()
 
   return {
@@ -82,8 +99,7 @@ export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, se
     server,
     status,
     /** Ask an owner's vault for a direct WebRTC link (needs an existing FIPS route, i.e. a session). */
-    // FIPS maps an x-only key to its canonical even-parity compressed form, hence "02".
-    goDirect: owner => node.connect({ transport: "webrtc", addr: "02" + owner }),
+    goDirect,
     stop: async () => {
       clearInterval(statsTimer)
       clearInterval(dialTimer)
