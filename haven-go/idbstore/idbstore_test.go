@@ -14,11 +14,12 @@ import (
 
 // The harness (harness/chrome_exec) runs each test binary twice in the same
 // browser profile: IDBSTORE_PHASE=1, then a real page reload, then
-// IDBSTORE_PHASE=2. Phase 2 only runs TestPersist, which reads what phase 1 wrote.
+// IDBSTORE_PHASE=2. Phase 2 only runs the tests that read what phase 1 wrote
+// (TestPersist, TestBench) and TestContext.
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if os.Getenv("IDBSTORE_PHASE") == "2" {
-		flag.Set("test.run", "^TestPersist$")
+		flag.Set("test.run", "^(TestPersist|TestBench|TestContext)$")
 	}
 	os.Exit(m.Run())
 }

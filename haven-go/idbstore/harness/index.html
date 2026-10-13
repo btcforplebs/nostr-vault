@@ -3,12 +3,25 @@
 <title>idbstore test</title>
 <script src="wasm_exec.js"></script>
 <script>
-  // Driven by chrome_exec.mjs: it sets window.__run, then reads window.__exit.
-  window.__run = async ({ args, env }) => {
+  // Driven by chrome_exec.mjs: it calls window.__run, then polls window.__exit.
+  // context "page" runs the Go binary here; "worker" runs it in worker.js.
+  window.__run = async ({ args, env, context }) => {
     const phase = new URLSearchParams(location.hash.slice(1)).get("phase") || "1";
+    env = { ...env, IDBSTORE_PHASE: phase, IDBSTORE_CONTEXT: context };
+    if (context === "worker") {
+      const w = new Worker("worker.js");
+      w.onmessage = ({ data }) => {
+        if ("log" in data) (data.err ? console.error : console.log)(data.log);
+        if ("instantiateMs" in data) window.__instantiateMs = data.instantiateMs;
+        if ("exit" in data) window.__exit = data.exit;
+      };
+      w.onerror = (e) => { console.error("worker error: " + e.message); window.__exit = 1; };
+      w.postMessage({ args, env });
+      return;
+    }
     const go = new Go();
     go.argv = ["test.wasm", ...args];
-    go.env = { ...env, IDBSTORE_PHASE: phase };
+    go.env = env;
     go.exit = (code) => { window.__exit = code; };
     const t0 = performance.now();
     const { instance } = await WebAssembly.instantiateStreaming(fetch("test.wasm"), go.importObject);

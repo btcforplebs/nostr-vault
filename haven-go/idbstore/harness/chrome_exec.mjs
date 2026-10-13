@@ -5,7 +5,16 @@
 // Page.reload (new document, new Go runtime, same IndexedDB), then
 // IDBSTORE_PHASE=2. The exit code is the worst of the two runs.
 //
-// Needs Node 22+ (global WebSocket) and Google Chrome. CHROME overrides the path.
+// Needs Node 22+ (global WebSocket).
+//
+// Environment:
+//   IDBSTORE_CONTEXT=page|worker   where the Go binary runs (default page)
+//   IDBSTORE_TARGET=desktop|android
+//     desktop: spawns headless Chrome with a throwaway profile (CHROME= path).
+//     android: uses Chrome on the adb device (ANDROID_SERIAL, ADB=) in a new tab
+//       on http://localhost:IDBSTORE_PORT via adb reverse. That origin's storage
+//       is cleared before and after, and the tab is closed. Nothing else in the
+//       browser is touched.
 
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -20,9 +29,15 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const goroot = execFileSync("go", ["env", "GOROOT"]).toString().trim();
 const timeoutMs = Number(process.env.IDBSTORE_TIMEOUT_MS || 30 * 60 * 1000);
 
+const target = process.env.IDBSTORE_TARGET || "desktop";
+const context = process.env.IDBSTORE_CONTEXT || "page";
+const adbBin = process.env.ADB || "/opt/homebrew/bin/adb";
+const adb = (...a) => execFileSync(adbBin, [...(process.env.ANDROID_SERIAL ? ["-s", process.env.ANDROID_SERIAL] : []), ...a]).toString().trim();
+
 const files = {
   "/index.html": ["text/html", readFileSync(join(here, "index.html"))],
   "/wasm_exec.js": ["text/javascript", readFileSync(join(goroot, "lib/wasm/wasm_exec.js"))],
+  "/worker.js": ["text/javascript", readFileSync(join(here, "worker.js"))],
   "/test.wasm": ["application/wasm", readFileSync(wasmPath)],
 };
 const server = createServer((req, res) => {
@@ -30,31 +45,60 @@ const server = createServer((req, res) => {
   if (!f) { res.writeHead(404).end(); return; }
   res.writeHead(200, { "content-type": f[0], "cache-control": "no-store" }).end(f[1]);
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const origin = `http://127.0.0.1:${server.address().port}`;
-
-const profile = mkdtempSync(join(tmpdir(), "idbstore-chrome-"));
-const proc = spawn(chrome, [
-  "--headless=new", "--no-proxy-server", "--no-first-run", "--no-default-browser-check",
-  "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
-], { stdio: "ignore" });
+const listenPort = target === "android" ? Number(process.env.IDBSTORE_PORT || 47123) : 0;
+await new Promise((r) => server.listen(listenPort, "127.0.0.1", r));
+const port0 = server.address().port;
+const origin = target === "android" ? `http://localhost:${port0}` : `http://127.0.0.1:${port0}`;
 
 let exitCode = 1;
-const cleanup = () => {
-  try { proc.kill("SIGKILL"); } catch {}
-  server.close();
-  rmSync(profile, { recursive: true, force: true });
+const cleanups = [() => server.close()];
+const cleanup = async () => {
+  for (const fn of cleanups.reverse()) { try { await fn(); } catch {} }
 };
-process.on("SIGINT", () => { cleanup(); process.exit(130); });
-const deadline = setTimeout(() => { console.error("chrome_exec: timed out"); cleanup(); process.exit(124); }, timeoutMs);
+process.on("SIGINT", async () => { await cleanup(); process.exit(130); });
+const deadline = setTimeout(async () => { console.error("chrome_exec: timed out"); await cleanup(); process.exit(124); }, timeoutMs);
 
-try {
+// Returns the page's webSocketDebuggerUrl.
+async function openPage() {
+  if (target === "android") {
+    adb("reverse", `tcp:${port0}`, `tcp:${port0}`);
+    cleanups.push(() => adb("reverse", "--remove", `tcp:${port0}`));
+    const fwd = adb("forward", "tcp:0", "localabstract:chrome_devtools_remote");
+    cleanups.push(() => adb("forward", "--remove", `tcp:${fwd}`));
+    // Android Chrome refuses /json/new; the browser target can still open a tab.
+    // Foreground, so the page runs visible the way a real one would.
+    const version = await (await fetch(`http://127.0.0.1:${fwd}/json/version`)).json();
+    const browser = await connect(version.webSocketDebuggerUrl);
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" });
+    cleanups.push(() => browser.send("Target.closeTarget", { targetId }));
+    for (let i = 0; i < 50; i++) {
+      const page = (await (await fetch(`http://127.0.0.1:${fwd}/json/list`)).json()).find((t) => t.id === targetId);
+      if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+      await sleep(100);
+    }
+    throw new Error("new tab never showed up in /json/list");
+  }
+  const profile = mkdtempSync(join(tmpdir(), "idbstore-chrome-"));
+  const proc = spawn(chrome, [
+    "--headless=new", "--no-proxy-server", "--no-first-run", "--no-default-browser-check",
+    "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
+  ], { stdio: "ignore" });
+  cleanups.push(() => rmSync(profile, { recursive: true, force: true }));
+  cleanups.push(() => proc.kill("SIGKILL"));
   const portFile = join(profile, "DevToolsActivePort");
   for (let i = 0; i < 200 && !existsSync(portFile); i++) await sleep(50);
   const port = readFileSync(portFile, "utf8").split("\n")[0];
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const page = targets.find((t) => t.type === "page");
-  const cdp = await connect(page.webSocketDebuggerUrl);
+  return targets.find((t) => t.type === "page").webSocketDebuggerUrl;
+}
+
+try {
+  const cdp = await connect(await openPage());
+  const clearOrigin = () => cdp.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
+  if (target === "android") {
+    await clearOrigin();
+    cleanups.push(clearOrigin);
+  }
 
   cdp.on("Runtime.consoleAPICalled", (p) => {
     const line = p.args.map((a) => a.value ?? a.description ?? "").join(" ");
@@ -76,8 +120,14 @@ try {
       await cdp.send("Page.reload", { ignoreCache: true });
     }
     await loaded;
+    if (phase === 1) {
+      const info = await evaluate(cdp, `(async () => JSON.stringify({ ua: navigator.userAgent, visibility: document.visibilityState,
+        persistBefore: await navigator.storage.persisted(), persist: await navigator.storage.persist(),
+        persistAfter: await navigator.storage.persisted() }))()`, true);
+      process.stderr.write(`chrome_exec: ${target} ${context} ${origin} ${info}\n`);
+    }
     const t0 = Date.now();
-    await evaluate(cdp, `window.__run(${JSON.stringify({ args, env })}); 0`);
+    await evaluate(cdp, `window.__run(${JSON.stringify({ args, env, context })}); 0`);
     let code;
     while ((code = await evaluate(cdp, "window.__exit")) === undefined) await sleep(100);
     const inst = await evaluate(cdp, "window.__instantiateMs");
@@ -90,14 +140,14 @@ try {
   exitCode = 1;
 } finally {
   clearTimeout(deadline);
-  cleanup();
+  await cleanup();
 }
 process.exit(exitCode);
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-async function evaluate(cdp, expression) {
-  const r = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: false });
+async function evaluate(cdp, expression, awaitPromise = false) {
+  const r = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
   return r.result.value;
 }
