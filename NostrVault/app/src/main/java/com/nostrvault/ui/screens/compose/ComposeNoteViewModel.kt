@@ -519,6 +519,15 @@ class ComposeNoteViewModel @Inject constructor(
         // The account this note is for, locked now: the signer reads whichever
         // account is active when it signs, after the media upload, and the
         // account can change in between (see PostingAccount).
+        // This draft may still be sending from an earlier visit to the
+        // composer (left mid-upload, then reopened from Drafts): a second
+        // send would post the same note twice.
+        if (pendingPostManager.isSending(draftId)) {
+            _error.value = ALREADY_SENDING
+            notificationManager.showError(ALREADY_SENDING)
+            return
+        }
+
         val lock = nostrService.lockPostingAccount()
 
         // On disk before the send starts, so a crash or a killed app during
@@ -538,7 +547,7 @@ class ComposeNoteViewModel @Inject constructor(
 
         // Not viewModelScope: leaving the composer mid-send would cancel the
         // upload and the post with it. iOS keeps going after its sheet closes.
-        pendingPostManager.launchSend {
+        pendingPostManager.launchSend(draftId) {
             _isPublishing.value = true
             _error.value = null
             try {
@@ -739,6 +748,10 @@ class ComposeNoteViewModel @Inject constructor(
             }
             finishSend()
         }
+    }
+
+    companion object {
+        internal const val ALREADY_SENDING = "This note is still sending. It will show up in a moment."
     }
 
     /** On the screen if it is still open, otherwise as a banner over whatever is. */

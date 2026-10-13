@@ -91,13 +91,26 @@ class PendingPostManager @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /** Draft ids whose send is running in [launchSend]. */
+    private val sendingDrafts = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** True while the post backed by [draftId] is still uploading or signing. */
+    fun isSending(draftId: String): Boolean = draftId in sendingDrafts
+
     /**
      * Runs a post's send (upload, signing, hand-off to the countdown) on this
      * app-lifetime scope, so leaving the composer mid-send does not cancel it.
      * iOS gets the same from an unstructured Task plus background time in
-     * ComposeView.postNote.
+     * ComposeView.postNote. Returns null, and runs nothing, when [draftId] is
+     * already sending: the composer can be left and the same draft reopened
+     * from Drafts while its first send is still going.
      */
-    fun launchSend(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block)
+    fun launchSend(draftId: String, block: suspend CoroutineScope.() -> Unit): Job? {
+        if (!sendingDrafts.add(draftId)) return null
+        return scope.launch(block = block).also { job ->
+            job.invokeOnCompletion { sendingDrafts.remove(draftId) }
+        }
+    }
 
     private val _isShowing = MutableStateFlow(false)
     val isShowing: StateFlow<Boolean> = _isShowing.asStateFlow()

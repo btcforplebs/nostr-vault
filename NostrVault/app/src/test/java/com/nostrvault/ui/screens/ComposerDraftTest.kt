@@ -191,6 +191,10 @@ class ComposerDraftTest {
         assertEquals("Edited", s.draft("keep", "a")!!.title)
         assertEquals("new", s.cover(s.draft("keep", "a")!!, "a")!!.readText())
 
+        // Opening it left no copy on disk that Save Draft would strand.
+        assertEquals(setOf("composer_drafts_a.json", "cover_a_keep"),
+            File(tmp.root, "drafts").list()!!.toSet())
+
         // ...and Discard Changes restores both.
         k.discard()
         val back = s.draft("keep", "a")!!

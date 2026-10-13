@@ -31,10 +31,11 @@ class ComposerDraftKeeper(
 
     /**
      * The draft as it was when picked from the list, so Discard can put it
-     * back instead of deleting work saved in an earlier session. Its cover is
-     * copied aside, since editing overwrites the saved one.
+     * back instead of deleting work saved in an earlier session. Its cover's
+     * bytes are held here (as iOS does), since editing overwrites the saved
+     * file; a copy on disk would outlive Save Draft or a killed app.
      */
-    private var opened: Pair<ComposerDraft, java.io.File?>? = null
+    private var opened: Pair<ComposerDraft, ByteArray?>? = null
 
     /**
      * Set after publish or discard, so a late autosave or leaving the screen
@@ -80,16 +81,11 @@ class ComposerDraftKeeper(
     fun open(draft: ComposerDraft): java.io.File? {
         pending?.cancel()
         val cover = store.cover(draft, account)
-        val coverCopy = cover?.let { src ->
-            runCatching {
-                java.io.File(src.parentFile, src.name + ".opened").also { src.copyTo(it, overwrite = true) }
-            }.getOrNull()
-        }
-        opened?.second?.delete()
+        val coverBytes = cover?.let { runCatching { it.readBytes() }.getOrNull() }
         draftId = draft.id
         lastSaved = draft
         lastCover = cover?.let { "${it.path}:${it.lastModified()}:${it.length()}" }
-        opened = draft to coverCopy
+        opened = draft to coverBytes
         refreshOthers()
         return cover
     }
@@ -107,7 +103,6 @@ class ComposerDraftKeeper(
         pending?.cancel()
         finished = true
         draftId?.let { store.delete(it, account) }
-        opened?.second?.delete()
     }
 
     /**
@@ -115,11 +110,14 @@ class ComposerDraftKeeper(
      * list goes back to how it was when it was opened.
      */
     fun discard() {
-        val (draft, cover) = opened ?: return finish()
+        val (draft, coverBytes) = opened ?: return finish()
         pending?.cancel()
         finished = true
+        // Written back to the draft's own cover file, which save() keeps in place.
+        val cover = coverBytes?.let { bytes ->
+            runCatching { store.coverFile(draft.id, account).apply { parentFile?.mkdirs(); writeBytes(bytes) } }.getOrNull()
+        }
         store.save(draft, cover, account)
-        cover?.delete()
     }
 
     fun refreshOthers() {

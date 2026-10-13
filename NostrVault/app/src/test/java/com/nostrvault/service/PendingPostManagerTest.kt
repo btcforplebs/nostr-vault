@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -157,7 +158,7 @@ class PendingPostManagerTest {
         val screen = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job() + dispatcher)
         var sent = false
         screen.launch {
-            m.launchSend {
+            m.launchSend("d1") {
                 kotlinx.coroutines.delay(5_000) // the upload
                 sent = true
             }
@@ -166,5 +167,24 @@ class PendingPostManagerTest {
         screen.cancel() // the composer closes mid-upload
         advanceUntilIdle()
         assertTrue(sent)
+    }
+
+    /** Reopening a draft whose send is still running cannot start a second one: one note, not two. */
+    @Test fun aDraftSendsOnceAtATime() = runTest(dispatcher) {
+        val m = manager()
+        var sends = 0
+        val first = m.launchSend("d1") { kotlinx.coroutines.delay(5_000); sends++ }
+        runCurrent()
+        assertTrue(first != null && m.isSending("d1"))
+        assertNull(m.launchSend("d1") { sends++ })
+        // Another draft is not held up.
+        assertTrue(m.launchSend("d2") { sends++ } != null)
+        advanceUntilIdle()
+        assertEquals(2, sends)
+        assertTrue(!m.isSending("d1"))
+        // Once it is done, the same draft may send again (e.g. after a failure).
+        assertTrue(m.launchSend("d1") { sends++ } != null)
+        advanceUntilIdle()
+        assertEquals(3, sends)
     }
 }
