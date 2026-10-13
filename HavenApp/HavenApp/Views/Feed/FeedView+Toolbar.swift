@@ -41,9 +41,11 @@ extension FeedView {
 
     /// The floating "New Posts" button is up: unloaded posts, and either
     /// auto-load is off or the user has scrolled away from the top. Never
-    /// when it's switched off in Appearance settings.
+    /// when it's switched off in Appearance settings, and stepped aside
+    /// while a toolbar note shows, which sits in the same spot.
     var showsNewPostsButton: Bool {
         configService.config.showNewPostsPill
+            && toolbarNote.note == nil
             && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
@@ -262,6 +264,156 @@ extension FeedView {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Toolbar note
+
+/// Every setting the feed's top-right toolbar shows, for the current feed.
+/// A change to one of them is a toolbar tap (or a pick from its menus), and
+/// leaves a note under the toolbar saying what the button does and what it
+/// is set to now: "Global · Web of Trust on".
+struct FeedToolbarState: Equatable {
+    var account: String
+    var mode: FeedMode
+    /// Following / Global for the feeds that have the pair; nil elsewhere.
+    var followingScope: Bool?
+    var everyone: Bool
+    var languages: [String]
+    var autoLoad: Bool
+    var reposts: Bool
+    var replies: Bool
+    var layout: FeedLayoutMode
+    var pollStatus: PollStatusFilter
+    var popular: PopularFilter
+    var engagement: Bool
+
+    /// The note for what changed from `old`, if a toolbar setting did.
+    /// Nothing when the feed or account switched: those are not toolbar taps,
+    /// and every setting can differ between feeds.
+    func note(changedFrom old: FeedToolbarState) -> FilterNote? {
+        guard account == old.account, mode == old.mode else { return nil }
+        let feed = mode.displayName
+        if followingScope != old.followingScope, let following = followingScope {
+            return following
+                ? FilterNote(icon: "person.2.fill", title: feed, setting: "Following")
+                : FilterNote(icon: "globe", title: feed, setting: "Global")
+        }
+        if everyone != old.everyone {
+            return FilterNote(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", title: feed, setting: everyone ? "Everyone" : "Web of Trust on")
+        }
+        if languages != old.languages {
+            return FilterNote(icon: languages.isEmpty ? "character.bubble" : "character.bubble.fill",
+                              title: "Languages", setting: Self.languageSetting(languages))
+        }
+        if autoLoad != old.autoLoad {
+            return autoLoad
+                ? FilterNote(icon: "bolt.circle.fill", title: "Auto-load", setting: "on")
+                : .off("Auto-load", icon: "bolt.circle.fill")
+        }
+        if reposts != old.reposts {
+            return Self.shownOrHidden("Reposts", icon: "arrow.2.squarepath", shown: reposts)
+        }
+        if replies != old.replies {
+            return Self.shownOrHidden("Replies", icon: "message.fill", shown: replies)
+        }
+        if layout != old.layout {
+            return FilterNote(icon: layout.symbolName, title: "Layout", setting: layout.shortName)
+        }
+        if pollStatus != old.pollStatus {
+            return FilterNote(icon: pollStatus.symbolName, title: "Polls", setting: pollStatus == .all ? "Open and closed" : "\(pollStatus.rawValue) only")
+        }
+        if popular != old.popular {
+            switch popular {
+            case .all: return FilterNote(icon: "flame", title: "Popular", setting: "Everyone")
+            case .follows: return FilterNote(icon: "person.2.fill", title: "Popular", setting: "People you follow only")
+            case .nonFollows: return FilterNote(icon: "globe.americas.fill", title: "Popular", setting: "People you don't follow only")
+            }
+        }
+        if engagement != old.engagement {
+            return Self.shownOrHidden("Engagement scores", icon: "chart.bar.fill", shown: engagement)
+        }
+        return nil
+    }
+
+    /// The picked languages, at most two by name: "English, Spanish +2".
+    /// Multi-select would otherwise push the setting past the pill's width.
+    static func languageSetting(_ codes: [String]) -> String {
+        guard codes.count > 2 else { return LanguageFilterMenuItems.summary(codes) }
+        return LanguageFilterMenuItems.summary(Array(codes.prefix(2))) + " +\(codes.count - 2)"
+    }
+
+    /// A show/hide toggle: "Reposts · shown", or "Reposts · hidden" with
+    /// the button's own icon dimmed, as `FilterNote.off` does.
+    private static func shownOrHidden(_ title: String, icon: String, shown: Bool) -> FilterNote {
+        shown
+            ? FilterNote(icon: icon, title: title, setting: "shown")
+            : FilterNote(icon: icon, title: title, setting: "hidden", dimmed: true)
+    }
+}
+
+extension FeedView {
+    var toolbarState: FeedToolbarState {
+        FeedToolbarState(
+            account: configService.activeAccountHexPubkey,
+            mode: feedService.feedMode,
+            followingScope: followingScope,
+            everyone: configService.config.globalShowsEveryone,
+            languages: configService.config.globalFeedLanguages,
+            autoLoad: configService.config.autoLoadNewPosts,
+            reposts: configService.config.showReposts,
+            replies: configService.config.showReplies,
+            layout: layoutModeForCurrentFeed,
+            pollStatus: feedService.pollStatusFilter,
+            popular: feedService.popularFilter,
+            engagement: feedService.showPopularEngagement
+        )
+    }
+
+    private var followingScope: Bool? {
+        switch feedService.feedMode {
+        case .reels: return reelsService.scope == .following
+        case .media: return feedService.mediaFeedMode == .following
+        case .recipes: return recipeService.scope == .following
+        case .articles: return feedService.articlesFeedMode == .following
+        case .polls: return feedService.pollsFeedMode == .following
+        case .marketplace: return marketplaceService.scope == .following
+        case .live: return liveService.scope == .following
+        default: return nil
+        }
+    }
+}
+
+/// Shows the toolbar's note for Music, whose buttons are all menus on
+/// `MusicFeedState`. Its own view so music updates don't re-render the feed.
+struct MusicToolbarNoteObserver: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+    let model: FilterNoteModel
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: feed.scope) { _, _ in model.show(note) }
+            .onChange(of: feed.trendingWindow) { _, _ in model.show(note) }
+    }
+
+    private var note: FilterNote {
+        switch feed.scope {
+        case .trending: return FilterNote(icon: "flame.fill", title: "Music", setting: "Trending \(feed.trendingWindow.title.lowercased())")
+        case .artist(let artist): return FilterNote(icon: "person.crop.circle.fill", title: "Music", setting: artist.name)
+        case .following: return FilterNote(icon: "person.2.fill", title: "Music", setting: "Artists you follow")
+        }
+    }
+}
+
+private extension FeedLayoutMode {
+    /// "Threaded", for the toolbar note; `displayName` adds " View".
+    var shortName: String {
+        switch self {
+        case .expanded: return "Expanded"
+        case .condensed: return "Compact"
+        case .threaded: return "Threaded"
         }
     }
 }

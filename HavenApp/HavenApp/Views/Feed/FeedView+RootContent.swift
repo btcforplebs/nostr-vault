@@ -59,6 +59,15 @@ extension FeedView {
             .transition(.opacity)
             .animation(Motion.fade, value: configService.activeAccountHexPubkey)
         }
+        .filterNoteHost(toolbarNote)
+        .background {
+            if feedService.feedMode == .music {
+                MusicToolbarNoteObserver(model: toolbarNote)
+            }
+        }
+        .onChange(of: toolbarState) { old, new in
+            if let note = new.note(changedFrom: old) { toolbarNote.show(note) }
+        }
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
