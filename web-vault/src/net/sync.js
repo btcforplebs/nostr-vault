@@ -1,7 +1,7 @@
 // Network -> in-page Haven. Every event that comes in is written to Haven (the user's own events to the
 // outbox route, follows' notes to /feed); the screens read only from Haven.
 import { verifyEvent } from "nostr-tools/pure"
-import { pool, relayLists, uniq } from "./pool.js"
+import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 
 export const FEED_KINDS = [1, 6]
 const now = () => Math.floor(Date.now() / 1000)
@@ -94,13 +94,17 @@ export function checkSigned(event, template, pubkey) {
   return copy
 }
 
-/** Sign, store in Haven's outbox, then send to the write relays. -> { event, local, relays: [{url, ok, message}] } */
+/**
+ * Sign, store in Haven's outbox, then send to the relays publishRelays picks.
+ * -> { event, local, relays: [{url, ok, message, local}] } with `local` set on this machine's own relay
+ */
 export async function publishNote(vault, signer, pubkey, content, writeRelays) {
   const template = { kind: 1, created_at: now(), tags: [], content }
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
   if (!local.ok) throw new Error(`Haven refused the note: ${local.message}`)
-  const urls = uniq(writeRelays)
+  const { network, local: own } = publishRelays(writeRelays)
+  const urls = [...network, ...own]
   const results = await Promise.allSettled(pool.publish(urls, event))
-  return { event, local, relays: results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) })) }
+  return { event, local, relays: results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length })) }
 }
