@@ -574,6 +574,7 @@ final class FollowListFollowWatch: ObservableObject {
         switch err {
         case .alreadyFollowing: return follow ? "Already following" : "Unfollow failed"
         case .cannotUnfollowSelf: return follow ? "Follow failed" : "Can't unfollow yourself"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: follow, readOnly: true)
         case .contactsNotLoaded, .listUnavailable:
             return follow ? "Following once your follow list loads…" : "Unfollowing once your follow list loads…"
         }

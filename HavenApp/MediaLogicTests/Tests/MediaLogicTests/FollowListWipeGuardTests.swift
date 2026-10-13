@@ -8,12 +8,14 @@ import XCTest
 final class FollowListWipeGuardTests: XCTestCase {
     private let someone = String(repeating: "c", count: 64)
     private let me = String(repeating: "a", count: 64)
+    private let other = String(repeating: "d", count: 64)
 
     /// State after a load that timed out: attempted, not loading, list unknown, nothing in memory.
     func testQueuedFollowAfterTimeoutPublishesNothing() {
         XCTAssertFalse(ContactManager.mayPublishFollowList(hasAttemptedLoad: true, isLoading: false, listConfirmed: false))
         let result = ContactManager.prepareFollow(pubkey: someone, currentPTags: [], currentPubkeys: [],
-                                                  hasAttemptedLoad: true, isLoading: false, listConfirmed: false)
+                                                  hasAttemptedLoad: true, isLoading: false, listConfirmed: false,
+                                                  readOnly: false)
         guard case .failure(.listUnavailable) = result else {
             return XCTFail("a follow after a timed-out load must not produce a list to publish, got \(result)")
         }
@@ -22,10 +24,31 @@ final class FollowListWipeGuardTests: XCTestCase {
     func testUnfollowAfterTimeoutPublishesNothing() {
         let result = ContactManager.prepareUnfollow(pubkey: someone, activeAccountHex: me,
                                                     currentPTags: [["p", someone]], currentPubkeys: [someone],
-                                                    hasAttemptedLoad: true, isLoading: false, listConfirmed: false)
+                                                    hasAttemptedLoad: true, isLoading: false, listConfirmed: false,
+                                                    readOnly: false)
         guard case .failure(.listUnavailable) = result else {
             return XCTFail("an unfollow after a timed-out load must not produce a list to publish, got \(result)")
         }
+    }
+
+    /// A read-only account's Follow / Unfollow is refused before the list
+    /// changes, so no "Followed" toast shows next to the read-only one.
+    func testReadOnlyFollowLeavesTheListUnchanged() {
+        let tags = [["p", someone]]
+        let follow = ContactManager.prepareFollow(pubkey: other, currentPTags: tags, currentPubkeys: [someone],
+                                                  hasAttemptedLoad: true, isLoading: false, listConfirmed: true,
+                                                  readOnly: true)
+        guard case .failure(.readOnly) = follow else { return XCTFail("read-only follow must refuse, got \(follow)") }
+        let unfollow = ContactManager.prepareUnfollow(pubkey: someone, activeAccountHex: me,
+                                                      currentPTags: tags, currentPubkeys: [someone],
+                                                      hasAttemptedLoad: true, isLoading: false, listConfirmed: true,
+                                                      readOnly: true)
+        guard case .failure(.readOnly) = unfollow else { return XCTFail("read-only unfollow must refuse, got \(unfollow)") }
+        // Not queued as "once your list loads" either: read-only wins over a list still loading.
+        let loading = ContactManager.prepareFollow(pubkey: other, currentPTags: [], currentPubkeys: [],
+                                                   hasAttemptedLoad: false, isLoading: true, listConfirmed: false,
+                                                   readOnly: true)
+        guard case .failure(.readOnly) = loading else { return XCTFail("read-only must not queue, got \(loading)") }
     }
 
     func testTimeoutDoesNotConfirmTheList() {
@@ -37,7 +60,8 @@ final class FollowListWipeGuardTests: XCTestCase {
     func testEveryRelayAnsweringEmptyIsANewAccount() {
         XCTAssertTrue(ContactManager.loadConfirmsList(foundList: false, relaysAsked: 3, relaysAnswered: 3))
         let result = ContactManager.prepareFollow(pubkey: someone, currentPTags: [], currentPubkeys: [],
-                                                  hasAttemptedLoad: true, isLoading: false, listConfirmed: true)
+                                                  hasAttemptedLoad: true, isLoading: false, listConfirmed: true,
+                                                  readOnly: false)
         guard case .success(let list) = result else { return XCTFail("new account should be able to follow, got \(result)") }
         XCTAssertEqual(list.pubkeys, [someone])
     }

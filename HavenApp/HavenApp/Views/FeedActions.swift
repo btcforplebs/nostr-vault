@@ -309,6 +309,9 @@ struct FeedActions {
                     FollowNotificationManager.shared.addPending(pubkey: hexPubkey, recipientName: name, follow: true)
                 case .failure(.alreadyFollowing):
                     break
+                case .failure(.readOnly):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
+                        ContactManager.publishFailedMessage(follow: true, readOnly: true)))
                 case .failure:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Follow failed"))
                 }
@@ -322,6 +325,9 @@ struct FeedActions {
                     FollowNotificationManager.shared.addPending(pubkey: hexPubkey, recipientName: name, follow: false)
                 case .failure(.cannotUnfollowSelf):
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Can't unfollow yourself"))
+                case .failure(.readOnly):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
+                        ContactManager.publishFailedMessage(follow: false, readOnly: true)))
                 case .failure:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollow failed"))
                 }

@@ -18,7 +18,8 @@ extension FeedService {
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
             isLoading: isLoadingContacts,
-            listConfirmed: contactListConfirmed
+            listConfirmed: contactListConfirmed,
+            readOnly: Self.activeAccountIsReadOnly
         ) {
         case .failure(.contactsNotLoaded):
             queueFollowAction(pubkey, follow: true)
@@ -60,7 +61,8 @@ extension FeedService {
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
             isLoading: isLoadingContacts,
-            listConfirmed: contactListConfirmed
+            listConfirmed: contactListConfirmed,
+            readOnly: Self.activeAccountIsReadOnly
         ) {
         case .failure(.contactsNotLoaded):
             queueFollowAction(pubkey, follow: false)
@@ -117,8 +119,9 @@ extension FeedService {
             DispatchQueue.main.async { fail(nil) }
             return
         }
-        // No key to sign with: don't try. `onFailure` reads the same check
-        // to say "read-only" instead of "try again".
+        // No key to sign with: don't try. Follow/unfollow already refuse
+        // with `.readOnly` before the list changes; this covers any other
+        // publish. `onFailure` reads the same check to say "read-only".
         guard !Self.activeAccountIsReadOnly else {
             DispatchQueue.main.async { fail(nil) }
             return

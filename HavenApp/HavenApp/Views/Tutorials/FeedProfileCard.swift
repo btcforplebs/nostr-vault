@@ -43,6 +43,7 @@ enum FollowActions {
         case .contactsNotLoaded, .listUnavailable: return "Following once your follow list loads…"
         case .alreadyFollowing:  return "Already following"
         case .cannotUnfollowSelf: return "Follow failed"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: true, readOnly: true)
         }
     }
 
@@ -51,6 +52,7 @@ enum FollowActions {
         case .contactsNotLoaded, .listUnavailable: return "Unfollowing once your follow list loads…"
         case .cannotUnfollowSelf: return "Can't unfollow yourself"
         case .alreadyFollowing:   return "Unfollow failed"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: false, readOnly: true)
         }
     }
 }

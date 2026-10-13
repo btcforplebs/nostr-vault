@@ -14,6 +14,9 @@ enum ContactManager {
         case listUnavailable
         case alreadyFollowing
         case cannotUnfollowSelf
+        /// No key here and no bunker: nothing can be signed, so the list is
+        /// left alone and nothing is queued.
+        case readOnly
     }
 
     // MARK: - Contact List Parsing
@@ -123,8 +126,10 @@ enum ContactManager {
         currentPubkeys: [String],
         hasAttemptedLoad: Bool,
         isLoading: Bool,
-        listConfirmed: Bool
+        listConfirmed: Bool,
+        readOnly: Bool
     ) -> Result<(pTags: [[String]], pubkeys: [String]), FollowActionError> {
+        guard !readOnly else { return .failure(.readOnly) }
         guard hasAttemptedLoad, !isLoading else { return .failure(.contactsNotLoaded) }
         guard listConfirmed else { return .failure(.listUnavailable) }
         guard !currentPubkeys.contains(pubkey) else { return .failure(.alreadyFollowing) }
@@ -144,8 +149,10 @@ enum ContactManager {
         currentPubkeys: [String],
         hasAttemptedLoad: Bool,
         isLoading: Bool,
-        listConfirmed: Bool
+        listConfirmed: Bool,
+        readOnly: Bool
     ) -> Result<(pTags: [[String]], pubkeys: [String]), FollowActionError> {
+        guard !readOnly else { return .failure(.readOnly) }
         guard hasAttemptedLoad, !isLoading else { return .failure(.contactsNotLoaded) }
         guard listConfirmed else { return .failure(.listUnavailable) }
         guard pubkey != activeAccountHex else { return .failure(.cannotUnfollowSelf) }
