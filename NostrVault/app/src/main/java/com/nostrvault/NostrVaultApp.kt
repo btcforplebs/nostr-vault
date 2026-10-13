@@ -60,6 +60,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // Widgets hear the relay start and stop, not only its 30 s tick.
+        com.nostrvault.widget.WidgetPublisher.watchRelay(this, applicationScope)
         applicationScope.launch {
             configStore.config.collect {
                 com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache

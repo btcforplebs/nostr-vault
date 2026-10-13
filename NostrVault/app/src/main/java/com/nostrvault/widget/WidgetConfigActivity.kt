@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 /**
  * The settings sheet for a home-screen widget — Android's counterpart to the
  * options iOS shows when you edit a widget (QuickActionsIntent,
- * FeedGlanceIntent, MosaicIntent).
+ * FeedGlanceIntent, MosaicIntent, LockScreenIntent).
  *
  * One activity serves every configurable widget; which form it shows comes
  * from the provider the widget id belongs to. The launcher opens it from the
@@ -59,7 +59,7 @@ import kotlinx.coroutines.launch
  */
 class WidgetConfigActivity : ComponentActivity() {
 
-    private enum class Kind { QUICK_ACTIONS, FEED, MOSAIC }
+    private enum class Kind { QUICK_ACTIONS, FEED, MOSAIC, GLANCE }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +78,7 @@ class WidgetConfigActivity : ComponentActivity() {
             QuickActionsReceiver::class.java.name -> Kind.QUICK_ACTIONS
             FeedReceiver::class.java.name -> Kind.FEED
             MosaicReceiver::class.java.name -> Kind.MOSAIC
+            VaultGlanceReceiver::class.java.name -> Kind.GLANCE
             else -> return finish()
         }
         val glanceId = GlanceAppWidgetManager(this).getGlanceIdBy(appWidgetId)
@@ -104,6 +105,9 @@ class WidgetConfigActivity : ComponentActivity() {
                                 }
                                 Kind.MOSAIC -> MosaicForm(MosaicConfig.from(current)) {
                                     save(appWidgetId, glanceId, MosaicWidget(), it.toEntries())
+                                }
+                                Kind.GLANCE -> GlanceForm(GlanceMetric.from(current)) {
+                                    save(appWidgetId, glanceId, VaultGlanceWidget(), GlanceMetric.toEntries(it))
                                 }
                             }
                             Spacer(Modifier.height(12.dp))
@@ -171,6 +175,17 @@ private fun MosaicForm(initial: MosaicConfig, onSave: (MosaicConfig) -> Unit) {
     }
     Toggle("Rounded tiles", config.rounded) { config = config.copy(rounded = it) }
     SaveButton { onSave(config) }
+}
+
+@Composable
+private fun GlanceForm(initial: GlanceMetric, onSave: (GlanceMetric) -> Unit) {
+    var metric by remember { mutableStateOf(initial) }
+    Title("Vault glance", "One thing from your vault in a single cell. A tap opens it.")
+    Section("Show")
+    GlanceMetric.entries.forEach { option ->
+        Choice(option.pickerName, selected = metric == option) { metric = option }
+    }
+    SaveButton { onSave(metric) }
 }
 
 @Composable

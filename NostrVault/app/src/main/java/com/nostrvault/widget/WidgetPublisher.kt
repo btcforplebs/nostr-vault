@@ -67,9 +67,24 @@ class WidgetPublisher @Inject constructor(
             if (changed) redraw(context)
         }
 
+        /**
+         * Publishes the relay half every time the relay starts or stops, for
+         * as long as [scope] (the app's) lives. The service's own 30 s tick
+         * runs only while the relay is up, so on its own a stop never
+         * reached the widgets and they went on saying "live".
+         */
+        fun watchRelay(context: Context, scope: CoroutineScope) {
+            val app = context.applicationContext
+            // A file write and a redraw: off the main thread.
+            scope.launch(Dispatchers.IO) {
+                RelayForegroundService.relayStatus.collect { publishRelayStats(app) }
+            }
+        }
+
         private suspend fun redraw(context: Context) {
             runCatching {
                 VaultPulseWidget().updateAll(context)
+                VaultGlanceWidget().updateAll(context)
                 FeedWidget().updateAll(context)
                 MosaicWidget().updateAll(context)
                 // The DMs tile carries the unread badge.
