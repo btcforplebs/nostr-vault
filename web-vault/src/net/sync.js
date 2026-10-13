@@ -24,11 +24,13 @@ function account(evs) {
 }
 
 /** Fetch the account's replaceable events from the network into Haven, then read it back from Haven. */
-export async function refreshAccount(vault, pubkey, hintRelays) {
+export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {} } = {}) {
   const evs = await pool.querySync(hintRelays, { kinds: [0, 3, 10002], authors: [pubkey] }, { maxWait: 6000 })
   for (const k of [0, 3, 10002]) {
     const ev = newest(evs.filter(e => e.kind === k))
-    if (ev) await vault.outbox.event(ev)
+    if (!ev) continue
+    const r = await vault.outbox.event(ev)
+    if (!r.ok && !/^duplicate:/.test(r.message)) log("account-store-refused", { kind: k, message: r.message })
   }
   return readAccount(vault, pubkey)
 }

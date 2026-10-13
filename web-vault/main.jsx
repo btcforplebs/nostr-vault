@@ -50,7 +50,7 @@ function App() {
       putProfile(local.profileEvent)
       setAccount({ ...local, loaded: !!local.contacts })
       if (!navigator.onLine) return
-      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]))
+      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log })
       putProfile(fresh.profileEvent)
       if (live) setAccount({ ...fresh, loaded: true })
       log("account", { follows: fresh.follows.length, cachedFollows: local.follows.length })
