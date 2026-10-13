@@ -1,4 +1,4 @@
-//go:build !cshared
+//go:build !cshared && !wasm
 
 package main
 

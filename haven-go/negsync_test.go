@@ -41,7 +41,7 @@ func hexid(c byte) string { return strings.Repeat(string(c), 64) }
 
 func newTestStore(t *testing.T) eventstore.RelayWrapper {
 	t.Helper()
-	db := newBadgerBackend(t.TempDir() + "/db")
+	db := fallbackBackend(t.TempDir() + "/db")
 	if err := db.Init(); err != nil {
 		t.Fatal(err)
 	}

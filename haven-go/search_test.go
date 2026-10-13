@@ -597,7 +597,7 @@ func reqMany(t *testing.T, r *nostr.Relay, fs nostr.Filters) ([]*nostr.Event, st
 // TestScanSearchPaging walks a store bigger than one page, with a run of
 // same-second events straddling a page boundary, on both backends.
 func TestScanSearchPaging(t *testing.T) {
-	backends := map[string]func(path string) DBBackend{"badger": newBadgerBackend}
+	backends := map[string]func(path string) DBBackend{fallbackBackendName: fallbackBackend}
 	if lmdbFactory != nil {
 		backends["lmdb"] = lmdbFactory
 	}
@@ -684,7 +684,7 @@ func TestSearchLatency(t *testing.T) {
 		t.Skip("set HAVEN_SEARCH_BENCH=1")
 	}
 	const n = 100_000
-	backends := map[string]func(path string) DBBackend{"badger": newBadgerBackend}
+	backends := map[string]func(path string) DBBackend{fallbackBackendName: fallbackBackend}
 	if lmdbFactory != nil {
 		backends["lmdb"] = lmdbFactory
 	}

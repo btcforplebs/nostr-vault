@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/spf13/afero"
 
 	"github.com/barrydeen/haven/pkg/runsafe"
 	"github.com/barrydeen/haven/pkg/wot"
@@ -36,7 +35,7 @@ func main() {
 	mainCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fs = afero.NewOsFs()
+	fs = newRootFs()
 	if err := fs.MkdirAll(config.BlossomPath, 0755); err != nil {
 		log.Fatal("🚫 error creating blossom path:", err)
 	}

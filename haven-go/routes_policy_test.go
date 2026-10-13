@@ -80,7 +80,7 @@ func signed(t *testing.T, sk string, kind int, tags nostr.Tags, content string) 
 // authAs completes NIP-42 on r as sk. Routes without RequestAuth on connect
 // (outbox, inbox) only issue a challenge after an auth-required reject, so if
 // none has arrived yet a throwaway stranger note is published to provoke one.
-func (a *policyActors) authAs(t *testing.T, r *nostr.Relay, sk string) {
+func (a *policyActors) authAs(t *testing.T, r *policyClient, sk string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -101,9 +101,9 @@ func (a *policyActors) authAs(t *testing.T, r *nostr.Relay, sk string) {
 }
 
 // socket opens a connection to path, authenticated as authSK unless it is "".
-func (a *policyActors) socket(t *testing.T, path, authSK string) *nostr.Relay {
+func (a *policyActors) socket(t *testing.T, path, authSK string) *policyClient {
 	t.Helper()
-	r := a.h.connect(t, path)
+	r := dialPolicyClient(t, a.h.base+path)
 	if authSK != "" {
 		a.authAs(t, r, authSK)
 	}
@@ -153,7 +153,7 @@ func (a *policyActors) runQueryCases(t *testing.T, path string, filter nostr.Fil
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := a.socket(t, path, c.authSK)
-			got, closed := req(t, r, filter)
+			got, closed := policyReq(t, r, filter)
 			if c.closedBy == "" {
 				if closed != "" {
 					t.Fatalf("want EOSE on %s, got CLOSED %q", path, closed)
@@ -301,17 +301,16 @@ func TestRoutePolicyPrivateLimitZeroLive(t *testing.T) {
 	spy := a.socket(t, "/private", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sub, err := spy.Subscribe(ctx, nostr.Filters{{Kinds: []int{nostr.KindTextNote}, LimitZero: true}})
+	sub, err := spy.Subscribe(nostr.Filter{Kinds: []int{nostr.KindTextNote}, LimitZero: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sub.Unsub()
 
 	// Whatever the relay does with the REQ, give it time to register before
 	// the owner publishes.
 	closedReason := ""
 	select {
-	case closedReason = <-sub.ClosedReason:
+	case closedReason = <-sub.closed:
 	case <-time.After(300 * time.Millisecond):
 	}
 
@@ -322,7 +321,7 @@ func TestRoutePolicyPrivateLimitZeroLive(t *testing.T) {
 	}
 
 	select {
-	case ev := <-sub.Events:
+	case ev := <-sub.events:
 		if ev.ID == secret.ID {
 			knownFailure(t, issuePrivateBypass, "unauthenticated limit:0 REQ received live /private event %s", ev.ID)
 		}
@@ -345,8 +344,14 @@ func TestRoutePolicyPrivateUnauthenticatedCount(t *testing.T) {
 		t.Fatalf("owner publish: %v", err)
 	}
 	spy := a.socket(t, "/private", "")
-	n, _, err := spy.Count(ctx, nostr.Filters{{Kinds: []int{nostr.KindTextNote}}})
-	if err == nil {
+	n, closed, err := spy.Count(ctx, nostr.Filter{Kinds: []int{nostr.KindTextNote}})
+	if err != nil {
+		t.Fatalf("COUNT: %v", err)
+	}
+	if closed == "" {
 		knownFailure(t, issuePrivateBypass, "unauthenticated COUNT on /private answered %d", n)
+	}
+	if !strings.HasPrefix(closed, closedQueryAuth) {
+		t.Fatalf("unauthenticated COUNT closed with %q, want %q", closed, closedQueryAuth)
 	}
 }
