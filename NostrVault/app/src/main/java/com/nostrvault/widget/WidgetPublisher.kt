@@ -10,13 +10,19 @@ import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.ZapsToday
+import com.nostrvault.service.ZapsTodayCounter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
@@ -43,6 +49,7 @@ class WidgetPublisher @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val mediaCache: MediaCacheService,
+    private val zapsTodayCounter: ZapsTodayCounter,
 ) {
     companion object {
         private const val TAG = "WidgetPublisher"
@@ -99,6 +106,7 @@ class WidgetPublisher @Inject constructor(
      * redraw of every installed widget.
      */
     fun start(scope: CoroutineScope) {
+        scope.watchZapsToday()
         scope.launch {
             combine(
                 feedService.notes,
@@ -139,11 +147,52 @@ class WidgetPublisher @Inject constructor(
                 .flowOn(Dispatchers.IO)
                 .collect { fresh ->
                     val changed = WidgetSnapshotStore.update(context) { current ->
-                        // Keep the relay half; that writer is the service.
-                        fresh.copy(relay = current.relay)
+                        // Keep the relay half (the service writes it) and the
+                        // zap count (its own collector below).
+                        fresh.copy(relay = current.relay, zapsToday = current.zapsToday)
                     }
                     if (changed) redraw(context)
                 }
+        }
+    }
+
+    /**
+     * Zaps today, counted again whenever something lands in your relay's
+     * inbox, the account changes, or the day turns over; the settle delay
+     * folds a burst of arrivals into one count. Before any count, a change
+     * of account or day puts a 0 in place at once ([VaultSnapshot.ZapCount.heldFor]),
+     * so the widget never shows another account's or yesterday's number,
+     * even when the relay can't answer. A count it can't get leaves that in place.
+     */
+    private fun CoroutineScope.watchZapsToday() = launch(Dispatchers.IO) {
+        combine(
+            RelayForegroundService.inboxActivityTick,
+            configStore.activeAccountHexPubkey,
+            midnights(),
+        ) { _, me, _ -> me }
+            .onEach { me ->
+                val todayStart = ZapsToday.startOfDay(System.currentTimeMillis())
+                val changed = WidgetSnapshotStore.update(context) {
+                    it.copy(zapsToday = it.zapsToday.heldFor(me, todayStart))
+                }
+                if (changed) redraw(context)
+            }
+            .debounce(3_000)
+            .collectLatest { me ->
+                val now = System.currentTimeMillis()
+                val count = zapsTodayCounter.count(me, now) ?: return@collectLatest
+                val today = VaultSnapshot.ZapCount(account = me, dayStart = ZapsToday.startOfDay(now), count = count)
+                val changed = WidgetSnapshotStore.update(context) { it.copy(zapsToday = today) }
+                if (changed) redraw(context)
+            }
+    }
+
+    /** Now, then each local midnight (a second after, so the new day has begun). */
+    private fun midnights() = flow {
+        while (true) {
+            emit(Unit)
+            val now = System.currentTimeMillis()
+            delay(ZapsToday.nextStartOfDay(now) * 1_000 - now + 1_000)
         }
     }
 

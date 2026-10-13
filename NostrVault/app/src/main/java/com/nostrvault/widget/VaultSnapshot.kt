@@ -16,9 +16,10 @@ import java.io.File
  * engineering around, and no thumbnail downsampling.
  *
  * Fields mirror NVWidgetSnapshot on iOS so the two platforms show the same
- * numbers. Where iOS hardcodes a placeholder (lightning balance, 24h zaps,
- * price) this leaves the field out entirely rather than shipping a widget that
- * displays a zero it invented.
+ * numbers. Where iOS hardcodes a placeholder (lightning balance, price) this
+ * leaves the field out entirely rather than shipping a widget that displays a
+ * zero it invented. Zaps today is counted here from your relay
+ * ([zapsToday]); iOS still writes 0 for it.
  */
 @Serializable
 data class VaultSnapshot(
@@ -29,7 +30,34 @@ data class VaultSnapshot(
     val unreadDMs: Int = 0,
     /** Mosaic's tiles, newest first. See WidgetPublisher.mediaTiles. */
     val media: List<MediaTile> = emptyList(),
+    /** Zaps received since local midnight (iOS `wallet.zapsReceived24h`). See ZapsTodayCounter. */
+    val zapsToday: ZapCount = ZapCount(),
 ) {
+    /**
+     * A count and the day it belongs to. A widget drawn after midnight shows
+     * 0 until the next count, rather than yesterday's number.
+     */
+    @Serializable
+    data class ZapCount(
+        val account: String = "",
+        /** Local midnight the count started from, in epoch seconds. */
+        val dayStart: Long = 0L,
+        val count: Int = 0,
+    ) {
+        /** The count for the day that started at [todayStart]: 0 once the day has changed. */
+        fun on(todayStart: Long): Int = if (dayStart == todayStart) count else 0
+
+        /**
+         * This count when it is [account]'s for the day that started at
+         * [todayStart]; otherwise a 0 for them. Written the moment the
+         * account or the day changes, so the widget never shows another
+         * account's zaps or yesterday's while the next count is pending, or
+         * when the relay can't give one.
+         */
+        fun heldFor(account: String, todayStart: Long): ZapCount =
+            if (account == this.account && dayStart == todayStart) this else ZapCount(account, todayStart, 0)
+    }
+
     @Serializable
     data class RelayStats(
         /**
