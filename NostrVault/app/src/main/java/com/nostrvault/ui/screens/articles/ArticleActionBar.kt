@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.Share
 import com.nostrvault.ui.components.engagementCountLabel
+import com.nostrvault.ui.components.LocalShowZapButton
 import com.nostrvault.ui.components.formatCount
 import androidx.compose.ui.unit.dp
 import com.nostrvault.ui.theme.*
@@ -37,7 +38,8 @@ internal fun ArticleActionBar(
             if (liked) Color(0xFFE5484D) else SecondaryText, onLike, count = engagementCountLabel(likeCount))
         ActionPill(Icons.Outlined.ChatBubbleOutline, "Comment", SecondaryText, onComment,
             count = engagementCountLabel(commentCount))
-        ActionPill(if (zapped) Icons.Filled.Bolt else Icons.Outlined.Bolt, "Zap",
+        // Hidden, count and all, when ⚡️ is out of Appearance → Post buttons (iOS ArticleReaderView).
+        if (LocalShowZapButton.current) ActionPill(if (zapped) Icons.Filled.Bolt else Icons.Outlined.Bolt, "Zap",
             if (zapped || zapSats > 0) Color(0xFFF5A623) else SecondaryText, onZap,
             count = zapSats.takeIf { it > 0 }?.let { formatCount(it) })
         ActionPill(Icons.Outlined.BorderColor, "Highlight",
