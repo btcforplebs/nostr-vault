@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
+import com.nostrvault.ui.components.VideoControls
 import com.nostrvault.ui.components.VideoPlayer
 import com.nostrvault.ui.components.ZoomableBox
 import com.nostrvault.ui.components.ZoomableImage
@@ -149,12 +150,16 @@ fun MediaViewerScreen(
 
             if (item.isVideo || item.isAudio) {
                 // The same gestures as a photo (iOS): drag to close, and
-                // pinch / double-tap zoom on a video. The player keeps its
-                // own taps.
+                // pinch / double-tap zoom on a video. A single tap shows or
+                // hides the player's controls, which zooming in hides.
+                val videoControls = remember(item.displayUrl) { VideoControls() }
                 ZoomableBox(
                     zoomable = item.isVideo && !isInPiP,
-                    contentTakesTaps = true,
-                    onScaleChanged = { newScale -> currentScale = newScale },
+                    onScaleChanged = { newScale ->
+                        currentScale = newScale
+                        videoControls.zoomed(newScale)
+                    },
+                    onTap = if (item.isVideo && !isInPiP) videoControls::tap else null,
                     onVerticalDrag = onVerticalDrag,
                     onVerticalDragEnd = { onVerticalDragEnd() },
                     modifier = Modifier.fillMaxSize(),
@@ -175,6 +180,7 @@ fun MediaViewerScreen(
                                 uri = mediaUri,
                                 modifier = Modifier.fillMaxSize(),
                                 autoplay = autoplayVideos,
+                                controls = videoControls.shown,
                             )
                         }
                     } else {

@@ -256,16 +256,21 @@ internal fun FullScreenMediaPager(
                 if (isVideoUrl(url) || isAudioUrl(url)) {
                     // The same gestures as a photo (iOS): drag to close,
                     // long-press for the delete bar, and pinch / double-tap
-                    // zoom on a video. The player keeps its own taps.
+                    // zoom on a video. A single tap shows or hides the
+                    // player's controls, which zooming in hides.
+                    val videoControls = remember(url) { VideoControls() }
                     ZoomableBox(
                         zoomable = isVideoUrl(url) && !isInPiP,
-                        contentTakesTaps = true,
-                        onScaleChanged = { currentScale = it },
+                        onScaleChanged = {
+                            currentScale = it
+                            videoControls.zoomed(it)
+                        },
                         onVerticalDrag = onVerticalDrag,
                         onVerticalDragEnd = { onVerticalDragEnd() },
                         onLongPress = {
                             if (!closing && !deleting && viewModel.canDelete(url)) showDeleteBar = !showDeleteBar
                         },
+                        onTap = if (isVideoUrl(url) && !isInPiP) videoControls::tap else null,
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color.Black),
@@ -279,7 +284,7 @@ internal fun FullScreenMediaPager(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
-                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
+                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize(), controls = videoControls.shown)
                             }
                         }
                     }
