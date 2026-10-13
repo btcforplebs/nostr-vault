@@ -1,5 +1,8 @@
 import AVFoundation
 import Combine
+#if os(macOS)
+import AppKit
+#endif
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -16,8 +19,16 @@ final class LocalNotificationService {
     static let shared = LocalNotificationService()
     private init() {}
 
+    #if os(macOS)
+    /// True while the main window is up and the app is frontmost: the only
+    /// time the lane (PillLaneStack over MenuBarView) is on screen. A menu bar
+    /// app is often active with no window, and then a system alert is the
+    /// only way anything shows.
+    var appInForeground: Bool { NSApp.isActive && MacWindow.isMainWindowMounted }
+    #else
     /// True while the app is foregrounded. Set by SceneDelegate.
     var appInForeground: Bool = false
+    #endif
 
     private var soundPlayer: AVAudioPlayer?
     private var seen = Set<String>()
@@ -72,7 +83,9 @@ final class LocalNotificationService {
         guard type == "summary" || !rawId.isEmpty else { return }
         let id = rawId.isEmpty ? "summary-\(Int(Date().timeIntervalSince1970))" : rawId
 
-        guard markSeen(id) else { return }
+        // Keyed like an APNs push for the same event (showPush), so the
+        // two paths show it once between them.
+        guard markSeen(NotificationPolicy.dedupKey(eventId: id)) else { return }
 
         // The inbox is shared across every whitelisted account on this device, so the
         // marker's `recipient` (the whitelisted hex pubkey it was actually tagged for —
@@ -283,7 +296,10 @@ final class LocalNotificationService {
             let extra: [String: Any] = [Self.foldedFollowersKey: folded.members,
                                         Self.foldedFollowerCountKey: folded.count]
             if appInForeground {
-                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub)
+                // An alert already waiting in Notification Center is updated
+                // there below, so the pill only needs filing if there is none.
+                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub,
+                                fileIfMissed: showing.isShowing ? nil : extra)
                 // The alert waiting in Notification Center still counts too,
                 // or its number would go backwards after the next stranger.
                 if showing.isShowing {
@@ -425,15 +441,66 @@ final class LocalNotificationService {
     private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String,
                                  carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
-        showInAppBanner(id: id, type: type, title: title, body: body, npub: npub, carried: carried)
+        showInAppBanner(id: id, type: type, title: title, body: body, npub: npub, carried: carried,
+                        fileIfMissed: carried)
     }
 
+    /// - Parameter fileIfMissed: when the lane never draws the pill (two are
+    ///   already up and it times out), the alert is filed quietly in
+    ///   Notification Center with these userInfo extras. Nil when the alert
+    ///   is already there.
     private func showInAppBanner(id: String, type: String, title: String, body: String, npub: String,
-                                 carried: [String: String] = [:]) {
+                                 carried: [AnyHashable: Any] = [:], fileIfMissed: [String: Any]?) {
         let (icon, color) = iconAndColor(for: type)
-        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color) {
-            Self.navigate(type: type, id: id, npub: npub, carried: carried)
+        let onMissed: (() -> Void)? = fileIfMissed.map { extra in
+            { [weak self] in
+                self?.post(id: id, type: type, title: title, body: body, npub: npub, extra: extra, quiet: true)
+            }
         }
+        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color, onTap: {
+            Self.navigate(type: type, id: id, npub: npub, carried: carried)
+        }, onMissed: onMissed)
+        playSound()
+    }
+
+    // MARK: - System alerts reaching an open app
+
+    /// What a system alert may do on screen (the delegates' `willPresent`).
+    /// While the app is in front the lane is the only on-screen surface
+    /// (`docs/pills.md`): the alert becomes a pill and goes to Notification
+    /// Center only. Never `[]`: a marker alert is filed as the app goes to the
+    /// background and may be presented after it is back (`post()` waits
+    /// 0.1 s, a DM up to 15 s to decrypt), and with no banner and no list it
+    /// would be lost from both surfaces. A quiet alert only updates the one
+    /// already listed.
+    func presentation(of content: UNNotificationContent) -> UNNotificationPresentationOptions {
+        let info = content.userInfo
+        if info[Self.quietKey] as? Bool == true { return Self.listed }
+        guard appInForeground else { return Self.listed.union([.banner, .sound]) }
+        if let type = info["notif_type"] as? String, let id = info["notif_id"] as? String {
+            // It is listed by the return below, so a missed pill loses nothing.
+            showInAppBanner(id: id, type: type, title: content.title, body: content.body,
+                            npub: info["notif_npub"] as? String ?? "", carried: info, fileIfMissed: nil)
+        }
+        return Self.listed
+    }
+
+    /// Notification Center only. iOS keeps the icon badge in step too.
+    private static var listed: UNNotificationPresentationOptions {
+        #if os(iOS)
+        [.list, .badge]
+        #else
+        [.list]
+        #endif
+    }
+
+    /// An APNs push for an event, arriving while the app is in front: the pill
+    /// its relay marker would show, unless the marker already showed it.
+    /// Listed in Notification Center by `presentation(of:)`.
+    func showPush(eventId: String, kind: Int, title: String, body: String, onTap: @escaping () -> Void) {
+        guard markSeen(NotificationPolicy.dedupKey(eventId: eventId)) else { return }
+        let (icon, color) = iconAndColor(for: NotificationPolicy.markerType(forEventKind: kind) ?? "")
+        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color, onTap: onTap)
         playSound()
     }
 

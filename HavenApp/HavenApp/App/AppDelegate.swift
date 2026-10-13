@@ -212,20 +212,18 @@ extension AppDelegate: NSApplicationDelegate {}
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
     /// macOS suppresses notifications for the frontmost app unless the delegate
-    /// asks for them. LocalNotificationService only posts these when the app is
-    /// not foregrounded on iOS; on macOS `appInForeground` is never set, and the
-    /// in-app banner (RelayActivityBanner) is only hosted by the iOS view tree —
-    /// so this is the only way a message that arrives while the app is active is
-    /// visible at all.
+    /// asks for them. While the main window is up the alert shows as a pill
+    /// in its lane instead (PillLaneStack); with no window it banners, since
+    /// nothing else would show it. See `LocalNotificationService.presentation(of:)`.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // A quiet replacement only updates the count already in Notification
-        // Center (LocalNotificationService.announceFoldedFollow).
-        let quiet = notification.request.content.userInfo[LocalNotificationService.quietKey] as? Bool ?? false
-        completionHandler(quiet ? [.list] : [.banner, .sound])
+        let content = notification.request.content
+        Task { @MainActor in
+            completionHandler(LocalNotificationService.shared.presentation(of: content))
+        }
     }
 
     nonisolated func userNotificationCenter(

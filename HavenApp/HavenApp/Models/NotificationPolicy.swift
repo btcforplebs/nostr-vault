@@ -134,6 +134,28 @@ enum NotificationPolicy {
         appInForeground && (type == "dm" || type == "giftwrap")
     }
 
+    /// The one key an event is shown under, whichever way it arrives: the
+    /// relay's `🔔NOTIFY|` marker (`id`) or an APNs push (`event_id`). Both
+    /// carry the event id, so the same mention cannot make two pills.
+    static func dedupKey(eventId: String) -> String {
+        eventId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// The marker type an APNs push stands for, from its `event_kind`, so a
+    /// push shown in the app gets the same pill as the marker would. Nil for
+    /// a kind the relay never raises a marker for.
+    static func markerType(forEventKind kind: Int) -> String? {
+        switch kind {
+        case 4, 1059: return "dm"
+        case 1:       return "mention"
+        case 7:       return "reaction"
+        case 6, 16:   return "repost"
+        case 9735:    return "zap"
+        case 3:       return "follow"
+        default:      return nil
+        }
+    }
+
     /// A decrypted DM as notification text: one line, cut to fit a banner.
     /// Nil when there is nothing to read (an empty message), so the caller
     /// keeps the generic line.

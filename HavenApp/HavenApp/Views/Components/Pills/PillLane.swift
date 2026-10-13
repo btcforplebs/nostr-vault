@@ -42,6 +42,18 @@ final class PillLane: ObservableObject {
     /// screen draws itself (the Feed's New Posts, the WoT rebuild pill) are
     /// ambient: hide them while this is true.
     @Published private(set) var hidesAmbient = false
+    /// The pills that have drawn, newest last, so a manager can tell a pill
+    /// that was seen from one the lane held back until it timed out.
+    private var shown: [String] = []
+    private static let shownMemory = 64
+
+    /// True when `id` has drawn in the lane. A pill that leaves without ever
+    /// drawing was never seen; an arrival (a mention, a DM) must then be
+    /// filed somewhere it can still be found, since the lane does not show a
+    /// pill late (`docs/pills.md`).
+    func wasShown(_ id: String) -> Bool {
+        shown.contains(id)
+    }
 
     func enter(_ id: String, _ level: PillLevel) {
         if var entry = entries[id] {
@@ -87,6 +99,8 @@ final class PillLane: ObservableObject {
             next.insert(ambient)
         }
         let hides = next.contains { entries[$0]?.level != .ambient }
+        for id in next where !shown.contains(id) { shown.append(id) }
+        if shown.count > Self.shownMemory { shown.removeFirst(shown.count - Self.shownMemory) }
         if next != visible { visible = next }
         if hides != hidesAmbient { hidesAmbient = hides }
     }

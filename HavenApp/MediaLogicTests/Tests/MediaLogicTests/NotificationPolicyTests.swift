@@ -125,6 +125,24 @@ final class NotificationPolicyTests: XCTestCase {
         }
     }
 
+    /// A marker and a push for the same event share one key, so it shows once.
+    func testDedupKeyIsSharedByMarkerAndPush() {
+        let id = "ab12CD34" + String(repeating: "0", count: 56)
+        XCTAssertEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: " \(id.lowercased())\n"))
+        XCTAssertNotEqual(NotificationPolicy.dedupKey(eventId: id), NotificationPolicy.dedupKey(eventId: "other"))
+    }
+
+    /// A push gets the pill its marker would have had.
+    func testPushKindMapsToMarkerType() {
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 1059), "dm")
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 4), "dm")
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 1), "mention")
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 7), "reaction")
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 16), "repost")
+        XCTAssertEqual(NotificationPolicy.markerType(forEventKind: 9735), "zap")
+        XCTAssertNil(NotificationPolicy.markerType(forEventKind: 30023))
+    }
+
     /// A decrypted DM becomes one readable banner line.
     func testDMPreviewIsOneLine() {
         XCTAssertEqual(NotificationPolicy.dmPreview("hey\n\n  are you  around?\t"), "hey are you around?")

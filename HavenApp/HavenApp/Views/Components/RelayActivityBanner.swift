@@ -15,6 +15,12 @@ struct RelayActivityNotification: Identifiable {
     let body: String
     let color: Color
     let onTap: () -> Void
+    /// Runs if the pill leaves without the lane ever drawing it, to file the
+    /// alert in Notification Center instead. Nil when it is already there.
+    let onMissed: (() -> Void)?
+
+    /// The pill's id in the lane.
+    var laneId: String { "relayActivity-\(id)" }
 }
 
 // MARK: - Relay Activity Notification Manager
@@ -26,13 +32,16 @@ final class RelayActivityNotificationManager: ObservableObject {
 
     @Published var notifications: [RelayActivityNotification] = []
 
-    func show(icon: String, title: String, body: String, color: Color, onTap: @escaping () -> Void) {
-        let notification = RelayActivityNotification(icon: icon, title: title, body: body, color: color, onTap: onTap)
+    func show(icon: String, title: String, body: String, color: Color,
+              onTap: @escaping () -> Void, onMissed: (() -> Void)? = nil) {
+        let notification = RelayActivityNotification(icon: icon, title: title, body: body, color: color,
+                                                     onTap: onTap, onMissed: onMissed)
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
         // Cap at 3 visible so a burst of activity doesn't fill the screen.
         if notifications.count > 3 {
+            notifications.dropFirst(3).forEach(fileIfMissed)
             withAnimation(Motion.bannerOut) {
                 notifications = Array(notifications.prefix(3))
             }
@@ -44,9 +53,17 @@ final class RelayActivityNotificationManager: ObservableObject {
     }
 
     func dismiss(_ id: UUID) {
+        notifications.filter { $0.id == id }.forEach(fileIfMissed)
         withAnimation(Motion.bannerOut) {
             notifications.removeAll { $0.id == id }
         }
+    }
+
+    /// The lane shows two pills at most and never shows one late, so a burst
+    /// of arrivals can time out unseen. Those go to Notification Center.
+    private func fileIfMissed(_ notification: RelayActivityNotification) {
+        guard let onMissed = notification.onMissed, !PillLane.shared.wasShown(notification.laneId) else { return }
+        onMissed()
     }
 }
 
@@ -58,7 +75,7 @@ struct RelayActivityBanner: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                PillSlot("relayActivity-\(notification.id)", level: .result) {
+                PillSlot(notification.laneId, level: .result) {
                     RelayActivityPill(notification: notification) {
                         manager.dismiss(notification.id)
                     }

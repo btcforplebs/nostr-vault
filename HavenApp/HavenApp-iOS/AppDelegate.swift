@@ -277,14 +277,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 // MARK: - UNUserNotificationCenterDelegate
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    /// Handle notification when app is in foreground
+    /// A notification arriving while the app is open shows as a pill in the
+    /// lane, never as a system banner too (`docs/pills.md`). It is still
+    /// listed in Notification Center; see `LocalNotificationService.presentation(of:)`.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Show banner, play sound, and update badge even when app is open
-        completionHandler([.banner, .sound, .badge])
+        let content = notification.request.content
+        Task { @MainActor in
+            let service = LocalNotificationService.shared
+            if service.appInForeground,
+               let eventId = content.userInfo["event_id"] as? String,
+               let eventKind = content.userInfo["event_kind"] as? Int {
+                let action = PendingNotificationAction(
+                    eventId: eventId, eventKind: eventKind,
+                    recipientPubkey: content.userInfo["recipient_pubkey"] as? String
+                )
+                service.showPush(eventId: eventId, kind: eventKind, title: content.title, body: content.body) {
+                    Self.dispatchAction(action)
+                }
+            }
+            completionHandler(service.presentation(of: content))
+        }
     }
 
     /// Handle notification tap
