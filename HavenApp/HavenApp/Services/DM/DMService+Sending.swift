@@ -46,17 +46,6 @@ extension DMService {
         return ConfigService.shared.hasCredential(forNpub: activeNpub)
     }
 
-    /// Whether the owner account can sign (NIP-42 AUTH always signs as owner).
-    /// Presence-only, like canDecryptNIP04(); NIP-46 defers to the bunker.
-    func canSignAsOwner() -> Bool {
-        let config = ConfigService.shared.config
-        if config.activeSigningMode() == "nip46" { return true }
-        if !config.ownerNcryptsec.isEmpty {
-            return NIP49Service.getPasswordFromKeychain() != nil
-        }
-        return !(config.ownerHexKey ?? "").isEmpty
-    }
-
     func sendDM(content: String, to recipientHexPubkey: String, useNIP04: Bool = false) async throws {
         if useNIP04 {
             try await sendNIP04DM(content: content, to: recipientHexPubkey)

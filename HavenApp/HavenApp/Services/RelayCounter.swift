@@ -19,17 +19,13 @@ final class RelayCounter {
         return await RelayCounter(filters: filters, url: url, needsAuth: needsAuth).run(timeout: timeout)
     }
 
-    /// Whether the owner can sign the AUTH /private and /chat need. Like
-    /// `DMService.canSignAsOwner()`, but by the owner's own signing mode, not
-    /// the active account's: the AUTH is owner-forced and goes to the owner's
-    /// signer (`NostrService.signEventAsync`) whichever account is active.
+    /// Whether the owner can sign the AUTH /private and /chat need, whichever
+    /// account is active (`HavenConfig.ownerCanSign`, the rule DM's /chat AUTH
+    /// uses too).
     static func ownerCanAuth() -> Bool {
-        let config = ConfigService.shared.config
-        if config.signingMode(for: config.ownerNpub) == "nip46" { return true }
-        if !config.ownerNcryptsec.isEmpty {
-            return NIP49Service.getPasswordFromKeychain() != nil
-        }
-        return !(config.ownerHexKey ?? "").isEmpty
+        ConfigService.shared.config.ownerCanSign(
+            hasNcryptsecPassword: NIP49Service.getPasswordFromKeychain() != nil
+        )
     }
 
     private let filters: [String: [String: Any]]

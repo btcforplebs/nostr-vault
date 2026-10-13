@@ -35,6 +35,36 @@ extension HavenConfig {
         !ownerNpub.isEmpty && signingMode(for: ownerNpub) == "nip46"
     }
 
+    /// The key the Go core files a bunker session under: the link's host (the
+    /// remote signer), else the stored signer key. For bunkers such as Clave
+    /// the host is not the account's own signerPubkey.
+    static func signerSessionKey(bunkerURI: String, signerPubkey: String) -> String {
+        URLComponents(string: bunkerURI)?.host ?? signerPubkey
+    }
+
+    /// The Go session key of the owner's bunker, or nil without one.
+    var ownerSessionKey: String? {
+        guard let cfg = accountBunkerConfigs[ownerNpub] else { return nil }
+        let key = Self.signerSessionKey(bunkerURI: cfg.bunkerURI, signerPubkey: cfg.signerPubkey)
+        return key.isEmpty ? nil : key
+    }
+
+    /// The owner's bunker link as the Go login takes it, built from the signer
+    /// key and relay when no link was stored (as NIP46Service.performConnect does).
+    var ownerBunkerLink: String? {
+        guard let cfg = accountBunkerConfigs[ownerNpub] else { return nil }
+        if !cfg.bunkerURI.isEmpty { return cfg.bunkerURI }
+        guard !cfg.signerPubkey.isEmpty, !cfg.relayURL.isEmpty else { return nil }
+        return "bunker://\(cfg.signerPubkey)?relay=\(cfg.relayURL)"
+    }
+
+    /// Whether the owner's bunker session has to be opened in the background:
+    /// the owner signs with a bunker, but another account is active, so the
+    /// active-signer connect at launch never logs the owner in.
+    var ownerNeedsBackgroundSession: Bool {
+        ownerSignsWithBunker && !activeAccountNpub.isEmpty && activeAccountNpub != ownerNpub
+    }
+
     /// Whether the owner can sign owner-forced events, whichever account is
     /// active. `hasNcryptsecPassword` is asked only for an ncryptsec owner:
     /// without the stored password the key can't be decrypted.

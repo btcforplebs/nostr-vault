@@ -475,6 +475,8 @@ class ConfigService: ObservableObject {
         } else {
             config.signingMode = mode
         }
+        // The owner's relay AUTH signs through the owner's own bunker session.
+        NIP46Service.shared.connectOwnerInBackgroundIfNeeded()
 
         save()
 

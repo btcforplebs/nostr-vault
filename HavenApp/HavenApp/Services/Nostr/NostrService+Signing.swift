@@ -131,10 +131,11 @@ extension NostrService {
         // sign for the owner's key, so every reconnect sent a doomed request
         // to that signer. Route them to the owner's own signer instead.
         if forceOwner, !ownerHexPubkey.isEmpty, ownerHexPubkey != activeHexPubkey {
-            let ownerNpub = config.ownerNpub
             // The owner's own signing mode, explicit or found from its bunker
             // config: a wizard-made bunker has no accountSigningModes entry.
-            guard config.ownerSignsWithBunker, let ownerSigner = config.accountBunkerConfigs[ownerNpub]?.signerPubkey, !ownerSigner.isEmpty else {
+            // The session is looked up by the key the Go core files it under
+            // (the link's host), not the account's own signerPubkey.
+            guard config.ownerSignsWithBunker, let ownerSigner = config.ownerSessionKey else {
                 return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true)
             }
             let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
