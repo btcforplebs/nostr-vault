@@ -142,6 +142,7 @@ internal fun NavGraphBuilder.tabRoutes(
             onNewMessage = {
                 navController.navigate(Screen.NewMessage.createRoute())
             },
+            onProfileClick = { pk -> navController.navigate(Screen.Profile.createRoute(pk)) },
         )
     }
 

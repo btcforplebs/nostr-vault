@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,12 +108,48 @@ class DMInboxViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Phones push the picked conversation full-screen through [onConversationClick];
+ * wide screens open it beside the list (iOS DMInboxView), where its header
+ * leads to the profile through [onProfileClick].
+ */
 @Composable
 fun DMInboxScreen(
     onConversationClick: (String) -> Unit,
     onNewMessage: () -> Unit = {},
+    onProfileClick: (String) -> Unit = {},
     viewModel: DMInboxViewModel = hiltViewModel(),
+) {
+    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (dmUsesTwoPane(maxWidth)) {
+            DMTwoPane(selected = selected, onProfileClick = onProfileClick) { listModifier ->
+                DMInboxList(
+                    onConversationClick = { selected = it },
+                    onNewMessage = onNewMessage,
+                    viewModel = viewModel,
+                    selected = selected,
+                    modifier = listModifier,
+                )
+            }
+        } else {
+            DMInboxList(
+                onConversationClick = onConversationClick,
+                onNewMessage = onNewMessage,
+                viewModel = viewModel,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DMInboxList(
+    onConversationClick: (String) -> Unit,
+    onNewMessage: () -> Unit,
+    viewModel: DMInboxViewModel,
+    selected: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val conversations by viewModel.conversations.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -123,6 +160,7 @@ fun DMInboxScreen(
     val colors = LocalNostrVaultColors.current
 
     GlassScaffold(
+        modifier = modifier,
         toolbar = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -222,6 +260,7 @@ fun DMInboxScreen(
                             ConversationRow(
                                 conversation = conversation,
                                 profile = viewModel.profileFor(conversation.id),
+                                isSelected = conversation.id == selected,
                                 onClick = { onConversationClick(conversation.id) },
                             )
                         }
@@ -302,6 +341,8 @@ private fun ConversationRow(
     conversation: DMConversation,
     profile: FeedProfile?,
     onClick: () -> Unit,
+    /** The conversation open beside the list on a wide screen. */
+    isSelected: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val hasUnread = conversation.unreadCount > 0
@@ -313,6 +354,7 @@ private fun ConversationRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(SecondaryGroupedBg)
+            .background(if (isSelected) colors.primary.copy(alpha = 0.14f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 18.dp),
     ) {

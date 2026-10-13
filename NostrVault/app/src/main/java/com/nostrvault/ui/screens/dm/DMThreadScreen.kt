@@ -1,5 +1,8 @@
 package com.nostrvault.ui.screens.dm
 
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -40,6 +43,7 @@ import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
 import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
+import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.FullScreenMediaRouter
 import com.nostrvault.ui.components.MediaSourceKey
 import com.nostrvault.ui.components.MediaZoomSources
@@ -96,8 +100,8 @@ class DMThreadViewModel @Inject constructor(
     private val _useNIP04 = MutableStateFlow(false)
     val useNIP04 = _useNIP04.asStateFlow()
 
-    private val _messageText = MutableStateFlow("")
-    val messageText = _messageText.asStateFlow()
+    /** The message box. A send clears it and a failed one hands the text back. */
+    val messageField = TextFieldState()
 
     private val _isSending = MutableStateFlow(false)
     val isSending = _isSending.asStateFlow()
@@ -135,21 +139,41 @@ class DMThreadViewModel @Inject constructor(
         }
     }
 
-    fun setMessageText(text: String) { _messageText.value = text }
+    fun setMessageText(text: String) { messageField.setTextAndPlaceCursorAtEnd(text) }
 
-    fun setAttachedImage(uri: Uri?) { _attachedImage.value = uri }
-    fun clearAttachedImage() { _attachedImage.value = null }
+    fun setAttachedImage(uri: Uri?) {
+        if (_attachedImage.value != uri) DMPastedImage.discard(_attachedImage.value)
+        _attachedImage.value = uri
+    }
+    fun clearAttachedImage() = setAttachedImage(null)
+
+    /** A photo pasted, dropped or sent from the keyboard: copied, then attached like a picked one. */
+    fun attachPastedImage(uri: Uri) {
+        if (_isSending.value) return
+        viewModelScope.launch {
+            val copy = DMPastedImage.copy(context, uri)
+            if (copy == null) {
+                _sendError.value = "Couldn't read that photo."
+            } else {
+                setAttachedImage(copy)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        DMPastedImage.discard(_attachedImage.value)
+    }
 
     fun toggleProtocol() { _useNIP04.value = !_useNIP04.value }
 
     fun sendMessage() {
-        val text = _messageText.value.trim()
+        val text = messageField.text.toString().trim()
         val image = _attachedImage.value
         if ((text.isBlank() && image == null) || _isSending.value) return
 
         viewModelScope.launch {
             _isSending.value = true
-            _messageText.value = ""
+            messageField.clearText()
             _attachedImage.value = null
             try {
                 // The photo goes up first: a message naming a URL no server
@@ -165,12 +189,13 @@ class DMThreadViewModel @Inject constructor(
                 if (content.isNotEmpty()) {
                     dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
                 }
+                DMPastedImage.discard(image)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // Hand the message back unless something new was typed meanwhile.
-                if (_messageText.value.isEmpty()) _messageText.value = text
-                if (_attachedImage.value == null) _attachedImage.value = image
+                if (messageField.text.isEmpty()) messageField.setTextAndPlaceCursorAtEnd(text)
+                if (_attachedImage.value == null) _attachedImage.value = image else DMPastedImage.discard(image)
                 _sendError.value = DMSendFailure.message(e)
             } finally {
                 _isSending.value = false
@@ -183,7 +208,9 @@ class DMThreadViewModel @Inject constructor(
             val input = context.contentResolver.openInputStream(uri) ?: return@withContext null
             val tempFile = File.createTempFile("dm_upload_", ".tmp", context.cacheDir)
             tempFile.outputStream().use { out -> input.use { it.copyTo(out) } }
-            val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            val contentType = context.contentResolver.getType(uri)
+                ?: DMPastedImage.mimeType(uri)
+                ?: "image/jpeg"
             if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
                 tempFile.delete()
                 return@withContext null
@@ -203,20 +230,20 @@ class DMThreadViewModel @Inject constructor(
 fun DMThreadScreen(
     counterpartyPubkey: String,
     onProfileClick: (String) -> Unit,
-    onBack: () -> Unit,
+    /** Null in the inbox's two-pane layout, where there is nothing to go back to. */
+    onBack: (() -> Unit)?,
     /** Typed into the message box on open, for the owner to edit or send. */
     initialMessage: String? = null,
     viewModel: DMThreadViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(initialMessage) {
-        if (initialMessage != null && viewModel.messageText.value.isEmpty()) {
+        if (initialMessage != null && viewModel.messageField.text.isEmpty()) {
             viewModel.setMessageText(initialMessage)
         }
     }
     val messages by viewModel.messages.collectAsState()
     val counterpartyProfile by viewModel.counterpartyProfile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
-    val messageText by viewModel.messageText.collectAsState()
     val isSending by viewModel.isSending.collectAsState()
     val useNIP04 by viewModel.useNIP04.collectAsState()
     val hasNIP04Messages by viewModel.hasNIP04Messages.collectAsState()
@@ -270,8 +297,10 @@ fun DMThreadScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(NostrVaultIcons.Back, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(NostrVaultIcons.Back, contentDescription = "Back")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -295,10 +324,10 @@ fun DMThreadScreen(
                         onToggle = viewModel::toggleProtocol,
                     )
                     MessageInputBar(
-                        text = messageText,
+                        field = viewModel.messageField,
                         isSending = isSending,
                         attachedImage = attachedImage,
-                        onTextChange = viewModel::setMessageText,
+                        onPasteImage = viewModel::attachPastedImage,
                         onSend = viewModel::sendMessage,
                         onPickImage = {
                             imagePicker.launch(
@@ -446,109 +475,126 @@ private fun MessageBubble(
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * 0.75f
         val photoSize = minOf(240.dp, maxWidth * 0.6f)
-        Column(
-            horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = maxBubbleWidth)
-                    .clip(bubbleShape)
-                    .background(
-                        brush = if (isFromMe) {
-                            Brush.linearGradient(listOf(colors.primary, colors.primaryDark))
-                        } else {
-                            Brush.linearGradient(listOf(otherBubbleColor, otherBubbleColor))
-                        },
-                    ),
-            ) {
-                parts.images.forEachIndexed { index, url ->
-                    RetryableAsyncImage(
-                        model = url,
-                        contentDescription = "Photo",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(photoSize)
-                            .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
-                            .clickable { FullScreenMediaRouter.open(parts.images, index, zoomOrigin) },
+        // iOS: who sent it, a 28pt avatar beside their bubbles, level with the time.
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
+            if (!isFromMe) {
+                val sender = profiles[message.senderPubkey]
+                if (sender != null) {
+                    AvatarImage(
+                        url = sender.pictureURL,
+                        pubkey = message.senderPubkey,
+                        size = 28.dp,
+                        displayName = sender.bestName,
                     )
+                } else {
+                    Box(Modifier.size(28.dp).background(SecondaryText.copy(alpha = 0.2f), CircleShape))
                 }
-                if (showText) {
-                    // Long-press selects, as iOS .textSelection(.enabled). The
-                    // accent-colored selection would vanish on our own accent
-                    // bubble, so it is white there.
-                    val selectionColors = if (isFromMe) {
-                        TextSelectionColors(handleColor = Color.White, backgroundColor = Color.White.copy(alpha = 0.35f))
-                    } else {
-                        TextSelectionColors(handleColor = colors.primary, backgroundColor = colors.primary.copy(alpha = 0.4f))
+                Spacer(Modifier.width(8.dp))
+            }
+            Column(
+                horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start,
+                modifier = Modifier.weight(1f),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = maxBubbleWidth)
+                        .clip(bubbleShape)
+                        .background(
+                            brush = if (isFromMe) {
+                                Brush.linearGradient(listOf(colors.primary, colors.primaryDark))
+                            } else {
+                                Brush.linearGradient(listOf(otherBubbleColor, otherBubbleColor))
+                            },
+                        ),
+                ) {
+                    parts.images.forEachIndexed { index, url ->
+                        RetryableAsyncImage(
+                            model = url,
+                            contentDescription = "Photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(photoSize)
+                                .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
+                                .clickable { FullScreenMediaRouter.open(parts.images, index, zoomOrigin) },
+                        )
                     }
-                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
-                        SelectionContainer {
+                    if (showText) {
+                        // Long-press selects, as iOS .textSelection(.enabled). The
+                        // accent-colored selection would vanish on our own accent
+                        // bubble, so it is white there.
+                        val selectionColors = if (isFromMe) {
+                            TextSelectionColors(handleColor = Color.White, backgroundColor = Color.White.copy(alpha = 0.35f))
+                        } else {
+                            TextSelectionColors(handleColor = colors.primary, backgroundColor = colors.primary.copy(alpha = 0.4f))
+                        }
+                        CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                            SelectionContainer {
+                                Text(
+                                    text = remember(parts.text, profiles) {
+                                        NostrMentions.toPlainText(parts.text, profiles)
+                                    },
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    lineHeight = 20.sp,
+                                    modifier = Modifier.padding(
+                                        start = 14.dp,
+                                        end = 14.dp,
+                                        top = 10.dp,
+                                        bottom = if (message.isNIP04) 4.dp else 10.dp,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    if (message.isNIP04) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.padding(
+                                start = 14.dp,
+                                end = 14.dp,
+                                top = if (showText) 0.dp else 8.dp,
+                                bottom = 10.dp,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = NostrVaultIcons.LockOpen,
+                                contentDescription = null,
+                                tint = ZapOrange.copy(alpha = 0.8f),
+                                modifier = Modifier.size(10.dp),
+                            )
                             Text(
-                                text = remember(parts.text, profiles) {
-                                    NostrMentions.toPlainText(parts.text, profiles)
-                                },
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                                modifier = Modifier.padding(
-                                    start = 14.dp,
-                                    end = 14.dp,
-                                    top = 10.dp,
-                                    bottom = if (message.isNIP04) 4.dp else 10.dp,
-                                ),
+                                text = "NIP-04",
+                                color = ZapOrange.copy(alpha = 0.8f),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
                             )
                         }
                     }
                 }
-                if (message.isNIP04) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        modifier = Modifier.padding(
-                            start = 14.dp,
-                            end = 14.dp,
-                            top = if (showText) 0.dp else 8.dp,
-                            bottom = 10.dp,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = NostrVaultIcons.LockOpen,
-                            contentDescription = null,
-                            tint = ZapOrange.copy(alpha = 0.8f),
-                            modifier = Modifier.size(10.dp),
-                        )
-                        Text(
-                            text = "NIP-04",
-                            color = ZapOrange.copy(alpha = 0.8f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = timeFormat.format(Date(message.timestamp * 1000)),
+                    color = SecondaryText.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                )
             }
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = timeFormat.format(Date(message.timestamp * 1000)),
-                color = SecondaryText.copy(alpha = 0.7f),
-                fontSize = 11.sp,
-            )
         }
     }
 }
 
 @Composable
 private fun MessageInputBar(
-    text: String,
+    field: TextFieldState,
     isSending: Boolean,
     attachedImage: Uri?,
-    onTextChange: (String) -> Unit,
+    onPasteImage: (Uri) -> Unit,
     onSend: () -> Unit,
     onPickImage: () -> Unit,
     onClearImage: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
-    val canSend = (text.isNotBlank() || attachedImage != null) && !isSending
+    val canSend = (field.text.isNotBlank() || attachedImage != null) && !isSending
 
     Surface(
         color = SecondaryGroupedBg,
@@ -596,17 +642,9 @@ private fun MessageInputBar(
                     )
                 }
 
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    placeholder = { Text("Message", color = PlaceholderText) },
-                    maxLines = 4,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = SeparatorColor,
-                        cursorColor = colors.primary,
-                    ),
-                    shape = RoundedCornerShape(20.dp),
+                DMMessageField(
+                    state = field,
+                    onPasteImage = { if (!isSending) onPasteImage(it) },
                     modifier = Modifier.weight(1f),
                 )
 
