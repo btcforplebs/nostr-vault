@@ -32,14 +32,24 @@ extension FeedService {
                     }
                 }
                 if self.eoseCount >= totalRelays {
-                    self.feedLoadingTimeout?.invalidate()
-                    self.drainBackgroundBuffers()
-                    self.flushNoteBuffer()
-                    self.isLoadingFeed = false
-                    self.isSyncing = false
-                    self.connectionStatus = "Live"
-                    self.processingQueue.async { [weak self] in
-                        self?.bgAccumulator.isInitialLoad = false
+                    // Once the count is reached, every later EOSE lands here
+                    // too: each relay's mentions, reactions, zaps and deletes,
+                    // and every older page. Forcing a flush and republishing
+                    // the same flags on each one rebuilt the feed in a burst
+                    // after every reconcile; the flush timer covers them.
+                    let finishing = isPrimaryFeed || self.isLoadingFeed || self.isSyncing
+                    if finishing {
+                        self.feedLoadingTimeout?.invalidate()
+                        self.drainBackgroundBuffers()
+                        self.flushNoteBuffer()
+                    }
+                    if self.isLoadingFeed { self.isLoadingFeed = false }
+                    if self.isSyncing { self.isSyncing = false }
+                    if self.connectionStatus != "Live" { self.connectionStatus = "Live" }
+                    if finishing {
+                        self.processingQueue.async { [weak self] in
+                            self?.bgAccumulator.isInitialLoad = false
+                        }
                     }
                 }
             }
