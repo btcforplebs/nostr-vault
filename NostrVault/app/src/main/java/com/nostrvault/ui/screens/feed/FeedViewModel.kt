@@ -30,6 +30,8 @@ import com.nostrvault.service.removeNote
 import com.nostrvault.service.retryMissingNote
 import com.nostrvault.service.loadFeedThreadReplies
 import com.nostrvault.service.setPopularFilter
+import com.nostrvault.service.FeedFilterEngine
+import com.nostrvault.ui.components.PopularRank
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -138,6 +140,15 @@ class FeedViewModel @Inject constructor(
     val hasAttemptedContactLoad: StateFlow<Boolean> = feedService.hasAttemptedContactLoad
     val isLoadingFeed: StateFlow<Boolean> = feedService.isLoadingFeed
     val isLoadingPopular: StateFlow<Boolean> = feedService.isLoadingPopular
+
+    /** Rank and score for the 🔥 line over each Popular post, by note id; empty elsewhere. */
+    val popularRanks: StateFlow<Map<String, PopularRank>> = combine(
+        feedService.feedMode, feedService.filteredNotes, feedService.popularNoteScores, feedService.showPopularEngagement,
+    ) { mode, notes, scores, shown ->
+        if (mode != FeedMode.POPULAR || !shown || scores.isEmpty()) return@combine emptyMap()
+        FeedFilterEngine.popularRanks(notes.map { it.id }, scores)
+            .mapValues { (id, rank) -> PopularRank(rank, scores.getValue(id)) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     fun loadReelsIfNeeded() = reelsFeedService.loadIfNeeded()
     fun refreshReels() = reelsFeedService.refresh()

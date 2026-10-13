@@ -103,6 +103,8 @@ fun NoteCard(
      * number goes on its own button; null leaves the buttons bare.
      */
     engagement: PostEngagement? = null,
+    /** The 🔥 rank line at the top, in the Popular feed. Null draws none. */
+    popularRank: PopularRank? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -256,6 +258,7 @@ fun NoteCard(
         Column(
             modifier = Modifier.padding(14.dp),
         ) {
+            popularRank?.let { PopularRankLine(it) }
             // Parent note preview (inside card, matching iOS)
             val showParentPreview = showReplyContext && note.isReply && !parentIsNext && note.parentEventId != null
             if (showParentPreview) {

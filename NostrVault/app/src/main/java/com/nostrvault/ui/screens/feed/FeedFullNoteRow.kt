@@ -141,6 +141,8 @@ private fun FeedFullNoteRowContent(
     val parentNextState = viewModel.parentIsNextNote.collectAsState()
     val quotedState = viewModel.quotedNotesCache.collectAsState()
     val repostedState = viewModel.repostedEventIds.collectAsState()
+    val ranksState = viewModel.popularRanks.collectAsState()
+    val popularRank by remember(note.id) { derivedStateOf { ranksState.value[note.id] } }
     // Likes and zaps are recorded against effectiveEventId (EngagementBar
     // sends it) and reactions are counted against the e-tag target, so a
     // repost is looked up by the note it reposts.
@@ -224,6 +226,7 @@ private fun FeedFullNoteRowContent(
         onRetryParent = viewModel::retryMissingNote,
         autoplayVideos = autoplayVideos,
         avatarMenu = rememberFeedAvatarMenu(viewModel),
+        popularRank = popularRank,
         modifier = modifier,
     )
 }
