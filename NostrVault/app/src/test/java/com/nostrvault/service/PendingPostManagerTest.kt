@@ -7,12 +7,14 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -148,5 +150,41 @@ class PendingPostManagerTest {
         assertEquals(1, second.published)
         assertEquals(0, second.kept)
         assertEquals(listOf("e1"), withdrawn)
+    }
+
+    /** A send started from a composer outlives it: leaving mid-send must not cancel the post. */
+    @Test fun aSendOutlivesTheScreenThatStartedIt() = runTest(dispatcher) {
+        val m = manager()
+        val screen = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job() + dispatcher)
+        var sent = false
+        screen.launch {
+            m.launchSend("d1") {
+                kotlinx.coroutines.delay(5_000) // the upload
+                sent = true
+            }
+        }
+        advanceTimeBy(1_000)
+        screen.cancel() // the composer closes mid-upload
+        advanceUntilIdle()
+        assertTrue(sent)
+    }
+
+    /** Reopening a draft whose send is still running cannot start a second one: one note, not two. */
+    @Test fun aDraftSendsOnceAtATime() = runTest(dispatcher) {
+        val m = manager()
+        var sends = 0
+        val first = m.launchSend("d1") { kotlinx.coroutines.delay(5_000); sends++ }
+        runCurrent()
+        assertTrue(first != null && m.isSending("d1"))
+        assertNull(m.launchSend("d1") { sends++ })
+        // Another draft is not held up.
+        assertTrue(m.launchSend("d2") { sends++ } != null)
+        advanceUntilIdle()
+        assertEquals(2, sends)
+        assertTrue(!m.isSending("d1"))
+        // Once it is done, the same draft may send again (e.g. after a failure).
+        assertTrue(m.launchSend("d1") { sends++ } != null)
+        advanceUntilIdle()
+        assertEquals(3, sends)
     }
 }

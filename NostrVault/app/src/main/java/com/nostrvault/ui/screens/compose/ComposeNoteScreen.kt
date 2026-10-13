@@ -79,7 +79,9 @@ fun ComposeNoteScreen(
     val requestClose: () -> Unit = {
         if (viewModel.shouldAskToSaveDraft()) showDraftPrompt = true else onBack()
     }
-    BackHandler(enabled = !isPublishing, onBack = requestClose)
+    // Mid-send there is nothing to ask: the post keeps going after the
+    // composer closes (ComposeNoteViewModel.publish), as on iPhone.
+    BackHandler(onBack = if (isPublishing) onBack else requestClose)
     // The attachment whose ALT text is being written; null = sheet closed.
     var altEditorTarget by remember { mutableStateOf<Attachment?>(null) }
     val colors = LocalNostrVaultColors.current
@@ -165,7 +167,7 @@ fun ComposeNoteScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = requestClose) {
+                    IconButton(onClick = if (isPublishing) onBack else requestClose) {
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
                     }
                 },

@@ -82,6 +82,7 @@ class ModeComposeViewModel @Inject constructor(
     private val marketplaceFeedService: com.nostrvault.service.MarketplaceFeedService,
     private val notificationManager: NotificationManager,
     private val configStore: com.nostrvault.data.local.ConfigStore,
+    internal val draftStore: ComposerDraftStore,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -98,7 +99,67 @@ class ModeComposeViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
-    fun setCover(uri: Uri?) { _cover.value = uri }
+    /** The cover's type, read when it was picked; a copied file has none of its own. */
+    private var coverMime: String? = null
+
+    /**
+     * Saved drafts for articles, recipes and polls; null for the other kinds.
+     * Kept here so they survive rotation with the form.
+     */
+    val drafts: ComposerDraftKeeper? = when (kind) {
+        ModeComposerKind.ARTICLE -> ComposerDraft.Kind.ARTICLE
+        ModeComposerKind.RECIPE -> ComposerDraft.Kind.RECIPE
+        ModeComposerKind.POLL -> ComposerDraft.Kind.POLL
+        ModeComposerKind.DIVINE, ModeComposerKind.LISTING -> null
+    }?.let { ComposerDraftKeeper(it, configStore.activeAccountHexPubkey.value, draftStore, viewModelScope) }
+
+    /** The cover as a file, which is what a draft keeps. */
+    val coverFile: File?
+        get() = _cover.value?.takeIf { it.scheme == "file" }?.path?.let(::File)
+
+    /**
+     * A picked cover is copied into the app first: a draft can then keep it
+     * after the picker's permission has lapsed, and publishing reads the same
+     * bytes the preview showed.
+     */
+    fun setCover(uri: Uri?) {
+        if (uri == null) {
+            dropPickedCover()
+            _cover.value = null
+            coverMime = null
+            return
+        }
+        viewModelScope.launch {
+            val mime = context.contentResolver.getType(uri)
+            val copy = withContext(Dispatchers.IO) {
+                runCatching {
+                    File.createTempFile(PICKED_COVER_PREFIX, ".img", context.cacheDir).also { f ->
+                        context.contentResolver.openInputStream(uri)!!.use { input ->
+                            f.outputStream().use { input.copyTo(it) }
+                        }
+                    }
+                }.onFailure { Log.w(TAG, "Couldn't read the cover", it) }.getOrNull()
+            } ?: return@launch
+            dropPickedCover()
+            _cover.value = Uri.fromFile(copy)
+            coverMime = mime
+        }
+    }
+
+    /** Loads a saved draft's cover, or clears the cover when it has none. */
+    fun showDraftCover(file: File?, mime: String?) {
+        dropPickedCover()
+        _cover.value = file?.let(Uri::fromFile)
+        coverMime = mime.takeIf { file != null }
+    }
+
+    /** The draft form of the cover's type, for [ComposerDraft.coverMime]. */
+    fun currentCoverMime(): String? = coverMime.takeIf { _cover.value != null }
+
+    /** Deletes a copy made by [setCover]; a saved draft's own cover stays. */
+    private fun dropPickedCover() {
+        coverFile?.takeIf { it.name.startsWith(PICKED_COVER_PREFIX) && it.parentFile == context.cacheDir }?.delete()
+    }
 
     fun loadClip(uri: Uri) {
         viewModelScope.launch {
@@ -313,7 +374,7 @@ class ModeComposeViewModel @Inject constructor(
             try {
                 var imageUrl: String? = null
                 _cover.value?.let { uri ->
-                    val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    val mime = coverMime ?: context.contentResolver.getType(uri) ?: "image/jpeg"
                     val file = withContext(Dispatchers.IO) {
                         File.createTempFile("cover_", ".img", context.cacheDir).also { f ->
                             context.contentResolver.openInputStream(uri)!!.use { input ->
@@ -333,6 +394,7 @@ class ModeComposeViewModel @Inject constructor(
                     lockedTo = lock,
                 ) ?: throw IllegalStateException("Couldn't sign the post. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
+                drafts?.finish()
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "publishLongForm failed", e)
@@ -370,6 +432,7 @@ class ModeComposeViewModel @Inject constructor(
                 ) ?: throw IllegalStateException("Couldn't sign the poll. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
                 nostrService.publishFireAndForget(event, tags.filter { it.size >= 2 && it[0] == "relay" }.map { it[1] })
+                drafts?.finish()
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "publishPoll failed", e)
@@ -476,10 +539,12 @@ class ModeComposeViewModel @Inject constructor(
 
     override fun onCleared() {
         _clip.value?.file?.delete()
+        dropPickedCover()
     }
 
     companion object {
         private const val TAG = "ModeCompose"
+        private const val PICKED_COVER_PREFIX = "picked_cover_"
         /** diVine's camera records six-second loops. */
         const val RECORD_LIMIT_SECONDS = 6
         /** Picked videos past this are trimmed; matches iOS's 6.3 s. */
