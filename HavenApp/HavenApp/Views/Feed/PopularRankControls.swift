@@ -10,9 +10,19 @@ extension FeedView {
     }
 
     /// Rank and score for the line above a Popular post, while ranks are shown.
+    /// A dictionary lookup, so a row never walks the feed.
     func popularRank(of note: FeedNote) -> (rank: Int, score: Double)? {
-        guard feedService.feedMode == .popular, feedService.showPopularEngagement else { return nil }
-        return PopularRankLine.rank(of: note, in: feedService.filteredNotes, scores: feedService.popularNoteScores)
+        guard feedService.feedMode == .popular, feedService.showPopularEngagement,
+              let rank = popularRanks[note.id], let score = feedService.popularNoteScores[note.id] else { return nil }
+        return (rank, score)
+    }
+
+    /// `notes` is the new value; `filteredNotes` still holds the old one here.
+    func updatePopularRanks(_ notes: [FeedNote]) {
+        // Not gated on the mode: the mode can flip after this publish, and
+        // `popularRank(of:)` checks it at draw time.
+        let ranks = PopularRanking.ranks(ids: notes.map(\.id), scores: feedService.popularNoteScores)
+        if ranks != popularRanks { popularRanks = ranks }
     }
 }
 
@@ -113,18 +123,5 @@ struct PopularRankLine: View {
             return String(format: "%.1fk", score / 1000)
         }
         return String(format: "%.0f", score)
-    }
-
-    /// The post's place among the scored posts now shown, in the feed's own
-    /// order (score, then newest). Replies threaded under a post have no score
-    /// and take no number, and the audience filter renumbers from #1.
-    static func rank(of note: FeedNote, in shown: [FeedNote], scores: [String: Double]) -> (rank: Int, score: Double)? {
-        guard let score = scores[note.id] else { return nil }
-        let ahead = shown.reduce(0) { count, other in
-            guard other.id != note.id, let otherScore = scores[other.id] else { return count }
-            let isAhead = otherScore > score || (otherScore == score && other.createdAt > note.createdAt)
-            return isAhead ? count + 1 : count
-        }
-        return (ahead + 1, score)
     }
 }

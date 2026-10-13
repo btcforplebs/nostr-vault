@@ -87,6 +87,8 @@ struct FeedView: View {
     @State var threadRebuildWork: DispatchWorkItem?
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
     @State var gapRegroupScheduled = false
+    /// Popular rank per note id, rebuilt once per `filteredNotes` change.
+    @State var popularRanks: [String: Int] = [:]
 
     // MARK: - Helper Functions
 
@@ -143,12 +145,14 @@ struct FeedView: View {
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }
+            .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
         #else
         VStack(spacing: 0) {
             macFeedHeader
             Divider()
             rootContent
         }
+        .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
         #endif
     }
 

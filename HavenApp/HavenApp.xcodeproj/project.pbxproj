@@ -235,6 +235,7 @@
 		30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6DAA5E7383F9175577A61C7 /* ZapService.swift */; };
 		31678CD3AA73D9AE222E8179 /* NWCService+PayInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */; };
 		317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */; };
+		317F503A1708A580ED8FF693 /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
 		32174E530F51223398BEAAE9 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		3242652E93E3319F20522E09 /* VaultEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10FAB057E10D3468126BB35 /* VaultEngagement.swift */; };
 		326C354948213E62EBB67757 /* ScrollChromeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E73FBAE7710CD17916B73EB /* ScrollChromeModifier.swift */; };
@@ -927,6 +928,7 @@
 		C4BFAF59D1E60FA8587887EB /* TrustWebView+Globe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99BB884D57C3B72272208E6D /* TrustWebView+Globe.swift */; };
 		C4FD1DA70112DA842CCAB6D1 /* BlossomService+ServerUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF3573CB587310AF650A307 /* BlossomService+ServerUpload.swift */; };
 		C5352175A47EC61C4030CC20 /* NVTileFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A671FC7A2A4BFABC2FF9F8DD /* NVTileFetcher.swift */; };
+		C54DF6BF136979DE14656BEE /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
 		C575F004C207A4F13295116B /* LightningPayTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DB502B6992F3E77F294CA5D /* LightningPayTarget.swift */; };
 		C5899FB94FFBF6F1CBCF4EB0 /* TrustPathText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D36F3CFEC85EB25E524B13D /* TrustPathText.swift */; };
 		C5C8191696EA0207483291CF /* MediaCacheService+Sources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140A9D83B992BBCA74D259C2 /* MediaCacheService+Sources.swift */; };
@@ -1489,6 +1491,7 @@
 		5E687B37FB00F4ED20723DBB /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
 		5E86551C962F13A9A41AB343 /* LockScreenWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidget.swift; sourceTree = "<group>"; };
 		5EF3573CB587310AF650A307 /* BlossomService+ServerUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+ServerUpload.swift"; sourceTree = "<group>"; };
+		5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopularRanking.swift; sourceTree = "<group>"; };
 		5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+Delete.swift"; sourceTree = "<group>"; };
 		606AB572251938C1D2B3590A /* HighlightSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightSheet.swift; sourceTree = "<group>"; };
 		60E2FC58F9B9F4CECA67CBB7 /* MusicAlbumPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicAlbumPage.swift; sourceTree = "<group>"; };
@@ -2592,6 +2595,7 @@
 				27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */,
 				44FA8B5C2592FA9E88658049 /* PlainLog.swift */,
 				CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */,
+				5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */,
 				5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */,
 				9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */,
 				32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */,
@@ -3569,6 +3573,7 @@
 				89218707D6852D10879EE010 /* PollStore.swift in Sources */,
 				BB42C47EA6799609B78A865C /* PollsFeedViews.swift in Sources */,
 				FF4441376B46784E5BF598AD /* PopularRankControls.swift in Sources */,
+				C54DF6BF136979DE14656BEE /* PopularRanking.swift in Sources */,
 				4C3E1EC23DF7183639C79DB0 /* PostActionNotificationBanner.swift in Sources */,
 				0A01917B3C0DC50066116572 /* PostEngagement.swift in Sources */,
 				B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */,
@@ -4180,6 +4185,7 @@
 				42D13EDFA392C11343B47088 /* PollStore.swift in Sources */,
 				A54A5F1BC6E78AF6CB3579A3 /* PollsFeedViews.swift in Sources */,
 				62C721A822B294AB8245A339 /* PopularRankControls.swift in Sources */,
+				317F503A1708A580ED8FF693 /* PopularRanking.swift in Sources */,
 				C0E6400FEDD07B023CE4D154 /* PostActionNotificationBanner.swift in Sources */,
 				92EBD4156406F61914CAE362 /* PostEngagement.swift in Sources */,
 				51100A24E2561C1B68EA7B5E /* PowPreferences.swift in Sources */,
