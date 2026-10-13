@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 import { FipsTcpEndpoint } from "@fips/tcp"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { TcpFipsRelayServer, RELAY_SERVICE_PORT } from "../src/fips/tcp-server.js"
+import { TcpFipsRelayServer, RELAY_SERVICE_PORT, MAX_LINE_IN, MAX_CONNECTIONS_PER_PEER } from "../src/fips/tcp-server.js"
 import { parseOwners } from "../src/fips/owners.js"
 import { wrap } from "../src/haven/haven.js"
 import { HavenClient } from "../src/haven/client.js"
@@ -133,7 +133,35 @@ test("each TCP connection is its own Haven stream, nip01 on the outbox route", a
   const fips = t.stub.conns.filter(c => c.id !== "page")
   assert.equal(fips.length, 1)
   assert.match(fips[0].id, /^fips-/)
-  assert.deepEqual(fips[0].opts, { mode: "nip01", route: "/" })
+  // peer is the vault's x-only key, so Haven's rate limiters share one bucket across its reconnects.
+  assert.deepEqual(fips[0].opts, { mode: "nip01", route: "/", peer: getPublicKey(t.vaultSk) })
+  assert.equal(fips[0].opts.owner, undefined, "a FIPS stream never gets the owner's limiter bypass")
+})
+
+test("oversized line: the server aborts before Haven sees more than MAX_LINE_IN bytes", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  const fips = t.stub.conns.find(c => c.id !== "page").conn
+  let fed = 0
+  const write = fips.write
+  fips.write = b => { fed += b.length; write(b) }
+  const huge = Buffer.alloc(MAX_LINE_IN + 128 * 1024, 0x61) // no newline
+  let off = 0
+  while (off < huge.length && (await t.state()) === "established") { try { off += await t.client.write(t.id, huge.subarray(off), Date.now()) } catch { break } await t.pump() }
+  assert.ok(await t.until(() => t.server.conns.size === 0))
+  assert.ok(fed <= MAX_LINE_IN, `Haven was fed ${fed} bytes of one line`)
+})
+
+test("one vault gets at most MAX_CONNECTIONS_PER_PEER connections", async () => {
+  const t = await setup()
+  assert.ok(await t.until(() => t.server.stats.accepted === 1))
+  for (let i = 1; i < MAX_CONNECTIONS_PER_PEER + 2; i++) await t.client.connect(t.relayKey, Date.now())
+  await t.until(() => false, 400)
+  assert.equal(t.server.stats.accepted, MAX_CONNECTIONS_PER_PEER)
+  assert.ok(t.server.stats.droppedSegments > 0, "the extra SYNs were dropped at the gate, not thrown")
+  // The connections it does hold are still served.
+  await t.send(["REQ", "after", { kinds: [1] }])
+  assert.ok(await t.until(() => t.lines.some(l => l[0] === "EOSE" && l[1] === "after")))
 })
 
 test("Haven hanging up closes the TCP connection", async () => {
