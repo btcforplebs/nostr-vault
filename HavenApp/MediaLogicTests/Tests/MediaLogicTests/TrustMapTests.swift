@@ -117,6 +117,19 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(simd_length(camera.spin), GlobeCamera.maxSpin, accuracy: 1e-9)
     }
 
+    func testALayerChangeFadesLeaversInPlace() {
+        // Picking a layer or filter keeps the middle: nobody flies outward.
+        for r in [TrustMap.ringRadius, TrustMap.closeRadius, TrustMap.outerRadius] {
+            XCTAssertEqual(TrustMap.leavingRadius(from: r, newCenter: false), r)
+        }
+    }
+
+    func testANewCenterSendsLeaversOutPastTheShells() {
+        let r = TrustMap.leavingRadius(from: TrustMap.closeRadius, newCenter: true)
+        XCTAssertGreaterThan(r, TrustMap.outerRadius)
+        XCTAssertEqual(r, TrustMap.driftOutRadius)
+    }
+
     func testFlyToArrivesAndLetsTheClockSleep() {
         var camera = GlobeCamera()
         camera.zoom = 2

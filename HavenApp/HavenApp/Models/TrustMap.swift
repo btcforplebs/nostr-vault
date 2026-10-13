@@ -27,6 +27,17 @@ enum TrustMap {
     /// The author sits between your follows and the Close shell, so their
     /// threads stay short and their face never lands among Close's stars.
     static let authorRadius = 1.15
+    /// Where a star leaving the globe heads. Moving onto someone else, the
+    /// people who aren't theirs drift out past the shells as they fade.
+    static let driftOutRadius = 2.4
+
+    /// Where a star that is leaving goes, from `radius`. Only a new person in
+    /// the middle sends it out: a layer or filter change fades it where it
+    /// is. Out toward the camera a star rushes off the screen and swells, so
+    /// a hundred of them leaving at once reads as the globe zooming.
+    static func leavingRadius(from radius: Double, newCenter: Bool) -> Double {
+        newCenter ? driftOutRadius : radius
+    }
     /// Outer-shell people drawn per globe. Your follows' follows run to tens
     /// of thousands; past this the shell reads the same and only costs frames.
     static let hazeCap = 2_500
