@@ -5,7 +5,8 @@ import { SimplePool } from "nostr-tools/pool"
 export const pool = new SimplePool({ enablePing: true, enableReconnect: true })
 
 export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"]
-export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://relay.nostr.band"]
+// relay.nostr.band stopped answering (no EOSE, every query held to its timeout) on 2026-10-13.
+export const PROFILE_RELAYS = ["wss://purplepag.es"]
 
 /** Read and write relays from a kind 10002 event (NIP-65), falling back to the defaults. */
 export function relayLists(ev) {

@@ -22,7 +22,7 @@ export function SearchScreen({ ctx, onProfile }) {
     if (q.type === "empty") { setResult(null); setStatus(""); return }
     if (q.type === "profile") {
       setResult({ people: [q.pubkey], notes: [] }); setStatus("")
-      fetchProfiles([q.pubkey], uniq([...q.relays, ...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
+      fetchProfiles(ctx.vault, [q.pubkey], uniq([...q.relays, ...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
       onProfile?.(q.pubkey)
       return
     }
@@ -33,7 +33,7 @@ export function SearchScreen({ ctx, onProfile }) {
       if (n !== seq.current) return
       people.forEach(putProfile)
       setResult({ people: people.map(ev => ev.pubkey), notes })
-      fetchProfiles(notes.map(ev => ev.pubkey), ctx.account.relays.read).catch(() => {})
+      fetchProfiles(ctx.vault, notes.map(ev => ev.pubkey), ctx.account.relays.read).catch(() => {})
       setStatus("")
     } catch (err) {
       if (n === seq.current) setStatus(`Search failed (${err?.message ?? err})`)

@@ -13,15 +13,24 @@ import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
 import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
 import { RelayScreen } from "./src/screens/RelayScreen.jsx"
+import { SearchScreen } from "./src/screens/SearchScreen.jsx"
+import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
+import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import "./src/styles/app.css"
 
-const ROUTES = ["feed", "compose", "profile", "relay"]
-const routeOf = () => { const r = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]; return ROUTES.includes(r) ? r : "feed" }
+const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread"]
+// "#/thread/<id>" -> { route: "thread", arg: "<id>" }
+const routeOf = () => {
+  const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
+  return ROUTES.includes(r) && (r !== "thread" || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
+}
 
 // Kept in localStorage so a phone run can be read back over CDP; nothing leaves the device.
 const logLines = JSON.parse(localStorage.getItem("nv-log") || "[]")
+let logging = true // off once sign-out has deleted the log, so nothing still running writes it back
 function log(type, data = {}) {
+  if (!logging) return
   logLines.push({ t: new Date().toISOString(), type, ...data })
   while (logLines.length > 300) logLines.shift()
   localStorage.setItem("nv-log", JSON.stringify(logLines))
@@ -34,7 +43,7 @@ function App() {
   const [vault, setVault] = useState(null)
   const [account, setAccount] = useState(null)
   const [error, setError] = useState("")
-  const [route, setRoute] = useState(routeOf)
+  const [{ route, arg }, setRoute] = useState(routeOf)
 
   useEffect(() => { const f = () => setRoute(routeOf()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
@@ -61,6 +70,7 @@ function App() {
   const onSignedIn = ({ signer, session }) => { saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
   const signOut = async () => {
     signer?.close?.()
+    logging = false
     const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
     if (failed.length) console.warn("sign-out: couldn't delete", failed)
     location.replace(location.pathname)
@@ -76,6 +86,9 @@ function App() {
       {route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {route === "profile" && <ProfileScreen ctx={ctx} />}
+      {route === "search" && <SearchScreen ctx={ctx} />}
+      {route === "notifications" && <NotificationsScreen ctx={ctx} />}
+      {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {(route === "feed" || route === "profile") && <PostButton />}
       <TabBar route={route} pubkey={session.pubkey} />

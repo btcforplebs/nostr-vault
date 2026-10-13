@@ -26,10 +26,10 @@ export function NotificationsScreen({ ctx }) {
       const r = await fetchNotifications(session.pubkey, relays, { limit: PAGE })
       setRows(r)
       setStatus(r.length ? "" : "Nothing yet")
-      fetchProfiles(r.flatMap(x => x.who), relays).catch(() => {})
+      fetchProfiles(ctx.vault, r.flatMap(x => x.who), relays).catch(() => {})
       const about = await fetchNotes(vault, r.map(x => x.noteId), relays)
       setNotes(about)
-      fetchProfiles([...about.values()].map(n => n.pubkey), relays).catch(() => {})
+      fetchProfiles(ctx.vault, [...about.values()].map(n => n.pubkey), relays).catch(() => {})
     } catch (e) { setStatus(`Couldn't load (${e?.message ?? e})`); setRows(rows ?? []) }
   }
   useEffect(() => { load() }, [session.pubkey])

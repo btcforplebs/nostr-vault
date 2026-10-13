@@ -43,7 +43,7 @@ export function ThreadScreen({ ctx, id }) {
   useEffect(() => {
     if (!thread) return
     const authors = [thread.root?.pubkey, ...flattenThread(thread.replies).map(r => r.event.pubkey)]
-    fetchProfiles(authors.filter(Boolean), relays).catch(() => {})
+    fetchProfiles(ctx.vault, authors.filter(Boolean), relays).catch(() => {})
   }, [thread])
 
   const rows = thread ? flattenThread(thread.replies) : []

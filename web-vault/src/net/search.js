@@ -3,7 +3,9 @@
 import { decode } from "nostr-tools/nip19"
 import { pool } from "./pool.js"
 
-export const SEARCH_RELAYS = ["wss://relay.nostr.band", "wss://search.nos.today"]
+// relay.nostr.band answered no NIP-50 query on 2026-10-13 and held each one to the timeout; of five probed, only
+// search.nos.today returned results.
+export const SEARCH_RELAYS = ["wss://search.nos.today"]
 
 /** What the box holds: nothing, one profile (with any relay hints), or text to search for. */
 export function parseQuery(input) {

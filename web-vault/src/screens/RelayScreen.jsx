@@ -1,6 +1,6 @@
 // Today's relay page as one screen of the app: Haven's status, then the FIPS panel from web-relay (pairing,
 // start/stop, seed and owner status). The panel finds its elements by id, so this screen stays mounted.
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { bytesToHex } from "nostr-tools/utils"
 import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
@@ -12,6 +12,9 @@ export function RelayScreen({ ctx, log }) {
   const [storage, setStorage] = useState({})
   const [address, setAddress] = useState("")
   const [copied, setCopied] = useState(false)
+  // This screen mounts at boot, before the follows arrive from the network; the timer reads the current list.
+  const follows = useRef(ctx.account.follows)
+  follows.current = ctx.account.follows
 
   useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log }) }, [])
   // The relay's FIPS address is the npub of its own key (made once, kept in this browser), never the user's key.
@@ -27,7 +30,7 @@ export function RelayScreen({ ctx, log }) {
       const [own, feed] = await Promise.all([
         vault.outbox.count({ authors: [session.pubkey] }).catch(() => "?"),
         // Only follows: the thread view also caches other people's notes in /feed.
-        ctx.account.follows.length ? vault.feed.count({ kinds: [1, 6], authors: ctx.account.follows }).catch(() => "?") : 0,
+        follows.current.length ? vault.feed.count({ kinds: [1, 6], authors: follows.current }).catch(() => "?") : 0,
       ])
       const est = await navigator.storage?.estimate?.()
       setCounts({ own, feed })

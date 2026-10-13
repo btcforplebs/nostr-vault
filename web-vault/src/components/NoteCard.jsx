@@ -16,13 +16,19 @@ export function NoteCard({ event }) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
     return (
-      <article class="note">
+      <article class="note" onClick={inner?.id && openThread(inner.id)}>
         <div class="repost-line"><RepostIcon /><AuthorName pubkey={event.pubkey} /> reposted</div>
         {inner?.pubkey ? <NoteBody event={inner} /> : <div class="note-text muted">Repost of a note not included</div>}
       </article>
     )
   }
-  return <article class="note"><NoteBody event={event} /></article>
+  return <article class="note" onClick={openThread(event.id)}><NoteBody event={event} /></article>
+}
+
+// Tapping a card opens its thread; a tap on a link or a playing video stays with that link or video.
+const openThread = id => e => {
+  if (e.target.closest("a, button, video, audio")) return
+  location.hash = `#/thread/${id}`
 }
 
 function NoteBody({ event }) {
