@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import com.nostrvault.service.DMService.Companion.PERIODIC_SYNC_INTERVAL_MS
 import com.nostrvault.service.DMService.Companion.TAG
+import com.nostrvault.service.NIP46Service
+import com.nostrvault.service.SignerRouting
 
     /** Saves the old account's inbox under its own key, then starts the new one's. */
     internal fun DMService.switchAccount() {
@@ -185,6 +187,19 @@ import com.nostrvault.service.DMService.Companion.TAG
     // NIP-42 AUTH
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Opens the owner's bunker session in the background when another account
+     * is active and the owner signs with a bunker (SignerRouting.ownerBunkerToWarm).
+     * No-op otherwise, and when the session is already live.
+     */
+    internal suspend fun DMService.warmOwnerBunker() {
+        val ownerHex = nostrService.ownerHexPubkey
+        val bunker = SignerRouting.ownerBunkerToWarm(configStore.config.value, ownerHex, nostrService.activeHexPubkey) ?: return
+        if (!NIP46Service.connectInBackground(bunker, ownerHex)) {
+            Log.w(TAG, "owner's bunker not reachable for /chat AUTH: ${NIP46Service.lastError.value ?: "unknown"}")
+        }
+    }
+
     internal fun DMService.handleAuthChallenge(parsed: JsonArray, client: WebSocketClient?) {
         if (parsed.size < 2) return
         val challenge = parsed[1].jsonPrimitive.contentOrNull ?: return
@@ -198,6 +213,11 @@ import com.nostrvault.service.DMService.Companion.TAG
         val relayUrl = config.localRelayURL("chat") ?: return
 
         scope.launch(Dispatchers.IO) {
+            // After a restart with another account active, only that account's
+            // bunker has a session; the owner's AUTH below would fail as "not
+            // connected" and the kind-1059 sub would never go out. Open the
+            // owner's session first; the challenge stays valid on this socket.
+            warmOwnerBunker()
             val tags = listOf(
                 listOf("relay", relayUrl),
                 listOf("challenge", challenge),

@@ -14,6 +14,7 @@ import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.ContactManager
 import com.nostrvault.service.NIP46Service
+import com.nostrvault.service.SignerRouting
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -291,6 +292,14 @@ class ConfigStore @Inject constructor(
                     // other key is dropped, never kept as connected.
                     NIP46Service.connectForAccount(it, _activeAccountHexPubkey.value)
                 }
+            }
+            // The owner's bunker when another account is now active: opened in
+            // the background, off the switch, so the owner's relay AUTH (the
+            // DMs' /chat) has a session. The DM AUTH path does the same on its
+            // own challenge; this just starts the login early.
+            val ownerHex = HavenBridge.decodeNpub(newCfg.ownerNpub).orEmpty()
+            SignerRouting.ownerBunkerToWarm(newCfg, ownerHex, _activeAccountHexPubkey.value)?.let { bunker ->
+                CoroutineScope(Dispatchers.IO).launch { NIP46Service.connectInBackground(bunker, ownerHex) }
             }
         } finally {
             setSwitchingAccount(false)

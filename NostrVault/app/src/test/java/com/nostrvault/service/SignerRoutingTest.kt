@@ -77,11 +77,26 @@ class SignerRoutingTest {
         assertEquals(SignerRoute.ActiveBunker, route)
     }
 
+    // Warming the owner's bunker while another account is active
+
+    /** The owner's AUTH needs a live owner session; with another account active nothing else opens one. */
+    @Test fun ownerBunkerIsWarmedWhenAnotherAccountIsActive() {
+        val warm = SignerRouting.ownerBunkerToWarm(config("nip46"), ownerHex = ownerHex, activeHex = otherHex)
+        assertEquals(ownerSigner, warm?.signerPubkey)
+    }
+
+    @Test fun nothingToWarmWhenTheOwnerIsActiveOrSignsWithoutABunker() {
+        assertNull(SignerRouting.ownerBunkerToWarm(config("nip46"), ownerHex = ownerHex, activeHex = ownerHex))
+        assertNull(SignerRouting.ownerBunkerToWarm(config("local"), ownerHex = ownerHex, activeHex = otherHex))
+        assertNull(SignerRouting.ownerBunkerToWarm(config("amber"), ownerHex = ownerHex, activeHex = otherHex))
+    }
+
     // Connect-time key check
 
     private class FakeBridge(val answersAs: String?) : NIP46Service.Bridge {
         val dropped = mutableListOf<String>()
         override fun connect(clientSecretKey: String, bunkerUrl: String) = answersAs
+        override fun connectBackground(clientSecretKey: String, bunkerUrl: String): String? = null
         override fun activate(signerPubkey: String): String? = null
         override fun drop(signerPubkey: String) { dropped += signerPubkey }
         override fun ping() = 0
