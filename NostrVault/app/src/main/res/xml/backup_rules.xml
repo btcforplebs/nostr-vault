@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 11 and below (fullBackupContent). Android 12+
+  reads data_extraction_rules.xml instead; keep the two files in step.
+
+  Allow-list, not a block-list: once one <include> exists, Android backs up
+  ONLY what is listed. A new file that holds a key or token is therefore kept
+  off Google and off device-to-device transfer by default. Add a line here
+  only after confirming the file holds no secret.
+
+  Never list these. They carry keys or secrets, and the keystore-wrapped
+  credential prefs cannot be decrypted on another device anyway (restoring
+  them makes EncryptedSharedPreferences.create throw on first launch):
+    sharedpref nostrvault_credentials  (nsec hex, passwords, NIP-49 passphrases, plus the
+                                        Tink keysets EncryptedSharedPreferences keeps in
+                                        the same file, wrapped by the AndroidKeyStore key)
+    file       nostrvault_config.json  (nwcURI, bunker secret + clientSecretKey, s3SecretKey)
+    file       relay_data/             (relay DB incl. private DMs, Blossom media)
+-->
+<full-backup-content>
+    <!-- Settings that hold no secret -->
+    <include domain="sharedpref" path="pow_preferences.xml" />
+    <include domain="sharedpref" path="reels_preferences.xml" />
+    <include domain="sharedpref" path="relay_followers.xml" />
+    <include domain="sharedpref" path="avatar_prefetch.xml" />
+    <include domain="sharedpref" path="media_cache_404.xml" />
+    <include domain="sharedpref" path="relay_lifecycle.xml" />
+    <!-- Unsent compose drafts (note text only) -->
+    <include domain="file" path="drafts.json" />
+
+    <!-- Belt and braces: even if someone later adds a broad include, these
+         stay out. -->
+    <exclude domain="sharedpref" path="nostrvault_credentials.xml" />
+    <exclude domain="file" path="nostrvault_config.json" />
+    <exclude domain="file" path="relay_data" />
+    <exclude domain="file" path="nostrvault_data" />
+</full-backup-content>
