@@ -29,8 +29,59 @@ struct LongFormComposeView: View {
     @State private var isPosting = false
     @State private var status: String?
     @State private var error: String?
+    @StateObject private var drafts: ComposerDraftKeeper
+    @State private var showingDrafts = false
+    @State private var confirmingCancel = false
+
+    init(flavor: Flavor, onDismiss: @escaping () -> Void) {
+        self.flavor = flavor
+        self.onDismiss = onDismiss
+        _drafts = StateObject(wrappedValue: ComposerDraftKeeper(kind: flavor == .recipe ? .recipe : .article))
+    }
 
     private var isRecipe: Bool { flavor == .recipe }
+
+    /// Everything typed so far, in the shape drafts are saved in.
+    private var currentDraft: ComposerDraft {
+        var d = ComposerDraft(kind: isRecipe ? .recipe : .article)
+        d.title = title
+        d.summary = summary
+        d.body = body_
+        if isRecipe {
+            d.prepTime = prepTime
+            d.cookTime = cookTime
+            d.servings = servings
+            d.ingredients = ingredients
+            d.directions = directions
+            d.categories = categories
+        }
+        return d
+    }
+
+    private func open(_ draft: ComposerDraft) {
+        drafts.saveNow(currentDraft, cover: coverData)
+        coverData = drafts.open(draft)
+        coverItem = nil
+        title = draft.title
+        summary = draft.summary
+        body_ = draft.body
+        prepTime = draft.prepTime
+        cookTime = draft.cookTime
+        servings = draft.servings
+        ingredients = draft.ingredients
+        directions = draft.directions
+        categories = draft.categories
+        error = nil
+    }
+
+    private func cancelTapped() {
+        if currentDraft.hasContent || coverData != nil {
+            confirmingCancel = true
+        } else {
+            drafts.finish()
+            onDismiss()
+        }
+    }
 
     private var canPost: Bool {
         let hasTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -43,6 +94,7 @@ struct LongFormComposeView: View {
     var body: some View {
         NavigationStack {
             Form {
+                ComposerDraftsRow(keeper: drafts) { showingDrafts = true }
                 Section {
                     cover
                     TextField("Title", text: $title)
@@ -125,7 +177,7 @@ struct LongFormComposeView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onDismiss() }
+                    Button("Cancel") { cancelTapped() }
                         .disabled(isPosting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -147,6 +199,27 @@ struct LongFormComposeView: View {
                     error = "Couldn't read that photo."
                 }
             }
+        }
+        .onChange(of: currentDraft) { _, draft in drafts.changed(draft, cover: coverData) }
+        .onChange(of: coverData) { _, cover in drafts.changed(currentDraft, cover: cover) }
+        // Swiping the sheet away keeps the draft, like Save Draft.
+        .onDisappear { drafts.saveNow(currentDraft, cover: coverData) }
+        .confirmationDialog(isRecipe ? "Save this recipe as a draft?" : "Save this article as a draft?",
+                            isPresented: $confirmingCancel, titleVisibility: .visible) {
+            Button("Save Draft") {
+                drafts.saveNow(currentDraft, cover: coverData)
+                onDismiss()
+            }
+            Button("Discard", role: .destructive) {
+                drafts.finish()
+                onDismiss()
+            }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Saved drafts stay on this device. Find them at the top of this editor.")
+        }
+        .sheet(isPresented: $showingDrafts) {
+            ComposerDraftsSheet(keeper: drafts) { open($0) }
         }
         .interactiveDismissDisabled(isPosting)
     }
@@ -234,6 +307,7 @@ struct LongFormComposeView: View {
                     nostrService: nostrService,
                     lockedTo: lock)
                 if isRecipe { RecipeFeedService.shared.refresh() }
+                drafts.finish()
                 status = nil
                 isPosting = false
                 onDismiss()

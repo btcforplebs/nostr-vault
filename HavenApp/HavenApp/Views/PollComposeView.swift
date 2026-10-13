@@ -15,6 +15,9 @@ struct PollComposeView: View {
     @State private var isPosting = false
     @State private var error: String?
     @FocusState private var focusedOption: Int?
+    @StateObject private var drafts = ComposerDraftKeeper(kind: .poll)
+    @State private var showingDrafts = false
+    @State private var confirmingCancel = false
 
     /// When voting closes, from the moment Post is tapped.
     enum Closing: String, CaseIterable, Identifiable {
@@ -46,6 +49,40 @@ struct PollComposeView: View {
         }
     }
 
+    /// The form as a saved draft.
+    private var currentDraft: ComposerDraft {
+        var d = ComposerDraft(kind: .poll)
+        d.question = draft.question
+        d.options = draft.options
+        d.multipleChoice = draft.type == .multiple
+        d.closing = closes.rawValue
+        d.customEnd = closes == .custom ? customEnd : nil
+        return d
+    }
+
+    private func open(_ saved: ComposerDraft) {
+        drafts.saveNow(currentDraft, cover: nil)
+        _ = drafts.open(saved)
+        focusedOption = nil
+        var options = saved.options
+        while options.count < PollDraft.minOptions { options.append("") }
+        draft = PollDraft(question: saved.question,
+                          options: Array(options.prefix(PollDraft.maxOptions)),
+                          type: saved.multipleChoice ? .multiple : .single)
+        closes = saved.closing.flatMap(Closing.init(rawValue:)) ?? .oneDay
+        if let end = saved.customEnd { customEnd = end }
+        error = nil
+    }
+
+    private func cancelTapped() {
+        if currentDraft.hasContent {
+            confirmingCancel = true
+        } else {
+            drafts.finish()
+            onDismiss()
+        }
+    }
+
     private var readyDraft: PollDraft {
         var d = draft
         d.endsAt = endDate()
@@ -70,6 +107,7 @@ struct PollComposeView: View {
     var body: some View {
         NavigationStack {
             Form {
+                ComposerDraftsRow(keeper: drafts) { showingDrafts = true }
                 Section {
                     TextField("Ask a question", text: $draft.question, axis: .vertical)
                         .font(.headline)
@@ -128,7 +166,7 @@ struct PollComposeView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onDismiss() }
+                    Button("Cancel") { cancelTapped() }
                         .disabled(isPosting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -141,6 +179,25 @@ struct PollComposeView: View {
                     }
                 }
             }
+        }
+        .onChange(of: currentDraft) { _, d in drafts.changed(d, cover: nil) }
+        // Swiping the sheet away keeps the draft, like Save Draft.
+        .onDisappear { drafts.saveNow(currentDraft, cover: nil) }
+        .confirmationDialog("Save this poll as a draft?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+            Button("Save Draft") {
+                drafts.saveNow(currentDraft, cover: nil)
+                onDismiss()
+            }
+            Button("Discard", role: .destructive) {
+                drafts.finish()
+                onDismiss()
+            }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Saved drafts stay on this device. Find them at the top of this editor.")
+        }
+        .sheet(isPresented: $showingDrafts) {
+            ComposerDraftsSheet(keeper: drafts) { open($0) }
         }
         .interactiveDismissDisabled(isPosting)
         #if os(macOS)
@@ -188,6 +245,7 @@ struct PollComposeView: View {
                     extraRelays: Array(relays.prefix(PollDraft.maxRelays)),
                     nostrService: nostrService,
                     lockedTo: lock)
+                drafts.finish()
                 isPosting = false
                 onDismiss()
             } catch {
