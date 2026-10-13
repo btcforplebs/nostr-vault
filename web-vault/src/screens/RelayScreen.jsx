@@ -53,7 +53,7 @@ export function RelayScreen({ ctx, log }) {
         <h3>FIPS</h3>
         <p class="muted small">NIP-01 on port 7447, for your paired vaults only.</p>
         <div class="k">Your relay's FIPS address</div>
-        <pre class="fips-address">{address || "…"}</pre>
+        <pre class="fips-address" style={{ wordBreak: "break-all" }}>{address || "…"}</pre>
         <div class="row"><button onClick={copy} disabled={!address}>{copied ? "Copied" : "Copy address"}</button></div>
         <p class="muted small">To reach this relay from Nostr Vault, add your vault's npub below and start FIPS. Your vault then connects to this address on port 7447.</p>
         <textarea id="fipsOwners" rows={2} placeholder="Your vault's npub (one per line)" />
