@@ -51,3 +51,27 @@ test("a link naming only known owners doesn't prompt", () => {
   assert.deepEqual([...load(true)], [mine])
   assert.equal(prompts.length, 0)
 })
+
+test("a multi-key link asks once per key, and a declined key is not added", () => {
+  const stranger = key(), mine = key()
+  at("#owner=" + [stranger, mine].map(npubEncode).join(","))
+  const owners = loadOwners({ storage, confirm: m => (prompts.push(m), m.includes(npubEncode(mine))) })
+  assert.equal(prompts.length, 2)
+  assert.deepEqual([...owners], [mine], "Haven's owner (the first key) is the one accepted")
+  assert.equal(store.get("fips-owners"), mine)
+})
+
+test("keys added by a link go after the saved owners, so Haven's owner does not change", () => {
+  const mine = key(), other = key()
+  store.set("fips-owners", mine)
+  at("#owner=" + npubEncode(other))
+  assert.deepEqual([...load(true)], [mine, other])
+})
+
+test("hash and scrub can be injected (no location/history globals needed)", () => {
+  const k = key()
+  let scrubbed = 0
+  const owners = loadOwners({ storage, hash: "#owner=" + npubEncode(k), confirm: () => true, scrub: () => scrubbed++ })
+  assert.deepEqual([...owners], [k])
+  assert.equal(scrubbed, 1)
+})

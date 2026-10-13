@@ -45,31 +45,36 @@ const OWNERS_ITEM = "fips-owners"
  * A link only ever adds owners, and only once the person at this browser confirms each new one: anyone can
  * send a link, and an owner can write to this relay and gets dialed by it.
  */
-export function loadOwners({ storage = localStorage, log = () => {}, confirm = msg => globalThis.confirm(msg) } = {}) {
+export function loadOwners({
+  storage = localStorage,
+  log = () => {},
+  confirm = msg => globalThis.confirm(msg),
+  hash = location.hash,
+  scrub = () => history.replaceState(null, "", location.pathname),
+} = {}) {
   let owners = new Set()
   try {
     owners = parseOwners(storage.getItem(OWNERS_ITEM) ?? "")
   } catch {}
-  const frag = new URLSearchParams(location.hash.slice(1)).get("owner")
+  const frag = new URLSearchParams(String(hash).slice(1)).get("owner")
   if (frag) {
     try {
+      // One prompt per key: Haven's owner is the first saved key, so a batch prompt would let a link put a
+      // stranger's key ahead of the reader's own and have both accepted with one OK.
       const fresh = [...parseOwners(frag)].filter(k => !owners.has(k))
-      if (fresh.length) {
-        const list = fresh.map(k => "  " + npubEncode(k)).join("\n")
-        const msg = `This link wants to add ${fresh.length === 1 ? "an owner" : fresh.length + " owners"} to this relay:\n\n${list}\n\n` +
-          "An owner can write to this relay and read everything on it. Only continue if this is your own vault."
-        if (confirm(msg)) {
-          owners = new Set([...owners, ...fresh])
-          saveOwners(owners, storage)
-          log("fips-owner-paired", { added: fresh.length, owners: owners.size })
-        } else {
-          log("fips-owner-declined", { offered: fresh.length })
-        }
+      const added = fresh.filter(k => confirm(`This link wants to add an owner to this relay:\n\n  ${npubEncode(k)}\n\n` +
+        "An owner can write to this relay and read everything on it. Only continue if this is your own vault."))
+      if (added.length) {
+        owners = new Set([...owners, ...added])
+        saveOwners(owners, storage)
+        log("fips-owner-paired", { offered: fresh.length, added: added.length, owners: owners.size })
+      } else if (fresh.length) {
+        log("fips-owner-declined", { offered: fresh.length })
       }
     } catch (e) {
       log("fips-owner-error", { err: String(e) })
     }
-    history.replaceState(null, "", location.pathname)
+    scrub()
   }
   return owners
 }
