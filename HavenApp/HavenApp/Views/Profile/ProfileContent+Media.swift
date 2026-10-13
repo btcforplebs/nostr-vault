@@ -141,6 +141,9 @@ extension ProfileContent {
                     }
                 }
                 .padding()
+                #if os(iOS)
+                .keepsPillLaneBelow()
+                #endif
                 .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
 
                 Spacer()
