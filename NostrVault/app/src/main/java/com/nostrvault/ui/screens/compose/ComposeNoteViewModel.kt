@@ -533,8 +533,10 @@ class ComposeNoteViewModel @Inject constructor(
         // On disk before the send starts, so a crash or a killed app during
         // the upload leaves the text in Drafts. The draft goes once the post
         // does (iOS ComposeView.postNote does the same).
+        // [sentVersion] is that save: the draft can be reopened from Drafts
+        // and edited while this send runs, and those edits must outlive it.
         autoSaveJob?.cancel()
-        if (text.isNotBlank()) {
+        val sentVersion = if (text.isNotBlank()) {
             draftService.saveDraft(
                 Draft(
                     id = draftId,
@@ -542,7 +544,9 @@ class ComposeNoteViewModel @Inject constructor(
                     replyToId = replyToNoteId,
                     quoteId = quoteCitedId(),
                 )
-            )
+            ).updatedAt
+        } else {
+            null
         }
 
         // Not viewModelScope: leaving the composer mid-send would cancel the
@@ -638,7 +642,7 @@ class ComposeNoteViewModel @Inject constructor(
                     // The queue now holds the post on disk; a draft too would
                     // offer to post it a second time.
                     autoSaveJob?.cancel()
-                    draftService.deleteDraft(draftId)
+                    draftService.deleteSentDraft(draftId, sentVersion)
                     val macHost = configStore.config.value.macRelayHttpsURL
                         .takeIf { it.isNotEmpty() }?.let { hostOf(it) }
                     notificationManager.showError(
@@ -713,8 +717,9 @@ class ComposeNoteViewModel @Inject constructor(
                     ) { evt, onOutcome ->
                         nostrService.postEvent(evt, onBroadcastOutcome = onOutcome)
                         // Out the door: its draft (an autosave, or one kept by
-                        // an earlier Cancel) has no further use.
-                        draftService.deleteDraft(keptDraft.id)
+                        // an earlier Cancel) has no further use, unless it was
+                        // edited again since the tap.
+                        draftService.deleteSentDraft(keptDraft.id, sentVersion)
                     }
                     // Posted or queued: the upload kept its own copy, so the GIF copies go.
                     deleteGifCopies(_attachments.value)

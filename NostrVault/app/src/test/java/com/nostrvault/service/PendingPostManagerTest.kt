@@ -187,4 +187,46 @@ class PendingPostManagerTest {
         advanceUntilIdle()
         assertEquals(3, sends)
     }
+
+    /**
+     * The undo countdown is still "on its way": the draft is on disk until
+     * the post goes, so reopening and posting it then would send it twice.
+     */
+    @Test fun theUndoWindowStillCountsAsSending() = runTest(dispatcher) {
+        val m = manager()
+        val a = m.launchSend("draft-a") { m.post("a") }
+        runCurrent()
+        assertTrue(a!!.isCompleted)
+        assertTrue("released before the countdown sent it", m.isSending("draft-a"))
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertTrue(!m.isSending("draft-a"))
+
+        // Taken back with Cancel: free again at once, to edit and post.
+        m.launchSend("draft-b") { m.post("b") }
+        runCurrent()
+        assertTrue(m.isSending("draft-b"))
+        m.cancel()
+        assertTrue(!m.isSending("draft-b"))
+
+        // Replaced by a newer post: the older one is taken back and freed.
+        m.launchSend("draft-c") { m.post("c") }
+        runCurrent()
+        m.launchSend("draft-d") { m.post("d") }
+        runCurrent()
+        assertTrue(!m.isSending("draft-c"))
+        assertTrue(m.isSending("draft-d"))
+    }
+
+    /** With the send delay Off the post goes at once, and so does the hold. */
+    @Test fun noCountdownNoHold() = runTest(dispatcher) {
+        val m = manager(delaySeconds = 0)
+        val post = Post()
+        m.launchSend("draft-a") {
+            m.startPost(event("a"), "text", null, null, draftId = "draft-a") { _, _ -> post.published++ }
+        }
+        advanceUntilIdle()
+        assertEquals(1, post.published)
+        assertTrue(!m.isSending("draft-a"))
+    }
 }

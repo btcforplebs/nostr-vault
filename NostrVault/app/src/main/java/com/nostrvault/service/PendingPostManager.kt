@@ -91,10 +91,14 @@ class PendingPostManager @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    /** Draft ids whose send is running in [launchSend]. */
+    /**
+     * Draft ids whose post is on its way: uploading or signing in
+     * [launchSend], then in the countdown until it is sent or taken back.
+     * The draft is still on disk for all of that, so it can be reopened.
+     */
     private val sendingDrafts = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-    /** True while the post backed by [draftId] is still uploading or signing. */
+    /** True while the post backed by [draftId] is still on its way (see [sendingDrafts]). */
     fun isSending(draftId: String): Boolean = draftId in sendingDrafts
 
     /**
@@ -108,7 +112,12 @@ class PendingPostManager @Inject constructor(
     fun launchSend(draftId: String, block: suspend CoroutineScope.() -> Unit): Job? {
         if (!sendingDrafts.add(draftId)) return null
         return scope.launch(block = block).also { job ->
-            job.invokeOnCompletion { sendingDrafts.remove(draftId) }
+            job.invokeOnCompletion {
+                // Handed to the countdown: held until that sends it or it is
+                // taken back (see startCountdown and cancel). Otherwise the
+                // send failed or queued the post, and the draft is free.
+                if (pendingDraftId != draftId) sendingDrafts.remove(draftId)
+            }
         }
     }
 
@@ -251,6 +260,8 @@ class PendingPostManager @Inject constructor(
                 .onFailure { Log.e(TAG, "Keeping the draft failed", it) }
             _withdrawn.tryEmit(id)
         }
+        // Taken back: the draft can be edited and posted again.
+        pendingDraftId?.let { sendingDrafts.remove(it) }
         clearPendingPost()
         _isShowing.value = false
         _actionType.value = null
@@ -313,6 +324,8 @@ class PendingPostManager @Inject constructor(
             _isShowing.value = false
             _actionType.value = null
             pendingPublishAction = null
+            // Sent: the post's draft is no longer on its way.
+            pendingDraftId?.let { sendingDrafts.remove(it) }
             clearPendingPost()
         }
     }
