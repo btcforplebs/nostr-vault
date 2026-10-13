@@ -27,6 +27,15 @@ extension SearchView {
             Text("No results found")
                 .font(.appSystem(size: 14, weight: .semibold))
                 .foregroundColor(.secondary)
+
+            // The filter, not the query, is what emptied the screen.
+            if searchFilter.isActive, let snapshot = globalSnapshot,
+               !(snapshot.notes.isEmpty && snapshot.profiles.isEmpty) {
+                Button("Clear filter") { searchFilter = .all }
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -273,28 +282,4 @@ extension SearchView {
         }
         return nil
     }
-
-    #if os(macOS)
-    @ViewBuilder
-    func modeChip(_ mode: SearchMode) -> some View {
-        Button(action: {
-            guard searchMode != mode else { return }
-            searchMode = mode
-            rerunSearch()
-        }) {
-            HStack(spacing: 4) {
-                Image(systemName: mode.icon)
-                    .font(.appSystem(size: 10, weight: .semibold))
-                Text(mode.label)
-                    .font(.appSystem(size: 12, weight: .semibold))
-            }
-            .foregroundColor(searchMode == mode ? .white : .secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(searchMode == mode ? Color.havenPurple : Color.secondary.opacity(0.12))
-            .cornerRadius(6)
-        }
-        .buttonStyle(.plain)
-    }
-    #endif
 }

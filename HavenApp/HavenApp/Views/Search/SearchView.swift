@@ -12,7 +12,9 @@ struct SearchView: View {
 
     @State var searchQuery: String = ""
     @State var resultTypeFilter: ResultTypeFilter = .all
-    @State var searchMode: SearchMode = .relay
+    /// Who/when filter. Applied to `globalSnapshot` on the device, so a
+    /// change never re-asks the relays.
+    @State var searchFilter: SearchFilter = .all
     @State var searchResults: SearchResults = .empty
     @State var isSearching = false
     @State var searchDebounceTask: Task<Void, Never>?
@@ -33,6 +35,8 @@ struct SearchView: View {
     @State var cachedPickedNotes: [FeedNote] = []
     /// Global search: one status per source, streamed with the results.
     @State var globalSources: [GlobalSearchSourceStatus] = []
+    /// The latest unfiltered answer, kept so `searchFilter` can be re-applied.
+    @State var globalSnapshot: GlobalSearchSnapshot?
     @State var globalFinished = true
     /// Cancels Global search when this view is really gone. Not `onDisappear`:
     /// that also fires when a result is opened on top, and the search (and the
@@ -43,24 +47,6 @@ struct SearchView: View {
     /// sitting behind Feed still hears ⌘F's notification; only the one
     /// showing may take the request, or it is spent off screen.
     @State private var isShowing = false
-
-    enum SearchMode: CaseIterable {
-        case relay, global
-
-        var label: String {
-            switch self {
-            case .relay: return "Relay"
-            case .global: return "Global"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .relay: return "externaldrive.connected.to.line.below"
-            case .global: return "globe"
-            }
-        }
-    }
 
     enum ResultTypeFilter: CaseIterable {
         case all, users, notes, hashtags, links
@@ -89,7 +75,7 @@ struct SearchView: View {
     struct SearchResults {
         var users: [String: FeedProfile] = [:]
         /// Display order for `users` when it matters (Global search is ranked
-        /// own → follows → everyone). Empty: sorted by pubkey, as relay mode is.
+        /// own → follows → everyone). Empty: sorted by pubkey.
         var userOrder: [String] = []
         var notes: [FeedNote] = []
         var links: [SearchLink] = []
@@ -172,9 +158,9 @@ struct SearchView: View {
                                     pendingDirectNoteId = nil
                                     isSearching = false
                                     globalSources = []
+                                    globalSnapshot = nil
                                     globalFinished = true
                                     nostrService.cancelGlobalSearch()
-                                    nostrService.cancelLocalRelaySearch()
                                     refreshDiscovery(force: true)
                                     return
                                 }
@@ -205,19 +191,12 @@ struct SearchView: View {
                     .background(Color.secondary.opacity(0.1))
                     .cornerRadius(10)
 
+                    SearchFilterCaption(scope: $searchFilter, color: .havenPurple)
+                        .animation(Motion.toggle, value: searchFilter)
+
                     #if os(macOS)
-                    // macOS has no glass toolbar — keep filters/mode inline.
+                    // macOS has no glass toolbar — keep the filters inline.
                     HStack(spacing: 12) {
-                        // Search source: relay vs global
-                        HStack(spacing: 6) {
-                            ForEach(SearchMode.allCases, id: \.self) { mode in
-                                modeChip(mode)
-                            }
-                        }
-
-                        Divider()
-                            .frame(height: 16)
-
                         // Result type filters
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
@@ -239,6 +218,11 @@ struct SearchView: View {
                                 }
                             }
                         }
+
+                        Spacer(minLength: 0)
+
+                        // Who / when
+                        SearchFilterMenu(scope: $searchFilter, color: .havenPurple)
                     }
                     #endif
                 }
@@ -250,7 +234,7 @@ struct SearchView: View {
                 // Results
                 if searchQuery.isEmpty {
                     emptyState
-                } else if searchMode == .global && !globalSources.isEmpty {
+                } else if !globalSources.isEmpty {
                     // Global streams: the source strip stays up while results
                     // arrive, and "no results" waits until every source is done.
                     VStack(spacing: 0) {
@@ -323,45 +307,15 @@ struct SearchView: View {
                     }
                 }
             }
-            // Right glass pill: search source (relay vs global)
+            // Right glass pill: who / when filter
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    HStack(spacing: 8) {
-                        ForEach(SearchMode.allCases, id: \.self) { mode in
-                            IconFilterButton(
-                                icon: mode.icon,
-                                tooltip: mode.label,
-                                isSelected: searchMode == mode,
-                                color: .havenPurple
-                            ) {
-                                guard searchMode != mode else { return }
-                                searchMode = mode
-                                rerunSearch()
-                            }
-                        }
-                    }
-
-                    Menu {
-                        ForEach(SearchMode.allCases, id: \.self) { mode in
-                            Button {
-                                guard searchMode != mode else { return }
-                                searchMode = mode
-                                rerunSearch()
-                            } label: {
-                                Label(mode.label, systemImage: mode.icon)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease")
-                            .font(.appSystem(size: 15, weight: .semibold))
-                            .foregroundColor(.havenPurple)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                }
+                SearchFilterMenu(scope: $searchFilter, color: .havenPurple)
             }
         }
         #endif
+        .onChange(of: searchFilter) { _, _ in
+            applySearchFilter()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             guard (note.object as? Int) == 1 else { return }
             showingCompose = true
