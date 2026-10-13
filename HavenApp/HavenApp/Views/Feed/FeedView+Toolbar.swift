@@ -222,15 +222,8 @@ extension FeedView {
                     trustScopeButton
                 }
             } else if feedService.feedMode == .popular {
-                IconFilterButton(icon: feedService.popularFilter == .follows ? "person.2.fill" : "person.2", tooltip: "Follows", isSelected: feedService.popularFilter == .follows, color: .havenPurple) {
-                    feedService.popularFilter = feedService.popularFilter == .follows ? .all : .follows
-                    feedService.recomputeFilteredNotes()
-                }
-                IconFilterButton(icon: feedService.popularFilter == .nonFollows ? "globe.americas.fill" : "globe.americas", tooltip: "Non-Follows", isSelected: feedService.popularFilter == .nonFollows, color: .havenPurple) {
-                    feedService.popularFilter = feedService.popularFilter == .nonFollows ? .all : .nonFollows
-                    feedService.recomputeFilteredNotes()
-                }
-                IconFilterButton(icon: feedService.showPopularEngagement ? "chart.bar.fill" : "chart.bar", tooltip: "Engagement", isSelected: feedService.showPopularEngagement, color: .havenPurple) {
+                PopularAudienceMenu(selected: feedService.popularFilter, color: .havenPurple, onSelect: setPopularFilter)
+                IconFilterButton(icon: feedService.showPopularEngagement ? "flame.fill" : "flame", tooltip: "Ranks", isSelected: feedService.showPopularEngagement, color: .havenPurple) {
                     feedService.showPopularEngagement.toggle()
                 }
             } else {
@@ -325,14 +318,10 @@ struct FeedToolbarState: Equatable {
             return FilterNote(icon: pollStatus.symbolName, title: "Polls", setting: pollStatus == .all ? "Open and closed" : "\(pollStatus.rawValue) only")
         }
         if popular != old.popular {
-            switch popular {
-            case .all: return FilterNote(icon: "flame", title: "Popular", setting: "Everyone")
-            case .follows: return FilterNote(icon: "person.2.fill", title: "Popular", setting: "People you follow only")
-            case .nonFollows: return FilterNote(icon: "globe.americas.fill", title: "Popular", setting: "People you don't follow only")
-            }
+            return FilterNote(icon: popular.symbolName, title: "Popular", setting: popular.menuTitle)
         }
         if engagement != old.engagement {
-            return Self.shownOrHidden("Engagement scores", icon: "chart.bar.fill", shown: engagement)
+            return Self.shownOrHidden("Ranks", icon: "flame.fill", shown: engagement)
         }
         return nil
     }

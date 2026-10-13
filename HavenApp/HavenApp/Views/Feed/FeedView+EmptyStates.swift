@@ -309,33 +309,4 @@ extension FeedView {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformControlBackground)
     }
-
-    // MARK: - Engagement Stats Badge
-
-    @ViewBuilder
-    func engagementBadge(score: Double) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "flame.fill")
-                .font(.appSystem(size: 9))
-                .foregroundColor(.orange)
-            Text(formatEngagementScore(score))
-                .font(.appSystem(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.9))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.havenPurple.opacity(0.3), lineWidth: 0.5)
-        )
-    }
-
-    private func formatEngagementScore(_ score: Double) -> String {
-        if score >= 1000 {
-            return String(format: "%.1fk", score / 1000)
-        }
-        return String(format: "%.0f", score)
-    }
 }

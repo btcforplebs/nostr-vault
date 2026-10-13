@@ -87,6 +87,8 @@ struct FeedView: View {
     @State var threadRebuildWork: DispatchWorkItem?
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
     @State var gapRegroupScheduled = false
+    /// Popular rank per note id, rebuilt once per `filteredNotes` change.
+    @State var popularRanks: [String: Int] = [:]
 
     // MARK: - Helper Functions
 
@@ -104,36 +106,34 @@ struct FeedView: View {
 
     @ViewBuilder
     func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool) -> some View {
-        FeedNoteRow(
-            note: note,
-            profile: profile,
-            rowData: rowData,
-            onReply: {
-                composeContext = ComposeContext(replyTo: feedService.replyTarget(for: note), quoteTo: nil)
-            },
-            onQuote: {
-                composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
-            },
-            onProfile: { pubkey in openProfile(pubkey) },
-            onMedia: { url, urls in
-                showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-            },
-            showParent: !parentIsNext,
-            isReplyToNext: parentIsNext,
-            useCompactMode: isCompactModeActive,
-            isExpanded: isExpanded,
-            onTapRow: {
-                // Toggle expansion: if already expanded, collapse it; otherwise expand it
-                expandedNoteId = (expandedNoteId == note.id) ? nil : note.id
+        // The rank sits above the card, clear of the post's time and menu.
+        VStack(alignment: .leading, spacing: 6) {
+            if let ranked = popularRank(of: note) {
+                PopularRankLine(rank: ranked.rank, score: ranked.score)
             }
-        )
-        .overlay(alignment: .topTrailing) {
-            if feedService.feedMode == .popular && feedService.showPopularEngagement,
-               let score = feedService.popularNoteScores[note.id] {
-                engagementBadge(score: score)
-                    .padding(.top, 8)
-                    .padding(.trailing, 8)
-            }
+            FeedNoteRow(
+                note: note,
+                profile: profile,
+                rowData: rowData,
+                onReply: {
+                    composeContext = ComposeContext(replyTo: feedService.replyTarget(for: note), quoteTo: nil)
+                },
+                onQuote: {
+                    composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
+                },
+                onProfile: { pubkey in openProfile(pubkey) },
+                onMedia: { url, urls in
+                    showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+                },
+                showParent: !parentIsNext,
+                isReplyToNext: parentIsNext,
+                useCompactMode: isCompactModeActive,
+                isExpanded: isExpanded,
+                onTapRow: {
+                    // Toggle expansion: if already expanded, collapse it; otherwise expand it
+                    expandedNoteId = (expandedNoteId == note.id) ? nil : note.id
+                }
+            )
         }
         .padding(.horizontal, isCompactModeActive && !isExpanded ? 8 : 16)
     }
@@ -145,12 +145,14 @@ struct FeedView: View {
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
                 openNotificationNote()
             }
+            .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
         #else
         VStack(spacing: 0) {
             macFeedHeader
             Divider()
             rootContent
         }
+        .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
         #endif
     }
 
