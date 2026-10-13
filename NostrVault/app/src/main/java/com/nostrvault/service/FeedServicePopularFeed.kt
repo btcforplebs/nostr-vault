@@ -48,7 +48,12 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
                 // A result that lands after you left Popular, or changed
                 // account, belongs to no feed on screen: writing it would
                 // replace the feed you are looking at.
-                if (_feedMode.value != FeedMode.POPULAR || nostrService.activeHexPubkey != account) return@withContext
+                if (_feedMode.value != FeedMode.POPULAR || nostrService.activeHexPubkey != account) {
+                    // A feed with no note subscription never clears the
+                    // spinner itself; one that subscribes owns it now.
+                    if (!FeedModeCaches.usesNotePipeline(_feedMode.value)) _isLoadingFeed.value = false
+                    return@withContext
+                }
                 _isLoadingFeed.value = false
                 if (loaded == null) {
                     _connectionStatus.value = "Popular feed error"

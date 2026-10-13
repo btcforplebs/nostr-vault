@@ -41,6 +41,9 @@ internal class FeedModeCaches(private val now: () -> Long = System::currentTimeM
         return cache to age
     }
 
+    /** Drops every account's feeds: on an account switch, nothing filed in the switch window survives. */
+    fun clear() = caches.clear()
+
     companion object {
         /** Older than this, a cached feed is dropped and the feed loads as before. */
         const val MAX_AGE_MS = 15 * 60 * 1000L

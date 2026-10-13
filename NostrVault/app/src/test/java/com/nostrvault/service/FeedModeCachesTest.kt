@@ -43,6 +43,15 @@ class FeedModeCachesTest {
     }
 
     @Test
+    fun `an account switch clears every account's feeds`() {
+        caches.put("me|FOLLOWING", listOf(note("a", 1)), emptyMap(), emptyMap())
+        caches.put("you|GLOBAL", listOf(note("b", 1)), emptyMap(), emptyMap())
+        caches.clear()
+        assertNull(caches.take("me|FOLLOWING"))
+        assertNull(caches.take("you|GLOBAL"))
+    }
+
+    @Test
     fun `what was on screen is kept even when it is older than the newest raw notes`() {
         val shown = note("shown", 1)
         val pending = note("pending", 500)
