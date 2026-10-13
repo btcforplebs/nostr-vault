@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Finds and caches the Trust Path for an author. Runs only when Event Info
 /// opens, never while scrolling: a few follow lists, then the answer is cached
@@ -31,6 +32,8 @@ final class TrustPathService {
             return TrustPath.resolve(author: author, follows: Set(follows), trustGraph: trustGraph, bridges: bridges,
                                      complete: true)
         }
+        // Someone you follow: no relays to ask. Their bridges only come from the links file above.
+        if let known = TrustPath.known(author: author, me: center, follows: Set(follows)) { return known }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         let key = "\(me)|\(center)|\(author)|\(Set(follows).hashValue)|\(trustGraph.isEmpty)"
@@ -72,6 +75,28 @@ final class TrustPathService {
         }
         return result
     }
+
+    // MARK: - Changes
+
+    /// Fires on the main queue after your web changed: a follow, an unfollow,
+    /// the saved web reloaded, an account switch. Never on subscribe. It hops
+    /// to the main queue on purpose: `@Published` fires in willSet, so a
+    /// plain sink would still read the old follows.
+    ///
+    /// One stream, built once, that every screen shares. A chain built per
+    /// call gave each SwiftUI body render its own: a resubscribe could lose a
+    /// change still waiting on the main-queue hop, and the globe's button
+    /// missed a rolled-back unfollow while its card line caught it.
+    static let webChanged: AnyPublisher<Void, Never> = {
+        let feed = FeedService.shared
+        let follows = feed.$followedPubkeys.map { Set($0) }.removeDuplicates().dropFirst().map { _ in () }
+        let saved = feed.$wotPubkeys.removeDuplicates().dropFirst().map { _ in () }
+        let account = ConfigService.shared.$activeAccountHexPubkey.removeDuplicates().dropFirst().map { _ in () }
+        return follows.merge(with: saved, account)
+            .receive(on: DispatchQueue.main)
+            .share()
+            .eraseToAnyPublisher()
+    }()
 
     // MARK: - Links
 

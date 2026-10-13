@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import com.nostrvault.service.FeedService.Companion.TAG
+import com.nostrvault.ui.notification.FollowKind
 
     /**
      * [rollback]: the list before this edit. If signing fails or every relay
@@ -23,9 +24,10 @@ import com.nostrvault.service.FeedService.Companion.TAG
         val tags = pubkeys.map { listOf("p", it) }
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
-                if (rollback != null && _followedPubkeys.value == pubkeys) {
+                val restore = followRollback(_followedPubkeys.value, pubkeys, rollback)
+                if (restore != null) {
                     if (refusedAt != null) refusedContactListCreatedAt = refusedAt
-                    _followedPubkeys.value = rollback
+                    _followedPubkeys.value = restore
                     recomputeFilteredNotes()
                     resubscribePrimaryToConnected()
                 }
@@ -67,3 +69,31 @@ import com.nostrvault.service.FeedService.Companion.TAG
     /** Best display name for a pubkey (profile name or truncated hex). */
     internal fun FeedService.profileDisplayName(pubkey: String): String =
         nostrService.profiles.value[pubkey]?.bestName ?: "${pubkey.take(8)}..."
+
+    /**
+     * The list to put back after a refused publish: [rollback], unless there
+     * is none or the list changed since ([current] is no longer what was
+     * [published]), when a newer edit owns it. Null leaves it alone.
+     */
+    internal fun followRollback(current: List<String>, published: List<String>, rollback: List<String>?): List<String>? =
+        rollback?.takeIf { current == published }
+
+    /**
+     * The pill when a follow or unfollow didn't go out and the button snapped
+     * back: says which, and that another tap may work. Never silent.
+     */
+    internal fun followFailedMessage(follow: Boolean): String =
+        if (follow) "Couldn't follow, try again" else "Couldn't unfollow, try again"
+
+    /**
+     * A read-only account (no key here, no outside signer) can't sign a follow
+     * list, and "try again" never helps: say so and stop before signing.
+     */
+    internal fun FeedService.refuseIfReadOnly(pubkey: String, follow: Boolean): Boolean {
+        if (!nostrService.isReadOnlyAccount()) return false
+        notificationManager.showFollow(profileDisplayName(pubkey), FollowKind.FAILED(readOnlyFollowMessage(follow)), pubkey = pubkey)
+        return true
+    }
+
+    internal fun readOnlyFollowMessage(follow: Boolean): String =
+        "This account is read-only. Add its key to ${if (follow) "follow" else "unfollow"}."

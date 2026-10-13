@@ -9,7 +9,11 @@ import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -59,6 +63,16 @@ class TrustPathService @Inject constructor(
      */
     val trustGraphUpdates: StateFlow<Set<String>> get() = feedService.wotPubkeys
 
+    /**
+     * Fires when your web changed: a follow, an unfollow, the saved web
+     * reloading, an account switch. Once on collect too, so a collector traces
+     * straight away. The new values are already readable when it fires.
+     */
+    val webChanged: Flow<Unit>
+        get() = combine(feedService.followedPubkeys, feedService.wotPubkeys, meUpdates) { follows, web, me ->
+            Triple(follows.toSet(), web, me)
+        }.distinctUntilChanged().map { }
+
     /** True while your follow list is being fetched. */
     val isLoadingFollows: StateFlow<Boolean> get() = feedService.isLoadingContacts
 
@@ -95,6 +109,8 @@ class TrustPathService @Inject constructor(
                 return TrustPath.resolve(author, follows.toSet(), trustGraph, it)
             }
         }
+        // Someone you follow: no relays to ask. Their bridges only come from the links file above.
+        TrustPath.known(author, center, follows.toSet())?.let { return it }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         val key = "$me|$center|$author|${follows.toSet().hashCode()}|${trustGraph.isEmpty()}"

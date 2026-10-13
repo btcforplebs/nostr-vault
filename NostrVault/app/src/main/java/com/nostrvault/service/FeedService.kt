@@ -169,15 +169,14 @@ class FeedService @Inject constructor(
      */
     fun relayTabTrustedPubkeys(): Set<String> {
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        val wot = _wotPubkeys.value
-        if (wot.isEmpty()) return emptySet()
-        return wot + _followedPubkeys.value
+        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
     }
 
     fun globalTrustSet(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return _wotPubkeys.value
+        // Your follows too, so someone you just followed passes right away.
+        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
     }
 
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
@@ -1060,6 +1059,7 @@ class FeedService @Inject constructor(
 
     /** [undo], when given, is offered on the "Followed" pill. */
     fun followUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = true)) return Result.failure(FollowActionError.ReadOnly)
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = true)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -1079,7 +1079,7 @@ class FeedService @Inject constructor(
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
                 publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the follow"))
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
                 }
                 // Re-filter so already-loaded notes from the newly-followed author
                 // surface immediately in the Following feed.
@@ -1108,6 +1108,7 @@ class FeedService @Inject constructor(
 
     /** [undo], when given, is offered on the "Unfollowed" pill. */
     fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = false)) return Result.failure(FollowActionError.ReadOnly)
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = false)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -1124,14 +1125,13 @@ class FeedService @Inject constructor(
             listConfirmed = contactListConfirmed,
         )
         return result.fold(
+            // One deliberate unfollow from a list that loaded is always allowed,
+            // even to 0: prepareUnfollow already refuses a list that didn't load.
             onSuccess = { followResult ->
-                if (contactManager.shouldBlockPublish(followResult.pubkeys.size, _followedPubkeys.value.size)) {
-                    return Result.failure(FollowActionError.SafetyCheckFailed)
-                }
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
                 publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the unfollow"))
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
                 }
                 // Re-filter so the unfollowed author's notes disappear from the
                 // Following feed immediately (the filter excludes non-follows).

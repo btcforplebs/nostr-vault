@@ -536,7 +536,8 @@ final class FollowListFollowWatch: ObservableObject {
         // The list changes now; if the new list cannot be published the feed
         // puts it back and the button follows.
         let failed: () -> Void = {
-            banner.add(recipientName: name, kind: .failed(follow ? "Couldn't publish the follow" : "Couldn't publish the unfollow"))
+            banner.add(recipientName: name, kind: .failed(
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
         }
         let result = follow
             ? feed.followUser(pubkey, onPublishFailed: failed)
@@ -573,6 +574,7 @@ final class FollowListFollowWatch: ObservableObject {
         switch err {
         case .alreadyFollowing: return follow ? "Already following" : "Unfollow failed"
         case .cannotUnfollowSelf: return follow ? "Follow failed" : "Can't unfollow yourself"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: follow, readOnly: true)
         case .contactsNotLoaded, .listUnavailable:
             return follow ? "Following once your follow list loads…" : "Unfollowing once your follow list loads…"
         }

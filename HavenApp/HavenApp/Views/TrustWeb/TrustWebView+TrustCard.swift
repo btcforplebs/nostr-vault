@@ -6,23 +6,17 @@ extension TrustWebView {
     func openCard(_ pubkey: String) {
         withAnimation(Motion.fade) {
             card = pubkey
-            cardPath = nil
+            // From you, whoever is in the middle: which of your follows follow them.
+            cardTrust.track(pubkey)
         }
         nostrService.fetchMissingProfiles(for: [pubkey])
-        Task {
-            // From you, whoever is in the middle: which of your follows follow them.
-            let found = await TrustPathService.shared.path(for: pubkey)
-            guard card == pubkey else { return }
-            nostrService.fetchMissingProfiles(for: found.bridges)
-            withAnimation(Motion.fade) { cardPath = found }
-        }
     }
 
     func closeCard() {
         guard card != nil else { return }
         withAnimation(Motion.fade) {
             card = nil
-            cardPath = nil
+            cardTrust.track(nil)
         }
     }
 
@@ -30,7 +24,9 @@ extension TrustWebView {
     /// them (the post card's answer and words), and what you can do about it.
     /// Block sits behind "…" so it can't be hit by accident.
     func trustCard(_ pubkey: String) -> some View {
-        let following = myFollows.contains(pubkey)
+        // Your follow list itself, as the card's line (`LiveTrustPath`) reads
+        // it, so the button and "You follow them" can never disagree.
+        let following = FeedService.shared.followedPubkeys.contains(pubkey)
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey)
         let bridges = cardPath?.bridges ?? []
         return VStack(alignment: .leading, spacing: 12) {
@@ -67,6 +63,7 @@ extension TrustWebView {
                     .font(.appSystem(size: 13))
                     .foregroundColor(cardPath?.reach == .outside ? .secondary : .primary.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
+                    .animation(Motion.fade, value: cardPath)
                 Spacer(minLength: 0)
             }
             HStack(spacing: 8) {

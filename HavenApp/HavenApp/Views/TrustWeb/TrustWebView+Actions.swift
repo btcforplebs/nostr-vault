@@ -26,6 +26,38 @@ extension TrustWebView {
         }
     }
 
+    /// Your follow list changed: redraw your own globe in place, so you stay
+    /// wherever you'd gone, and trace the author again so a follow of them
+    /// reads "You follow them" here too.
+    func foldInFollows() {
+        let follows = FeedService.shared.followedPubkeys
+        guard Set(follows) != myFollows else { return }
+        myFollows = Set(follows)
+        frames[me] = refolded(frames[me], ring: follows, path: frames[me]?.path ?? path)
+        prepareFaces(me)
+        // Someone you unfollowed moves out to the haze; a new follow leaves it.
+        recomputeHaze()
+        Task {
+            let found = await TrustPathService.shared.path(for: author)
+            guard FeedService.shared.followedPubkeys == follows else { return }
+            frames[me] = refolded(frames[me], ring: follows, path: found)
+        }
+    }
+
+    /// Your globe on a new follow list, keeping what it had already found.
+    private func refolded(_ old: Frame?, ring: [String], path: TrustPath) -> Frame {
+        var updated = Frame(center: me, ring: ring, path: path)
+        if let old {
+            // A bridge you unfollowed is no longer one.
+            let follows = Set(ring)
+            updated.bridges = Array(Set(old.bridges).union(path.lit)).filter(follows.contains).sorted()
+            updated.seen = old.seen.union(path.lit)
+            updated.exhausted = old.exhausted
+            updated.chains = old.chains
+        }
+        return updated
+    }
+
     func jump(to index: Int) {
         guard index < crumbs.count - 1 else { return }
         crumbs = Array(crumbs.prefix(index + 1))

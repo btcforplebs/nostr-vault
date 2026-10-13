@@ -24,7 +24,7 @@ import kotlinx.serialization.json.*
         _filteredMediaNotes.value = feedFilterEngine.filterMediaNotes(
             notes = _notes.value,
             blocked = blockedPubkeys,
-            wotPubkeys = _wotPubkeys.value,
+            wotPubkeys = myWeb(),
             isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
             globalRequiresTrust = !config.globalShowsEveryone,
             authorOf = ::authorOf,
@@ -44,7 +44,7 @@ import kotlinx.serialization.json.*
         showReposts = configStore.config.value.showReposts,
         showReplies = configStore.config.value.showReplies,
         followedPubkeys = _followedPubkeys.value.toSet(),
-        wotPubkeys = _wotPubkeys.value,
+        wotPubkeys = myWeb(),
         popularFilter = _popularFilter.value,
         popularNoteScores = _popularNoteScores.value,
         globalLanguages = config.globalFeedLanguages.toSet(),
@@ -54,6 +54,9 @@ import kotlinx.serialization.json.*
         languageOf = ::languageOf,
         authorOf = ::authorOf,
     )
+
+    /** The saved web plus your follows, so Global shows a new follow at once. */
+    private fun FeedService.myWeb(): Set<String> = TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
 
     /** Author of a note the feed has loaded, for the blocked-person check. */
     internal fun FeedService.authorOf(id: String): String? = findNote(id)?.pubkey

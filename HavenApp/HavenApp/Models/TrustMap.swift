@@ -39,6 +39,13 @@ enum TrustMap {
         return SIMD3(r * cos(longitude), r * sin(longitude), z)
     }
 
+    /// Your web right now: the relay's saved web plus everyone you follow, so
+    /// a follow counts the moment you make it instead of after the daily
+    /// rebuild. Empty while no web is saved: no graph, no claims either way.
+    static func web(saved: Set<String>, follows: Set<String>) -> Set<String> {
+        saved.isEmpty ? [] : saved.union(follows)
+    }
+
     /// Up to `cap` of `candidates`, picked by key so the same people show
     /// every time: a growing set only swaps people at the margin.
     static func haze(_ candidates: Set<String>, cap: Int = hazeCap) -> [String] {

@@ -58,8 +58,7 @@ extension FeedService {
     /// Empty while the graph isn't loaded, which counts nobody as outside.
     func relayTabTrustedPubkeys() -> Set<String> {
         if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
-        guard !wotPubkeys.isEmpty else { return [] }
-        return wotPubkeys.union(followedPubkeys)
+        return feedTrustedPubkeys
     }
 
     /// The one rule every feed with a Global button follows (Global, Media,
@@ -69,7 +68,16 @@ extension FeedService {
     func globalTrustSet() -> Set<String>? {
         guard !ConfigService.shared.config.globalShowsEveryone else { return nil }
         if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
-        return wotPubkeys
+        return feedTrustedPubkeys
+    }
+
+    /// Your web right now, the one set every Global view and the Relay tab
+    /// filter against: the saved graph plus your current follows
+    /// (`TrustMap.web`). The graph is rebuilt about once a day, so without the
+    /// follows someone you just followed stayed filtered out of Global until
+    /// then. Empty while there is no graph, so Global still fails closed.
+    var feedTrustedPubkeys: Set<String> {
+        TrustMap.web(saved: wotPubkeys, follows: Set(followedPubkeys))
     }
 
     /// REQ filters for a Global view under `trust`. Everyone: the filter as

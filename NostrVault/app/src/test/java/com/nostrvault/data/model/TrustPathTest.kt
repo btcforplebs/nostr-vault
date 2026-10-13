@@ -112,4 +112,11 @@ class TrustPathTest {
         assertNull(TrustLinks.bridges(json, "b", me, setOf("a", "d")))
         assertNull(TrustLinks.bridges("{}", "ab", me, setOf("b")))
     }
+
+    @Test fun `a follow is known without relays`() {
+        assertEquals(TrustPath.Reach.FOLLOW, TrustPath.known(author, me, setOf(author, "a"))?.reach)
+        assertEquals(TrustPath.Reach.YOU, TrustPath.known(me, me, emptySet())?.reach)
+        // Not followed: only relays can tell.
+        assertEquals(null, TrustPath.known(author, me, setOf("a")))
+    }
 }

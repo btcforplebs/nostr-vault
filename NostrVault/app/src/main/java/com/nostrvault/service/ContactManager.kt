@@ -186,14 +186,13 @@ object ContactManager {
     }
 
     /**
-     * Returns true if publishing should be BLOCKED because the contact list
-     * would shrink drastically (prevents accidental wipes from stale data).
+     * The self-heal re-publish of the local list over an older relay copy.
+     * Never an empty list, and never one under half a relay copy of more than
+     * 10: one tap changes one follow, so a local list that much smaller is a
+     * stale or partly loaded one, and publishing it would wipe follows.
      */
-    fun shouldBlockPublish(currentTagCount: Int, lastFetchedCount: Int): Boolean {
-        if (lastFetchedCount <= 10) return false
-        val ratio = currentTagCount.toDouble() / lastFetchedCount.toDouble()
-        return ratio < 0.5
-    }
+    fun mayRepublish(localSize: Int, relaySize: Int): Boolean =
+        localSize > 0 && (relaySize <= 10 || localSize * 2 >= relaySize)
 
     /**
      * Count mutual follows from a kind-3 event's tags, excluding the user's own follows.

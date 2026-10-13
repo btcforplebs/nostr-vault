@@ -511,4 +511,12 @@ class TrustMapTest {
         assertEquals(1600 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(1600.0, 2560.0, phone = false), 1e-9)
         assertEquals(1080 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(2400.0, 1080.0, phone = true), 1e-9)
     }
+
+    @Test fun `web counts a follow the moment it is made`() {
+        assertEquals(setOf("w1", "w2", "new"), TrustMap.web(saved = setOf("w1", "w2"), follows = setOf("new", "w1")))
+    }
+
+    @Test fun `web makes no claims while no web is saved`() {
+        assertTrue(TrustMap.web(saved = emptySet(), follows = setOf("new")).isEmpty())
+    }
 }
