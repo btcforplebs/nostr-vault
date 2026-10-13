@@ -181,6 +181,18 @@ object FeedFilterEngine {
     }
 
     /**
+     * Each scored post's place in the Popular feed as shown, from #1. [ids] is
+     * the shown order, already sorted by score, so the rank is the position
+     * among scored posts: replies threaded under a post take no number, and a
+     * narrower audience renumbers from #1. iOS: PopularRanking.ranks.
+     */
+    fun popularRanks(ids: List<String>, scores: Map<String, Double>): Map<String, Int> {
+        val ranks = LinkedHashMap<String, Int>()
+        for (id in ids) if (id in scores && id !in ranks) ranks[id] = ranks.size + 1
+        return ranks
+    }
+
+    /**
      * Filter notes for the media gallery grid.
      */
     fun filterMediaNotes(

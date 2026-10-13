@@ -133,6 +133,9 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         // A merge still running would publish the old account's notes and
         // counts into the cleared feed.
         cancelMergeWorker()
+        // A feed switch between the pubkey flipping and this reset filed
+        // the old account's notes under the new one's key.
+        modeCaches.clear()
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()

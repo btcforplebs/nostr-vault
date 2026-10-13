@@ -426,6 +426,7 @@ class FeedService @Inject constructor(
 
     internal val _popularNoteScores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val popularNoteScores: StateFlow<Map<String, Double>> = _popularNoteScores.asStateFlow()
+    internal val modeCaches = FeedModeCaches() // Each feed kept for a switch back: FeedServiceModeCache.kt
 
     /**
      * Replies to the Popular and Global posts, fetched only for Threaded View,
@@ -660,6 +661,7 @@ class FeedService @Inject constructor(
             if (_feedMode.value == FeedMode.GLOBAL) resetFeedThreadReplies()
 
             when (_feedMode.value) {
+                FeedMode.POPULAR -> loadPopularFeed() // Computed, not streamed: pull to refresh computes it again.
                 FeedMode.DISCOVERY -> {
                     loadExtendedNetwork()
                     subscribeToAllRelays()
@@ -677,6 +679,7 @@ class FeedService @Inject constructor(
     fun switchMode(mode: FeedMode) {
         if (mode == _feedMode.value) return
         val previousSubId = primaryFeedSubId()
+        captureModeCache(_feedMode.value)
         _feedMode.value = mode
 
         // Pending notes are raw, unfiltered for the previous mode — drop them so
@@ -684,9 +687,9 @@ class FeedService @Inject constructor(
         // the new mode will repopulate.
         _pendingNotes.value = emptyList()
         resetFeedThreadReplies()
-
+        val cachedAgeMs = restoreModeCache(mode)
         when (mode) {
-            FeedMode.POPULAR -> loadPopularFeed()
+            FeedMode.POPULAR -> showCachedPopularOrLoad(cachedAgeMs)
             FeedMode.GLOBAL -> {
                 loadWotPubkeys()
                 subscribeToAllRelays()
@@ -998,11 +1001,6 @@ class FeedService @Inject constructor(
     fun setPollStatusFilter(filter: com.nostrvault.data.model.PollStatusFilter) {
         if (_pollStatusFilter.value == filter) return
         _pollStatusFilter.value = filter
-        recomputeFilteredNotes()
-    }
-
-    fun setPopularFilter(filter: PopularFilter) {
-        _popularFilter.value = filter
         recomputeFilteredNotes()
     }
 
@@ -1438,27 +1436,6 @@ class FeedService @Inject constructor(
             .filter { nostrService.profiles.value[it] == null }
             .distinct()
         if (missingAuthors.isNotEmpty()) nostrService.fetchMissingProfiles(missingAuthors)
-    }
-
-    /**
-     * Fetches replies to these Popular or Global posts (once per post per
-     * list) from the local relay and the feed relays. Only signature-checked
-     * events are kept, and only those [FeedThreadReplies.admits]: real
-     * replies into one of these threads, from nobody blocked, and on Global
-     * from inside the trust rule. iOS: `FeedService.loadFeedThreadReplies`.
-     *
-     * Global's list grows with every stream batch, so the ids are queued and
-     * one worker asks for them, after a short settle, in chunks — rather than
-     * a REQ per batch of three new posts.
-     */
-    fun loadFeedThreadReplies(postIds: List<String>) {
-        if (!FeedThreadReplies.fetchesReplies(_feedMode.value)) return
-        synchronized(threadRepliesLock) {
-            for (id in postIds) if (threadRepliesRequested.add(id)) threadRepliesPending.add(id)
-            if (threadRepliesPending.isEmpty() || threadRepliesJob != null) return
-            val generation = threadRepliesGeneration
-            threadRepliesJob = scope.launch(processingDispatcher) { drainThreadReplies(generation) }
-        }
     }
 
     /** Who reacted, zapped and reposted one note. See FeedServiceEngagementDetails.kt. */
