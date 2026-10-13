@@ -1001,11 +1001,6 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
-    fun setPopularFilter(filter: PopularFilter) {
-        _popularFilter.value = filter
-        recomputeFilteredNotes()
-    }
-
     /**
      * Reloads the trust graph whenever the relay rewrites wot_cache.json. The
      * relay builds the graph in the background after it boots — usually after
@@ -1438,27 +1433,6 @@ class FeedService @Inject constructor(
             .filter { nostrService.profiles.value[it] == null }
             .distinct()
         if (missingAuthors.isNotEmpty()) nostrService.fetchMissingProfiles(missingAuthors)
-    }
-
-    /**
-     * Fetches replies to these Popular or Global posts (once per post per
-     * list) from the local relay and the feed relays. Only signature-checked
-     * events are kept, and only those [FeedThreadReplies.admits]: real
-     * replies into one of these threads, from nobody blocked, and on Global
-     * from inside the trust rule. iOS: `FeedService.loadFeedThreadReplies`.
-     *
-     * Global's list grows with every stream batch, so the ids are queued and
-     * one worker asks for them, after a short settle, in chunks — rather than
-     * a REQ per batch of three new posts.
-     */
-    fun loadFeedThreadReplies(postIds: List<String>) {
-        if (!FeedThreadReplies.fetchesReplies(_feedMode.value)) return
-        synchronized(threadRepliesLock) {
-            for (id in postIds) if (threadRepliesRequested.add(id)) threadRepliesPending.add(id)
-            if (threadRepliesPending.isEmpty() || threadRepliesJob != null) return
-            val generation = threadRepliesGeneration
-            threadRepliesJob = scope.launch(processingDispatcher) { drainThreadReplies(generation) }
-        }
     }
 
     /** Who reacted, zapped and reposted one note. See FeedServiceEngagementDetails.kt. */

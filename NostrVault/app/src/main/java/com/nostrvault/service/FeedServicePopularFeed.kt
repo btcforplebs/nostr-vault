@@ -55,6 +55,11 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
         }
     }
 
+    fun FeedService.setPopularFilter(filter: PopularFilter) {
+        _popularFilter.value = filter
+        recomputeFilteredNotes()
+    }
+
     // ══════════════════════════════════════════════════════════════════
 
     // Threaded View replies (Popular, Global)
@@ -125,4 +130,25 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
             (tag as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
         } ?: return null
         return FeedNote.fromEvent(id, pubkey, str("content").orEmpty(), tags, createdAt, 1)
+    }
+
+    /**
+     * Fetches replies to these Popular or Global posts (once per post per
+     * list) from the local relay and the feed relays. Only signature-checked
+     * events are kept, and only those [FeedThreadReplies.admits]: real
+     * replies into one of these threads, from nobody blocked, and on Global
+     * from inside the trust rule. iOS: `FeedService.loadFeedThreadReplies`.
+     *
+     * Global's list grows with every stream batch, so the ids are queued and
+     * one worker asks for them, after a short settle, in chunks — rather than
+     * a REQ per batch of three new posts.
+     */
+    fun FeedService.loadFeedThreadReplies(postIds: List<String>) {
+        if (!FeedThreadReplies.fetchesReplies(_feedMode.value)) return
+        synchronized(threadRepliesLock) {
+            for (id in postIds) if (threadRepliesRequested.add(id)) threadRepliesPending.add(id)
+            if (threadRepliesPending.isEmpty() || threadRepliesJob != null) return
+            val generation = threadRepliesGeneration
+            threadRepliesJob = scope.launch(processingDispatcher) { drainThreadReplies(generation) }
+        }
     }
