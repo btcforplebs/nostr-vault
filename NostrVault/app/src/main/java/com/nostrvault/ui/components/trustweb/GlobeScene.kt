@@ -110,6 +110,11 @@ internal class GlobeScene(
     /** With Everyone picked the shells' faces are a small, dim few that give way to your follows' faces. */
     private var dimLayerFaces = false
     /**
+     * How far the shells' faces are dimmed and shrunk, easing toward
+     * [dimLayerFaces], so a layer change doesn't pop every face's size.
+     */
+    private var layerDim = 0.0
+    /**
      * How brightly your follows, the Close shell and the rest of the shell
      * are drawn, easing toward the picked layer's ([TrustMap.layerWeights]).
      */
@@ -173,6 +178,9 @@ internal class GlobeScene(
         // Vouched people sit on their own shell, nearer than the rest.
         fun shell(close: Boolean) =
             if (close) Kind.CLOSE_HAZE to TrustMap.CLOSE_RADIUS else Kind.HAZE to TrustMap.OUTER_RADIUS
+        // Close is who someone is, not which layer is picked: a Close face past
+        // the shell's cap keeps its shell when the layer changes.
+        fun wasClose(key: String) = index[key]?.kind == Kind.CLOSE_HAZE
         if (frame.center == me) for (key in haze) want[key] = shell(key in closeHaze)
         for (key in frame.ring) {
             val kind = when {
@@ -193,12 +201,14 @@ internal class GlobeScene(
         tracedStar?.let { if (it !in want) want[it] = Kind.BRIDGE to TrustMap.OUTER_RADIUS }
         // A layer's face may be past the shell's cap: it still gets its star.
         if (frame.center == me) {
-            for (key in layerFaces) if (key !in want) want[key] = shell(layer == TrustMap.Layer.CLOSE || key in closeHaze)
+            for (key in layerFaces) {
+                if (key !in want) want[key] = shell(layer == TrustMap.Layer.CLOSE || key in closeHaze || (!newCenter && wasClose(key)))
+            }
         }
 
         for (star in stars) {
             if (star.key !in want) {
-                star.radiusTarget = 2.4 // drifts out and fades
+                star.radiusTarget = leavingRadius(star.radius, newCenter)
                 star.alphaTarget = 0.0
             }
         }
@@ -233,6 +243,8 @@ internal class GlobeScene(
         if (frame.center == me) for (key in layerFaces) if (taken.add(key)) { shown += key; layerShown += key }
         layerFaceSet = layerShown
         dimLayerFaces = layer == TrustMap.Layer.EVERYONE
+        // A new globe opens with its faces already the right size.
+        if (!hasLoaded) layerDim = layerDimTarget()
         faces = shown
         seatFaces()
 
@@ -386,7 +398,12 @@ internal class GlobeScene(
             filterMix = min(1.0, filterMix + dt / FILTER_FADE)
             if (filterMix >= 1) filterFrom = null
         }
-        val fading = weights != weightTarget || filterMix < 1
+        val dimTarget = layerDimTarget()
+        if (layerDim != dimTarget) {
+            layerDim += (dimTarget - layerDim) * (1 - exp(-dt * 8))
+            if (abs(dimTarget - layerDim) < 0.005 || reduceMotion) layerDim = dimTarget
+        }
+        val fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget
         if (weights != weightTarget) {
             val ease = 1 - exp(-dt * 8)
             fun step(from: Double, to: Double) = if (abs(to - from) < 0.005) to else from + (to - from) * ease
@@ -412,6 +429,9 @@ internal class GlobeScene(
         frameCount.longValue++
         if (!settling && !fading && !camera.wantsFrames(now, reduceMotion)) awake = false
     }
+
+    /** Everyone's shell faces are small and dim, unless a filter is lighting them. */
+    private fun layerDimTarget() = if (dimLayerFaces && filterTo == null) 1.0 else 0.0
 
     /** Land every star where it's heading and drop the ones that faded out. */
     private fun settle() {
@@ -646,7 +666,7 @@ internal class GlobeScene(
             val p = index[key]?.let { project.of(it) } ?: continue
             drawn += when {
                 traceTarget == null && key in layerFaceSet ->
-                    Drawn(key, p, HazeColor, if (dimLayer) 10.0 else 14.0, dimLayer)
+                    Drawn(key, p, HazeColor, 14.0 - 4.0 * layerDim, dimLayer)
                 center == author && traceTarget == null -> Drawn(key, p, RingColor, 15.0)
                 else -> Drawn(key, p, GlobeAccent, 15.0)
             }
@@ -695,7 +715,8 @@ internal class GlobeScene(
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
             val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
-            val dim = (0.35 + 0.65 * face.p.front) * a * (if (face.dim) DIM_FACE else 1.0)
+            val faint = if (traceTarget == null && face.key in layerFaceSet) 1 - (1 - DIM_FACE) * layerDim else 1.0
+            val dim = (0.35 + 0.65 * face.p.front) * a * faint
             val behind = face.p.depth < -0.1 && face.key != author
             // No room for its picture here: a bright star in its colour.
             val held = !behind && face.key !in seats
@@ -858,5 +879,16 @@ internal class GlobeScene(
          * that the faint haze keeps its front-to-back depth.
          */
         const val LEVELS = 40
+        /** Where a star leaving the globe heads when someone else moves into the middle: out past the shells. */
+        const val DRIFT_OUT_RADIUS = 2.4
+
+        /**
+         * Where a star that is leaving goes, from [radius]. Only a new person in
+         * the middle sends it out: a layer or filter change fades it where it
+         * is. Out toward the camera a star rushes off the screen and swells, so
+         * a hundred of them leaving at once reads as the globe zooming.
+         * iOS `TrustMap.leavingRadius`.
+         */
+        fun leavingRadius(radius: Double, newCenter: Boolean) = if (newCenter) DRIFT_OUT_RADIUS else radius
     }
 }
