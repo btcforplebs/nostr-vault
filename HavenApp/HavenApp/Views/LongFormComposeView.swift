@@ -101,11 +101,8 @@ struct LongFormComposeView: View {
     private var publishHint: String? {
         guard !canPost, currentDraft.hasContent || coverData != nil else { return nil }
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Add a title to publish." }
-        if isRecipe {
-            if Self.lines(ingredients).isEmpty { return "Add at least one ingredient to publish." }
-            return "Add at least one step to publish."
-        }
-        return "Write the article to publish."
+        guard isRecipe else { return "Write the article to publish." }
+        return Self.lines(ingredients).isEmpty ? "Add at least one ingredient to publish." : "Add at least one step to publish."
     }
 
     /// The post as it will go out, without the cover upload.
@@ -310,6 +307,7 @@ struct LongFormComposeView: View {
         .overlay(alignment: .topTrailing) {
             if coverData != nil {
                 Button {
+                    coverLoad += 1
                     coverData = nil
                     coverItem = nil
                 } label: {
