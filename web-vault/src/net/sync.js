@@ -61,7 +61,12 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {} }
 
 /** The user's own notes and articles from their write relays into Haven's outbox route. */
 export async function syncOwn(vault, pubkey, relays) {
-  const evs = await pool.querySync(relays, { kinds: [1, 30023], authors: [pubkey], limit: 300 }, { maxWait: 8000 })
+  // Articles get their own filter: with one shared limit, a busy account's notes fill it and no article comes back.
+  const [notes, articles] = await Promise.all([
+    pool.querySync(relays, { kinds: [1], authors: [pubkey], limit: 300 }, { maxWait: 8000 }),
+    pool.querySync(relays, { kinds: [30023], authors: [pubkey], limit: 50 }, { maxWait: 8000 }),
+  ])
+  const evs = [...notes, ...articles]
   let stored = 0
   for (const ev of evs) if ((await vault.outbox.event(ev)).ok) stored++
   return stored
