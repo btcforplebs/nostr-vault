@@ -45,6 +45,9 @@ final class GlobeScene: ObservableObject {
     /// With Everyone picked the shells' faces are a small, dim few that give
     /// way to your follows' faces.
     private var dimLayerFaces = false
+    /// How far the shells' faces are dimmed and shrunk, easing toward
+    /// `dimLayerFaces`, so a layer change doesn't pop every face's size.
+    private var layerDim = 0.0
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
     private var direct = false
@@ -111,6 +114,9 @@ final class GlobeScene: ObservableObject {
             close ? (.closeHaze, TrustMap.closeRadius) : (.haze, TrustMap.outerRadius)
         }
         for key in haze { want[key] = shell(close: closeHaze.contains(key)) }
+        // Close is who someone is, not which layer is picked: a Close face past
+        // the shell's cap keeps its shell when the layer changes.
+        func wasClose(_ key: String) -> Bool { index[key].map { kinds[$0] == .closeHaze } ?? false }
         if frame.center != me {
             for key in myFollows { want[key] = (.haze, TrustMap.outerRadius) }
             want[me] = (.bridge, TrustMap.outerRadius)
@@ -132,12 +138,12 @@ final class GlobeScene: ObservableObject {
         // A layer's face may be past the shell's cap: it still gets its star.
         if frame.center == me {
             for key in layerFaces where want[key] == nil {
-                want[key] = shell(close: layer == .close || closeHaze.contains(key))
+                want[key] = shell(close: layer == .close || closeHaze.contains(key) || (!newCenter && wasClose(key)))
             }
         }
 
         for i in keys.indices where want[keys[i]] == nil {
-            radiusTarget[i] = 2.4      // drifts out and fades
+            radiusTarget[i] = TrustMap.leavingRadius(from: radius[i], newCenter: newCenter)
             alphaTarget[i] = 0
         }
         for (key, (kind, r)) in want {
@@ -209,6 +215,8 @@ final class GlobeScene: ObservableObject {
                 camera.touch(at: now)
             }
         }
+        // A new globe opens with its faces already the right size.
+        if !hasLoaded { layerDim = dimLayerFaces && filterTo == nil ? 1 : 0 }
         hasLoaded = true
         if reduceMotion { settle() }
         wake()
@@ -329,7 +337,12 @@ final class GlobeScene: ObservableObject {
             filterMix = min(1, filterMix + dt / Self.filterFade)
             if filterMix >= 1 { filterFrom = nil }
         }
-        let fading = weights != weightTarget || filterMix < 1
+        let dimTarget = dimLayerFaces && filterTo == nil ? 1.0 : 0
+        if layerDim != dimTarget {
+            layerDim += (dimTarget - layerDim) * (1 - exp(-dt * 8))
+            if abs(dimTarget - layerDim) < 0.005 || reduceMotion { layerDim = dimTarget }
+        }
+        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -585,7 +598,7 @@ final class GlobeScene: ObservableObject {
             if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
-                drawn.append((key, p, Self.hazeColor, dimLayer ? 10 : 14, dimLayer))
+                drawn.append((key, p, Self.hazeColor, 14 - 4 * layerDim, dimLayer))
             } else {
                 drawn.append((key, p, accent, 15, false))
             }
@@ -624,7 +637,8 @@ final class GlobeScene: ObservableObject {
         }
         for face in drawn {
             let a = min(1, alpha[index[face.key] ?? centerIndex] * weight(index[face.key] ?? centerIndex))
-            let dim = (0.35 + 0.65 * face.p.front) * a * (face.dim ? Self.dimFace : 1)
+            let faint = layerFaceSet.contains(face.key) && traceTarget == nil ? 1 - (1 - Self.dimFace) * layerDim : 1
+            let dim = (0.35 + 0.65 * face.p.front) * a * faint
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             if face.p.depth < -0.1 && face.key != author {
                 // Behind the globe: a warm ember, not a face.
