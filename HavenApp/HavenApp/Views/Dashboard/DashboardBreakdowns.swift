@@ -158,7 +158,7 @@ struct EventKindBreakdownView: View {
 
     private func reload() async {
         isLoading = true
-        publicOnly = !DMService.shared.canSignAsOwner()
+        publicOnly = !RelayCounter.ownerCanAuth()
         let fresh = await statsService.fetchCountsByKind()
         counts = fresh ?? [:]
         countFailed = fresh == nil

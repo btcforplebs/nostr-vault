@@ -91,10 +91,10 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
             }
             if (isCounting || countFailed || publicOnly) {
                 DashDivider()
-                CountStatus(isCounting, countFailed, relayStatus)
+                CountStatus(isCounting, countFailed, publicOnly, relayStatus)
             }
         } else {
-            CountStatus(isCounting, countFailed, relayStatus)
+            CountStatus(isCounting, countFailed, publicOnly, relayStatus)
         }
 
         DashDivider()
@@ -165,7 +165,7 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
  * answer, or (watch-only) only the public endpoints were counted.
  */
 @Composable
-private fun CountStatus(isCounting: Boolean, countFailed: Boolean, relayStatus: RelayForegroundService.RelayStatus) {
+private fun CountStatus(isCounting: Boolean, countFailed: Boolean, publicOnly: Boolean, relayStatus: RelayForegroundService.RelayStatus) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -178,8 +178,8 @@ private fun CountStatus(isCounting: Boolean, countFailed: Boolean, relayStatus: 
             when {
                 isCounting -> "Counting…"
                 relayStatus != RelayForegroundService.RelayStatus.RUNNING -> "Start your vault to count what's in it."
-                countFailed -> "Couldn't count. Tap refresh to try again."
-                else -> StatsService.PUBLIC_ONLY_NOTE
+                publicOnly && !countFailed -> StatsService.PUBLIC_ONLY_NOTE
+                else -> "Couldn't count. Tap refresh to try again."
             },
             color = SecondaryText,
             fontSize = 13.sp,

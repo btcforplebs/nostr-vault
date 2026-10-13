@@ -130,8 +130,8 @@ struct VaultContentsSection: View {
             if model.isCounting { ProgressView().controlSize(.small) }
             Text(model.isCounting ? "Counting…"
                  : !relayManager.isRunning ? "Start your vault to count what's in it."
-                 : model.countFailed ? "Couldn't count. Pull down to try again."
-                 : RelayCountSession.publicOnlyNote)
+                 : model.publicOnly && !model.countFailed ? RelayCountSession.publicOnlyNote
+                 : "Couldn't count. Pull down to try again.")
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
             Spacer(minLength: 0)

@@ -97,7 +97,7 @@ class StatsService: ObservableObject {
             baseURL.appendingPathComponent("inbox"),
             baseURL.appendingPathComponent("private"),
             baseURL.appendingPathComponent("chat")
-        ], canSignAsOwner: DMService.shared.canSignAsOwner())
+        ], canSignAsOwner: RelayCounter.ownerCanAuth())
 
         // Common Nostr kinds to query — covers profile, social, media, lists, long-form, zaps, DMs
         let kindsToQuery = [

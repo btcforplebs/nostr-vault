@@ -87,8 +87,8 @@ class VaultDashboardViewModel @Inject constructor(
 
     /** The owner has no key, so /private and /chat are left out of the counts. */
     val countsPublicOnly: StateFlow<Boolean> = configStore.config
-        .map { StatsService.ownerIsWatchOnly(it) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, StatsService.ownerIsWatchOnly(configStore.config.value))
+        .map { statsService.ownerIsWatchOnly(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, statsService.ownerIsWatchOnly(configStore.config.value))
 
     /** The files in the Blossom folder, by type; null until scanned. */
     private val _media = MutableStateFlow<VaultDashboardContents.Media?>(null)

@@ -31,7 +31,7 @@ final class VaultContentsModel: ObservableObject {
         async let files: Void = loadFiles(relayManager: relayManager, configService: configService, statsService: statsService)
         if relayManager.isRunning && !owner.isEmpty {
             isCounting = true
-            publicOnly = !DMService.shared.canSignAsOwner()
+            publicOnly = !RelayCounter.ownerCanAuth()
             let fresh = await Self.count(owner: owner, port: configService.config.relayPort)
             // A partial answer would undercount; keep what is shown.
             if let fresh { contents = fresh }
@@ -101,7 +101,7 @@ final class VaultContentsModel: ObservableObject {
         for group in VaultContents.groups where group.countsYours {
             filters["y-\(group.id)"] = ["kinds": group.kinds, "authors": [owner]]
         }
-        let urls = RelayCountSession.countable(relayURLs(port: port), canSignAsOwner: DMService.shared.canSignAsOwner())
+        let urls = RelayCountSession.countable(relayURLs(port: port), canSignAsOwner: RelayCounter.ownerCanAuth())
         guard !urls.isEmpty else { return nil }
 
         var sums: [String: Int] = [:]

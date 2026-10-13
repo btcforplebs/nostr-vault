@@ -15,8 +15,21 @@ final class RelayCounter {
         guard !filters.isEmpty else { return [:] }
         let needsAuth = RelayCountSession.needsAuth(url)
         // Watch-only: nothing to sign the AUTH with, so this route can't be counted.
-        if needsAuth && !DMService.shared.canSignAsOwner() { return nil }
+        if needsAuth && !ownerCanAuth() { return nil }
         return await RelayCounter(filters: filters, url: url, needsAuth: needsAuth).run(timeout: timeout)
+    }
+
+    /// Whether the owner can sign the AUTH /private and /chat need. Like
+    /// `DMService.canSignAsOwner()`, but by the owner's own signing mode, not
+    /// the active account's: the AUTH is owner-forced and goes to the owner's
+    /// signer (`NostrService.signEventAsync`) whichever account is active.
+    static func ownerCanAuth() -> Bool {
+        let config = ConfigService.shared.config
+        if config.signingMode(for: config.ownerNpub) == "nip46" { return true }
+        if !config.ownerNcryptsec.isEmpty {
+            return NIP49Service.getPasswordFromKeychain() != nil
+        }
+        return !(config.ownerHexKey ?? "").isEmpty
     }
 
     private let filters: [String: [String: Any]]
