@@ -105,6 +105,29 @@ button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weig
 .article-image { display: block; width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; }
 .article-body { white-space: pre-wrap; margin-top: 10px; font: var(--t-body); }
 
+/* Search: box, uppercase section labels, person rows (a card-shaped button when tappable, a plain card when not). */
+.search-form { padding: 0 var(--gutter) 12px; }
+.section-label { padding: 12px var(--gutter) 8px; font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.person-row { display: flex; align-items: center; gap: 12px; width: calc(100% - 2 * var(--gutter)); min-height: 64px; margin: 0 var(--gutter) 8px; padding: 10px 14px;
+  background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); color: var(--text); text-align: left; font: inherit; }
+button.person-row:hover { border-color: var(--accent-line); }
+.person-names { display: grid; min-width: 0; }
+.person-sub { color: var(--text-3); font: var(--t-foot); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Notifications: "A and B reacted" wraps (names too), unlike a note's one-line author. The about line sits under it. */
+.notif-who { flex: 1; min-width: 0; font: var(--t-headline); overflow-wrap: anywhere; }
+.notif-who .author-name { font: inherit; white-space: normal; }
+.notification .repost-line { margin: 8px 0 0; align-items: baseline; }
+.notification .repost-line > :first-child { flex: none; }
+.notification .repost-line > :last-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* Thread: nested replies step in 16px a level (capped in JS, passed as --indent) with a thin rail in the step; the
+   tapped reply gets a full-accent border. The rail is 0 wide at --indent 0, so direct replies sit flush. */
+.thread-reply { position: relative; padding-left: calc(var(--indent, 0) * 16px); }
+.thread-reply::before { content: ""; position: absolute; top: 0; bottom: 12px; left: calc(var(--gutter) + var(--indent, 0) * 16px - 9px);
+  width: calc(min(var(--indent, 0), 1) * 2px); border-radius: 1px; background: var(--accent-line); }
+[aria-current] .note { border-color: var(--accent); }
+
 /* Relay tab: status cards, hairline border (status, not content). */
 .card { background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); margin: 0 var(--gutter) 12px; padding: 16px; }
 .card h3 { margin: 0 0 4px; font: var(--t-headline); }
