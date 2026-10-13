@@ -27,6 +27,23 @@ extension HavenConfig {
         signingMode(for: activeAccountNpub.isEmpty ? ownerNpub : activeAccountNpub)
     }
 
+    /// Whether owner-forced events (the local relay's NIP-42 AUTH) go to the
+    /// owner's remote signer. Read from the owner's own signing mode, explicit
+    /// or found from its bunker config, never the active account's: a bunker
+    /// set up in the wizard has no `accountSigningModes` entry.
+    var ownerSignsWithBunker: Bool {
+        !ownerNpub.isEmpty && signingMode(for: ownerNpub) == "nip46"
+    }
+
+    /// Whether the owner can sign owner-forced events, whichever account is
+    /// active. `hasNcryptsecPassword` is asked only for an ncryptsec owner:
+    /// without the stored password the key can't be decrypted.
+    func ownerCanSign(hasNcryptsecPassword: @autoclosure () -> Bool) -> Bool {
+        if ownerSignsWithBunker { return true }
+        if !ownerNcryptsec.isEmpty { return hasNcryptsecPassword() }
+        return !(ownerHexKey ?? "").isEmpty
+    }
+
     /// The signing mode `activeNpub` would sign with if it were active: the
     /// same rules as activeSigningMode(), for any account.
     func signingMode(for activeNpub: String) -> String {
