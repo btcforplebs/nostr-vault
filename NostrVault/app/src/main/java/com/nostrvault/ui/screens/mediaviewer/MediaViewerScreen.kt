@@ -29,6 +29,7 @@ import com.nostrvault.service.MediaCacheService
 import com.nostrvault.ui.components.AudioPlayer
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.components.VideoPlayer
+import com.nostrvault.ui.components.ZoomableBox
 import com.nostrvault.ui.components.ZoomableImage
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
@@ -111,8 +112,22 @@ fun MediaViewerScreen(
     // Dismiss threshold in pixels (120dp)
     val dismissThresholdPx = with(density) { 120.dp.toPx() }
 
-    // Accumulated vertical drag for ZoomableImage callback
+    // Accumulated vertical drag for the page's drag-to-dismiss
     var accumulatedDragY by remember { mutableFloatStateOf(0f) }
+    val onVerticalDrag: (Float) -> Unit = { deltaY ->
+        if (currentScale <= 1.05f) {
+            accumulatedDragY += deltaY
+            scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
+        }
+    }
+    val onVerticalDragEnd: () -> Unit = {
+        if (abs(accumulatedDragY) > dismissThresholdPx) {
+            onBack()
+        } else {
+            scope.launch { dragOffsetY.animateTo(0f, Motion.snapBack()) }
+        }
+        accumulatedDragY = 0f
+    }
 
     Box(
         modifier = Modifier
@@ -133,47 +148,59 @@ fun MediaViewerScreen(
             val item = items[page]
 
             if (item.isVideo || item.isAudio) {
-                // Only create ExoPlayer for the currently visible page
-                // to keep memory usage at one instance (~10-15MB).
-                if (page == pagerState.currentPage) {
-                    val mediaUri = item.localFile?.toUri()?.toString() ?: item.displayUrl
-                    if (item.isAudio) {
-                        AudioPlayer(
-                            uri = mediaUri,
-                            fileName = audioFileName(item.displayUrl, item.sha256),
-                            modifier = Modifier.fillMaxSize(),
-                            autoplay = autoplayVideos,
-                        )
+                // The same gestures as a photo (iOS): drag to close, and
+                // pinch / double-tap zoom on a video. The player keeps its
+                // own taps.
+                ZoomableBox(
+                    zoomable = item.isVideo && !isInPiP,
+                    contentTakesTaps = true,
+                    onScaleChanged = { newScale -> currentScale = newScale },
+                    onVerticalDrag = onVerticalDrag,
+                    onVerticalDragEnd = { onVerticalDragEnd() },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    // Only create ExoPlayer for the currently visible page
+                    // to keep memory usage at one instance (~10-15MB).
+                    if (page == pagerState.currentPage) {
+                        val mediaUri = item.localFile?.toUri()?.toString() ?: item.displayUrl
+                        if (item.isAudio) {
+                            AudioPlayer(
+                                uri = mediaUri,
+                                fileName = audioFileName(item.displayUrl, item.sha256),
+                                modifier = Modifier.fillMaxSize(),
+                                autoplay = autoplayVideos,
+                            )
+                        } else {
+                            VideoPlayer(
+                                uri = mediaUri,
+                                modifier = Modifier.fillMaxSize(),
+                                autoplay = autoplayVideos,
+                            )
+                        }
                     } else {
-                        VideoPlayer(
-                            uri = mediaUri,
-                            modifier = Modifier.fillMaxSize(),
-                            autoplay = autoplayVideos,
-                        )
-                    }
-                } else {
-                    // Static thumbnail placeholder for off-screen video pages
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black),
-                    ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(item.localFile ?: item.displayUrl)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        Icon(
-                            imageVector = NostrVaultIcons.PlayCircle,
-                            contentDescription = "Video",
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(48.dp),
-                        )
+                        // Static thumbnail placeholder for off-screen video pages
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black),
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(item.localFile ?: item.displayUrl)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            Icon(
+                                imageVector = NostrVaultIcons.PlayCircle,
+                                contentDescription = "Video",
+                                tint = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(48.dp),
+                            )
+                        }
                     }
                 }
             } else {
@@ -183,24 +210,8 @@ fun MediaViewerScreen(
                     onScaleChanged = { newScale ->
                         currentScale = newScale
                     },
-                    onVerticalDrag = { deltaY ->
-                        if (currentScale <= 1.05f) {
-                            accumulatedDragY += deltaY
-                            scope.launch {
-                                dragOffsetY.snapTo(accumulatedDragY)
-                            }
-                        }
-                    },
-                    onVerticalDragEnd = {
-                        if (abs(accumulatedDragY) > dismissThresholdPx) {
-                            onBack()
-                        } else {
-                            scope.launch {
-                                dragOffsetY.animateTo(0f, Motion.snapBack())
-                            }
-                        }
-                        accumulatedDragY = 0f
-                    },
+                    onVerticalDrag = onVerticalDrag,
+                    onVerticalDragEnd = { onVerticalDragEnd() },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
