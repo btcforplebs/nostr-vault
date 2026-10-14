@@ -14,8 +14,9 @@ const VIDEO = /\.(mp4|webm|mov)(\?\S*)?$/i
 const MAX_QUOTE_DEPTH = 1
 
 /** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
- *  (no preload) and nostr:npub / nprofile stay short text (no profile fetch). Images show as in a note. */
-export function NoteText({ content, depth = 0, dm = false }) {
+ *  (no preload) and nostr:npub / nprofile stay short text (no profile fetch). Images show as in a note.
+ *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed. */
+export function NoteText({ content, depth = 0, dm = false, memoryOnly = false }) {
   const parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -27,7 +28,7 @@ export function NoteText({ content, depth = 0, dm = false }) {
     <div class="note-text">
       {parts.map((s, i) => {
         if (i % 2 === 0) return s
-        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm)
+        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
         if (IMAGE.test(s)) return <img key={i} class="note-media" src={s} alt="" loading="lazy" />
         if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline />
         const label = s.replace(/^https?:\/\//, "")
@@ -37,21 +38,21 @@ export function NoteText({ content, depth = 0, dm = false }) {
   )
 }
 
-function nostrRef(ref, key, depth, dm) {
+function nostrRef(ref, key, depth, dm, memoryOnly) {
   const q = parseRef(ref)
-  if (q?.type === "profile") return dm ? <span key={key} class="mention">{shortRef(ref)}</span> : <Mention key={key} pubkey={q.pubkey} />
-  if (q && depth < MAX_QUOTE_DEPTH) return <QuotedNote key={key} q={q} short={shortRef(ref)} depth={depth} />
+  if (q?.type === "profile") return dm ? <span key={key} class="mention">{shortRef(ref)}</span> : <Mention key={key} pubkey={q.pubkey} memoryOnly={memoryOnly} />
+  if (q && depth < MAX_QUOTE_DEPTH) return <QuotedNote key={key} q={q} short={shortRef(ref)} depth={depth} memoryOnly={memoryOnly} />
   return <span key={key} class="mention">{shortRef(ref)}</span>
 }
 
 /** @name for a pubkey, linking to their profile. Unknown names are fetched once the vault is registered. */
-export function Mention({ pubkey }) {
+export function Mention({ pubkey, memoryOnly = false }) {
   const p = useProfile(pubkey)
   useEffect(() => {
-    const load = () => { const src = quoteSource(); if (src) fetchProfiles(src.vault, [pubkey], src.relays).catch(() => {}) }
+    const load = () => { const src = quoteSource(); if (src) fetchProfiles(src.vault, [pubkey], src.relays, { save: !memoryOnly }).catch(() => {}) }
     load()
     return onQuotes(load) // again once main.jsx registers the vault
-  }, [pubkey])
+  }, [pubkey, memoryOnly])
   return <a class="mention" href={`#/profile/${pubkey}`} onClick={e => e.stopPropagation()}>@{p?.name || npubEncode(pubkey).slice(0, 12) + "…"}</a>
 }
 

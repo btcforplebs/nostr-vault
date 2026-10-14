@@ -16,8 +16,9 @@ export function AuthorName({ pubkey }) {
 
 /** A kind 1 note, or a kind 6 repost shown as the reposted note with a "reposted" line. Floating card, as on iOS
  *  (VaultNoteRow), with the iPhone's action row under it: reply, repost, quote, like. A repost's actions act on the
- *  note inside it. No zap: there's no wallet on the web yet. */
-export function NoteCard({ event }) {
+ *  note inside it. No zap: there's no wallet on the web yet. `memoryOnly`: a stranger's note (Global, Hashtag), so
+ *  quotes and @names inside it aren't written to Haven /feed. */
+export function NoteCard({ event, memoryOnly = false }) {
   if (event.kind === 6) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
@@ -25,12 +26,12 @@ export function NoteCard({ event }) {
     return (
       <article class="note" onClick={inner?.id && openThread(inner.id)}>
         <div class="repost-line"><RepostIcon /><a class="author-link" href={profileHref(event.pubkey)}><AuthorName pubkey={event.pubkey} /></a> reposted</div>
-        {inner?.pubkey ? <NoteBody event={inner} /> : <div class="note-text muted">Repost of a note not included</div>}
+        {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} /> : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
       </article>
     )
   }
-  return <article class="note" onClick={openThread(event.id)}><NoteBody event={event} /><NoteActions note={event} /></article>
+  return <article class="note" onClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} /><NoteActions note={event} /></article>
 }
 
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it.
@@ -41,7 +42,7 @@ const openThread = id => e => {
 
 const profileHref = pubkey => `#/profile/${pubkey}`
 
-function NoteBody({ event }) {
+function NoteBody({ event, memoryOnly }) {
   return (
     <>
       <div class="note-head">
@@ -51,7 +52,7 @@ function NoteBody({ event }) {
         </a>
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()}>{ago(event.created_at)}</time>
       </div>
-      <NoteText content={event.content} />
+      <NoteText content={event.content} memoryOnly={memoryOnly} />
     </>
   )
 }

@@ -8,8 +8,9 @@ import { ago } from "./time.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { fetchQuote, getQuote, hasQuote, onQuotes, quoteHash, quoteKey, quoteSource } from "../net/quotes.js"
 
-/** The cached event for a parsed reference (undefined while loading, null when not found), fetching it once. */
-export function useQuote(q) {
+/** The cached event for a parsed reference (undefined while loading, null when not found), fetching it once.
+ *  `memoryOnly`: the card is a stranger's, so what the relays return isn't written to Haven /feed. */
+export function useQuote(q, memoryOnly = false) {
   const key = quoteKey(q)
   const [ev, setEv] = useState(() => getQuote(key))
   useEffect(() => {
@@ -18,7 +19,7 @@ export function useQuote(q) {
     const load = () => {
       if (hasQuote(key)) return setEv(getQuote(key))
       const src = quoteSource()
-      if (src) fetchQuote(q, src).catch(() => {})
+      if (src) fetchQuote(q, { ...src, save: !memoryOnly }).catch(() => {})
     }
     load()
     return onQuotes(load)
@@ -26,11 +27,11 @@ export function useQuote(q) {
   return ev
 }
 
-export function QuotedNote({ q, short, depth = 0 }) {
-  const ev = useQuote(q)
+export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
+  const ev = useQuote(q, memoryOnly)
   useEffect(() => {
     const src = quoteSource()
-    if (ev && src) fetchProfiles(src.vault, [ev.pubkey], src.relays).catch(() => {})
+    if (ev && src) fetchProfiles(src.vault, [ev.pubkey], src.relays, { save: !memoryOnly }).catch(() => {})
   }, [ev?.pubkey])
 
   if (ev === undefined) return <div class="quote quote-pending"><span class="quote-ref">{short}</span> Loading…</div>
@@ -50,7 +51,7 @@ export function QuotedNote({ q, short, depth = 0 }) {
         <time class="note-time" datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
       </div>
       {title && <strong class="quote-title">{title}</strong>}
-      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} depth={depth + 1} />
+      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} depth={depth + 1} memoryOnly={memoryOnly} />
     </div>
   )
 }
