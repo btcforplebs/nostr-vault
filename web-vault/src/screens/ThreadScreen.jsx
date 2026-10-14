@@ -2,11 +2,25 @@
 // the network fills /feed in the background. Read-only: nothing here signs.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { NoteCard } from "../components/NoteCard.jsx"
-import { buildThread, flattenThread, readThread, rootIdOf, syncThread } from "../net/thread.js"
+import { buildThread, flattenThread, readThread, repostedNote, rootIdOf, syncThread } from "../net/thread.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
+
+/** Where the thread for `id` opens, from Haven /feed alone (so offline too). A stored note opens under its root.
+ *  A reposted note is not stored, only the kind 6 carrying it: it opens under its real root when /feed has that
+ *  root, otherwise under itself. `extra` is that carried note, which /feed's reply query can't return.
+ *  -> { rootId, extra: [event] } */
+export async function threadStart(vault, id) {
+  const [stored] = await vault.feed.query({ ids: [id] })
+  if (stored) return { rootId: rootIdOf(stored), extra: [] }
+  const carried = await repostedNote(vault, id)
+  if (!carried) return { rootId: id, extra: [] }
+  const rid = rootIdOf(carried)
+  const rootStored = rid !== id && (await vault.feed.query({ ids: [rid] })).length > 0
+  return { rootId: rootStored ? rid : id, extra: [carried] }
+}
 
 export function ThreadScreen({ ctx, id }) {
   const { vault, account } = ctx
@@ -14,8 +28,9 @@ export function ThreadScreen({ ctx, id }) {
   const [rootId, setRootId] = useState(null)
   const [thread, setThread] = useState(null)
   const [status, setStatus] = useState("")
+  const extra = useRef([])
 
-  const reload = async rid => setThread(buildThread(rid, await readThread(vault, rid)))
+  const reload = async rid => setThread(buildThread(rid, [...await readThread(vault, rid), ...extra.current]))
   const sync = async () => {
     if (!navigator.onLine) return setStatus("Offline: showing the saved thread")
     setStatus("Loading replies…")
@@ -30,8 +45,9 @@ export function ThreadScreen({ ctx, id }) {
   useEffect(() => {
     let live = true
     ;(async () => {
-      const [note] = await vault.feed.query({ ids: [id] })
-      const rid = note ? rootIdOf(note) : id
+      const start = await threadStart(vault, id)
+      const rid = start.rootId
+      extra.current = start.extra
       if (!live) return
       setRootId(rid)
       await reload(rid)
