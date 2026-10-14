@@ -25,7 +25,7 @@ function store(ev) {
   if (have && have.created_at >= ev.created_at) return false
   let c
   try { c = JSON.parse(ev.content) } catch { return false }
-  cache.set(ev.pubkey, { name: str(c.display_name) || str(c.name), picture: str(c.picture), about: str(c.about), banner: str(c.banner), nip05: str(c.nip05), lud16: str(c.lud16), created_at: ev.created_at })
+  cache.set(ev.pubkey, { name: str(c.display_name) || str(c.name), picture: str(c.picture), about: str(c.about), banner: str(c.banner), nip05: str(c.nip05), lud16: str(c.lud16), website: link(c.website), created_at: ev.created_at })
   return true
 }
 
@@ -56,3 +56,14 @@ export async function fetchProfiles(vault, pubkeys, relays, { force = false, que
 }
 
 const str = v => (typeof v === "string" ? v.trim() : "")
+
+// A profile's website, only ever as an http(s) URL: a bare "example.com" gets https://, any other scheme
+// (javascript:, data:, nostr:) is dropped, so the chip's href can't run anything.
+export function link(v) {
+  const s = str(v)
+  if (!s) return ""
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`)
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : ""
+  } catch { return "" }
+}

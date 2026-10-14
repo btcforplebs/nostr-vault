@@ -6,11 +6,12 @@ import { useProfile } from "./useProfile.js"
 /** The iOS profile header: banner fading to black, ringed avatar over it, name + YOU badge, bio, chips, counts.
  *  No Edit Profile button in M1 (nothing to edit with yet). No verified seal: NIP-05 isn't checked here, and the
  *  seal means verified only. */
-export function ProfileHeader({ pubkey, follows }) {
+export function ProfileHeader({ pubkey, follows, you = true }) {
   const p = useProfile(pubkey)
   const npub = npubEncode(pubkey)
   // Offline, the banner URL fails: drop the img so the gradient shows, not a broken-image icon. Keyed on the URL so a newer one gets its chance.
   const [badBanner, setBadBanner] = useState("")
+  // profiles.js keeps website only as an http(s) URL, so it goes into href as-is.
   const site = p?.website?.replace(/^https?:\/\//, "").replace(/\/$/, "")
   return (
     <header class="profile-header">
@@ -20,7 +21,7 @@ export function ProfileHeader({ pubkey, follows }) {
         <div class="profile-names">
           <div class="profile-name-row">
             <h1>{p?.display_name || p?.name || npub.slice(0, 16) + "…"}</h1>
-            <span class="you-badge">YOU</span>
+            {you && <span class="you-badge">YOU</span>}
           </div>
           {p?.nip05 && <div class="profile-nip05">{p.nip05.replace(/^_@/, "")}</div>}
         </div>
@@ -28,10 +29,10 @@ export function ProfileHeader({ pubkey, follows }) {
       {p?.about && <p class="about">{p.about}</p>}
       <div class="chips">
         {p?.lud16 && <span class="chip"><Icon d="M13 2L4 14h7l-1 8 9-12h-7z" fill />{p.lud16}</span>}
-        {site && <a class="chip" href={/^https?:/.test(p.website) ? p.website : `https://${p.website}`} target="_blank" rel="noopener noreferrer"><Icon d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />{site}</a>}
+        {site && <a class="chip" href={p.website} target="_blank" rel="noopener noreferrer"><Icon d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />{site}</a>}
         <button class="chip" type="button" title="Copy npub" onClick={() => navigator.clipboard?.writeText(npub)}><Icon d="M15 7a4 4 0 1 0-3.9 4.9L4 19v2h3v-2h2v-2h2l1.4-1.4" />{npub.slice(0, 12)}…{npub.slice(-7)}</button>
       </div>
-      <div class="counts"><b>{fmt(follows)}</b> Following</div>
+      {follows != null && <div class="counts"><b>{fmt(follows)}</b> Following</div>}
     </header>
   )
 }

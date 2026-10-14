@@ -61,3 +61,23 @@ test("force asks the network even for cached pubkeys, and a newer kind 0 replace
   assert.equal(m.getProfile(getPublicKey(a)).name, "new")
   assert.equal(JSON.parse(vault.stored.get(getPublicKey(a)).content).name, "new")
 })
+
+// ProfileHeader's website chip puts this straight into an href, so profiles.js keeps it only as an http(s) URL.
+test("a profile's website is kept as an http(s) link, and nothing else", async () => {
+  const m = await load()
+  const site = (sk, website, at) => finalizeEvent({ kind: 0, created_at: at, tags: [], content: JSON.stringify({ name: "w", website }) }, sk)
+  const cases = [
+    ["https://example.com/me", "https://example.com/me"],
+    ["http://example.com", "http://example.com/"],
+    ["  example.com  ", "https://example.com/"],
+    ["javascript:alert(1)", ""],
+    ["data:text/html,<b>x</b>", ""],
+    ["nostr:npub1xyz", ""],
+    [42, ""],
+  ]
+  for (const [website, want] of cases) {
+    const sk = generateSecretKey()
+    m.putProfile(site(sk, website, 100))
+    assert.equal(m.getProfile(getPublicKey(sk)).website, want, `website ${JSON.stringify(website)}`)
+  }
+})
