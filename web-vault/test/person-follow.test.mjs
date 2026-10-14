@@ -88,7 +88,21 @@ test("guard: one own relay times out, the other answers empty, the vault has an 
   assert.deepEqual(vault.outbox.evs, [old])
 })
 
-test("guard: a list from any relay, or every own relay answering, is enough", async () => {
+test("guard: own relays both time out, purplepag.es has an old copy -> refused, signer never asked (Tron's index-relay case)", async () => {
+  const many = Array.from({ length: 40 }, pk)
+  const old = contacts(many.slice(0, 4), nowS() - 30 * 86400) // the real 40 is on wss://a, which timed out
+  const vault = fakeVault([old])
+  let signed = false, sent = false
+  const ask = async url => PROFILE_RELAYS.includes(url) ? { events: [old], answered: true } : { events: [], answered: false }
+  await assert.rejects(run({ vault, readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"], target: pk(), follow: true, known: old, appCount: 4, ask,
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
+    publish: urls => { sent = true; return okPublish(urls) } }), /None of your relays answered/)
+  assert.equal(signed, false)
+  assert.equal(sent, false)
+  assert.deepEqual(vault.outbox.evs, [old])
+})
+
+test("guard: a list from one of your relays, or every own relay answering, is enough", async () => {
   const many = Array.from({ length: 40 }, pk)
   const real = contacts(many, nowS() - 60), old = contacts(many.slice(0, 4), nowS() - 30 * 86400)
   const relays = { readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"] }

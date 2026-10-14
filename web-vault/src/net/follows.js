@@ -59,7 +59,8 @@ export async function askRelay(url, filter, ms = ASK_MS) {
 /**
  * The newest kind 3 of `pubkey` from the vault (Haven's outbox), the network and `known` (the list the app holds).
  * `asked`: how many of `relays` (the user's own) were asked; `answered`: how many of those sent their EOSE (purplepag.es
- * is asked too but doesn't count for either). `netFound`: a kind 3 came from a relay, not only from this browser.
+ * is asked too but doesn't count for either). `netFound`: a kind 3 came from one of the user's own relays (a copy from
+ * purplepag.es alone may be old; it is still in `seen`, so it can be the base and counts toward the size rule).
  * Nothing found here is written to the vault: a list the guard refuses must not become the app's follows.
  * `ask` is for tests. -> { base, seen: [kind 3], asked, answered, netFound }
  */
@@ -75,7 +76,8 @@ export async function findLatestList({ vault, pubkey, relays, known, ask = askRe
   const answered = replies.filter((r, i) => r.answered && own.includes(asked[i])).length
   const at = now()
   const seen = [...local, ...net, ...(known ? [known] : [])].filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && ev.created_at < at + MAX_SKEW)
-  const netFound = net.some(ev => ev.created_at < at + MAX_SKEW)
+  const netFound = replies.some((r, i) => own.includes(asked[i]) &&
+    r.events.some(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev) && ev.created_at < at + MAX_SKEW))
   return { base: newestList(seen, pubkey, at), seen, asked: own.length, answered, netFound }
 }
 
