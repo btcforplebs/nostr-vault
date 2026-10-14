@@ -1,14 +1,12 @@
 package com.nostrvault.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -391,13 +389,17 @@ fun NoteDetailScreen(
                     // Thread stats toggle. While on it says "Stats": an icon
                     // alone gave no hint what it had switched on (iOS #325).
                     ThreadStatsToggle(isOn = expandedEngagement, onClick = viewModel::toggleExpandedEngagement)
-                    // Reply
-                    IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))
-                    }
-                    // Broadcast
-                    IconButton(onClick = { broadcastTargetNote = focusedNote }, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Relay, "Broadcast", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                    // Reply and Broadcast would act on the blocked note behind
+                    // the placeholder, so they go with it (iOS 1d38f8be).
+                    if (!showsBlockedPlaceholder) {
+                        // Reply
+                        IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
+                            Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                        }
+                        // Broadcast
+                        IconButton(onClick = { broadcastTargetNote = focusedNote }, modifier = Modifier.size(40.dp)) {
+                            Icon(NostrVaultIcons.Relay, "Broadcast", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                        }
                     }
                 }
             }
@@ -784,26 +786,6 @@ fun NoteDetailScreen(
 
 private const val THREAD_PREFS = "thread_view"
 private const val KEY_CONDENSED_REPLIES = "condensedReplies"
-
-/**
- * Takes the place of the note you opened once you block its author; their
- * replies and quotes go with it. iOS: NoteDetailView.blockedNotePlaceholder.
- */
-@Composable
-private fun BlockedNotePlaceholder(modifier: Modifier = Modifier) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = modifier
-            .fillMaxWidth()
-            .background(SecondaryGroupedBg, RoundedCornerShape(12.dp))
-            .padding(vertical = 24.dp),
-    ) {
-        Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("You blocked this person", color = SecondaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
 
 /**
  * Parents and replies sit this far in from the screen's edges, lined up with
