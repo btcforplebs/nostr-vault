@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -29,6 +30,8 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.NIP88Poll
+import com.nostrvault.data.model.VaultNoteScope
 import com.nostrvault.data.model.condensedTitle
 import com.nostrvault.ui.theme.*
 
@@ -58,6 +61,49 @@ enum class CondensedLineStyle {
     /** A line inside a thread card, which owns the chrome instead. */
     PLAIN,
 }
+
+/**
+ * The glyph that says a condensed line is not a plain note. The same symbols
+ * as the feed picker and the Vault. iOS: `CondensedNoteLine.kindMarker`.
+ */
+enum class CondensedKindMarker(val label: String) {
+    ARTICLE("Article"),
+    RECIPE("Recipe"),
+    HIGHLIGHT("Highlight"),
+    POLL("Poll");
+
+    val icon: ImageVector
+        get() = when (this) {
+            ARTICLE -> NostrVaultIcons.Articles
+            RECIPE -> NostrVaultIcons.Recipes
+            HIGHLIGHT -> NostrVaultIcons.Highlights
+            POLL -> NostrVaultIcons.Polls
+        }
+
+    fun tint(themeColor: Color): Color = when (this) {
+        ARTICLE -> themeColor
+        RECIPE -> ZapOrange
+        HIGHLIGHT -> WarningYellow
+        POLL -> PollTeal
+    }
+
+    companion object {
+        /**
+         * Reads only the note the line shows. A resolved repost carries its
+         * original's kind and tags, so a reposted article is marked; a quote
+         * of one is a kind 1 and is not.
+         */
+        fun of(note: FeedNote): CondensedKindMarker? = when (note.displayKind) {
+            VaultNoteScope.ARTICLE_KIND -> if (VaultNoteScope.isRecipe(note.tags)) RECIPE else ARTICLE
+            VaultNoteScope.HIGHLIGHT_KIND -> HIGHLIGHT
+            NIP88Poll.KIND -> POLL
+            else -> null
+        }
+    }
+}
+
+/** iOS `.teal` in dark mode. */
+private val PollTeal = Color(0xFF40C8E0)
 
 /** One source for the indent so a line and the row that replaces it when tapped share a left edge. */
 fun condensedIndentWidth(depth: Int): Dp =
@@ -194,7 +240,7 @@ fun CondensedNoteLine(
             Spacer(Modifier.width(8.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                // Header: name · time · reply count / reply-or-repost marker
+                // Header: name · time · reply / repost / quote / kind markers
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = displayName,
@@ -250,6 +296,15 @@ fun CondensedNoteLine(
                             imageVector = NostrVaultIcons.Quote,
                             contentDescription = "Quote",
                             tint = InfoBlue.copy(alpha = 0.7f),
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
+                    CondensedKindMarker.of(note)?.let { marker ->
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = marker.icon,
+                            contentDescription = marker.label,
+                            tint = marker.tint(themeColor).copy(alpha = 0.7f),
                             modifier = Modifier.size(10.dp),
                         )
                     }
