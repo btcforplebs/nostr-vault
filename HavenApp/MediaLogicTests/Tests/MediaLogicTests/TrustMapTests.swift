@@ -146,6 +146,40 @@ final class TrustMapTests: XCTestCase {
         XCTAssertFalse(camera.wantsFrames(now: GlobeCamera.sleepAfter + 1, reduceMotion: false))
     }
 
+    func testTheWOTGlobeDriftsWithNoTimer() {
+        // Long past any sleep timer it still turns and still wants frames:
+        // only leaving the tab, the app or a sheet stops it.
+        var camera = GlobeCamera()
+        camera.keepsDrifting = true
+        var now = 0.0
+        while now < GlobeCamera.sleepAfter * 5 { now += 1 / 30; camera.step(dt: 1 / 30, now: now, reduceMotion: false) }
+        XCTAssertTrue(camera.wantsFrames(now: now, reduceMotion: false))
+        let before = camera.orientation
+        camera.step(dt: 1 / 30, now: now + 1 / 30, reduceMotion: false)
+        XCTAssertNotEqual(camera.orientation.vector, before.vector)
+        // Reduce Motion still holds it still, and lets the clock sleep.
+        XCTAssertFalse(camera.wantsFrames(now: now, reduceMotion: true))
+    }
+
+    func testStarLightMatchesTheKeysItWasBuiltFrom() {
+        let keys = (0..<50).map(key)
+        let pinned: Set = [key(3), key(17)]
+        let from: Set = Set((0..<50).filter { $0 % 2 == 0 }.map(key))
+        let to: Set = Set((0..<50).filter { $0 % 3 == 0 }.map(key))
+        let light = TrustMap.StarLight(keys: keys, pinned: pinned, from: from, to: to)
+        let out = TrustMap.StarLight.filteredOut
+        for (i, k) in keys.enumerated() {
+            XCTAssertEqual(light.pinned[i], pinned.contains(k))
+            let a = from.contains(k) ? 1 : out, b = to.contains(k) ? 1 : out
+            XCTAssertEqual(light.filter(i, mix: 1), b)
+            XCTAssertEqual(light.filter(i, mix: 0), a)
+            XCTAssertEqual(light.filter(i, mix: 0.25), a + (b - a) * 0.25, accuracy: 1e-12)
+        }
+        // No filter lights everyone; no light pins no one.
+        let open = TrustMap.StarLight(keys: keys, pinned: [], from: nil, to: nil)
+        XCTAssertTrue(keys.indices.allSatisfy { open.filter($0, mix: 0.5) == 1 && !open.pinned[$0] })
+    }
+
     func testIdleDriftStopsBeforeTheClockSleeps() {
         var camera = GlobeCamera()
         var now = 0.0

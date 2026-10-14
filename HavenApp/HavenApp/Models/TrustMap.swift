@@ -501,6 +501,40 @@ enum TrustMap {
 /// The globe's camera and how it moves. Every step is scaled by the real time
 /// since the last frame, so it spins, glides and settles the same at 60Hz and
 /// 120Hz.
+extension TrustMap {
+    /// What lights each star on the globe, by index, worked out once when
+    /// the stars or the filter change: a frame reads flags instead of
+    /// comparing 64-character keys for every star (about a fifth of a frame).
+    struct StarLight {
+        /// How bright someone a filter leaves out stays: still there, just back.
+        static let filteredOut = 0.08
+        /// Always lit, whatever the layer or filter: the core, the author
+        /// and a traced path.
+        private(set) var pinned: [Bool] = []
+        /// Who the filter fading out and the one fading in light; nil lights everyone.
+        private var litFrom: [Bool]?
+        private var litTo: [Bool]?
+
+        init() {}
+
+        init(keys: [String], pinned: Set<String>, from: Set<String>?, to: Set<String>?) {
+            self.pinned = keys.map(pinned.contains)
+            litFrom = from.map { lit in keys.map(lit.contains) }
+            litTo = to.map { lit in keys.map(lit.contains) }
+        }
+
+        /// How lit star `i` is by the filters, `mix` of the way from the old
+        /// one to the new.
+        func filter(_ i: Int, mix: Double) -> Double {
+            func level(_ lit: [Bool]?) -> Double { lit.map { $0[i] ? 1 : Self.filteredOut } ?? 1 }
+            let to = level(litTo)
+            guard mix < 1 else { return to }
+            let from = level(litFrom)
+            return from + (to - from) * mix
+        }
+    }
+}
+
 struct GlobeCamera {
     var orientation = simd_quatd(angle: 0, axis: SIMD3(0, 1, 0))
     /// Angular velocity after a flick, radians a second.
@@ -512,6 +546,10 @@ struct GlobeCamera {
     var dragging = false
     /// Frame-clock time of the last touch.
     var lastTouch: TimeInterval = 0
+    /// The WOT tab's globe drifts for as long as it is on screen, with no
+    /// timer (Logen, 10/14: "should keep spinning"). Its view stops the
+    /// clock when the tab goes, the app is inactive or something covers it.
+    var keepsDrifting = false
 
     static let zoomRange = 0.8...2.4
     /// How far the camera sits from the middle at zoom 1.
@@ -534,7 +572,8 @@ struct GlobeCamera {
     }
     /// Idle this long and the globe starts drifting, so it reads as alive.
     static let driftAfter: TimeInterval = 3
-    /// Idle this long and it stops: the frame clock can sleep.
+    /// Idle this long and it stops: the frame clock can sleep. Not on a
+    /// globe that `keepsDrifting`.
     static let sleepAfter: TimeInterval = 20
     static let driftSpeed = 0.05
     /// How fast a flick dies away, per second.
@@ -615,7 +654,7 @@ struct GlobeCamera {
                 spin = .zero
             }
             let idle = now - lastTouch
-            if idle > Self.driftAfter && idle < Self.sleepAfter {
+            if idle > Self.driftAfter && (keepsDrifting || idle < Self.sleepAfter) {
                 orientation = simd_normalize(simd_quatd(angle: Self.driftSpeed * dt, axis: SIMD3(0, 1, 0)) * orientation)
             }
         }
@@ -630,6 +669,6 @@ struct GlobeCamera {
     /// keep the frame clock running. False is the cue to let it sleep.
     func wantsFrames(now: TimeInterval, reduceMotion: Bool) -> Bool {
         if dragging || flyTarget != nil || spin != .zero || zoom != zoomTarget { return true }
-        return !reduceMotion && now - lastTouch < Self.sleepAfter
+        return !reduceMotion && (keepsDrifting || now - lastTouch < Self.sleepAfter)
     }
 }
