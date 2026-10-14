@@ -6,7 +6,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { npubEncode } from "nostr-tools/nip19"
+import { decode, nprofileEncode, noteEncode, neventEncode, naddrEncode } from "nostr-tools/nip19"
 
 registerHooks({
   load(url, context, next) {
@@ -17,7 +17,8 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { NoteText } = await import("../src/components/NoteText.jsx")
+const { NoteText, Mention } = await import("../src/components/NoteText.jsx")
+const { QuotedNote } = await import("../src/components/QuotedNote.jsx")
 
 // The rendered parts: strings stay strings, elements become { type, ...props }.
 function parts(content) {
@@ -154,24 +155,65 @@ test("punctuation inside a link is kept", () => {
   assert.equal(parts("https://x.com/a.b?q=1,2!x")[0].href, "https://x.com/a.b?q=1,2!x")
 })
 
-test("a nostr: npub shows as a short mention", () => {
+test("a nostr: npub is a Mention of that pubkey", () => {
   const npub = "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m"
   const [before, m] = parts(`hi nostr:${npub}`)
   assert.equal(before, "hi ")
-  assert.equal(m.type, "span")
-  assert.equal(m.class, "mention")
-  assert.equal(m.children, npub.slice(0, 12) + "…")
+  assert.equal(m.type, Mention)
+  assert.equal(m.pubkey, decode(npub).data)
 })
 
-test("a nostr: hex pubkey is shown as a short npub", () => {
+test("a nostr: nprofile is a Mention of its pubkey", () => {
+  const hex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
+  const [m] = parts(`nostr:${nprofileEncode({ pubkey: hex, relays: ["wss://r.example"] })}`)
+  assert.equal(m.type, Mention)
+  assert.equal(m.pubkey, hex)
+})
+
+test("a nostr: hex pubkey is a Mention too", () => {
   const hex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
   const [m] = parts(`nostr:${hex}`)
-  assert.equal(m.children, npubEncode(hex).slice(0, 12) + "…")
+  assert.equal(m.type, Mention)
+  assert.equal(m.pubkey, hex)
 })
 
-test("other nostr: references (note, nevent) are shortened as they are", () => {
-  const ref = "note1fntxtkcy9pjwucqwa9mddn7v03wwwsu9j330jj350nvhpky2tuaspk6nqc"
-  assert.equal(parts(`nostr:${ref}`)[0].children, ref.slice(0, 12) + "…")
+test("a nostr: note / nevent / naddr becomes a QuotedNote with the parsed reference and a short label", () => {
+  const id = "4cd665db9d8ac9b9ab26b2aedb4c6c2a9ed2e21b9c0aa64e7f1ac1cfcc9e5f68"
+  const pk = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
+  const note = noteEncode(id)
+  const [q] = parts(`nostr:${note}`)
+  assert.equal(q.type, QuotedNote)
+  assert.deepEqual(q.q, { type: "note", id, relays: [] })
+  assert.equal(q.short, note.slice(0, 12) + "…")
+  assert.equal(q.depth, 0)
+
+  const [qe] = parts(`nostr:${neventEncode({ id, relays: ["wss://r.example"] })}`)
+  assert.deepEqual(qe.q, { type: "note", id, relays: ["wss://r.example"] })
+
+  const [qa] = parts(`nostr:${naddrEncode({ kind: 30023, pubkey: pk, identifier: "post-1", relays: [] })}`)
+  assert.deepEqual(qa.q, { type: "addr", kind: 30023, pubkey: pk, d: "post-1", relays: [] })
+})
+
+test("text around a quote keeps its place", () => {
+  const note = noteEncode("4cd665db9d8ac9b9ab26b2aedb4c6c2a9ed2e21b9c0aa64e7f1ac1cfcc9e5f68")
+  assert.deepEqual(parts(`look nostr:${note} wow`).map(p => (typeof p === "string" ? p : p.type)), ["look ", QuotedNote, " wow"])
+})
+
+test("inside a quoted note (depth 1) a quote stays a short reference, but a mention is still a Mention", () => {
+  const note = noteEncode("4cd665db9d8ac9b9ab26b2aedb4c6c2a9ed2e21b9c0aa64e7f1ac1cfcc9e5f68")
+  const inner = [NoteText({ content: `nostr:${note}`, depth: 1 }).props.children].flat().filter(c => c !== "")
+  assert.equal(inner[0].type, "span")
+  assert.equal(inner[0].props.class, "mention")
+  assert.equal(inner[0].props.children, note.slice(0, 12) + "…")
+  const hex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
+  assert.equal([NoteText({ content: `nostr:${hex}`, depth: 1 }).props.children].flat().filter(c => c !== "")[0].type, Mention)
+})
+
+test("a nostr: reference that doesn't decode is shown short, as text", () => {
+  const [m] = parts("nostr:nonsense123")
+  assert.equal(m.type, "span")
+  assert.equal(m.class, "mention")
+  assert.equal(m.children, "nonsense123…")
 })
 
 test("a bare npub without nostr: stays plain text", () => {

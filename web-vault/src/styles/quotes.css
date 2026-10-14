@@ -1,0 +1,14 @@
+/* Quoted notes (nostr:nevent / note / naddr inside a note) and @mentions. iOS VaultNoteRow shows a quote as an
+   inset card: hairline border, the surface one step up, smaller head. */
+.quote { display: block; margin: 10px 0 2px; padding: 10px 12px; border: 1px solid var(--hair); border-radius: var(--radius);
+  background: var(--s2); color: var(--text); font: var(--t-sub); cursor: pointer; transition: background var(--press); }
+.quote:active { background: var(--s3); }
+.quote .note-head { gap: 8px; }
+.quote .author-name { font: 600 15px/1.3 var(--font); }
+.quote .note-text { margin-top: 6px; font: var(--t-sub); }
+.quote .note-media { max-height: 320px; object-fit: contain; margin-top: 6px; }
+.quote-title { display: block; margin-top: 6px; font: var(--t-headline); }
+.quote-pending, .quote-missing { color: var(--text-2); cursor: default; }
+.quote-ref { font: 13px var(--mono); color: var(--text-3); }
+.mention { color: var(--accent-light); text-decoration: none; font-weight: 600; }
+.mention:hover { text-decoration: underline; }
