@@ -9,6 +9,8 @@ import { ago } from "../components/time.js"
 import { fetchNotifications, fetchNotes, formatSats } from "../net/notifications.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { visibleRows } from "../net/blocks.js"
+import { useBlocks } from "../components/useBlocks.js"
 
 const PAGE = 100
 
@@ -18,6 +20,7 @@ export function NotificationsScreen({ ctx }) {
   const [rows, setRows] = useState(null)
   const [notes, setNotes] = useState(new Map())
   const [status, setStatus] = useState("")
+  const { blocked } = useBlocks(ctx)
 
   const load = async () => {
     if (!navigator.onLine) { setStatus("Offline: notifications need the network"); setRows(rows ?? []); return }
@@ -33,14 +36,15 @@ export function NotificationsScreen({ ctx }) {
     } catch (e) { setStatus(`Couldn't load (${e?.message ?? e})`); setRows(rows ?? []) }
   }
   useEffect(() => { load() }, [session.pubkey])
+  const shown = rows && visibleRows(rows, blocked, session.pubkey)
 
   return (
     <main class="screen">
       <header class="screen-head"><h2>Notifications</h2><button class="small" onClick={load}>Refresh</button></header>
       {status && <div class="status-line">{status}</div>}
       {rows === null ? <p class="empty">Loading…</p>
-        : !rows.length ? <p class="empty">No notifications yet.</p>
-        : rows.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} />)}
+        : !shown.length ? <p class="empty">No notifications yet.</p>
+        : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} />)}
     </main>
   )
 }
