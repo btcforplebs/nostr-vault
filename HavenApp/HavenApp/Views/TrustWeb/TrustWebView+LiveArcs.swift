@@ -81,7 +81,8 @@ final class GlobeArrivalStream: ObservableObject {
         watch = Publishers.CombineLatest4(feed.$feedMode, feed.$mediaFeedMode, relay.$isRunning, relay.$isBooting)
             .receive(on: DispatchQueue.main)
             .map { mode, media, _, _ -> Source in
-                // Read after the change lands; the published values are the new ones.
+                // The hop above runs this after the change is stored (@Published
+                // fires in willSet), so the relay's flags read here are the new ones.
                 let carriesFollows = mode == .following || (mode == .media && media == .following)
                 return carriesFollows && feed.localInboxURL != nil ? .feed : .own(inbox: feed.localInboxURL)
             }
@@ -147,6 +148,11 @@ final class GlobeArrivalStream: ObservableObject {
                 if seen.count > 256 {
                     let cutoff = Date().addingTimeInterval(-Self.freshWindow)
                     seen = seen.filter { $0.value >= cutoff }
+                }
+                // More than that inside one minute: keep the newest. The board
+                // drops a repeat id itself.
+                if seen.count > 256 {
+                    seen = Dictionary(uniqueKeysWithValues: seen.sorted { $0.value > $1.value }.prefix(256).map { ($0.key, $0.value) })
                 }
             }
             .store(in: &cancellables)
