@@ -135,6 +135,21 @@ fun NoteDetailScreen(
             ?: note
     }
 
+    // Whether the note shown full size is by someone you blocked, read from
+    // the live block list so a block made anywhere on this page applies at
+    // once. iOS: NoteDetailView.focusedNoteBlockState (#676).
+    val focusedBlockState = remember(focusedNote, focusedNoteId, blockedPubkeys) {
+        focusedNote?.let { BlockedPeople.focusedNote(it.pubkey, isOpenedNote = focusedNoteId == noteId, blocked = blockedPubkeys) }
+            ?: BlockedPeople.FocusedNote.SHOWN
+    }
+    val showsBlockedPlaceholder = focusedBlockState == BlockedPeople.FocusedNote.PLACEHOLDER
+
+    // Blocked the author of the reply you tapped into: back to the note you
+    // opened, as the reply itself is now hidden.
+    LaunchedEffect(focusedBlockState) {
+        if (focusedBlockState == BlockedPeople.FocusedNote.BACK_TO_OPENED) focusedNoteId = noteId
+    }
+
     val dynamicParents = remember(focusedNoteId, parentNotes, allReplies, note) {
         if (focusedNoteId == noteId) {
             parentNotes
@@ -156,7 +171,7 @@ fun NoteDetailScreen(
 
     // Notes above it by someone you blocked are left out.
     val shownParents = remember(dynamicParents, blockedPubkeys) {
-        dynamicParents.filter { it.pubkey !in blockedPubkeys }
+        BlockedPeople.visibleNotes(dynamicParents, blockedPubkeys) { it.pubkey }
     }
 
     // Effective id redirects kind-6 reposts to the reposted event, whose
@@ -190,7 +205,13 @@ fun NoteDetailScreen(
             showOutside = showsOutsideReplies,
         )
     }
-    val visibleReplies = threadReplies.visible
+    // The placeholder takes the opened note's replies and quotes with it.
+    val visibleReplies = if (showsBlockedPlaceholder) emptyList() else threadReplies.visible
+    val outsideReplies = if (showsBlockedPlaceholder) 0 else threadReplies.outside
+    val shownResponses = remember(otherResponses, blockedPubkeys, showsBlockedPlaceholder) {
+        if (showsBlockedPlaceholder) emptyList()
+        else BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }
+    }
 
     val directReplies = remember(replyTargetId, visibleReplies) {
         visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
@@ -303,9 +324,10 @@ fun NoteDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        // Stays on the page: the opened note turns into a
+                        // placeholder, a tapped-into reply hands focus back.
                         viewModel.blockUser(target.pubkey)
                         blockTarget = null
-                        if (target.id == focusedNote?.id) onBack()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = LikeRed),
                 ) { Text("Block") }
@@ -367,13 +389,17 @@ fun NoteDetailScreen(
                     // Thread stats toggle. While on it says "Stats": an icon
                     // alone gave no hint what it had switched on (iOS #325).
                     ThreadStatsToggle(isOn = expandedEngagement, onClick = viewModel::toggleExpandedEngagement)
-                    // Reply
-                    IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))
-                    }
-                    // Broadcast
-                    IconButton(onClick = { broadcastTargetNote = focusedNote }, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Relay, "Broadcast", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                    // Reply and Broadcast would act on the blocked note behind
+                    // the placeholder, so they go with it (iOS 1d38f8be).
+                    if (!showsBlockedPlaceholder) {
+                        // Reply
+                        IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
+                            Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                        }
+                        // Broadcast
+                        IconButton(onClick = { broadcastTargetNote = focusedNote }, modifier = Modifier.size(40.dp)) {
+                            Icon(NostrVaultIcons.Relay, "Broadcast", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                        }
                     }
                 }
             }
@@ -488,7 +514,9 @@ fun NoteDetailScreen(
                 }
 
                 // ── Hero note ───────────────────────────────────
-                item(key = "hero_${focusedNote!!.id}") {
+                if (showsBlockedPlaceholder) item(key = "hero_blocked") {
+                    BlockedNotePlaceholder(modifier = Modifier.padding(horizontal = ThreadSideInset))
+                } else item(key = "hero_${focusedNote!!.id}") {
                     HeroNoteCard(
                         note = focusedNote!!,
                         profile = viewModel.profileFor(focusedNote!!.pubkey),
@@ -531,12 +559,14 @@ fun NoteDetailScreen(
                 }
 
                 // ── Replies: loading / empty / header ───────────
-                if (isLoadingReplies && directReplies.isEmpty()) {
+                if (showsBlockedPlaceholder) {
+                    // Nothing under the placeholder: its replies went with it.
+                } else if (isLoadingReplies && directReplies.isEmpty()) {
                     item(key = "replies_loading") {
                         InlineLoadingRow(text = "Loading replies…", color = colors.primary)
                     }
                 } else if (directReplies.isEmpty()) {
-                    if (threadReplies.outside == 0) item(key = "replies_empty") {
+                    if (outsideReplies == 0) item(key = "replies_empty") {
                         Text(
                             text = "No replies yet",
                             color = SecondaryText,
@@ -616,9 +646,9 @@ fun NoteDetailScreen(
                 }
 
                 // Replies from outside your network, folded until asked for.
-                if (!isLoadingReplies && threadReplies.outside > 0) {
+                if (!isLoadingReplies && outsideReplies > 0) {
                     item(key = "outside_replies") {
-                        val count = threadReplies.outside
+                        val count = outsideReplies
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
@@ -646,7 +676,7 @@ fun NoteDetailScreen(
                 }
 
                 // ── Quotes & highlights (below the fold) ─────────
-                if (otherResponses.isNotEmpty()) {
+                if (shownResponses.isNotEmpty()) {
                     item(key = "other_header") {
                         Text(
                             text = "Quotes & highlights",
@@ -656,7 +686,7 @@ fun NoteDetailScreen(
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
                         )
                     }
-                    items(otherResponses, key = { "other_${it.id}" }) { response ->
+                    items(shownResponses, key = { "other_${it.id}" }) { response ->
                         OtherResponseCard(
                             note = response,
                             profile = profiles[response.pubkey],

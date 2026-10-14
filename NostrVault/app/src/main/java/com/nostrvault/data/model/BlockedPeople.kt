@@ -32,6 +32,27 @@ object BlockedPeople {
         !isFromMe && !isBlocked(sender, blocked)
 
     /**
+     * Notes left once blocked people's are taken out: the notes above a reply,
+     * and the quotes and highlights under a note. iOS: BlockedPeople.visibleNotes.
+     */
+    fun <N> visibleNotes(notes: List<N>, blocked: Set<String>, author: (N) -> String): List<N> =
+        if (blocked.isEmpty()) notes
+        else notes.filterNot { isBlocked(author(it), blocked) }
+
+    /**
+     * What a thread page does with the note it shows full size once its author
+     * is blocked. A reply you tapped into hands focus back to the note you
+     * opened; the note you opened is swapped for a placeholder.
+     */
+    enum class FocusedNote { SHOWN, BACK_TO_OPENED, PLACEHOLDER }
+
+    fun focusedNote(author: String, isOpenedNote: Boolean, blocked: Set<String>): FocusedNote = when {
+        !isBlocked(author, blocked) -> FocusedNote.SHOWN
+        isOpenedNote -> FocusedNote.PLACEHOLDER
+        else -> FocusedNote.BACK_TO_OPENED
+    }
+
+    /**
      * [npub] unblocked for the active account. The page lists
      * [HavenConfig.blockedForActiveAccount], which falls back to the legacy flat
      * list while the account has no list of its own, so the unblock starts from
