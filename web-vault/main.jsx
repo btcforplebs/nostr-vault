@@ -8,7 +8,7 @@ import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
-import { putProfile } from "./src/net/profiles.js"
+import { putProfile, fetchProfiles } from "./src/net/profiles.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -18,19 +18,22 @@ import { SearchScreen } from "./src/screens/SearchScreen.jsx"
 import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
 import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
+import { ProfileHeader } from "./src/components/ProfileHeader.jsx"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
 
 const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread"]
-// "#/thread/<id>" -> { route: "thread", arg: "<id>" }
+// "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
-  return ROUTES.includes(r) && (r !== "thread" || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
+  return ROUTES.includes(r) && (r !== "thread" || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
 }
 
 // Kept in localStorage so a phone run can be read back over CDP; nothing leaves the device.
 const logLines = JSON.parse(localStorage.getItem("nv-log") || "[]")
-let logging = true // off once sign-out has deleted the log, so nothing still running writes it back
+// Only while someone is signed in: off once sign-out has deleted the log, so nothing still running writes it back,
+// and off on the sign-in screen that sign-out reloads into, so nothing written at boot brings it back either.
+let logging = !!loadSession()
 function log(type, data = {}) {
   if (!logging) return
   logLines.push({ t: new Date().toISOString(), type, ...data })
@@ -71,7 +74,7 @@ function App() {
   }, [session?.pubkey])
 
   // An approval link the user never tapped (they approved in the bunker app) is done with once sign-in succeeds.
-  const onSignedIn = ({ signer, session }) => { clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
+  const onSignedIn = ({ signer, session }) => { logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
   const restart = () => location.replace(location.pathname)
 
   // Another tab signed out (or in as someone else): stop this tab's Haven so that tab's deletes can finish, and
@@ -114,19 +117,32 @@ function App() {
   if (!vault || !account) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Starting your relay…</p></main>
 
   const ctx = { vault, session, signer, account, signOut }
+  const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   return (
     <div class="app">
       {route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
-      {route === "profile" && <ProfileScreen ctx={ctx} />}
-      {route === "search" && <SearchScreen ctx={ctx} />}
+      {route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
+      {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} />}
       {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
-      {(route === "feed" || route === "profile") && <PostButton />}
-      <TabBar route={route} pubkey={session.pubkey} />
+      {(route === "feed" || route === "profile" && !other) && <PostButton />}
+      <TabBar route={other ? "search" : route} pubkey={session.pubkey} />
       <AuthPrompt />
     </div>
+  )
+}
+
+// Someone else's profile (opened from Search): their kind 0 from Haven, else the network. Their notes aren't
+// loaded here yet; ProfileScreen reads only the user's own outbox.
+function PersonScreen({ ctx, pubkey }) {
+  useEffect(() => { fetchProfiles(ctx.vault, [pubkey], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [pubkey])
+  return (
+    <main class="screen">
+      <ProfileHeader pubkey={pubkey} you={false} />
+      <p class="empty">Their notes aren't shown here yet.</p>
+    </main>
   )
 }
 

@@ -1,5 +1,5 @@
 // Search: a box, then People (kind 0) and Notes (kind 1) from the NIP-50 search relays. A pasted npub / nprofile /
-// hex pubkey skips the search and opens that profile (onProfile; until that's wired, it shows as the one person).
+// hex pubkey skips the search and opens that profile (onProfile; main.jsx routes it to #/profile/<pubkey>).
 import { useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
