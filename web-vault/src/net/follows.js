@@ -11,6 +11,8 @@ const now = () => Math.floor(Date.now() / 1000)
 /** How far ahead of this clock a kind 3 may be dated and still count. A list dated later is ignored, and a new list
  *  is never dated later than this, so one bad clock can't pin the follow list in the future for every other app. */
 export const MAX_SKEW = 15 * 60
+/** How old this browser's own copy may be and still be built on when none of the user's relays had a list. */
+export const MAX_LOCAL_AGE = 7 * 86400
 const ASK_MS = 6000
 
 /** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries, and a relay or a test can set one. */
@@ -99,13 +101,20 @@ export function editedTags(base, target, follow) {
  *  - the base itself must not be a shrunken copy: if the most follows any list we saw had (or the app shows) is over
  *    10, the result must keep at least half of it (iOS shouldBlockPublish). This catches a relay that returns an old
  *    or truncated list newer-dated than the real one.
+ *  - no list came from the user's relays and the base (then this browser's copy) is over MAX_LOCAL_AGE old: refuse.
+ *    The size rule can't catch that case (the base and the app's count are the same copy), and an old copy would drop
+ *    every follow since and bring back anyone unfollowed on another client.
  */
-export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false }) {
+export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false, at = now() }) {
   if (!netFound && !(asked > 0 && answered * 2 > asked)) {
     if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
     return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when most of them are reachable.`
   }
   if (!base) return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
+  if (!netFound && base.created_at < at - MAX_LOCAL_AGE) {
+    const day = new Date(base.created_at * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+    return `Your relays no longer have your follow list and this browser's copy is from ${day}, so nothing was changed. Open the app on your phone, or try again when your relays are reachable.`
+  }
   const before = followsOf(base), after = new Set(followsOf({ tags }))
   const single = !follow && before.includes(target) && after.size === before.length - 1
   if (!after.size && !single) return "This would publish an empty follow list, so it wasn't published."
