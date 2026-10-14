@@ -69,8 +69,55 @@ final class VaultSearchLogicTests: XCTestCase {
         XCTAssertEqual(links.map(\.url), ["https://example.com/post", "https://example.com/two"])
     }
 
+    /// Tron on #641: Wikipedia-style links end in ")" and were cut to a
+    /// dead "…/Bitcoin_(currency". A paren the URL opened stays; one that
+    /// closes the sentence around it still goes.
+    func testAClosingParenTheURLOpenedStays() {
+        let links = VaultSearchLogic.links(notes: [("a", """
+            https://en.wikipedia.org/wiki/Bitcoin_(currency) and \
+            (see https://en.wikipedia.org/wiki/Nostr_(protocol)). \
+            [https://example.com/x[1]]
+            """)])
+        XCTAssertEqual(links.map(\.url), [
+            "https://en.wikipedia.org/wiki/Bitcoin_(currency)",
+            "https://en.wikipedia.org/wiki/Nostr_(protocol)",
+            "https://example.com/x[1]",
+        ])
+    }
+
     func testNoLinksInPlainText() {
         XCTAssertTrue(VaultSearchLogic.links(notes: [("a", "no links here")]).isEmpty)
+    }
+
+    // MARK: People
+
+    private let jackNpub = "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m"
+    private let jackHex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
+
+    func testAPastedKeyNamesItsPerson() {
+        XCTAssertEqual(VaultSearchLogic.pubkey(inQuery: jackHex), jackHex)
+        XCTAssertEqual(VaultSearchLogic.pubkey(inQuery: " \(jackHex.uppercased()) "), jackHex)
+        XCTAssertEqual(VaultSearchLogic.pubkey(inQuery: jackNpub), jackHex)
+        XCTAssertEqual(VaultSearchLogic.pubkey(inQuery: "nostr:\(jackNpub)"), jackHex)
+        XCTAssertNil(VaultSearchLogic.pubkey(inQuery: String(jackHex.dropLast())))
+        XCTAssertNil(VaultSearchLogic.pubkey(inQuery: "jack"))
+    }
+
+    /// A hex key typed into search finds that profile, and only that one.
+    func testAHexKeyFindsThatProfile() {
+        let noName: [String?] = [nil, nil, nil, nil]
+        XCTAssertTrue(VaultSearchLogic.keepsPerson(pubkey: jackHex, fields: noName, query: jackHex))
+        XCTAssertTrue(VaultSearchLogic.keepsPerson(pubkey: jackHex, fields: noName, query: jackNpub))
+        let other = String(repeating: "ab", count: 32)
+        XCTAssertFalse(VaultSearchLogic.keepsPerson(pubkey: other, fields: ["jack", nil, nil, nil], query: jackHex))
+    }
+
+    /// Tron on #641: a short query matched inside the hex key, so "ab"
+    /// listed nearly every profile. Only names, about and NIP-05 count.
+    func testAShortQueryDoesNotMatchInsideTheKey() {
+        XCTAssertFalse(VaultSearchLogic.keepsPerson(pubkey: jackHex, fields: ["Jack", "jack", nil, nil], query: "abcd"))
+        XCTAssertTrue(VaultSearchLogic.keepsPerson(pubkey: jackHex, fields: ["Jack", "jack", nil, nil], query: "jack"))
+        XCTAssertTrue(VaultSearchLogic.keepsPerson(pubkey: jackHex, fields: [nil, nil, nil, "jack@cash.app"], query: "cash"))
     }
 
     // MARK: Query state

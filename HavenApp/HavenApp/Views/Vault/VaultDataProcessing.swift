@@ -279,10 +279,9 @@ extension VaultView {
                         }
                     }
                     let myLikedNoteIds = Set(myLikeDates.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
-                    filtered.sort { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
-
-                    let result = filtered
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
+                        .sorted { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
@@ -323,16 +322,15 @@ extension VaultView {
                     }
 
                     let likedNoteIds = Set(rxMap.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
                     // Sort by newest reaction first, tiebreaking by note date
-                    filtered.sort {
-                        let d0 = latestReaction[$0.id] ?? Date.distantPast
-                        let d1 = latestReaction[$1.id] ?? Date.distantPast
-                        if d0 == d1 { return $0.createdAtDate > $1.createdAtDate }
-                        return d0 > d1
-                    }
-
-                    let result = filtered
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
+                        .sorted {
+                            let d0 = latestReaction[$0.id] ?? Date.distantPast
+                            let d1 = latestReaction[$1.id] ?? Date.distantPast
+                            if d0 == d1 { return $0.createdAtDate > $1.createdAtDate }
+                            return d0 > d1
+                        }
 
                     let finalRxMap = rxMap
                     let finalReactionDates = latestReaction
@@ -422,6 +420,7 @@ extension VaultView {
                     for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
                     for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
+                    // Immutable copies for the main-actor hop.
                     let result = filtered
                     let finalGivenMap = givenMap
 
@@ -455,13 +454,12 @@ extension VaultView {
                         isBlocked: { blacklist.contains($0) })
 
                     let zappedNoteIds = Set(zMap.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
-                    filtered.sort { a, b in
-                        let ta = lastZapAt[a.id] ?? 0, tb = lastZapAt[b.id] ?? 0
-                        return ta != tb ? ta > tb : a.created_at > b.created_at
-                    }
-
-                    let result = filtered
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
+                        .sorted { a, b in
+                            let ta = lastZapAt[a.id] ?? 0, tb = lastZapAt[b.id] ?? 0
+                            return ta != tb ? ta > tb : a.created_at > b.created_at
+                        }
 
                     let finalZMap = zMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
