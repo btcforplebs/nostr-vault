@@ -1,11 +1,12 @@
-version: '3'
-
 services:
   website:
-    image: nginx:alpine
+    # The pages and the built web apps are baked into the image (Dockerfile). Deploy and roll back with ./deploy.sh.
+    build:
+      context: ..
+      dockerfile: website/Dockerfile
+      args:
+        ALLOW_MISSING_WEB_APPS: ${ALLOW_MISSING_WEB_APPS:-0}
+    image: nostrvault-website:${SITE_TAG:-latest}
     ports:
       - "4024:80"
-    volumes:
-      - .:/usr/share/nginx/html
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
