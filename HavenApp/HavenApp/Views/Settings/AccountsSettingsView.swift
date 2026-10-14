@@ -30,14 +30,15 @@ struct AccountsSettingsView: View {
                     for index in indexSet {
                         guard index > 0 else { continue }
                         let npub = configService.allAccountNpubs[index]
+                        // Switch away first: the switch detaches this account's signer
+                        // only while its bunker config still exists.
+                        if configService.config.activeAccountNpub == npub {
+                            configService.switchActiveAccount(to: nil)
+                        }
                         configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == npub }
                         configService.removeBunkerConfig(forNpub: npub)
                         configService.removeCredential(forNpub: npub)
                         configService.config.accountSigningModes.removeValue(forKey: npub)
-                        if configService.config.activeAccountNpub == npub {
-                            configService.config.activeAccountNpub = ""
-                            configService.refreshActiveAccountHex()
-                        }
                     }
                     configService.save()
                 }
@@ -110,14 +111,15 @@ struct AccountsSettingsView: View {
                     }
                 },
                 onRemoveAccount: {
+                    // Switch away first: the switch detaches this account's signer
+                    // only while its bunker config still exists.
+                    if configService.config.activeAccountNpub == item.id {
+                        configService.switchActiveAccount(to: nil)
+                    }
                     configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == item.id }
                     configService.removeBunkerConfig(forNpub: item.id)
                     configService.removeCredential(forNpub: item.id)
                     configService.config.accountSigningModes.removeValue(forKey: item.id)
-                    if configService.config.activeAccountNpub == item.id {
-                        configService.config.activeAccountNpub = ""
-                        configService.refreshActiveAccountHex()
-                    }
                     configService.save()
                 }
             )
