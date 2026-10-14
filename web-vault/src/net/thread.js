@@ -1,5 +1,6 @@
 // A note's thread: the network fills Haven /feed with the root and its replies, the screen reads them back from
 // Haven, and buildThread() turns them into a tree from the NIP-10 `e` tags.
+import { verifyEvent } from "nostr-tools/pure"
 import { pool, uniq } from "./pool.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -88,12 +89,26 @@ export function flattenThread(replies, depth = 1) {
 /** The root id for a note: its own id unless it is a reply. */
 export const rootIdOf = ev => replyRefs(ev).root ?? ev.id
 
+/** The note a repost in Haven /feed carries for `id`: the feed stores the kind 6, not the note inside it, so a
+ *  reposted note's thread would otherwise open offline without its root. Signature checked, since the embedded copy
+ *  is only as good as whoever reposted it. -> the kind 1, or null */
+export async function repostedNote(vault, id) {
+  for (const repost of await vault.feed.query({ kinds: [6], "#e": [id], limit: 20 })) {
+    let inner
+    try { inner = JSON.parse(repost.content) } catch { continue }
+    // A fresh copy: verifyEvent trusts a "verified" flag an event object can carry.
+    if (inner?.id === id && inner.kind === 1 && verifyEvent({ ...inner })) return inner
+  }
+  return null
+}
+
 /** Everything Haven /feed has for this thread. Works offline. */
 export async function readThread(vault, rootId) {
-  const [roots, replies] = await Promise.all([
+  const [stored, replies] = await Promise.all([
     vault.feed.query({ ids: [rootId] }),
     vault.feed.query({ kinds: [1], "#e": [rootId], limit: 1000 }),
   ])
+  const roots = stored.length ? stored : [await repostedNote(vault, rootId)].filter(Boolean)
   const evs = [...roots, ...replies]
   // Deep replies that tag only their parent: follow them through Haven too.
   let frontier = replies.map(e => e.id)
