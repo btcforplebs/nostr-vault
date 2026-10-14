@@ -18,7 +18,7 @@ struct HavenApp: App {
 
     var body: some Scene {
         #if os(macOS)
-        MenuBarExtra("Nostr Vault", systemImage: "server.rack") {
+        MenuBarExtra("Nostr Vault", image: "MenuBarIcon") {
             MenuBarContent(configService: configService, relayManager: relayManager)
                 .environmentObject(configService)
                 .environmentObject(relayManager)
