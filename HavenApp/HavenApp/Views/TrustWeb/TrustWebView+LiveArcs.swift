@@ -28,9 +28,11 @@ private struct LiveArcsToggle: View {
     }
 }
 
-/// Notes arriving at the relay, as globe arrivals. Your device relay when it
-/// is up: its feed cache (your follows' notes) and its inbox (notes to you).
-/// Your read relays when it isn't.
+/// Notes arriving, as globe arrivals. While your device relay is up they
+/// come from the feed's own live subscriptions, which stay open whichever tab
+/// is on screen: one stream, no second set of connections. When it is down
+/// the feed has nothing open, so your follows' notes and notes to you are
+/// asked from your read relays directly.
 @MainActor
 final class GlobeArrivalStream: ObservableObject {
     let arrived = PassthroughSubject<GlobeArcs.Arrival, Never>()
@@ -42,6 +44,9 @@ final class GlobeArrivalStream: ObservableObject {
     #if DEBUG
     private var stub: Task<Void, Never>?
     #endif
+
+    /// Most authors one filter names.
+    private static let authorsPerFilter = 500
 
     /// Opens the connections; returns the token that stops them.
     @discardableResult
@@ -57,24 +62,59 @@ final class GlobeArrivalStream: ObservableObject {
         }
         #endif
         let feed = FeedService.shared
-        let since = Int(Date().timeIntervalSince1970)
-        let note: [String: Any] = ["kinds": GlobeArcs.kinds, "since": since]
-        var plan: [(URL, [[String: Any]])] = []
-        if let local = feed.localFeedURL { plan.append((local, [note])) }
-        if let inbox = feed.localInboxURL { plan.append((inbox, [note.merging(["#p": [me]]) { $1 }])) }
-        // Anyone can tag you on an outside relay: there, only your web's
-        // notes come through, the same as Global. Your own relay already
-        // keeps strangers out.
-        var trusted: Set<String>?
-        if plan.isEmpty {
-            let follows = Array(feed.followedPubkeys.prefix(500))
-            let filters = [note.merging(["authors": follows]) { $1 }, note.merging(["#p": [me]]) { $1 }]
-            plan = feed.externalRelayURLs.prefix(3).map { ($0, filters) }
-            trusted = feed.relayTabTrustedPubkeys()
-        }
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        if feed.localInboxURL != nil {
+            watchFeed(feed, me: me, blocked: blocked)
+        } else {
+            askReadRelays(feed, me: me, blocked: blocked)
+        }
+        return generation
+    }
+
+    /// New notes as the feed takes them in: your follows' always; anyone's
+    /// that tag you, except in a Global-like mode, where strangers reach the
+    /// feed too and only your web's come through. Notes land in `pendingNotes`
+    /// or `notes` depending on their age and the feed's scroll, so both are
+    /// watched; both are newest first, so only their new heads are read.
+    private func watchFeed(_ feed: FeedService, me: String, blocked: Set<String>) {
+        // A minute back, for authors whose clocks run a little slow.
+        let since = Date().addingTimeInterval(-60)
+        let follows = Set(feed.followedPubkeys)
+        var web: Set<String>?
+        var seen = Set<String>()
+        feed.$pendingNotes.merge(with: feed.$notes)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notes in
+                for note in notes.prefix(while: { $0.createdAt >= since })
+                where note.repostedBy == nil && seen.insert(note.id).inserted {
+                    guard let arrival = GlobeArcs.arrival(note.event), !blocked.contains(arrival.author) else { continue }
+                    if !follows.contains(arrival.author) {
+                        guard arrival.targets.contains(me) else { continue }
+                        if feed.isGlobalLikeMode {
+                            if web == nil { web = feed.relayTabTrustedPubkeys() }
+                            guard web?.contains(arrival.author) == true else { continue }
+                        }
+                    }
+                    self?.arrived.send(arrival)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// The device relay is down: your follows' notes and notes to you from
+    /// your read relays. Relays cap how many authors one filter may name, so
+    /// follows go in filters of up to 500 in the same REQ and every one
+    /// counts. Anyone can tag you out there: only your web's notes come
+    /// through, the same as Global.
+    private func askReadRelays(_ feed: FeedService, me: String, blocked: Set<String>) {
+        let note: [String: Any] = ["kinds": GlobeArcs.kinds, "since": Int(Date().timeIntervalSince1970)]
+        let follows = Array(Set(feed.followedPubkeys)).sorted()
+        let filters = stride(from: 0, to: follows.count, by: Self.authorsPerFilter).map {
+            note.merging(["authors": Array(follows[$0..<min($0 + Self.authorsPerFilter, follows.count)])]) { $1 }
+        } + [note.merging(["#p": [me]]) { $1 }]
+        let trusted = feed.relayTabTrustedPubkeys().union(follows)
         let subId = "arcs-\(UUID().uuidString.prefix(8))"
-        for (url, filters) in plan {
+        for url in feed.externalRelayURLs.prefix(3) {
             let client = WebSocketClient()
             client.isTemporary = true
             clients.append(client)
@@ -91,7 +131,6 @@ final class GlobeArrivalStream: ObservableObject {
                 }
             }
         }
-        return generation
     }
 
     /// Closes the connections, unless `token` is from an earlier start.
@@ -109,14 +148,14 @@ final class GlobeArrivalStream: ObservableObject {
         return true
     }
 
-    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>?) {
+    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>) {
         guard message.hasPrefix("[\"EVENT\""),
               let data = message.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
               let event = array[2] as? [String: Any],
               let arrival = GlobeArcs.arrival(event),
               !blocked.contains(arrival.author),
-              trusted?.contains(arrival.author) ?? true else { return }
+              trusted.contains(arrival.author) else { return }
         arrived.send(arrival)
     }
 
@@ -295,5 +334,13 @@ struct LiveArcsPainter {
             let r = 13 * k * p.scale * min(zoom, 1.8)
             face(&context, key, p.point, r, Self.starColor.opacity(0.85), a * (0.4 + 0.6 * p.front))
         }
+    }
+}
+
+private extension FeedNote {
+    /// The fields of its relay event the globe reads.
+    var event: [String: Any] {
+        ["id": id, "pubkey": pubkey, "kind": kind, "content": content, "tags": tags,
+         "created_at": createdAt.timeIntervalSince1970]
     }
 }
