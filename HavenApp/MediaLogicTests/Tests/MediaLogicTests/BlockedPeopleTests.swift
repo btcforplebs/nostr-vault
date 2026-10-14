@@ -41,4 +41,16 @@ final class BlockedPeopleTests: XCTestCase {
         XCTAssertTrue(BlockedPeople.isBlocked(blockedHex.uppercased(), in: [blockedHex]))
         XCTAssertFalse(BlockedPeople.isBlocked("", in: [blockedHex]))
     }
+
+    /// A followed person quoting someone you blocked: the quote is hidden.
+    func testQuoteOfBlockedPersonIsHidden() {
+        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex, blocked: [blockedHex]))
+        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex.uppercased(), blocked: [blockedHex]))
+    }
+
+    /// Positive control, and unblocking: the same quote shows again.
+    func testQuoteShowsWhenAuthorNotBlocked() {
+        XCTAssertTrue(BlockedPeople.showsQuote(author: friendHex, blocked: [blockedHex]))
+        XCTAssertTrue(BlockedPeople.showsQuote(author: blockedHex, blocked: []))
+    }
 }

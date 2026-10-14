@@ -3,10 +3,21 @@ import SwiftUI
 struct QuotedNoteView: View {
     let note: FeedNote
     @EnvironmentObject var nostrService: NostrService
-    
+    @State private var blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+
     var body: some View {
-        // A quoted live stream is something to watch, not text to read.
-        if let stream = LiveStream(note: note) {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+                blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !BlockedPeople.showsQuote(author: note.pubkey, blocked: blocked) {
+            blockedPlaceholder
+        } else if let stream = LiveStream(note: note) {
+            // A quoted live stream is something to watch, not text to read.
             LiveStreamEmbedView(stream: stream)
         } else if let listing = MarketListing(note: note) {
             // A shared listing's content is usually NIP-15 JSON, so the
@@ -15,6 +26,16 @@ struct QuotedNoteView: View {
         } else {
             noteCard
         }
+    }
+
+    private var blockedPlaceholder: some View {
+        Text("Quote from someone you blocked")
+            .font(.appSystem(size: 12, weight: .regular))
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(Color.platformTertiaryGroupedBackground)
+            .cornerRadius(8)
     }
 
     private var noteCard: some View {

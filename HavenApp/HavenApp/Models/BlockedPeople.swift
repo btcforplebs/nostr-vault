@@ -1,6 +1,6 @@
 import Foundation
 
-/// What a block means for direct messages. A gift-wrapped DM is signed by a
+/// What a block means for direct messages and quoted notes. A gift-wrapped DM is signed by a
 /// throwaway key, so neither the relay nor the notification marker can tell
 /// who sent it; only the opened message names the person. These checks run on
 /// that real sender.
@@ -25,5 +25,13 @@ enum BlockedPeople {
     /// surface a backlog of unread messages from while they were blocked.
     static func mayAlert(sender: String, isFromMe: Bool, blocked: Set<String>) -> Bool {
         !isFromMe && !isBlocked(sender, in: blocked)
+    }
+
+    /// Whether a quoted note may be drawn. Someone you follow can quote a
+    /// blocked person, and the feed filter only looks at the quoting note, so
+    /// the quote card itself checks. A hidden quote shows neither the blocked
+    /// person's words nor their picture.
+    static func showsQuote(author: String, blocked: Set<String>) -> Bool {
+        !isBlocked(author, in: blocked)
     }
 }
