@@ -1,0 +1,11 @@
+/* The Feed's picker (FeedScreen FeedPicker): a capsule row of feeds, then the hashtag box when Hashtag is picked. */
+.feed-picker { padding: 0 var(--gutter) 12px; display: grid; gap: 10px; }
+.feed-modes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.feed-modes button { flex: none; min-height: 34px; padding: 0 14px; border-radius: 999px; font: var(--t-foot); font-weight: 600;
+  background: var(--s1); color: var(--text-2); border: 1px solid var(--hair); }
+.feed-modes button.on { background: var(--accent-pale); color: var(--accent-light); border-color: var(--accent-line); }
+.feed-tag { display: flex; gap: 8px; }
+.feed-tag input { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: var(--radius);
+  border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
+.feed-tag input:focus { outline: none; border-color: var(--accent-line); }
+.feed-tag input::placeholder { color: var(--text-3); }

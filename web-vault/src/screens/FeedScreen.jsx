@@ -1,11 +1,15 @@
-// Following feed. Rendered only from Haven /feed; the network fills /feed in the background.
-import { useEffect, useState } from "preact/hooks"
+// The Feed, with the picker (net/feeds.js). Following is rendered only from Haven /feed; the network fills /feed in
+// the background. Global and Hashtag come from the network into memory only: strangers' notes never go into /feed.
+import { useEffect, useRef, useState } from "preact/hooks"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { FEEDS, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, fetchStrangerProfiles, mergePage, heldNotes, holdNotes, noteAuthors, feedKey } from "../net/feeds.js"
+
+if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
 
@@ -17,6 +21,10 @@ export function FeedScreen({ ctx }) {
   const [status, setStatus] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { blocked, privateNote } = useBlocks(ctx)
+  const [choice, setChoice] = useState(loadChoice)
+  const [strange, setStrange] = useState(() => heldNotes(loadChoice()))
+  const following = choice.mode === "following"
+  const pick = c => { saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus("") }
 
   const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(PAGE, notes?.length ?? 0) }))
   const sync = async () => {
@@ -54,27 +62,86 @@ export function FeedScreen({ ctx }) {
     setNotes([...notes, ...more])
   }
 
-  useEffect(() => { reload().then(sync) }, [follows.length])
-  useEffect(() => {
-    if (!notes?.length) return
-    const authors = notes.flatMap(n => { if (n.kind !== 6) return [n.pubkey]; try { return [n.pubkey, JSON.parse(n.content).pubkey] } catch { return [n.pubkey] } })
-    fetchProfiles(vault, authors.filter(Boolean), relays).catch(() => {})
-  }, [notes])
+  // Global and Hashtag. Each load is for one feed: once the picker has moved on, a late answer is dropped.
+  const seq = useRef(0)
+  const loadStrange = async (c, until) => {
+    const n = ++seq.current
+    if (c.mode === "hashtag" && !c.tag) return setStatus("")
+    if (!navigator.onLine) return setStatus(`Offline: ${c.mode === "global" ? "Global" : "Hashtag"} needs the network`)
+    setStatus(until ? "Fetching older notes…" : "Loading…")
+    try {
+      const page = await fetchStrangerFeed(c, account.relays.read, { until })
+      if (n !== seq.current) return
+      const all = until ? mergePage(heldNotes(c) ?? [], page) : page
+      holdNotes(c, all)
+      setStrange(all)
+      setStatus(page.length ? "" : until ? "No older notes found" : "")
+    } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
+  }
 
-  // Blocked people's notes stay in Haven and are only left out here, so unblocking brings them back.
-  const shown = notes && visibleNotes(notes, blocked)
+  useEffect(() => { if (following) reload().then(sync) }, [follows.length, following])
+  useEffect(() => { if (!following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice)])
+  useEffect(() => {
+    if (following && notes?.length) fetchProfiles(vault, noteAuthors(notes), relays).catch(() => {})
+  }, [notes, following])
+  useEffect(() => {
+    if (!following && strange?.length) fetchStrangerProfiles(noteAuthors(strange), account.relays.read).catch(() => {})
+  }, [strange, following])
+
+  // Blocked people's notes stay where they are and are only left out here, so unblocking brings them back.
+  const list = following ? notes : strange
+  const shown = list && visibleNotes(list, blocked)
+  const label = FEEDS.find(f => f.id === choice.mode).label
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Following</h2><button class="small" onClick={sync}>Refresh</button></header>
+      <header class="screen-head">
+        <h2>{choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : label}</h2>
+        <button class="small" onClick={() => (following ? sync() : loadStrange(choice))}>Refresh</button>
+      </header>
+      <FeedPicker choice={choice} onPick={pick} />
       {status && <div class="status-line">{status}</div>}
       {privateNote && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
-      {!follows.length ? <p class="empty">{account.loaded ? "You don't follow anyone yet." : "Loading your follows…"}</p>
-        : notes === null ? <p class="empty">Opening your relay…</p>
-        : !notes.length ? <p class="empty">{syncing ? "Fetching notes from the people you follow…" : "No notes saved yet."}</p>
-        : <>
-            {shown.map(n => <NoteCard key={n.id} event={n} />)}
-            <button class="more" onClick={older}>Older notes</button>
-          </>}
+      {following
+        ? !follows.length ? <p class="empty">{account.loaded ? "You don't follow anyone yet." : "Loading your follows…"}</p>
+          : notes === null ? <p class="empty">Opening your relay…</p>
+          : !notes.length ? <p class="empty">{syncing ? "Fetching notes from the people you follow…" : "No notes saved yet."}</p>
+          : <Notes shown={shown} onOlder={older} />
+        : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
+          : strange === null ? <p class="empty">{navigator.onLine ? "Loading notes…" : "This feed needs the network."}</p>
+          : !strange.length ? <p class="empty">No notes found.</p>
+          : <Notes shown={shown} onOlder={() => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
     </main>
+  )
+}
+
+/** The notes left after blocks, then Older. When every loaded note is from someone blocked, say so instead. */
+function Notes({ shown, onOlder }) {
+  if (!shown.length) return <p class="empty">Every note loaded here is from someone you blocked.</p>
+  return <>
+    {shown.map(n => <NoteCard key={n.id} event={n} />)}
+    <button class="more" onClick={onOlder}>Older notes</button>
+  </>
+}
+
+/** Following / Global / Hashtag, and the tag box when Hashtag is picked. */
+function FeedPicker({ choice, onPick }) {
+  const [draft, setDraft] = useState(choice.tag)
+  const submit = e => { e.preventDefault(); const tag = normalizeTag(draft); setDraft(tag); onPick({ mode: "hashtag", tag }) }
+  return (
+    <div class="feed-picker">
+      <div class="feed-modes" role="tablist" aria-label="Feed">
+        {FEEDS.map(f => (
+          <button key={f.id} type="button" role="tab" aria-selected={choice.mode === f.id} class={choice.mode === f.id ? "on" : ""}
+            onClick={() => onPick({ mode: f.id, tag: choice.tag })}>{f.label}</button>
+        ))}
+      </div>
+      {choice.mode === "hashtag" && (
+        <form class="feed-tag" onSubmit={submit}>
+          <input type="search" value={draft} onInput={e => setDraft(e.currentTarget.value)} placeholder="#bitcoin" aria-label="Hashtag"
+            enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck={false} />
+          <button type="submit" class="small">Show</button>
+        </form>
+      )}
+    </div>
   )
 }
