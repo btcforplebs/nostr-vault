@@ -377,28 +377,32 @@ struct NoteDetailView: View {
                         }
                     }
 
-                    // Reply button
-                    IconFilterButton(
-                        icon: "arrowshape.turn.up.left.fill",
-                        tooltip: "Reply",
-                        isSelected: false,
-                        color: .havenPurple
-                    ) {
-                        // The toolbar replies to whatever note is focused, the
-                        // same target the focused card's own reply button uses.
-                        // Pointing it at the entry note instead let the two
-                        // buttons disagree once you tapped into a reply.
-                        composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
-                    }
+                    // Both act on the note shown full size. Behind the
+                    // blocked placeholder that is the blocked person's note.
+                    if focusedNoteBlockState != .placeholder {
+                        // Reply button
+                        IconFilterButton(
+                            icon: "arrowshape.turn.up.left.fill",
+                            tooltip: "Reply",
+                            isSelected: false,
+                            color: .havenPurple
+                        ) {
+                            // The toolbar replies to whatever note is focused, the
+                            // same target the focused card's own reply button uses.
+                            // Pointing it at the entry note instead let the two
+                            // buttons disagree once you tapped into a reply.
+                            composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
+                        }
 
-                    // Event info / re-broadcast
-                    IconFilterButton(
-                        icon: "antenna.radiowaves.left.and.right",
-                        tooltip: "Broadcast",
-                        isSelected: false,
-                        color: .havenPurple
-                    ) {
-                        showingBroadcastSheet = true
+                        // Event info / re-broadcast
+                        IconFilterButton(
+                            icon: "antenna.radiowaves.left.and.right",
+                            tooltip: "Broadcast",
+                            isSelected: false,
+                            color: .havenPurple
+                        ) {
+                            showingBroadcastSheet = true
+                        }
                     }
                 }
             }
