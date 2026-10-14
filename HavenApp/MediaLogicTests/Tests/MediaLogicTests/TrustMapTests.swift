@@ -146,6 +146,31 @@ final class TrustMapTests: XCTestCase {
         XCTAssertFalse(camera.wantsFrames(now: GlobeCamera.sleepAfter + 1, reduceMotion: false))
     }
 
+    func testTheGlobeDriftsForSecondsNotHalfAMinute() {
+        // The drift after you let go is a few seconds of life, then the clock sleeps.
+        XCTAssertLessThanOrEqual(GlobeCamera.sleepAfter, 8)
+        XCTAssertLessThan(GlobeCamera.driftAfter, GlobeCamera.sleepAfter)
+    }
+
+    func testStarLightMatchesTheKeysItWasBuiltFrom() {
+        let keys = (0..<50).map(key)
+        let pinned: Set = [key(3), key(17)]
+        let from: Set = Set((0..<50).filter { $0 % 2 == 0 }.map(key))
+        let to: Set = Set((0..<50).filter { $0 % 3 == 0 }.map(key))
+        let light = TrustMap.StarLight(keys: keys, pinned: pinned, from: from, to: to)
+        let out = TrustMap.StarLight.filteredOut
+        for (i, k) in keys.enumerated() {
+            XCTAssertEqual(light.pinned[i], pinned.contains(k))
+            let a = from.contains(k) ? 1 : out, b = to.contains(k) ? 1 : out
+            XCTAssertEqual(light.filter(i, mix: 1), b)
+            XCTAssertEqual(light.filter(i, mix: 0), a)
+            XCTAssertEqual(light.filter(i, mix: 0.25), a + (b - a) * 0.25, accuracy: 1e-12)
+        }
+        // No filter lights everyone; no light pins no one.
+        let open = TrustMap.StarLight(keys: keys, pinned: [], from: nil, to: nil)
+        XCTAssertTrue(keys.indices.allSatisfy { open.filter($0, mix: 0.5) == 1 && !open.pinned[$0] })
+    }
+
     func testIdleDriftStopsBeforeTheClockSleeps() {
         var camera = GlobeCamera()
         var now = 0.0

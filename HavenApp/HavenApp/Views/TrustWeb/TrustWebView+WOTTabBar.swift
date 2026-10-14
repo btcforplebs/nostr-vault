@@ -199,7 +199,9 @@ extension TrustWebView {
                 FeedService.shared.loadWotPubkeys()
                 recomputeHaze()
             }
-            try? await Task.sleep(for: .seconds(liveRebuild ? 1 : 5))
+            // Every few seconds, rebuilding or not: newcomers arrive in
+            // batches, and each check that finds some wakes the globe.
+            try? await Task.sleep(for: .seconds(5))
         }
     }
 }

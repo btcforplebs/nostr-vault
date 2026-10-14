@@ -94,9 +94,9 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            // 30 fps while only arcs move: a steady stream would otherwise
-            // hold the whole globe at full display rate.
-            TimelineView(.animation(minimumInterval: scene.arcsOnly ? 1.0 / 30 : nil,
+            // Full rate only under a finger (a drag, its flick, a pinch).
+            // Drift, settling and arcs at 30 fps: the idle globe was the heat.
+            TimelineView(.animation(minimumInterval: scene.fullRate || pinchActive ? nil : 1 / GlobeScene.slowRate,
                                     paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
                     scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)

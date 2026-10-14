@@ -17,8 +17,12 @@ final class GlobeScene: ObservableObject {
     @Published private(set) var faceKeys: [String] = []
     /// Notes whose star just landed, shown for a moment beside the face.
     @Published private(set) var previews: [NotePreview] = []
-    /// Only the live arcs are moving: the clock can run slower.
-    @Published private(set) var arcsOnly = false
+    /// A finger is turning the globe, or its flick is still spinning: the
+    /// clock runs at full rate. Otherwise drift, settling and arcs draw at
+    /// `slowRate`, which is plenty for them and keeps the phone cool.
+    @Published private(set) var fullRate = false
+    /// Frames a second while nothing is under a finger.
+    static let slowRate = 30.0
 
     struct NotePreview: Identifiable, Equatable {
         /// The note.
@@ -84,8 +88,6 @@ final class GlobeScene: ObservableObject {
     private var filterFrom: Set<String>?
     private var filterTo: Set<String>?
     private var filterMix = 1.0
-    /// How bright someone a filter leaves out stays: still there, just back.
-    private static let filteredOut = 0.08
     private static let filterFade: TimeInterval = 0.35
 
     private var keys: [String] = []
@@ -97,6 +99,9 @@ final class GlobeScene: ObservableObject {
     private var alpha: [Double] = []
     private var alphaTarget: [Double] = []
     private var index: [String: Int] = [:]
+    /// Each star's lit flags, by index: worked out when the data changes so
+    /// a frame never compares keys.
+    private var light = TrustMap.StarLight()
 
     private var born: TimeInterval = 0
     private var threadsBorn: TimeInterval = 0
@@ -223,6 +228,7 @@ final class GlobeScene: ObservableObject {
         }
         faces = shown
         seatFaces()
+        relight()
 
         born = now
         settling = true
@@ -288,6 +294,7 @@ final class GlobeScene: ObservableObject {
         traceBridges = through
         traced = target.map { Set([$0] + through) } ?? []
         seatFaces()
+        relight()
         // A new path draws in; closing one leaves the rest as they were.
         if target != nil {
             threadsBorn = now
@@ -314,21 +321,13 @@ final class GlobeScene: ObservableObject {
     /// How brightly star `i` is drawn for the picked layer. The core, the
     /// author and a traced path are always lit.
     private func weight(_ i: Int) -> Double {
-        if keys[i] == center || keys[i] == author || traced.contains(keys[i]) { return 1 }
-        let lit = filterWeight(keys[i])
+        if light.pinned[i] { return 1 }
+        let lit = light.filter(i, mix: filterMix)
         switch kinds[i] {
         case .haze: return weights.z * lit
         case .closeHaze: return weights.y * lit
         default: return weights.x * lit
         }
-    }
-
-    private func filterWeight(_ key: String) -> Double {
-        func level(_ lit: Set<String>?) -> Double { lit.map { $0.contains(key) ? 1 : Self.filteredOut } ?? 1 }
-        let to = level(filterTo)
-        guard filterMix < 1 else { return to }
-        let from = level(filterFrom)
-        return from + (to - from) * filterMix
     }
 
     /// Lights who the filters match and sets the rest back. Nothing is reloaded.
@@ -337,6 +336,7 @@ final class GlobeScene: ObservableObject {
         filterFrom = filterTo
         filterTo = lit
         filterMix = reduceMotion ? 1 : 0
+        relight()
         wake()
     }
 
@@ -347,9 +347,20 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
+    /// A finger on the globe, or the spin it left.
+    private var handsOn: Bool { camera.dragging || camera.spin != .zero }
+
+    /// Works out each star's lit flags again, after the stars, the core,
+    /// the author, the traced path or the filter change.
+    private func relight() {
+        light = TrustMap.StarLight(keys: keys, pinned: Set([center, author]).union(traced),
+                                   from: filterFrom, to: filterTo)
+    }
+
     func wake() {
         sleepQueued = false
-        if arcsOnly { arcsOnly = false }
+        let full = handsOn
+        if fullRate != full { fullRate = full }
         if !awake {
             lastTick = nil
             awake = true
@@ -453,13 +464,12 @@ final class GlobeScene: ObservableObject {
             if age > Self.settleTime { settle() }
         }
         let still = !settling && !fading && !camera.wantsFrames(now: now, reduceMotion: reduceMotion)
-        // Only stars in flight need frames: a slower clock keeps a busy
-        // stream from holding the whole globe at full rate (heat).
-        let slow = still && !board.isIdle
-        if slow != arcsOnly {
+        if handsOn != fullRate {
+            // Not from inside the draw: the rate publishes on the next turn.
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.arcsOnly != slow else { return }
-                self.arcsOnly = slow
+                guard let self else { return }
+                let full = self.handsOn
+                if self.fullRate != full { self.fullRate = full }
             }
         }
         if still, board.isIdle, awake, !sleepQueued {
@@ -490,6 +500,7 @@ final class GlobeScene: ObservableObject {
         alpha = keep.map { alpha[$0] }
         alphaTarget = keep.map { alphaTarget[$0] }
         index = Dictionary(uniqueKeysWithValues: keys.enumerated().map { ($1, $0) })
+        relight()
     }
 
     // MARK: Projection
