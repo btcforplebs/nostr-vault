@@ -33,7 +33,7 @@ export function AccountsScreen({ ctx }) {
       <header class="screen-head"><h2>Accounts</h2></header>
       <div class="section-label">On this browser</div>
       {accounts.map(a => (
-        <AccountRow key={a.pubkey} account={a} active={a.pubkey === active} open={open === a.pubkey} ctx={ctx}
+        <AccountRow key={a.pubkey} account={a} active={a.pubkey === active} open={open === a.pubkey} ctx={ctx} others={accounts.length > 1}
           onToggle={() => setOpen(open === a.pubkey ? "" : a.pubkey)}
           onRemoved={msg => { setAccounts(loadAccounts()); setOpen(""); setNote(msg) }} />
       ))}
@@ -48,6 +48,10 @@ export function AccountsScreen({ ctx }) {
         : <button class="add-account-button" onClick={() => { setAdding(true); setNote("") }}>Add account</button>}
       <BackupCard ctx={ctx} />
       <section class="card">
+        <h3>Paired vaults</h3>
+        <p class="muted small">Vaults you pair on the Relay screen are paired with this browser, not with one account. A paired vault can reach whichever account is active here, and signing out of any account un-pairs them all.</p>
+      </section>
+      <section class="card">
         <h3>Your keys</h3>
         <p class="muted small">Nostr Vault on the web never holds your secret key: your extension or bunker keeps it, and signs for you. Back up your key there. A bunker's connection to this browser is stored encrypted, and removing the account or signing out asks the bunker to drop it.</p>
       </section>
@@ -55,7 +59,7 @@ export function AccountsScreen({ ctx }) {
   )
 }
 
-function AccountRow({ account, active, open, ctx, onToggle, onRemoved }) {
+function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved }) {
   const p = useProfile(account.pubkey)
   const [busy, setBusy] = useState("")
   const [confirm, setConfirm] = useState(false)
@@ -89,7 +93,7 @@ function AccountRow({ account, active, open, ctx, onToggle, onRemoved }) {
         {active
           ? confirm
             ? <>
-                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in. Your notes on other relays and on your phone stay.</p>
+                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in.{others ? " It also un-pairs this browser's paired vaults, for your other accounts too." : ""} Your notes on other relays and on your phone stay.</p>
                 <div class="row"><button class="danger" onClick={ctx.signOut}>Sign out</button><button onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <button class="danger" onClick={() => setConfirm(true)}>Sign out</button>
@@ -134,10 +138,10 @@ function BackupCard({ ctx }) {
     e.currentTarget.value = ""
     if (!file) return
     run("import", async () => {
-      const { counts, skipped } = await importNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, bytes: new Uint8Array(await file.arrayBuffer()), onProgress: n => setStatus(`Restoring ${NAMES[n] ?? n}…`) })
-      if (!Object.keys(counts).length) throw new Error("That .zip has no notes in it. Choose a Nostr Vault notes backup.")
+      const { counts, skipped, failed } = await importNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, bytes: new Uint8Array(await file.arrayBuffer()), onProgress: n => setStatus(`Restoring ${NAMES[n] ?? n}…`) })
+      if (!Object.keys(counts).length) throw new Error(failed.length ? failed.join(" ") : "That .zip has no notes in it. Choose a Nostr Vault notes backup.")
       const refused = Object.values(counts).reduce((n, c) => n + c.refused + c.bad, 0)
-      setStatus(`Restored: ${summary(counts)}.` + (refused ? ` ${events(refused)} not restored: not this account's, or damaged.` : "") + (skipped.length ? ` Skipped ${skipped.join(", ")}.` : ""))
+      setStatus(`Restored: ${summary(counts)}.` + (refused ? ` ${events(refused)} not restored: not this account's, or damaged.` : "") + (skipped.length ? ` Skipped ${skipped.join(", ")}.` : "") + (failed.length ? ` ${failed.join(" ")}` : ""))
     })()
   }
   return (

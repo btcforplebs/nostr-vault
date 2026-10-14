@@ -2,10 +2,12 @@
 // (haven-go/jsonl.go exportToZip, what Settings › Backup › Export Notes saves). A web backup restores on the iPhone and
 // an iPhone backup restores here. Media (Blossom files) is not in it, on the iPhone either: that is its own backup.
 //
-// The web reads its stores through Haven's NIP-01 routes, so its policies apply both ways. Reading: these routes refuse
+// The web reads its stores through Haven's NIP-01 routes, so its policies apply both ways. Reading: most routes refuse
 // a filter with no kind, author, id or tag, so each database is read with filters that cover what its route accepts.
-// Restoring: only events the export's filters would read back go in (so a crafted backup can't put someone else's notes
-// in your outbox), and each is sent to its route like any client's, so Haven checks the signature and the route's
+// Restoring: only events the export's filters would read back go in. Your own stores (outbox, private) take only your
+// account's and this browser's events, so a crafted backup can't put someone else's notes there; chat, inbox and feed
+// hold other people's events anyway. Each event is sent to its route like any client's, so Haven checks the signature
+// and the route's
 // policy; whatever it refuses is counted, never written behind its back. Nothing is published: the web Haven has no
 // blastr relays (BLASTR_RELAYS_FILE is unset), the same as when sync.js stores your own notes in the outbox.
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure"
@@ -24,7 +26,10 @@ const CHAT_KINDS = [5, 9, 10, 11, 12, 42, 43, 1059, 9000, 9001, 9002, 9005, 9007
  *  device key Haven whitelists (the only other key a whitelisted write can come from). */
 export const DATABASES = {
   outbox: { route: "/", filters: (me, dev) => [{ authors: [me, dev] }] },
-  private: { route: "/private", filters: () => [{}] },
+  // Haven's /private takes any event from an AUTHed whitelisted connection, whoever signed it, so the author is checked
+  // here. The apps keep the active account's drafts there (DraftService); an iPhone backup's drafts of another account
+  // on that phone are refused here, as they aren't this account's.
+  private: { route: "/private", filters: (me, dev) => [{ authors: [me, dev] }] },
   chat: { route: "/chat", filters: () => [{ kinds: CHAT_KINDS }] },
   inbox: { route: "/inbox", filters: (me, dev) => [{ "#p": [me, dev] }, { kinds: [5], authors: [me] }] },
   feed: { route: "/feed", filters: () => [{ kinds: FEED_KINDS }] },
@@ -84,7 +89,8 @@ export async function exportNotes({ vault, pubkey, sk = deviceKey(), onProgress 
 
 /**
  * Restore a backup .zip (from here or the iPhone) into this account's stores.
- * -> { counts: { database: { stored, refused, bad, why? } }, skipped: file names this vault has no database for }
+ * -> { counts: { database: { stored, refused, bad, why? } }, skipped: file names this vault has no database for,
+ *      failed: messages for databases that couldn't be opened (damaged, too large) }
  * "refused" is Haven saying no (bad signature, someone else's account, a kind the route doesn't take), and a duplicate
  * of an event already here is "stored": it is there.
  */
@@ -92,10 +98,15 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
   const counts = {}
   const dev = getPublicKey(sk)
   const skipped = []
+  const failed = []
   for (const entry of await unzip(bytes)) {
     const name = entry.name.replace(/\.jsonl$/, "")
-    if (!entry.name.endsWith(".jsonl") || !DATABASES[name]) { skipped.push(entry.name); continue }
+    // Object.hasOwn: a zip entry named "__proto__.jsonl" or "constructor.jsonl" is just an unknown file.
+    if (!entry.name.endsWith(".jsonl") || !Object.hasOwn(DATABASES, name)) { skipped.push(entry.name); continue }
     onProgress(name)
+    // A damaged or oversized database is reported and the rest of the backup still restores.
+    let data
+    try { data = await entry.read() } catch (e) { failed.push(String(e?.message ?? e)); continue }
     const c = (counts[name] = { stored: 0, refused: 0, bad: 0 })
     const belongs = DATABASES[name].filters(pubkey, dev)
     const client = open(vault, name, sk)
@@ -104,7 +115,7 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
       // need it; the rest (/inbox) are AUTHed by storeEvent on their first refusal.
       await client.query({ ids: ["0".repeat(64)] }).catch(() => {})
       const store = storeEvent(client)
-      for (const line of new TextDecoder().decode(await entry.read()).split("\n")) {
+      for (const line of new TextDecoder().decode(data).split("\n")) {
         if (!line.trim()) continue
         let ev
         try { ev = JSON.parse(line) } catch { c.bad++; continue }
@@ -118,7 +129,7 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
       client.close?.()
     }
   }
-  return { counts, skipped }
+  return { counts, skipped, failed }
 }
 
 /**
@@ -155,6 +166,29 @@ export function crc32(bytes) {
 }
 
 const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer())
+
+// The largest entry a restore opens: a whole database is read into memory, so a crafted zip that inflates to gigabytes
+// would take the tab down. Far above any real notes backup.
+export const MAX_ENTRY = 512 * 1024 * 1024
+const TOO_BIG = name => new Error(`${name} in this backup is too large to restore here.`)
+
+// Inflates at most `limit` bytes, stopping as soon as the output passes it, so a size the zip lies about can't get past.
+async function inflate(raw, limit, name) {
+  const reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader()
+  const chunks = []
+  let n = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    n += value.length
+    if (n > limit) { await reader.cancel().catch(() => {}); throw TOO_BIG(name) }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(n)
+  let at = 0
+  for (const c of chunks) { out.set(c, at); at += c.length }
+  return out
+}
 
 /** [{ name, data: Uint8Array }] -> zip bytes */
 export async function zip(files, { now = new Date(), deflate = typeof CompressionStream === "function" } = {}) {
@@ -194,7 +228,7 @@ export async function zip(files, { now = new Date(), deflate = typeof Compressio
 }
 
 /** zip bytes -> [{ name, read(): Promise<Uint8Array> }], from the central directory. Stored and deflated entries. */
-export async function unzip(bytes) {
+export async function unzip(bytes, { maxEntry = MAX_ENTRY } = {}) {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   const v = new DataView(b.buffer, b.byteOffset, b.byteLength)
   let end = -1
@@ -210,16 +244,18 @@ export async function unzip(bytes) {
     const method = v.getUint16(p + 10, true)
     const crc = v.getUint32(p + 16, true)
     const size = v.getUint32(p + 20, true)
+    const unpacked = v.getUint32(p + 24, true) // checked before inflating, and inflate holds the output to it
     const nameLen = v.getUint16(p + 28, true), extraLen = v.getUint16(p + 30, true), commentLen = v.getUint16(p + 32, true)
     const at = v.getUint32(p + 42, true)
     const name = dec.decode(b.subarray(p + 46, p + 46 + nameLen))
     p += 46 + nameLen + extraLen + commentLen
     const read = async () => {
+      if (unpacked > maxEntry) throw TOO_BIG(name)
       const start = at + 30 + v.getUint16(at + 26, true) + v.getUint16(at + 28, true)
       const raw = b.subarray(start, start + size)
       let data
       if (method === 0) data = raw
-      else if (method === 8) data = await pipe(raw, new DecompressionStream("deflate-raw"))
+      else if (method === 8) data = await inflate(raw, unpacked, name)
       else throw new Error(`${name} is compressed in a way this browser can't open.`)
       if (crc32(data) !== crc) throw new Error(`${name} in this backup is damaged.`)
       return data

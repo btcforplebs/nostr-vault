@@ -4,7 +4,7 @@ import { BunkerSigner, parseBunkerInput } from "nostr-tools/nip46"
 import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { checkedPubkey, loadSession, saveSession, rememberAccount } from "../session.js"
-import { seal, unseal } from "./keyring.js"
+import { seal, unseal, assertCanSeal } from "./keyring.js"
 
 // The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only web pages
 // are shown. The scheme check is what keeps a javascript: URL out; noopener only cuts the new page off from this one.
@@ -25,6 +25,7 @@ export const clearAuthUrl = () => { lastAuthUrl = "" } // once tapped, a later p
 const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) { lastAuthUrl = safe; authUrls.dispatchEvent(new CustomEvent("url", { detail: safe })) } }
 
 export async function bunkerSignIn(input, pool) {
+  assertCanSeal()
   const bp = await parseBunkerInput(String(input).trim())
   if (!bp) throw new Error("That isn't a bunker:// link or a NIP-05 with a bunker")
   if (!bp.relays.length) throw new Error("The bunker link has no relay")

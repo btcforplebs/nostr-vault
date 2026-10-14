@@ -37,7 +37,7 @@ const store = ks => ks ?? (defaultStore ??= idbKeyStore())
 async function wrappingKey(ks, create) {
   const have = await ks.get(WRAP)
   if (have || !create) return have
-  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  const key = await subtle().generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   // Two tabs signing in at once could both make one: only the first is stored, and both seal with that one.
   await ks.add(WRAP, key).catch(() => {})
   return ks.get(WRAP)
@@ -45,20 +45,28 @@ async function wrappingKey(ks, create) {
 
 /** hex secret -> { iv, ct } (base64), for the session in localStorage. */
 export async function seal(hex, ks) {
+  subtle()
   const key = await wrappingKey(store(ks), true)
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(hex)))
+  const ct = new Uint8Array(await subtle().encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(hex)))
   return { iv: b64(iv), ct: b64(ct) }
 }
 
-export const LOST_KEY = "This browser no longer has the key for your bunker connection (its site data was partly cleared). Remove this account and connect your bunker again."
+export const LOST_KEY = "This browser no longer has the key for your bunker connection (its site data was partly cleared). Sign out of this account (or remove it in Accounts, if it isn't the one you're using), then connect your bunker again."
+// crypto.subtle only exists on https pages and localhost. Bunker sign-in needs it to store the connection encrypted, and
+// refuses rather than storing it in the clear.
+export const INSECURE = "Signing in with a bunker needs a secure page: open Nostr Vault over https (or on localhost), not plain http."
+const subtle = () => { if (!globalThis.crypto?.subtle) throw new Error(INSECURE); return globalThis.crypto.subtle }
+/** Throws INSECURE where nothing can be sealed: checked before a bunker sign-in starts, not after the user approves. */
+export const assertCanSeal = () => { subtle() }
 
 /** { iv, ct } -> hex secret. Throws LOST_KEY when the wrapping key is gone or doesn't open it. */
 export async function unseal(sealed, ks) {
+  subtle()
   const key = await wrappingKey(store(ks), false)
   if (!key || !sealed?.iv || !sealed?.ct) throw new Error(LOST_KEY)
   try {
-    return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(sealed.iv) }, key, unb64(sealed.ct)))
+    return new TextDecoder().decode(await subtle().decrypt({ name: "AES-GCM", iv: unb64(sealed.iv) }, key, unb64(sealed.ct)))
   } catch {
     throw new Error(LOST_KEY)
   }

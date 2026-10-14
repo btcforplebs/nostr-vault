@@ -113,11 +113,46 @@ test("real Haven: export reads every database, restore puts it back and refuses 
   const forged = { ...ev(owner, 1, [], "forged") , content: "changed after signing" }
   const bad = await zip([
     { name: "outbox.jsonl", data: enc([ev(stranger, 1, [], "not yours"), forged].map(e => JSON.stringify(e)).join("\n") + "\nnot json\n") },
+    { name: "private.jsonl", data: enc(JSON.stringify(ev(stranger, 1, [], "planted in private")) + "\n") },
     { name: "blossom.jsonl", data: enc("") },
   ])
   const r = await importNotes({ vault, pubkey: me, bytes: bad, sk: device })
   assert.deepEqual(r.counts.outbox, { stored: 0, refused: 2, bad: 1, why: "invalid: id is computed incorrectly" }) // the stranger's note never reached Haven
+  assert.deepEqual(r.counts.private, { stored: 0, refused: 1, bad: 0 }, "a stranger's note never reaches /private")
   assert.deepEqual(r.skipped, ["blossom.jsonl"])
   const after2 = await exportNotes({ vault, pubkey: me, sk: device })
   assert.equal(after2.counts.outbox, seed.outbox.length, "nothing from the crafted backup got in")
+  assert.equal(after2.counts.private, seed.private.length)
+})
+
+// ---- review fixes (Tron, PR 704) ----
+
+test("a zip entry named after an Object property is skipped, not a crash", async () => {
+  const z = await zip(["__proto__", "constructor", "toString", "hasOwnProperty"].map(n => ({ name: `${n}.jsonl`, data: enc("{}\n") })))
+  const r = await importNotes({ vault: null, pubkey: "a".repeat(64), bytes: z, sk: generateSecretKey(), open: () => assert.fail("no route opened") })
+  assert.deepEqual(r.skipped, ["__proto__.jsonl", "constructor.jsonl", "toString.jsonl", "hasOwnProperty.jsonl"])
+  assert.deepEqual(r.counts, {})
+})
+
+test("an entry larger than the cap is refused before inflating, and one that lies about its size stops at its claim", async () => {
+  const big = { name: "feed.jsonl", data: new Uint8Array(200_000).fill(0x61) }
+  const z = await zip([big])
+  await assert.rejects((await unzip(z, { maxEntry: 100_000 }))[0].read(), /too large/)
+  assert.equal((await (await unzip(z, { maxEntry: 300_000 }))[0].read()).length, 200_000)
+  // The central directory claims 1,000 bytes; the deflate stream holds 200,000.
+  const v = new DataView(z.buffer, z.byteOffset)
+  const cd = v.getUint32(z.length - 22 + 16, true)
+  v.setUint32(cd + 24, 1000, true)
+  await assert.rejects((await unzip(z))[0].read(), /too large/)
+})
+
+test("a database that can't be opened is reported and the rest of the backup still restores", async () => {
+  const z = await zip([{ name: "feed.jsonl", data: new Uint8Array(5000).fill(0x61) }, { name: "chat.jsonl", data: enc("") }])
+  const v = new DataView(z.buffer, z.byteOffset)
+  const cd = v.getUint32(z.length - 22 + 16, true)
+  v.setUint32(cd + 24, 0xffffffff, true) // feed.jsonl claims 4 GB
+  const opened = []
+  const r = await importNotes({ vault: null, pubkey: "a".repeat(64), bytes: z, sk: generateSecretKey(), open: (_, name) => { opened.push(name); return { query: async () => [], event: async () => ({ ok: true }), close() {} } } })
+  assert.deepEqual(opened, ["chat"])
+  assert.match(r.failed[0], /feed.jsonl .*too large/)
 })

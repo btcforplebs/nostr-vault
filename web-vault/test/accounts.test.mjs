@@ -164,3 +164,21 @@ test("an extension account switches only when the extension is signed in as it",
   await assert.rejects(checkExtensionAccount(ext(pk("a")), async () => ({ getPublicKey: async () => pk("b") })), /different account/)
   await assert.rejects(checkExtensionAccount(ext(pk("a")), async () => undefined), /No Nostr extension/)
 })
+
+test("over plain http (no crypto.subtle) sealing refuses with a readable message, before a bunker sign-in starts", async () => {
+  const { INSECURE } = await import("../src/signer/keyring.js")
+  const { bunkerSignIn } = await import("../src/signer/nip46.js")
+  const real = Object.getOwnPropertyDescriptor(globalThis, "crypto")
+  Object.defineProperty(globalThis, "crypto", { value: { getRandomValues: a => a }, configurable: true })
+  try {
+    await assert.rejects(seal("aa", memKeyStore()), e => e.message === INSECURE)
+    await assert.rejects(unseal({ iv: "AAAA", ct: "AAAA" }, memKeyStore()), e => e.message === INSECURE)
+    await assert.rejects(bunkerSignIn("bunker://" + pk("e") + "?relay=wss://bunker.invalid", {}), e => e.message === INSECURE)
+  } finally {
+    Object.defineProperty(globalThis, "crypto", real)
+  }
+})
+
+test("the lost-key message points at something that works for the active account", () => {
+  assert.match(LOST_KEY, /Sign out/)
+})
