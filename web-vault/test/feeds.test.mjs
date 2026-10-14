@@ -1,15 +1,19 @@
 // The Feed's picker: what each feed asks the relays for, what is remembered, and that strangers' notes stay in memory.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { FEEDS, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, mergePage, statusGate, noteAuthors, heldNotes, holdNotes, feedKey } from "../src/net/feeds.js"
+import { FEEDS, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, mergePage, statusGate, noteAuthors, heldNotes, holdNotes, feedKey, fromHaven } from "../src/net/feeds.js"
 import { getProfile, fetchProfiles } from "../src/net/profiles.js"
 import { visibleNotes } from "../src/net/blocks.js"
 
 const memStorage = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
 const A = "a".repeat(64), B = "b".repeat(64)
 
-test("the picker offers Following, Global and Hashtag, in that order", () => {
-  assert.deepEqual(FEEDS.map(f => f.label), ["Following", "Global", "Hashtag"])
+test("the picker offers Following, Global, Hashtag, Popular and Media, in the iPhone's order", () => {
+  assert.deepEqual(FEEDS.map(f => f.label), ["Following", "Global", "Hashtag", "Popular", "Media"])
+})
+
+test("only Following and Media are read from Haven /feed", () => {
+  assert.deepEqual(FEEDS.filter(f => fromHaven(f.id)).map(f => f.id), ["following", "media"])
 })
 
 test("the last choice is remembered; nothing or junk saved means Following", () => {
