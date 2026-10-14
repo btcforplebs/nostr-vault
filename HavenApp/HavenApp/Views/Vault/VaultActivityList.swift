@@ -60,6 +60,7 @@ extension VaultView {
                 .frame(maxWidth: .infinity)
             }
         }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
     }
 
     /// A line opens what it's about: the post (theirs, or yours they reacted
@@ -67,7 +68,9 @@ extension VaultView {
     /// Followers list when several followed you that day.
     @ViewBuilder
     private func activityLink(_ line: VaultActivity) -> some View {
-        let row = VaultActivityRow(line: line, isUnread: line.createdAt > activityUnreadSince)
+        let row = VaultActivityRow(line: line, isUnread: line.createdAt > activityUnreadSince) { url, all in
+            showingMediaUrl = IdentifiableURL(url: url, allURLs: all)
+        }
             .relayFocusOutline(line.openId != nil && focusedEventId == line.openId)
         #if os(iOS)
         if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
@@ -133,6 +136,8 @@ extension VaultView {
 struct VaultActivityRow: View {
     let line: VaultActivity
     var isUnread = false
+    /// A tapped thumbnail: the picture, and the line's pictures to swipe.
+    var onImage: ((URL, [URL]) -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
@@ -158,6 +163,9 @@ struct VaultActivityRow: View {
                 headline
                     .fixedSize(horizontal: false, vertical: true)
                 previewText
+                if !line.images.isEmpty {
+                    VaultActivityThumbnails(urls: line.images, onTap: onImage)
+                }
             }
         }
         .padding(14)

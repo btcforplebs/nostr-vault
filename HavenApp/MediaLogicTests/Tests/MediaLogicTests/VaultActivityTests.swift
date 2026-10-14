@@ -10,8 +10,28 @@ final class VaultActivityTests: XCTestCase {
     private let noteKinds: Set<Int> = [1, 6, 30023, 1111, 9802, 1068]
 
     private func event(_ id: String, _ pubkey: String, kind: Int = 1, at: Int64,
-                       content: String = "", tags: [[String]] = []) -> VaultActivity.Event {
-        VaultActivity.Event(id: id, pubkey: pubkey, kind: kind, createdAt: at, content: content, tags: tags)
+                       content: String = "", tags: [[String]] = [], images: [URL] = []) -> VaultActivity.Event {
+        VaultActivity.Event(id: id, pubkey: pubkey, kind: kind, createdAt: at, content: content, tags: tags, images: images)
+    }
+
+    func testPicturesLeaveThePreviewAndRideAlongAsThumbnails() {
+        let pic = URL(string: "https://img.example/a.jpg")!
+        let pic2 = URL(string: "https://img.example/b.png")!
+        let lines = build([
+            event("post", me, at: 100, content: "mine \(pic2.absoluteString)", images: [pic2]),
+            event("r1", ann, kind: 7, at: 110, content: "+", tags: [["e", "post"], ["p", me]]),
+            event("reply", bob, at: 120, content: "look \(pic.absoluteString) https://example.com/page wow",
+                  tags: [["e", "post"], ["p", me]], images: [pic]),
+        ])
+        XCTAssertEqual(lines.count, 2)
+        // Their reply: the picture link is gone from the words, the page link stays.
+        XCTAssertEqual(lines[0].kind, .reply)
+        XCTAssertEqual(lines[0].preview, "look https://example.com/page wow")
+        XCTAssertEqual(lines[0].images, [pic])
+        // A like of your post carries your post's pictures.
+        XCTAssertEqual(lines[1].kind, .reaction)
+        XCTAssertEqual(lines[1].preview, "mine")
+        XCTAssertEqual(lines[1].images, [pic2])
     }
 
     private func zapReceipt(_ id: String, from sender: String, on note: String?, sats: Int, at: Int64,

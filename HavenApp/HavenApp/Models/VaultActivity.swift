@@ -18,6 +18,9 @@ struct VaultActivity: Identifiable, Equatable {
         let createdAt: Int64
         let content: String
         let tags: [[String]]
+        /// The pictures in `content`, as the view already finds them for
+        /// feed rows. They show as thumbnails and leave the preview text.
+        var images: [URL] = []
     }
 
     let id: String
@@ -36,6 +39,9 @@ struct VaultActivity: Identifiable, Equatable {
     var emojis: [String] = []
     /// Zaps only: the total.
     var sats: Int64 = 0
+    /// The pictures in the previewed note, in content order: theirs for a
+    /// reply, mention or quote; yours when they only reacted to your post.
+    var images: [URL] = []
 
     static func == (a: VaultActivity, b: VaultActivity) -> Bool {
         a.id == b.id && a.actors == b.actors && a.createdAt == b.createdAt && a.sats == b.sats && a.emojis == b.emojis
@@ -92,6 +98,7 @@ struct VaultActivity: Identifiable, Equatable {
 
         let mine = events.filter { $0.pubkey == owner && noteKinds.contains($0.kind) && !repostKinds.contains($0.kind) }
         let myText = Dictionary(mine.map { ($0.id, preview(of: $0)) }, uniquingKeysWith: { a, _ in a })
+        let myImages = Dictionary(mine.map { ($0.id, $0.images) }, uniquingKeysWith: { a, _ in a })
 
         var singles: [VaultActivity] = []
         // Folded lines, by kind and target: actors newest first.
@@ -136,7 +143,8 @@ struct VaultActivity: Identifiable, Equatable {
                         id: event.id, kind: .zap, actors: [sender], createdAt: event.createdAt,
                         openId: target.flatMap { myText[$0] != nil ? $0 : nil },
                         preview: comment.isEmpty ? (target.flatMap { myText[$0] } ?? "") : comment,
-                        sats: sats))
+                        sats: sats,
+                        images: comment.isEmpty ? (target.flatMap { myImages[$0] } ?? []) : []))
                 }
                 continue
             }
@@ -168,14 +176,14 @@ struct VaultActivity: Identifiable, Equatable {
             }
             singles.append(VaultActivity(
                 id: event.id, kind: kind, actors: [event.pubkey], createdAt: event.createdAt,
-                openId: event.id, preview: preview(of: event)))
+                openId: event.id, preview: preview(of: event), images: event.images))
         }
 
         let folded = folds.map { key, f in
             VaultActivity(
                 id: key, kind: f.kind, actors: unique(f.actors), createdAt: f.at,
                 openId: f.target, preview: myText[f.target] ?? "",
-                emojis: unique(f.emojis), sats: f.sats)
+                emojis: unique(f.emojis), sats: f.sats, images: myImages[f.target] ?? [])
         }
 
         // Follows on one day fold into one line, like a notifications page.
@@ -212,14 +220,17 @@ struct VaultActivity: Identifiable, Equatable {
     }
 
     /// One line of text for an event: an article's title or summary, else its
-    /// content with whitespace runs collapsed.
+    /// content with whitespace runs collapsed and its pictures' links left
+    /// out, since those show as thumbnails.
     static func preview(of event: Event) -> String {
         if event.kind == VaultNoteScope.articleKind {
             if let title = firstTag("title", in: event.tags) { return title }
             if let summary = firstTag("summary", in: event.tags) { return summary }
         }
+        let pictures = Set(event.images.map(\.absoluteString))
         return event.content
             .split(whereSeparator: { $0.isWhitespace })
+            .filter { !pictures.contains(String($0)) }
             .joined(separator: " ")
     }
 }

@@ -56,6 +56,9 @@ struct VaultView: View {
     @State var displayNotes: [NostrEvent] = []
     /// The "Vault" list's lines, newest first.
     @State var displayActivity: [VaultActivity] = []
+    /// The picture a Vault-list thumbnail opened in the media viewer.
+    @State var showingMediaUrl: IdentifiableURL?
+    @Namespace var mediaZoom
     @State var activityHasLoadedOnce = false
     /// Lines newer than this (unix seconds) are new since your last visit.
     @State var activityUnreadSince: Int64 = .max
