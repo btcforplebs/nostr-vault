@@ -13,7 +13,9 @@ const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i
 const VIDEO = /\.(mp4|webm|mov)(\?\S*)?$/i
 const MAX_QUOTE_DEPTH = 1
 
-export function NoteText({ content, depth = 0 }) {
+/** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
+ *  (no preload) and nostr:npub / nprofile stay short text (no profile fetch). Images show as in a note. */
+export function NoteText({ content, depth = 0, dm = false }) {
   const parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -25,9 +27,9 @@ export function NoteText({ content, depth = 0 }) {
     <div class="note-text">
       {parts.map((s, i) => {
         if (i % 2 === 0) return s
-        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth)
+        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm)
         if (IMAGE.test(s)) return <img key={i} class="note-media" src={s} alt="" loading="lazy" />
-        if (VIDEO.test(s)) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline />
+        if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
@@ -35,9 +37,9 @@ export function NoteText({ content, depth = 0 }) {
   )
 }
 
-function nostrRef(ref, key, depth) {
+function nostrRef(ref, key, depth, dm) {
   const q = parseRef(ref)
-  if (q?.type === "profile") return <Mention key={key} pubkey={q.pubkey} />
+  if (q?.type === "profile") return dm ? <span key={key} class="mention">{shortRef(ref)}</span> : <Mention key={key} pubkey={q.pubkey} />
   if (q && depth < MAX_QUOTE_DEPTH) return <QuotedNote key={key} q={q} short={shortRef(ref)} depth={depth} />
   return <span key={key} class="mention">{shortRef(ref)}</span>
 }
