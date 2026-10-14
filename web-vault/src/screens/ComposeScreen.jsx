@@ -1,11 +1,19 @@
 // Post a note: signed by the user's signer, stored in the in-page Haven first, then sent to the relays
 // publishRelays picks (write list + the iPhone app's broadcast set). "#/compose?reply=<id>" and "?quote=<id>"
 // (a note card's Reply and Quote) post a reply with NIP-10 tags, or a quote with a q tag and the nevent.
-import { useEffect, useState } from "preact/hooks"
+// As on the iPhone: photos (picked, dropped or pasted) go up to the account's media servers as they're added and into
+// the note as links with imeta tags; "@" suggests people and tags them; what isn't posted yet is kept as a draft.
+import { useCallback, useEffect, useRef, useState } from "preact/hooks"
 import { publishNote } from "../net/sync.js"
 import { composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
+import { MAX_PHOTOS, imetaTag, mediaServers, uploadPhoto } from "../net/upload.js"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
+import { MentionPicker, mentionAt, mentionedPubkeys, toNostr, uniqueToken } from "../components/MentionPicker.jsx"
+import { getProfile } from "../net/profiles.js"
+
+// Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
+if (import.meta.env) import("../styles/compose.css")
 
 const host = url => url.replace(/^wss?:\/\//, "")
 
@@ -41,8 +49,64 @@ function ComposeTarget({ mode, note }) {
   )
 }
 
+// Drafts: one per account and per target (a new note, or a reply or quote to one note), in an IndexedDB database named
+// like Haven's own, "haven:<pubkey>:drafts", so sign-out's wipe (vault.js storeNames) deletes it with the rest.
+// Each write is its own short connection, and one asked to close for a delete closes, so it never blocks sign-out.
+export const draftKey = target => (target ? `${target.mode}:${target.id}` : "new")
+
+export function idbDrafts(pubkey, idb = globalThis.indexedDB) {
+  const run = (mode, op) => new Promise((resolve, reject) => {
+    const req = idb.open(`haven:${pubkey}:drafts`, 1)
+    req.onupgradeneeded = () => req.result.createObjectStore("drafts")
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => {
+      const db = req.result
+      db.onversionchange = () => db.close()
+      const tx = db.transaction("drafts", mode)
+      const r = op(tx.objectStore("drafts"))
+      tx.oncomplete = () => { db.close(); resolve(r?.result) }
+      tx.onerror = tx.onabort = () => { db.close(); reject(tx.error) }
+    }
+  })
+  return {
+    get: key => run("readonly", s => s.get(key)),
+    put: (key, value) => run("readwrite", s => s.put(value, key)),
+    delete: key => run("readwrite", s => s.delete(key)),
+  }
+}
+
+/** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the photos already uploaded. */
+export const draftOf = (text, mentions, photos) => ({
+  text, mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
+  photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height }) => ({ url, sha256, mime, size, width, height })),
+})
+const emptyDraft = d => !d.text.trim() && !d.photos.length
+
+/** Content and tags for a post: tokens -> nostr:npub, photo links appended (as the iPhone does), then the reply or
+ *  quote's tags, a p tag per mention still in the text, one imeta per photo. */
+export function buildPost({ text, mentions, photos, target, parent }) {
+  const urls = photos.map(p => p.url)
+  const body = [toNostr(text.trim(), mentions), ...urls].filter(Boolean).join("\n")
+  const base = !parent ? { content: body, tags: [] } : target.mode === "reply" ? { content: body, tags: replyTags(parent) } : quoteOf(parent, body)
+  const tags = [...base.tags]
+  for (const pk of mentionedPubkeys(text, mentions)) if (!tags.some(t => t[0] === "p" && t[1] === pk)) tags.push(["p", pk])
+  for (const p of photos) { const t = imetaTag(p); if (t) tags.push(t) }
+  return { content: base.content, tags }
+}
+
+// Pixel size, so readers can reserve the box before the photo loads.
+async function pixelSize(file) {
+  try { const b = await createImageBitmap(file); const s = { width: b.width, height: b.height }; b.close?.(); return s } catch { return {} }
+}
+
+let nextPhoto = 0
+
 export function ComposeScreen({ ctx }) {
   const [text, setText] = useState("")
+  const [mentions, setMentions] = useState({}) // { "@Name": pubkey }
+  const [photos, setPhotos] = useState([]) // { id, preview, status: "uploading" | "done" | "failed", error?, file?, url?, ... }
+  const [mention, setMention] = useState(null) // the "@query" at the caret
+  const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [err, setErr] = useState("")
@@ -61,14 +125,82 @@ export function ComposeScreen({ ctx }) {
   const parent = target && note?.id === target.id ? note.event : null
   const waiting = target && note?.id !== target.id
 
+  // The draft for this target: loaded when the target changes, saved on every change after that.
+  const drafts = useRef(null)
+  drafts.current ??= idbDrafts(ctx.session.pubkey)
+  const key = draftKey(target)
+  const [loaded, setLoaded] = useState(null) // the key whose draft is in the box
+  useEffect(() => {
+    let live = true
+    setLoaded(null); setText(""); setMentions({}); setPhotos([]); setMention(null)
+    drafts.current.get(key).catch(() => null).then(d => {
+      if (!live) return
+      if (d) { setText(d.text ?? ""); setMentions(d.mentions ?? {}); setPhotos((d.photos ?? []).map(p => ({ ...p, id: ++nextPhoto, status: "done", preview: p.url }))) }
+      setLoaded(key)
+    })
+    return () => { live = false }
+  }, [key])
+  const saving = useRef(Promise.resolve())
+  useEffect(() => {
+    if (loaded !== key) return
+    const d = draftOf(text, mentions, photos)
+    // One write after another, so an older one can't land last.
+    saving.current = saving.current.then(() => (emptyDraft(d) ? drafts.current.delete(key) : drafts.current.put(key, d))).catch(() => {})
+  }, [text, mentions, photos, loaded])
+
+  // Photos: hashed, signed and uploaded one at a time (one signer prompt after another), as they're added.
+  const servers = useRef(null)
+  const queue = useRef(Promise.resolve())
+  const update = (id, patch) => setPhotos(ps => ps.map(p => (p.id === id ? { ...p, ...patch } : p)))
+  const upload = (id, file) => {
+    update(id, { status: "uploading", error: "" })
+    queue.current = queue.current.then(async () => {
+      try {
+        servers.current ??= await mediaServers(ctx)
+        const [size, up] = await Promise.all([pixelSize(file), uploadPhoto(file, { ctx, servers: servers.current })])
+        update(id, { ...size, ...up, status: "done", file: null })
+      } catch (e) { update(id, { status: "failed", error: String(e?.message ?? e) }) }
+    })
+  }
+  const addFiles = files => {
+    const images = [...files].filter(f => /^image\//.test(f.type))
+    if (!images.length) return
+    setErr("")
+    setPhotos(ps => {
+      const room = MAX_PHOTOS - ps.length
+      if (images.length > room) setErr(`A note can carry ${MAX_PHOTOS} photos.`)
+      const added = images.slice(0, Math.max(0, room)).map(file => ({ id: ++nextPhoto, file, preview: URL.createObjectURL(file), status: "queued" }))
+      queueMicrotask(() => added.forEach(p => upload(p.id, p.file)))
+      return [...ps, ...added]
+    })
+  }
+  const removePhoto = id => setPhotos(ps => ps.filter(p => { if (p.id === id && p.preview.startsWith("blob:")) URL.revokeObjectURL(p.preview); return p.id !== id }))
+  const picker = useRef(null)
+
+  // Mentions: the "@query" at the caret opens the picker; picking swaps it for the person's "@Name" token.
+  const box = useRef(null)
+  const track = el => setMention(mentionAt(el.value, el.selectionStart))
+  const pick = useCallback(pk => {
+    const el = box.current, at = mentionAt(el.value, el.selectionStart)
+    if (!at) return setMention(null)
+    const token = uniqueToken(getProfile(pk)?.name, pk, mentions)
+    const next = el.value.slice(0, at.start) + token + " " + el.value.slice(at.end)
+    const caret = at.start + token.length + 1
+    setText(next); setMentions(m => ({ ...m, [token]: pk })); setMention(null)
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(caret, caret) })
+  }, [mentions])
+  const closePicker = useCallback(() => setMention(null), [])
+
+  const uploading = photos.some(p => p.status !== "done" && p.status !== "failed")
+  const ready = photos.filter(p => p.status === "done")
+  const canPost = !busy && !uploading && (text.trim() || ready.length) && (!target || parent)
+
   const post = async () => {
     setBusy(true); setErr(""); setResult(null)
     try {
-      const body = text.trim()
-      const { content, tags } = !parent ? { content: body, tags: [] }
-        : target.mode === "reply" ? { content: body, tags: replyTags(parent) } : quoteOf(parent, body)
+      const { content, tags } = buildPost({ text, mentions, photos: ready, target, parent })
       setResult(await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags))
-      setText("")
+      setText(""); setMentions({}); setPhotos([]); setMention(null)
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
@@ -79,9 +211,44 @@ export function ComposeScreen({ ctx }) {
       {waiting && <p class="status-line">Finding the note…</p>}
       {target && note?.id === target.id && !parent && <p class="error status-line">That note couldn't be found, so there's nothing to {target.mode} to.</p>}
       {parent && <ComposeTarget mode={target.mode} note={parent} />}
-      <textarea class="compose" rows={6} value={text} onInput={e => setText(e.currentTarget.value)}
-        placeholder={target?.mode === "reply" ? "Write your reply" : target ? "Add your comment" : "What's happening?"} aria-label={title} />
-      <button class="primary" disabled={busy || !text.trim() || (target && !parent)} onClick={post}>{busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : target?.mode === "reply" ? "Reply" : "Post"}</button>
+      <div class={dragging ? "compose-area dragging" : "compose-area"}
+        onDragOver={e => { if ([...(e.dataTransfer?.types ?? [])].includes("Files")) { e.preventDefault(); setDragging(true) } }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
+        onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}>
+        <textarea ref={box} class="compose" rows={6} value={text} aria-label={title}
+          placeholder={target?.mode === "reply" ? "Write your reply" : target ? "Add your comment" : "What's happening?"}
+          aria-autocomplete="list" aria-expanded={!!mention} aria-controls={mention ? "mention-picker" : undefined}
+          onInput={e => { setText(e.currentTarget.value); track(e.currentTarget) }}
+          onKeyUp={e => { if (e.key.startsWith("Arrow") && !mention) track(e.currentTarget) }} onClick={e => track(e.currentTarget)}
+          onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(f => /^image\//.test(f.type))) { e.preventDefault(); addFiles(files) } }} />
+        {mention && <MentionPicker ctx={ctx} query={mention.query} onPick={pick} onClose={closePicker} input={box} />}
+        {photos.length > 0 && (
+          <ul class="compose-photos" aria-label="Photos">
+            {photos.map((p, i) => (
+              <li key={p.id} class={`compose-photo ${p.status}`}>
+                <img src={p.preview} alt={`Photo ${i + 1}`} />
+                {p.status !== "done" && p.status !== "failed" && <span class="compose-photo-state" role="status">Uploading…</span>}
+                {p.status === "failed" && <span class="compose-photo-state" title={p.error}>Didn't upload</span>}
+                {p.status === "failed" && p.file && <button type="button" class="compose-photo-retry" onClick={() => upload(p.id, p.file)}>Retry</button>}
+                <button type="button" class="compose-photo-remove" aria-label={`Remove photo ${i + 1}`} onClick={() => removePhoto(p.id)}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {photos.filter(p => p.status === "failed").map(p => <p key={p.id} class="error small compose-photo-error">{p.error}</p>)}
+        <div class="compose-tools">
+          <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS} onClick={() => picker.current.click()}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
+            Photo
+          </button>
+          <input ref={picker} type="file" accept="image/*" multiple hidden onChange={e => { addFiles(e.currentTarget.files); e.currentTarget.value = "" }} />
+          {photos.length > 0 && <span class="muted small">{photos.length} of {MAX_PHOTOS}</span>}
+          {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
+        </div>
+      </div>
+      <button class="primary" disabled={!canPost} onClick={post}>{busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"}</button>
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
     </main>
