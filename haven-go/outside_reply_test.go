@@ -20,7 +20,7 @@ func TestClassifyAcceptsRepliesToOwnerPostsFromOutsideWot(t *testing.T) {
 
 	saved := outboxDB
 	t.Cleanup(func() { outboxDB = saved })
-	db := newBadgerBackend(t.TempDir() + "/outbox")
+	db := newTestBackend(t, "outbox")
 	if err := db.Init(); err != nil {
 		t.Fatal(err)
 	}

@@ -19,13 +19,15 @@ import (
 // deletionBackends runs a test against every database engine this platform
 // builds, since isDeleted relies on each engine's tag index.
 func deletionBackends(t *testing.T, run func(t *testing.T, db DBBackend)) {
-	backends := map[string]func(path string) DBBackend{"badger": newBadgerBackend}
+	backends := map[string]func(t *testing.T) DBBackend{
+		strings.ToLower(fallbackBackendName): func(t *testing.T) DBBackend { return newTestBackend(t, "db") },
+	}
 	if lmdbFactory != nil {
-		backends["lmdb"] = lmdbFactory
+		backends["lmdb"] = func(t *testing.T) DBBackend { return lmdbFactory(t.TempDir() + "/db") }
 	}
 	for name, factory := range backends {
 		t.Run(name, func(t *testing.T) {
-			db := factory(t.TempDir() + "/db")
+			db := factory(t)
 			if err := db.Init(); err != nil {
 				t.Fatal(err)
 			}
