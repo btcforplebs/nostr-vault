@@ -4,15 +4,25 @@ struct ProfileResultRow: View {
     let profile: FeedProfile
     @State private var isHovered = false
 
+    /// The name, or for someone with no profile yet (a pasted npub) the
+    /// whole npub, so its start and end can be checked against what was
+    /// pasted. `bestName`'s "npub…" + six hex characters cannot be.
+    private var title: String {
+        let named = [profile.displayName, profile.name].contains { !($0 ?? "").isEmpty }
+        if !named, let npub = ProfileFormat.npub(profile.pubkey) { return npub }
+        return profile.bestName
+    }
+
     var body: some View {
         HStack(spacing: 14) {
             AvatarView(url: profile.pictureURL, pubkey: profile.pubkey, size: 44)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(profile.bestName)
+                Text(title)
                     .font(.appSystem(size: 15, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
                 if let nip05 = profile.nip05, !nip05.isEmpty {
                     Text(nip05)

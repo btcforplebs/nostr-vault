@@ -89,7 +89,8 @@ enum VaultSearchLogic {
     /// Links in the matched notes, each URL once, in note order. A note that
     /// matched on its text gives its links even when the query is not in the
     /// URL, as the Search tab does. Trailing punctuation that closes a
-    /// sentence is not part of the link.
+    /// sentence is not part of the link; a closing bracket the URL itself
+    /// opened is (`…/wiki/Foo_(bar)`).
     static func links(notes: [(id: String, content: String)]) -> [Link] {
         guard let regex = try? NSRegularExpression(pattern: "https?://[^\\s]+") else { return [] }
         var seen = Set<String>()
@@ -98,8 +99,7 @@ enum VaultSearchLogic {
             let range = NSRange(note.content.startIndex..., in: note.content)
             for match in regex.matches(in: note.content, range: range) {
                 guard let r = Range(match.range, in: note.content) else { continue }
-                var url = String(note.content[r])
-                while let last = url.last, ".,;:!?)]\"'".contains(last) { url.removeLast() }
+                let url = trimmingTrailingPunctuation(String(note.content[r]))
                 guard seen.insert(url).inserted else { continue }
                 let title = url
                     .replacingOccurrences(of: "https://", with: "")
@@ -108,6 +108,58 @@ enum VaultSearchLogic {
             }
         }
         return links
+    }
+
+    private static let openers: [Character: Character] = [")": "(", "]": "["]
+
+    /// Strips what closes the sentence around a URL. `)` and `]` go only
+    /// when the URL has more closers than openers, so "(see https://x.y/a)"
+    /// loses its paren and "https://en.wikipedia.org/wiki/Foo_(bar)" keeps it.
+    static func trimmingTrailingPunctuation(_ raw: String) -> String {
+        var url = raw
+        while let last = url.last {
+            if ".,;:!?\"'".contains(last) {
+                url.removeLast()
+            } else if let open = Self.openers[last],
+                      url.filter({ $0 == last }).count > url.filter({ $0 == open }).count {
+                url.removeLast()
+            } else {
+                break
+            }
+        }
+        return url
+    }
+
+    // MARK: - People
+
+    /// The public key a query names: 64 hex characters, or an `npub1…` with a
+    /// good checksum, either with or without `nostr:`. Lowercased hex.
+    static func pubkey(inQuery query: String) -> String? {
+        var text = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if text.hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
+        if text.count == 64, text.allSatisfy({ $0.isASCII && $0.isHexDigit }) { return text }
+        if text.hasPrefix("npub1") { return NpubValidation.hexPubkey(fromNpub: text) }
+        return nil
+    }
+
+    /// The key to show a bare People row for when the walk found nobody.
+    /// An npub is unambiguously a key. Bare hex may be a note id (also 64
+    /// hex), so it counts only when a store already holds that profile —
+    /// otherwise the row would be a person who does not exist.
+    static func keyOnlyPerson(inQuery query: String, hasProfile: (String) -> Bool) -> String? {
+        guard let key = pubkey(inQuery: query) else { return nil }
+        var text = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if text.hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
+        return text.hasPrefix("npub1") || hasProfile(key) ? key : nil
+    }
+
+    /// Whether a profile the relay walk matched belongs under People. A query
+    /// that is a key finds that one person. Any other query has to be in the
+    /// names, about or NIP-05: the walk also matches it inside the hex key,
+    /// so "ab" or "cafe" would otherwise list nearly everyone.
+    static func keepsPerson(pubkey: String, fields: [String?], query: String) -> Bool {
+        if let key = self.pubkey(inQuery: query) { return pubkey.lowercased() == key }
+        return SearchTermMatcher(query: query)?.matches(fields: fields) ?? false
     }
 
     // MARK: - Query state

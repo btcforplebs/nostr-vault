@@ -11,6 +11,8 @@ import SwiftUI
 /// as in `ChromeMorphCapsule`, so nothing around it relayouts mid-animation.
 struct VaultSearchBar: View {
     @Binding var text: String
+    /// Each change puts the cursor back in the field.
+    var focusRequest = 0
     var onSubmit: () -> Void = {}
     /// Runs once the bar has folded back into the icon.
     let onClose: () -> Void
@@ -83,6 +85,7 @@ struct VaultSearchBar: View {
                 .frame(width: width)
         }
         .onAppear(perform: open)
+        .onChange(of: focusRequest) { _, _ in focused = true }
         #if os(macOS)
         .onExitCommand(perform: close)
         #endif
@@ -193,7 +196,7 @@ final class VaultSearchModel: ObservableObject {
             guard let self else { return }
             self.land(query, profiles: found.profiles, notes: found.notes,
                       as: found.isCutShort ? .cutShort : .done,
-                      feedService: feedService, blocked: blocked)
+                      nostrService: nostrService, feedService: feedService, blocked: blocked)
         }
     }
 
@@ -225,15 +228,27 @@ final class VaultSearchModel: ObservableObject {
             }
             notes.sort { $0.createdAt > $1.createdAt }
             await self?.land(query, profiles: people, notes: notes, as: .inMemory,
-                             feedService: feedService, blocked: blocked)
+                             nostrService: nostrService, feedService: feedService, blocked: blocked)
         }
     }
 
     private func land(_ query: String, profiles: [FeedProfile], notes found: [FeedNote], as result: Status,
-                      feedService: FeedService, blocked: Set<String>) {
+                      nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
         guard state.landed(query, as: result) else { return }
+        var matched = profiles.filter {
+            VaultSearchLogic.keepsPerson(pubkey: $0.pubkey,
+                                         fields: [$0.displayName, $0.name, $0.about, $0.nip05],
+                                         query: query)
+        }
+        // A pasted npub finds its person even when no store holds their
+        // profile yet: the row shows the npub and opens the profile.
+        if matched.isEmpty,
+           let key = VaultSearchLogic.keyOnlyPerson(inQuery: query,
+                                                    hasProfile: { nostrService.profiles[$0] != nil }) {
+            matched = [nostrService.profiles[key] ?? FeedProfile(pubkey: key)]
+        }
         let filter = SearchBlockFilter(blocked: blocked)
-        let people = filter.profiles(profiles, pubkey: \.pubkey)
+        let people = filter.profiles(matched, pubkey: \.pubkey)
         let notes = filter.notes(found) { note, blocked in
             FeedFilterEngine.involvesBlocked(note, blocked: blocked,
                                              authorOf: { feedService.findNote(id: $0)?.pubkey })

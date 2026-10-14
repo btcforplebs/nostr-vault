@@ -328,21 +328,24 @@ extension VaultView {
 
     /// The magnifying glass at the right end of the Vault's toolbar. It opens
     /// `VaultSearchBar`, which grows out of this spot; on the Mac it sits in
-    /// the header and the bar opens under it.
+    /// the header and the bar opens under it. It stays a magnifying glass
+    /// while the bar is open — the bar's own ✕ is the one way to close, so
+    /// the fold back into the icon always plays — and pressed again (or ⌘F)
+    /// it puts the cursor back in the field.
     var searchToggleButton: some View {
         IconFilterButton(
-            icon: isSearchActive ? "xmark" : "magnifyingglass",
-            tooltip: isSearchActive ? "Close Search" : "Search your Vault",
+            icon: "magnifyingglass",
+            tooltip: "Search your Vault",
             isSelected: isSearchActive,
             color: .havenPurple
         ) {
-            if isSearchActive { closeVaultSearch() } else { openVaultSearch() }
+            if isSearchActive { searchFocusRequest &+= 1 } else { openVaultSearch() }
         }
         #if os(macOS)
         // iPad keeps ⌘F for the Search tab (ContentView).
         .keyboardShortcut("f", modifiers: .command)
         #endif
-        .accessibilityLabel(isSearchActive ? "Close search" : "Search your Vault")
+        .accessibilityLabel("Search your Vault")
     }
 
     func openVaultSearch() {
@@ -372,6 +375,7 @@ extension VaultView {
     var searchBar: some View {
         if isSearchActive {
             VaultSearchBar(text: $searchQueryDraft,
+                           focusRequest: searchFocusRequest,
                            onSubmit: { runVaultSearch(now: true) },
                            onClose: closeVaultSearch)
                 .onChange(of: searchQueryDraft) { _, _ in runVaultSearch() }

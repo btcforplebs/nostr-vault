@@ -16,6 +16,8 @@ struct VaultView: View {
     /// the search found in place of its list.
     @State var isSearchActive = false
     @State var searchQueryDraft = ""
+    /// Bumped to put the cursor back in the open search bar.
+    @State var searchFocusRequest = 0
     @StateObject var vaultSearch = VaultSearchModel()
     /// The phone and iPad open the Vault tab on "Vault", everything new in
     /// one list. The Mac's relay page has no such list.
