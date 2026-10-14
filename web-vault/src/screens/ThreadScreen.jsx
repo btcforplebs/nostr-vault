@@ -30,29 +30,36 @@ export function ThreadScreen({ ctx, id }) {
   const [status, setStatus] = useState("")
   const extra = useRef([])
 
-  const reload = async rid => setThread(buildThread(rid, [...await readThread(vault, rid), ...extra.current]))
-  const sync = async () => {
+  // Each run is for one id: once the screen has moved on, `isLive()` is false and the run touches nothing, so a late
+  // read or sync for the previous thread can't take over this one's root, extra or status.
+  const reload = async (rid, isLive) => {
+    const evs = await readThread(vault, rid)
+    if (isLive()) setThread(buildThread(rid, [...evs, ...extra.current]))
+  }
+  const sync = async isLive => {
     if (!navigator.onLine) return setStatus("Offline: showing the saved thread")
     setStatus("Loading replies…")
     try {
       const { rootId: rid } = await syncThread(vault, id, relays)
+      if (!isLive()) return
       setRootId(rid)
-      await reload(rid)
-      setStatus("")
-    } catch (e) { setStatus(`Couldn't load replies (${e?.message ?? e}): showing the saved thread`) }
+      await reload(rid, isLive)
+      if (isLive()) setStatus("")
+    } catch (e) { if (isLive()) setStatus(`Couldn't load replies (${e?.message ?? e}): showing the saved thread`) }
   }
 
   useEffect(() => {
     let live = true
+    const isLive = () => live
     ;(async () => {
       const start = await threadStart(vault, id)
       if (!live) return // a late run for the previous id: its carried note isn't this thread's
       const rid = start.rootId
       extra.current = start.extra
       setRootId(rid)
-      await reload(rid)
-      if (live) await sync()
-    })().catch(e => setStatus(String(e?.message ?? e)))
+      await reload(rid, isLive)
+      if (live) await sync(isLive)
+    })().catch(e => { if (live) setStatus(String(e?.message ?? e)) })
     return () => { live = false }
   }, [id])
 
