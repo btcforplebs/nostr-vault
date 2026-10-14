@@ -1,0 +1,92 @@
+// Messages: the user's conversations, newest first (iPhone DMInboxView). Read from Haven's /chat and the relays
+// through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out.
+import { useEffect, useState } from "preact/hooks"
+import { decode } from "nostr-tools/nip19"
+import { Avatar } from "../components/Avatar.jsx"
+import { AuthorName } from "../components/NoteCard.jsx"
+import { ago } from "../components/time.js"
+import { useBlocks } from "../components/useBlocks.js"
+import { fetchProfiles } from "../net/profiles.js"
+import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { conversations, dmRelaysFor, extraRelays, getMessages, loadMessages, onMessages, watchMessages } from "../net/dms.js"
+
+/** The relays the user's own DMs are read from: their DM inbox list, read list, defaults and this browser's extras. */
+export async function inboxRelays(ctx) {
+  const { read, write } = ctx.account.relays
+  const lookup = uniq([...read, ...write, ...DEFAULT_RELAYS])
+  const mine = await dmRelaysFor(ctx.session.pubkey, lookup, { fallback: [] }).catch(() => [])
+  return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
+}
+
+/** Messages state for a screen, loading once and re-rendering as messages land. */
+export function useMessages(ctx) {
+  const [m, setM] = useState(getMessages)
+  useEffect(() => {
+    const off = onMessages(() => setM(getMessages()))
+    let stop = () => {}
+    let live = true
+    ;(async () => {
+      const relays = await inboxRelays(ctx)
+      if (!live) return
+      await loadMessages(ctx, relays).catch(() => {})
+      if (live) stop = watchMessages(ctx, relays)
+    })()
+    return () => { live = false; off(); stop() }
+  }, [ctx.session.pubkey])
+  return m
+}
+
+export function MessagesScreen({ ctx }) {
+  const { messages, note, loaded } = useMessages(ctx)
+  const { blocked } = useBlocks(ctx)
+  const [to, setTo] = useState("")
+  const [err, setErr] = useState("")
+  const list = conversations(messages, blocked)
+
+  useEffect(() => {
+    const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
+    fetchProfiles(ctx.vault, list.map(c => c.peer), relays).catch(() => {})
+  }, [list.map(c => c.peer).join()])
+
+  const open = e => {
+    e.preventDefault()
+    const pk = pubkeyOf(to.trim())
+    if (!pk) return setErr("Paste an npub, nprofile or hex public key.")
+    setErr(""); setTo("")
+    location.hash = `#/dm/${pk}`
+  }
+
+  return (
+    <main class="screen">
+      <header class="screen-head"><h2>Messages</h2></header>
+      {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
+      <form class="dm-new" onSubmit={open}>
+        <input value={to} onInput={e => setTo(e.currentTarget.value)} placeholder="New message to npub…" autocapitalize="off" autocorrect="off" spellcheck={false} aria-label="New message to" />
+        <button type="submit" class="small" disabled={!to.trim()}>Open</button>
+      </form>
+      {err && <div class="status-line error">{err}</div>}
+      {!loaded ? <p class="empty">Opening your messages…</p>
+        : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
+        : list.map(c => (
+          <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>
+            <Avatar pubkey={c.peer} size={44} />
+            <span class="dm-row-text">
+              <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
+              <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{c.last.content.replace(/\s+/g, " ").trim() || "(empty)"}</span>
+            </span>
+          </a>
+        ))}
+    </main>
+  )
+}
+
+/** npub / nprofile / 64-hex -> hex pubkey, else null. */
+export function pubkeyOf(s) {
+  if (/^[0-9a-f]{64}$/i.test(s)) return s.toLowerCase()
+  try {
+    const d = decode(s.replace(/^nostr:/, ""))
+    if (d.type === "npub") return d.data
+    if (d.type === "nprofile") return d.data.pubkey
+  } catch {}
+  return null
+}

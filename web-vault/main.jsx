@@ -19,17 +19,20 @@ import { RelayScreen } from "./src/screens/RelayScreen.jsx"
 import { SearchScreen } from "./src/screens/SearchScreen.jsx"
 import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
 import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
+import { MessagesScreen } from "./src/screens/MessagesScreen.jsx"
+import { ConversationScreen } from "./src/screens/ConversationScreen.jsx"
 import { PersonScreen } from "./src/screens/PersonScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
 import "./src/styles/quotes.css"
+import "./src/styles/dms.css"
 
-const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread"]
+const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread", "messages", "dm"]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
-  return ROUTES.includes(r) && (r !== "thread" || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
+  return ROUTES.includes(r) && ((r !== "thread" && r !== "dm") || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
 }
 
 // Kept in localStorage so a phone run can be read back over CDP; nothing leaves the device.
@@ -133,9 +136,11 @@ function App() {
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} />}
       {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
+      {route === "messages" && <MessagesScreen ctx={ctx} />}
+      {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {(route === "feed" || route === "profile" && !other) && <PostButton />}
-      <TabBar route={other ? "search" : route} pubkey={session.pubkey} />
+      <TabBar route={other ? "search" : route === "dm" ? "messages" : route} pubkey={session.pubkey} />
       <AuthPrompt />
     </div>
   )

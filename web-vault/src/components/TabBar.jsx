@@ -1,9 +1,10 @@
 import { Avatar } from "./Avatar.jsx"
 
-// Feed · Search · Notifications · Profile · Relay. Compose is the floating Post button, as on iOS, not a tab.
+// Feed · Search · Messages · Notifications · Profile · Relay. Compose is the floating Post button, as on iOS, not a tab.
 const TABS = [
   ["feed", "Feed", "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8"],
   ["search", "Search", "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM20 20l-4.8-4.8"],
+  ["messages", "Messages", "M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4.5 3.5V16H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"],
   ["notifications", "Alerts", "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"],
   ["profile", "Profile", null],
   ["relay", "Relay", "M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"],
