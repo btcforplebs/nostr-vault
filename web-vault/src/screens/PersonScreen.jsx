@@ -1,5 +1,5 @@
-// Someone else's profile (opened from Search): their kind 0, Follow / Unfollow, and their notes. Notes are fetched
-// from their write relays into Haven /feed and read back from it (net/person.js); follows go through net/follows.js.
+// Someone else's profile (opened from Search): their kind 0, Follow / Unfollow, and their notes. Notes come
+// from their write relays and Haven /feed (net/person.js keeps fetched ones in memory); follows: net/follows.js.
 import { useEffect, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { NoteCard } from "../components/NoteCard.jsx"

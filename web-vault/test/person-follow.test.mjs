@@ -3,7 +3,8 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { editedTags, wipeGuard, setFollow, followsOf, newestList, relation } from "../src/net/follows.js"
+import { editedTags, wipeGuard, setFollow, followsOf, newestList, relation, askRelay, MAX_SKEW } from "../src/net/follows.js"
+import { pool, PROFILE_RELAYS } from "../src/net/pool.js"
 import { readPersonNotes, syncPersonNotes, fetchPersonLists } from "../src/net/person.js"
 
 const me = generateSecretKey(), mePk = getPublicKey(me)
@@ -24,7 +25,10 @@ function fakeVault(seed = []) {
 }
 const signer = { method: "nip07", signEvent: async t => finalizeEvent(t, me) }
 const okPublish = (urls) => urls.map(() => Promise.resolve(""))
-const run = (over) => setFollow({ vault: fakeVault(), signer, pubkey: mePk, readRelays: [], writeRelays: ["wss://w.example"], query: async () => [], publish: okPublish, ...over })
+const run = (over) => setFollow({ vault: fakeVault(), signer, pubkey: mePk, readRelays: [], writeRelays: ["wss://w.example"], ask: relaysAnswer([]), publish: okPublish, ...over })
+// Every relay asked sends these events and its EOSE.
+function relaysAnswer(events) { return async () => ({ events, answered: true }) }
+const nowS = () => Math.floor(Date.now() / 1000)
 
 test("editedTags keeps every other tag and adds or removes only the target", () => {
   const a = pk(), b = pk(), t = pk()
@@ -41,35 +45,62 @@ test("newestList picks the newest of the user's own kind 3s and ignores anyone e
 })
 
 test("guard: no list found means nothing is published", async () => {
-  assert.match(wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true }), /wasn't found/)
+  assert.match(wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true, answered: 1 }), /wasn't found/)
   let signed = false
   await assert.rejects(run({ target: pk(), follow: true, signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /wasn't found/)
   assert.equal(signed, false, "the signer is never asked")
 })
 
-test("guard: a result that loses other follows is refused", () => {
-  const a = pk(), b = pk(), t = pk()
-  const base = contacts([a, b], 100)
-  assert.match(wipeGuard({ base, tags: [["p", t]], target: t, follow: true }), /drop 2 other follows/)
-  assert.equal(wipeGuard({ base, tags: editedTags(base, t, true), target: t, follow: true }), "")
+test("guard: relays all down and only an old vault copy -> nothing is signed or sent (Tron's 40 -> 5 case)", async () => {
+  const many = Array.from({ length: 40 }, pk)
+  const old = contacts(many.slice(0, 4), 100) // the vault's stale copy; the real 40-follow list is on the relays
+  const vault = fakeVault([old])
+  let signed = false, sent = false
+  await assert.rejects(run({ vault, target: pk(), follow: true, known: old, appCount: 4,
+    ask: async () => ({ events: [], answered: false }),
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
+    publish: urls => { sent = true; return okPublish(urls) } }), /None of your relays answered/)
+  assert.equal(signed, false)
+  assert.equal(sent, false)
+  assert.deepEqual(vault.outbox.evs, [old])
+})
+
+test("guard: an answer from purplepag.es alone doesn't count; one of the user's relays does", async () => {
+  const base = contacts([pk()], 100)
+  const onlyIndex = async url => ({ events: [], answered: PROFILE_RELAYS.includes(url) })
+  await assert.rejects(run({ vault: fakeVault([base]), target: pk(), follow: true, ask: onlyIndex }), /None of your relays answered/)
+  const oneOwn = async url => ({ events: [], answered: url === "wss://w.example" })
+  const r = await run({ vault: fakeVault([base]), target: pk(), follow: true, ask: oneOwn })
+  assert.equal(followsOf(r.event).length, 2)
+})
+
+test("askRelay: answered only on the relay's own EOSE, never on a timeout or a dead relay", async t => {
+  assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [3] }, 2000), { events: [], answered: false })
+  const ev = contacts([pk()], 100)
+  // As nostr-tools does: a subscription whose eoseTimeout runs out calls oneose too.
+  const relay = eose => ({ subscribe: (f, p) => { p.onevent(ev); const h = setTimeout(p.oneose, eose ? 10 : p.eoseTimeout); return { close() { clearTimeout(h) } } } })
+  t.mock.method(pool, "ensureRelay", async () => relay(false))
+  assert.deepEqual(await askRelay("wss://silent.example", { kinds: [3] }, 50), { events: [ev], answered: false })
+  t.mock.method(pool, "ensureRelay", async () => relay(true))
+  assert.deepEqual(await askRelay("wss://ok.example", { kinds: [3] }, 1000), { events: [ev], answered: true })
 })
 
 test("guard: a stale list newer-dated than a much bigger one is refused (most > 10, result < half)", () => {
   const many = Array.from({ length: 40 }, pk), t = pk()
   const big = contacts(many, 100), stale = contacts(many.slice(0, 5), 200)
-  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [big, stale] }), /had 40/)
-  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [stale], appCount: 40 }), /had 40/, "the app's own count counts too")
+  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [big, stale], answered: 1 }), /had 40/)
+  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [stale], appCount: 40, answered: 1 }), /had 40/, "the app's own count counts too")
   // Small lists are under the threshold, as on iOS: 10 -> 4 is allowed.
   const ten = contacts(many.slice(0, 10), 100), four = contacts(many.slice(0, 4), 200)
-  assert.equal(wipeGuard({ base: four, tags: editedTags(four, t, true), target: t, follow: true, seen: [ten, four] }), "")
+  assert.equal(wipeGuard({ base: four, tags: editedTags(four, t, true), target: t, follow: true, seen: [ten, four], answered: 1 }), "")
 })
 
 test("guard: one deliberate unfollow always passes, even the last follow; an empty list otherwise never does", () => {
   const a = pk()
   const one = contacts([a], 100)
-  assert.equal(wipeGuard({ base: one, tags: editedTags(one, a, false), target: a, follow: false, seen: [one] }), "")
+  assert.equal(wipeGuard({ base: one, tags: editedTags(one, a, false), target: a, follow: false, seen: [one], answered: 1 }), "")
   const none = contacts([], 100)
-  assert.match(wipeGuard({ base: none, tags: editedTags(none, a, false), target: a, follow: false, seen: [none] }), /empty/)
+  assert.match(wipeGuard({ base: none, tags: editedTags(none, a, false), target: a, follow: false, seen: [none], answered: 1 }), /empty/)
 })
 
 test("follow builds on the newest list (network beats an older vault copy), keeps content, and is newer than it", async () => {
@@ -77,7 +108,7 @@ test("follow builds on the newest list (network beats an older vault copy), keep
   const vaultOld = contacts([a], 100), netNew = contacts([a, b], 300, [["t", "x"]])
   const vault = fakeVault([vaultOld])
   const sent = []
-  const r = await run({ vault, target: t, follow: true, query: async () => [netNew], publish: (urls, ev) => { sent.push(...urls); return okPublish(urls) } })
+  const r = await run({ vault, target: t, follow: true, ask: relaysAnswer([netNew]), publish: (urls, ev) => { sent.push(...urls); return okPublish(urls) } })
   assert.deepEqual(followsOf(r.event), [a, b, t])
   assert.deepEqual(r.event.tags.find(x => x[0] === "t"), ["t", "x"])
   assert.equal(r.event.content, netNew.content)
@@ -90,15 +121,29 @@ test("a refused list is not written into Haven, so the app's follows don't shrin
   const many = Array.from({ length: 30 }, pk)
   const vault = fakeVault([contacts(many, 100)])
   const stale = contacts(many.slice(0, 3), 200)
-  await assert.rejects(run({ vault, target: pk(), follow: true, query: async () => [stale] }), /had 30/)
+  await assert.rejects(run({ vault, target: pk(), follow: true, ask: relaysAnswer([stale]) }), /had 30/)
   assert.equal(vault.outbox.evs.length, 1)
   assert.equal(followsOf(vault.outbox.evs[0]).length, 30)
 })
 
-test("a base dated in the future still gets a strictly newer list", async () => {
-  const future = contacts([pk()], Math.floor(Date.now() / 1000) + 3600)
-  const r = await run({ vault: fakeVault([future]), target: pk(), follow: true })
-  assert.equal(r.event.created_at, future.created_at + 1)
+test("a list dated past the skew is ignored, and a new list is never dated past it", async () => {
+  const a = pk(), b = pk(), t = pk()
+  const real = contacts([a, b], nowS() - 60)
+  const rogue = contacts([a], nowS() + 5 * 365 * 86400) // a relay serving a kind 3 dated years ahead
+  assert.equal(newestList([real, rogue], mePk), real)
+  const r = await run({ vault: fakeVault([real]), target: t, follow: true, ask: relaysAnswer([rogue]) })
+  assert.deepEqual(followsOf(r.event), [a, b, t], "built on the real list, not the rogue one")
+  assert.ok(r.event.created_at <= nowS() + 1, "dated now, not after the rogue list")
+})
+
+test("a base slightly ahead (inside the skew) still gets a newer list, capped at now + skew", async () => {
+  const ahead = contacts([pk()], nowS() + 600)
+  const r = await run({ vault: fakeVault([ahead]), target: pk(), follow: true })
+  assert.equal(r.event.created_at, ahead.created_at + 1)
+  assert.ok(r.event.created_at <= nowS() + MAX_SKEW)
+  const edge = contacts([pk()], nowS() + MAX_SKEW - 1)
+  const r2 = await run({ vault: fakeVault([edge]), target: pk(), follow: true })
+  assert.ok(r2.event.created_at > edge.created_at && r2.event.created_at <= nowS() + MAX_SKEW)
 })
 
 test("unfollow removes just that pubkey", async () => {
@@ -134,7 +179,7 @@ test("relation badges", () => {
   assert.equal(relation(false, false), "")
 })
 
-test("their notes: fetched from their write relays into Haven /feed, read back newest first, paged by until", async () => {
+test("their notes: fetched from their write relays, kept out of Haven /feed, read newest first, paged by until", async () => {
   const them = generateSecretKey(), them_pk = getPublicKey(them)
   const notes = [100, 200, 300].map(at => finalizeEvent({ kind: 1, created_at: at, tags: [], content: `n${at}` }, them))
   const stranger = finalizeEvent({ kind: 1, created_at: 400, tags: [], content: "not theirs" }, generateSecretKey())
@@ -142,12 +187,18 @@ test("their notes: fetched from their write relays into Haven /feed, read back n
   let asked
   const got = await syncPersonNotes(vault, them_pk, ["wss://their.write"], { query: async (relays, f) => { asked = { relays, f }; return [...notes, stranger] } })
   assert.equal(got, 3)
+  assert.equal(vault.feed.evs.length, 0, "a stranger's notes are not written into the Following feed's store")
   assert.ok(asked.relays.includes("wss://their.write"))
   assert.deepEqual(asked.f.authors, [them_pk])
   assert.deepEqual((await readPersonNotes(vault, them_pk)).map(n => n.created_at), [300, 200, 100])
   assert.deepEqual((await readPersonNotes(vault, them_pk, { until: 199 })).map(n => n.created_at), [100])
   await syncPersonNotes(vault, them_pk, [], { until: 199, query: async (r, f) => { asked = f; return [] } })
   assert.equal(asked.until, 199, "an older page asks the network before that note")
+  // Notes feed sync already saved (someone you follow) are merged in, once each.
+  await vault.feed.event(notes[1])
+  const saved = finalizeEvent({ kind: 1, created_at: 250, tags: [], content: "saved by feed sync" }, them)
+  await vault.feed.event(saved)
+  assert.deepEqual((await readPersonNotes(vault, them_pk)).map(n => n.created_at), [300, 250, 200, 100])
 })
 
 test("their lists: newest 10002 gives their write relays; their kind 3 says whether they follow you", async () => {
