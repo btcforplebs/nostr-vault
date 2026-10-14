@@ -546,6 +546,10 @@ struct GlobeCamera {
     var dragging = false
     /// Frame-clock time of the last touch.
     var lastTouch: TimeInterval = 0
+    /// The WOT tab's globe drifts for as long as it is on screen, with no
+    /// timer (Logen, 10/14: "should keep spinning"). Its view stops the
+    /// clock when the tab goes, the app is inactive or something covers it.
+    var keepsDrifting = false
 
     static let zoomRange = 0.8...2.4
     /// How far the camera sits from the middle at zoom 1.
@@ -568,8 +572,9 @@ struct GlobeCamera {
     }
     /// Idle this long and the globe starts drifting, so it reads as alive.
     static let driftAfter: TimeInterval = 3
-    /// Idle this long and it stops: the frame clock can sleep.
-    static let sleepAfter: TimeInterval = 8
+    /// Idle this long and it stops: the frame clock can sleep. Not on a
+    /// globe that `keepsDrifting`.
+    static let sleepAfter: TimeInterval = 20
     static let driftSpeed = 0.05
     /// How fast a flick dies away, per second.
     static let spinDecay = 2.4
@@ -649,7 +654,7 @@ struct GlobeCamera {
                 spin = .zero
             }
             let idle = now - lastTouch
-            if idle > Self.driftAfter && idle < Self.sleepAfter {
+            if idle > Self.driftAfter && (keepsDrifting || idle < Self.sleepAfter) {
                 orientation = simd_normalize(simd_quatd(angle: Self.driftSpeed * dt, axis: SIMD3(0, 1, 0)) * orientation)
             }
         }
@@ -664,6 +669,6 @@ struct GlobeCamera {
     /// keep the frame clock running. False is the cue to let it sleep.
     func wantsFrames(now: TimeInterval, reduceMotion: Bool) -> Bool {
         if dragging || flyTarget != nil || spin != .zero || zoom != zoomTarget { return true }
-        return !reduceMotion && now - lastTouch < Self.sleepAfter
+        return !reduceMotion && (keepsDrifting || now - lastTouch < Self.sleepAfter)
     }
 }

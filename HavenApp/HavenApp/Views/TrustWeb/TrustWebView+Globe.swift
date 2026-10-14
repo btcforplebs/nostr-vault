@@ -30,14 +30,14 @@ extension TrustWebView {
                              myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
                              layerFaces: layerFaces,
                              filterLit: filterLit,
-                             running: profilePubkey == nil,
+                             running: !wotSheetOpen,
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
                              focus: card,
                              focusBridges: cardPath?.all ?? [],
                              onEmptyTap: { closeCard(); searchFocused = false },
-                             liveArcs: isWOTTab)
+                             liveArcs: isWOTTab, keepsDrifting: isWOTTab)
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             // Moving onto someone keeps the globe up: the trail's chip spins
             // instead. Only the very first globe has nothing to show.

@@ -40,6 +40,9 @@ struct TrustGlobeCanvas: View {
     /// The WOT tab's globe, where the bar's Live arrivals switch draws notes
     /// arriving at the relay. A post's globe never does.
     var liveArcs = false
+    /// The WOT tab's globe: it keeps drifting while on screen. A post's
+    /// globe drifts a while after a touch, then sleeps.
+    var keepsDrifting = false
 
     /// The globe shows about this many times `TrustMap`'s face counts: more
     /// pictures overall, not quite double (Logen, 10/14).
@@ -58,6 +61,9 @@ struct TrustGlobeCanvas: View {
     @State private var openNote: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
+    /// Off when the tab or the post leaves the screen: a drifting globe's
+    /// clock never runs behind another tab.
+    @State private var onScreen = false
     @State private var lastDrag: CGSize = .zero
     @State private var pinchBase: CGFloat = 1
     /// Reset by SwiftUI when a gesture ends *or is cancelled*; `onEnded` is
@@ -132,10 +138,13 @@ struct TrustGlobeCanvas: View {
             .overlay { previews(in: geo.size) }
         }
         .onAppear {
+            onScreen = true
+            scene.camera.keepsDrifting = keepsDrifting
             scene.reduceMotion = reduceMotion
             scene.focus(layer)
             scene.filter(filterLit)
         }
+        .onDisappear { onScreen = false }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
         .task(id: liveArcs && liveArcsOn) {
             // Listens while the switch is on and the globe is on screen; leaving
@@ -192,7 +201,7 @@ struct TrustGlobeCanvas: View {
     }
 
     /// False while a sheet or another app covers the globe: the clock stops.
-    private var clockAllowed: Bool { running && appIsActive && openNote == nil }
+    private var clockAllowed: Bool { onScreen && running && appIsActive && openNote == nil }
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 6)

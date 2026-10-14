@@ -146,10 +146,19 @@ final class TrustMapTests: XCTestCase {
         XCTAssertFalse(camera.wantsFrames(now: GlobeCamera.sleepAfter + 1, reduceMotion: false))
     }
 
-    func testTheGlobeDriftsForSecondsNotHalfAMinute() {
-        // The drift after you let go is a few seconds of life, then the clock sleeps.
-        XCTAssertLessThanOrEqual(GlobeCamera.sleepAfter, 8)
-        XCTAssertLessThan(GlobeCamera.driftAfter, GlobeCamera.sleepAfter)
+    func testTheWOTGlobeDriftsWithNoTimer() {
+        // Long past any sleep timer it still turns and still wants frames:
+        // only leaving the tab, the app or a sheet stops it.
+        var camera = GlobeCamera()
+        camera.keepsDrifting = true
+        var now = 0.0
+        while now < GlobeCamera.sleepAfter * 5 { now += 1 / 30; camera.step(dt: 1 / 30, now: now, reduceMotion: false) }
+        XCTAssertTrue(camera.wantsFrames(now: now, reduceMotion: false))
+        let before = camera.orientation
+        camera.step(dt: 1 / 30, now: now + 1 / 30, reduceMotion: false)
+        XCTAssertNotEqual(camera.orientation.vector, before.vector)
+        // Reduce Motion still holds it still, and lets the clock sleep.
+        XCTAssertFalse(camera.wantsFrames(now: now, reduceMotion: true))
     }
 
     func testStarLightMatchesTheKeysItWasBuiltFrom() {
