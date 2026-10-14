@@ -1,0 +1,56 @@
+/* Nostr Vault design tokens, taken from the iOS app (HavenApp/HavenApp/Services/Theming.swift).
+   The app has one appearance: OLED black with the orange accent. Spec: PLANS/NV_WEB_DESIGN.md. */
+:root {
+  color-scheme: dark;
+
+  /* Surface ramp: Apple's dark grouped-background steps (surface0..3). */
+  --bg: #000;
+  --s1: #1c1c1e;  /* cards, rows, sheets */
+  --s2: #2c2c2e;  /* a field or button inside a card */
+  --s3: #3a3a3c;  /* overlays, pressed, disabled fills */
+
+  /* Accent (AppTheme.orange). */
+  --accent: #e67326;
+  --accent-light: #fa9447;
+  --accent-dark: #b35214;
+  --accent-pale: rgb(230 115 38 / .10);
+  --accent-line: rgb(230 115 38 / .30);  /* note-card border, OLED weight */
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
+
+  /* Meaning colours: green = running only; teal = vouched-for only. */
+  --online: #33d980;
+  --verified: #33cc99;
+  --booting: #ffd60a;
+  --danger: #ff453a;
+
+  /* Text (iOS dark label ramp). */
+  --text: #fff;
+  --text-2: rgb(255 255 255 / .60);
+  --text-3: rgb(255 255 255 / .35);
+
+  /* Borders: a seam where fills already differ, a real line where the border is the only cue. */
+  --hair: rgb(255 255 255 / .14);
+  --strong: rgb(255 255 255 / .36);
+
+  /* Glass (tab bar, top chrome). */
+  --glass: rgb(40 40 42 / .55);
+  --glass-blur: blur(20px) saturate(1.6);
+
+  /* Type: the iOS ramp. */
+  --font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-round: ui-rounded, "SF Pro Rounded", var(--font);
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --t-title: 700 28px/1.15 var(--font);
+  --t-title2: 700 22px/1.2 var(--font);
+  --t-headline: 600 17px/1.3 var(--font);
+  --t-body: 400 17px/1.35 var(--font);
+  --t-sub: 400 15px/1.35 var(--font);
+  --t-foot: 400 13px/1.3 var(--font);
+  --t-cap: 400 11px/1.2 var(--font);
+
+  --radius: 12px;
+  --gutter: 16px;
+  --tabbar-h: 64px;
+  --tabbar-gap: 8px;  /* bar's distance above the home indicator */
+  --press: 120ms ease-out;
+}

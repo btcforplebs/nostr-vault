@@ -146,6 +146,7 @@ func assertHasAll(t *testing.T, label string, store eventstore.RelayWrapper, wan
 }
 
 func TestMacBackfillNegentropyCopiesEverything(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
 
@@ -176,6 +177,7 @@ func TestMacBackfillNegentropyCopiesEverything(t *testing.T) {
 }
 
 func TestMacBackfillCheckReportsMissing(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
 	// A store that accepts nothing: every event stays missing, and the check
@@ -191,6 +193,7 @@ func TestMacBackfillCheckReportsMissing(t *testing.T) {
 }
 
 func TestMacBackfillSupersededReplaceableIsNotMissing(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
 	// The Mac kept two versions of someone's follow list (both tag the owner);
@@ -214,6 +217,7 @@ func TestMacBackfillSupersededReplaceableIsNotMissing(t *testing.T) {
 }
 
 func TestMacBackfillPagedFallbackPassesRelayCap(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, false, 100)
 	f := setupMacFixture(t, mac)
 	// NIP-77 stays enabled: the copy must find out on its own (NEG-OPEN
@@ -256,6 +260,7 @@ func (s *refusingStore) Publish(context.Context, nostr.Event) error {
 }
 
 func TestMacBackfillPagedWalkCutShortIsNotDone(t *testing.T) {
+	skipWithoutSockets(t)
 	// A Mac that answers the first page and then refuses every older one: the
 	// walk must not be recorded as a finished copy.
 	mac := newFakeMac(t, false, 100, func(_ context.Context, f nostr.Filter) (bool, string) {
@@ -276,6 +281,7 @@ func TestMacBackfillPagedWalkCutShortIsNotDone(t *testing.T) {
 }
 
 func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
 	// Nobody is in the WoT: every mention is rejected (a cached stub), none stored.
@@ -297,6 +303,7 @@ func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
 }
 
 func TestMacBackfillIncompleteRetriesDaily(t *testing.T) {
+	skipWithoutSockets(t)
 	mac := newFakeMac(t, true, 0)
 	f := setupMacFixture(t, mac)
 	base, _ := macRelayURLs()

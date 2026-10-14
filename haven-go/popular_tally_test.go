@@ -192,6 +192,7 @@ func TestCoverageCannotExceedTheHour(t *testing.T) {
 // must preserve is the ranking, not every byte: singletons are deliberately
 // dropped.
 func TestSnapshotRoundTripPreservesRanking(t *testing.T) {
+	skipWithoutFS(t)
 	now := time.Now()
 	path := filepath.Join(t.TempDir(), "popular_tally.json")
 
@@ -221,6 +222,7 @@ func TestSnapshotRoundTripPreservesRanking(t *testing.T) {
 
 // A snapshot written yesterday must not resurrect yesterday's popularity.
 func TestSnapshotLoadDropsStaleBuckets(t *testing.T) {
+	skipWithoutFS(t)
 	now := time.Now()
 	path := filepath.Join(t.TempDir(), "popular_tally.json")
 
@@ -243,6 +245,7 @@ func TestSnapshotLoadDropsStaleBuckets(t *testing.T) {
 // A truncated or corrupt file must leave the tally usable and empty, not panic
 // and not half-load: the read path backfills from the network in that case.
 func TestSnapshotLoadToleratesGarbage(t *testing.T) {
+	skipWithoutFS(t)
 	now := time.Now()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "popular_tally.json")
@@ -396,6 +399,7 @@ func TestIngestSinceResumesFromWatermark(t *testing.T) {
 // under -race; an unsynchronised map here is a hard crash in production, not a
 // wrong answer.
 func TestTallyConcurrentAccess(t *testing.T) {
+	skipWithoutFS(t)
 	now := time.Now()
 	tally := newEngagementTally()
 	path := filepath.Join(t.TempDir(), "popular_tally.json")

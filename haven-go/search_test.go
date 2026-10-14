@@ -99,7 +99,7 @@ type havenUnderTest struct {
 
 func startHaven(t *testing.T) *havenUnderTest {
 	t.Helper()
-	t.Chdir(t.TempDir())
+	isolateTestStores(t)
 
 	ownerSK := nostr.GeneratePrivateKey()
 	owner, _ := nostr.GetPublicKey(ownerSK)
@@ -190,6 +190,7 @@ func req(t *testing.T, r *nostr.Relay, f nostr.Filter) ([]*nostr.Event, string) 
 }
 
 func TestSearchRoutes(t *testing.T) {
+	skipWithoutSockets(t)
 	h := startHaven(t)
 	now := time.Now().Unix()
 	otherSK := nostr.GeneratePrivateKey()
@@ -472,6 +473,7 @@ func waitSearchIdle(t *testing.T) {
 }
 
 func TestSearchConcurrencyCaps(t *testing.T) {
+	skipWithoutSockets(t)
 	h := startHaven(t)
 	saveAll(t, outboxDB, signedAt(t, h.ownerSK, 1, "qzqzqz found", time.Now().Unix()-10))
 	noMatch := nostr.Filter{Kinds: []int{1}, Search: "nothingmatches"}
@@ -597,7 +599,8 @@ func reqMany(t *testing.T, r *nostr.Relay, fs nostr.Filters) ([]*nostr.Event, st
 // TestScanSearchPaging walks a store bigger than one page, with a run of
 // same-second events straddling a page boundary, on both backends.
 func TestScanSearchPaging(t *testing.T) {
-	backends := map[string]func(path string) DBBackend{"badger": newBadgerBackend}
+	skipWithoutFS(t)
+	backends := map[string]func(path string) DBBackend{fallbackBackendName: fallbackBackend}
 	if lmdbFactory != nil {
 		backends["lmdb"] = lmdbFactory
 	}
@@ -684,7 +687,7 @@ func TestSearchLatency(t *testing.T) {
 		t.Skip("set HAVEN_SEARCH_BENCH=1")
 	}
 	const n = 100_000
-	backends := map[string]func(path string) DBBackend{"badger": newBadgerBackend}
+	backends := map[string]func(path string) DBBackend{fallbackBackendName: fallbackBackend}
 	if lmdbFactory != nil {
 		backends["lmdb"] = lmdbFactory
 	}

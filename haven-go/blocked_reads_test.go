@@ -14,6 +14,7 @@ import (
 // A block hides what the person already stored, on every read, and unblocking
 // brings it back. Runs against a real relay (startHaven) over websockets.
 func TestBlockedAuthorsAreNotServed(t *testing.T) {
+	skipWithoutSockets(t)
 	h := startHaven(t)
 	t.Cleanup(func() { blacklistOverride.Store(nil) })
 	now := time.Now().Unix()

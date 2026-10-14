@@ -1,0 +1,21 @@
+{
+  "name": "nostr-vault-web",
+  "version": "0.1.0",
+  "description": "Nostr Vault as a web app, with Haven running in the page as its own relay",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "npm run build && node server.mjs",
+    "test": "node --test test/"
+  },
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "^2.25.2",
+    "preact": "^10.27.2"
+  },
+  "private": true,
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^8.3.4"
+  }
+}

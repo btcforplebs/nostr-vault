@@ -1,0 +1,166 @@
+/* Nostr Vault web look. Values come from the iOS app (tokens.css); spec: PLANS/NV_WEB_DESIGN.md. */
+@import "./tokens.css";
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+img { max-width: 100%; }
+:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+
+/* Buttons: capsules; primary is the accent gradient. Press = scale .96 (iOS PressScaleButtonStyle). */
+button, a.button, .post-button, .chip {
+  font: var(--t-sub); font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 999px;
+  border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer;
+  transition: transform var(--press), opacity var(--press);
+}
+button:active:not(:disabled), .post-button:active, .chip:active { transform: scale(.96); }
+button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 700; }
+a.button { display: inline-flex; align-items: center; text-decoration: none; }
+button:disabled { background: var(--s3); border-color: transparent; color: var(--text-3); cursor: default; }
+button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weight: 600; }
+.muted { color: var(--text-2); } .small { font: var(--t-foot); } .mono { font: 12px var(--mono); }
+.error { color: var(--danger); }
+
+/* Shell. Room at the bottom for the floating tab bar + Post button. */
+.app { padding-bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 72px + env(safe-area-inset-bottom)); }
+.screen { padding: max(12px, env(safe-area-inset-top)) 0 16px; max-width: 640px; margin: 0 auto; }
+.screen-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+  padding: max(8px, env(safe-area-inset-top)) var(--gutter) 8px; margin-top: calc(-1 * max(12px, env(safe-area-inset-top))); }
+.screen-head h2 { margin: 0; font: var(--t-headline); padding: 8px 16px; border-radius: 999px;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.screen-head button.small { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+.status-line { padding: 0 var(--gutter) 10px; font: var(--t-foot); color: var(--text-3); }
+.empty { padding: 48px var(--gutter); text-align: center; color: var(--text-2); font: var(--t-sub); }
+.more { display: block; margin: 8px auto 16px; }
+
+/* Note card: floating, accent hairline (VaultNoteRow). Body runs full card width under the head row. */
+.note, .article { background: var(--s1); border: 1.5px solid var(--accent-line); border-radius: var(--radius);
+  margin: 0 var(--gutter) 12px; padding: 14px; }
+.note-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.author-name { font: var(--t-headline); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.note-time { margin-left: auto; flex: none; color: var(--text-3); font: var(--t-foot); }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; font: var(--t-body); }
+.note-media { display: block; width: 100%; max-height: 480px; object-fit: cover; border-radius: var(--radius); margin: 10px 0 2px; background: var(--s2); }
+.note-text a, .mention { color: var(--accent-light); }
+.repost-line { display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; color: var(--text-2); font: var(--t-foot); }
+.repost-line svg { color: var(--accent); flex: none; }
+.repost-line .author-name { font: inherit; font-weight: 600; color: var(--text); }
+
+.avatar { border-radius: 50%; object-fit: cover; flex: none; display: block; background: var(--s2); }
+.avatar.ring { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent-dark); }
+
+/* Tab bar: floating glass capsule above the home indicator. */
+.tabbar { position: fixed; z-index: 10; left: var(--gutter); right: var(--gutter); bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
+  max-width: 420px; margin: 0 auto; height: var(--tabbar-h); display: flex; justify-content: space-around; align-items: center;
+  border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .5); }
+.tab { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: var(--text-2); font: 500 10px/1 var(--font); }
+.tab.on { color: var(--accent); font-weight: 600; }
+.tab-avatar { display: block; border-radius: 50%; }
+.tab.on .tab-avatar { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Post: orange capsule one row above the tab bar, bottom-right (iOS FeedView). */
+.post-button { position: fixed; z-index: 10; right: max(var(--gutter), calc(50% - 320px + var(--gutter)));
+  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 20px; border: 0;
+  background: var(--accent-grad); color: #fff; font: 700 15px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
+
+/* Compose. */
+.compose { display: block; width: calc(100% - 2 * var(--gutter)); margin: 4px var(--gutter) 12px; min-height: 160px; resize: vertical;
+  background: var(--s1); color: var(--text); border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px; font: var(--t-body); }
+.compose::placeholder { color: var(--text-3); }
+.compose:focus { outline: none; border-color: var(--accent-line); }
+.screen > button.primary { margin: 0 var(--gutter); width: calc(100% - 2 * var(--gutter)); }
+.result { margin: 16px var(--gutter); padding: 14px; display: grid; gap: 6px; font: var(--t-sub); background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
+
+/* Profile header. */
+.profile-header { margin-top: calc(-1 * max(12px, env(safe-area-inset-top))); }
+.profile-header .banner { position: relative; height: 200px; background: linear-gradient(135deg, var(--accent-dark), var(--s1)); overflow: hidden; }
+.profile-header .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-header .banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 45%, var(--bg)); }
+.profile-id { position: relative; display: flex; gap: 14px; align-items: flex-end; padding: 0 var(--gutter); margin-top: -40px; }
+.profile-names { min-width: 0; padding-bottom: 4px; }
+.profile-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.profile-name-row h1 { margin: 0; font: var(--t-title2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.you-badge { flex: none; padding: 3px 6px; border-radius: 4px; background: var(--accent-pale); color: var(--accent); font: 700 11px/1 var(--font); letter-spacing: .08em; }
+.profile-nip05 { color: var(--text-2); font: var(--t-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-header .about { margin: 12px var(--gutter) 0; font: var(--t-sub); white-space: pre-wrap; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px var(--gutter) 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; background: var(--s1); border-color: var(--hair);
+  color: var(--text); font: var(--t-foot); font-weight: 500; max-width: 100%; }
+.chip svg { color: var(--accent); flex: none; }
+.counts { padding: 12px var(--gutter) 0; font: var(--t-sub); color: var(--text-2); }
+.counts b { color: var(--text); font-weight: 700; font-size: 17px; }
+
+/* Segments: accent text + 2px underline (iOS profile tabs). */
+.segmented { display: flex; margin: 16px 0 12px; border-bottom: 1px solid var(--hair); }
+.segmented button { flex: 1; min-height: 44px; border: 0; border-radius: 0; background: none; color: var(--text-2); box-shadow: inset 0 -2px 0 transparent; }
+.segmented button.on { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.segmented button:active { transform: none; }
+
+.article { cursor: pointer; }
+.article h3 { margin: 10px 0 4px; font: var(--t-headline); }
+.article p { margin: 6px 0 0; font: var(--t-sub); color: var(--text-2); }
+.article-image { display: block; width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; }
+.article-body { white-space: pre-wrap; margin-top: 10px; font: var(--t-body); }
+
+/* Search: box, uppercase section labels, person rows (a card-shaped button when tappable, a plain card when not). */
+.search-form { padding: 0 var(--gutter) 12px; }
+.section-label { padding: 12px var(--gutter) 8px; font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.person-row { display: flex; align-items: center; gap: 12px; width: calc(100% - 2 * var(--gutter)); min-height: 64px; margin: 0 var(--gutter) 8px; padding: 10px 14px;
+  background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); color: var(--text); text-align: left; font: inherit; }
+button.person-row:hover { border-color: var(--accent-line); }
+.person-names { display: grid; min-width: 0; }
+.person-sub { color: var(--text-3); font: var(--t-foot); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Notifications: "A and B reacted" wraps (names too), unlike a note's one-line author. The about line sits under it. */
+.notif-who { flex: 1; min-width: 0; font: var(--t-headline); overflow-wrap: anywhere; }
+.notif-who .author-name { font: inherit; white-space: normal; }
+.notification .repost-line { margin: 8px 0 0; align-items: baseline; }
+.notification .repost-line > :first-child { flex: none; }
+.notification .repost-line > :last-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* Thread: nested replies step in 16px a level (capped in JS, passed as --indent) with a thin rail in the step; the
+   tapped reply gets a full-accent border. The rail is 0 wide at --indent 0, so direct replies sit flush. */
+.thread-reply { position: relative; padding-left: calc(var(--indent, 0) * 16px); }
+.thread-reply::before { content: ""; position: absolute; top: 0; bottom: 12px; left: calc(var(--gutter) + var(--indent, 0) * 16px - 9px);
+  width: calc(min(var(--indent, 0), 1) * 2px); border-radius: 1px; background: var(--accent-line); }
+[aria-current] .note { border-color: var(--accent); }
+
+/* Relay tab: status cards, hairline border (status, not content). */
+.card { background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); margin: 0 var(--gutter) 12px; padding: 16px; }
+.card h3 { margin: 0 0 4px; font: var(--t-headline); }
+.card > .muted.small { margin: 0 0 10px; }
+.card .k { font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.relay-state { display: flex; align-items: center; gap: 8px; font: var(--t-headline); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); } .dot.on { background: var(--online); box-shadow: 0 0 8px rgb(51 217 128 / .6); }
+.stats { display: flex; gap: 24px; margin: 14px 0; }
+.stats .v { font: 600 22px var(--mono); }
+.card .fips-address { margin: 6px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--hair);
+  color: var(--text); font: 13px/1.4 var(--mono); word-break: break-all; user-select: all; }
+.card textarea { width: 100%; margin-top: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
+.card textarea:focus { outline: none; border-color: var(--strong); }
+.card .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.card pre { white-space: pre-wrap; font: 11px var(--mono); color: var(--text-2); margin: 0; }
+.card > button { margin-top: 12px; }
+
+/* Sign-in + splash. */
+.signin, .splash { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 14px;
+  padding: 24px; max-width: 420px; margin: 0 auto; text-align: center; }
+.signin-logo, .splash img { width: 72px; height: 72px; margin: 0 auto 4px; border-radius: 16px; }
+.signin h1 { margin: 0; font: var(--t-title); }
+.signin > p { margin: 0 0 8px; font: var(--t-sub); }
+.signin button { width: 100%; }
+.field { display: grid; gap: 6px; text-align: left; font: var(--t-foot); color: var(--text-2); }
+.field input { font: var(--t-body); min-height: 48px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
+.field input:focus { outline: none; border-color: var(--accent-line); }
+.field input::placeholder { color: var(--text-3); }
+
+/* Storage note (sign-in + Relay): the browser's copy can be cleared; the answer to persist() under it. */
+.storage-note p { margin: 0; }
+.card .storage-note { margin-top: 10px; }
+.storage-note .storage-kept { margin-top: 4px; font-weight: 600; color: var(--text-2); }
+.storage-note .storage-kept.on { color: var(--online); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
