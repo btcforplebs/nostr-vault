@@ -275,12 +275,11 @@ final class GlobeArrivalStream: ObservableObject {
                 onEvent(event)
             }
         client.connect(url: url)
-        let subId = "arcs-\(UUID().uuidString.prefix(8))"
+        // Split, so a relay's size cap can't refuse every filter at once.
+        let requests = GlobeArcs.requests(filters, subId: "arcs-\(UUID().uuidString.prefix(8))")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak client] in
             guard let client else { return }
-            let req: [Any] = ["REQ", subId] + filters
-            if let data = try? JSONSerialization.data(withJSONObject: req),
-               let text = String(data: data, encoding: .utf8) {
+            for text in requests {
                 client.send(text: text)
             }
         }

@@ -216,6 +216,37 @@ enum GlobeArcs {
         return min(fadeIn, stage(of: line, at: now).alpha)
     }
 
+    /// The biggest REQ message sent to one relay. Relays cap a message's
+    /// size (relay.btcforplebs.com at 128 KB) and refuse a bigger one whole,
+    /// with a NOTICE: every filter in it is lost, not just the extra ones.
+    static let maxRequestBytes = 60_000
+
+    /// `filters` as REQ messages, each with its own subscription id and
+    /// under `maxBytes` (a single filter bigger than that goes on its own).
+    /// Filters keep their order.
+    static func requests(_ filters: [[String: Any]], subId: String,
+                         maxBytes: Int = maxRequestBytes) -> [String] {
+        func text(_ id: String, _ group: [[String: Any]]) -> String? {
+            guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", id] + group, options: [.sortedKeys]) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        var groups: [[[String: Any]]] = []
+        var current: [[String: Any]] = []
+        for filter in filters {
+            let candidate = current + [filter]
+            if !current.isEmpty, (text(subId, candidate)?.utf8.count ?? 0) > maxBytes {
+                groups.append(current)
+                current = [filter]
+            } else {
+                current = candidate
+            }
+        }
+        if !current.isEmpty { groups.append(current) }
+        return groups.enumerated().compactMap { i, group in
+            text(groups.count == 1 ? subId : "\(subId)-\(i)", group)
+        }
+    }
+
     static func ease(_ t: Double) -> Double { t * t * (3 - 2 * t) }
 
     /// A point `t` of the way along a line from `a` to `b`, lifted off the

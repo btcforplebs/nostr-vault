@@ -100,6 +100,36 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertNotNil(GlobeArcs.arrival(note(2, by: key(1), to: [key(2)], kind: 16), now: now))
     }
 
+    func testABigRequestIsSplitUnderTheRelaysSizeCap() {
+        // His follows' reposts and the Discover feed as one REQ came to 170 KB,
+        // and relay.btcforplebs.com refused it whole ("message too large").
+        let authors = (0..<1_500).map(key)
+        let filters: [[String: Any]] = stride(from: 0, to: authors.count, by: 500).map {
+            ["kinds": [1, 6, 16], "since": 1, "authors": Array(authors[$0..<$0 + 500])]
+        } + [["kinds": [1, 6, 16], "since": 1]]
+        let one = try! JSONSerialization.data(withJSONObject: ["REQ", "arcs-x"] + filters)
+        XCTAssertGreaterThan(one.count, 100_000)
+        let requests = GlobeArcs.requests(filters, subId: "arcs-x")
+        XCTAssertGreaterThan(requests.count, 1)
+        var ids: [String] = [], sent: [[String: Any]] = []
+        for text in requests {
+            XCTAssertLessThanOrEqual(text.utf8.count, GlobeArcs.maxRequestBytes)
+            let req = try! JSONSerialization.jsonObject(with: Data(text.utf8)) as! [Any]
+            XCTAssertEqual(req[0] as? String, "REQ")
+            ids.append(req[1] as! String)
+            sent += req.dropFirst(2).map { $0 as! [String: Any] }
+        }
+        // Every filter goes, once, in order, each REQ under its own id.
+        XCTAssertEqual(Set(ids).count, ids.count)
+        XCTAssertEqual(sent.map { ($0["authors"] as? [String])?.first }, filters.map { ($0["authors"] as? [String])?.first })
+        // A small REQ stays one message with the id it was given.
+        let small = GlobeArcs.requests([["kinds": [1], "since": 1]], subId: "arcs-y")
+        XCTAssertEqual(small.count, 1)
+        XCTAssertTrue(small[0].hasPrefix("[\"REQ\",\"arcs-y\","))
+        // A single filter past the cap still goes, on its own.
+        XCTAssertEqual(GlobeArcs.requests(filters, subId: "z", maxBytes: 10).count, filters.count)
+    }
+
     func testARepostWithNoPTagFliesIntoYou() {
         // Most reposts on some relays carry only the e tag: no one to point
         // at, so like any note aimed at no one it flies into you.
