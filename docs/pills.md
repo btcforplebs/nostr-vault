@@ -110,6 +110,9 @@ sound. They are gathered into **one** pill with **one** sound:
 - Gathering stops 12 s after the return if nothing came, otherwise 6 s after
   the last arrival, and never later than 30 s after the return. The pill
   shows at least 6 s. After that, arrivals get the ordinary top pill.
+- An event created before the return came in while you were away, however
+  late the relay hands it over: for up to 5 minutes after the return it
+  joins the pill, silently, bringing it back if it had gone.
   Rules and tests: `ReturnWindow`.
 
 While the app is in front, nothing changes: each arrival is its own top pill.
