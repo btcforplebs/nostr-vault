@@ -91,6 +91,16 @@ struct SearchFilter: Equatable {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// Caption under the search field: "People you follow · Last week",
+    /// or just the one that is on. Full labels, since there is room here.
+    /// `nil` when nothing is filtered.
+    var caption: String? {
+        var parts: [String] = []
+        if who != .everyone { parts.append(who.label) }
+        if when != .anyTime { parts.append(when.label) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Spoken form for accessibility: "People you follow, Last week".
     var accessibilitySummary: String {
         isActive ? [who.label, when.label].joined(separator: ", ") : "No filter"

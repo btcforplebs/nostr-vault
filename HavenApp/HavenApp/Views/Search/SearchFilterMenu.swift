@@ -79,22 +79,30 @@ struct SearchFilterCaption: View {
     let color: Color
 
     var body: some View {
-        if scope.isActive {
+        if let caption = scope.caption {
             HStack(spacing: 6) {
                 Image(systemName: "line.3.horizontal.decrease.circle.fill")
                     .font(.appSystem(size: 11, weight: .semibold))
                     .foregroundColor(color)
-                Text(scope.accessibilitySummary)
+                Text(caption)
                     .font(.appSystem(size: 12, weight: .semibold))
                     .foregroundColor(.primary.opacity(0.85))
                     .lineLimit(1)
+                    .accessibilityLabel(scope.accessibilitySummary)
                 Spacer(minLength: 8)
-                Button("Clear filter") {
+                Button {
                     scope = .all
+                } label: {
+                    Text("Clear filter")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(color)
+                        // 12 pt text is a small target: pad the hit area out
+                        // to 44 pt without moving the text or the row.
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .font(.appSystem(size: 12, weight: .semibold))
-                .foregroundColor(color)
                 .buttonStyle(.plain)
+                .frame(height: 16)
             }
             .padding(.horizontal, 4)
             .transition(.opacity.combined(with: .move(edge: .top)))

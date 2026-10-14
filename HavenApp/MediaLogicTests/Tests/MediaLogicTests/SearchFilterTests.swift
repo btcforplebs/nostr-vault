@@ -75,4 +75,11 @@ final class SearchFilterTests: XCTestCase {
         XCTAssertEqual(SearchFilter(who: .you, when: .day).summary, "You · 24 h")
         XCTAssertEqual(SearchFilter(who: .you, when: .day).accessibilitySummary, "You, Last 24 hours")
     }
+
+    func testCaptionUsesFullLabelsForOnlyWhatIsOn() {
+        XCTAssertNil(SearchFilter.all.caption)
+        XCTAssertEqual(SearchFilter(who: .follows).caption, "People you follow")
+        XCTAssertEqual(SearchFilter(when: .week).caption, "Last week")
+        XCTAssertEqual(SearchFilter(who: .follows, when: .week).caption, "People you follow · Last week")
+    }
 }
