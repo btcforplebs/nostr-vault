@@ -46,9 +46,9 @@ export function ThreadScreen({ ctx, id }) {
     let live = true
     ;(async () => {
       const start = await threadStart(vault, id)
+      if (!live) return // a late run for the previous id: its carried note isn't this thread's
       const rid = start.rootId
       extra.current = start.extra
-      if (!live) return
       setRootId(rid)
       await reload(rid)
       if (live) await sync()

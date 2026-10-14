@@ -96,10 +96,22 @@ export async function repostedNote(vault, id) {
   for (const repost of await vault.feed.query({ kinds: [6], "#e": [id], limit: 20 })) {
     let inner
     try { inner = JSON.parse(repost.content) } catch { continue }
-    // A fresh copy: verifyEvent trusts a "verified" flag an event object can carry.
-    if (inner?.id === id && inner.kind === 1 && verifyEvent({ ...inner })) return inner
+    if (inner?.id !== id || inner.kind !== 1) continue
+    const note = verifiedCopy(inner)
+    if (note) return note
   }
   return null
+}
+
+/** `ev` checked against its signature, as a copy holding only the signed fields: verifyEvent trusts a "verified"
+ *  flag an event object can carry, and that flag survives a spread. A malformed event never throws, it is just not
+ *  verified. -> the copy, or null */
+export function verifiedCopy(ev) {
+  try {
+    const { id, pubkey, created_at, kind, tags, content, sig } = ev
+    const copy = { id, pubkey, created_at, kind, tags, content, sig }
+    return verifyEvent(copy) ? copy : null
+  } catch { return null }
 }
 
 /** Everything Haven /feed has for this thread. Works offline. */

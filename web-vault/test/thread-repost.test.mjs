@@ -6,8 +6,9 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { generateSecretKey, finalizeEvent } from "nostr-tools/pure"
-import { buildThread, flattenThread, readThread, repostedNote } from "../src/net/thread.js"
+import { generateSecretKey, finalizeEvent, verifyEvent, verifiedSymbol } from "nostr-tools/pure"
+import { h, render } from "preact"
+import { buildThread, flattenThread, readThread, repostedNote, verifiedCopy } from "../src/net/thread.js"
 
 // Node can't load .jsx: compile it with Vite's Oxc transform, as in storage-note.test.mjs.
 registerHooks({
@@ -19,7 +20,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { threadStart } = await import("../src/screens/ThreadScreen.jsx")
+const { threadStart, ThreadScreen } = await import("../src/screens/ThreadScreen.jsx")
 
 const now = Math.floor(Date.now() / 1000)
 const author = generateSecretKey(), reposter = generateSecretKey(), replier = generateSecretKey()
@@ -85,4 +86,77 @@ test("offline, a repost of a reply whose root isn't stored opens under the reply
 test("a stored note still opens under its root, stored or not, and an unknown id under itself", async () => {
   assert.equal((await threadStart(feedOf([reply]), reply.id)).rootId, original.id)
   assert.deepEqual(await threadStart(feedOf([]), original.id), { rootId: original.id, extra: [] })
+})
+
+test("a note carrying a \"verified\" flag is still checked against its signature", () => {
+  const forged = { ...original, content: "words the author never signed", [verifiedSymbol]: true }
+  assert.equal(verifyEvent({ ...forged }), true) // the trap: a spread keeps the flag, so verifyEvent takes its word
+  assert.equal(verifiedCopy(forged), null)
+  assert.deepEqual(verifiedCopy({ ...original, [verifiedSymbol]: true, extra: 1 }), { ...original })
+})
+
+test("a malformed embedded note is skipped, never thrown", async () => {
+  for (const bad of [null, 5, "x", { ...original, tags: 5 }, { ...original, tags: [[{}]] }, { ...original, created_at: {} }])
+    assert.equal(verifiedCopy(bad), null)
+  const malformed = { ...original, tags: { length: 1 } }
+  assert.equal(await repostedNote(feedOf([repost(malformed)]), original.id), null)
+})
+
+// Just enough DOM for preact to render ThreadScreen into and for the test to read text back.
+class Node {
+  constructor(nodeType, localName) { this.nodeType = nodeType; this.localName = localName; this.childNodes = []; this.parentNode = null; this.style = {}; this.attributes = {} }
+  get firstChild() { return this.childNodes[0] ?? null }
+  get nextSibling() { const s = this.parentNode?.childNodes; return s ? s[s.indexOf(this) + 1] ?? null : null }
+  insertBefore(n, ref) {
+    n.parentNode?.removeChild(n)
+    const i = ref ? this.childNodes.indexOf(ref) : -1
+    i < 0 ? this.childNodes.push(n) : this.childNodes.splice(i, 0, n)
+    n.parentNode = this
+    return n
+  }
+  appendChild(n) { return this.insertBefore(n, null) }
+  removeChild(n) { this.childNodes.splice(this.childNodes.indexOf(n), 1); n.parentNode = null; return n }
+  remove() { this.parentNode?.removeChild(this) }
+  setAttribute(k, v) { this.attributes[k] = String(v) }
+  removeAttribute(k) { delete this.attributes[k] }
+  addEventListener() {}
+  removeEventListener() {}
+  get textContent() { return this.nodeType === 3 ? this.data : this.childNodes.map(c => c.textContent).join("") }
+  set textContent(v) { this.childNodes = []; if (v) this.appendChild(document.createTextNode(v)) }
+}
+
+test("a late opening read for the previous note doesn't swap in its carried note", async () => {
+  globalThis.document = {
+    createElement: name => new Node(1, name),
+    createElementNS: (_, name) => new Node(1, name),
+    createTextNode: data => Object.assign(new Node(3, "#text"), { data: String(data) }),
+  }
+  Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
+  // A reposted note, then a reposted reply whose root is stored: only the carried copy puts that reply in its thread.
+  // The first note's opening read is held until the second thread is reading its replies, so the stale run lands
+  // between the second's threadStart and its render.
+  const first = finalizeEvent({ kind: 1, created_at: now - 50, tags: [], content: "the first note" }, author)
+  const events = [repost(first), original, repost(replyToOriginal)]
+  const held = []
+  const hold = f => new Promise(resolve => held.push({ f, go: () => resolve(feedOf(events).feed.query(f)) }))
+  const isFirstOpen = f => f.ids?.[0] === first.id && !held.some(x => x.f === f)
+  const isSecondReplies = f => f.kinds?.[0] === 1 && f["#e"]?.[0] === original.id
+  let holding = true
+  const vault = { feed: { query: f => holding && (isFirstOpen(f) || isSecondReplies(f)) ? hold(f) : feedOf(events).feed.query(f) } }
+  const ctx = { vault, account: { relays: { read: [] } } }
+  const until = async (cond, what) => { for (let i = 0; i < 200; i++) { if (cond()) return; await new Promise(r => setTimeout(r, 5)) } assert.fail(`timed out waiting for ${what}`) }
+
+  const el = document.createElement("div")
+  render(h(ThreadScreen, { ctx, id: first.id }), el)
+  await until(() => held.length === 1, "the first note's opening read")
+  render(h(ThreadScreen, { ctx, id: replyToOriginal.id }), el)
+  await until(() => held.length === 2, "the second note's reply read")
+  holding = false
+  held[0].go() // the first note's run finishes late
+  await new Promise(r => setTimeout(r, 20))
+  held[1].go()
+  await until(() => /the reposted note/.test(el.textContent), "the second thread on screen")
+  assert.match(el.textContent, /a reposted reply/)
+  assert.doesNotMatch(el.textContent, /No replies yet\./)
+  render(null, el)
 })
