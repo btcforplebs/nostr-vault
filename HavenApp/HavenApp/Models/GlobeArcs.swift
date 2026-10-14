@@ -1,0 +1,197 @@
+import Foundation
+import simd
+
+/// Live arrival arcs on the Web of Trust globe. A note reaching the relay
+/// draws one line from its author to each person it is aimed at: one to you
+/// for a note to you, one to each person a reply or quote is for. A note
+/// aimed at no one only lights its author.
+enum GlobeArcs {
+    /// Most lines on the globe at once. A new one past this sends the oldest
+    /// on its way out early, so the globe never fills up with lines.
+    static let maxLines = 10
+    /// People one note draws lines to: a reply to a crowd stays a few lines.
+    static let maxTargets = 4
+    /// Arrivals waiting their turn. A burst past this drops its oldest:
+    /// the globe shows what is arriving now, not a backlog.
+    static let maxWaiting = 8
+    /// Arrivals are let onto the globe at most this often, so a burst
+    /// reads as a stream rather than a flash.
+    static let spacing: TimeInterval = 0.7
+    /// A line runs from its author to its target over this long,
+    static let travel: TimeInterval = 1.6
+    /// stays drawn this long,
+    static let hold: TimeInterval = 2.6
+    /// and drains into its target as it fades over this long.
+    static let fade: TimeInterval = 2.2
+    static var life: TimeInterval { travel + hold + fade }
+    /// A line sent out early to make room fades this fast.
+    static let retireFade: TimeInterval = 0.7
+    /// A light on its own, for a note aimed at no one.
+    static let pulseLife: TimeInterval = 2.4
+    /// A note older than this when it arrives is a relay catching up, not an arrival.
+    static let maxAge: TimeInterval = 180
+    /// Notes, replies and quotes.
+    static let kinds = [1]
+
+    /// One note: who wrote it and who it is aimed at.
+    struct Arrival: Equatable {
+        let id: String
+        let author: String
+        let targets: [String]
+    }
+
+    /// From a relay `EVENT`'s event: its `p` tags in order, once each,
+    /// without the author. nil for anything that isn't a fresh note.
+    static func arrival(_ event: [String: Any], now: Date = Date()) -> Arrival? {
+        guard let kind = event["kind"] as? Int, kinds.contains(kind),
+              let id = event["id"] as? String, isKey(id),
+              let author = event["pubkey"] as? String, isKey(author) else { return nil }
+        if let created = event["created_at"] as? Double,
+           now.timeIntervalSince1970 - created > maxAge { return nil }
+        var targets: [String] = []
+        for tag in event["tags"] as? [[String]] ?? [] where tag.count > 1 && tag[0] == "p" {
+            let key = tag[1].lowercased()
+            guard isKey(key), key != author, !targets.contains(key) else { continue }
+            targets.append(key)
+            if targets.count == maxTargets { break }
+        }
+        return Arrival(id: id, author: author, targets: targets)
+    }
+
+    private static func isKey(_ s: String) -> Bool {
+        s.utf8.count == 64 && s.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) || (65...70).contains($0) }
+    }
+
+    struct Line: Equatable {
+        let from: String
+        let to: String
+        /// Aimed at you: drawn in its own colour.
+        let toMe: Bool
+        let born: TimeInterval
+        /// Set when a newer line needs the room: it fades from here.
+        var retired: TimeInterval?
+    }
+
+    struct Pulse: Equatable {
+        let key: String
+        let born: TimeInterval
+    }
+
+    /// Where a line is at a moment: drawn from `tail` to `head` (0 at the
+    /// author, 1 at the target) at `alpha`.
+    struct Stage: Equatable {
+        let head: Double
+        let tail: Double
+        let alpha: Double
+        /// 0 to 1 as the line lands: the target's light swells, then settles.
+        let landing: Double
+    }
+
+    /// Everything live on the globe, and what is waiting to go on.
+    struct Board {
+        private(set) var lines: [Line] = []
+        private(set) var pulses: [Pulse] = []
+        private(set) var waiting: [Arrival] = []
+        private var seen: [String] = []
+        private var lastRelease: TimeInterval = -.infinity
+
+        var isIdle: Bool { lines.isEmpty && pulses.isEmpty && waiting.isEmpty }
+
+        /// Queues a note; one already seen (another relay sent it too) is skipped.
+        mutating func add(_ arrival: Arrival) {
+            guard !seen.contains(arrival.id) else { return }
+            seen.append(arrival.id)
+            if seen.count > 256 { seen.removeFirst(seen.count - 256) }
+            waiting.append(arrival)
+            if waiting.count > GlobeArcs.maxWaiting { waiting.removeFirst(waiting.count - GlobeArcs.maxWaiting) }
+        }
+
+        /// Lets the next note on when its turn comes and drops what has faded.
+        /// Returns the note let on, if any.
+        @discardableResult
+        mutating func step(now: TimeInterval, me: String) -> Arrival? {
+            lines.removeAll { GlobeArcs.stage(of: $0, at: now).alpha <= 0 }
+            pulses.removeAll { now - $0.born >= GlobeArcs.pulseLife }
+            guard !waiting.isEmpty, now - lastRelease >= GlobeArcs.spacing else { return nil }
+            let next = waiting.removeFirst()
+            lastRelease = now
+            if next.targets.isEmpty {
+                pulses.append(Pulse(key: next.author, born: now))
+            }
+            for target in next.targets {
+                lines.append(Line(from: next.author, to: target, toMe: target == me, born: now))
+            }
+            // Over the cap: the oldest still-standing lines start their fade now.
+            var standing = lines.filter { $0.retired == nil }.count
+            for i in lines.indices where standing > GlobeArcs.maxLines && lines[i].retired == nil {
+                lines[i].retired = now
+                standing -= 1
+            }
+            return next
+        }
+
+        mutating func clear() {
+            lines = []
+            pulses = []
+            waiting = []
+        }
+    }
+
+    static func stage(of line: Line, at now: TimeInterval, reduceMotion: Bool = false) -> Stage {
+        let age = max(0, now - line.born)
+        let head = reduceMotion ? 1 : ease(min(1, age / travel))
+        let landing = reduceMotion ? 0 : max(0, min(1, (age - travel) / 1.2))
+        var alpha = 1.0, tail = 0.0
+        if age > travel + hold {
+            let f = min(1, (age - travel - hold) / fade)
+            alpha = 1 - f
+            if !reduceMotion { tail = ease(f) }
+        }
+        if let retired = line.retired {
+            alpha = min(alpha, 1 - min(1, max(0, now - retired) / retireFade))
+        }
+        if age < 0.25 { alpha = min(alpha, age / 0.25) }
+        return Stage(head: head, tail: tail, alpha: max(0, alpha), landing: landing)
+    }
+
+    /// How brightly an endpoint's face shows: in as its line sets out,
+    /// out as it fades.
+    static func faceAlpha(of line: Line, at now: TimeInterval) -> Double {
+        let age = now - line.born
+        let fadeIn = min(1, max(0, age / 0.8))
+        return min(fadeIn, stage(of: line, at: now).alpha)
+    }
+
+    static func ease(_ t: Double) -> Double { t * t * (3 - 2 * t) }
+
+    /// A point `t` of the way along a line from `a` to `b`, lifted off the
+    /// globe so it reads as a flight rather than a cut through it. `facing`
+    /// is toward the viewer: a line bent to one side bends across the screen.
+    static func point(from a: SIMD3<Double>, to b: SIMD3<Double>, at t: Double,
+                      facing: SIMD3<Double> = SIMD3(0, 0, 1)) -> SIMD3<Double> {
+        let c = control(a, b, facing: facing)
+        let u = 1 - t
+        return u * u * a + 2 * u * t * c + t * t * b
+    }
+
+    /// The bend: away from the core, or to one side when the line runs at
+    /// or through the core.
+    static func control(_ a: SIMD3<Double>, _ b: SIMD3<Double>,
+                        facing: SIMD3<Double> = SIMD3(0, 0, 1)) -> SIMD3<Double> {
+        let mid = (a + b) / 2
+        let span = simd_length(b - a)
+        guard span > 1e-6 else { return mid }
+        let lift = 0.32 * span
+        let along = (b - a) / span
+        // Out from the core, square to the line: a line running into the core
+        // has nothing square to it there, and bends sideways instead.
+        let out = mid - simd_dot(mid, along) * along
+        if simd_length(out) > 0.25 * span {
+            return mid + simd_normalize(out) * lift
+        }
+        var side = simd_cross(along, facing)
+        if simd_length(side) < 1e-3 { side = simd_cross(along, SIMD3(0, 1, 0)) }
+        if simd_length(side) < 1e-3 { side = simd_cross(along, SIMD3(1, 0, 0)) }
+        return mid + simd_normalize(side) * lift
+    }
+}

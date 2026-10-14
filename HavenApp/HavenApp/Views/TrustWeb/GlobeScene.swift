@@ -92,6 +92,16 @@ final class GlobeScene: ObservableObject {
     private var lastTick: TimeInterval?
     private var sleepQueued = false
 
+    /// Live arrival arcs: notes flying across the globe as they reach the
+    /// relay, while the bar's switch is on.
+    private var board = GlobeArcs.Board()
+    private var liveArcs = false
+    /// People drawn with a picture because a line or light is on them.
+    private var arcKeys: Set<String> = []
+    private var arcKeysQueued = false
+    /// The frame clock's time, for drawing the arcs where it left them.
+    private var now: TimeInterval = 0
+
     // MARK: Data
 
     func load(_ frame: TrustWebView.Frame, me: String, author: String, myFollows: Set<String>, haze: [String],
@@ -228,6 +238,7 @@ final class GlobeScene: ObservableObject {
         var symbols = (center == author ? [author] : [center, author]) + faces
         let traced = traceTarget.map { [$0] + traceBridges } ?? []
         for key in traced where !symbols.contains(key) { symbols.append(key) }
+        for key in arcKeys.sorted() where !symbols.contains(key) { symbols.append(key) }
         let pictured = Set([center] + (traceTarget == nil ? [author] + faces : traced))
         for i in keys.indices { isFace[i] = pictured.contains(keys[i]) }
         if faceKeys != symbols { faceKeys = symbols }
@@ -327,6 +338,41 @@ final class GlobeScene: ObservableObject {
         }
     }
 
+    // MARK: Live arcs
+
+    /// Turns the arrival arcs on or off. Off clears what is on the globe.
+    func setLiveArcs(_ on: Bool) {
+        guard on != liveArcs else { return }
+        liveArcs = on
+        if !on {
+            board.clear()
+            syncArcKeys()
+        }
+        wake()
+    }
+
+    /// A note reached the relay: it takes its turn on the globe.
+    func arrive(_ arrival: GlobeArcs.Arrival) {
+        guard liveArcs, hasLoaded else { return }
+        board.add(arrival)
+        wake()
+    }
+
+    /// Who the arcs need pictures for: the ends of every line and light.
+    private var arcPeople: Set<String> {
+        var keys = Set(board.lines.flatMap { [$0.from, $0.to] })
+        keys.formUnion(board.pulses.map(\.key))
+        keys.remove(center)
+        return keys
+    }
+
+    private func syncArcKeys() {
+        let keys = arcPeople
+        guard keys != arcKeys else { return }
+        arcKeys = keys
+        seatFaces()
+    }
+
     // MARK: Frame clock
 
     func tick(now: TimeInterval) {
@@ -342,7 +388,19 @@ final class GlobeScene: ObservableObject {
             layerDim += (dimTarget - layerDim) * (1 - exp(-dt * 8))
             if abs(dimTarget - layerDim) < 0.005 || reduceMotion { layerDim = dimTarget }
         }
-        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget
+        self.now = now
+        let arcsBefore = board.lines.count + board.pulses.count
+        board.step(now: now, me: me)
+        if board.lines.count + board.pulses.count != arcsBefore, !arcKeysQueued {
+            // Not from inside the draw: the pictures publish on the next turn.
+            arcKeysQueued = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.arcKeysQueued = false
+                self.syncArcKeys()
+            }
+        }
+        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || !board.isIdle
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -402,6 +460,8 @@ final class GlobeScene: ObservableObject {
     /// One camera's projection, worked out once per frame.
     private struct Projector {
         let turn: simd_double3x3
+        /// Toward the viewer, in the globe's own space.
+        var facing: SIMD3<Double> { turn.transpose * SIMD3(0, 0, 1) }
         let cameraZ: Double
         let unit: Double
         let mid: CGPoint
@@ -589,6 +649,9 @@ final class GlobeScene: ObservableObject {
         }
         fill(.hot, accent)
 
+        // Live arcs over the stars and threads, under the faces.
+        if !board.lines.isEmpty || !board.pulses.isEmpty { arcPainter(project, k: k, zoom: zoom).drawLines(&context) }
+
         // Faces, back to front: bridges, chain steps and the author.
         var drawn: [(key: String, p: Projected, tint: Color, size: Double, dim: Bool)] = []
         // A filter's matches are the point of the filter, so they never dim.
@@ -663,6 +726,12 @@ final class GlobeScene: ObservableObject {
             }
         }
 
+        if !arcKeys.isEmpty {
+            arcPainter(project, k: k, zoom: zoom).drawFaces(&context, seated: seats) { c, key, p, r, tint, opacity in
+                drawFace(&c, key: key, at: p, r: r, tint: tint, opacity: opacity, name: name)
+            }
+        }
+
         // Names on plain stars once zoomed well in, where they fit.
         if namesOut {
             for star in labelled where placed.count < 60 {
@@ -680,6 +749,20 @@ final class GlobeScene: ObservableObject {
                  opacity: 1, name: name)
         let label = context.resolve(Text(name(center)).font(.system(size: 13, weight: .bold)).foregroundColor(.white))
         context.draw(label, at: CGPoint(x: core.point.x, y: core.point.y + coreR + 11))
+    }
+
+    // MARK: Drawing live arcs
+
+    /// Where someone sits for an arc: their star, or on the outer shell where
+    /// their star would be when they aren't on the globe.
+    private func arcPoint(_ key: String) -> SIMD3<Double> {
+        if let i = index[key], alpha[i] > 0.05 { return dirs[i] * radius[i] }
+        return TrustMap.direction(of: key) * TrustMap.outerRadius
+    }
+
+    private func arcPainter(_ project: Projector, k: Double, zoom: Double) -> LiveArcsPainter {
+        LiveArcsPainter(board: board, now: now, reduceMotion: reduceMotion, center: center, k: k, zoom: zoom,
+                        facing: project.facing, project: { project($0) }, place: arcPoint)
     }
 
     private func drawFace(_ context: inout GraphicsContext, key: String, at p: CGPoint, r: Double,

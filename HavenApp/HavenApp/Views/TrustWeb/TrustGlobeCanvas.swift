@@ -37,14 +37,23 @@ struct TrustGlobeCanvas: View {
     var focusBridges: [String] = []
     /// A tap that lands on no one, e.g. to close the trust card.
     var onEmptyTap: () -> Void = {}
+    /// The WOT tab's globe, where the bar's Live arrivals switch draws notes
+    /// arriving at the relay. A post's globe never does.
+    var liveArcs = false
 
+    /// The globe shows about this many times `TrustMap`'s face counts: more
+    /// pictures overall, not quite double (Logen, 10/14).
+    nonisolated static let faceScale = 1.8
+    nonisolated static func faces(_ count: Int) -> Int { Int((Double(count) * faceScale).rounded()) }
     /// Bridges drawn as faces; the rest stay bright stars.
-    static let maxFaces = 12
+    static let maxFaces = faces(12)
     /// Spinning and turning to a person both take about this long; a new
     /// person's globe settles in after it.
     private static let turnDelay: Duration = .milliseconds(380)
 
     @StateObject private var scene = GlobeScene()
+    @StateObject private var arrivals = GlobeArrivalStream()
+    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     @State private var lastDrag: CGSize = .zero
@@ -120,6 +129,17 @@ struct TrustGlobeCanvas: View {
             scene.filter(filterLit)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .task(id: liveArcs && liveArcsOn) {
+            // Listens while the switch is on and the globe is on screen; leaving
+            // the tab cancels this, and coming back starts it again.
+            guard liveArcs && liveArcsOn else { return }
+            scene.setLiveArcs(true)
+            let token = arrivals.start(me: me)
+            while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+            // A quick off and on can start the next run before this one ends.
+            if arrivals.stop(token) { scene.setLiveArcs(false) }
+        }
+        .onReceive(arrivals.arrived) { scene.arrive($0) }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
