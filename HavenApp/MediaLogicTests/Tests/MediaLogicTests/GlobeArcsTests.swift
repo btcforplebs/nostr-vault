@@ -83,23 +83,38 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertLessThanOrEqual(board.lines.count, GlobeArcs.maxLines + 2 * 2)
     }
 
-    func testALineFadesInTravelsHoldsAndDrainsOut() {
-        let line = GlobeArcs.Line(from: key(1), to: me, toMe: true, born: 0, retired: nil)
+    func testAStarTravelsLandsAndItsTrailFadesFirst() {
+        let line = GlobeArcs.Line(note: key(9), from: key(1), to: me, toMe: true, born: 0, retired: nil)
         XCTAssertEqual(GlobeArcs.stage(of: line, at: 0).alpha, 0)
         let mid = GlobeArcs.stage(of: line, at: GlobeArcs.travel / 2)
         XCTAssertEqual(mid.head, 0.5, accuracy: 0.001)
-        XCTAssertEqual(mid.alpha, 1)
-        let held = GlobeArcs.stage(of: line, at: GlobeArcs.travel + 1)
+        XCTAssertEqual(mid.trail, 1)
+        XCTAssertFalse(GlobeArcs.hasLanded(line, at: GlobeArcs.travel / 2))
+        XCTAssertTrue(GlobeArcs.hasLanded(line, at: GlobeArcs.travel))
+        // Landed: the trail is gone soon after, the light where it landed stays.
+        let held = GlobeArcs.stage(of: line, at: GlobeArcs.travel + GlobeArcs.trailFade)
         XCTAssertEqual(held.head, 1)
-        XCTAssertEqual(held.tail, 0)
+        XCTAssertEqual(held.trail, 0, accuracy: 1e-9)
+        XCTAssertEqual(held.alpha, 1)
         let fading = GlobeArcs.stage(of: line, at: GlobeArcs.travel + GlobeArcs.hold + GlobeArcs.fade / 2)
         XCTAssertEqual(fading.alpha, 0.5, accuracy: 0.001)
-        XCTAssertGreaterThan(fading.tail, 0)
-        XCTAssertEqual(GlobeArcs.stage(of: line, at: GlobeArcs.life).alpha, 0)
-        // Reduce Motion: no flight, no drain, the same fade.
+        XCTAssertEqual(GlobeArcs.stage(of: line, at: GlobeArcs.life).alpha, 0, accuracy: 1e-9)
+        // Reduce Motion: no flight, the same fades.
         let still = GlobeArcs.stage(of: line, at: 0.3, reduceMotion: true)
         XCTAssertEqual(still.head, 1)
-        XCTAssertEqual(still.tail, 0)
+        XCTAssertLessThan(still.trail, 1)
+    }
+
+    func testANotesPreviewIsItsFirstLineWithWords() {
+        XCTAssertEqual(GlobeArcs.firstLine("https://x.io/a.jpg\n\n  gm   nostr  friends \nsecond"), "gm nostr friends")
+        XCTAssertEqual(GlobeArcs.firstLine("nostr:nevent1abc"), "")
+        let long = String(repeating: "word ", count: 60)
+        let cut = GlobeArcs.firstLine(long)
+        XCTAssertTrue(cut.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(cut.count, GlobeArcs.previewLength + 1)
+        XCTAssertFalse(cut.dropLast().hasSuffix(" "))
+        let arrival = GlobeArcs.arrival(note(1, by: key(1)).merging(["content": "hello there\nmore"]) { $1 }, now: now)
+        XCTAssertEqual(arrival?.text, "hello there")
     }
 
     func testFadedLinesAreDropped() {

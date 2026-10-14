@@ -122,12 +122,16 @@ final class GlobeArrivalStream: ObservableObject {
 
     #if DEBUG
     private func runStub(me: String) async {
-        let people = Array(FeedService.shared.followedPubkeys.shuffled().prefix(80))
+        // Real notes from the feed, so a preview shows real words and opens a
+        // real note; the lines they draw are made up.
+        let feedNotes = FeedService.shared.notes.filter { $0.kind == 1 && !GlobeArcs.firstLine($0.content).isEmpty }
+        let people = Array(Set(FeedService.shared.followedPubkeys + feedNotes.map(\.pubkey)).shuffled().prefix(80))
         guard people.count > 4 else { return }
         var n = 0
         while !Task.isCancelled {
             n += 1
-            let author = people.randomElement()!
+            let real = feedNotes.randomElement()
+            let author = real?.pubkey ?? people.randomElement()!
             // Mostly notes to you; some replies to a few people; some to no one.
             let targets: [String]
             switch n % 5 {
@@ -136,9 +140,10 @@ final class GlobeArrivalStream: ObservableObject {
             case 3: targets = [people.filter { $0 != author }.randomElement()!]
             default: targets = []
             }
-            let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
-            emit(GlobeArcs.Arrival(id: id, author: author, targets: targets))
-            try? await Task.sleep(for: .milliseconds(Int.random(in: 600...1600)))
+            let id = real?.id ?? (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
+            emit(GlobeArcs.Arrival(id: id, author: author, targets: targets,
+                                   text: GlobeArcs.firstLine(real?.content ?? "")))
+            try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
         }
     }
     #endif
@@ -161,122 +166,134 @@ struct LiveArcsPainter {
     /// Where someone sits on the globe.
     let place: (String) -> SIMD3<Double>
 
-    /// Pink for a note to you, sky blue for one to someone else: apart from
-    /// the amber trust threads, the violet haze and the pale follows.
-    static let toMeColor = Color(red: 1, green: 0.46, blue: 0.72)
-    static let toOthersColor = Color(red: 0.42, green: 0.84, blue: 1)
-    static let pulseColor = Color(red: 0.94, green: 0.94, blue: 1)
+    /// Every arrival is a small white star, like the stars of the globe itself.
+    static let starColor = Color.white
     /// Points along a drawn line: smooth at full zoom, cheap at ten lines.
-    static let arcSamples = 40
+    private static let arcSamples = 40
+    /// Steps in a star's tail, each a little fainter and thinner than the last.
+    private static let tailSteps = 8
 
     /// One soft light: a glow with a bright middle.
-    private func light(_ context: inout GraphicsContext, at p: CGPoint, r: Double, color: Color, opacity: Double) {
+    private func light(_ context: inout GraphicsContext, at p: CGPoint, r: Double, opacity: Double) {
         guard opacity > 0.01 else { return }
+        let color = Self.starColor
         context.fill(Path(ellipseIn: CGRect(x: p.x - r * 3, y: p.y - r * 3, width: r * 6, height: r * 6)),
-                     with: .radialGradient(Gradient(colors: [color.opacity(0.55 * opacity), .clear]),
+                     with: .radialGradient(Gradient(colors: [color.opacity(0.5 * opacity), .clear]),
                                            center: p, startRadius: 0, endRadius: r * 3))
         context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
                      with: .color(color.opacity(opacity)))
     }
 
-    /// The lines, their lights and the lights of notes aimed at no one:
+    /// Shooting stars, their faint trails, and the lights where they land:
     /// over the stars and threads, under the faces.
     func drawLines(_ context: inout GraphicsContext) {
-        // Lights breathe slowly while their line stands.
+        let unit = max(0.8, k)
+        // Lights breathe slowly while they stay.
         let breath = reduceMotion ? 1 : 0.82 + 0.18 * sin(now * 2 * .pi / 2.6)
-        struct Drawn { let front: Path; let back: Path; let color: Color; let alpha: Double }
-        var drawn: [Drawn] = []
-        var heads: [(CGPoint, Color, Double)] = []
-        var landings: [(CGPoint, Color, GlobeArcs.Stage)] = []
+        var trails: [(Path, Double)] = []
+        var tails: [(Path, Double, Double)] = []
+        var stars: [(CGPoint, Double)] = []
+        var landings: [(CGPoint, GlobeArcs.Stage)] = []
         for line in board.lines {
             let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
-            guard stage.alpha > 0.01, stage.head > stage.tail else { continue }
+            guard stage.alpha > 0.01 else { continue }
             let a = place(line.from), b = place(line.to)
-            let color = line.toMe ? Self.toMeColor : Self.toOthersColor
-            var front = Path(), back = Path()
-            var last: (CGPoint, Bool)?
-            // Which path the open run of points is in: one run per side, so joins stay smooth.
-            var run: Bool?
-            let n = Self.arcSamples
-            for s in 0...n {
-                let t = stage.tail + (stage.head - stage.tail) * Double(s) / Double(n)
-                guard let p = project(GlobeArcs.point(from: a, to: b, at: t, facing: facing)) else { last = nil; run = nil; continue }
-                // Behind the globe's middle, the line goes faint.
-                let isFront = p.depth > -0.2
-                if let (q, wasFront) = last {
-                    let toFront = isFront || wasFront
-                    if run != toFront {
-                        if toFront { front.move(to: q) } else { back.move(to: q) }
-                        run = toFront
-                    }
-                    if toFront { front.addLine(to: p.point) } else { back.addLine(to: p.point) }
+            func at(_ t: Double) -> GlobeScene.Projected? {
+                project(GlobeArcs.point(from: a, to: b, at: t, facing: facing))
+            }
+            // The faint trail it leaves, gone soon after it lands.
+            if stage.trail > 0.01 {
+                var path = Path(), open = false
+                let n = Self.arcSamples
+                for s in 0...n {
+                    guard let p = at(stage.head * Double(s) / Double(n)) else { open = false; continue }
+                    if open { path.addLine(to: p.point) } else { path.move(to: p.point); open = true }
                 }
-                last = (p.point, isFront)
-                if s == n, stage.head < 1 { heads.append((p.point, color, stage.alpha * (isFront ? 1 : 0.4))) }
+                trails.append((path, stage.trail))
             }
-            drawn.append(Drawn(front: front, back: back, color: color, alpha: stage.alpha))
-            if stage.landing > 0, let p = project(b) { landings.append((p.point, color, stage)) }
+            // In flight: the star and its short tail, brightest at the star.
+            if stage.head < 1, let head = at(stage.head) {
+                let behind = head.depth > -0.2 ? 1.0 : 0.35
+                let start = max(0, stage.head - GlobeArcs.tailLength)
+                var last = at(start)?.point
+                for step in 1...Self.tailSteps {
+                    let t = start + (stage.head - start) * Double(step) / Double(Self.tailSteps)
+                    guard let p = at(t) else { last = nil; continue }
+                    if let last {
+                        var segment = Path()
+                        segment.move(to: last)
+                        segment.addLine(to: p.point)
+                        let f = Double(step) / Double(Self.tailSteps)
+                        tails.append((segment, f * f * stage.alpha * behind, 0.4 + 1.4 * f))
+                    }
+                    last = p.point
+                }
+                stars.append((head.point, stage.alpha * behind))
+            }
+            if stage.landing > 0, let p = project(b) { landings.append((p.point, stage)) }
         }
-        // All the glow in one blurred layer.
-        context.drawLayer { layer in
-            layer.addFilter(.blur(radius: 4))
-            for line in drawn {
-                layer.stroke(line.front, with: .color(line.color.opacity(0.55 * line.alpha)), lineWidth: 3.2)
+        let color = Self.starColor
+        for (path, a) in trails {
+            context.stroke(path, with: .color(color.opacity(0.14 * a)),
+                           style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round))
+        }
+        if !tails.isEmpty {
+            // The tails' glow in one blurred layer.
+            context.drawLayer { layer in
+                layer.addFilter(.blur(radius: 2.5))
+                for (segment, a, width) in tails {
+                    layer.stroke(segment, with: .color(color.opacity(0.5 * a)), lineWidth: width + 2)
+                }
+            }
+            for (segment, a, width) in tails {
+                context.stroke(segment, with: .color(color.opacity(0.9 * a)),
+                               style: StrokeStyle(lineWidth: width, lineCap: .round))
             }
         }
-        for line in drawn {
-            context.stroke(line.back, with: .color(line.color.opacity(0.28 * line.alpha)),
-                           style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-            context.stroke(line.front, with: .color(line.color.opacity(0.9 * line.alpha)),
-                           style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-        }
-        // The note in flight: a bright bead at the head.
-        for (p, color, a) in heads { light(&context, at: p, r: 2.6 * max(0.8, k), color: color, opacity: a) }
-        // Where it lands: a ring opens once, then a light stays and breathes.
-        for (p, color, stage) in landings {
-            let r = (6 + 22 * stage.landing) * max(0.8, k)
+        for (p, a) in stars { light(&context, at: p, r: 1.8 * unit, opacity: a) }
+        // Where it lands: a small ring opens once, then a light stays and breathes.
+        for (p, stage) in landings {
+            let r = (5 + 14 * stage.landing) * unit
             context.stroke(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
-                           with: .color(color.opacity(0.7 * (1 - stage.landing) * stage.alpha)), lineWidth: 1.4)
-            light(&context, at: p, r: 2.4 * max(0.8, k), color: color, opacity: 0.8 * stage.alpha * breath)
+                           with: .color(color.opacity(0.5 * (1 - stage.landing) * stage.alpha)), lineWidth: 1)
+            light(&context, at: p, r: 1.8 * unit, opacity: 0.7 * stage.alpha * breath)
         }
         // A note to no one: its author's light swells and fades.
         for pulse in board.pulses {
             let t = min(1, (now - pulse.born) / GlobeArcs.pulseLife)
             guard let p = project(place(pulse.key)), p.depth > -0.2 else { continue }
             let swell = reduceMotion ? 0 : sin(t * .pi)
-            let r = (8 + 14 * t) * max(0.8, k)
+            let r = (6 + 12 * t) * unit
             if !reduceMotion {
                 context.stroke(Path(ellipseIn: CGRect(x: p.point.x - r, y: p.point.y - r, width: 2 * r, height: 2 * r)),
-                               with: .color(Self.pulseColor.opacity(0.5 * (1 - t))), lineWidth: 1.2)
+                               with: .color(color.opacity(0.4 * (1 - t))), lineWidth: 1)
             }
-            light(&context, at: p.point, r: (2 + 1.2 * swell) * max(0.8, k), color: Self.pulseColor,
-                  opacity: 0.85 * (1 - t * t))
+            light(&context, at: p.point, r: (1.8 + 1 * swell) * unit, opacity: 0.8 * (1 - t * t))
         }
     }
 
-    /// Pictures at the ends of the lines, easing in as a line sets out and
-    /// out as it fades. Someone already seated as a face keeps their seat.
+    /// Pictures at the ends of the lines, easing in as a star sets out and
+    /// out as its light fades. Someone already seated as a face keeps their seat.
     func drawFaces(_ context: inout GraphicsContext, seated: Set<String>,
                    face: (inout GraphicsContext, String, CGPoint, Double, Color, Double) -> Void) {
-        var shown: [String: (alpha: Double, color: Color)] = [:]
+        var shown: [String: Double] = [:]
         for line in board.lines {
             let a = GlobeArcs.faceAlpha(of: line, at: now)
-            let color = line.toMe ? Self.toMeColor : Self.toOthersColor
-            for key in [line.from, line.to] where a > (shown[key]?.alpha ?? 0) { shown[key] = (a, color) }
+            for key in [line.from, line.to] where a > (shown[key] ?? 0) { shown[key] = a }
         }
         for pulse in board.pulses {
             let t = (now - pulse.born) / GlobeArcs.pulseLife
             let a = min(1, t / 0.3, (1 - t) / 0.4)
-            if a > (shown[pulse.key]?.alpha ?? 0) { shown[pulse.key] = (a, Self.pulseColor) }
+            if a > (shown[pulse.key] ?? 0) { shown[pulse.key] = a }
         }
-        let faces = shown.compactMap { key, look -> (String, GlobeScene.Projected, Double, Color)? in
-            guard key != center, !seated.contains(key), look.alpha > 0.02,
+        let faces = shown.compactMap { key, alpha -> (String, GlobeScene.Projected, Double)? in
+            guard key != center, !seated.contains(key), alpha > 0.02,
                   let p = project(place(key)), p.depth > -0.2 else { return nil }
-            return (key, p, look.alpha, look.color)
+            return (key, p, alpha)
         }.sorted { $0.1.depth < $1.1.depth }
-        for (key, p, a, color) in faces {
+        for (key, p, a) in faces {
             let r = 13 * k * p.scale * min(zoom, 1.8)
-            face(&context, key, p.point, r, color, a * (0.4 + 0.6 * p.front))
+            face(&context, key, p.point, r, Self.starColor.opacity(0.85), a * (0.4 + 0.6 * p.front))
         }
     }
 }

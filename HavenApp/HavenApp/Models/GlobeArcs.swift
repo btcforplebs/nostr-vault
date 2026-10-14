@@ -17,12 +17,21 @@ enum GlobeArcs {
     /// Arrivals are let onto the globe at most this often, so a burst
     /// reads as a stream rather than a flash.
     static let spacing: TimeInterval = 0.7
-    /// A line runs from its author to its target over this long,
-    static let travel: TimeInterval = 1.6
-    /// stays drawn this long,
+    /// A star travels from its author to its target over this long,
+    static let travel: TimeInterval = 2.0
+    /// its faint trail fades this long after it lands,
+    static let trailFade: TimeInterval = 1.2
+    /// and the light where it landed stays this long
     static let hold: TimeInterval = 2.6
-    /// and drains into its target as it fades over this long.
+    /// and fades over this long.
     static let fade: TimeInterval = 2.2
+    /// How much of the line, behind the star, its tail covers.
+    static let tailLength = 0.16
+    /// A landed note's preview: up this long, at most this many at once.
+    static let previewLife: TimeInterval = 4.5
+    static let maxPreviews = 2
+    /// Characters of a note's first line a preview shows.
+    static let previewLength = 140
     static var life: TimeInterval { travel + hold + fade }
     /// A line sent out early to make room fades this fast.
     static let retireFade: TimeInterval = 0.7
@@ -33,11 +42,12 @@ enum GlobeArcs {
     /// Notes, replies and quotes.
     static let kinds = [1]
 
-    /// One note: who wrote it and who it is aimed at.
+    /// One note: who wrote it, who it is aimed at, and its first line.
     struct Arrival: Equatable {
         let id: String
         let author: String
         let targets: [String]
+        var text: String = ""
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
@@ -55,7 +65,29 @@ enum GlobeArcs {
             targets.append(key)
             if targets.count == maxTargets { break }
         }
-        return Arrival(id: id, author: author, targets: targets)
+        return Arrival(id: id, author: author, targets: targets,
+                       text: firstLine(event["content"] as? String ?? ""))
+    }
+
+    /// A note's first line with words in it, for its preview: links and
+    /// `nostr:` references dropped, spaces collapsed, cut at a word.
+    static func firstLine(_ content: String) -> String {
+        for line in content.split(whereSeparator: \.isNewline) {
+            let words = line.split(whereSeparator: \.isWhitespace).filter {
+                !$0.hasPrefix("http://") && !$0.hasPrefix("https://") && !$0.hasPrefix("nostr:")
+            }
+            guard !words.isEmpty else { continue }
+            var text = ""
+            for word in words {
+                let next = text.isEmpty ? String(word) : text + " " + word
+                if next.count > previewLength {
+                    return text.isEmpty ? String(next.prefix(previewLength)) + "…" : text + "…"
+                }
+                text = next
+            }
+            return text
+        }
+        return ""
     }
 
     private static func isKey(_ s: String) -> Bool {
@@ -63,9 +95,11 @@ enum GlobeArcs {
     }
 
     struct Line: Equatable {
+        /// The note it carries.
+        let note: String
         let from: String
         let to: String
-        /// Aimed at you: drawn in its own colour.
+        /// Aimed at you: its preview goes first.
         let toMe: Bool
         let born: TimeInterval
         /// Set when a newer line needs the room: it fades from here.
@@ -77,11 +111,12 @@ enum GlobeArcs {
         let born: TimeInterval
     }
 
-    /// Where a line is at a moment: drawn from `tail` to `head` (0 at the
-    /// author, 1 at the target) at `alpha`.
+    /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
+    /// the target), its faint trail behind at `trail`, and the light where it
+    /// lands at `alpha`.
     struct Stage: Equatable {
         let head: Double
-        let tail: Double
+        let trail: Double
         let alpha: Double
         /// 0 to 1 as the line lands: the target's light swells, then settles.
         let landing: Double
@@ -119,7 +154,7 @@ enum GlobeArcs {
                 pulses.append(Pulse(key: next.author, born: now))
             }
             for target in next.targets {
-                lines.append(Line(from: next.author, to: target, toMe: target == me, born: now))
+                lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me, born: now))
             }
             // Over the cap: the oldest still-standing lines start their fade now.
             var standing = lines.filter { $0.retired == nil }.count
@@ -140,19 +175,22 @@ enum GlobeArcs {
     static func stage(of line: Line, at now: TimeInterval, reduceMotion: Bool = false) -> Stage {
         let age = max(0, now - line.born)
         let head = reduceMotion ? 1 : ease(min(1, age / travel))
-        let landing = reduceMotion ? 0 : max(0, min(1, (age - travel) / 1.2))
-        var alpha = 1.0, tail = 0.0
-        if age > travel + hold {
-            let f = min(1, (age - travel - hold) / fade)
-            alpha = 1 - f
-            if !reduceMotion { tail = ease(f) }
-        }
+        let landed = reduceMotion ? age : age - travel
+        let landing = reduceMotion ? 0 : max(0, min(1, landed / 1.2))
+        var alpha = 1.0
+        if age > travel + hold { alpha = 1 - min(1, (age - travel - hold) / fade) }
+        var trail = landed > 0 ? 1 - min(1, landed / trailFade) : 1
         if let retired = line.retired {
-            alpha = min(alpha, 1 - min(1, max(0, now - retired) / retireFade))
+            let out = 1 - min(1, max(0, now - retired) / retireFade)
+            alpha = min(alpha, out)
+            trail = min(trail, out)
         }
         if age < 0.25 { alpha = min(alpha, age / 0.25) }
-        return Stage(head: head, tail: tail, alpha: max(0, alpha), landing: landing)
+        return Stage(head: head, trail: min(trail, alpha), alpha: max(0, alpha), landing: landing)
     }
+
+    /// True once the star has reached its target.
+    static func hasLanded(_ line: Line, at now: TimeInterval) -> Bool { now - line.born >= travel }
 
     /// How brightly an endpoint's face shows: in as its line sets out,
     /// out as it fades.

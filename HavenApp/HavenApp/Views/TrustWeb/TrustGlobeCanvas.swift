@@ -54,6 +54,8 @@ struct TrustGlobeCanvas: View {
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    /// A landed note's preview was tapped: the note opens over the globe.
+    @State private var openNote: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     @State private var lastDrag: CGSize = .zero
@@ -92,7 +94,8 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: nil, paused: !scene.awake || !running || !appIsActive)) { timeline in
+            TimelineView(.animation(minimumInterval: nil,
+                                    paused: !scene.awake || !running || !appIsActive || openNote != nil)) { timeline in
                 Canvas { context, size in
                     scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)
                     scene.draw(in: &context, size: size, accent: .orange, name: name)
@@ -103,6 +106,7 @@ struct TrustGlobeCanvas: View {
                 }
             }
             .contentShape(Rectangle())
+            .overlay { previews(in: geo.size) }
             .gesture(drag.simultaneously(with: magnify))
             .simultaneousGesture(taps(in: geo.size))
             .accessibilityElement()
@@ -140,6 +144,12 @@ struct TrustGlobeCanvas: View {
             if arrivals.stop(token) { scene.setLiveArcs(false) }
         }
         .onReceive(arrivals.arrived) { scene.arrive($0) }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { openNote.map { IdentifiableString(id: $0) } },
+            set: { openNote = $0?.id }
+        )) { note in
+            NoteDetailViewWrapper(noteId: note.id, onDismiss: { openNote = nil })
+        }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
@@ -180,6 +190,7 @@ struct TrustGlobeCanvas: View {
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate
+                scene.dismissPreviews()
                 scene.camera.dragging = true
                 scene.camera.drag(dx: value.translation.width - lastDrag.width,
                                   dy: value.translation.height - lastDrag.height, at: now)
@@ -193,6 +204,22 @@ struct TrustGlobeCanvas: View {
                                    at: Date.timeIntervalSinceReferenceDate, reduceMotion: reduceMotion)
                 scene.wake()
             }
+    }
+
+    /// Landed notes beside their faces, above them unless that runs off the top.
+    private func previews(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(scene.previews) { preview in
+                let width = min(240, size.width - 24)
+                let x = min(max(preview.point.x, width / 2 + 12), size.width - width / 2 - 12)
+                let y = preview.point.y > 190 ? preview.point.y - 48 : preview.point.y + 48
+                GlobeNotePreview(avatar: avatar(preview.author, 24), name: name(preview.author),
+                                 text: preview.text) { openNote = preview.id }
+                    .frame(width: width)
+                    .position(x: x, y: y)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
     }
 
     private var magnify: some Gesture {
