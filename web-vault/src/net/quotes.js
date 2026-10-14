@@ -75,11 +75,19 @@ async function lookup(q, { vault, relays, query }) {
   if (globalThis.navigator?.onLine === false) return null
   const urls = uniq([...relays, ...q.relays])
   if (!urls.length) return null
-  const found = newest((await query(urls, filter, { maxWait: 6000 })).map(verifiedCopy).filter(Boolean))
+  // Only what was asked for: a relay may answer with extra or unrelated events, and a validly signed article from
+  // another key with the same d tag must not stand in for this one.
+  const found = newest((await query(urls, filter, { maxWait: 6000 })).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
   if (!found) return null
-  if (q.type === "note" && found.id !== q.id) return null
   if (vault) await vault.feed.event(found).catch(() => {})
   return found
+}
+
+/** True when ev is the event q points at: the note with that id, or that author's event of that kind and d tag. */
+export function matches(q, ev) {
+  if (q.type === "note") return ev.id === q.id
+  if (q.type === "addr") return ev.kind === q.kind && ev.pubkey === q.pubkey && (ev.tags ?? []).some(t => t[0] === "d" && t[1] === q.d)
+  return false
 }
 
 // A replaceable (naddr) event may come back in several versions: the newest wins.

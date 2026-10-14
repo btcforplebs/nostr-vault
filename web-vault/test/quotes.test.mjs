@@ -88,6 +88,41 @@ test("a relay answering with a different note than asked for is ignored", async 
   assert.equal(got, null)
 })
 
+test("a relay answering with the asked note plus a newer unrelated one still gives the asked note", async () => {
+  const { fetchQuote } = await load()
+  const asked = note("asked", 100), extra = note("extra", 200)
+  const vault = fakeVault()
+  const got = await fetchQuote({ type: "note", id: asked.id, relays: [] }, { vault, relays: ["wss://a"], query: async () => [extra, asked] })
+  assert.equal(got.id, asked.id)
+  assert.deepEqual(vault.stored.map(e => e.id), [asked.id])
+})
+
+test("an naddr quote never shows another key's article with the same d tag, even a newer signed one", async () => {
+  const { fetchQuote } = await load()
+  const other = generateSecretKey()
+  const mine = article("p1", "Mine", 100)
+  const forged = finalizeEvent({ kind: 30023, created_at: 200, tags: [["d", "p1"], ["title", "Theirs"]], content: "body" }, other)
+  const q = { type: "addr", kind: 30023, pubkey: pk, d: "p1", relays: [] }
+  const vault = fakeVault()
+  const got = await fetchQuote(q, { vault, relays: ["wss://a"], query: async () => [forged, mine] })
+  assert.equal(got.id, mine.id)
+  assert.deepEqual(vault.stored.map(e => e.id), [mine.id], "only the matching article is written into Haven")
+
+  const onlyForged = await fetchQuote({ ...q, d: "p2" }, { vault: fakeVault(), relays: ["wss://a"], query: async () => [finalizeEvent({ kind: 30023, created_at: 300, tags: [["d", "p2"]], content: "" }, other)] })
+  assert.equal(onlyForged, null)
+})
+
+test("an naddr answer with the right key but another kind or d tag is ignored", async () => {
+  const { fetchQuote, matches } = await load()
+  const q = { type: "addr", kind: 30023, pubkey: pk, d: "p1", relays: [] }
+  const wrongD = article("p9", "Wrong d", 100)
+  const wrongKind = finalizeEvent({ kind: 30024, created_at: 100, tags: [["d", "p1"]], content: "" }, sk)
+  assert.equal(matches(q, wrongD), false)
+  assert.equal(matches(q, wrongKind), false)
+  assert.equal(matches(q, article("p1", "Right", 100)), true)
+  assert.equal(await fetchQuote(q, { vault: fakeVault(), relays: ["wss://a"], query: async () => [wrongD, wrongKind] }), null)
+})
+
 test("a note nowhere is null, remembered, and asked for only once", async () => {
   const { fetchQuote, getQuote, hasQuote, quoteKey } = await load()
   const q = { type: "note", id: note("gone").id, relays: [] }
