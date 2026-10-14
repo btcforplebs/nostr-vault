@@ -9,6 +9,7 @@ import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
+import { setActionContext } from "./src/net/actions.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -117,6 +118,7 @@ function App() {
   if (!vault || !account) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Starting your relay…</p></main>
 
   const ctx = { vault, session, signer, account, signOut }
+  setActionContext(ctx)
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   return (
     <div class="app">

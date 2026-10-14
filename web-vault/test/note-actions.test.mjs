@@ -1,0 +1,196 @@
+// Note actions: the tags a like, repost, reply and quote carry (as the iPhone app builds them), and a like or repost
+// reading as sent only once it is signed and a relay took it. Throwaway keys and a stubbed pool: nothing is published.
+import test from "node:test"
+import assert from "node:assert/strict"
+import { registerHooks } from "node:module"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { transformSync } from "rolldown/utils" // Vite 8's own transformer
+import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
+import { decode } from "nostr-tools/nip19"
+import { pool } from "../src/net/pool.js"
+import { publishNote } from "../src/net/sync.js"
+import {
+  REACTION, act, actionState, actionTarget, composeTarget, findNote, loadSent, publishAction, quoteOf, reactionTemplate,
+  replyTags, repostTemplate,
+} from "../src/net/actions.js"
+
+const HEX = /^[0-9a-f]{64}$/
+const now = Math.floor(Date.now() / 1000)
+const me = generateSecretKey(), author = generateSecretKey(), other = generateSecretKey()
+const pk = sk => getPublicKey(sk)
+// Each note distinct: the action state is kept per note id across tests.
+let n0 = 0
+const note = (tags = [], content = `note ${++n0}`, sk = author) => finalizeEvent({ kind: 1, created_at: now - 60, tags, content }, sk)
+const plain = ev => JSON.parse(JSON.stringify(ev)) // without nostr-tools' hidden "verified" flag
+
+// A signer holding a throwaway key, an outbox that keeps what it is given, and relays stubbed per test.
+function ctxFor({ sk = me, write = ["wss://relay.example.com"] } = {}) {
+  const kept = []
+  return {
+    kept,
+    session: { pubkey: pk(me) },
+    signer: { signEvent: async t => finalizeEvent(t, sk) },
+    account: { relays: { read: write, write } },
+    vault: {
+      outbox: {
+        event: async ev => { kept.push(ev); return { ok: true, message: "" } },
+        query: async f => kept.filter(e => f.kinds.includes(e.kind) && f.authors.includes(e.pubkey) && e.tags.some(t => t[0] === "e" && f["#e"].includes(t[1]))),
+      },
+      feed: { query: async () => [] },
+    },
+  }
+}
+const relaysSay = (t, answer) => {
+  const sent = []
+  t.mock.method(pool, "publish", (urls, ev) => { sent.push({ urls, ev }); return urls.map(answer) })
+  globalThis.location = { hostname: "vault.example.com", hash: "" }
+  t.after(() => { delete globalThis.location })
+  return sent
+}
+
+test("a like is a kind 7 with the iPhone's reaction and e, p and k tags", () => {
+  const n = note()
+  const t = reactionTemplate(n)
+  assert.equal(t.kind, 7)
+  assert.equal(t.content, REACTION)
+  assert.deepEqual(t.tags, [["e", n.id, ""], ["p", n.pubkey], ["k", "1"]])
+})
+
+test("a repost is a kind 6 carrying the note", () => {
+  const n = note()
+  const t = repostTemplate(n)
+  assert.equal(t.kind, 6)
+  assert.deepEqual(t.tags, [["e", n.id, ""], ["p", n.pubkey]])
+  assert.deepEqual(JSON.parse(t.content), plain(n))
+})
+
+test("a reply to a root note: one root e tag with the author, then the author's p", () => {
+  const n = note()
+  assert.deepEqual(replyTags(n), [["e", n.id, "", "root", n.pubkey], ["p", n.pubkey]])
+})
+
+test("a reply to a reply: the thread's root, the parent as reply, and everyone tagged once", () => {
+  const root = note()
+  const parent = note([["e", root.id, "", "root", root.pubkey], ["p", root.pubkey], ["p", pk(author)], ["p", pk(other)]], "a reply", author)
+  assert.deepEqual(replyTags(parent), [
+    ["e", root.id, "", "root", root.pubkey],
+    ["e", parent.id, "", "reply", parent.pubkey],
+    ["p", parent.pubkey], ["p", pk(other)],
+  ])
+})
+
+test("old positional tags: the first e is the root; a mention-only e doesn't make a note a reply", () => {
+  const root = note(), mid = note([], "mid")
+  const positional = note([["e", root.id], ["e", mid.id]], "positional reply", other)
+  assert.deepEqual(replyTags(positional).slice(0, 2), [["e", root.id, "", "root"], ["e", positional.id, "", "reply", pk(other)]])
+  const quoting = note([["e", root.id, "", "mention"]], "only mentions", other)
+  assert.deepEqual(replyTags(quoting)[0], ["e", quoting.id, "", "root", pk(other)])
+})
+
+test("a quote appends a nevent for the note and tags it with q and p", () => {
+  const n = note()
+  const { content, tags } = quoteOf(n, "look at this")
+  const [text, ref] = content.split("\nnostr:")
+  assert.equal(text, "look at this")
+  const d = decode(ref)
+  assert.equal(d.type, "nevent")
+  assert.equal(d.data.id, n.id)
+  assert.equal(d.data.author, n.pubkey)
+  assert.deepEqual(tags, [["q", n.id, "", n.pubkey], ["p", n.pubkey]])
+})
+
+test("publishNote signs the tags it is given", async t => {
+  relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  const { event } = await publishNote(c.vault, c.signer, c.session.pubkey, "my reply", c.account.relays.write, replyTags(n))
+  assert.deepEqual(event.tags, replyTags(n))
+  assert.ok(verifyEvent(event))
+})
+
+test("a repost card's actions act on the note inside it, only when that note's signature checks", () => {
+  const n = note()
+  const repost = finalizeEvent(repostTemplate(n), other)
+  assert.deepEqual(plain(actionTarget(repost)), plain(n))
+  const forged = finalizeEvent({ ...repostTemplate({ ...n, content: "never signed" }) }, other)
+  assert.equal(actionTarget(forged), null)
+  assert.equal(actionTarget(finalizeEvent({ kind: 6, created_at: now, tags: [], content: "not json" }, other)), null)
+  assert.equal(actionTarget(finalizeEvent({ kind: 7, created_at: now, tags: [], content: "+" }, other)), null)
+})
+
+test("a like is sent once signed and a relay took it, and is kept in the outbox", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  const p = act(c, "like", n)
+  assert.equal(actionState(n.id).like, "busy")
+  await p
+  assert.equal(actionState(n.id).like, "sent")
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].ev.kind, 7)
+  assert.equal(sent[0].ev.pubkey, pk(me))
+  assert.ok(verifyEvent(sent[0].ev))
+  assert.deepEqual(c.kept.map(e => e.id), [sent[0].ev.id])
+  await act(c, "like", n) // a second tap does nothing
+  assert.equal(sent.length, 1)
+})
+
+test("no relay took it: the action shows the error and can be tried again", async t => {
+  relaysSay(t, () => Promise.reject(new Error("connection failed")))
+  const c = ctxFor(), n = note()
+  await act(c, "repost", n)
+  assert.match(actionState(n.id).repost.error, /No relay took it/)
+  assert.equal(c.kept.length, 0) // not kept, or a reload would show it as sent
+  t.mock.method(pool, "publish", urls => urls.map(() => Promise.resolve("")))
+  await act(c, "repost", n)
+  assert.equal(actionState(n.id).repost, "sent")
+})
+
+test("a signer that signs as someone else never gets published", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor({ sk: other }), n = note()
+  await assert.rejects(publishAction(c, reactionTemplate(n)), /different account/)
+  await act(c, "like", n)
+  assert.match(actionState(n.id).like.error, /different account/)
+  assert.equal(sent.length, 0)
+})
+
+test("after a reload, a like and repost already in the outbox read as sent", async t => {
+  relaysSay(t, () => Promise.resolve(""))
+  const n = note(), c = ctxFor()
+  await publishAction(c, reactionTemplate(n))
+  await publishAction(c, repostTemplate(n))
+  await loadSent(c, n.id)
+  assert.deepEqual(actionState(n.id), { like: "sent", repost: "sent" })
+})
+
+test("compose's hash: reply and quote take a note id; anything else is a plain new note", () => {
+  const id = "a".repeat(64)
+  assert.deepEqual(composeTarget(`#/compose?reply=${id}`), { mode: "reply", id })
+  assert.deepEqual(composeTarget(`#/compose?quote=${id}`), { mode: "quote", id })
+  for (const h of ["#/compose", "#/compose?reply=xyz", `#/compose?zap=${id}`, `#/feed?reply=${id}`]) assert.equal(composeTarget(h), null, h)
+})
+
+test("compose finds the note in Haven, signature checked, before asking the network", async t => {
+  const n = note()
+  t.mock.method(pool, "querySync", async () => { throw new Error("network asked") })
+  const c = ctxFor()
+  c.vault.feed.query = async f => f.ids.includes(n.id) ? [n] : []
+  assert.deepEqual(plain(await findNote(c, n.id)), plain(n))
+  c.vault.feed.query = async () => [{ ...n, content: "tampered" }]
+  assert.equal(await findNote(c, n.id), null)
+})
+
+test("the card and compose load outside Vite (their stylesheet is Vite-only)", async () => {
+  registerHooks({
+    load(url, context, next) {
+      if (!url.endsWith(".jsx")) return next(url, context)
+      const path = fileURLToPath(url)
+      const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
+      if (errors.length) throw new Error(errors.map(e => e.message).join("\n"))
+      return { format: "module", source: code, shortCircuit: true }
+    },
+  })
+  assert.equal(typeof (await import("../src/components/NoteCard.jsx")).NoteCard, "function")
+  assert.equal(typeof (await import("../src/screens/ComposeScreen.jsx")).ComposeScreen, "function")
+  assert.ok(HEX.test(pk(me)))
+})
