@@ -1,0 +1,72 @@
+/* Settings (iPhone SettingsView: inset grouped list, coloured icon squares) and the Vault tab's pills, menus and grid. */
+
+/* Settings: grouped rows. */
+.settings-group { margin-bottom: 8px; }
+.settings-rows { margin: 0 var(--gutter); background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); overflow: hidden; }
+.settings-row { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; color: var(--text); font: var(--t-body); }
+.settings-row + .settings-row { border-top: 1px solid var(--hair); }
+a.settings-row:hover { background: var(--s2); }
+.settings-row.static { margin: 0 var(--gutter) 8px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
+.settings-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: #fff; flex: none; }
+.settings-icon.big { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-pale); color: var(--accent); }
+.settings-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-title.mono { font: 13px var(--mono); }
+.settings-chevron { color: var(--text-3); flex: none; }
+.settings-tags { display: flex; gap: 6px; flex: none; }
+.tag { padding: 3px 8px; border-radius: 999px; background: var(--s2); color: var(--text-2); font: 600 11px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.settings-note { margin: 0 var(--gutter) 12px; }
+.settings .screen-head .button.small { min-height: 34px; padding: 0 12px; }
+
+/* Relay status card (the phone's RelayStatusCard). */
+.relay-card-head { display: flex; align-items: center; gap: 12px; }
+.relay-card-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.relay-card-title { font: var(--t-headline); }
+.relay-card-text .mono { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relay-card-state { display: inline-flex; align-items: center; gap: 6px; color: var(--online); font: 600 15px var(--font); flex: none; }
+.relay-card-state .dot { width: 8px; height: 8px; }
+
+/* About. */
+.settings-about { text-align: center; display: grid; gap: 4px; justify-items: center; }
+.settings-about hr { width: 100%; border: 0; border-top: 1px solid var(--hair); margin: 8px 0; }
+.settings-app { font: var(--t-headline); }
+.settings-support { font: 600 15px var(--font); }
+.settings-about p { margin: 0; }
+.settings-npub { min-height: 0; padding: 8px; border-radius: 4px; background: var(--s2); font: 10px var(--mono); word-break: break-all; white-space: normal; max-width: 100%; }
+.settings-log { max-height: 60vh; overflow: auto; }
+
+/* Vault tab: the left mode pill, the right envelope + filter pill. */
+.vault-head { gap: 8px; }
+.vault-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.vault-menu { position: relative; min-width: 0; }
+.vault-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px 0 10px; max-width: 100%;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); font: var(--t-sub); font-weight: 600; }
+.vault-pill b { font: var(--t-headline); }
+.vault-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
+.vault-pill.open, .vault-pill:hover { border-color: var(--strong); }
+.vault-menu .vault-pill svg:first-child { color: var(--accent); }
+.vault-pill-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.vault-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; padding: 6px; display: grid;
+  background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
+.vault-menu.right .vault-menu-list { left: auto; right: 0; }
+.vault-menu-list hr { border: 0; border-top: 1px solid var(--hair); margin: 6px 0; }
+.vault-menu-list [role=menuitem] { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--text); font: var(--t-sub); text-align: left; white-space: nowrap; }
+.vault-menu-list [role=menuitem] svg { color: var(--accent); }
+.vault-menu-list [role=menuitem]:hover { background: var(--s2); }
+.vault-menu-list [role=menuitem].on { color: var(--accent); font-weight: 600; }
+.vault-menu-list [role=menuitem].on::after { content: "✓"; margin-left: auto; }
+
+/* Vault lists. */
+.note.tappable { cursor: pointer; }
+.vault-about { margin: 8px 0 0; align-items: baseline; }
+.vault-about > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.vault-thumbs { display: flex; gap: 6px; margin-top: 10px; }
+.vault-thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--s2); }
+.vault-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 0 var(--gutter); }
+.vault-thumb { display: block; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--s1); }
+.vault-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vault-quote { margin: 10px 0 6px; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); font: var(--t-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.highlight .person-sub { margin-top: 6px; }
+.highlight .note-head .author-name { flex: 1; }
+.person-row .author-name { font: var(--t-headline); }
