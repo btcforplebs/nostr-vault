@@ -69,12 +69,11 @@ struct ReturnPillLayer: View {
                     .offset(x: place.origin.x, y: place.origin.y)
                     .opacity(pillSize == .zero ? 0 : 1)
                     .transition(.move(edge: place.arrow == .leading ? .leading : .bottom).combined(with: .opacity))
-                    .onAppear { liftButtons(geo: geo) }
-                    .onChange(of: pillSize) { _, _ in liftButtons(geo: geo) }
+                    .onAppear { liftButtons() }
+                    .onChange(of: pillSize) { _, _ in liftButtons() }
                     .onDisappear { onFrame(nil) }
             }
         }
-        .ignoresSafeArea()
         .animation(Motion.bannerIn, value: manager.isShowing)
     }
 
@@ -89,10 +88,11 @@ struct ReturnPillLayer: View {
         var arrowAt: CGFloat
     }
 
-    /// Where the pill's bottom sits above the screen's bottom edge: over the
+    /// Where the arrow's tip sits above the bottom of the safe area: over the
     /// tab bar and mini player on iPhone, 20 pt up where there's no tab bar.
-    private func bottomInset(_ geo: GeometryProxy) -> CGFloat {
-        geo.safeAreaInsets.bottom + (row.chromeHeight > 0 ? row.chromeHeight + Self.gap : 20)
+    /// Floating buttons are placed from the same edge.
+    private var bottomInset: CGFloat {
+        row.chromeHeight > 0 ? row.chromeHeight + Self.gap : 20
     }
 
     private func placement(in geo: GeometryProxy, origin: CGPoint) -> Placement {
@@ -107,7 +107,7 @@ struct ReturnPillLayer: View {
                              arrowAt: frame.midY - origin.y - y)
         }
         // The arrow hangs below the pill, so its tip sits the gap above the bar.
-        let y = size.height - bottomInset(geo) - Self.arrowLength - h
+        let y = size.height - bottomInset - Self.arrowLength - h
         guard let frame = anchor.frame else {
             return Placement(origin: CGPoint(x: (size.width - w) / 2, y: y), arrow: .none, arrowAt: 0)
         }
@@ -120,11 +120,11 @@ struct ReturnPillLayer: View {
 
     /// Moves the screen's floating button (Post) up clear of the pill while
     /// it shows; `ReturnPillManager` settles it back as the pill goes.
-    private func liftButtons(geo: GeometryProxy) {
+    private func liftButtons() {
         guard row.chromeHeight > 0, pillSize.height > 0 else { return }
-        // The pill's top, above the bottom safe area, against the button's
-        // usual bottom, which is measured from there too.
-        let pillTop = bottomInset(geo) - geo.safeAreaInsets.bottom + Self.arrowLength + pillSize.height
+        // The pill's top against the button's usual bottom, both above the
+        // bottom of the safe area.
+        let pillTop = bottomInset + Self.arrowLength + pillSize.height
         row.setLift(max(0, pillTop + Self.gap - row.buttonBottom))
     }
 

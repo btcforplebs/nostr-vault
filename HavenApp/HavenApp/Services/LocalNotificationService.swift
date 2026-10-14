@@ -457,7 +457,10 @@ final class LocalNotificationService {
         let key = NotificationPolicy.dedupKey(eventId: id)
         // Just back from the background: one bottom pill and one sound for
         // everything, not a top pill and a sound each (ReturnPillManager).
-        switch ReturnPillManager.shared.gather(type: type, key: key) {
+        let createdAt = (carried[NotificationNote.eventKey] as? String)
+            .flatMap(NotificationNote.decode)
+            .map { Date(timeIntervalSince1970: TimeInterval($0.createdAt)) }
+        switch ReturnPillManager.shared.gather(type: type, key: key, createdAt: createdAt) {
         case .first: playSound(); return
         case .added: return
         case .no: break

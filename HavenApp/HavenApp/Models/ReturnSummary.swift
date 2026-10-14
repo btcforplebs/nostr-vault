@@ -88,21 +88,28 @@ struct ReturnSummary: Equatable {
 /// - Each arrival keeps it open `settle` longer, since the relay's catch-up
 ///   and the DM sync land in bursts over several seconds, but never past
 ///   `maximum` after the return: by then it is live traffic again.
-/// - The pill stays at least `minimumShow` after the first arrival, so one
-///   arriving just before the close is still readable.
+/// - An event created before the return came in while you were away,
+///   however late the relay hands it over, so it is gathered too, up to
+///   `lateHorizon` after the return. It brings the pill back if it had gone,
+///   but never a second sound.
+/// - The pill stays at least `minimumShow` after an arrival brings it up, so
+///   one arriving just before the close is still readable.
 struct ReturnWindow: Equatable {
     static let waitForFirst: TimeInterval = 12
     static let settle: TimeInterval = 6
     static let maximum: TimeInterval = 30
     static let minimumShow: TimeInterval = 6
+    static let lateHorizon: TimeInterval = 5 * 60
 
     let returnedAt: Date
     private(set) var firstArrival: Date?
     private(set) var lastArrival: Date?
+    /// The last arrival gathered only because it was older than the return.
+    private(set) var lastLateArrival: Date?
 
     init(returnedAt: Date) { self.returnedAt = returnedAt }
 
-    /// Until when an arrival is gathered rather than shown as a top pill.
+    /// Until when any arrival is gathered rather than shown as a top pill.
     var gathersUntil: Date {
         guard let lastArrival else { return returnedAt.addingTimeInterval(Self.waitForFirst) }
         return min(returnedAt.addingTimeInterval(Self.maximum), lastArrival.addingTimeInterval(Self.settle))
@@ -111,17 +118,26 @@ struct ReturnWindow: Equatable {
     /// Until when the bottom pill shows. Nil while nothing has arrived: no pill.
     var showsUntil: Date? {
         guard let firstArrival else { return nil }
-        return max(gathersUntil, firstArrival.addingTimeInterval(Self.minimumShow))
+        var until = max(gathersUntil, firstArrival.addingTimeInterval(Self.minimumShow))
+        if let lastLateArrival { until = max(until, lastLateArrival.addingTimeInterval(Self.minimumShow)) }
+        return until
     }
 
     func gathers(at now: Date) -> Bool { now < gathersUntil }
 
-    /// Records an arrival at `now`. False (and nothing recorded) once the
-    /// window has closed.
-    mutating func arrive(at now: Date) -> Bool {
-        guard gathers(at: now) else { return false }
+    /// Whether an arrival at `now` for an event created at `createdAt` is
+    /// gathered, and records it if so. `createdAt` nil (a DM, whose gift
+    /// wrap carries a made-up time) is judged by the time window alone.
+    mutating func arrive(at now: Date, createdAt: Date? = nil) -> Bool {
+        if gathers(at: now) {
+            if firstArrival == nil { firstArrival = now }
+            lastArrival = now
+            return true
+        }
+        guard let createdAt, createdAt < returnedAt,
+              now < returnedAt.addingTimeInterval(Self.lateHorizon) else { return false }
         if firstArrival == nil { firstArrival = now }
-        lastArrival = now
+        lastLateArrival = now
         return true
     }
 }

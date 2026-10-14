@@ -44,15 +44,17 @@ final class ReturnPillManager: ObservableObject {
         setShowing(false)
     }
 
-    /// Called for every arrival pill before it is drawn.
-    func gather(type: String, key: String, now: Date = Date()) -> Gathered {
-        guard var w = window, w.arrive(at: now) else { return .no }
+    /// Called for every arrival pill before it is drawn. `createdAt` is
+    /// the event's own time, when known (see `ReturnWindow.arrive`).
+    func gather(type: String, key: String, createdAt: Date? = nil, now: Date = Date()) -> Gathered {
+        guard var w = window, w.arrive(at: now, createdAt: createdAt) else { return .no }
         window = w
         let first = summary.isEmpty
         // The folded strangers' alert keeps one id however many follow, and
         // each call is one more stranger, so each counts.
         summary.add(type: type, key: type == "followers" ? UUID().uuidString : key)
-        if first {
+        if !isShowing {
+            // First, or a late one bringing the pill back (silently).
             setShowing(true)
             #if os(iOS)
             // The full tab bar, so the Vault tab is there to point at.

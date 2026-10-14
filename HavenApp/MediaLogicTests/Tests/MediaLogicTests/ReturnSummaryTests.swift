@@ -100,4 +100,37 @@ final class ReturnSummaryTests: XCTestCase {
         _ = single.arrive(at: at(ReturnWindow.maximum - 25))
         XCTAssertGreaterThanOrEqual(single.showsUntil!, at(ReturnWindow.maximum - 25 + ReturnWindow.minimumShow))
     }
+
+    // MARK: - Late catch-up
+
+    /// The relay hands over a backlog a minute after the return: it came in
+    /// while you were away, so it joins the pill instead of flooding the lane.
+    func testAnOldEventArrivingLateIsStillGathered() {
+        var w = ReturnWindow(returnedAt: back)
+        XCTAssertTrue(w.arrive(at: at(2)))
+        XCTAssertFalse(w.gathers(at: at(60)))
+        XCTAssertTrue(w.arrive(at: at(60), createdAt: at(-3600)))
+        XCTAssertEqual(w.showsUntil, at(60 + ReturnWindow.minimumShow), "the pill comes back for it")
+    }
+
+    func testANewEventAfterTheWindowIsLive() {
+        var w = ReturnWindow(returnedAt: back)
+        XCTAssertFalse(w.arrive(at: at(60), createdAt: at(59)))
+        XCTAssertFalse(w.arrive(at: at(60), createdAt: nil), "a DM has no trustworthy time")
+        XCTAssertNil(w.showsUntil)
+    }
+
+    func testOldEventsStopBeingGatheredAfterTheHorizon() {
+        var w = ReturnWindow(returnedAt: back)
+        XCTAssertTrue(w.arrive(at: at(ReturnWindow.lateHorizon - 1), createdAt: at(-10)))
+        XCTAssertFalse(w.arrive(at: at(ReturnWindow.lateHorizon), createdAt: at(-10)))
+    }
+
+    /// A late one does not hold the window open for live traffic.
+    func testALateArrivalDoesNotReopenTheWindow() {
+        var w = ReturnWindow(returnedAt: back)
+        XCTAssertTrue(w.arrive(at: at(40), createdAt: at(-5)))
+        XCTAssertFalse(w.gathers(at: at(41)))
+        XCTAssertFalse(w.arrive(at: at(41), createdAt: at(41)))
+    }
 }
