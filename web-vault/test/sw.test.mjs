@@ -35,8 +35,9 @@ function cacheStorage() {
   }
 }
 
-// Loads sw.js into a worker-like global. `files` is what the network serves (url -> body); offline rejects every fetch.
-function worker({ files = {}, offline = false } = {}) {
+// Loads sw.js into a worker-like global. `files` is what the network serves (url -> body); offline rejects every
+// fetch, and `drop(n)` rejects the n-th one (counted from 1), like a network that dies mid-install.
+function worker({ files = {}, offline = false, drop = () => false } = {}) {
   const listeners = {}, fetched = []
   const caches = cacheStorage()
   const self = {
@@ -46,7 +47,7 @@ function worker({ files = {}, offline = false } = {}) {
   const fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     fetched.push(url)
-    if (offline) throw new TypeError("Failed to fetch")
+    if (offline || drop(fetched.length)) throw new TypeError("Failed to fetch")
     const f = files[new URL(url).pathname]
     if (!f) return new Response("missing", { status: 404 })
     return new Response(f.body, { status: 200, headers: { "Content-Type": f.type, ETag: f.etag || `"${f.body.length}"` } })
@@ -80,6 +81,31 @@ test("install stores the app shell: index.html and every same-origin file it lin
   for (const p of Object.keys(site)) assert.ok(await c.match(`${ORIGIN}${p}`), `${p} is cached at install`)
   assert.ok(!w.fetched.some(u => u.startsWith("https://fonts.example")), "other origins are not fetched")
   assert.equal(await (await c.match(SCOPE)).text(), INDEX)
+})
+
+const OLD = "<!doctype html><html><body>old</body></html>"
+const withOldShell = async w => {
+  const c = await w.caches.open("nv-web-vault-v2")
+  await c.put(new Request(SCOPE), new Response(OLD, { headers: { "Content-Type": "text/html" } }))
+  return c
+}
+
+test("install fails and the cache keeps the old shell when a linked file 404s", async () => {
+  // The old worker's shell is in the shared cache; the new build's css is missing on the server.
+  const { "/vault/assets/index-Ef56Gh78.css": _, ...partial } = site
+  const w = worker({ files: partial })
+  const c = await withOldShell(w)
+  await assert.rejects(w.fire("install"), /index-Ef56Gh78\.css 404/, "install does not resolve")
+  assert.equal(await (await c.match(SCOPE)).text(), OLD, "the old index is still served")
+  assert.equal(await c.match(`${SCOPE}assets/index-Ab12Cd34.js`), undefined, "no new file went in either")
+})
+
+test("install fails and the cache keeps the old shell when the network drops after index.html", async () => {
+  const w = worker({ files: site, drop: n => n > 1 })
+  const c = await withOldShell(w)
+  await assert.rejects(w.fire("install"), /Failed to fetch/)
+  assert.equal(await (await c.match(SCOPE)).text(), OLD, "a dropped network leaves the old shell in place")
+  assert.equal((await c.keys()).length, 1, "nothing else went in")
 })
 
 test("after the first visit, a reload offline is served from the cache", async () => {

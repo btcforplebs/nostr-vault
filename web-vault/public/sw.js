@@ -11,11 +11,16 @@ async function precache() {
   const index = new URL("./", location), res = await fetch(index, { cache: "no-cache" })
   if (!res.ok) throw new Error(`index ${res.status}`)
   const html = await res.clone().text()
-  await store(new Request(index), res)
-  await Promise.all(shell(html, index).map(async u => {
+  // The old worker keeps serving from this same cache while this one installs, so nothing goes in until every
+  // file is in hand: the index last, after the files it links. A 404 or a dropped network fails the install and
+  // leaves the cache as it was; a cached new index pointing at a script that isn't cached would be a blank app.
+  const files = await Promise.all(shell(html, index).map(async u => {
     const r = await fetch(u, { cache: "no-cache" })
-    if (r.ok) await store(new Request(u), r)
+    if (!r.ok) throw new Error(`${u} ${r.status}`)
+    return [u, r]
   }))
+  for (const [u, r] of files) await store(new Request(u), r)
+  await store(new Request(index), res)
 }
 // The same-origin URLs an index.html links (src="…" and href="…" of its tags).
 function shell(html, base) {
