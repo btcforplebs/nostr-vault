@@ -10,6 +10,7 @@ import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
+import { setQuoteSource } from "./src/net/quotes.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -22,6 +23,7 @@ import { PersonScreen } from "./src/screens/PersonScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
+import "./src/styles/quotes.css"
 
 const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread"]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
@@ -64,6 +66,7 @@ function App() {
       setVault(v)
       const local = await readAccount(v, session.pubkey)
       putProfile(local.profileEvent)
+      setQuoteSource({ vault: v, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
       setAccount({ ...local, loaded: !!local.contacts })
       if (!navigator.onLine) return
       const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log })
