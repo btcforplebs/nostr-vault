@@ -253,12 +253,11 @@ extension RelayProcessManager {
         }
 
         // Local notifications — forward NOTIFY markers to LocalNotificationService.
-        // Only compiled for iOS; macOS uses the push server path.
-        #if os(iOS)
+        // Both platforms: there is no push server, so on macOS too these markers
+        // are the only source of mention, reply, zap and DM notifications.
         for marker in batch.notifyMarkers {
             LocalNotificationService.shared.handle(marker)
         }
-        #endif
     }
 
     func startLogThrottler() {

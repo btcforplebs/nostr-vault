@@ -447,6 +447,11 @@ struct SetupWizardView: View {
             TutorialCenter.shared.onNextClose = {
                 PushNotificationService.shared.requestPermissionAndRegister()
             }
+        } else {
+            // The Mac asks as the setup window closes: the switch above is
+            // already on, and without the system's permission nothing it
+            // allows can show. The Mac AppDelegate asks again at launch.
+            PushNotificationService.shared.requestPermissionAndRegister()
         }
 
         onComplete()
