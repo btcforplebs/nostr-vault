@@ -44,7 +44,8 @@ export async function startVault({ pubkey, log = () => {} }) {
   const open = route => new HavenClient(haven.conn(`ui${route.replace("/", "-")}`, { mode: "nip01", route, owner: true }), {
     auth: challenge => finalizeEvent(makeAuthEvent(`wss://${RELAY_HOST}${route}`, challenge), sk),
   })
-  return { haven, owners, outbox: open("/"), feed: open("/feed"), loadMs, startMs: Date.now() - t0 - loadMs }
+  // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
+  return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
 
 // Haven's route databases (haven-go/store_wasm.go) for this account: "haven:<pubkey>:<route>" (storePrefix).
