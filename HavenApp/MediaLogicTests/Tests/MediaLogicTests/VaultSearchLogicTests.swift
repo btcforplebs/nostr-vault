@@ -72,4 +72,69 @@ final class VaultSearchLogicTests: XCTestCase {
     func testNoLinksInPlainText() {
         XCTAssertTrue(VaultSearchLogic.links(notes: [("a", "no links here")]).isEmpty)
     }
+
+    // MARK: Query state
+
+    /// Tron's repro on #641: "ab" lands, "abc" starts, the field goes back
+    /// to "ab" while "abc" is walking. The spinner must not stay up.
+    func testBackToTheShownQueryDoesNotLeaveTheSpinnerUp() {
+        var state = VaultSearchLogic.QueryState()
+        XCTAssertEqual(state.typed("ab"), .run("ab"))
+        XCTAssertTrue(state.started("ab"))
+        XCTAssertTrue(state.landed("ab", as: .done))
+
+        XCTAssertEqual(state.typed("abc"), .run("abc"))
+        XCTAssertTrue(state.started("abc"))
+        XCTAssertEqual(state.status, .searching)
+
+        XCTAssertEqual(state.typed("ab"), .keep)
+        XCTAssertEqual(state.status, .done)
+        XCTAssertEqual(state.resultsQuery, "ab")
+
+        // "abc" finishes late: it is for a query no longer in the field.
+        XCTAssertFalse(state.landed("abc", as: .done))
+        XCTAssertEqual(state.status, .done)
+        XCTAssertEqual(state.resultsQuery, "ab")
+    }
+
+    /// The same, but "ab" had never landed: it runs again, and its answer
+    /// is the one that counts.
+    func testALateAnswerForAnOldQueryIsDropped() {
+        var state = VaultSearchLogic.QueryState()
+        _ = state.typed("ab"); _ = state.started("ab")
+        XCTAssertEqual(state.typed("abc"), .run("abc"))
+        _ = state.started("abc")
+        XCTAssertEqual(state.typed("ab"), .run("ab"))
+        _ = state.started("ab")
+        XCTAssertFalse(state.landed("abc", as: .done))
+        XCTAssertEqual(state.status, .searching)
+        XCTAssertTrue(state.landed("ab", as: .done))
+        XCTAssertEqual(state.status, .done)
+    }
+
+    /// A search whose debounce outlived the field's text never starts.
+    func testAStaleSearchDoesNotStart() {
+        var state = VaultSearchLogic.QueryState()
+        _ = state.typed("ab")
+        _ = state.typed("abc")
+        XCTAssertFalse(state.started("ab"))
+        XCTAssertEqual(state.status, .idle)
+    }
+
+    func testUnderTwoCharactersClears() {
+        var state = VaultSearchLogic.QueryState()
+        _ = state.typed("ab"); _ = state.started("ab"); _ = state.landed("ab", as: .done)
+        XCTAssertEqual(state.typed(" a "), .clear)
+        XCTAssertEqual(state.status, .idle)
+        XCTAssertEqual(state.resultsQuery, "")
+    }
+
+    /// In-memory and cut-short answers are partial: the same query asks again.
+    func testPartialAnswersAreAskedAgain() {
+        for partial in [VaultSearchLogic.Status.inMemory, .cutShort] {
+            var state = VaultSearchLogic.QueryState()
+            _ = state.typed("ab"); _ = state.started("ab"); _ = state.landed("ab", as: partial)
+            XCTAssertEqual(state.typed("ab "), .run("ab"), "\(partial)")
+        }
+    }
 }

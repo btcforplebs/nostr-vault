@@ -26,10 +26,6 @@ struct VaultSearchResults: View {
                 message(icon: "magnifyingglass",
                         title: "Search your Vault",
                         detail: "Notes, people, hashtags, links, articles and media stored on this device's relay.")
-            case .relayDown:
-                message(icon: "antenna.radiowaves.left.and.right.slash",
-                        title: "Your Vault's relay isn't running",
-                        detail: "Search works once it has started.")
             case .searching where model.results.isEmpty:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
@@ -39,11 +35,19 @@ struct VaultSearchResults: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 60)
-            case .done where model.results.isEmpty:
-                message(icon: "doc.text.magnifyingglass",
-                        title: "Nothing in your Vault matches",
-                        detail: "“\(model.resultsQuery)”")
-            default:
+            case .done, .cutShort, .inMemory:
+                if let caveat {
+                    caveatLine(caveat)
+                }
+                if model.results.isEmpty {
+                    message(icon: "doc.text.magnifyingglass",
+                            title: "Nothing in your Vault matches",
+                            detail: "“\(model.resultsQuery)”")
+                } else {
+                    chips
+                    sections
+                }
+            case .searching:
                 chips
                 sections
             }
@@ -51,6 +55,34 @@ struct VaultSearchResults: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: model.resultsQuery) { _, _ in section = nil }
+    }
+
+    /// Why these results may not be everything, when they may not.
+    private var caveat: (icon: String, text: String)? {
+        switch model.status {
+        case .cutShort:
+            return ("clock.badge.exclamationmark",
+                    "The search ran out of time, so older items may be missing.")
+        case .inMemory:
+            return ("antenna.radiowaves.left.and.right.slash",
+                    "Your Vault's relay is still starting, so this covers only what's loaded. Search again in a moment for everything.")
+        default:
+            return nil
+        }
+    }
+
+    private func caveatLine(_ caveat: (icon: String, text: String)) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: caveat.icon)
+                .font(.appSystem(size: 13, weight: .semibold))
+                .foregroundColor(.orange)
+            Text(caveat.text)
+                .font(.appSystem(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Chips

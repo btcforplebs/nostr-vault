@@ -18,6 +18,9 @@ struct GlobalSearchResults {
     var profileCreatedAt: [String: Int64] = [:]
     /// True on the last delivery of a search: every relay has answered.
     var isFinished = false
+    /// A local relay walk hit its deadline before it ran out of events, so
+    /// later kinds or older pages are missing.
+    var isCutShort = false
 }
 
 /// Lightweight signal published when profile metadata changes, so views can

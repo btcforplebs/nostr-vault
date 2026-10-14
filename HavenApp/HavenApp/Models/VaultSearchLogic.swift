@@ -109,4 +109,84 @@ enum VaultSearchLogic {
         }
         return links
     }
+
+    // MARK: - Query state
+
+    /// How the Vault's search stands.
+    enum Status: Equatable {
+        /// Nothing typed, or under two characters.
+        case idle
+        case searching
+        /// The relay walk finished.
+        case done
+        /// The walk hit its deadline: the results are real, but kinds or
+        /// pages it had not reached yet are missing.
+        case cutShort
+        /// The Vault's relay was not up, so only what the app had already
+        /// loaded was searched.
+        case inMemory
+    }
+
+    /// Which query is on screen and which one the results are for. A search
+    /// that lands is kept only if it is for the query in the field now —
+    /// the Search tab's rule (it compares the live text too). Comparing with
+    /// the last results' query instead left the spinner up for good: type
+    /// "ab", then "abc", then back to "ab", and "abc" landed for nothing.
+    struct QueryState: Equatable {
+        enum Next: Equatable {
+            /// Under two characters: drop the results and any search running.
+            case clear
+            /// The results already on screen are for this query: stop any
+            /// search running and show them.
+            case keep
+            /// Search this query.
+            case run(String)
+        }
+
+        private(set) var live = ""
+        private(set) var resultsQuery = ""
+        private(set) var status: Status = .idle
+        /// How the search behind the results on screen ended.
+        private var resultsStatus: Status = .idle
+
+        /// The field changed.
+        mutating func typed(_ query: String) -> Next {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            live = trimmed
+            guard trimmed.count >= 2 else {
+                resultsQuery = ""
+                status = .idle
+                resultsStatus = .idle
+                return .clear
+            }
+            // An in-memory or cut-short answer is worth asking again for:
+            // the relay may be up now, or answer faster.
+            if trimmed == resultsQuery && resultsStatus == .done {
+                status = .done
+                return .keep
+            }
+            return .run(trimmed)
+        }
+
+        /// A search for `query` starts. False if the field has moved on.
+        mutating func started(_ query: String) -> Bool {
+            guard query == live else { return false }
+            status = .searching
+            return true
+        }
+
+        /// A search for `query` came back. False, and nothing changes, if
+        /// the field no longer holds that query.
+        mutating func landed(_ query: String, as result: Status) -> Bool {
+            guard query == live else { return false }
+            resultsQuery = query
+            status = result
+            resultsStatus = result
+            return true
+        }
+
+        mutating func reset() {
+            self = QueryState()
+        }
+    }
 }

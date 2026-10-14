@@ -12,9 +12,11 @@ import SwiftUI
 /// last subscription is done — the timeout is only there for a socket that
 /// never answers.
 final class LocalRelaySearchSession {
-    /// Fallback for a route that never connects or never EOSEs. Not the normal
-    /// completion path: on-box LMDB answers a page in milliseconds.
-    static let timeout: TimeInterval = 6.0
+    /// Fallback for a route that never connects or never EOSEs, for the
+    /// default walk (profiles and kind 1). Not the normal completion path:
+    /// on-box LMDB answers a page in milliseconds. A walk over more kinds
+    /// gets `LocalRelaySearchPlan.timeout(kindCount:)`.
+    static let timeout: TimeInterval = LocalRelaySearchPlan.timeout(kindCount: 2)
 
     private struct Stream {
         let routeIndex: Int
@@ -64,16 +66,18 @@ final class LocalRelaySearchSession {
     private var doneRoutes = Set<Int>()
     private var didFinish = false
     private var didStart = false
+    /// The deadline ended the walk, not the relay running dry.
+    private var timedOut = false
 
     init(matcher: LocalSearchMatcher,
          routes: [URL],
          noteKinds: [Int] = [1],
-         timeout: TimeInterval = LocalRelaySearchSession.timeout,
+         timeout: TimeInterval? = nil,
          onFinish: @escaping (GlobalSearchResults) -> Void) {
         self.collector = LocalRelaySearchCollector(matcher: matcher)
         self.routes = routes
-        self.kindOrder = [0] + noteKinds.filter { $0 != 0 }
-        self.timeout = timeout
+        self.kindOrder = LocalRelaySearchPlan.kindOrder(noteKinds: noteKinds)
+        self.timeout = timeout ?? LocalRelaySearchPlan.timeout(kindCount: kindOrder.count)
         self.onFinish = onFinish
     }
 
@@ -135,6 +139,7 @@ final class LocalRelaySearchSession {
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self = self else { return }
             if self.failureReason == nil { self.failureReason = "timed out" }
+            if !self.didFinish { self.timedOut = true }
             self.finish()
         }
     }
@@ -250,7 +255,8 @@ final class LocalRelaySearchSession {
     private func finish() {
         guard !didFinish else { return }
         didFinish = true
-        let results = collector.snapshot()
+        var results = collector.snapshot()
+        results.isCutShort = timedOut
         teardown()
         let answered = !answeredRoutes.isEmpty
         onOutcome?(Outcome(answered: answered, reason: answered ? nil : (failureReason ?? "no response")))

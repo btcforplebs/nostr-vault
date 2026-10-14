@@ -134,14 +134,7 @@ final class VaultSearchModel: ObservableObject {
         var isEmpty: Bool { people.isEmpty && notes.isEmpty && hashtags.isEmpty && links.isEmpty }
     }
 
-    enum Status: Equatable {
-        /// Nothing typed, or under two characters.
-        case idle
-        case searching
-        case done
-        /// The Vault's relay is not running, so there is nothing to search.
-        case relayDown
-    }
+    typealias Status = VaultSearchLogic.Status
 
     /// Notes, articles, highlights, comments, polls and media. Reposts are
     /// left out: their content is the reposted event's JSON.
@@ -149,9 +142,11 @@ final class VaultSearchModel: ObservableObject {
         + VaultSearchLogic.mediaKinds.sorted()
 
     @Published private(set) var results = Results()
-    @Published private(set) var status: Status = .idle
+    @Published private(set) var state = VaultSearchLogic.QueryState()
+
+    var status: Status { state.status }
     /// The query the results are for.
-    @Published private(set) var resultsQuery = ""
+    var resultsQuery: String { state.resultsQuery }
 
     private var pending: Task<Void, Never>?
 
@@ -160,19 +155,20 @@ final class VaultSearchModel: ObservableObject {
     func search(_ query: String, now: Bool = false,
                 nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
         pending?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else {
+        pending = nil
+        switch state.typed(query) {
+        case .clear:
             nostrService.cancelLocalRelaySearch()
             results = Results()
-            resultsQuery = ""
-            status = .idle
-            return
-        }
-        guard trimmed != resultsQuery || status == .relayDown else { return }
-        pending = Task { [weak self] in
-            if !now { try? await Task.sleep(for: .milliseconds(300)) }
-            guard !Task.isCancelled, let self else { return }
-            self.run(trimmed, nostrService: nostrService, feedService: feedService, blocked: blocked)
+        case .keep:
+            // Whatever is still walking is for a query the field has left.
+            nostrService.cancelLocalRelaySearch()
+        case .run(let trimmed):
+            pending = Task { [weak self] in
+                if !now { try? await Task.sleep(for: .milliseconds(300)) }
+                guard !Task.isCancelled, let self else { return }
+                self.run(trimmed, nostrService: nostrService, feedService: feedService, blocked: blocked)
+            }
         }
     }
 
@@ -181,41 +177,78 @@ final class VaultSearchModel: ObservableObject {
         pending = nil
         nostrService.cancelLocalRelaySearch()
         results = Results()
-        resultsQuery = ""
-        status = .idle
+        state.reset()
     }
 
     private func run(_ query: String, nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
+        guard state.started(query) else { return }
         guard let relayURL = feedService.localRelayURL else {
-            results = Results()
-            resultsQuery = query
-            status = .relayDown
+            // The relay is still starting: search what the app has loaded
+            // rather than show nothing.
+            runInMemory(query, nostrService: nostrService, feedService: feedService, blocked: blocked)
             return
         }
-        status = .searching
         nostrService.localRelaySearch(query: query, relayURL: relayURL,
                                       noteKinds: Self.noteKinds, allTerms: true) { [weak self] found in
-            guard let self, self.pending?.isCancelled == false else { return }
-            let filter = SearchBlockFilter(blocked: blocked)
-            let people = filter.profiles(found.profiles, pubkey: \.pubkey)
-            let notes = filter.notes(found.notes) { note, blocked in
-                FeedFilterEngine.involvesBlocked(note, blocked: blocked,
-                                                 authorOf: { feedService.findNote(id: $0)?.pubkey })
-            }
-            let follows = Set(feedService.followedPubkeys)
-            var results = Results()
-            // People you follow first, then by name.
-            results.people = people.sorted {
-                let a = follows.contains($0.pubkey), b = follows.contains($1.pubkey)
-                if a != b { return a }
-                return $0.bestName.localizedCaseInsensitiveCompare($1.bestName) == .orderedAscending
-            }
-            results.notes = notes
-            results.hashtags = VaultSearchLogic.hashtags(contents: notes.map { ($0.content, $0.tags) }, query: query)
-            results.links = VaultSearchLogic.links(notes: notes.map { ($0.id, $0.content) })
-            self.results = results
-            self.resultsQuery = query
-            self.status = .done
+            guard let self else { return }
+            self.land(query, profiles: found.profiles, notes: found.notes,
+                      as: found.isCutShort ? .cutShort : .done,
+                      feedService: feedService, blocked: blocked)
         }
+    }
+
+    /// The relay-down fallback: the same matching over the profiles, Vault
+    /// events and feed notes already in memory.
+    private func runInMemory(_ query: String, nostrService: NostrService, feedService: FeedService, blocked: Set<String>) {
+        guard let matcher = LocalSearchMatcher(allTermsOf: query) else { return }
+        let kinds = Set(Self.noteKinds)
+        let profiles = Array(nostrService.profiles.values)
+        let events = nostrService.events
+        let feedNotes = feedService.notes
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let people = profiles.filter {
+                matcher.matchesProfile(displayName: $0.displayName, name: $0.name, about: $0.about,
+                                       nip05: $0.nip05, pubkey: $0.pubkey)
+            }
+            var seen = Set<String>()
+            var notes: [FeedNote] = []
+            for event in events where kinds.contains(event.kind)
+                && matcher.matchesNote(content: event.content, tags: event.tags)
+                && seen.insert(event.id).inserted {
+                notes.append(FeedNote(id: event.id, pubkey: event.pubkey, content: event.content,
+                                      createdAt: event.createdAtDate, tags: event.tags, kind: event.kind))
+            }
+            for note in feedNotes where kinds.contains(note.kind)
+                && matcher.matchesNote(content: note.content, tags: note.tags)
+                && seen.insert(note.id).inserted {
+                notes.append(note)
+            }
+            notes.sort { $0.createdAt > $1.createdAt }
+            await self?.land(query, profiles: people, notes: notes, as: .inMemory,
+                             feedService: feedService, blocked: blocked)
+        }
+    }
+
+    private func land(_ query: String, profiles: [FeedProfile], notes found: [FeedNote], as result: Status,
+                      feedService: FeedService, blocked: Set<String>) {
+        guard state.landed(query, as: result) else { return }
+        let filter = SearchBlockFilter(blocked: blocked)
+        let people = filter.profiles(profiles, pubkey: \.pubkey)
+        let notes = filter.notes(found) { note, blocked in
+            FeedFilterEngine.involvesBlocked(note, blocked: blocked,
+                                             authorOf: { feedService.findNote(id: $0)?.pubkey })
+        }
+        let follows = Set(feedService.followedPubkeys)
+        var results = Results()
+        // People you follow first, then by name.
+        results.people = people.sorted {
+            let a = follows.contains($0.pubkey), b = follows.contains($1.pubkey)
+            if a != b { return a }
+            return $0.bestName.localizedCaseInsensitiveCompare($1.bestName) == .orderedAscending
+        }
+        results.notes = notes
+        results.hashtags = VaultSearchLogic.hashtags(contents: notes.map { ($0.content, $0.tags) }, query: query)
+        results.links = VaultSearchLogic.links(notes: notes.map { ($0.id, $0.content) })
+        self.results = results
     }
 }
