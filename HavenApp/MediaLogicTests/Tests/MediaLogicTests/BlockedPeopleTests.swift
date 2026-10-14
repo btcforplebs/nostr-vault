@@ -79,3 +79,41 @@ final class BlockedPeopleTests: XCTestCase {
                                                 tags: hostTags(friendHex), blocked: [blockedHex]))
     }
 }
+
+/// Blocking someone from a thread page: their notes leave it at once, and the
+/// note shown full size gives way if it is theirs.
+final class BlockedPeopleThreadTests: XCTestCase {
+    private let blockedHex = String(repeating: "b", count: 64)
+    private let friendHex = String(repeating: "f", count: 64)
+
+    private struct Note { let id: String; let pubkey: String }
+
+    func testBlockedPersonsQuotesAndParentsAreLeftOut() {
+        let notes = [Note(id: "1", pubkey: friendHex), Note(id: "2", pubkey: blockedHex),
+                     Note(id: "3", pubkey: blockedHex.uppercased())]
+        let shown = BlockedPeople.visibleNotes(notes, blocked: [blockedHex]) { $0.pubkey }
+        XCTAssertEqual(shown.map(\.id), ["1"])
+    }
+
+    func testNothingIsLeftOutWithNoBlocks() {
+        let notes = [Note(id: "1", pubkey: friendHex), Note(id: "2", pubkey: blockedHex)]
+        XCTAssertEqual(BlockedPeople.visibleNotes(notes, blocked: []) { $0.pubkey }.map(\.id), ["1", "2"])
+    }
+
+    func testOpenedNoteByBlockedPersonBecomesAPlaceholder() {
+        XCTAssertEqual(BlockedPeople.focusedNote(author: blockedHex, isOpenedNote: true, blocked: [blockedHex]),
+                       .placeholder)
+    }
+
+    func testTappedIntoReplyByBlockedPersonGoesBackToTheOpenedNote() {
+        XCTAssertEqual(BlockedPeople.focusedNote(author: blockedHex, isOpenedNote: false, blocked: [blockedHex]),
+                       .backToOpened)
+    }
+
+    func testNoteBySomeoneElseStaysShown() {
+        XCTAssertEqual(BlockedPeople.focusedNote(author: friendHex, isOpenedNote: true, blocked: [blockedHex]),
+                       .shown)
+        XCTAssertEqual(BlockedPeople.focusedNote(author: blockedHex, isOpenedNote: true, blocked: []),
+                       .shown)
+    }
+}

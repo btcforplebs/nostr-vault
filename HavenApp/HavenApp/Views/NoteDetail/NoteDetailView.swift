@@ -257,13 +257,17 @@ struct NoteDetailView: View {
                         .transition(.opacity)
                     }
 
-                    // Main Note (focused hero note) + engagement merged into one card
-                    mainNoteSection(proxy: proxy)
+                    if focusedNoteBlockState == .placeholder {
+                        blockedNotePlaceholder
+                    } else {
+                        // Main Note (focused hero note) + engagement merged into one card
+                        mainNoteSection(proxy: proxy)
 
-                    // Replies Section
-                    repliesSection(proxy: proxy)
+                        // Replies Section
+                        repliesSection(proxy: proxy)
 
-                    otherResponsesSection
+                        otherResponsesSection
+                    }
 
                     // Room under a short thread, so the opened note can scroll
                     // to the top with the posts it answers above it. Without
@@ -308,6 +312,13 @@ struct NoteDetailView: View {
                 if dynamicParents.isEmpty && !isLoadingParents { settle(); return }
                 try? await Task.sleep(nanoseconds: UInt64(Self.settleCap * 1_000_000_000))
                 settle()
+            }
+            // Blocked the author of the reply you tapped into: back to the
+            // note you opened, as the reply itself is now hidden.
+            .onChange(of: focusedNoteBlockState) { _, state in
+                guard state == .backToOpened else { return }
+                focusedNoteId = note.id
+                pinnedScrollId = note.id
             }
             .onChange(of: focusedNoteId) { _, newId in
                 if !newId.isEmpty {
@@ -366,28 +377,32 @@ struct NoteDetailView: View {
                         }
                     }
 
-                    // Reply button
-                    IconFilterButton(
-                        icon: "arrowshape.turn.up.left.fill",
-                        tooltip: "Reply",
-                        isSelected: false,
-                        color: .havenPurple
-                    ) {
-                        // The toolbar replies to whatever note is focused, the
-                        // same target the focused card's own reply button uses.
-                        // Pointing it at the entry note instead let the two
-                        // buttons disagree once you tapped into a reply.
-                        composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
-                    }
+                    // Both act on the note shown full size. Behind the
+                    // blocked placeholder that is the blocked person's note.
+                    if focusedNoteBlockState != .placeholder {
+                        // Reply button
+                        IconFilterButton(
+                            icon: "arrowshape.turn.up.left.fill",
+                            tooltip: "Reply",
+                            isSelected: false,
+                            color: .havenPurple
+                        ) {
+                            // The toolbar replies to whatever note is focused, the
+                            // same target the focused card's own reply button uses.
+                            // Pointing it at the entry note instead let the two
+                            // buttons disagree once you tapped into a reply.
+                            composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
+                        }
 
-                    // Event info / re-broadcast
-                    IconFilterButton(
-                        icon: "antenna.radiowaves.left.and.right",
-                        tooltip: "Broadcast",
-                        isSelected: false,
-                        color: .havenPurple
-                    ) {
-                        showingBroadcastSheet = true
+                        // Event info / re-broadcast
+                        IconFilterButton(
+                            icon: "antenna.radiowaves.left.and.right",
+                            tooltip: "Broadcast",
+                            isSelected: false,
+                            color: .havenPurple
+                        ) {
+                            showingBroadcastSheet = true
+                        }
                     }
                 }
             }
