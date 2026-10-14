@@ -241,7 +241,8 @@ extension VaultView {
                 let lines = VaultActivity.build(
                     events: currentEvents.map {
                         VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
-                                            createdAt: $0.created_at, content: $0.content, tags: $0.tags)
+                                            createdAt: $0.created_at, content: $0.content, tags: $0.tags,
+                                            images: $0.mediaURLs.filter(\.isImage))
                     },
                     owner: owner,
                     noteKinds: Set(NostrService.relayTabNoteKinds),
