@@ -40,7 +40,7 @@ function Connect() {
         placeholder="nostr+walletconnect://…" value={uri} onInput={e => setUri(e.currentTarget.value)} aria-label="Wallet connection link" />
       {err && <p class="error" role="alert">{err}</p>}
       <button class="primary" disabled={busy || !uri.trim()}>{busy ? "Connecting…" : "Connect wallet"}</button>
-      <p class="muted small">The link stays in this browser, encrypted, and is deleted when you sign out. Anyone with the link can spend from the wallet, so give this app a connection with a spending limit.</p>
+      <p class="muted small">The link stays in this browser and is deleted when you sign out. Its encryption only keeps it out of plain sight on this device: script on this page, or anyone who copies this browser's profile, can still read it. Anyone with the link can spend from the wallet, so give this app a connection with a spending limit.</p>
     </form>
   )
 }

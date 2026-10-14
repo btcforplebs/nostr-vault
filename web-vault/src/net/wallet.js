@@ -3,8 +3,10 @@
 // NIP-04 encrypted to the wallet, answered by a kind 23195 that tags the request.
 //
 // The link's secret spends the wallet's money. It is never logged, never put in a URL, and never shown again once
-// saved. It is kept sealed in this browser: AES-GCM under a key WebCrypto made non-extractable, both in the
-// IndexedDB "haven:<pubkey>:wallet", which sign-out deletes with the account's other stores (vault.js storeNames).
+// saved. It is kept in this browser under AES-GCM with a non-extractable WebCrypto key, both in the IndexedDB
+// "haven:<pubkey>:wallet", which sign-out deletes with the account's other stores (vault.js storeNames). That only
+// keeps the link out of plain sight in the stored value: Chrome writes the key's raw bytes into the same record, so a
+// copied browser profile decrypts it, and so can script running on this page.
 import { Relay } from "nostr-tools/relay"
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure"
 import { encrypt, decrypt } from "nostr-tools/nip04"
@@ -98,8 +100,8 @@ export async function payInvoice(conn, invoice, opts) {
   return typeof preimage === "string" ? preimage : ""
 }
 
-// Sealing: the link is encrypted under a non-extractable AES-GCM key. Both are kept together, so this hides the
-// link from anything that reads the browser's files or copies its storage, not from script running on this page.
+// Sealing: the link is encrypted under a non-extractable AES-GCM key, kept with it. This keeps the link out of plain
+// sight in the stored value; it is not protection: a copied profile or script on this page can still read it.
 export async function sealUri(uri, subtle = crypto.subtle) {
   const key = await subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   const iv = crypto.getRandomValues(new Uint8Array(12))
