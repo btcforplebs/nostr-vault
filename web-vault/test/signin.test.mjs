@@ -80,7 +80,14 @@ test("a store the browser lists is deleted even if the route list doesn't know i
   // Another account's vault on this browser is left alone, and so is anything that isn't Haven's.
   assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
-  assert.equal((await storeNames(pk, fakeIdb())).length, 15) // 7 routes, with and without the pubkey, + its drafts
+  const fallback = await storeNames(pk, fakeIdb())
+  assert.equal(fallback.length, 16) // 7 routes, with and without the pubkey, + its drafts and wallet
+  // The page's own stores (drafts, the NWC wallet) are wiped with the account whether or not the browser lists them.
+  for (const s of ["drafts", "wallet"]) {
+    assert.ok(fallback.includes(`haven:${pk}:${s}`), `${s} on the fallback list`)
+    assert.ok(idb.deleted.includes(`haven:${pk}:${s}`), `${s} on the databases() path`)
+    assert.ok(!fallback.includes(`haven:${s}`), `no unprefixed ${s}: there never was one`)
+  }
 })
 
 // /vault/ and /relay/ are one origin (nostrvault.app), so one IndexedDB and one localStorage.
