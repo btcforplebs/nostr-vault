@@ -32,12 +32,14 @@ struct AccountsSettingsView: View {
                         let npub = configService.allAccountNpubs[index]
                         configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == npub }
                         configService.removeBunkerConfig(forNpub: npub)
+                        // Switch away only after the bunker config is gone: removeBunkerConfig
+                        // already detaches the active signer, and its session drop must land
+                        // before the owner's connect, which can share the same signer session.
+                        if configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines) == npub {
+                            configService.switchActiveAccount(to: nil)
+                        }
                         configService.removeCredential(forNpub: npub)
                         configService.config.accountSigningModes.removeValue(forKey: npub)
-                        if configService.config.activeAccountNpub == npub {
-                            configService.config.activeAccountNpub = ""
-                            configService.refreshActiveAccountHex()
-                        }
                     }
                     configService.save()
                 }
@@ -112,12 +114,14 @@ struct AccountsSettingsView: View {
                 onRemoveAccount: {
                     configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == item.id }
                     configService.removeBunkerConfig(forNpub: item.id)
+                    // Switch away only after the bunker config is gone: removeBunkerConfig
+                    // already detaches the active signer, and its session drop must land
+                    // before the owner's connect, which can share the same signer session.
+                    if configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines) == item.id {
+                        configService.switchActiveAccount(to: nil)
+                    }
                     configService.removeCredential(forNpub: item.id)
                     configService.config.accountSigningModes.removeValue(forKey: item.id)
-                    if configService.config.activeAccountNpub == item.id {
-                        configService.config.activeAccountNpub = ""
-                        configService.refreshActiveAccountHex()
-                    }
                     configService.save()
                 }
             )
