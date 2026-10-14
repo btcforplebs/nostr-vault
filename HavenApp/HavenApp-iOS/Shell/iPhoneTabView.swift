@@ -161,8 +161,11 @@ struct iPhoneTabView: View {
             .background(
                 GeometryReader { geo in
                     Color.clear
-                        .onAppear { tabBarHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { _, height in tabBarHeight = height }
+                        .onAppear { tabBarHeight = geo.size.height; buttonRow.update(chromeHeight: geo.size.height) }
+                        .onChange(of: geo.size.height) { _, height in
+                            tabBarHeight = height
+                            buttonRow.update(chromeHeight: height)
+                        }
                 }
             )
         }
@@ -183,5 +186,7 @@ struct iPhoneTabView: View {
         .onChange(of: selectedTab, initial: true) { _, tab in
             VaultSection.shared.isOnScreen = tab == 4
         }
+        // The return pill sits on the tab bar; on the iPad sidebar it doesn't.
+        .onDisappear { buttonRow.update(chromeHeight: 0) }
     }
 }

@@ -252,6 +252,15 @@ private struct OpensRelayTab: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in showVault(media: false) }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in showVault(media: false) }
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in showVault(media: false) }
+            // The return pill: the Vault tab on its "Vault" list. A Vault not
+            // built yet opens there anyway; one that is hears the list switch
+            // once the tab is up.
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenVault)) { _ in
+                showVault(media: false)
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .havenOpenRelayActivity, object: nil)
+                }
+            }
     }
 
     /// The Vault tab, on its relay half or its Media half.

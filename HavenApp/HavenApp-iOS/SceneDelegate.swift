@@ -59,6 +59,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             AppBannerStack()
             ReactionTapbackLayer()
             TutorialStage { BannerHitRegions.frames["tutorial"] = $0 }
+            ReturnPillLayer { BannerHitRegions.frames["returnPill"] = $0 }
         })
         // While the tapback bar waits for a tap, this window takes every
         // touch, so a tap anywhere else closes the bar instead of reaching
@@ -190,6 +191,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        // Back from the background (or just launched): what the relay catches
+        // up on now is gathered into one bottom pill (ReturnPillManager).
+        // Not on didBecomeActive: Control Center or an alert going away is
+        // not a return.
+        ReturnPillManager.shared.beginReturn()
+
         // Check the NIP-46 signer session survived the suspension; reconnect
         // only if it no longer answers.
         NIP46Service.shared.resumeAfterForeground()
@@ -256,6 +263,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // active: Control Center, the app switcher or an alert leaves the
         // app on screen, and a pill being read there is not lost.
         RelayActivityNotificationManager.shared.hostLost()
+        ReturnPillManager.shared.endReturn()
 
         // The NIP-46 signer session is deliberately kept: approving a request
         // means switching to the signer app, and disconnecting here killed the
