@@ -2,8 +2,35 @@
 // stored and are fetched only once. Everything else is network first, with the cached copy when offline, so a
 // reload works without a network.
 const C = "nv-web-vault-v2"
-self.addEventListener("install", () => self.skipWaiting())
+self.addEventListener("install", e => e.waitUntil(precache().then(() => self.skipWaiting())))
 self.addEventListener("activate", e => e.waitUntil(migrate().then(() => self.clients.claim())))
+// The first visit's page and scripts were fetched before this worker existed, so nothing above would have stored
+// them: a reload offline right after the first visit fails. Stores the app shell now: index.html (served at the
+// scope root) and every same-origin file it links (the hashed script and stylesheet, manifest, icons).
+async function precache() {
+  const index = new URL("./", location), res = await fetch(index, { cache: "no-cache" })
+  if (!res.ok) throw new Error(`index ${res.status}`)
+  const html = await res.clone().text()
+  // The old worker keeps serving from this same cache while this one installs, so nothing goes in until every
+  // file is in hand: the index last, after the files it links. A 404 or a dropped network fails the install and
+  // leaves the cache as it was; a cached new index pointing at a script that isn't cached would be a blank app.
+  const files = await Promise.all(shell(html, index).map(async u => {
+    const r = await fetch(u, { cache: "no-cache" })
+    if (!r.ok) throw new Error(`${u} ${r.status}`)
+    return [u, r]
+  }))
+  for (const [u, r] of files) await store(new Request(u), r)
+  await store(new Request(index), res)
+}
+// The same-origin URLs an index.html links (src="…" and href="…" of its tags).
+function shell(html, base) {
+  const out = new Set()
+  for (const [, , v] of html.matchAll(/\s(src|href)=["']([^"']+)["']/g)) {
+    const u = new URL(v, base)
+    if (u.origin === base.origin && u.href !== base.href) out.add(u.href)
+  }
+  return [...out]
+}
 // Moves what the older caches hold into this one, then deletes them: the page open right now was served by
 // the old worker, and must still reload offline before it has been fetched through this one.
 async function migrate() {
@@ -24,7 +51,9 @@ self.addEventListener("fetch", e => {
     return r
   })
   if (asset) return e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(hit => hit || net()))
-  e.respondWith(net().catch(() => caches.match(e.request, { ignoreSearch: true })))
+  // Offline, a page URL not seen before (a deep link, a stale tab) gets the shell, as the server would send index.html.
+  const shellPage = () => e.request.mode === "navigate" ? caches.match(new URL("./", location).href) : undefined
+  e.respondWith(net().catch(async () => (await caches.match(e.request, { ignoreSearch: true })) || shellPage()))
 })
 
 // Unchanged files (same ETag) aren't rewritten. A new build's hashed .wasm replaces its older versions
