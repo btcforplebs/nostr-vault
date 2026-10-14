@@ -6,7 +6,8 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".wasm": "applic
 http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^\/vault(\/|$)/, "/")
   let p = path.join(root, pathname)
-  if (!p.startsWith(root)) { res.statusCode = 403; return res.end() }
+  // A path boundary, not a string prefix: "%2e%2e%2fdist-secret" must not reach a sibling of root.
+  if (p !== root && !p.startsWith(root + path.sep)) { res.statusCode = 403; return res.end() }
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, "index.html")
   if (!fs.existsSync(p)) p = path.join(root, "index.html")
   res.setHeader("Content-Type", types[path.extname(p)] || "application/octet-stream")
