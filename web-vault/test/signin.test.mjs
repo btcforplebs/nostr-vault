@@ -80,7 +80,7 @@ test("a store the browser lists is deleted even if the route list doesn't know i
   // Another account's vault on this browser is left alone, and so is anything that isn't Haven's.
   assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
-  assert.equal((await storeNames(pk, fakeIdb())).length, 14)
+  assert.equal((await storeNames(pk, fakeIdb())).length, 15) // 7 routes, with and without the pubkey, + its drafts
 })
 
 // /vault/ and /relay/ are one origin (nostrvault.app), so one IndexedDB and one localStorage.
