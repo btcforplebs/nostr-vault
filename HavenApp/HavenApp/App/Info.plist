@@ -12,7 +12,7 @@
 		<true/>
 	</dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<true/>
 	<key>NostrBuildGIFAPIKey</key>
 	<string>$(NOSTR_BUILD_GIF_KEY)</string>
 </dict>
