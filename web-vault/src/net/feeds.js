@@ -1,9 +1,9 @@
 // The Feed's picker: Following (Haven /feed, see sync.js), Global (recent notes from the user's read relays) and
 // Hashtag (`#t` notes). Global and Hashtag notes are strangers': they are held in memory only and never written
-// to Haven /feed, which is the Following feed's store. Their names and pictures stay in memory too (putProfile).
-import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
+// to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
+// their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
+import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
-import { getProfile, putProfile } from "./profiles.js"
 
 // The iPhone's FeedMode names (Services/FeedServiceTypes.swift). The rest of its feeds aren't on the web yet.
 export const FEEDS = [
@@ -56,13 +56,11 @@ export function mergePage(have, more) {
   return [...have, ...more.filter(e => !ids.has(e.id))]
 }
 
-/** Names and pictures for strangers' notes, kept in memory (not Haven /feed). `query` is for tests. */
-export async function fetchStrangerProfiles(pubkeys, relays, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const want = uniq(pubkeys).filter(pk => pk && !getProfile(pk))
-  for (let i = 0; i < want.length; i += 200) {
-    const evs = await query(uniq([...relays, ...PROFILE_RELAYS]), { kinds: [0], authors: want.slice(i, i + 200) }, { maxWait: 6000 })
-    for (const ev of evs) putProfile(ev)
-  }
+/** A status setter for work starting now: it goes quiet once `seq` (FeedScreen's feed counter) moves on, so a
+ *  Following sync or a Global page still running after a switch can't write onto the next feed's status line. */
+export function statusGate(seq, set) {
+  const n = seq.current
+  return text => { if (n === seq.current) set(text) }
 }
 
 /** Everyone a page of notes shows: authors, and the author inside each repost. */

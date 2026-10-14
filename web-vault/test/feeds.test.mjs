@@ -1,8 +1,8 @@
 // The Feed's picker: what each feed asks the relays for, what is remembered, and that strangers' notes stay in memory.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { FEEDS, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, fetchStrangerProfiles, mergePage, noteAuthors, heldNotes, holdNotes, feedKey } from "../src/net/feeds.js"
-import { getProfile } from "../src/net/profiles.js"
+import { FEEDS, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, mergePage, statusGate, noteAuthors, heldNotes, holdNotes, feedKey } from "../src/net/feeds.js"
+import { getProfile, fetchProfiles } from "../src/net/profiles.js"
 import { visibleNotes } from "../src/net/blocks.js"
 
 const memStorage = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
@@ -63,13 +63,19 @@ test("loaded stranger feeds are held per feed, in memory", () => {
   assert.notEqual(feedKey({ mode: "hashtag", tag: "a" }), feedKey({ mode: "hashtag", tag: "b" }))
 })
 
-test("strangers' profiles go to memory, and only the missing ones are asked for", async () => {
-  const pk = "c".repeat(64)
-  const asked = []
-  await fetchStrangerProfiles([pk, pk], ["wss://r"], { query: async (r, f) => { asked.push(f.authors); return [{ kind: 0, pubkey: pk, created_at: 1, content: JSON.stringify({ name: "Stranger" }) }] } })
+test("strangers' profiles go to memory, not Haven, once each, in one batch", async () => {
+  const pk = "c".repeat(64), pk2 = "d".repeat(64)
+  const writes = [], asked = []
+  const vault = { feed: { query: async () => [], event: async ev => writes.push(ev) } }
+  const kind0 = (p, name) => ({ kind: 0, pubkey: p, created_at: 1, content: JSON.stringify({ name }) })
+  const query = async (r, f) => { asked.push(f.authors); await new Promise(r => setTimeout(r, 5)); return [kind0(pk, "Stranger"), kind0(pk2, "Other")] }
+  // Two loads at once (a page re-render): the second finds the first in flight and doesn't ask again.
+  await Promise.all([fetchProfiles(vault, [pk, pk2, pk], ["wss://r"], { save: false, query }), fetchProfiles(vault, [pk], ["wss://r"], { save: false, query })])
   assert.equal(getProfile(pk).name, "Stranger")
-  await fetchStrangerProfiles([pk], ["wss://r"], { query: async () => assert.fail("already known") })
-  assert.deepEqual(asked, [[pk]])
+  assert.equal(getProfile(pk2).name, "Other")
+  assert.deepEqual(asked, [[pk, pk2]])
+  assert.deepEqual(writes, [], "nothing written to Haven /feed")
+  await fetchProfiles(vault, [pk], ["wss://r"], { save: false, query: async () => assert.fail("already known") })
 })
 
 test("authors include the person inside a repost", () => {
@@ -79,4 +85,15 @@ test("authors include the person inside a repost", () => {
 test("blocks apply to stranger feeds too", () => {
   const notes = [{ id: "1", kind: 1, pubkey: A }, { id: "2", kind: 1, pubkey: B }]
   assert.deepEqual(visibleNotes(notes, new Set([B])).map(e => e.id), ["1"])
+})
+
+test("a status line set by older work goes quiet once the feed is switched", () => {
+  const seq = { current: 0 }, said = []
+  const following = statusGate(seq, s => said.push(s))
+  following("Syncing 3/10 follows")
+  seq.current++ // picked Global
+  const global = statusGate(seq, s => said.push(s))
+  following("Up to date")
+  global("Loading…")
+  assert.deepEqual(said, ["Syncing 3/10 follows", "Loading…"])
 })

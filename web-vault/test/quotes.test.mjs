@@ -186,3 +186,13 @@ test("a tap on a quoted card goes to that note's thread", async () => {
   const ev = note("t")
   assert.equal(quoteHash(ev), `#/thread/${ev.id}`)
 })
+
+test("a quote inside a stranger's note (save: false) comes from the relays but isn't written into Haven", async () => {
+  const { fetchQuote, getQuote } = await load()
+  const ev = note("quoted by a stranger", 150)
+  const vault = fakeVault()
+  const got = await fetchQuote({ type: "note", id: ev.id, relays: [] }, { vault, relays: ["wss://a"], save: false, query: async () => [ev] })
+  assert.equal(got.id, ev.id)
+  assert.equal(getQuote(ev.id).id, ev.id, "kept in memory")
+  assert.equal(vault.stored.length, 0, "not written into Haven")
+})

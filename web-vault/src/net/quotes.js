@@ -1,6 +1,7 @@
 // Quoted notes: a nostr:nevent / note / naddr reference in a note's text, read from Haven /feed first and the
 // relays only for what /feed doesn't have (what they return is verified and written into /feed, so the next
-// open finds it there). Read-only on the network: nothing here signs. The screens never see the vault here:
+// open finds it there, unless the card is a stranger's: then `save: false` keeps it in memory only). Read-only on
+// the network: nothing here signs. The screens never see the vault here:
 // main.jsx registers it once with setQuoteSource(), and the cards read it through quoteSource().
 import { decode } from "nostr-tools/nip19"
 import { pool, uniq } from "./pool.js"
@@ -46,14 +47,14 @@ function changed() { for (const cb of listeners) cb() }
 /**
  * The event for a parsed note/addr reference: Haven /feed (or a repost there that carries it), else the relays
  * plus the reference's own hints. Resolves to the event, or null when nowhere has it. One fetch per key at a time.
- * `query` is for tests.
+ * `save: false` doesn't write what the relays return into /feed. `query` is for tests.
  */
-export function fetchQuote(q, { vault, relays = [], query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export function fetchQuote(q, { vault, relays = [], save = true, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const key = quoteKey(q)
   if (cache.has(key)) return Promise.resolve(cache.get(key))
   if (inflight.has(key)) return inflight.get(key)
   const run = (async () => {
-    const ev = await lookup(q, { vault, relays, query })
+    const ev = await lookup(q, { vault, relays, save, query })
     cache.set(key, ev)
     changed()
     return ev
@@ -62,7 +63,7 @@ export function fetchQuote(q, { vault, relays = [], query = (r, f, o) => pool.qu
   return run
 }
 
-async function lookup(q, { vault, relays, query }) {
+async function lookup(q, { vault, relays, save, query }) {
   const filter = q.type === "note" ? { ids: [q.id] } : { kinds: [q.kind], authors: [q.pubkey], "#d": [q.d] }
   if (vault) {
     const local = newest(await vault.feed.query(filter))
@@ -79,7 +80,7 @@ async function lookup(q, { vault, relays, query }) {
   // another key with the same d tag must not stand in for this one.
   const found = newest((await query(urls, filter, { maxWait: 6000 })).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
   if (!found) return null
-  if (vault) await vault.feed.event(found).catch(() => {})
+  if (vault && save) await vault.feed.event(found).catch(() => {})
   return found
 }
 

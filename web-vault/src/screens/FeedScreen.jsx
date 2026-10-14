@@ -7,7 +7,7 @@ import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { FEEDS, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, fetchStrangerProfiles, mergePage, heldNotes, holdNotes, noteAuthors, feedKey } from "../net/feeds.js"
+import { FEEDS, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey } from "../net/feeds.js"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -24,46 +24,51 @@ export function FeedScreen({ ctx }) {
   const [choice, setChoice] = useState(loadChoice)
   const [strange, setStrange] = useState(() => heldNotes(loadChoice()))
   const following = choice.mode === "following"
-  const pick = c => { saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus("") }
+  // One number per feed shown: picking a feed or starting a stranger load bumps it, and work started under an older
+  // number (a Following sync, a Global page) no longer writes the status line.
+  const seq = useRef(0)
+  const pick = c => { seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus("") }
+  const sayer = () => statusGate(seq, setStatus)
 
   const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(PAGE, notes?.length ?? 0) }))
   const sync = async () => {
     // No follow list yet (still loading, or nobody followed): there is nothing to sync, so nothing is "up to date".
-    if (!follows.length) return setStatus("")
-    if (!navigator.onLine) return setStatus("Offline: showing your saved feed")
-    setStatus("Syncing…")
+    const say = sayer()
+    if (!follows.length) return say("")
+    if (!navigator.onLine) return say("Offline: showing your saved feed")
+    say("Syncing…")
     setSyncing(true)
     // Show notes as each chunk of follows lands, not after the last one. Reloads queue so an older read can't
     // land after a newer one.
     let shown = Promise.resolve(), seen = 0
     try {
       const n = await syncFeed(vault, follows, relays, { onProgress: p => {
-        setStatus(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
+        say(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
         if (p.stored > seen) { seen = p.stored; shown = shown.then(reload) }
       } })
       await shown
       await reload()
-      setStatus(n ? `${n} notes saved to your relay` : "Up to date")
-    } catch (e) { setStatus(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
+      say(n ? `${n} notes saved to your relay` : "Up to date")
+    } catch (e) { say(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
     finally { setSyncing(false) }
   }
   const older = async () => {
+    const say = sayer()
     const until = notes.at(-1)?.created_at - 1
     let more = await readFeed(vault, follows, { limit: PAGE, until })
     if (more.length < PAGE / 2 && navigator.onLine) {
-      setStatus("Fetching older notes…")
+      say("Fetching older notes…")
       for (let i = 0; i < follows.length; i += 250) {
         const evs = await pool.querySync(relays, { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), until, limit: 200 }, { maxWait: 8000 })
         for (const ev of evs) await vault.feed.event(ev)
       }
       more = await readFeed(vault, follows, { limit: PAGE, until })
-      setStatus("")
+      say("")
     }
     setNotes([...notes, ...more])
   }
 
   // Global and Hashtag. Each load is for one feed: once the picker has moved on, a late answer is dropped.
-  const seq = useRef(0)
   const loadStrange = async (c, until) => {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
@@ -85,7 +90,7 @@ export function FeedScreen({ ctx }) {
     if (following && notes?.length) fetchProfiles(vault, noteAuthors(notes), relays).catch(() => {})
   }, [notes, following])
   useEffect(() => {
-    if (!following && strange?.length) fetchStrangerProfiles(noteAuthors(strange), account.relays.read).catch(() => {})
+    if (!following && strange?.length) fetchProfiles(vault, noteAuthors(strange), account.relays.read, { save: false }).catch(() => {})
   }, [strange, following])
 
   // Blocked people's notes stay where they are and are only left out here, so unblocking brings them back.
@@ -109,16 +114,17 @@ export function FeedScreen({ ctx }) {
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : strange === null ? <p class="empty">{navigator.onLine ? "Loading notes…" : "This feed needs the network."}</p>
           : !strange.length ? <p class="empty">No notes found.</p>
-          : <Notes shown={shown} onOlder={() => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
+          : <Notes shown={shown} memoryOnly onOlder={() => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
     </main>
   )
 }
 
-/** The notes left after blocks, then Older. When every loaded note is from someone blocked, say so instead. */
-function Notes({ shown, onOlder }) {
-  if (!shown.length) return <p class="empty">Every note loaded here is from someone you blocked.</p>
+/** The notes left after blocks, then Older. When every loaded note is from someone blocked, say so above Older.
+ *  `memoryOnly`: strangers' notes, so their cards write nothing to Haven /feed. */
+export function Notes({ shown, onOlder, memoryOnly = false }) {
   return <>
-    {shown.map(n => <NoteCard key={n.id} event={n} />)}
+    {shown.length ? shown.map(n => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} />)
+      : <p class="empty">Every note loaded here is from someone you blocked.</p>}
     <button class="more" onClick={onOlder}>Older notes</button>
   </>
 }

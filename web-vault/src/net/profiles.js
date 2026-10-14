@@ -33,9 +33,10 @@ function changed() { for (const cb of listeners) cb() }
 
 /**
  * Load kind 0 for any of these pubkeys not in memory yet: from Haven /feed first, then the network for the rest
- * (or all of them, with force), writing what the network returns into Haven. `query` is for tests.
+ * (or all of them, with force), writing what the network returns into Haven. `save: false` keeps what the network
+ * returns in memory only (strangers on the Global and Hashtag feeds). `query` is for tests.
  */
-export async function fetchProfiles(vault, pubkeys, relays, { force = false, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export async function fetchProfiles(vault, pubkeys, relays, { force = false, save = true, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const want = uniq(pubkeys).filter(pk => (force || !cache.has(pk)) && !inflight.has(pk))
   if (!want.length) return
   want.forEach(pk => inflight.add(pk))
@@ -48,7 +49,7 @@ export async function fetchProfiles(vault, pubkeys, relays, { force = false, que
       if (!missing.length || globalThis.navigator?.onLine === false) continue
       const evs = await query(uniq([...relays, ...PROFILE_RELAYS]), { kinds: [0], authors: missing }, { maxWait: 6000 })
       if (evs.map(store).some(Boolean)) changed()
-      for (const ev of evs) await vault.feed.event(ev)
+      if (save) for (const ev of evs) await vault.feed.event(ev)
     }
   } finally {
     want.forEach(pk => inflight.delete(pk))
