@@ -745,8 +745,9 @@ struct LiveStreamReferenceView: View {
     @ObservedObject private var feedService = FeedService.shared
 
     var body: some View {
-        if let note = feedService.findNote(id: coordinate), let stream = LiveStream(note: note) {
-            LiveStreamEmbedView(stream: stream)
+        if let note = feedService.findNote(id: coordinate), LiveStream(note: note) != nil {
+            // Drawn as a quote so a blocked streamer's stream stays hidden.
+            QuotedNoteView(note: note)
         } else if feedService.unavailableNoteIds.contains(coordinate) {
             LinkFallbackCard(url: fallbackURL)
         } else {

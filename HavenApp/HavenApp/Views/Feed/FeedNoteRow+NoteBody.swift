@@ -127,17 +127,11 @@ extension FeedNoteRow {
         if !bodySource.quotedEventIds.isEmpty {
             VStack(spacing: 8) {
                 ForEach(bodySource.quotedEventIds, id: \.self) { quoteId in
-                    if let quotedNote = actions.findNote(quoteId), let stream = LiveStream(note: quotedNote) {
-                        // Not wrapped in a link: the tap plays the stream, and
-                        // a stream event has no thread to open.
-                        LiveStreamEmbedView(stream: stream)
+                    if let quotedNote = actions.findNote(quoteId) {
+                        // QuotedNoteView decides what a tap does: streams play,
+                        // a quote of someone you blocked does nothing.
+                        QuotedNoteView(note: quotedNote, opensThread: true)
                             .transition(Self.arrivalTransition)
-                    } else if let quotedNote = actions.findNote(quoteId) {
-                        NoteNavigationLink(note: quotedNote) {
-                            QuotedNoteView(note: quotedNote)
-                        }
-                        .buttonStyle(.plain)
-                        .transition(Self.arrivalTransition)
                     } else if quoteFetchFailed.contains(quoteId) {
                         Text("Quoted note unavailable")
                             .font(.appSystem(size: 12, weight: .regular))

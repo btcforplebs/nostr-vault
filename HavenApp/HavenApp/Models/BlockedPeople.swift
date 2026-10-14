@@ -31,7 +31,16 @@ enum BlockedPeople {
     /// blocked person, and the feed filter only looks at the quoting note, so
     /// the quote card itself checks. A hidden quote shows neither the blocked
     /// person's words nor their picture.
-    static func showsQuote(author: String, blocked: Set<String>) -> Bool {
-        !isBlocked(author, in: blocked)
+    ///
+    /// A live stream (kind 30311) is the streamer's, not its signer's:
+    /// zap.stream and shosho.live sign with their own service key and name the
+    /// streamer in the `Host` p tag, so both are checked, as the Live tab does.
+    static func showsQuote(author: String, kind: Int, tags: [[String]], blocked: Set<String>) -> Bool {
+        guard !blocked.isEmpty else { return true }
+        if isBlocked(author, in: blocked) { return false }
+        if kind == 30311, isBlocked(LiveChat.hostPubkey(authorPubkey: author, tags: tags), in: blocked) {
+            return false
+        }
+        return true
     }
 }

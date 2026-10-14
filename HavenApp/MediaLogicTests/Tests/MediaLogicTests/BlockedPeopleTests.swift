@@ -42,15 +42,40 @@ final class BlockedPeopleTests: XCTestCase {
         XCTAssertFalse(BlockedPeople.isBlocked("", in: [blockedHex]))
     }
 
+    private let serviceHex = String(repeating: "5", count: 64)
+
     /// A followed person quoting someone you blocked: the quote is hidden.
     func testQuoteOfBlockedPersonIsHidden() {
-        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex, blocked: [blockedHex]))
-        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex.uppercased(), blocked: [blockedHex]))
+        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex, kind: 1, tags: [], blocked: [blockedHex]))
+        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex.uppercased(), kind: 1, tags: [], blocked: [blockedHex]))
     }
 
     /// Positive control, and unblocking: the same quote shows again.
     func testQuoteShowsWhenAuthorNotBlocked() {
-        XCTAssertTrue(BlockedPeople.showsQuote(author: friendHex, blocked: [blockedHex]))
-        XCTAssertTrue(BlockedPeople.showsQuote(author: blockedHex, blocked: []))
+        XCTAssertTrue(BlockedPeople.showsQuote(author: friendHex, kind: 1, tags: [], blocked: [blockedHex]))
+        XCTAssertTrue(BlockedPeople.showsQuote(author: blockedHex, kind: 1, tags: [], blocked: []))
+    }
+
+    private func hostTags(_ host: String) -> [[String]] {
+        [["d", "stream"], ["p", host, "", "Host"]]
+    }
+
+    /// zap.stream signs with its own key; the blocked streamer is only the
+    /// Host p tag. Their quoted stream is still hidden.
+    func testServiceSignedStreamOfBlockedHostIsHidden() {
+        XCTAssertFalse(BlockedPeople.showsQuote(author: serviceHex, kind: 30311,
+                                                tags: hostTags(blockedHex), blocked: [blockedHex]))
+    }
+
+    /// Positive control: the same service's stream for someone not blocked shows.
+    func testServiceSignedStreamOfUnblockedHostShows() {
+        XCTAssertTrue(BlockedPeople.showsQuote(author: serviceHex, kind: 30311,
+                                               tags: hostTags(friendHex), blocked: [blockedHex]))
+    }
+
+    /// Blocking the service key itself still hides its streams.
+    func testStreamFromBlockedSignerIsHidden() {
+        XCTAssertFalse(BlockedPeople.showsQuote(author: blockedHex, kind: 30311,
+                                                tags: hostTags(friendHex), blocked: [blockedHex]))
     }
 }

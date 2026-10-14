@@ -2,11 +2,16 @@ import SwiftUI
 
 struct QuotedNoteView: View {
     let note: FeedNote
+    /// Whether a tap opens the quoted note's thread. Never for a hidden quote,
+    /// which would open the blocked note in full, nor for a stream, whose tap
+    /// plays it and which has no thread.
+    var opensThread = false
     @EnvironmentObject var nostrService: NostrService
     @State private var blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
 
     var body: some View {
         content
+            .onAppear { blocked = ConfigService.shared.activeAccountBlockedHexPubkeys }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
                 blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
             }
@@ -14,12 +19,22 @@ struct QuotedNoteView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !BlockedPeople.showsQuote(author: note.pubkey, blocked: blocked) {
+        if !BlockedPeople.showsQuote(author: note.pubkey, kind: note.kind, tags: note.tags, blocked: blocked) {
             blockedPlaceholder
         } else if let stream = LiveStream(note: note) {
             // A quoted live stream is something to watch, not text to read.
             LiveStreamEmbedView(stream: stream)
-        } else if let listing = MarketListing(note: note) {
+        } else if opensThread {
+            NoteNavigationLink(note: note) { card }
+                .buttonStyle(.plain)
+        } else {
+            card
+        }
+    }
+
+    @ViewBuilder
+    private var card: some View {
+        if let listing = MarketListing(note: note) {
             // A shared listing's content is usually NIP-15 JSON, so the
             // plain note card would print the JSON.
             MarketplaceListingEmbedView(listing: listing)
