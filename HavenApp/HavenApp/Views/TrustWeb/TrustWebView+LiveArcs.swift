@@ -9,10 +9,21 @@ extension TrustWebView {
     var liveArcsButton: some View { LiveArcsToggle() }
 }
 
-/// Whether notes fly across the WOT globe as they reach the relay. Kept
-/// across launches, like Auto-load.
+/// Whether notes fly across the WOT globe as they reach the relay, and from
+/// which feeds. Kept across launches, like Auto-load. The bar's antenna is
+/// the main switch; the My Web dashboard picks the feeds.
 enum LiveArcsSetting {
     static let key = "wotLiveArcs"
+
+    /// Each feed's own switch. All three start on.
+    static func key(_ ring: GlobeArcs.Ring) -> String {
+        "wotLiveArcs." + ring.rawValue
+    }
+
+    /// The feeds switched on, read straight from the defaults.
+    static var rings: Set<GlobeArcs.Ring> {
+        Set(GlobeArcs.Ring.allCases.filter { UserDefaults.standard.object(forKey: key($0)) as? Bool ?? true })
+    }
 }
 
 private struct LiveArcsToggle: View {
@@ -23,17 +34,19 @@ private struct LiveArcsToggle: View {
                          isSelected: on, color: .havenPurple) { on.toggle() }
             .accessibilityLabel(Text("Live arrivals"))
             .accessibilityValue(Text(on ? "On" : "Off"))
-            .accessibilityHint(Text("Draws a line across the globe for each note as it reaches your relay"))
+            .accessibilityHint(Text("A star flies across the globe for each new note"))
             .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
-/// Notes arriving, as globe arrivals. When the feed has your follows'
-/// timeline open (Following, or Media on Following) they come from its own
-/// live subscriptions, which stay open whichever tab is on screen: one
-/// stream, no second set of connections. In every other feed mode the feed
-/// carries no follows' notes, so the globe asks for them itself. Which of the
-/// two is re-picked whenever the feed mode or your device relay changes.
+/// Notes arriving, as globe arrivals, each marked with the feed it belongs
+/// to. Your follows' notes: when the feed has their timeline open
+/// (Following, or Media on Following) they come from its own live
+/// subscriptions, which stay open whichever tab is on screen: one stream, no
+/// second set of connections. In every other feed mode the feed carries no
+/// follows' notes, so the globe asks for them itself. Which of the two is
+/// re-picked whenever the feed mode or your device relay changes. Reposts,
+/// Discover and Global come from a second, wider REQ on your read relays.
 @MainActor
 final class GlobeArrivalStream: ObservableObject {
     let arrived = PassthroughSubject<GlobeArcs.Arrival, Never>()
@@ -51,6 +64,11 @@ final class GlobeArrivalStream: ObservableObject {
 
     /// Most authors one filter names.
     private static let authorsPerFilter = 500
+    /// Most Discover authors asked for: three filters' worth.
+    private static let discoverCap = 1_500
+    /// The wider REQ's connections and sinks, apart from the follows' source.
+    private var wideClients: [WebSocketClient] = []
+    private var wideCancellables: Set<AnyCancellable> = []
     /// How far back a note in the feed still counts as just arrived, for
     /// authors whose clocks run a little slow.
     private static let freshWindow: TimeInterval = 60
@@ -63,11 +81,13 @@ final class GlobeArrivalStream: ObservableObject {
         case own(inbox: URL?)
     }
 
-    /// Opens the connections; returns the token that stops them.
+    /// Opens the connections for the feeds in `rings`; returns the token
+    /// that stops them.
     @discardableResult
-    func start(me: String) -> Int {
+    func start(me: String, rings: Set<GlobeArcs.Ring> = Set(GlobeArcs.Ring.allCases)) -> Int {
         stop()
         generation += 1
+        guard !rings.isEmpty else { return generation }
         #if DEBUG
         // For looking at the arcs without anyone posting: made-up notes from
         // people on the globe. Nothing is published.
@@ -78,6 +98,9 @@ final class GlobeArrivalStream: ObservableObject {
         #endif
         let feed = FeedService.shared
         let relay = RelayProcessManager.shared
+        let people = Self.people(feed, me: me)
+        openWide(feed, me: me, rings: rings, people: people)
+        guard rings.contains(.following) else { return generation }
         watch = Publishers.CombineLatest4(feed.$feedMode, feed.$mediaFeedMode, relay.$isRunning, relay.$isBooting)
             .receive(on: DispatchQueue.main)
             .map { mode, media, _, _ -> Source in
@@ -98,6 +121,9 @@ final class GlobeArrivalStream: ObservableObject {
         if let token, token != generation { return false }
         watch = nil
         closeSource()
+        wideCancellables.removeAll()
+        wideClients.forEach { $0.disconnect() }
+        wideClients = []
         #if DEBUG
         stub?.cancel()
         stub = nil
@@ -141,8 +167,11 @@ final class GlobeArrivalStream: ObservableObject {
             .sink { [weak self] notes in
                 for note in fresh(notes) where note.repostedBy == nil && seen[note.id] == nil {
                     seen[note.id] = note.createdAt
-                    guard let arrival = GlobeArcs.arrival(note.event), !blocked.contains(arrival.author),
+                    guard var arrival = GlobeArcs.arrival(note.event), !blocked.contains(arrival.author),
                           follows.contains(arrival.author) || arrival.targets.contains(me) else { continue }
+                    // A note to you from outside your follows still flies on
+                    // Following: your relay's inbox already kept strangers out.
+                    arrival.ring = .following
                     self?.arrived.send(arrival)
                 }
                 if seen.count > 256 {
@@ -180,43 +209,93 @@ final class GlobeArrivalStream: ObservableObject {
             let trusted = feed.relayTabTrustedPubkeys().union(authors)
             plan += feed.externalRelayURLs.prefix(3).map { ($0, byAuthors + [toMe], trusted) }
         }
-        let subId = "arcs-\(UUID().uuidString.prefix(8))"
         for (url, filters, trusted) in plan {
-            let client = WebSocketClient()
-            client.isTemporary = true
-            clients.append(client)
-            client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in self?.handle(message, blocked: blocked, trusted: trusted) }
-                .store(in: &cancellables)
-            client.connect(url: url)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak client] in
-                guard let client else { return }
-                let req: [Any] = ["REQ", subId] + filters
-                if let data = try? JSONSerialization.data(withJSONObject: req),
-                   let text = String(data: data, encoding: .utf8) {
-                    client.send(text: text)
-                }
+            let client = Self.subscribe(url, filters: filters) { [weak self] event in
+                guard var arrival = GlobeArcs.arrival(event), !blocked.contains(arrival.author),
+                      trusted?.contains(arrival.author) ?? true else { return }
+                arrival.ring = .following
+                self?.arrived.send(arrival)
             }
+            clients.append(client.client)
+            cancellables.insert(client.sink)
         }
     }
 
-    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>?) {
-        guard message.hasPrefix("[\"EVENT\""),
-              let data = message.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
-              let event = array[2] as? [String: Any],
-              let arrival = GlobeArcs.arrival(event),
-              !blocked.contains(arrival.author),
-              trusted?.contains(arrival.author) ?? true else { return }
-        arrived.send(arrival)
+    /// Who belongs to which feed: you and your follows, then your wider web
+    /// (the Discover feed's people, or your saved web while those aren't
+    /// worked out yet), capped.
+    private static func people(_ feed: FeedService, me: String) -> (follows: Set<String>, discover: [String]) {
+        let follows = Set(feed.followedPubkeys).union([me])
+        let wider = feed.extendedNetworkPubkeys.isEmpty
+            ? feed.feedTrustedPubkeys.sorted() : feed.extendedNetworkPubkeys
+        return (follows, Array(wider.lazy.filter { !follows.contains($0) }.prefix(discoverCap)))
+    }
+
+    /// The wider REQ on your read relays: your follows' reposts (the feed
+    /// shows a repost as the note reposted, so it can't say when one is
+    /// made), and the Discover and Global feeds when they're on. Global keeps
+    /// to your web, as the Global feed does, unless that is set to Everyone.
+    private func openWide(_ feed: FeedService, me: String, rings: Set<GlobeArcs.Ring>,
+                          people: (follows: Set<String>, discover: [String])) {
+        let since = Int(Date().timeIntervalSince1970)
+        let all = GlobeArcs.kinds + GlobeArcs.repostKinds
+        func byAuthors(_ authors: [String], kinds: [Int]) -> [[String: Any]] {
+            stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
+                ["kinds": kinds, "since": since, "authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]
+            }
+        }
+        var filters: [[String: Any]] = []
+        if rings.contains(.following) { filters += byAuthors(people.follows.sorted(), kinds: GlobeArcs.repostKinds) }
+        if rings.contains(.discover) { filters += byAuthors(people.discover, kinds: all) }
+        if rings.contains(.global) { filters.append(["kinds": all, "since": since]) }
+        guard !filters.isEmpty else { return }
+        let discover = Set(people.discover)
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let trusted = rings.contains(.global) ? feed.globalTrustSet() : nil
+        for url in feed.externalRelayURLs.prefix(rings.contains(.global) ? 2 : 3) {
+            let wide = Self.subscribe(url, filters: filters) { [weak self] event in
+                guard var arrival = GlobeArcs.arrival(event), !blocked.contains(arrival.author) else { return }
+                arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: discover)
+                guard rings.contains(arrival.ring),
+                      arrival.ring != .global || (trusted?.contains(arrival.author) ?? true) else { return }
+                self?.arrived.send(arrival)
+            }
+            wideClients.append(wide.client)
+            wideCancellables.insert(wide.sink)
+        }
+    }
+
+    /// One relay connection with one REQ; each event it sends goes to `onEvent`.
+    private static func subscribe(_ url: URL, filters: [[String: Any]],
+                                  onEvent: @escaping ([String: Any]) -> Void) -> (client: WebSocketClient, sink: AnyCancellable) {
+        let client = WebSocketClient()
+        client.isTemporary = true
+        let sink = client.messageSubject
+            .receive(on: DispatchQueue.main)
+            .sink { message in
+                guard message.hasPrefix("[\"EVENT\""),
+                      let data = message.data(using: .utf8),
+                      let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
+                      let event = array[2] as? [String: Any] else { return }
+                onEvent(event)
+            }
+        client.connect(url: url)
+        let subId = "arcs-\(UUID().uuidString.prefix(8))"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak client] in
+            guard let client else { return }
+            let req: [Any] = ["REQ", subId] + filters
+            if let data = try? JSONSerialization.data(withJSONObject: req),
+               let text = String(data: data, encoding: .utf8) {
+                client.send(text: text)
+            }
+        }
+        return (client, sink)
     }
 
     #if DEBUG
     private func runStub(me: String) async {
-        // Real notes from the feed, so a preview shows real words and opens a
-        // real note; the lines they draw are made up.
-        let feedNotes = FeedService.shared.notes.filter { $0.kind == 1 && !GlobeArcs.firstLine($0.content).isEmpty }
+        // Real authors from the feed; the lines they draw are made up.
+        let feedNotes = FeedService.shared.notes.filter { $0.kind == 1 }
         let people = Array(Set(FeedService.shared.followedPubkeys + feedNotes.map(\.pubkey)).shuffled().prefix(80))
         guard people.count > 4 else { return }
         var n = 0
@@ -232,9 +311,10 @@ final class GlobeArrivalStream: ObservableObject {
             case 3: targets = [people.filter { $0 != author }.randomElement()!]
             default: targets = []
             }
-            let id = real?.id ?? (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
-            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: targets,
-                                   text: GlobeArcs.firstLine(real?.content ?? "")))
+            let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
+            // Every feed in turn, so each shell's stars show.
+            let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
+            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: targets, ring: ring))
             try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
         }
     }
@@ -255,8 +335,9 @@ struct LiveArcsPainter {
     /// Toward the viewer, in the globe's own space.
     let facing: SIMD3<Double>
     let project: (SIMD3<Double>) -> GlobeScene.Projected?
-    /// Where someone sits on the globe.
-    let place: (String) -> SIMD3<Double>
+    /// Where someone sits on the globe; with a feed, where a star from them
+    /// on that feed sets out.
+    let place: (String, GlobeArcs.Ring?) -> SIMD3<Double>
 
     /// Every arrival is a small white star, like the stars of the globe itself.
     static let starColor = Color.white
@@ -289,7 +370,7 @@ struct LiveArcsPainter {
         for line in board.lines {
             let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
             guard stage.alpha > 0.01 else { continue }
-            let a = place(line.from), b = place(line.to)
+            let a = place(line.from, line.ring), b = place(line.to, nil)
             func at(_ t: Double) -> GlobeScene.Projected? {
                 project(GlobeArcs.point(from: a, to: b, at: t, facing: facing))
             }
@@ -350,18 +431,6 @@ struct LiveArcsPainter {
                            with: .color(color.opacity(0.5 * (1 - stage.landing) * stage.alpha)), lineWidth: 1)
             light(&context, at: p, r: 1.8 * unit, opacity: 0.7 * stage.alpha * breath)
         }
-        // A note to no one: its author's light swells and fades.
-        for pulse in board.pulses {
-            let t = min(1, (now - pulse.born) / GlobeArcs.pulseLife)
-            guard let p = project(place(pulse.key)), p.depth > -0.2 else { continue }
-            let swell = reduceMotion ? 0 : sin(t * .pi)
-            let r = (6 + 12 * t) * unit
-            if !reduceMotion {
-                context.stroke(Path(ellipseIn: CGRect(x: p.point.x - r, y: p.point.y - r, width: 2 * r, height: 2 * r)),
-                               with: .color(color.opacity(0.4 * (1 - t))), lineWidth: 1)
-            }
-            light(&context, at: p.point, r: (1.8 + 1 * swell) * unit, opacity: 0.8 * (1 - t * t))
-        }
     }
 
     /// Pictures at the ends of the lines, easing in as a star sets out and
@@ -369,18 +438,15 @@ struct LiveArcsPainter {
     func drawFaces(_ context: inout GraphicsContext, seated: Set<String>,
                    face: (inout GraphicsContext, String, CGPoint, Double, Color, Double) -> Void) {
         var shown: [String: Double] = [:]
+        var setsOut: [String: GlobeArcs.Ring] = [:]
         for line in board.lines {
             let a = GlobeArcs.faceAlpha(of: line, at: now)
             for key in [line.from, line.to] where a > (shown[key] ?? 0) { shown[key] = a }
-        }
-        for pulse in board.pulses {
-            let t = (now - pulse.born) / GlobeArcs.pulseLife
-            let a = min(1, t / 0.3, (1 - t) / 0.4)
-            if a > (shown[pulse.key] ?? 0) { shown[pulse.key] = a }
+            if setsOut[line.from] == nil { setsOut[line.from] = line.ring }
         }
         let faces = shown.compactMap { key, alpha -> (String, GlobeScene.Projected, Double)? in
             guard key != center, !seated.contains(key), alpha > 0.02,
-                  let p = project(place(key)), p.depth > -0.2 else { return nil }
+                  let p = project(place(key, setsOut[key])), p.depth > -0.2 else { return nil }
             return (key, p, alpha)
         }.sorted { $0.1.depth < $1.1.depth }
         for (key, p, a) in faces {

@@ -123,6 +123,12 @@ struct MyWebDashboardView: View {
     let onFilter: (TrustMap.Filter) -> Void
     let onRebuild: () -> Void
 
+    /// Live arrivals: the bar's antenna, and which feeds' notes fly.
+    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
+    @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
+    @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -142,6 +148,22 @@ struct MyWebDashboardView: View {
                     countRow(icon: TrustMap.Filter.followsBack.symbolName, title: TrustMap.Filter.followsBack.title,
                              detail: followsBackDetail,
                              count: followsBack, selected: filters.contains(.followsBack)) { onFilter(.followsBack) }
+                }
+                DashboardSection(title: "Live arrivals") {
+                    switchRow(icon: "antenna.radiowaves.left.and.right", title: "Stars on the globe",
+                              detail: "A star for each new note as it arrives", isOn: $liveArcsOn)
+                    DashboardDivider()
+                    switchRow(icon: "person.2.fill", title: GlobeArcs.Ring.following.title,
+                              detail: "Your follows' notes, from the inner ring. The fewest", isOn: $followingOn)
+                        .disabled(!liveArcsOn)
+                    DashboardDivider()
+                    switchRow(icon: "sparkles", title: GlobeArcs.Ring.discover.title,
+                              detail: "Your wider web, from the next ring out. More", isOn: $discoverOn)
+                        .disabled(!liveArcsOn)
+                    DashboardDivider()
+                    switchRow(icon: "globe", title: GlobeArcs.Ring.global.title,
+                              detail: "The rest of Global, from the outer haze. The most", isOn: $globalOn)
+                        .disabled(!liveArcsOn)
                 }
                 DashboardSection(title: "Upkeep") {
                     DashboardRow(icon: "arrow.clockwise", title: "Rebuild your web",
@@ -209,6 +231,14 @@ struct MyWebDashboardView: View {
         if rebuilding { return "Rebuilding now…" }
         guard let rebuiltAt else { return "Your vault rebuilds it once a day" }
         return "Last rebuilt \(rebuiltAt.formatted(.relative(presentation: .named))). Your vault rebuilds it once a day"
+    }
+
+    private func switchRow(icon: String, title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        DashboardRow(icon: icon, title: title, detail: detail, state: .info) {
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .tint(.havenPurple)
+        }
     }
 
     private func countRow(icon: String, title: String, detail: String, count: Int?, selected: Bool,

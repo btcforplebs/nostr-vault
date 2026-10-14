@@ -45,12 +45,71 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(board.lines.count, 1)
     }
 
-    func testANoteToNoOneOnlyLightsItsAuthor() {
+    func testANoteToNoOneFliesIntoYou() {
         var board = GlobeArcs.Board()
         board.add(GlobeArcs.arrival(note(1, by: key(1)), now: now)!)
         board.step(now: 0, me: me)
+        XCTAssertEqual(board.lines.map(\.from), [key(1)])
+        XCTAssertEqual(board.lines.map(\.to), [me])
+        XCTAssertTrue(board.lines.allSatisfy(\.toMe))
+    }
+
+    func testYourOwnNoteToNoOneDrawsNothing() {
+        var board = GlobeArcs.Board()
+        board.add(GlobeArcs.arrival(note(1, by: me), now: now)!)
+        board.step(now: 0, me: me)
         XCTAssertTrue(board.lines.isEmpty)
-        XCTAssertEqual(board.pulses.map(\.key), [key(1)])
+    }
+
+    func testAReplyFliesBetweenItsPartiesNotIntoYou() {
+        var board = GlobeArcs.Board()
+        board.add(GlobeArcs.arrival(note(1, by: key(1), to: [key(2)]), now: now)!)
+        board.step(now: 0, me: me)
+        XCTAssertEqual(board.lines.map(\.to), [key(2)])
+        XCTAssertFalse(board.lines.contains(where: \.toMe))
+    }
+
+    func testARepostFliesFromTheReposterToWhoTheyReposted() {
+        let repost = GlobeArcs.arrival(note(1, by: key(1), to: [key(2)], kind: 6), now: now)
+        XCTAssertEqual(repost?.author, key(1))
+        XCTAssertEqual(repost?.targets, [key(2)])
+        XCTAssertNotNil(GlobeArcs.arrival(note(2, by: key(1), to: [key(2)], kind: 16), now: now))
+        // Nobody to point at: nothing to fly between.
+        XCTAssertNil(GlobeArcs.arrival(note(3, by: key(1), kind: 6), now: now))
+    }
+
+    func testEachFeedSetsOutFromItsOwnShellWidestLast() {
+        let follows: Set = [key(1), me], discover: Set = [key(2)]
+        XCTAssertEqual(GlobeArcs.ring(of: key(1), follows: follows, discover: discover), .following)
+        XCTAssertEqual(GlobeArcs.ring(of: me, follows: follows, discover: discover), .following)
+        XCTAssertEqual(GlobeArcs.ring(of: key(2), follows: follows, discover: discover), .discover)
+        XCTAssertEqual(GlobeArcs.ring(of: key(3), follows: follows, discover: discover), .global)
+        let radii = GlobeArcs.Ring.allCases.map(\.radius)
+        XCTAssertEqual(radii, radii.sorted())
+        XCTAssertEqual(Set(radii).count, radii.count)
+        // The line keeps its note's feed.
+        var board = GlobeArcs.Board()
+        var a = GlobeArcs.arrival(note(1, by: key(3)), now: now)!
+        a.ring = .global
+        board.add(a)
+        board.step(now: 0, me: me)
+        XCTAssertEqual(board.lines.map(\.ring), [.global])
+    }
+
+    func testABusyGlobalNeverPushesOutYourFollows() {
+        var board = GlobeArcs.Board()
+        var mine = GlobeArcs.arrival(note(0, by: key(1), to: [me]), now: now)!
+        mine.ring = .following
+        board.add(mine)
+        for n in 1..<40 {
+            var a = GlobeArcs.arrival(note(n, by: key(n + 100)), now: now)!
+            a.ring = n % 3 == 0 ? .discover : .global
+            board.add(a)
+        }
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
+        XCTAssertTrue(board.waiting.contains { $0.id == mine.id })
+        // Global gives way before Discover does.
+        XCTAssertTrue(board.waiting.filter { $0.ring == .discover }.count >= GlobeArcs.maxWaiting - 1)
     }
 
     func testArrivalsAreSpacedOut() {
@@ -105,36 +164,17 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertLessThan(still.trail, 1)
     }
 
-    func testANotesPreviewIsItsFirstLineWithWords() {
-        XCTAssertEqual(GlobeArcs.firstLine("https://x.io/a.jpg\n\n  gm   nostr  friends \nsecond"), "gm nostr friends")
-        XCTAssertEqual(GlobeArcs.firstLine("nostr:nevent1abc"), "")
-        let long = String(repeating: "word ", count: 60)
-        let cut = GlobeArcs.firstLine(long)
-        XCTAssertTrue(cut.hasSuffix("…"))
-        XCTAssertLessThanOrEqual(cut.count, GlobeArcs.previewLength + 1)
-        XCTAssertFalse(cut.dropLast().hasSuffix(" "))
-        let arrival = GlobeArcs.arrival(note(1, by: key(1)).merging(["content": "hello there\nmore"]) { $1 }, now: now)
-        XCTAssertEqual(arrival?.text, "hello there")
-    }
-
     func testNotesHeldNeverOutgrowTheQueueAndLines() {
         // A long burst with no frames to move it on (a sheet open, another app
-        // in front): only the notes still waiting are kept.
+        // in front): only the newest few wait.
         var board = GlobeArcs.Board()
         for n in 0..<200 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.notes.count, GlobeArcs.maxWaiting)
-        XCTAssertEqual(Set(board.notes.keys), Set(board.waiting.map(\.id)))
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
         // Let on and faded out, they all go.
         var t = 0.0
         while !board.waiting.isEmpty { board.step(now: t, me: me); t += GlobeArcs.spacing }
-        XCTAssertEqual(Set(board.notes.keys), Set(board.lines.map(\.note)))
         board.step(now: t + GlobeArcs.life, me: me)
         XCTAssertTrue(board.isIdle)
-        XCTAssertTrue(board.notes.isEmpty)
-        // A note to no one has no line to carry it.
-        board.add(GlobeArcs.arrival(note(500, by: key(3)), now: now)!)
-        board.step(now: t + 2 * GlobeArcs.life, me: me)
-        XCTAssertTrue(board.notes.isEmpty)
     }
 
     func testFadedLinesAreDropped() {

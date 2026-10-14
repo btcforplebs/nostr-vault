@@ -1,10 +1,12 @@
 import Foundation
 import simd
 
-/// Live arrival arcs on the Web of Trust globe. A note reaching the relay
-/// draws one line from its author to each person it is aimed at: one to you
-/// for a note to you, one to each person a reply or quote is for. A note
-/// aimed at no one only lights its author.
+/// Live arrival arcs on the Web of Trust globe. Every note reaching the
+/// relay flies a star. A reply, quote or repost flies between its two
+/// parties: from its author to each person it is aimed at. A note aimed at
+/// no one flies into you at the center. Where a star sets out says which
+/// feed it came from: your follows from the ring, Discover from the next
+/// shell out, Global from the outer haze (Logen, 10/14).
 enum GlobeArcs {
     /// Most lines on the globe at once. A new one past this sends the oldest
     /// on its way out early, so the globe never fills up with lines.
@@ -27,33 +29,55 @@ enum GlobeArcs {
     static let fade: TimeInterval = 2.2
     /// How much of the line, behind the star, its tail covers.
     static let tailLength = 0.16
-    /// A landed note's preview: up this long, at most this many at once.
-    static let previewLife: TimeInterval = 4.5
-    static let maxPreviews = 2
-    /// Characters of a note's first line a preview shows.
-    static let previewLength = 140
     static var life: TimeInterval { travel + hold + fade }
     /// A line sent out early to make room fades this fast.
     static let retireFade: TimeInterval = 0.7
-    /// A light on its own, for a note aimed at no one.
-    static let pulseLife: TimeInterval = 2.4
     /// A note older than this when it arrives is a relay catching up, not an arrival.
     static let maxAge: TimeInterval = 180
     /// Notes, replies and quotes.
     static let kinds = [1]
+    /// Reposts (kind 6) and generic reposts (kind 16): the reposter to the
+    /// person reposted.
+    static let repostKinds = [6, 16]
 
-    /// One note: who wrote it, who it is aimed at, and its first line.
+    /// The feed a note came in on, which sets where its star starts.
+    enum Ring: String, CaseIterable, Comparable {
+        case following, discover, global
+
+        var title: String {
+            switch self {
+            case .following: "Following"
+            case .discover: "Discover"
+            case .global: "Global"
+            }
+        }
+
+        /// Off the globe, an author's star starts on this shell. Your follows
+        /// start where their own star is, on the ring.
+        var radius: Double {
+            switch self {
+            case .following: TrustMap.ringRadius
+            case .discover: TrustMap.closeRadius
+            case .global: TrustMap.outerRadius
+            }
+        }
+
+        static func < (a: Ring, b: Ring) -> Bool { a.order < b.order }
+        private var order: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+    }
+
+    /// One note: who wrote it, who it is aimed at, and the feed it came in on.
     struct Arrival: Equatable {
         let id: String
         let author: String
         let targets: [String]
-        var text: String = ""
+        var ring: Ring = .following
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
-    /// without the author. nil for anything that isn't a fresh note.
+    /// without the author. nil for anything that isn't a fresh note or repost.
     static func arrival(_ event: [String: Any], now: Date = Date()) -> Arrival? {
-        guard let kind = event["kind"] as? Int, kinds.contains(kind),
+        guard let kind = event["kind"] as? Int, kinds.contains(kind) || repostKinds.contains(kind),
               let id = event["id"] as? String, isKey(id),
               let author = event["pubkey"] as? String, isKey(author) else { return nil }
         if let created = event["created_at"] as? Double,
@@ -65,29 +89,15 @@ enum GlobeArcs {
             targets.append(key)
             if targets.count == maxTargets { break }
         }
-        return Arrival(id: id, author: author, targets: targets,
-                       text: firstLine(event["content"] as? String ?? ""))
+        // A repost with no one to point at has nothing to fly between.
+        if repostKinds.contains(kind), targets.isEmpty { return nil }
+        return Arrival(id: id, author: author, targets: targets)
     }
 
-    /// A note's first line with words in it, for its preview: links and
-    /// `nostr:` references dropped, spaces collapsed, cut at a word.
-    static func firstLine(_ content: String) -> String {
-        for line in content.split(whereSeparator: \.isNewline) {
-            let words = line.split(whereSeparator: \.isWhitespace).filter {
-                !$0.hasPrefix("http://") && !$0.hasPrefix("https://") && !$0.hasPrefix("nostr:")
-            }
-            guard !words.isEmpty else { continue }
-            var text = ""
-            for word in words {
-                let next = text.isEmpty ? String(word) : text + " " + word
-                if next.count > previewLength {
-                    return text.isEmpty ? String(next.prefix(previewLength)) + "…" : text + "…"
-                }
-                text = next
-            }
-            return text
-        }
-        return ""
+    /// Which feed a note's author belongs to: yours and your follows' are
+    /// Following, your wider web's Discover, anyone else's Global.
+    static func ring(of author: String, follows: Set<String>, discover: Set<String>) -> Ring {
+        follows.contains(author) ? .following : discover.contains(author) ? .discover : .global
     }
 
     private static func isKey(_ s: String) -> Bool {
@@ -99,16 +109,13 @@ enum GlobeArcs {
         let note: String
         let from: String
         let to: String
-        /// Aimed at you: its preview goes first.
+        /// Aimed at you, or at no one and so flying into you.
         let toMe: Bool
+        /// The feed its note came in on: where its star sets out.
+        var ring: Ring = .following
         let born: TimeInterval
         /// Set when a newer line needs the room: it fades from here.
         var retired: TimeInterval?
-    }
-
-    struct Pulse: Equatable {
-        let key: String
-        let born: TimeInterval
     }
 
     /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
@@ -125,52 +132,38 @@ enum GlobeArcs {
     /// Everything live on the globe, and what is waiting to go on.
     struct Board {
         private(set) var lines: [Line] = []
-        private(set) var pulses: [Pulse] = []
         private(set) var waiting: [Arrival] = []
-        /// The notes still waiting or carried by a line, for their previews.
-        /// Nothing else: a note dropped from the queue or faded out goes.
-        private(set) var notes: [String: Arrival] = [:]
         private var seen: [String] = []
         private var lastRelease: TimeInterval = -.infinity
 
-        var isIdle: Bool { lines.isEmpty && pulses.isEmpty && waiting.isEmpty }
+        var isIdle: Bool { lines.isEmpty && waiting.isEmpty }
 
-        /// Queues a note; one already seen (another relay sent it too) is skipped.
+        /// Queues a note; one already seen (another relay sent it too) is
+        /// skipped. Past the waiting cap the oldest of the widest feed goes,
+        /// so a busy Global never pushes out a note from someone you follow.
         mutating func add(_ arrival: Arrival) {
             guard !seen.contains(arrival.id) else { return }
             seen.append(arrival.id)
             if seen.count > 256 { seen.removeFirst(seen.count - 256) }
             waiting.append(arrival)
-            notes[arrival.id] = arrival
-            if waiting.count > GlobeArcs.maxWaiting {
-                waiting.removeFirst(waiting.count - GlobeArcs.maxWaiting)
-                forgetDropped()
+            while waiting.count > GlobeArcs.maxWaiting, let widest = waiting.map(\.ring).max(),
+                  let i = waiting.firstIndex(where: { $0.ring == widest }) {
+                waiting.remove(at: i)
             }
-        }
-
-        /// Keeps only the notes still waiting or on a line.
-        private mutating func forgetDropped() {
-            let live = Set(lines.map(\.note) + waiting.map(\.id))
-            notes = notes.filter { live.contains($0.key) }
         }
 
         /// Lets the next note on when its turn comes and drops what has faded.
         /// Returns the note let on, if any.
         @discardableResult
         mutating func step(now: TimeInterval, me: String) -> Arrival? {
-            let before = lines.count
             lines.removeAll { GlobeArcs.stage(of: $0, at: now).alpha <= 0 }
-            if lines.count != before { forgetDropped() }
-            pulses.removeAll { now - $0.born >= GlobeArcs.pulseLife }
             guard !waiting.isEmpty, now - lastRelease >= GlobeArcs.spacing else { return nil }
             let next = waiting.removeFirst()
             lastRelease = now
-            if next.targets.isEmpty {
-                pulses.append(Pulse(key: next.author, born: now))
-                notes[next.id] = nil
-            }
-            for target in next.targets {
-                lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me, born: now))
+            // Aimed at no one: it flies into you, where your relay is.
+            for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
+                lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
+                                  ring: next.ring, born: now))
             }
             // Over the cap: the oldest still-standing lines start their fade now.
             var standing = lines.filter { $0.retired == nil }.count
@@ -183,9 +176,7 @@ enum GlobeArcs {
 
         mutating func clear() {
             lines = []
-            pulses = []
             waiting = []
-            notes = [:]
         }
     }
 
