@@ -470,6 +470,7 @@
 		608C95B782D0B2715D844A0A /* RelayConfigStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA754FD69CE3C70A03501C91 /* RelayConfigStep.swift */; };
 		60B57CA574C71ADCEE8194D3 /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
+		6107634D0F024E5CA86830A2 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
 		613AC454E25815E8143C6724 /* RelayProcessManager+MimeDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */; };
 		6170146EE4DEC312D4DAB61B /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
 		617E1B3DC71576368FA56019 /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
@@ -996,6 +997,7 @@
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		CF9087EA80B641891843DB01 /* FeedView+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BEE38A82AADD2A18C4BE83 /* FeedView+Layout.swift */; };
 		CFA3FAE3FE9E3F35516F2419 /* MusicBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34514E56570393BEB67F9D54 /* MusicBrowserView.swift */; };
+		CFAC954EF7DFDE57D1667878 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
 		CFE920F1073C8063C4907027 /* RelayCountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80C9464564EDE937ADDFDDC /* RelayCountSession.swift */; };
 		D016ED896705E2C8A0C450E5 /* RelayStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */; };
 		D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
@@ -1814,6 +1816,7 @@
 		CF318FF14D794C94750A566D /* MediaCacheService+Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+Playback.swift"; sourceTree = "<group>"; };
 		CF57E75767BD80C1504D555C /* VaultExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultExporter.swift; sourceTree = "<group>"; };
 		CFD316B1F53D755B6C3CBED9 /* FeedNoteRow+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Layout.swift"; sourceTree = "<group>"; };
+		D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+MyWeb.swift"; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
 		D0D02100F9C47D8B2A714FBA /* MediaGalleryViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryViewer.swift; sourceTree = "<group>"; };
 		D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeArcs.swift; sourceTree = "<group>"; };
@@ -2079,6 +2082,7 @@
 				6D6825353E7452265462E9D7 /* TrustWebView+FacesAndFilters.swift */,
 				99BB884D57C3B72272208E6D /* TrustWebView+Globe.swift */,
 				0F2F07F17344362A67CFDF3A /* TrustWebView+LiveArcs.swift */,
+				D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */,
 				AA6686D9EE170F237E3B1A13 /* TrustWebView+Refresh.swift */,
 				D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */,
 				5A748BF7419C4CC72FE97E36 /* TrustWebView+TrustCard.swift */,
@@ -3754,6 +3758,7 @@
 				90609E13F8FFF4E52B08C9CE /* TrustWebView+FacesAndFilters.swift in Sources */,
 				C4BFAF59D1E60FA8587887EB /* TrustWebView+Globe.swift in Sources */,
 				881FF9D0BB68F04B0B0757D3 /* TrustWebView+LiveArcs.swift in Sources */,
+				CFAC954EF7DFDE57D1667878 /* TrustWebView+MyWeb.swift in Sources */,
 				34B784D78D879D90A576B5EB /* TrustWebView+Refresh.swift in Sources */,
 				906C585B369B0C3BB89E483A /* TrustWebView+Search.swift in Sources */,
 				29EE7D62B0B904BEDAA99720 /* TrustWebView+TrustCard.swift in Sources */,
@@ -4378,6 +4383,7 @@
 				F239F64A041524F1D4D2CF52 /* TrustWebView+FacesAndFilters.swift in Sources */,
 				E7EFAB5689240E5BE29F36D5 /* TrustWebView+Globe.swift in Sources */,
 				DB36EDFF178B93A4D8FD92F9 /* TrustWebView+LiveArcs.swift in Sources */,
+				6107634D0F024E5CA86830A2 /* TrustWebView+MyWeb.swift in Sources */,
 				021604C5BFF72BDB6B22E210 /* TrustWebView+Refresh.swift in Sources */,
 				4103D3EF38F088EB79B4F109 /* TrustWebView+Search.swift in Sources */,
 				656A51773B5F77F92811C9AB /* TrustWebView+TrustCard.swift in Sources */,

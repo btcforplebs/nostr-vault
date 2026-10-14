@@ -44,7 +44,7 @@ extension TrustWebView {
         #endif
     }
 
-    private var layerCounts: [TrustMap.Layer: Int] {
+    var layerCounts: [TrustMap.Layer: Int] {
         TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches)
     }
 
