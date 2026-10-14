@@ -1,16 +1,20 @@
-// The Feed's picker: Following (Haven /feed, see sync.js), Global (recent notes from the user's read relays) and
-// Hashtag (`#t` notes). Global and Hashtag notes are strangers': they are held in memory only and never written
+// The Feed's picker: Following (Haven /feed, see sync.js), Global (recent notes from the user's read relays),
+// Hashtag (`#t` notes), Popular (net/popular.js) and Media (Following's image and video notes, net/media.js). Global and Hashtag notes are strangers': they are held in memory only and never written
 // to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
 
-// The iPhone's FeedMode names (Services/FeedServiceTypes.swift). The rest of its feeds aren't on the web yet.
+// The iPhone's FeedMode names and order (Services/FeedServiceTypes.swift). The rest of its feeds aren't on the web yet.
 export const FEEDS = [
   { id: "following", label: "Following" },
   { id: "global", label: "Global" },
   { id: "hashtag", label: "Hashtag" },
+  { id: "popular", label: "Popular" },
+  { id: "media", label: "Media" },
 ]
+/** Following and Media are read from Haven /feed; the others are strangers' notes, held in memory. */
+export const fromHaven = mode => mode === "following" || mode === "media"
 const KEY = "nv-feed"
 
 /** The last feed picked on this browser: { mode, tag }. Following when nothing (or nothing valid) is saved. */

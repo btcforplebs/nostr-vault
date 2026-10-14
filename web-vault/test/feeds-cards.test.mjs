@@ -58,3 +58,22 @@ test("when every loaded note is blocked, the message shows and Older is still th
   assert.equal(msg.type, "p"); assert.match(msg.props.children, /someone you blocked/)
   assert.equal(older.type, "button"); assert.equal(older.props.onClick, onOlder)
 })
+
+test("Popular has no Older: it's one ranked page", () => {
+  const notes = [{ id: "1", kind: 1, pubkey: A, created_at: 1, content: "" }]
+  assert.ok(!elements(Notes({ shown: notes, onOlder: null, memoryOnly: true })).some(e => e.type === "button"))
+})
+
+test("Media shows the grid, or says why it's empty, and always offers Older", async () => {
+  const { Media } = await import("../src/screens/FeedScreen.jsx")
+  const { MediaGrid } = await import("../src/components/MediaGrid.jsx")
+  const onOlder = () => {}
+  const tiles = [{ id: "1", url: "https://x.example/a.png", type: "image", count: 1 }]
+  const [grid, older] = elements(Media({ tiles, blockedAll: false, onOlder }))
+  assert.equal(grid.type, MediaGrid); assert.equal(older.props.onClick, onOlder)
+  assert.match(elements(Media({ tiles: [], blockedAll: false, onOlder }))[0].props.children, /No photos or videos/)
+  assert.match(elements(Media({ tiles: [], blockedAll: true, onOlder }))[0].props.children, /someone you blocked/)
+  const [img, vid] = elements(MediaGrid({ tiles: [...tiles, { id: "2", url: "https://x.example/v.mp4", type: "video", count: 1 }] }))
+  assert.equal(img.props.href, "#/thread/1", "a tap opens the note")
+  assert.equal(elements(vid)[0].type, "video"); assert.equal(elements(vid)[0].props.preload, "metadata", "only enough to show a frame")
+})

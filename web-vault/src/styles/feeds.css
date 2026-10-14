@@ -9,3 +9,12 @@
   border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
 .feed-tag input:focus { outline: none; border-color: var(--accent-line); }
 .feed-tag input::placeholder { color: var(--text-3); }
+
+/* Media (MediaGrid): square tiles edge to edge, 2px apart, three across on a phone and more on a wide window. */
+.media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 0 2px; }
+@media (min-width: 700px) { .media-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); } }
+.media-tile { position: relative; display: block; aspect-ratio: 1; overflow: hidden; background: var(--s2); }
+.media-tile img, .media-tile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.media-tile:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.media-mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; padding: 4px; border-radius: 4px;
+  background: rgb(0 0 0 / 0.6); color: #fff; }
