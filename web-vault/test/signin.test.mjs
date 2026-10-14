@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 import { safeAuthUrl } from "../src/signer/nip46.js"
 import { checkedPubkey, saveSession, loadSession } from "../src/session.js"
 import { forgetThisBrowser, storeNames, onSignedOutElsewhere } from "../src/haven/vault.js"
-import { RELAY_NS, pageStorage, migrateRelayKeys } from "../../web-relay/src/page-storage.js"
+import { RELAY_NS, pageStorage } from "../../web-relay/src/page-storage.js"
 import { loadOwners } from "../../web-relay/src/fips/owners.js"
 import { checkSigned } from "../src/net/sync.js"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
@@ -46,7 +46,7 @@ test("sign-out stops Haven and deletes the session, keys, paired vaults, log and
   const pk = "b".repeat(64)
   const storage = memStorage()
   saveSession({ method: "nip07", pubkey: pk }, storage)
-  for (const k of ["nv-device-sk", "nv-vault:fips-relay-key", "nv-vault:fips-owners", "nv-log"]) storage.setItem(k, "x")
+  for (const k of ["nv-device-sk", "nv-vault:fips-relay-key", "nv-vault:fips-owners", "fips-relay-key", "fips-owners", "nv-log"]) storage.setItem(k, "x")
   storage.setItem("unrelated", "keep")
   let stopped = false
   const vault = { haven: { stop: async () => { stopped = true } } }
@@ -58,7 +58,7 @@ test("sign-out stops Haven and deletes the session, keys, paired vaults, log and
   assert.deepEqual([...storage.m.keys()], ["unrelated"])
   for (const r of ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]) {
     assert.ok(idb.deleted.includes(`haven:${pk}:${r}`), `haven:${pk}:${r}`)
-    assert.ok(!idb.deleted.includes(`haven:${r}`), `haven:${r} is the relay page's, not this account's`)
+    assert.ok(idb.deleted.includes(`haven:${r}`), `legacy haven:${r}`)
   }
 })
 
@@ -76,37 +76,37 @@ test("a store the browser lists is deleted even if the route list doesn't know i
   const { failed } = await forgetThisBrowser({ vault: null, pubkey: pk, storage: memStorage(), idb })
   assert.deepEqual(failed, [])
   assert.ok(idb.deleted.includes(`haven:${pk}:newroute`))
-  // Another account's vault on this browser is left alone, and so is anything that isn't this account's.
-  assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else" || n === "haven:newlegacy"), [])
+  assert.ok(idb.deleted.includes("haven:newlegacy"))
+  // Another account's vault on this browser is left alone, and so is anything that isn't Haven's.
+  assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
-  assert.equal((await storeNames(pk, fakeIdb())).length, 7)
+  assert.equal((await storeNames(pk, fakeIdb())).length, 14)
 })
 
 // /vault/ and /relay/ are one origin (nostrvault.app), so one IndexedDB and one localStorage.
-test("vault sign-out leaves the relay page's stores, FIPS key and paired vaults alone", async () => {
+test("vault sign-out erases the old unprefixed stores and FIPS keys, and leaves the relay page's alone", async () => {
   const pk = "a1".repeat(32)
   const relayKey = "7".repeat(64), paired = "9".repeat(64)
-  for (const relayOpenedFirst of [true, false]) {
-    const storage = memStorage()
-    saveSession({ method: "nip07", pubkey: pk }, storage)
-    // A relay page from before the prefixes: its FIPS key and paired vault are unprefixed.
-    storage.setItem("fips-relay-key", relayKey)
-    storage.setItem("fips-owners", paired)
-    storage.setItem("nv-vault:fips-relay-key", "vault's own")
-    // The relay page moves its keys on its next start, before or after this sign-out.
-    if (relayOpenedFirst) migrateRelayKeys(storage)
-    const relayStores = ["haven:relay:outbox", "haven:relay:feed", "haven:outbox", "haven:feed"]
-    const idb = fakeIdb([], [...relayStores, `haven:${pk}:outbox`, `haven:${pk}:feed`])
-    await forgetThisBrowser({ vault: null, pubkey: pk, storage, idb })
-    if (!relayOpenedFirst) migrateRelayKeys(storage)
+  const storage = memStorage()
+  saveSession({ method: "nip07", pubkey: pk }, storage)
+  // The relay page, since the prefixes: its FIPS key and paired vault under "nv-relay:", its stores "haven:relay:*".
+  const relay = pageStorage(storage, RELAY_NS)
+  relay.setItem("fips-relay-key", relayKey)
+  relay.setItem("fips-owners", paired)
+  // From before the prefixes, left by the vault's Relay screen: nothing reads these now.
+  storage.setItem("fips-relay-key", "8".repeat(64))
+  storage.setItem("fips-owners", "6".repeat(64))
+  const relayStores = ["haven:relay:outbox", "haven:relay:feed", "haven:relay:blobs"]
+  const legacy = ["haven:outbox", "haven:private", "haven:chat", "haven:blobs"]
+  const idb = fakeIdb([], [...relayStores, ...legacy, `haven:${pk}:outbox`])
+  await forgetThisBrowser({ vault: null, pubkey: pk, storage, idb })
 
-    assert.deepEqual(idb.deleted.filter(n => relayStores.includes(n)), [], `relay stores (relay opened first: ${relayOpenedFirst})`)
-    assert.ok(idb.deleted.includes(`haven:${pk}:outbox`))
-    const relay = pageStorage(storage, RELAY_NS)
-    assert.equal(relay.getItem("fips-relay-key"), relayKey, "the relay keeps its mesh address")
-    assert.deepEqual([...loadOwners({ storage: relay, hash: "" })], [paired], "the relay keeps its paired vault")
-    assert.equal(storage.getItem("nv-vault:fips-relay-key"), null, "the vault's own FIPS key goes")
-  }
+  for (const n of [...legacy, `haven:${pk}:outbox`]) assert.ok(idb.deleted.includes(n), `${n} erased`)
+  assert.equal(storage.getItem("fips-relay-key"), null, "bare FIPS key erased")
+  assert.equal(storage.getItem("fips-owners"), null, "bare paired vaults erased")
+  assert.deepEqual(idb.deleted.filter(n => relayStores.includes(n)), [], "the relay page's stores are left")
+  assert.equal(relay.getItem("fips-relay-key"), relayKey, "the relay keeps its mesh address")
+  assert.deepEqual([...loadOwners({ storage: relay, hash: "" })], [paired], "the relay keeps its paired vault")
 })
 
 test("a key another tab writes back while the stores are deleting is dropped again", async () => {

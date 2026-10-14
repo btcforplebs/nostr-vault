@@ -26,8 +26,10 @@ A Nostr relay that runs inside a browser page. It's served as a static PWA at `h
 ```sh
 npm ci
 tools/build-haven-wasm.sh   # haven-go -> public/haven.wasm + src/haven/wasm_exec.js (needs Go)
-npm run build    # writes ../website/relay/; commit it with the source change
+npm run build    # writes ../website/relay/, built at deploy time and not committed (.gitignore)
 npm run serve    # http://localhost:8787/relay/, beacons go to beacons.jsonl
 npm test         # TCP/FIPS server + page client against a contract stub; the real haven.wasm under node when built
 node tools/vault-sim.mjs <secretHex> <relayNpub>   # stand-in vault over the public seed: REQ -> EOSE
 ```
+
+Nothing builds `website/relay/` automatically yet: a fresh clone serves `/relay/` as 404 until `npm run build` runs.

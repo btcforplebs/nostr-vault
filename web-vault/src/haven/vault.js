@@ -49,19 +49,22 @@ export async function startVault({ pubkey, log = () => {} }) {
 
 // Haven's route databases (haven-go/store_wasm.go) for this account: "haven:<pubkey>:<route>" (storePrefix).
 // Sign-out deletes every database the browser lists under that prefix, so a route added in Go is wiped too, and
-// nothing else: /relay/ is the same origin, so its stores ("haven:relay:<route>", and "haven:<route>" from before
-// it had a prefix) are in this IndexedDB too, and another account's are "haven:<other pubkey>:<route>".
-// The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
+// the unprefixed "haven:<route>" ones from before storePrefix: nothing opens those any more (the vault uses the
+// pubkey, /relay/ uses "relay"), and they may still hold old notes, DMs and files. Never "haven:relay:<route>":
+// /relay/ is the same origin, so its stores are in this IndexedDB too. Never another account's either:
+// "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
 // "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go).
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
 export async function storeNames(pubkey, idb = indexedDB) {
-  const known = ROUTES.map(r => `haven:${pubkey}:${r}`)
-  const mine = new RegExp(`^haven:${pubkey}:[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
+  const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
+  const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
   const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => mine.test(n ?? "")) : []
   return [...new Set([...known, ...listed])]
 }
-// Everything else this page keeps: the device key, its FIPS key and paired vaults, and the activity log.
-const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), "nv-log"]
+// Everything else this page keeps: the device key, its FIPS key and paired vaults, and the activity log. The bare
+// FIPS keys are from before the page prefixes: a vault that paired through its Relay screen left them, and nothing
+// reads them now unless /relay/ is opened again (src/page-storage.js migrateRelayKeys), which would then re-pair.
+const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), ...FIPS_ITEMS, "nv-log"]
 const SESSION_KEY = "nv-session"
 
 /** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys and the log. -> { failed } */
