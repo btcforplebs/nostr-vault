@@ -3,11 +3,26 @@
 // events. Throwaway keys and a fake outbox: nothing is published.
 import test from "node:test"
 import assert from "node:assert/strict"
+import { registerHooks } from "node:module"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, relayRows, mediaServerRows, readEverything, backupLines, backupName,
   parseBackup, restoreBackup, logLines,
 } from "../src/net/settings.js"
+
+registerHooks({
+  load(url, context, next) {
+    if (!url.endsWith(".jsx")) return next(url, context)
+    const path = fileURLToPath(url)
+    const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
+    if (errors.length) throw new Error(errors.map(e => e.message).join("\n"))
+    return { format: "module", source: code, shortCircuit: true }
+  },
+})
+const { resetBrowser, RESET_QUESTION } = await import("../src/screens/SettingsScreen.jsx")
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER_SK = generateSecretKey(), OTHER = getPublicKey(OTHER_SK)
@@ -92,4 +107,15 @@ test("restoreBackup counts stored, already-there and refused, and reports progre
 test("log lines show the time, the type and the rest", () => {
   assert.deepEqual(logLines([{ t: "T", type: "boot", loadMs: 5 }]), ['T  boot  {"loadMs":5}'])
   assert.deepEqual(logLines([]), [])
+})
+
+test("Database & Reset asks first, naming what goes; Cancel wipes nothing", () => {
+  let wiped = 0, asked = ""
+  const ctx = { signOut: () => wiped++ }
+  assert.equal(resetBrowser(ctx, q => { asked = q; return false }), false)
+  assert.equal(wiped, 0)
+  assert.equal(asked, RESET_QUESTION)
+  assert.match(RESET_QUESTION, /notes, messages, drafts and paired vaults/)
+  assert.equal(resetBrowser(ctx, () => true), true)
+  assert.equal(wiped, 1)
 })

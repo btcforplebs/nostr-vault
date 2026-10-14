@@ -203,22 +203,23 @@ function Backup({ ctx }) {
     } catch (e) { setOut(`Couldn't read your relay (${e?.message ?? e})`) }
   }
   const onFile = async e => {
-    const file = e.currentTarget.files?.[0]
+    const input = e.currentTarget // read before any await: the event's target is gone by then
+    const file = input.files?.[0]
     if (!file) return
     setRestore("Checking…")
     const { events, skipped } = parseBackup(await file.text(), me)
     const skippedText = Object.entries(skipped).filter(([, n]) => n).map(([k, n]) => `${n} ${{ unreadable: "unreadable", badSignature: "with a bad signature", notYours: "not yours" }[k]}`).join(", ")
+    input.value = "" // cleared first, so the same file can be picked again whichever way this ends
     if (!events.length) { setRestore(`Nothing to restore${skippedText ? ` (${skippedText})` : ""}.`); return }
     setRestore(`Restoring ${events.length}…`)
     const r = await restoreBackup(ctx.vault, events, { onProgress: p => setRestore(`Restoring ${p.done} of ${p.of}…`) })
     setRestore(`Restored ${r.stored}, already here ${r.duplicate}${r.refused.length ? `, refused ${r.refused.length}` : ""}${skippedText ? `; skipped ${skippedText}` : ""}.`)
-    e.currentTarget.value = ""
   }
   return (
     <>
       <div class="card">
         <h3>Backup</h3>
-        <p class="muted small">Downloads every event this browser's relay holds for your account, one signed event per line (.jsonl). The phone's Backup makes the same kind of file.</p>
+        <p class="muted small">Downloads every event you signed that this browser's relay holds (notes, articles, profile, lists, likes), one per line (.jsonl). Messages and what others sent you aren't included. The phone's Backup makes the same kind of file.</p>
         <button class="primary" disabled={out === "Reading…"} onClick={download}>{out === "Reading…" ? "Reading…" : "Download backup"}</button>
         {out && out !== "Reading…" && <p class="muted small" style="margin-top: 10px">{out}</p>}
       </div>
@@ -232,6 +233,15 @@ function Backup({ ctx }) {
   )
 }
 
+export const RESET_QUESTION = "Delete notes, messages, drafts and paired vaults from this browser and sign out? Your phone's vault is untouched."
+
+/** Asks first; nothing is deleted on Cancel. -> whether the wipe was started */
+export function resetBrowser(ctx, ask = q => globalThis.confirm(q)) {
+  if (!ask(RESET_QUESTION)) return false
+  ctx.signOut()
+  return true
+}
+
 /** The phone's Database & Reset: here, what this browser keeps and the one way to clear it (sign out). */
 function Database({ ctx }) {
   const [usage, setUsage] = useState(null)
@@ -241,7 +251,7 @@ function Database({ ctx }) {
       <h3>This browser's copy</h3>
       <div class="stats"><div><div class="k">storage</div><div class="v">{usage ?? "–"} MB</div></div></div>
       <p class="muted small">Your relay's data lives in this browser's storage. Signing out deletes it all: notes, messages, keys and paired vaults. Your phone's vault is untouched.</p>
-      <button onClick={ctx.signOut}>Sign out and delete this browser's copy</button>
+      <button onClick={() => resetBrowser(ctx)}>Sign out and delete this browser's copy</button>
     </div>
   )
 }
