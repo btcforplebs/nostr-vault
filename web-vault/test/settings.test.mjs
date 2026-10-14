@@ -33,6 +33,7 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   const rows = SETTINGS_GROUPS.flatMap(g => g.rows)
   assert.equal(rows.find(r => r.id === "accounts").href, "#/accounts")
   assert.equal(rows.find(r => r.id === "relay-access").href, "#/relay")
+  assert.equal(rows.find(r => r.id === "wallet").href, "#/wallet")
   for (const r of rows) assert.match(r.href, /^#\/[a-z-]+(\/[a-z-]+)?$/)
   assert.deepEqual(Object.keys(PAGES).sort(), ["backup", "blocked", "database", "import", "logs", "media-servers", "relays"])
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))

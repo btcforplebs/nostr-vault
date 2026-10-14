@@ -15,13 +15,14 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
  * The phone's groups (SettingsView.groups), with the rows the web has. A row's `href` is where it goes: a page of
  * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & backup screen, "#/relay" the
  * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Rows the phone has and the web
- * doesn't are left out rather than shown dead: Recently Deleted, Following Backup, Wallet, Feed, Appearance,
+ * doesn't are left out rather than shown dead: Recently Deleted, Following Backup, Feed, Appearance,
  * Media & Cache, Notifications, Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay Automatically.
  */
 export const SETTINGS_GROUPS = [
   { title: "Account", rows: [
     { id: "accounts", title: "Accounts & backup", icon: "key", color: "#0a84ff", href: "#/accounts" },
     { id: "blocked", title: "Blocked", icon: "block", color: "#ff453a", href: "#/settings/blocked" },
+    { id: "wallet", title: "Wallet", icon: "bolt", color: "#ff9f0a", href: "#/wallet" },
   ] },
   { title: "Relays", rows: [
     { id: "relays", title: "Relays", icon: "relays", color: "#8e5cf6", href: "#/settings/relays" },
