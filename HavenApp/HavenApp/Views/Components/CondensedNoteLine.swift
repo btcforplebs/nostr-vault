@@ -39,6 +39,9 @@ struct CondensedNoteLine: View, Equatable {
     /// The author to credit when it isn't `note.pubkey` — a bare kind-6 repost
     /// shows the original author, not the reposter.
     var displayPubkey: String? = nil
+    /// The note a bare repost carries, when the caller has it, so the line can
+    /// mark what kind of post it is showing (an article, a highlight).
+    var original: FeedNote? = nil
 
     /// 0 is a root or standalone note; each step indents under a thread rail.
     var depth: Int = 0
@@ -68,6 +71,7 @@ struct CondensedNoteLine: View, Equatable {
     /// ones act the same. Whether there is a tap still counts, for VoiceOver.
     static func == (lhs: CondensedNoteLine, rhs: CondensedNoteLine) -> Bool {
         lhs.note == rhs.note && lhs.profile == rhs.profile && lhs.displayPubkey == rhs.displayPubkey
+            && lhs.original == rhs.original
             && lhs.depth == rhs.depth && lhs.style == rhs.style && lhs.isFocused == rhs.isFocused
             && lhs.replyCount == rhs.replyCount && lhs.contentOverride == rhs.contentOverride
             && lhs.postedAt == rhs.postedAt && lhs.mediaURLs == rhs.mediaURLs
@@ -239,6 +243,20 @@ struct CondensedNoteLine: View, Equatable {
         CondensedNoteLine.rail(isOLED: isOLED)
     }
 
+    /// The glyph that says a line is not a plain note: an article, a recipe,
+    /// a highlight or a poll. Same symbols as the feed picker and the Vault.
+    static func kindMarker(for note: FeedNote) -> (symbol: String, tint: Color, label: String)? {
+        switch note.kind {
+        case VaultNoteScope.articleKind:
+            return VaultNoteScope.isRecipe(tags: note.tags)
+                ? ("fork.knife", .orange, "Recipe")
+                : ("doc.richtext", .havenPurple, "Article")
+        case FeedNote.highlightKind: return ("highlighter", .yellow, "Highlight")
+        case NIP88Poll.kind: return ("chart.bar.xaxis", .teal, "Poll")
+        default: return nil
+        }
+    }
+
     private var headerRow: some View {
         HStack(spacing: 4) {
             Text(displayName)
@@ -281,6 +299,12 @@ struct CondensedNoteLine: View, Equatable {
                     .font(.appSystem(size: 10))
                     .foregroundColor(.blue.opacity(0.7))
                     .accessibilityLabel("Quote")
+            }
+            if let marker = CondensedNoteLine.kindMarker(for: original ?? note) {
+                Image(systemName: marker.symbol)
+                    .font(.appSystem(size: 10))
+                    .foregroundColor(marker.tint.opacity(0.7))
+                    .accessibilityLabel(marker.label)
             }
         }
     }

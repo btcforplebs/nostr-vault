@@ -12,6 +12,7 @@ extension FeedNoteRow {
             note: note,
             profile: rowData.displayProfile,
             displayPubkey: rowData.displayPubkey,
+            original: rowData.resolvedOriginal,
             depth: 0,
             style: .card,
             contentOverride: compactContentOverride,
