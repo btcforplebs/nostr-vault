@@ -8,7 +8,7 @@ import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
 import { readAccount, refreshAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
-import { putProfile, fetchProfiles } from "./src/net/profiles.js"
+import { putProfile } from "./src/net/profiles.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -17,8 +17,8 @@ import { RelayScreen } from "./src/screens/RelayScreen.jsx"
 import { SearchScreen } from "./src/screens/SearchScreen.jsx"
 import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
 import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
+import { PersonScreen } from "./src/screens/PersonScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
-import { ProfileHeader } from "./src/components/ProfileHeader.jsx"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
 
@@ -131,18 +131,6 @@ function App() {
       <TabBar route={other ? "search" : route} pubkey={session.pubkey} />
       <AuthPrompt />
     </div>
-  )
-}
-
-// Someone else's profile (opened from Search): their kind 0 from Haven, else the network. Their notes aren't
-// loaded here yet; ProfileScreen reads only the user's own outbox.
-function PersonScreen({ ctx, pubkey }) {
-  useEffect(() => { fetchProfiles(ctx.vault, [pubkey], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [pubkey])
-  return (
-    <main class="screen">
-      <ProfileHeader pubkey={pubkey} you={false} />
-      <p class="empty">Their notes aren't shown here yet.</p>
-    </main>
   )
 }
 
