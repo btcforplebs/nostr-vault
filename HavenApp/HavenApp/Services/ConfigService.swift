@@ -480,6 +480,10 @@ class ConfigService: ObservableObject {
 
         save()
 
+        // Each account has its own block list. Tell the screens now, so they
+        // drop the old account's blocks without waiting for a feed `.id` reset.
+        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
+
         // Services process synchronously via Combine before the next run-loop cycle.
         // Clear the flag once SwiftUI has had one cycle to recreate views with .id().
         DispatchQueue.main.async { [weak self] in
