@@ -175,6 +175,40 @@ class AccountSettingsViewModel @Inject constructor(
         return npub
     }
 
+    /**
+     * Connects a pasted bunker link to [npub], an account already here (iOS
+     * ConnectSignerSheetView.connectBunker). The signer must answer as this
+     * account's key. Returns the message to show, or null once stored. Runs
+     * in the view model's scope so closing the sheet mid-connect doesn't cut
+     * the save in half.
+     */
+    suspend fun connectSignerFor(npub: String, bunkerUri: String): String? =
+        viewModelScope.async {
+            val parts = HavenBridge.generateKeyPair()?.split(":")
+            if (parts == null || parts.size != 2) return@async SignerPairing.NOT_REACHED
+            SignerPairing.pair(npub, bunkerUri.trim(), parts[0], parts[1], configStore.activeAccountHexPubkey.value, pairingStore)
+        }.await()
+
+    /**
+     * Finishes a nostrconnect:// pairing for [npub], an account already here
+     * (iOS ConnectSignerSheetView.pairWithClave): stored like a pasted bunker
+     * link, with the pairing's own client key. Returns the message to show,
+     * or null once stored.
+     */
+    suspend fun pairNostrConnectFor(npub: String, request: NIP46Service.NostrConnectRequest, signerPubkey: String): String? =
+        viewModelScope.async {
+            SignerPairing.pair(
+                npub,
+                NIP46Service.bunkerUri(signerPubkey, request.relays),
+                request.clientSecretKey,
+                request.clientPubkey,
+                configStore.activeAccountHexPubkey.value,
+                pairingStore,
+            )
+        }.await()
+
+    private val pairingStore = SignerPairing.Store(configStore::setBunkerConfig, configStore::setSigningMode)
+
     /** Bumped when a key is removed: [hasLocalKey] reads the credential store, not config. */
     private val _keysChanged = kotlinx.coroutines.flow.MutableStateFlow(0)
     val keysChanged: StateFlow<Int> = _keysChanged

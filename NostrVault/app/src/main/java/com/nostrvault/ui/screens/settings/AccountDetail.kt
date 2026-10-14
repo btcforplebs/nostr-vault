@@ -46,6 +46,15 @@ internal fun AccountDetail(
     var confirmDisconnectSigner by remember(npub) { mutableStateOf(false) }
     var confirmRemoveAccount by remember(npub) { mutableStateOf(false) }
     var importingKey by remember(npub) { mutableStateOf(false) }
+    var connectingSigner by remember(npub) { mutableStateOf(false) }
+
+    if (connectingSigner) {
+        ConnectSignerSheet(
+            npub = npub,
+            viewModel = viewModel,
+            onDismiss = { connectingSigner = false },
+        )
+    }
 
     if (importingKey) {
         ImportKeyDialog(
@@ -212,10 +221,15 @@ internal fun AccountDetail(
             }
         }
 
-        // Remote signer
+        // Remote signer: pair one, or drop the one there (iOS AccountDetailView's
+        // Remote Signer section).
         if (hasBunker) {
             TextButton(onClick = { confirmDisconnectSigner = true }) {
                 Text("Disconnect Remote Signer", color = ErrorRed)
+            }
+        } else {
+            TextButton(onClick = { connectingSigner = true }) {
+                Text("Connect Remote Signer", color = colors.primary)
             }
         }
 
