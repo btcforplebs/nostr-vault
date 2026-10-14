@@ -17,6 +17,8 @@ final class GlobeScene: ObservableObject {
     @Published private(set) var faceKeys: [String] = []
     /// Notes whose star just landed, shown for a moment beside the face.
     @Published private(set) var previews: [NotePreview] = []
+    /// Only the live arcs are moving: the clock can run slower.
+    @Published private(set) var arcsOnly = false
 
     struct NotePreview: Identifiable, Equatable {
         /// The note.
@@ -112,8 +114,6 @@ final class GlobeScene: ObservableObject {
     private var arcKeysQueued = false
     /// The frame clock's time, for drawing the arcs where it left them.
     private var now: TimeInterval = 0
-    /// The notes the lines carry, for their previews.
-    private var notes: [String: GlobeArcs.Arrival] = [:]
     /// Notes that have had their landing: each gets one preview at most.
     private var landedNotes: Set<String> = []
     private var previewsQueued: [NotePreview] = []
@@ -349,6 +349,7 @@ final class GlobeScene: ObservableObject {
 
     func wake() {
         sleepQueued = false
+        if arcsOnly { arcsOnly = false }
         if !awake {
             lastTick = nil
             awake = true
@@ -363,7 +364,6 @@ final class GlobeScene: ObservableObject {
         liveArcs = on
         if !on {
             board.clear()
-            notes = [:]
             landedNotes = []
             previews = []
             previewsQueued = []
@@ -378,11 +378,11 @@ final class GlobeScene: ObservableObject {
         withAnimation(.easeOut(duration: 0.25)) { previews = [] }
     }
 
-    /// A note reached the relay: it takes its turn on the globe.
+    /// A note reached the relay: it takes its turn on the globe. The board
+    /// keeps only what is waiting or on a line, so this stays small.
     func arrive(_ arrival: GlobeArcs.Arrival) {
         guard liveArcs, hasLoaded else { return }
         board.add(arrival)
-        notes[arrival.id] = arrival
         wake()
     }
 
@@ -395,10 +395,8 @@ final class GlobeScene: ObservableObject {
     }
 
     private func syncArcKeys() {
-        // Forget the notes no line or queue still carries.
-        let live = Set(board.lines.map(\.note) + board.waiting.map(\.id))
-        notes = notes.filter { live.contains($0.key) }
-        landedNotes.formIntersection(live)
+        // Forget the landings of notes no line still carries.
+        landedNotes.formIntersection(board.lines.map(\.note))
         let keys = arcPeople
         guard keys != arcKeys else { return }
         arcKeys = keys
@@ -422,7 +420,13 @@ final class GlobeScene: ObservableObject {
         }
         self.now = now
         let arcsBefore = board.lines.count + board.pulses.count
-        board.step(now: now, me: me)
+        if let released = board.step(now: now, me: me) {
+            // Their pictures, once the note is let on: not for every arrival,
+            // most of which a busy queue drops. Not from inside the draw.
+            DispatchQueue.main.async {
+                NostrService.shared.fetchMissingProfiles(for: [released.author] + released.targets)
+            }
+        }
         if board.lines.count + board.pulses.count != arcsBefore, !arcKeysQueued {
             // Not from inside the draw: the pictures publish on the next turn.
             arcKeysQueued = true
@@ -432,7 +436,7 @@ final class GlobeScene: ObservableObject {
                 self.syncArcKeys()
             }
         }
-        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || !board.isIdle
+        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -448,7 +452,17 @@ final class GlobeScene: ObservableObject {
             threadProgress = min(1, max(0, (now - threadsBorn - 0.35) / 0.55))
             if age > Self.settleTime { settle() }
         }
-        if !settling, !fading, !camera.wantsFrames(now: now, reduceMotion: reduceMotion), awake, !sleepQueued {
+        let still = !settling && !fading && !camera.wantsFrames(now: now, reduceMotion: reduceMotion)
+        // Only stars in flight need frames: a slower clock keeps a busy
+        // stream from holding the whole globe at full rate (heat).
+        let slow = still && !board.isIdle
+        if slow != arcsOnly {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.arcsOnly != slow else { return }
+                self.arcsOnly = slow
+            }
+        }
+        if still, board.isIdle, awake, !sleepQueued {
             // Not from inside the draw: publishing mid-update is undefined.
             sleepQueued = true
             DispatchQueue.main.async { [weak self] in
@@ -797,7 +811,7 @@ final class GlobeScene: ObservableObject {
     /// A star that just landed brings up its note beside the face, unless
     /// two are already up or it would cover one: the globe stays quiet.
     private func previewLanding(_ line: GlobeArcs.Line, _ project: Projector, size: CGSize) -> NotePreview? {
-        guard let note = notes[line.note], !note.text.isEmpty,
+        guard let note = board.notes[line.note], !note.text.isEmpty,
               let p = project(arcPoint(line.to)), p.depth > -0.2,
               CGRect(origin: .zero, size: size).insetBy(dx: 20, dy: 80).contains(p.point) else { return nil }
         let shown = previews + previewsQueued

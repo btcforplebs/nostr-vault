@@ -127,6 +127,9 @@ enum GlobeArcs {
         private(set) var lines: [Line] = []
         private(set) var pulses: [Pulse] = []
         private(set) var waiting: [Arrival] = []
+        /// The notes still waiting or carried by a line, for their previews.
+        /// Nothing else: a note dropped from the queue or faded out goes.
+        private(set) var notes: [String: Arrival] = [:]
         private var seen: [String] = []
         private var lastRelease: TimeInterval = -.infinity
 
@@ -138,20 +141,33 @@ enum GlobeArcs {
             seen.append(arrival.id)
             if seen.count > 256 { seen.removeFirst(seen.count - 256) }
             waiting.append(arrival)
-            if waiting.count > GlobeArcs.maxWaiting { waiting.removeFirst(waiting.count - GlobeArcs.maxWaiting) }
+            notes[arrival.id] = arrival
+            if waiting.count > GlobeArcs.maxWaiting {
+                waiting.removeFirst(waiting.count - GlobeArcs.maxWaiting)
+                forgetDropped()
+            }
+        }
+
+        /// Keeps only the notes still waiting or on a line.
+        private mutating func forgetDropped() {
+            let live = Set(lines.map(\.note) + waiting.map(\.id))
+            notes = notes.filter { live.contains($0.key) }
         }
 
         /// Lets the next note on when its turn comes and drops what has faded.
         /// Returns the note let on, if any.
         @discardableResult
         mutating func step(now: TimeInterval, me: String) -> Arrival? {
+            let before = lines.count
             lines.removeAll { GlobeArcs.stage(of: $0, at: now).alpha <= 0 }
+            if lines.count != before { forgetDropped() }
             pulses.removeAll { now - $0.born >= GlobeArcs.pulseLife }
             guard !waiting.isEmpty, now - lastRelease >= GlobeArcs.spacing else { return nil }
             let next = waiting.removeFirst()
             lastRelease = now
             if next.targets.isEmpty {
                 pulses.append(Pulse(key: next.author, born: now))
+                notes[next.id] = nil
             }
             for target in next.targets {
                 lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me, born: now))
@@ -169,6 +185,7 @@ enum GlobeArcs {
             lines = []
             pulses = []
             waiting = []
+            notes = [:]
         }
     }
 

@@ -94,8 +94,10 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: nil,
-                                    paused: !scene.awake || !running || !appIsActive || openNote != nil)) { timeline in
+            // 30 fps while only arcs move: a steady stream would otherwise
+            // hold the whole globe at full display rate.
+            TimelineView(.animation(minimumInterval: scene.arcsOnly ? 1.0 / 30 : nil,
+                                    paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
                     scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)
                     scene.draw(in: &context, size: size, accent: .orange, name: name)
@@ -106,7 +108,6 @@ struct TrustGlobeCanvas: View {
                 }
             }
             .contentShape(Rectangle())
-            .overlay { previews(in: geo.size) }
             .gesture(drag.simultaneously(with: magnify))
             .simultaneousGesture(taps(in: geo.size))
             .accessibilityElement()
@@ -126,6 +127,9 @@ struct TrustGlobeCanvas: View {
                 }
                 Button("Reset view") { scene.reset() }
             }
+            // Over the gestures, not under them: a tap on a preview opens its
+            // note and never also lands on the face beneath it.
+            .overlay { previews(in: geo.size) }
         }
         .onAppear {
             scene.reduceMotion = reduceMotion
@@ -143,7 +147,9 @@ struct TrustGlobeCanvas: View {
             // A quick off and on can start the next run before this one ends.
             if arrivals.stop(token) { scene.setLiveArcs(false) }
         }
-        .onReceive(arrivals.arrived) { scene.arrive($0) }
+        // While the clock is stopped nothing would move them on: they're
+        // dropped rather than piling up behind a sheet or another app.
+        .onReceive(arrivals.arrived) { if clockAllowed { scene.arrive($0) } }
         .sheet(item: Binding<IdentifiableString?>(
             get: { openNote.map { IdentifiableString(id: $0) } },
             set: { openNote = $0?.id }
@@ -184,6 +190,9 @@ struct TrustGlobeCanvas: View {
                        ringFaces: ringFaces, layerFaces: layerFaces, layer: layer)
         }
     }
+
+    /// False while a sheet or another app covers the globe: the clock stops.
+    private var clockAllowed: Bool { running && appIsActive && openNote == nil }
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 6)

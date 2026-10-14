@@ -117,6 +117,26 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(arrival?.text, "hello there")
     }
 
+    func testNotesHeldNeverOutgrowTheQueueAndLines() {
+        // A long burst with no frames to move it on (a sheet open, another app
+        // in front): only the notes still waiting are kept.
+        var board = GlobeArcs.Board()
+        for n in 0..<200 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.notes.count, GlobeArcs.maxWaiting)
+        XCTAssertEqual(Set(board.notes.keys), Set(board.waiting.map(\.id)))
+        // Let on and faded out, they all go.
+        var t = 0.0
+        while !board.waiting.isEmpty { board.step(now: t, me: me); t += GlobeArcs.spacing }
+        XCTAssertEqual(Set(board.notes.keys), Set(board.lines.map(\.note)))
+        board.step(now: t + GlobeArcs.life, me: me)
+        XCTAssertTrue(board.isIdle)
+        XCTAssertTrue(board.notes.isEmpty)
+        // A note to no one has no line to carry it.
+        board.add(GlobeArcs.arrival(note(500, by: key(3)), now: now)!)
+        board.step(now: t + 2 * GlobeArcs.life, me: me)
+        XCTAssertTrue(board.notes.isEmpty)
+    }
+
     func testFadedLinesAreDropped() {
         var board = GlobeArcs.Board()
         board.add(GlobeArcs.arrival(note(1, by: key(1), to: [me]), now: now)!)

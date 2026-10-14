@@ -62,10 +62,15 @@ final class GlobeArrivalStream: ObservableObject {
         var plan: [(URL, [[String: Any]])] = []
         if let local = feed.localFeedURL { plan.append((local, [note])) }
         if let inbox = feed.localInboxURL { plan.append((inbox, [note.merging(["#p": [me]]) { $1 }])) }
+        // Anyone can tag you on an outside relay: there, only your web's
+        // notes come through, the same as Global. Your own relay already
+        // keeps strangers out.
+        var trusted: Set<String>?
         if plan.isEmpty {
             let follows = Array(feed.followedPubkeys.prefix(500))
             let filters = [note.merging(["authors": follows]) { $1 }, note.merging(["#p": [me]]) { $1 }]
             plan = feed.externalRelayURLs.prefix(3).map { ($0, filters) }
+            trusted = feed.relayTabTrustedPubkeys()
         }
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let subId = "arcs-\(UUID().uuidString.prefix(8))"
@@ -75,7 +80,7 @@ final class GlobeArrivalStream: ObservableObject {
             clients.append(client)
             client.messageSubject
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in self?.handle(message, blocked: blocked) }
+                .sink { [weak self] message in self?.handle(message, blocked: blocked, trusted: trusted) }
                 .store(in: &cancellables)
             client.connect(url: url)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -104,19 +109,14 @@ final class GlobeArrivalStream: ObservableObject {
         return true
     }
 
-    private func handle(_ message: String, blocked: Set<String>) {
+    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>?) {
         guard message.hasPrefix("[\"EVENT\""),
               let data = message.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
               let event = array[2] as? [String: Any],
               let arrival = GlobeArcs.arrival(event),
-              !blocked.contains(arrival.author) else { return }
-        emit(arrival)
-    }
-
-    private func emit(_ arrival: GlobeArcs.Arrival) {
-        // Their pictures, so the faces at each end can be pictures.
-        NostrService.shared.fetchMissingProfiles(for: [arrival.author] + arrival.targets)
+              !blocked.contains(arrival.author),
+              trusted?.contains(arrival.author) ?? true else { return }
         arrived.send(arrival)
     }
 
@@ -141,7 +141,7 @@ final class GlobeArrivalStream: ObservableObject {
             default: targets = []
             }
             let id = real?.id ?? (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
-            emit(GlobeArcs.Arrival(id: id, author: author, targets: targets,
+            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: targets,
                                    text: GlobeArcs.firstLine(real?.content ?? "")))
             try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
         }
