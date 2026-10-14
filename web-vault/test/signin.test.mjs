@@ -54,7 +54,7 @@ test("sign-out stops Haven and deletes the session, keys, paired vaults, log and
   assert.deepEqual(failed, [])
   assert.equal(loadSession(storage), null)
   assert.deepEqual([...storage.m.keys()], ["unrelated"])
-  for (const r of ["private", "chat", "outbox", "inbox", "blossom", "feed"]) {
+  for (const r of ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]) {
     assert.ok(idb.deleted.includes(`haven:${pk}:${r}`), `haven:${pk}:${r}`)
     assert.ok(idb.deleted.includes(`haven:${r}`), `legacy haven:${r}`)
   }
@@ -78,7 +78,7 @@ test("a store the browser lists is deleted even if the route list doesn't know i
   // Another account's vault on this browser is left alone, and so is anything that isn't Haven's.
   assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
-  assert.equal((await storeNames(pk, fakeIdb())).length, 12)
+  assert.equal((await storeNames(pk, fakeIdb())).length, 14)
 })
 
 test("a key another tab writes back while the stores are deleting is dropped again", async () => {

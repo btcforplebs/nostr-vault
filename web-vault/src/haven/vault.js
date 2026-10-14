@@ -48,7 +48,8 @@ export async function startVault({ pubkey, log = () => {} }) {
 // Sign-out deletes every database the browser lists for this account ("haven:<pubkey>:<route>") and the legacy
 // shared ones ("haven:<route>"), so a route added in Go is wiped too. Never another account's: its stores are
 // "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
-const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed"]
+// "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go).
+const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
 export async function storeNames(pubkey, idb = indexedDB) {
   const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
   const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
