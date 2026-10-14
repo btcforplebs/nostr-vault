@@ -30,13 +30,17 @@ export function FeedScreen({ ctx }) {
   const [strange, setStrange] = useState(() => heldNotes(loadChoice()))
   const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
   const page = media ? MEDIA_PAGE : PAGE
+  // A sync started on Following reloads when it ends, maybe after a switch to Media: it reads with the page size
+  // and note count of the feed shown then, not of the render that started it.
+  const shownNow = useRef({})
+  shownNow.current = { page, have: notes?.length ?? 0 }
   // One number per feed shown: picking a feed or starting a stranger load bumps it, and work started under an older
   // number (a Following sync, a Global page) no longer writes the status line.
   const seq = useRef(0)
   const pick = c => { seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus("") }
   const sayer = () => statusGate(seq, setStatus)
 
-  const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(page, notes?.length ?? 0) }))
+  const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(shownNow.current.page, shownNow.current.have) }))
   const sync = async () => {
     // No follow list yet (still loading, or nobody followed): there is nothing to sync, so nothing is "up to date".
     const say = sayer()
@@ -83,7 +87,7 @@ export function FeedScreen({ ctx }) {
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…" : "Loading…")
     try {
       const page = c.mode === "popular"
-        ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault })).notes
+        ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
         : await fetchStrangerFeed(c, account.relays.read, { until })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
@@ -96,7 +100,7 @@ export function FeedScreen({ ctx }) {
   useEffect(() => { if (following) reload().then(sync) }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
-  useEffect(() => { if (!following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), popular && follows.length])
+  useEffect(() => { if (!following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), popular && follows.length > 0])
   useEffect(() => {
     if (following && notes?.length) fetchProfiles(vault, noteAuthors(notes), relays).catch(() => {})
   }, [notes, following])

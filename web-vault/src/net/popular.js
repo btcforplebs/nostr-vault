@@ -21,24 +21,32 @@ export function targetOf(ev) {
   return id
 }
 
-/** Who did it. A zap receipt (9735) is signed by the payee's wallet, so the zapper is the signed zap request in its
- *  `description` tag; a receipt without a valid one counts for nobody. */
-export function reactorOf(ev, verify = verifyEvent) {
-  if (ev.kind !== 9735) return ev.pubkey
+/** The zap request inside a zap receipt (9735), unverified: the payee's wallet signs the receipt, the zapper
+ *  signs this. null when there isn't one. */
+function zapRequest(ev) {
   try {
     const req = JSON.parse(ev.tags.find(t => t[0] === "description")?.[1] ?? "")
-    return req?.kind === 9734 && verify(req) ? req.pubkey : ""
-  } catch { return "" }
+    return req?.kind === 9734 && typeof req.pubkey === "string" ? req : null
+  } catch { return null }
 }
 
-/** note id -> Map(reactor -> weight), only trusted reactors, each at the strongest thing they did. */
-export function tally(events, trusted, verify = verifyEvent) {
+/** Who did it: the author, or for a zap the signer of its zap request; a receipt without a valid one counts for
+ *  nobody. `counts` (who may vote) is checked before the signature, so a stranger's zap costs no verify. */
+export function reactorOf(ev, verify = verifyEvent, counts = () => true) {
+  if (ev.kind !== 9735) return counts(ev.pubkey) ? ev.pubkey : ""
+  const req = zapRequest(ev)
+  return req && counts(req.pubkey) && verify(req) ? req.pubkey : ""
+}
+
+/** note id -> Map(reactor -> weight), only trusted reactors who aren't blocked, each at the strongest thing they did. */
+export function tally(events, trusted, verify = verifyEvent, blocked = new Set()) {
   const out = new Map()
+  const counts = pk => trusted.has(pk) && !blocked.has(pk)
   for (const ev of events) {
     const w = engagementWeight(ev?.kind), target = w && targetOf(ev)
     if (!target) continue
-    const who = reactorOf(ev, verify)
-    if (!who || !trusted.has(who)) continue
+    const who = reactorOf(ev, verify, counts)
+    if (!who) continue
     const reactors = out.get(target) ?? new Map()
     if (w > (reactors.get(who) ?? 0)) reactors.set(who, w)
     out.set(target, reactors)
@@ -84,17 +92,20 @@ export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Da
 // The trust set is a few hundred contact lists: built once per follow list this session, memory only.
 let trustCache = { key: "", set: null }
 
-/** The user, their follows and the people their follows follow. `query` is for tests. */
-export async function trustSet(me, follows, relays, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+/**
+ * The user, their follows and the people their follows follow. Contact lists come from the profile relay only
+ * (purplepag.es keeps them): asking every read relay too multiplied the download by the number of relays, at
+ * 20-50 KB a list. The chunks go out together. `query` is for tests.
+ */
+export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
   if (trustCache.key === key) return trustCache.set
   const set = new Set([me, ...follows].filter(Boolean))
-  const newest = new Map()
-  for (let i = 0; i < follows.length; i += 250) {
-    const chunk = follows.slice(i, i + 250)
-    const evs = await query(uniq([...relays, ...PROFILE_RELAYS]), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })
-    for (const ev of evs) if (ev?.kind === 3 && chunk.includes(ev.pubkey) && !(newest.get(ev.pubkey)?.created_at >= ev.created_at)) newest.set(ev.pubkey, ev)
-  }
+  const mine = new Set(follows), newest = new Map()
+  const chunks = []
+  for (let i = 0; i < follows.length; i += 250) chunks.push(follows.slice(i, i + 250))
+  const answers = await Promise.all(chunks.map(chunk => query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })))
+  for (const ev of answers.flat()) if (ev?.kind === 3 && mine.has(ev.pubkey) && !(newest.get(ev.pubkey)?.created_at >= ev.created_at)) newest.set(ev.pubkey, ev)
   for (const ev of newest.values()) for (const t of ev.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) set.add(t[1])
   trustCache = { key, set }
   return set
@@ -103,17 +114,18 @@ export async function trustSet(me, follows, relays, { query = (r, f, o) => pool.
 /**
  * The Popular page: notes ranked from the last day's engagement on these relays. Asks once for everyone's
  * engagement (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
- * -> { notes, trusted } (trusted: how many people count, so the screen can say why it's empty). `query` is for tests.
+ * Blocked people's likes, reposts and zaps don't count. -> { notes, trusted } (trusted: how many people count, so the
+ * screen can say why it's empty). `query` is for tests.
  */
-export async function fetchPopular({ me, follows, relays, vault, now = Math.floor(Date.now() / 1000), query = (r, f, o) => pool.querySync(r, f, o) }) {
-  const trusted = await trustSet(me, follows, relays, { query })
+export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), query = (r, f, o) => pool.querySync(r, f, o) }) {
+  const trusted = await trustSet(me, follows, { query })
   const urls = uniq(relays)
   const since = now - WINDOW, kinds = [7, 6, 9735]
   const asks = [query(urls, { kinds, since, limit: 5000 }, { maxWait: 10000 })]
   for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since, limit: 2000 }, { maxWait: 10000 }))
   const byId = new Map()
   for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
-  const t = tally(byId.values(), trusted)
+  const t = tally(byId.values(), trusted, verifyEvent, blocked)
   const ids = rankTargets(t)
   if (!ids.length) return { notes: [], trusted: trusted.size }
   // Bodies: Haven /feed first (read only), the relays for the rest.

@@ -72,15 +72,44 @@ test("no author has more than three notes on the page", () => {
 
 test("the trust set is the user, their follows and who those follow, newest contact list each", async () => {
   const asked = []
-  const query = async (r, f) => { asked.push(f); return [
+  const query = async (r, f) => { asked.push([r, f]); return [
     { kind: 3, pubkey: R1, created_at: 1, tags: [["p", STRANGER]] },
     { kind: 3, pubkey: R1, created_at: 2, tags: [["p", R3]] },
     { kind: 3, pubkey: STRANGER, created_at: 9, tags: [["p", N1]] }, // not a follow: ignored
   ] }
-  const set = await trustSet(AUTHOR, [R1, R2], ["wss://r"], { query })
+  const set = await trustSet(AUTHOR, [R1, R2], { query })
   assert.deepEqual([...set].sort(), [AUTHOR, R1, R2, R3].sort())
-  assert.deepEqual(asked, [{ kinds: [3], authors: [R1, R2], limit: 2 }])
-  await trustSet(AUTHOR, [R1, R2], ["wss://r"], { query: async () => assert.fail("built once") })
+  assert.deepEqual(asked, [[["wss://purplepag.es"], { kinds: [3], authors: [R1, R2], limit: 2 }]], "contact lists from the profile relay only")
+  await trustSet(AUTHOR, [R1, R2], { query: async () => assert.fail("built once") })
+})
+
+test("a big follow list asks for its contact lists in chunks of 250, all at once", async () => {
+  const follows = Array.from({ length: 1000 }, (_, i) => i.toString(16).padStart(64, "0"))
+  let open = 0, most = 0, asks = 0
+  const query = async (r, f) => {
+    asks++; open++; most = Math.max(most, open)
+    assert.deepEqual(r, ["wss://purplepag.es"]); assert.equal(f.authors.length, 250)
+    await new Promise(res => setTimeout(res, 10)); open--
+    return [{ kind: 3, pubkey: f.authors[0], created_at: 1, tags: [["p", hex("7")]] }]
+  }
+  const set = await trustSet(hex("9"), follows, { query })
+  assert.equal(asks, 4); assert.equal(most, 4, "not one after another")
+  assert.ok(set.has(hex("7")))
+})
+
+test("a stranger's zap is dropped before its signature is checked", () => {
+  let verified = 0
+  const verify = () => (verified++, true)
+  const zap = who => ({ kind: 9735, pubkey: hex("f"), tags: [["e", N1], ["description", JSON.stringify({ kind: 9734, pubkey: who, tags: [], content: "", sig: "x" })]] })
+  const t = tally([zap(STRANGER), zap(STRANGER), zap(R1)], new Set([R1]), verify)
+  assert.equal(verified, 1, "only the trusted zapper's request is verified")
+  assert.deepEqual([...t.get(N1)], [[R1, 3]])
+})
+
+test("blocked people's likes, reposts and zaps don't count, even when they're trusted", () => {
+  const t = tally([like(R1, N1), repost(R2, N1), like(R3, N1)], new Set([R1, R2, R3]), () => true, new Set([R2]))
+  assert.deepEqual([...t.get(N1).keys()], [R1, R3])
+  assert.deepEqual(rankTargets(t), [], "two left: under the floor")
 })
 
 test("a Popular page: engagement in, scored notes out, Haven /feed only read", async () => {
@@ -95,6 +124,9 @@ test("a Popular page: engagement in, scored notes out, Haven /feed only read", a
     return [like(R1, N1), like(R2, N1), like(R3, N1), like(R2, N2), like(R3, N2), like(STRANGER, N2)]
   }
   const { notes, trusted } = await fetchPopular({ me: hex("9"), follows: [R1], relays: ["wss://r"], vault, now, query })
+  // R3 blocked: N1 keeps two votes (under the floor), N2 keeps R1's repost and R2's like (two: under the floor too)
+  const blockedRun = await fetchPopular({ me: hex("9"), follows: [R1], relays: ["wss://r"], vault, now, query, blocked: new Set([R3]) })
+  assert.deepEqual(blockedRun.notes, [], "a blocked voter's likes don't lift anything over the floor")
   assert.deepEqual(notes.map(n => n.id), [N2, N1], "N2: repost 2 + 1 + 1; N1: 1 + 1 + 1")
   assert.equal(trusted, 4)
   assert.ok(filters.some(f => f.since === now - 86400 && !f.authors && f.limit === 5000), "everyone's last day")
