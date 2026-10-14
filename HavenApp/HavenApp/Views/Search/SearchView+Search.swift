@@ -76,21 +76,6 @@ extension SearchView {
         }
     }
 
-    /// Re-run the current query, e.g. after switching between relay/global modes.
-    func rerunSearch() {
-        nostrService.cancelGlobalSearch()
-        nostrService.cancelLocalRelaySearch()
-        globalSources = []
-        globalFinished = true
-        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            searchResults = .empty
-            isSearching = false
-            return
-        }
-        performSearch(query: searchQuery)
-    }
-
     /// Runs the search for whatever is in the field right now, cancelling the debounce
     /// task so Return doesn't race a second search behind it.
     func searchNow() {
@@ -109,9 +94,9 @@ extension SearchView {
         pendingDirectNoteId = nil
         isSearching = false
         globalSources = []
+        globalSnapshot = nil
         globalFinished = true
         nostrService.cancelGlobalSearch()
-        nostrService.cancelLocalRelaySearch()
     }
 
     func performSearch(query: String) {
@@ -119,6 +104,7 @@ extension SearchView {
         // A new query supersedes whatever Global search was streaming.
         nostrService.cancelGlobalSearch()
         globalSources = []
+        globalSnapshot = nil
         globalFinished = true
         guard !trimmed.isEmpty else {
             searchResults = .empty
@@ -170,144 +156,61 @@ extension SearchView {
 
         // Global search: this device's store, the Mac relay and the NIP-50
         // search relays at once, streamed as each answers.
-        if searchMode == .global {
-            isSearching = true
-            globalFinished = false
-            let requestedQuery = trimmed
-            globalSearchLifetime.session = nostrService.startGlobalSearch(query: trimmed,
-                                           deviceRelay: feedService.localRelayURL,
-                                           follows: feedService.followedPubkeys) { snapshot in
-                // Ignore stale updates (user changed query or switched mode).
-                guard self.searchMode == .global,
-                      self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
-
-                let filter = self.blockFilter
-                let profiles = filter.profiles(snapshot.profiles, pubkey: \.pubkey)
-                let notes = self.visibleNotes(snapshot.notes, filter)
-
-                var results = SearchResults()
-                for profile in profiles {
-                    results.users[profile.pubkey] = profile
-                }
-                results.userOrder = profiles.map(\.pubkey)
-                // Already ranked own → follows → everyone, newest first in each.
-                results.notes = Array(notes.prefix(100))
-
-                var foundHashtags = Set<String>()
-                for note in notes {
-                    for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
-                        foundHashtags.insert(tag)
-                    }
-                }
-                results.hashtags = Array(foundHashtags).sorted()
-
-                results.links = self.extractURLs(from: results.notes)
-
-                self.searchResults = results
-                self.globalSources = snapshot.sources
-                self.globalFinished = snapshot.isFinished
-                self.isSearching = false
-            }
-            return
-        }
-
-        // Relay search: query the local relay's full stored dataset directly,
-        // not just whatever the feed subscription has already loaded.
         isSearching = true
-
-        guard let relayURL = feedService.localRelayURL else {
-            // Relay not up yet (e.g. still booting) — fall back to whatever's
-            // already in memory rather than showing nothing.
-            performInMemoryRelaySearch(trimmedQuery: trimmedQuery)
-            return
-        }
-
+        globalFinished = false
         let requestedQuery = trimmed
-        nostrService.localRelaySearch(query: trimmed, relayURL: relayURL) { localResults in
-            // Ignore stale completions (user changed query or switched mode).
-            guard self.searchMode == .relay,
-                  self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
-
-            let filter = self.blockFilter
-            let profiles = filter.profiles(localResults.profiles, pubkey: \.pubkey)
-            let notes = self.visibleNotes(localResults.notes, filter)
-
-            var results = SearchResults()
-            for profile in profiles {
-                results.users[profile.pubkey] = profile
-            }
-            results.notes = Array(notes.prefix(20))
-
-            var foundHashtags = Set<String>()
-            for note in notes {
-                for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
-                    foundHashtags.insert(tag)
-                }
-            }
-            results.hashtags = Array(foundHashtags).sorted()
-
-            // Links are what the matching notes link to, so a note that matches
-            // on its text contributes its links even when the query is nowhere
-            // in the URL (Logen, 2026-09-09).
-            results.links = self.extractURLs(from: notes)
-
-            self.searchResults = results
+        globalSearchLifetime.session = nostrService.startGlobalSearch(query: trimmed,
+                                       deviceRelay: feedService.localRelayURL,
+                                       follows: feedService.followedPubkeys) { snapshot in
+            // Ignore stale updates (user changed query).
+            guard self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
+            self.globalSnapshot = snapshot
+            self.searchResults = self.filteredResults(from: snapshot, query: trimmedQuery)
+            self.globalSources = snapshot.sources
+            self.globalFinished = snapshot.isFinished
             self.isSearching = false
         }
     }
 
-    /// Fallback used only when the local relay isn't reachable yet: filters
-    /// whatever's already loaded into the live feed/profile cache.
-    private func performInMemoryRelaySearch(trimmedQuery: String) {
+    /// Re-applies the who/when filter to the answer already on hand. Nothing
+    /// is re-fetched: the stream keeps every match and the filter picks.
+    func applySearchFilter() {
+        guard let snapshot = globalSnapshot else { return }
+        let trimmedQuery = searchQuery.lowercased().trimmingCharacters(in: .whitespaces)
+        searchResults = filteredResults(from: snapshot, query: trimmedQuery)
+    }
+
+    /// Blocks, then the who/when scope, then the per-type lists. Hashtags and
+    /// links come from the notes that survived, so they follow the filter too.
+    func filteredResults(from snapshot: GlobalSearchSnapshot, query trimmedQuery: String) -> SearchResults {
         let filter = blockFilter
-        let visibleKeys = Set(filter.pubkeys(Array(nostrService.profiles.keys)))
-        let localProfiles = nostrService.profiles.filter { visibleKeys.contains($0.key) }
-        let localNotes = visibleNotes(feedService.notes, filter)
+        let scope = searchFilter
+        let own = configService.activeAccountHexPubkey
+        let follows = Set(feedService.followedPubkeys)
+        let profiles = filter.profiles(snapshot.profiles, pubkey: \.pubkey)
+            .filter { scope.allowsAuthor($0.pubkey, own: own, follows: follows) }
+        let now = Date()
+        let notes = visibleNotes(snapshot.notes, filter)
+            .filter { scope.allowsAuthor($0.pubkey, own: own, follows: follows) && scope.allowsDate($0.createdAt, now: now) }
 
-        // Same matching rules as the relay walk, so the fallback cannot drift
-        // away from the real path.
-        guard let matcher = LocalSearchMatcher(query: trimmedQuery) else {
-            searchResults = .empty
-            isSearching = false
-            return
+        var results = SearchResults()
+        for profile in profiles {
+            results.users[profile.pubkey] = profile
         }
+        results.userOrder = profiles.map(\.pubkey)
+        // Already ranked own → follows → everyone, newest first in each.
+        results.notes = Array(notes.prefix(100))
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            var results = SearchResults()
-
-            for (pubkey, profile) in localProfiles {
-                if matcher.matchesProfile(displayName: profile.displayName,
-                                          name: profile.name,
-                                          about: profile.about,
-                                          nip05: profile.nip05,
-                                          pubkey: pubkey) {
-                    results.users[pubkey] = profile
-                }
-            }
-
-            let relevantNotes = localNotes
-                .filter { matcher.matchesNote(content: $0.content) }
-                .sorted { $0.createdAt > $1.createdAt }
-            results.notes = relevantNotes.prefix(20).map { $0 }
-
-            var foundHashtags = Set<String>()
-            for note in relevantNotes {
-                let hashtags = extractHashtags(from: note.content)
-                for tag in hashtags {
-                    if tag.lowercased().contains(trimmedQuery) {
-                        foundHashtags.insert(tag)
-                    }
-                }
-            }
-            results.hashtags = Array(foundHashtags).sorted()
-
-            results.links = extractURLs(from: relevantNotes)
-
-            DispatchQueue.main.async {
-                self.searchResults = results
-                self.isSearching = false
+        var foundHashtags = Set<String>()
+        for note in notes {
+            for tag in extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
+                foundHashtags.insert(tag)
             }
         }
+        results.hashtags = Array(foundHashtags).sorted()
+
+        results.links = extractURLs(from: results.notes)
+        return results
     }
 
     private func extractHashtags(from text: String) -> [String] {
