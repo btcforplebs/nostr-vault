@@ -1,5 +1,5 @@
 // The app is served as static files at https://nostrvault.app/relay/, from website/relay/.
-// `npm run build` writes there; commit the output with the source change.
+// `npm run build` writes there at deploy time; the output is not committed (.gitignore).
 import fs from "node:fs"; import path from "node:path"; import zlib from "node:zlib"
 
 /** Writes a .br and a .gz next to every compressible build output, for servers that serve precompressed files
