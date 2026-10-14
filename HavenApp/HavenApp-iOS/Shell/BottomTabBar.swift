@@ -140,11 +140,13 @@ struct BottomTabBar: View {
 
     // MARK: - Collapsed Content
 
-    /// Feed, Search and Profile compose; the Vault tab opens its dashboard.
+    /// Feed, Search and Profile compose; the Vault tab opens its dashboard
+    /// and the WoT tab its My Web panel.
     private var opensVaultDashboard: Bool { selectedTab == 4 }
+    private var opensMyWeb: Bool { selectedTab == 3 }
 
     private var collapsedFABIcon: String {
-        opensVaultDashboard ? VaultDashboard.symbol : "square.and.pencil"
+        opensVaultDashboard ? VaultDashboard.symbol : opensMyWeb ? TrustMap.Layer.everyone.symbolName : "square.and.pencil"
     }
 
     private var collapsedFABColor: Color {
@@ -152,7 +154,7 @@ struct BottomTabBar: View {
     }
 
     private var collapsedFABLabel: String {
-        opensVaultDashboard ? VaultDashboard.title : "Compose new post"
+        opensVaultDashboard ? VaultDashboard.title : opensMyWeb ? "My Web" : "Compose new post"
     }
 
     @ViewBuilder

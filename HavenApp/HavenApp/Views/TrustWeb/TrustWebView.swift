@@ -125,6 +125,8 @@ struct TrustWebView: View {
     /// Your follow list is still on its way (FeedService, mirrored so this
     /// view doesn't redraw on every feed change).
     @State var contactsLoading = true
+    /// The WOT tab's My Web dashboard is open.
+    @State var myWebOpen = false
 
     /// Width of the globe's own pane. The trust card becomes a side panel once
     /// there is room for one beside the globe instead of across its bottom.
@@ -152,6 +154,13 @@ struct TrustWebView: View {
                         // centre in what is left rather than running under it.
                         .padding(.trailing, cardIsSidePanel ? AdaptiveLayout.sidePanelWidth : 0)
                 }
+                #if os(iOS)
+                .overlay(alignment: .bottomTrailing) {
+                    // FloatingButtonSlot lifts from the home indicator, as on
+                    // the other tabs; this pane is already inset for the bar.
+                    myWebHUD.padding(.bottom, -tabBarHeight)
+                }
+                #endif
             } else {
                 // A post's globe: the WOT tab's card does the explaining, so it
                 // reads and moves like the tab.
@@ -219,6 +228,7 @@ struct TrustWebView: View {
             clearSearch()
             searchOpen = false
             closeCard()
+            myWebOpen = false
             jump(to: 0)
         }
         // The WOT tour points into the globe; a sheet over it hides what the card points at.

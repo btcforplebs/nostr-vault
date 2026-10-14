@@ -30,7 +30,7 @@ extension TrustWebView {
 
     // MARK: - Filters
 
-    private var filterMatches: [TrustMap.Filter: Set<String>] {
+    var filterMatches: [TrustMap.Filter: Set<String>] {
         let onGlobe = myFollows.union(web)
         return [
             .talk: Set(engagement.keys).intersection(onGlobe),
@@ -88,7 +88,7 @@ extension TrustWebView {
         filterNote.show(FilterNote(icon: on ? tapped.symbolName : "circle.slash", text: text))
     }
 
-    private func loadFollowsBack() {
+    func loadFollowsBack() {
         let owner = me
         Task {
             let followers = await Task.detached(priority: .userInitiated) {
