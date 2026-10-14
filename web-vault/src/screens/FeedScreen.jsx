@@ -4,6 +4,8 @@ import { NoteCard } from "../components/NoteCard.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
+import { visibleNotes } from "../net/blocks.js"
+import { useBlocks } from "../components/useBlocks.js"
 
 const PAGE = 100
 
@@ -14,6 +16,7 @@ export function FeedScreen({ ctx }) {
   const [notes, setNotes] = useState(null)
   const [status, setStatus] = useState("")
   const [syncing, setSyncing] = useState(false)
+  const { blocked, privateNote } = useBlocks(ctx)
 
   const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(PAGE, notes?.length ?? 0) }))
   const sync = async () => {
@@ -58,15 +61,18 @@ export function FeedScreen({ ctx }) {
     fetchProfiles(vault, authors.filter(Boolean), relays).catch(() => {})
   }, [notes])
 
+  // Blocked people's notes stay in Haven and are only left out here, so unblocking brings them back.
+  const shown = notes && visibleNotes(notes, blocked)
   return (
     <main class="screen">
       <header class="screen-head"><h2>Following</h2><button class="small" onClick={sync}>Refresh</button></header>
       {status && <div class="status-line">{status}</div>}
+      {privateNote && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
       {!follows.length ? <p class="empty">{account.loaded ? "You don't follow anyone yet." : "Loading your follows…"}</p>
         : notes === null ? <p class="empty">Opening your relay…</p>
         : !notes.length ? <p class="empty">{syncing ? "Fetching notes from the people you follow…" : "No notes saved yet."}</p>
         : <>
-            {notes.map(n => <NoteCard key={n.id} event={n} />)}
+            {shown.map(n => <NoteCard key={n.id} event={n} />)}
             <button class="more" onClick={older}>Older notes</button>
           </>}
     </main>

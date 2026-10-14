@@ -8,12 +8,15 @@ import { useProfile } from "../components/useProfile.js"
 import { parseQuery, searchNostr } from "../net/search.js"
 import { fetchProfiles, putProfile } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { visibleNotes, visiblePeople } from "../net/blocks.js"
+import { useBlocks } from "../components/useBlocks.js"
 
 export function SearchScreen({ ctx, onProfile }) {
   const [text, setText] = useState("")
-  const [result, setResult] = useState(null) // null | { people: [pubkey], notes: [event] }
+  const [result, setResult] = useState(null) // null | { people: [pubkey], notes: [event], direct? }
   const [status, setStatus] = useState("")
   const seq = useRef(0) // a slow answer to an older query must not replace a newer one
+  const { blocked } = useBlocks(ctx)
 
   const submit = async e => {
     e.preventDefault()
@@ -21,7 +24,7 @@ export function SearchScreen({ ctx, onProfile }) {
     const n = ++seq.current
     if (q.type === "empty") { setResult(null); setStatus(""); return }
     if (q.type === "profile") {
-      setResult({ people: [q.pubkey], notes: [] }); setStatus("")
+      setResult({ people: [q.pubkey], notes: [], direct: true }); setStatus("")
       fetchProfiles(ctx.vault, [q.pubkey], uniq([...q.relays, ...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
       onProfile?.(q.pubkey)
       return
@@ -40,6 +43,9 @@ export function SearchScreen({ ctx, onProfile }) {
     }
   }
 
+  // A pasted npub still opens that profile, blocked or not: that is the way to find someone to unblock them.
+  const people = result && (result.direct ? result.people : visiblePeople(result.people, blocked))
+  const notes = result && visibleNotes(result.notes, blocked)
   return (
     <main class="screen">
       <header class="screen-head"><h2>Search</h2></header>
@@ -50,14 +56,14 @@ export function SearchScreen({ ctx, onProfile }) {
         </label>
       </form>
       {status && <div class="status-line">{status}</div>}
-      {result && !result.people.length && !result.notes.length && <p class="empty">Nothing found.</p>}
-      {result?.people.length > 0 && <>
+      {result && !people.length && !notes.length && <p class="empty">Nothing found.</p>}
+      {people?.length > 0 && <>
         <div class="section-label">People</div>
-        {result.people.map(pk => <PersonRow key={pk} pubkey={pk} onClick={onProfile && (() => onProfile(pk))} />)}
+        {people.map(pk => <PersonRow key={pk} pubkey={pk} onClick={onProfile && (() => onProfile(pk))} />)}
       </>}
-      {result?.notes.length > 0 && <>
+      {notes?.length > 0 && <>
         <div class="section-label">Notes</div>
-        {result.notes.map(n => <NoteCard key={n.id} event={n} />)}
+        {notes.map(n => <NoteCard key={n.id} event={n} />)}
       </>}
     </main>
   )

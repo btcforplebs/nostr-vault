@@ -5,6 +5,8 @@ import { NoteCard } from "../components/NoteCard.jsx"
 import { buildThread, flattenThread, readThread, repostedNote, rootIdOf, syncThread } from "../net/thread.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
+import { isBlockedNote, visibleReplies } from "../net/blocks.js"
+import { useBlocks } from "../components/useBlocks.js"
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
 
@@ -29,6 +31,7 @@ export function ThreadScreen({ ctx, id }) {
   const [thread, setThread] = useState(null)
   const [status, setStatus] = useState("")
   const extra = useRef([])
+  const { blocked } = useBlocks(ctx)
 
   // Each run is for one id: once the screen has moved on, `isLive()` is false and the run touches nothing, so a late
   // read or sync for the previous thread can't take over this one's root, extra or status.
@@ -69,7 +72,9 @@ export function ThreadScreen({ ctx, id }) {
     fetchProfiles(ctx.vault, authors.filter(Boolean), relays).catch(() => {})
   }, [thread])
 
-  const rows = thread ? flattenThread(thread.replies) : []
+  // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
+  const rows = thread ? flattenThread(visibleReplies(thread.replies, blocked)) : []
+  const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
   return (
     <main class="screen">
       <header class="screen-head">
@@ -78,10 +83,11 @@ export function ThreadScreen({ ctx, id }) {
         {/* Mirrors Back so the title sits centred */}
         <button class="small" style={{ visibility: "hidden" }} aria-hidden="true" tabIndex={-1}>Back</button>
       </header>
-      <div class="status-line">{status || (thread ? `${thread.count} ${thread.count === 1 ? "reply" : "replies"}` : "")}</div>
+      <div class="status-line">{status || (thread ? `${rows.length} ${rows.length === 1 ? "reply" : "replies"}` : "")}</div>
       {thread === null ? <p class="empty">Opening your relay…</p>
         : <>
-            {thread.root ? <NoteCard event={thread.root} />
+            {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
+              : thread.root ? <NoteCard event={thread.root} />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {rows.map(({ event, depth }) => (
               <div key={event.id} style={{ paddingLeft: `${Math.min(depth - 1, MAX_INDENT) * 16}px` }}>
