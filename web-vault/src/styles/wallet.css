@@ -1,0 +1,41 @@
+/* Wallet screen (WalletSettingsView) and the zap button (FeedNoteRow+NoteBody): a 32 pt capsule like the other note
+   actions, widening to hold its sats; zapped turns it orange on orange at 20%, as on the iPhone. */
+.wallet-card { display: flex; flex-direction: column; gap: 10px; }
+.wallet-card h3 { margin: 0; }
+.wallet-card p { margin: 0; }
+.wallet-uri, .wallet-sats { background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
+.wallet-uri { width: 100%; }
+.wallet-uri:focus, .wallet-sats:focus { outline: none; border-color: var(--strong); }
+.wallet-sats { width: 110px; text-align: right; }
+.wallet-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.wallet-row > span:first-child { flex: 1; }
+.wallet-balance { font: 600 15px var(--mono); }
+button.danger { color: var(--danger); }
+
+.zap { position: relative; display: inline-flex; }
+.note-actions .note-action.zap-button, .note-actions .note-action.zap-total, .person-actions .zap-button {
+  display: inline-flex; align-items: center; gap: 4px; width: auto; font: 600 13px/1 var(--font-round);
+}
+.note-actions .note-action.zap-button.wide, .note-actions .note-action.zap-total { padding: 0 10px; }
+.note-actions .note-action.zap-total { color: rgb(255 159 10 / .85); cursor: default; }
+.note-actions .note-action.zap-button.sent, .person-actions .zap-button.sent { color: #ff9f0a; background: rgb(255 159 10 / .20); }
+/* The profile pill sits with Follow: the same height, the accent orange as on the iPhone. */
+.person-actions .zap-button { min-height: 34px; padding: 0 14px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); }
+.person-actions .zap-button.failed { color: var(--danger); }
+.zap-button { touch-action: manipulation; -webkit-touch-callout: none; user-select: none; }
+
+.zap-error { position: absolute; z-index: 6; top: calc(100% + 6px); right: 0; width: max-content; max-width: min(280px, 70vw);
+  padding: 8px 10px; border-radius: 10px; background: var(--s3); color: var(--text); font: var(--t-foot); }
+
+.zap-picker { position: absolute; z-index: 7; bottom: calc(100% + 8px); right: 0; width: 264px; padding: 14px;
+  display: flex; flex-direction: column; gap: 12px; border-radius: 16px; background: var(--s1); border: 1px solid var(--strong);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .6); cursor: default; }
+.zap-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.zap-presets button { min-height: 36px; padding: 0; }
+.zap-presets button.on { border-color: var(--accent); color: var(--accent-light); }
+.zap-custom { display: flex; align-items: center; gap: 8px; color: var(--text-2); font: var(--t-foot); }
+.zap-custom input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font: 14px var(--mono); }
+.zap-picker-row { display: flex; gap: 8px; justify-content: flex-end; }
+.zap-picker-row button { min-height: 38px; padding: 0 14px; }
+/* On a profile the pill is near the top of the screen: the picker opens downward. */
+.person-actions .zap-picker { bottom: auto; top: calc(100% + 8px); }

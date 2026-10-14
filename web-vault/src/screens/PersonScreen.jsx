@@ -3,6 +3,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { NoteCard } from "../components/NoteCard.jsx"
+import { ZapButton } from "../components/ZapButton.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
 import { fetchPersonLists, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
@@ -78,6 +79,7 @@ export function PersonScreen({ ctx, pubkey }) {
             </svg>
             {label}
           </button>
+          <ZapButton pubkey={pubkey} />
         </div>
         {err && <p class="error person-error" role="alert">{err}</p>}
       </ProfileHeader>
