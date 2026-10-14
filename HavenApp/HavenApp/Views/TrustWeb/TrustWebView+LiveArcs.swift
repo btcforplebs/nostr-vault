@@ -28,14 +28,18 @@ private struct LiveArcsToggle: View {
     }
 }
 
-/// Notes arriving, as globe arrivals. While your device relay is up they
-/// come from the feed's own live subscriptions, which stay open whichever tab
-/// is on screen: one stream, no second set of connections. When it is down
-/// the feed has nothing open, so your follows' notes and notes to you are
-/// asked from your read relays directly.
+/// Notes arriving, as globe arrivals. When the feed has your follows'
+/// timeline open (Following, or Media on Following) they come from its own
+/// live subscriptions, which stay open whichever tab is on screen: one
+/// stream, no second set of connections. In every other feed mode the feed
+/// carries no follows' notes, so the globe asks for them itself. Which of the
+/// two is re-picked whenever the feed mode or your device relay changes.
 @MainActor
 final class GlobeArrivalStream: ObservableObject {
     let arrived = PassthroughSubject<GlobeArcs.Arrival, Never>()
+    /// Watches what decides the source; lives for the whole start.
+    private var watch: AnyCancellable?
+    /// The current source's connections and sinks.
     private var clients: [WebSocketClient] = []
     private var cancellables: Set<AnyCancellable> = []
     /// Which start the open connections belong to, so a late stop from an
@@ -47,6 +51,17 @@ final class GlobeArrivalStream: ObservableObject {
 
     /// Most authors one filter names.
     private static let authorsPerFilter = 500
+    /// How far back a note in the feed still counts as just arrived, for
+    /// authors whose clocks run a little slow.
+    private static let freshWindow: TimeInterval = 60
+
+    /// Where arrivals come from.
+    private enum Source: Equatable {
+        /// The feed's own live timeline.
+        case feed
+        /// The globe's own REQ; `inbox` is your device relay's, when it is up.
+        case own(inbox: URL?)
+    }
 
     /// Opens the connections; returns the token that stops them.
     @discardableResult
@@ -62,59 +77,105 @@ final class GlobeArrivalStream: ObservableObject {
         }
         #endif
         let feed = FeedService.shared
-        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-        if feed.localInboxURL != nil {
-            watchFeed(feed, me: me, blocked: blocked)
-        } else {
-            askReadRelays(feed, me: me, blocked: blocked)
-        }
+        let relay = RelayProcessManager.shared
+        watch = Publishers.CombineLatest4(feed.$feedMode, feed.$mediaFeedMode, relay.$isRunning, relay.$isBooting)
+            .receive(on: DispatchQueue.main)
+            .map { mode, media, _, _ -> Source in
+                // Read after the change lands; the published values are the new ones.
+                let carriesFollows = mode == .following || (mode == .media && media == .following)
+                return carriesFollows && feed.localInboxURL != nil ? .feed : .own(inbox: feed.localInboxURL)
+            }
+            .removeDuplicates()
+            .sink { [weak self] source in self?.open(source, me: me) }
         return generation
     }
 
-    /// New notes as the feed takes them in: your follows' always; anyone's
-    /// that tag you, except in a Global-like mode, where strangers reach the
-    /// feed too and only your web's come through. Notes land in `pendingNotes`
-    /// or `notes` depending on their age and the feed's scroll, so both are
-    /// watched; both are newest first, so only their new heads are read.
+    /// Closes the connections, unless `token` is from an earlier start.
+    /// True when they were closed.
+    @discardableResult
+    func stop(_ token: Int? = nil) -> Bool {
+        if let token, token != generation { return false }
+        watch = nil
+        closeSource()
+        #if DEBUG
+        stub?.cancel()
+        stub = nil
+        #endif
+        return true
+    }
+
+    private func closeSource() {
+        cancellables.removeAll()
+        clients.forEach { $0.disconnect() }
+        clients = []
+    }
+
+    private func open(_ source: Source, me: String) {
+        closeSource()
+        let feed = FeedService.shared
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        switch source {
+        case .feed: watchFeed(feed, me: me, blocked: blocked)
+        case .own(let inbox): ask(feed, inbox: inbox, me: me, blocked: blocked)
+        }
+    }
+
+    /// New notes as the feed takes them in: yours, your follows', and those
+    /// that tag you (the feed's are from your device relay's inbox, which
+    /// already keeps strangers out). Notes land in `pendingNotes` or `notes`
+    /// depending on their age and the feed's scroll, so both are watched;
+    /// both are newest first, so only their fresh heads are read. What is
+    /// already there when the globe opens has arrived, so it doesn't fly.
     private func watchFeed(_ feed: FeedService, me: String, blocked: Set<String>) {
-        // A minute back, for authors whose clocks run a little slow.
-        let since = Date().addingTimeInterval(-60)
-        let follows = Set(feed.followedPubkeys)
-        var web: Set<String>?
-        var seen = Set<String>()
+        let follows = Set(feed.followedPubkeys).union([me])
+        func fresh(_ notes: [FeedNote]) -> ArraySlice<FeedNote> {
+            let cutoff = Date().addingTimeInterval(-Self.freshWindow)
+            return notes.prefix { $0.createdAt >= cutoff }
+        }
+        // Seen ids and when they were written; only the fresh window is kept.
+        var seen: [String: Date] = [:]
+        for note in fresh(feed.notes) + fresh(feed.pendingNotes) { seen[note.id] = note.createdAt }
         feed.$pendingNotes.merge(with: feed.$notes)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notes in
-                for note in notes.prefix(while: { $0.createdAt >= since })
-                where note.repostedBy == nil && seen.insert(note.id).inserted {
-                    guard let arrival = GlobeArcs.arrival(note.event), !blocked.contains(arrival.author) else { continue }
-                    if !follows.contains(arrival.author) {
-                        guard arrival.targets.contains(me) else { continue }
-                        if feed.isGlobalLikeMode {
-                            if web == nil { web = feed.relayTabTrustedPubkeys() }
-                            guard web?.contains(arrival.author) == true else { continue }
-                        }
-                    }
+                for note in fresh(notes) where note.repostedBy == nil && seen[note.id] == nil {
+                    seen[note.id] = note.createdAt
+                    guard let arrival = GlobeArcs.arrival(note.event), !blocked.contains(arrival.author),
+                          follows.contains(arrival.author) || arrival.targets.contains(me) else { continue }
                     self?.arrived.send(arrival)
+                }
+                if seen.count > 256 {
+                    let cutoff = Date().addingTimeInterval(-Self.freshWindow)
+                    seen = seen.filter { $0.value >= cutoff }
                 }
             }
             .store(in: &cancellables)
     }
 
-    /// The device relay is down: your follows' notes and notes to you from
-    /// your read relays. Relays cap how many authors one filter may name, so
-    /// follows go in filters of up to 500 in the same REQ and every one
-    /// counts. Anyone can tag you out there: only your web's notes come
-    /// through, the same as Global.
-    private func askReadRelays(_ feed: FeedService, me: String, blocked: Set<String>) {
+    /// The globe's own REQ: yours and your follows' notes from your read
+    /// relays, and notes to you. Relays cap how many authors one filter may
+    /// name, so authors go in filters of up to 500 in the same REQ and every
+    /// one counts. Notes to you come from your device relay's inbox when it
+    /// is up, which keeps strangers out; when it isn't, from the read relays,
+    /// where anyone can tag you, so only your web's come through, the same
+    /// as Global.
+    private func ask(_ feed: FeedService, inbox: URL?, me: String, blocked: Set<String>) {
         let note: [String: Any] = ["kinds": GlobeArcs.kinds, "since": Int(Date().timeIntervalSince1970)]
-        let follows = Array(Set(feed.followedPubkeys)).sorted()
-        let filters = stride(from: 0, to: follows.count, by: Self.authorsPerFilter).map {
-            note.merging(["authors": Array(follows[$0..<min($0 + Self.authorsPerFilter, follows.count)])]) { $1 }
-        } + [note.merging(["#p": [me]]) { $1 }]
-        let trusted = feed.relayTabTrustedPubkeys().union(follows)
+        let toMe = note.merging(["#p": [me]]) { $1 }
+        let authors = Array(Set(feed.followedPubkeys).union([me])).sorted()
+        let byAuthors = stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
+            note.merging(["authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]) { $1 }
+        }
+        var plan: [(url: URL, filters: [[String: Any]], trusted: Set<String>?)] = []
+        if let inbox {
+            plan.append((inbox, [toMe], nil))
+            plan += feed.externalRelayURLs.prefix(3).map { ($0, byAuthors, Set(authors)) }
+        } else {
+            let trusted = feed.relayTabTrustedPubkeys().union(authors)
+            plan += feed.externalRelayURLs.prefix(3).map { ($0, byAuthors + [toMe], trusted) }
+        }
         let subId = "arcs-\(UUID().uuidString.prefix(8))"
-        for url in feed.externalRelayURLs.prefix(3) {
+        for (url, filters, trusted) in plan {
             let client = WebSocketClient()
             client.isTemporary = true
             clients.append(client)
@@ -123,7 +184,8 @@ final class GlobeArrivalStream: ObservableObject {
                 .sink { [weak self] message in self?.handle(message, blocked: blocked, trusted: trusted) }
                 .store(in: &cancellables)
             client.connect(url: url)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak client] in
+                guard let client else { return }
                 let req: [Any] = ["REQ", subId] + filters
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
@@ -133,29 +195,14 @@ final class GlobeArrivalStream: ObservableObject {
         }
     }
 
-    /// Closes the connections, unless `token` is from an earlier start.
-    /// True when they were closed.
-    @discardableResult
-    func stop(_ token: Int? = nil) -> Bool {
-        if let token, token != generation { return false }
-        cancellables.removeAll()
-        clients.forEach { $0.disconnect() }
-        clients = []
-        #if DEBUG
-        stub?.cancel()
-        stub = nil
-        #endif
-        return true
-    }
-
-    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>) {
+    private func handle(_ message: String, blocked: Set<String>, trusted: Set<String>?) {
         guard message.hasPrefix("[\"EVENT\""),
               let data = message.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
               let event = array[2] as? [String: Any],
               let arrival = GlobeArcs.arrival(event),
               !blocked.contains(arrival.author),
-              trusted.contains(arrival.author) else { return }
+              trusted?.contains(arrival.author) ?? true else { return }
         arrived.send(arrival)
     }
 
