@@ -1,7 +1,7 @@
 // Follow / Unfollow: a new kind 3 built on the newest one this browser can find, with the iPhone app's wipe guard
 // (ContactManager.mayPublish). A kind 3 replaces the whole list, so a stale or missing base would wipe the follows:
-// nothing is published unless a list came from the network or every one of the user's relays answered, and never one
-// that drops most of what the user had.
+// nothing is published unless a list came from one of the user's relays or most of them answered, and never one that
+// drops most of what the user had.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
@@ -90,9 +90,10 @@ export function editedTags(base, target, follow) {
 
 /**
  * Why this list may not be published, or "" if it may. The rules, in order:
- *  - no list came from the network and not every one of the user's relays answered: refuse. Then the base can only be
- *    this browser's own copy, which may be old, and the relay that timed out may hold the real list; the size rule
- *    below can't tell (the app's count comes from that same copy). iOS: loadConfirmsList.
+ *  - no list came from the user's own relays and no more than half of them answered: refuse. Then the base can only be
+ *    this browser's own copy, which may be old, and a relay that timed out may hold the real list; the size rule
+ *    below can't tell (the app's count comes from that same copy). iOS (loadConfirmsList) wants every relay; the web
+ *    takes a majority (Logen, 2026-10-14) so one relay that is down for good doesn't block following.
  *  - no base list found: refuse (a missing list must never be replaced by a one-follow list);
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
  *  - the base itself must not be a shrunken copy: if the most follows any list we saw had (or the app shows) is over
@@ -100,9 +101,9 @@ export function editedTags(base, target, follow) {
  *    or truncated list newer-dated than the real one.
  */
 export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false }) {
-  if (!netFound && !(asked > 0 && answered >= asked)) {
+  if (!netFound && !(asked > 0 && answered * 2 > asked)) {
     if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when they're all reachable.`
+    return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when most of them are reachable.`
   }
   if (!base) return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
   const before = followsOf(base), after = new Set(followsOf({ tags }))

@@ -102,7 +102,7 @@ test("guard: own relays both time out, purplepag.es has an old copy -> refused, 
   assert.deepEqual(vault.outbox.evs, [old])
 })
 
-test("guard: a list from one of your relays, or every own relay answering, is enough", async () => {
+test("guard: a list from one of your relays, or all of them answering, is enough", async () => {
   const many = Array.from({ length: 40 }, pk)
   const real = contacts(many, nowS() - 60), old = contacts(many.slice(0, 4), nowS() - 30 * 86400)
   const relays = { readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"] }
@@ -114,6 +114,48 @@ test("guard: a list from one of your relays, or every own relay answering, is en
   const small = contacts(many.slice(0, 2), 100)
   const all = await run({ vault: fakeVault([small]), ...relays, target: pk(), follow: true, ask: relaysAnswer([]) })
   assert.equal(followsOf(all.event).length, 3)
+})
+
+test("guard: most of your relays answering is enough, half or fewer is not", async () => {
+  const relays = { readRelays: ["wss://a.example", "wss://b.example"], writeRelays: ["wss://c.example"] }
+  const answering = (...urls) => async url => ({ events: [], answered: urls.includes(url) })
+  // 2 of 3 answer empty, the third is down: the vault's copy is used.
+  const small = contacts([pk(), pk()], nowS() - 3600)
+  const two = await run({ vault: fakeVault([small]), ...relays, target: pk(), follow: true, ask: answering("wss://a.example", "wss://c.example") })
+  assert.equal(followsOf(two.event).length, 3)
+  // 1 of 3: refused before the signer is asked.
+  let signed = false
+  await assert.rejects(run({ vault: fakeVault([small]), ...relays, target: pk(), follow: true, ask: answering("wss://b.example"),
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /Only 1 of your 3 relays answered/)
+  assert.equal(signed, false)
+  // The edges, on the guard alone: exactly half is not most.
+  const base = contacts([pk()], 100), t = pk(), tags = editedTags(base, t, true)
+  const guard = (answered, asked) => wipeGuard({ base, tags, target: t, follow: true, seen: [base], answered, asked })
+  assert.equal(guard(2, 3), "")
+  assert.equal(guard(3, 4), "")
+  assert.match(guard(2, 4), /Only 2 of your 4/)
+  assert.match(guard(1, 2), /Only 1 of your 2/)
+  assert.match(guard(0, 0), /None of your relays/)
+})
+
+test("guard: with 2 of 3 answering, the old wipe cases still refuse", async () => {
+  const many = Array.from({ length: 40 }, pk)
+  const relays = { readRelays: ["wss://a.example", "wss://b.example"], writeRelays: ["wss://c.example"] }
+  const twoOfThree = async url => ({ events: [], answered: url !== "wss://a.example" })
+  let signed = false
+  const signer = { signEvent: async t => { signed = true; return finalizeEvent(t, me) } }
+  // No list anywhere: never replaced by a one-follow list.
+  await assert.rejects(run({ ...relays, target: pk(), follow: true, ask: twoOfThree, signer }), /wasn't found/)
+  // Only an old 4-follow copy while the app showed 40: the size rule refuses.
+  const old = contacts(many.slice(0, 4), nowS() - 30 * 86400)
+  await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, known: old, appCount: 40, ask: twoOfThree, signer }), /had 40/)
+  // A future-dated copy is not a base, and only it was found: nothing to build on.
+  const future = contacts(many, nowS() + MAX_SKEW + 60)
+  await assert.rejects(run({ vault: fakeVault([future]), ...relays, target: pk(), follow: true, ask: twoOfThree, signer }), /wasn't found/)
+  // purplepag.es alone can't confirm: 1 of 3 own relays answered, the index relay has a list.
+  const idx = async url => PROFILE_RELAYS.includes(url) ? { events: [old], answered: true } : { events: [], answered: url === "wss://c.example" }
+  await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, ask: idx, signer }), /Only 1 of your 3/)
+  assert.equal(signed, false, "the signer is never asked")
 })
 
 test("a relay's kind 3 with a forged signature and a 'verified' flag is not taken", async () => {
