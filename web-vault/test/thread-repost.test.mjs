@@ -168,8 +168,10 @@ test("a network sync still running for the previous note doesn't take over the n
   Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true })
   // Every relay query waits until the test answers it, so which sync finishes when is set by the test, not by timing.
   const held = []
+  let holding = true
   const querySync = pool.querySync
-  pool.querySync = (_, f) => new Promise(resolve => held.push({ f, answer: () => resolve([]) }))
+  pool.querySync = async (_, f) => holding ? new Promise(resolve => held.push({ f, answer: () => resolve([]) })) : []
+  const el = document.createElement("div")
   try {
     // First a stored note, then a reposted reply whose root is stored: the second thread shows that reply only from
     // its carried copy, so the first sync landing late (its root, this thread's extra) would drop it.
@@ -177,7 +179,6 @@ test("a network sync still running for the previous note doesn't take over the n
     const events = [first, original, repost(replyToOriginal)]
     const ctx = { vault: { feed: { query: feedOf(events).feed.query, event: async () => ({ ok: true }) } }, account: { relays: { read: [] } } }
 
-    const el = document.createElement("div")
     render(h(ThreadScreen, { ctx, id: first.id }), el)
     await until(() => held.some(q => q.f["#e"]?.[0] === first.id), "the first note's sync asking relays for replies")
     render(h(ThreadScreen, { ctx, id: replyToOriginal.id }), el)
@@ -191,9 +192,12 @@ test("a network sync still running for the previous note doesn't take over the n
     assert.match(el.textContent, /the reposted note/)
     assert.match(el.textContent, /a reposted reply/)
     assert.doesNotMatch(el.textContent, /the first note/)
-    render(null, el)
   } finally {
+    // Unmount, then let the second sync run out against empty relays, so nothing reaches the real network.
+    render(null, el)
+    holding = false
     held.forEach(q => q.answer())
+    await tick()
     pool.querySync = querySync
   }
 })
