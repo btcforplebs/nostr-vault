@@ -11,8 +11,8 @@ export const PUBLIC_SEEDS = ["wss://fips1.iris.to/fips", "wss://fips2.iris.to/fi
 const KEY_ITEM = "fips-relay-key"
 const OWNER_DIAL_MS = 30_000
 
-/** The relay's own FIPS identity (never the owner's key), kept on this device. */
-export async function loadRelayIdentity(storage = localStorage) {
+/** The relay's own FIPS identity (never the owner's key), kept on this device in the page's storage (src/page-storage.js). */
+export async function loadRelayIdentity(storage) {
   let hex = storage.getItem(KEY_ITEM)
   if (!hex) {
     hex = toHex(crypto.getRandomValues(new Uint8Array(32)))
@@ -24,10 +24,11 @@ export async function loadRelayIdentity(storage = localStorage) {
 /**
  * @param haven      Haven's entry point handle (src/haven/haven.js), already started
  * @param getOwners  () => Set<x-only hex>
+ * @param storage    the page's storage (src/page-storage.js), which holds the relay's FIPS key
  * @param onStatus   (status) => void, called on every change
  */
-export async function startFipsRelay({ haven, getOwners, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
-  const identity = await loadRelayIdentity()
+export async function startFipsRelay({ haven, getOwners, storage, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
+  const identity = await loadRelayIdentity(storage)
   const status = { npub: encodeNpub(identity.xOnlyPubkey), seeds: new Map(), owners: new Map(), sessions: new Map(), server: undefined, errors: 0, lastError: "" }
   const emit = () => onStatus(status)
 

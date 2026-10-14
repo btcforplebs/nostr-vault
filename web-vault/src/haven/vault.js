@@ -10,12 +10,16 @@ import { makeAuthEvent } from "nostr-tools/nip42"
 import { loadHaven } from "../../../web-relay/src/haven/haven.js"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { loadOwners } from "../../../web-relay/src/fips/owners.js"
+import { VAULT_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
 import { clearSession } from "../session.js"
 
 // Haven's ServiceURL is https://RELAY_HOST/<route>; NIP-42 compares the AUTH relay tag against it as wss.
 const RELAY_HOST = "vault.local"
 const DEVICE_KEY = "nv-device-sk"
 const WASM = new URL("../../../web-relay/public/haven.wasm", import.meta.url)
+// FIPS keys (this browser's mesh key, paired vaults) under VAULT_NS: /relay/ is the same origin and keeps its own.
+const FIPS_ITEMS = ["fips-relay-key", "fips-owners"]
+export const fipsStorage = (storage = localStorage) => pageStorage(storage, VAULT_NS)
 
 /** This browser's own key: answers Haven's AUTH. Not a user key, and it never signs anything public. */
 export function deviceKey(storage = localStorage) {
@@ -25,7 +29,7 @@ export function deviceKey(storage = localStorage) {
 }
 
 export async function startVault({ pubkey, log = () => {} }) {
-  const owners = loadOwners({ log, account: pubkey })
+  const owners = loadOwners({ log, account: pubkey, storage: fipsStorage() })
   const sk = deviceKey()
   const t0 = Date.now()
   const haven = await loadHaven(WASM)
@@ -43,21 +47,21 @@ export async function startVault({ pubkey, log = () => {} }) {
   return { haven, owners, outbox: open("/"), feed: open("/feed"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
 
-// Haven's route databases (haven-go/store_wasm.go), per account since storePrefix. The unprefixed ones are from
-// before that, when every account on this browser shared them; this page has its own origin, so they're its own.
-// Sign-out deletes every database the browser lists for this account ("haven:<pubkey>:<route>") and the legacy
-// shared ones ("haven:<route>"), so a route added in Go is wiped too. Never another account's: its stores are
-// "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
+// Haven's route databases (haven-go/store_wasm.go) for this account: "haven:<pubkey>:<route>" (storePrefix).
+// Sign-out deletes every database the browser lists under that prefix, so a route added in Go is wiped too, and
+// nothing else: /relay/ is the same origin, so its stores ("haven:relay:<route>", and "haven:<route>" from before
+// it had a prefix) are in this IndexedDB too, and another account's are "haven:<other pubkey>:<route>".
+// The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
 // "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go).
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
 export async function storeNames(pubkey, idb = indexedDB) {
-  const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
-  const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
+  const known = ROUTES.map(r => `haven:${pubkey}:${r}`)
+  const mine = new RegExp(`^haven:${pubkey}:[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
   const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => mine.test(n ?? "")) : []
   return [...new Set([...known, ...listed])]
 }
-// Everything else this page keeps: the device key, the FIPS relay key and paired vaults, and the activity log.
-const LOCAL_KEYS = [DEVICE_KEY, "fips-relay-key", "fips-owners", "nv-log"]
+// Everything else this page keeps: the device key, its FIPS key and paired vaults, and the activity log.
+const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), "nv-log"]
 const SESSION_KEY = "nv-session"
 
 /** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys and the log. -> { failed } */

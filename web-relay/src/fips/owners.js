@@ -52,19 +52,20 @@ const OWNERS_ITEM = "fips-owners"
  * A link only ever adds owners, and only once the person at this browser confirms each new one: anyone can
  * send a link, and an owner can write to this relay and gets dialed by it.
  * `account` (the signed-in user's pubkey, where there is one) is never an owner: it's dropped from what was saved
- * and refused from a link.
+ * and refused from a link. `storage` is the page's own (src/page-storage.js).
  */
 export function loadOwners({
   account,
-  storage = localStorage,
+  storage,
   log = () => {},
   confirm = msg => globalThis.confirm(msg),
   hash = location.hash,
   scrub = () => history.replaceState(null, "", location.pathname),
 } = {}) {
+  const saved = storage.getItem(OWNERS_ITEM) ?? ""
   let owners = new Set()
   try {
-    owners = parseOwners(storage.getItem(OWNERS_ITEM) ?? "")
+    owners = parseOwners(saved)
   } catch {}
   if (account && owners.delete(account)) {
     saveOwners(owners, storage)
@@ -93,6 +94,6 @@ export function loadOwners({
   return owners
 }
 
-export function saveOwners(owners, storage = localStorage) {
+export function saveOwners(owners, storage) {
   storage.setItem(OWNERS_ITEM, [...owners].join(" "))
 }

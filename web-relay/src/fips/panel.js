@@ -9,8 +9,9 @@ const $ = id => document.getElementById(id)
  * @param haven   Haven's started entry point, or undefined when it isn't running (no owner yet, or it failed)
  * @param owners  Set<x-only hex> of the vaults' mesh keys
  * @param account the signed-in user's pubkey, if any: refused as a mesh address
+ * @param storage the page's storage (src/page-storage.js): paired vaults and the relay's FIPS key
  */
-export function mountFipsPanel({ haven, owners, log, account }) {
+export function mountFipsPanel({ haven, owners, log, account, storage }) {
   let running
   $("fipsOwners").value = [...owners].join("\n")
 
@@ -34,7 +35,7 @@ export function mountFipsPanel({ haven, owners, log, account }) {
   $("fipsSave").onclick = () => {
     try {
       const next = parseOwners($("fipsOwners").value, { account })
-      saveOwners(next)
+      saveOwners(next, storage)
       log("fips-owners-saved", { owners: next.size })
       const same = next.size === owners.size && [...next].every(k => owners.has(k))
       if (!same) location.reload()
@@ -52,7 +53,7 @@ export function mountFipsPanel({ haven, owners, log, account }) {
     }
     if (!owners.size || !haven) return render()
     try {
-      running = await startFipsRelay({ haven, getOwners: () => owners, onStatus: render })
+      running = await startFipsRelay({ haven, getOwners: () => owners, storage, onStatus: render })
       $("fipsStart").textContent = "Stop FIPS"
       log("fips-start", { npub: running.status.npub })
     } catch (e) {

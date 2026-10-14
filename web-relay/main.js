@@ -3,11 +3,14 @@ import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { npubEncode } from "nostr-tools/nip19"
 import { mountFipsPanel } from "./src/fips/panel.js"
 import { loadOwners } from "./src/fips/owners.js"
+import { RELAY_NS, pageStorage, migrateRelayKeys } from "./src/page-storage.js"
 import { loadHaven } from "./src/haven/haven.js"
 import { HavenClient } from "./src/haven/client.js"
 
 const $ = id => document.getElementById(id)
-const LS = localStorage
+// /relay/ shares its origin, so its localStorage, with /vault/: every key here lives under RELAY_NS.
+migrateRelayKeys(localStorage)
+const LS = pageStorage(localStorage, RELAY_NS)
 const pageStart = Date.now()
 const sid = Math.random().toString(36).slice(2, 8)
 const ua = navigator.userAgent
@@ -127,13 +130,14 @@ async function startHaven(owners) {
   const t = Date.now()
   haven = await loadHaven()
   const loadMs = Date.now() - t
-  await haven.start({ ownerNpub: npubEncode(owner), whitelist: [...rest.map(npubEncode), npubEncode(pk)] })
+  // Its own stores ("haven:relay:<route>"): the vault's are "haven:<pubkey>:<route>" on the same origin.
+  await haven.start({ ownerNpub: npubEncode(owner), whitelist: [...rest.map(npubEncode), npubEncode(pk)], storePrefix: "relay" })
   relay = new HavenClient(haven.conn("page", { mode: "nip01", route: "/" }))
   return { loadMs, startMs: Date.now() - t - loadMs }
 }
 
 ;(async () => {
-  const owners = loadOwners({ log })
+  const owners = loadOwners({ log, storage: LS })
   try {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
     const persistGranted = await navigator.storage.persist()
@@ -148,7 +152,7 @@ async function startHaven(owners) {
       $("status").textContent = `Haven ready (owner ${npubEncode([...owners][0]).slice(0, 16)}…)`
     }
   } catch (e) { $("status").textContent = "HAVEN FAILED TO START: " + e; log("init-error", { err: String(e) }); haven = relay = undefined }
-  mountFipsPanel({ haven, owners, log })
+  mountFipsPanel({ haven, owners, log, storage: LS })
 
   // heartbeat every 5s; generator event every 10s; beacon a heartbeat every 60s
   let n = 0
