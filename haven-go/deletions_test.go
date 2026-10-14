@@ -109,6 +109,7 @@ func stored(t *testing.T, db DBBackend, id string) bool {
 }
 
 func TestOwnerCanDeleteAnyEvent(t *testing.T) {
+	skipWithoutSockets(t)
 	deletionBackends(t, func(t *testing.T, db DBBackend) {
 		owner, stranger, other := newTestKey(t), newTestKey(t), newTestKey(t)
 		saved := config
@@ -190,6 +191,7 @@ func TestOwnerCanDeleteAnyEvent(t *testing.T) {
 // relay's policies, so they need their own check — otherwise the next sync
 // round brings a deleted event straight back.
 func TestNegStoresSkipDeletedEvents(t *testing.T) {
+	skipWithoutFS(t)
 	owner := hexid('0')
 	author := hexid('1')
 	setupSyncConfig(owner)
@@ -428,6 +430,7 @@ func TestSweepDeleteRequests(t *testing.T) {
 // as well. The target is stored beforehand, so only the import's own
 // deletion step can remove it — not the isDeleted re-import guard.
 func TestImportOwnerNotesAppliesDeleteRequests(t *testing.T) {
+	skipWithoutSockets(t)
 	owner := newTestKey(t)
 	savedCfg, savedDB, savedPool, savedReach := config, outboxDB, pool, reachableImportRelays.Load()
 	t.Cleanup(func() {

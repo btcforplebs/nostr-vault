@@ -70,6 +70,7 @@ func setupSyncConfig(owner string) {
 }
 
 func TestInboxNegStorePublish(t *testing.T) {
+	skipWithoutFS(t)
 	owner := hexid('0')
 	author := hexid('1')
 	setupSyncConfig(owner)
@@ -184,6 +185,7 @@ func TestInboxNegStorePublish(t *testing.T) {
 // but IS folded into the negentropy vector as a stub for this process run, so
 // the remote stops re-offering it — the fix for the per-minute 100% CPU loop.
 func TestInboxNegStoreTempRejectStubs(t *testing.T) {
+	skipWithoutFS(t)
 	owner := hexid('0')
 	setupSyncConfig(owner)
 	wot.MarkReady(wot.NewCycle(), stubWot{allow: false}) // reject everything
@@ -312,6 +314,7 @@ func TestTempRejectsReevaluate(t *testing.T) {
 }
 
 func TestOutboxNegStoreUpFilter(t *testing.T) {
+	skipWithoutFS(t)
 	owner := hexid('0')
 	setupSyncConfig(owner)
 
@@ -361,6 +364,7 @@ func TestOutboxNegStoreUpFilter(t *testing.T) {
 }
 
 func TestFeedNegStorePublishGates(t *testing.T) {
+	skipWithoutFS(t)
 	owner := hexid('0')
 	follow := hexid('1')
 	setupSyncConfig(owner)

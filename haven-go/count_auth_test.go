@@ -74,6 +74,7 @@ func hasNoticePrefix(notices []string, prefix string) bool {
 // REQ. A stranger gets a NOTICE and 0 (khatru still sends the COUNT reply),
 // the owner gets the real number. The outbox stays open.
 func TestPrivateCountsNeedAuth(t *testing.T) {
+	skipWithoutSockets(t)
 	h := startHaven(t)
 	now := time.Now().Unix()
 	strangerSK := nostr.GeneratePrivateKey()
