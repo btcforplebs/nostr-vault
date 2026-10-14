@@ -27,6 +27,9 @@ extension Notification.Name {
     /// Posted when the user taps a new-follower notification — switches the
     /// relay page to its Followers list (the profile opens via havenOpenProfile).
     static let havenOpenRelayFollowers = Notification.Name("com.haven.openRelayFollowers")
+    /// Opens the Vault (the iOS Vault tab, the Mac's Notes) on its "Vault"
+    /// list: the return pill was tapped.
+    static let havenOpenVault = Notification.Name("com.haven.openVault")
     /// Switches the Vault tab to its first list, "Vault": everything new.
     static let havenOpenRelayActivity = Notification.Name("com.haven.openRelayActivity")
     /// Posted when the user taps a repost notification — opens relay page notes section.

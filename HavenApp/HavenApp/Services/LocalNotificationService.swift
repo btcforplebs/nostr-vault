@@ -454,8 +454,18 @@ final class LocalNotificationService {
     ///   generic line only. Nil when the alert is already there.
     private func showInAppBanner(id: String, type: String, title: String, body: String, npub: String,
                                  carried: [AnyHashable: Any] = [:], fileIfMissed: [String: Any]?) {
-        let (icon, color) = iconAndColor(for: type)
         let key = NotificationPolicy.dedupKey(eventId: id)
+        // Just back from the background: one bottom pill and one sound for
+        // everything, not a top pill and a sound each (ReturnPillManager).
+        let createdAt = (carried[NotificationNote.eventKey] as? String)
+            .flatMap(NotificationNote.decode)
+            .map { Date(timeIntervalSince1970: TimeInterval($0.createdAt)) }
+        switch ReturnPillManager.shared.gather(type: type, key: key, createdAt: createdAt) {
+        case .first: playSound(); return
+        case .added: return
+        case .no: break
+        }
+        let (icon, color) = iconAndColor(for: type)
         let onMissed: (() -> Void)? = fileIfMissed.map { extra in
             { [weak self] in
                 self?.fileMissed(key: key, id: id, type: type, title: title, body: body, npub: npub, extra: extra)

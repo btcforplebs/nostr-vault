@@ -24,6 +24,12 @@ final class FloatingButtonRow: ObservableObject {
     /// Bottom padding for floating buttons, from the bottom safe area:
     /// level with the mini player's spot, whether or not it's showing.
     @Published private(set) var buttonBottom: CGFloat = defaultBottom
+    /// Extra room under floating buttons while the return pill sits in
+    /// their row (`ReturnPillLayer`); 0 otherwise.
+    @Published private(set) var lift: CGFloat = 0
+    /// The tab bar and the mini player above it, together; 0 where there is
+    /// no iPhone tab bar. The return pill sits on top of this.
+    @Published private(set) var chromeHeight: CGFloat = 0
 
     private var widths: [UUID: CGFloat] = [:]
 
@@ -38,6 +44,14 @@ final class FloatingButtonRow: ObservableObject {
         buttonBottom = tabBarOnlyHeight > 0
             ? tabBarOnlyHeight + 6
             : Self.defaultBottom
+    }
+
+    func update(chromeHeight: CGFloat) {
+        if self.chromeHeight != chromeHeight { self.chromeHeight = chromeHeight }
+    }
+
+    func setLift(_ lift: CGFloat) {
+        if self.lift != lift { self.lift = lift }
     }
 }
 
@@ -63,8 +77,9 @@ struct FloatingButtonSlot: ViewModifier {
             )
             .onDisappear { row.report(id, width: nil) }
             .padding(.trailing, FloatingButtonRow.trailingInset)
-            .padding(.bottom, sharesRow ? row.buttonBottom : 20)
+            .padding(.bottom, sharesRow ? row.buttonBottom + row.lift : 20)
             .animation(Motion.chrome, value: row.buttonBottom)
+            .animation(Motion.chrome, value: row.lift)
     }
 }
 

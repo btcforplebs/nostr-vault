@@ -129,6 +129,8 @@ struct BottomTabBar: View {
             // The dot goes to where the news is, not to the list you left.
             if relayManager.hasNewRelayActivity { VaultSection.shared.opensNewActivity = true }
         }
+        // What the return pill's arrow points at.
+        .vaultAnchor(.bottom)
     }
 
     /// The Vault tab's dot: something came in, a new message included.

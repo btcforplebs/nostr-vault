@@ -179,6 +179,8 @@ extension MenuBarView {
                                 SidebarTabButton(icon: "note.text", title: "Notes", isSelected: selectedTab == .notes) {
                                     selectedTab = .notes
                                 }
+                                // The Vault (VaultView): what the return pill's arrow points at.
+                                .vaultAnchor(.leading)
 
                                 SidebarTabButton(icon: "photo.on.rectangle", title: "Blossom", isSelected: selectedTab == .media) {
                                     selectedTab = .media
@@ -287,5 +289,13 @@ extension MenuBarView {
                         .animation(Motion.toggle, value: selectedTab)
                         .animation(Motion.fade, value: activeHex)
                     }
+                    #if os(macOS)
+                    // What came in while the app was away, beside the Vault
+                    // (Notes) row; a tap opens it.
+                    .overlay { ReturnPillLayer() }
+                    .onReceive(NotificationCenter.default.publisher(for: .havenOpenVault)) { _ in
+                        selectedTab = .notes
+                    }
+                    #endif
     }
 }

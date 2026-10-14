@@ -222,6 +222,8 @@ struct iPadSidebarView: View {
                             Spacer()
                             NewsDot(isShown: vaultHasNews, ring: 0)
                         }
+                        // What the return pill's arrow points at.
+                        .vaultAnchor(.leading)
                     }
                     .accessibilityValue(vaultHasNews ? "New activity" : "")
                     NavigationLink(value: SidebarItem.tab(5)) {

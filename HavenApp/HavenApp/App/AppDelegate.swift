@@ -109,6 +109,7 @@ class AppDelegate: NSObject, ObservableObject {
                 NotificationActivityLog.recordForeground()
                 // The lane is off screen now: file the pills still up.
                 RelayActivityNotificationManager.shared.hostLost()
+                ReturnPillManager.shared.endReturn()
                 // Pause the feed to reduce background CPU/memory from relay
                 // traffic and note accumulation.
                 FeedService.shared.pauseFeed()
@@ -130,6 +131,9 @@ class AppDelegate: NSObject, ObservableObject {
             MainActor.assumeIsolated {
                 // Ends any absence for the catch-up summary (NotificationPolicy).
                 NotificationActivityLog.recordForeground()
+                // What the relay catches up on now is gathered into one pill
+                // beside the sidebar's Vault row (ReturnPillManager).
+                ReturnPillManager.shared.beginReturn()
                 FeedService.shared.resumeFeed()
                 NetworkSyncService.shared.start()
                 RelayProcessManager.shared.enterForeground()

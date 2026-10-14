@@ -89,6 +89,34 @@ banner is only for when the app is in the background.
 - With push notifications off, only DMs show while the app is open. Other
   types are dropped before routing.
 
+## Coming back: the return pill
+
+The one pill outside the lane. When the app comes back from the background
+(iOS: the scene enters the foreground, including a cold launch, but not
+Control Center or an alert going away; Mac: the app becomes active), the
+arrivals the relay catches up on do **not** each get a level-2 pill and a
+sound. They are gathered into **one** pill with **one** sound:
+
+- Counts by kind, in this order: mentions (quotes count), replies, zaps,
+  DMs, reactions, reposts, new followers. Three kinds at most, then
+  "+N more" (`ReturnSummary`). One event counts once.
+- iPhone and iPad with the tab bar: at the bottom, over the tab bar and the
+  mini player, its arrow pointing down at the Vault tab. The floating
+  button (Post) moves up clear of it and settles back when it goes. The tab
+  bar unfolds so the Vault tab is there to point at.
+- iPad sidebar and Mac window: beside the sidebar, level with the Vault row
+  (the Mac's Notes row), arrow pointing left.
+- Accent tone, regular size. Tap opens the Vault on its "Vault" list.
+- Gathering stops 12 s after the return if nothing came, otherwise 6 s after
+  the last arrival, and never later than 30 s after the return. The pill
+  shows at least 6 s. After that, arrivals get the ordinary top pill.
+- An event created before the return came in while you were away, however
+  late the relay hands it over: for up to 5 minutes after the return it
+  joins the pill, silently, bringing it back if it had gone.
+  Rules and tests: `ReturnWindow`.
+
+While the app is in front, nothing changes: each arrival is its own top pill.
+
 ## Not pills
 
 Use these instead of a pill, never alongside one:
