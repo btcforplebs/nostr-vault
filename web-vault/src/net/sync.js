@@ -95,11 +95,11 @@ export function checkSigned(event, template, pubkey) {
 }
 
 /**
- * Sign, store in Haven's outbox, then send to the relays publishRelays picks.
+ * Sign, store in Haven's outbox, then send to the relays publishRelays picks. `tags`: a reply's or quote's (actions.js).
  * -> { event, local, relays: [{url, ok, message, local}] } with `local` set on this machine's own relay
  */
-export async function publishNote(vault, signer, pubkey, content, writeRelays) {
-  const template = { kind: 1, created_at: now(), tags: [], content }
+export async function publishNote(vault, signer, pubkey, content, writeRelays, tags = []) {
+  const template = { kind: 1, created_at: now(), tags, content }
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
   if (!local.ok) throw new Error(`Haven refused the note: ${local.message}`)
