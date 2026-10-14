@@ -43,4 +43,25 @@ enum BlockedPeople {
         }
         return true
     }
+
+    /// Notes left once blocked people's are taken out: the notes above a
+    /// reply, and the quotes and highlights under a note.
+    static func visibleNotes<N>(_ notes: [N], blocked: Set<String>, author: (N) -> String) -> [N] {
+        guard !blocked.isEmpty else { return notes }
+        return notes.filter { !isBlocked(author($0), in: blocked) }
+    }
+
+    /// What a thread page does with the note it shows full size once its
+    /// author is blocked. A reply you tapped into hands focus back to the
+    /// note you opened; the note you opened is swapped for a placeholder.
+    enum FocusedNote: Equatable {
+        case shown
+        case backToOpened
+        case placeholder
+    }
+
+    static func focusedNote(author: String, isOpenedNote: Bool, blocked: Set<String>) -> FocusedNote {
+        guard isBlocked(author, in: blocked) else { return .shown }
+        return isOpenedNote ? .placeholder : .backToOpened
+    }
 }

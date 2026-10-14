@@ -72,7 +72,7 @@ extension NoteDetailView {
             VStack(alignment: .leading, spacing: 2) {
                 // Notes above it by someone you blocked are left out, as in
                 // the full history.
-                ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
+                ForEach(BlockedPeople.visibleNotes(dynamicParents, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }) { parent in
                     condensedLine(for: parent, depth: 0, proxy: proxy)
                 }
             }
@@ -86,7 +86,7 @@ extension NoteDetailView {
     private func fullThreadHistory(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // Notes above it by someone you blocked are left out.
-            ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
+            ForEach(BlockedPeople.visibleNotes(dynamicParents, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }) { parent in
                 let parentProfile = nostrService.profiles[parent.pubkey]
 
                 Group {
@@ -159,15 +159,38 @@ extension NoteDetailView {
         }
     }
 
+    /// Whether the note shown full size is by someone you blocked. Read from
+    /// the live block list, so a block made on this page applies at once.
+    var focusedNoteBlockState: BlockedPeople.FocusedNote {
+        BlockedPeople.focusedNote(author: focusedNote.pubkey, isOpenedNote: focusedNote.id == note.id,
+                                  blocked: configService.activeAccountBlockedHexPubkeys)
+    }
+
+    /// Takes the place of the note you opened once you block its author.
+    /// Their replies and quotes go with it.
+    var blockedNotePlaceholder: some View {
+        Label("You blocked this person", systemImage: "hand.raised.fill")
+            .font(.appSystem(size: 14, weight: .semibold))
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(Color.platformSecondaryGroupedBackground)
+            .cornerRadius(12)
+            .id(note.id)
+            .padding(.horizontal, 16)
+    }
+
     /// Quotes, highlights and other responses, under the replies.
     @ViewBuilder
     var otherResponsesSection: some View {
-        if !otherResponses.isEmpty {
+        // Read at draw time, so blocking someone takes their quotes out at once.
+        let shown = BlockedPeople.visibleNotes(otherResponses, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }
+        if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Quotes & highlights")
                     .font(.appSystem(size: 15, weight: .bold))
                     .padding(.horizontal, 16)
-                ForEach(otherResponses) { response in
+                ForEach(shown) { response in
                     OtherResponseCard(note: response, profile: nostrService.profiles[response.pubkey])
                         .padding(.horizontal, 16)
                 }
