@@ -5,6 +5,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { bytesToHex } from "nostr-tools/utils"
 import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
 import { loadRelayIdentity } from "../../../web-relay/src/fips/node.js"
+import { StorageNote } from "../components/StorageNote.jsx"
 
 export function RelayScreen({ ctx, log }) {
   const { vault, session } = ctx
@@ -35,7 +36,7 @@ export function RelayScreen({ ctx, log }) {
       ])
       const est = await navigator.storage?.estimate?.()
       setCounts({ own, feed })
-      setStorage({ persisted: await navigator.storage?.persisted?.(), usageMB: est ? (est.usage / 1048576).toFixed(1) : "?" })
+      setStorage({ persisted: (await navigator.storage?.persisted?.()) ?? null, usageMB: est ? (est.usage / 1048576).toFixed(1) : "?" })
     }
     tick()
     const t = setInterval(tick, 10_000)
@@ -52,7 +53,8 @@ export function RelayScreen({ ctx, log }) {
           <div><div class="k">feed cache</div><div class="v">{counts.feed ?? "–"}</div></div>
           <div><div class="k">storage</div><div class="v">{storage.usageMB ?? "–"} MB</div></div>
         </div>
-        <div class="muted small">storage {storage.persisted ? "persistent" : "may be cleared by the browser"} · started in {vault.loadMs + vault.startMs} ms</div>
+        <div class="muted small">started in {vault.loadMs + vault.startMs} ms</div>
+        <StorageNote kept={storage.persisted} />
       </section>
       <section class="card">
         <h3>FIPS</h3>

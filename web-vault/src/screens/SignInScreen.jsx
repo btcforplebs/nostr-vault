@@ -4,6 +4,7 @@ import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
 import { pool } from "../net/pool.js"
 import { AuthPrompt } from "../components/AuthPrompt.jsx"
+import { StorageNote, askToKeep } from "../components/StorageNote.jsx"
 
 export function SignInScreen({ onSignedIn }) {
   const [hasExt, setHasExt] = useState(false)
@@ -12,9 +13,11 @@ export function SignInScreen({ onSignedIn }) {
   const [err, setErr] = useState("")
   useEffect(() => { findExtension().then(e => setHasExt(!!e)) }, [])
 
+  // After sign-in, ask the browser to keep its copy. Not awaited: a browser that asks the user must not hold up
+  // sign-in. The Relay screen shows the answer.
   const run = (label, fn) => async () => {
     setBusy(label); setErr("")
-    try { onSignedIn(await fn()) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy("") }
+    try { onSignedIn(await fn()); askToKeep() } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy("") }
   }
 
   return (
@@ -30,6 +33,7 @@ export function SignInScreen({ onSignedIn }) {
       <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
+      <StorageNote />
       <AuthPrompt />
       {err && <p class="error">{err}</p>}
     </main>

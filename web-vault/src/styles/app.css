@@ -157,4 +157,10 @@ button.person-row:hover { border-color: var(--accent-line); }
 .field input:focus { outline: none; border-color: var(--accent-line); }
 .field input::placeholder { color: var(--text-3); }
 
+/* Storage note (sign-in + Relay): the browser's copy can be cleared; the answer to persist() under it. */
+.storage-note p { margin: 0; }
+.card .storage-note { margin-top: 10px; }
+.storage-note .storage-kept { margin-top: 4px; font-weight: 600; color: var(--text-2); }
+.storage-note .storage-kept.on { color: var(--online); }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
