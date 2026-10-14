@@ -36,7 +36,8 @@ extension TrustWebView {
                              avatar: avatar, name: name, onTap: tapped,
                              focus: card,
                              focusBridges: cardPath?.all ?? [],
-                             onEmptyTap: { closeCard(); searchFocused = false })
+                             onEmptyTap: { closeCard(); searchFocused = false },
+                             liveArcs: isWOTTab)
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             // Moving onto someone keeps the globe up: the trail's chip spins
             // instead. Only the very first globe has nothing to show.

@@ -9,7 +9,8 @@ extension TrustWebView {
     var ringFaces: [String] {
         guard let frame, let candidates = faceCandidates[frame.center] else { return [] }
         // With a filter on, only people it lights get a face.
-        return TrustMap.pickFaces(candidates) { filterLit?.contains($0) != false && pictureRenders($0) }
+        return TrustMap.pickFaces(candidates, renders: { filterLit?.contains($0) != false && pictureRenders($0) },
+                                  count: TrustGlobeCanvas.faces(TrustMap.ringFaceCount))
     }
 
     /// Pictures past your follows for the picked layer, most vouched first:
@@ -19,10 +20,12 @@ extension TrustWebView {
         guard isWOTTab, frame?.center == me else { return [] }
         // A filter's people take the outer faces first, as long as the layer lights them.
         if filterLit != nil {
-            return TrustMap.pickFaces(filterCandidates, renders: pictureRenders, count: TrustMap.layerFaceCount)
+            return TrustMap.pickFaces(filterCandidates, renders: pictureRenders,
+                                      count: TrustGlobeCanvas.faces(TrustMap.layerFaceCount))
         }
         guard let candidates = layerCandidates[layer] else { return [] }
-        return TrustMap.pickFaces(candidates, renders: pictureRenders, count: TrustMap.faceCount(for: layer))
+        return TrustMap.pickFaces(candidates, renders: pictureRenders,
+                                  count: TrustGlobeCanvas.faces(TrustMap.faceCount(for: layer)))
     }
 
     // MARK: - Filters
@@ -58,7 +61,7 @@ extension TrustWebView {
             let (va, vb) = (vouches?[$0] ?? 0, vouches?[$1] ?? 0)
             return va != vb ? va > vb : $0 < $1
         }
-        let candidates = Array(ranked.prefix(TrustMap.layerFaceCount * 3))
+        let candidates = Array(ranked.prefix(TrustGlobeCanvas.faces(TrustMap.layerFaceCount) * 3))
         guard candidates != filterCandidates else { return }
         filterCandidates = candidates
         nostrService.fetchMissingProfiles(for: candidates)
@@ -126,7 +129,8 @@ extension TrustWebView {
 
     func prepareFaces(_ key: String, forceProfiles: Bool = false) {
         guard key == author, let ring = frames[key]?.ring else { return }
-        let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:])
+        let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:],
+                                                 count: TrustGlobeCanvas.faces(TrustMap.faceCandidateCount))
         faceCandidates[key] = candidates
         nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
         pictureLoader?.cancel()
@@ -199,7 +203,7 @@ extension TrustWebView {
                 for layer in [TrustMap.Layer.everyone, .close, .furtherOut] {
                     layerFaces[layer] = TrustMap.layerFaceCandidates(layer, me: me, follows: follows,
                                                                      web: graph, vouches: counts,
-                                                                     count: TrustMap.faceCandidateCount(for: layer))
+                                                                     count: TrustGlobeCanvas.faces(TrustMap.faceCandidateCount(for: layer)))
                 }
             }
             await MainActor.run {

@@ -37,14 +37,25 @@ struct TrustGlobeCanvas: View {
     var focusBridges: [String] = []
     /// A tap that lands on no one, e.g. to close the trust card.
     var onEmptyTap: () -> Void = {}
+    /// The WOT tab's globe, where the bar's Live arrivals switch draws notes
+    /// arriving at the relay. A post's globe never does.
+    var liveArcs = false
 
+    /// The globe shows about this many times `TrustMap`'s face counts: more
+    /// pictures overall, not quite double (Logen, 10/14).
+    nonisolated static let faceScale = 1.8
+    nonisolated static func faces(_ count: Int) -> Int { Int((Double(count) * faceScale).rounded()) }
     /// Bridges drawn as faces; the rest stay bright stars.
-    static let maxFaces = 12
+    static let maxFaces = faces(12)
     /// Spinning and turning to a person both take about this long; a new
     /// person's globe settles in after it.
     private static let turnDelay: Duration = .milliseconds(380)
 
     @StateObject private var scene = GlobeScene()
+    @StateObject private var arrivals = GlobeArrivalStream()
+    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    /// A landed note's preview was tapped: the note opens over the globe.
+    @State private var openNote: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     @State private var lastDrag: CGSize = .zero
@@ -83,7 +94,10 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: nil, paused: !scene.awake || !running || !appIsActive)) { timeline in
+            // 30 fps while only arcs move: a steady stream would otherwise
+            // hold the whole globe at full display rate.
+            TimelineView(.animation(minimumInterval: scene.arcsOnly ? 1.0 / 30 : nil,
+                                    paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
                     scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)
                     scene.draw(in: &context, size: size, accent: .orange, name: name)
@@ -113,6 +127,9 @@ struct TrustGlobeCanvas: View {
                 }
                 Button("Reset view") { scene.reset() }
             }
+            // Over the gestures, not under them: a tap on a preview opens its
+            // note and never also lands on the face beneath it.
+            .overlay { previews(in: geo.size) }
         }
         .onAppear {
             scene.reduceMotion = reduceMotion
@@ -120,6 +137,25 @@ struct TrustGlobeCanvas: View {
             scene.filter(filterLit)
         }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
+        .task(id: liveArcs && liveArcsOn) {
+            // Listens while the switch is on and the globe is on screen; leaving
+            // the tab cancels this, and coming back starts it again.
+            guard liveArcs && liveArcsOn else { return }
+            scene.setLiveArcs(true)
+            let token = arrivals.start(me: me)
+            while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+            // A quick off and on can start the next run before this one ends.
+            if arrivals.stop(token) { scene.setLiveArcs(false) }
+        }
+        // While the clock is stopped nothing would move them on: they're
+        // dropped rather than piling up behind a sheet or another app.
+        .onReceive(arrivals.arrived) { if clockAllowed { scene.arrive($0) } }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { openNote.map { IdentifiableString(id: $0) } },
+            set: { openNote = $0?.id }
+        )) { note in
+            NoteDetailViewWrapper(noteId: note.id, onDismiss: { openNote = nil })
+        }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
@@ -155,11 +191,15 @@ struct TrustGlobeCanvas: View {
         }
     }
 
+    /// False while a sheet or another app covers the globe: the clock stops.
+    private var clockAllowed: Bool { running && appIsActive && openNote == nil }
+
     private var drag: some Gesture {
         DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate
+                scene.dismissPreviews()
                 scene.camera.dragging = true
                 scene.camera.drag(dx: value.translation.width - lastDrag.width,
                                   dy: value.translation.height - lastDrag.height, at: now)
@@ -173,6 +213,22 @@ struct TrustGlobeCanvas: View {
                                    at: Date.timeIntervalSinceReferenceDate, reduceMotion: reduceMotion)
                 scene.wake()
             }
+    }
+
+    /// Landed notes beside their faces, above them unless that runs off the top.
+    private func previews(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(scene.previews) { preview in
+                let width = min(240, size.width - 24)
+                let x = min(max(preview.point.x, width / 2 + 12), size.width - width / 2 - 12)
+                let y = preview.point.y > 190 ? preview.point.y - 48 : preview.point.y + 48
+                GlobeNotePreview(avatar: avatar(preview.author, 24), name: name(preview.author),
+                                 text: preview.text) { openNote = preview.id }
+                    .frame(width: width)
+                    .position(x: x, y: y)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
     }
 
     private var magnify: some Gesture {
