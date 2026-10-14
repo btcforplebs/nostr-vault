@@ -3,10 +3,11 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
 import { useProfile } from "./useProfile.js"
 
-/** The iOS profile header: banner fading to black, ringed avatar over it, name + YOU badge, bio, chips, counts.
+/** The iOS profile header: banner fading to black, ringed avatar over it, name + YOU / MUTUAL / FOLLOWING / FOLLOWS YOU
+ *  badge, bio, chips, counts, then `children` (someone else's profile puts its Follow button there).
  *  No Edit Profile button in M1 (nothing to edit with yet). No verified seal: NIP-05 isn't checked here, and the
  *  seal means verified only. */
-export function ProfileHeader({ pubkey, follows, you = true }) {
+export function ProfileHeader({ pubkey, follows, you = true, relation = "", children }) {
   const p = useProfile(pubkey)
   const npub = npubEncode(pubkey)
   // Offline, the banner URL fails: drop the img so the gradient shows, not a broken-image icon. Keyed on the URL so a newer one gets its chance.
@@ -21,7 +22,7 @@ export function ProfileHeader({ pubkey, follows, you = true }) {
         <div class="profile-names">
           <div class="profile-name-row">
             <h1>{p?.display_name || p?.name || npub.slice(0, 16) + "…"}</h1>
-            {you && <span class="you-badge">YOU</span>}
+            {you ? <span class="you-badge">YOU</span> : <Relation kind={relation} />}
           </div>
           {p?.nip05 && <div class="profile-nip05">{p.nip05.replace(/^_@/, "")}</div>}
         </div>
@@ -33,8 +34,17 @@ export function ProfileHeader({ pubkey, follows, you = true }) {
         <button class="chip" type="button" title="Copy npub" onClick={() => navigator.clipboard?.writeText(npub)}><Icon d="M15 7a4 4 0 1 0-3.9 4.9L4 19v2h3v-2h2v-2h2l1.4-1.4" />{npub.slice(0, 12)}…{npub.slice(-7)}</button>
       </div>
       {follows != null && <div class="counts"><b>{fmt(follows)}</b> Following</div>}
+      {children}
     </header>
   )
+}
+
+// As PersonProfileView.badge: MUTUAL in the verified teal with its ∞, else FOLLOWING (green) and/or FOLLOWS YOU (grey).
+function Relation({ kind }) {
+  if (kind === "mutual") return <span class="rel-badge mutual"><b aria-hidden="true">∞</b>MUTUAL</span>
+  if (kind === "following") return <span class="rel-badge following">FOLLOWING</span>
+  if (kind === "follows-you") return <span class="rel-badge follows-you">FOLLOWS YOU</span>
+  return null
 }
 
 const fmt = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n)

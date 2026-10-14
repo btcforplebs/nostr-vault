@@ -120,7 +120,9 @@ function App() {
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
   if (!vault || !account) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Starting your relay…</p></main>
 
-  const ctx = { vault, session, signer, account, signOut }
+  // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
+  const reloadAccount = async () => setAccount({ ...(await readAccount(vault, session.pubkey)), loaded: true })
+  const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   return (

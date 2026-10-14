@@ -1,16 +1,93 @@
-// Someone else's profile (opened from Search): their kind 0 from Haven, else the network. Their notes aren't
-// loaded here yet; ProfileScreen reads only the user's own outbox.
-import { useEffect } from "preact/hooks"
+// Someone else's profile (opened from Search): their kind 0, Follow / Unfollow, and their notes. Notes come
+// from their write relays and Haven /feed (net/person.js keeps fetched ones in memory); follows: net/follows.js.
+import { useEffect, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
+import { NoteCard } from "../components/NoteCard.jsx"
 import { fetchProfiles } from "../net/profiles.js"
+import { followsOf, relation, setFollow } from "../net/follows.js"
+import { fetchPersonLists, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import "../styles/person.css"
 
 export function PersonScreen({ ctx, pubkey }) {
-  useEffect(() => { fetchProfiles(ctx.vault, [pubkey], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [pubkey])
+  const { vault, account, session } = ctx
+  const [notes, setNotes] = useState(null)
+  const [lists, setLists] = useState(null) // { relays, contacts } once their lists came back
+  const [status, setStatus] = useState("")
+  const [end, setEnd] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+  const hints = uniq([...account.relays.read, ...DEFAULT_RELAYS])
+
+  useEffect(() => {
+    let live = true
+    fetchProfiles(vault, [pubkey], uniq([...hints, ...PROFILE_RELAYS])).catch(() => {})
+    ;(async () => {
+      const cached = await readPersonNotes(vault, pubkey)
+      if (!live) return
+      setNotes(cached)
+      if (!navigator.onLine) return setStatus(cached.length ? "Offline: showing saved notes" : "Offline")
+      setStatus(cached.length ? "" : "Fetching notes…")
+      const l = await fetchPersonLists(pubkey, hints).catch(() => ({ relays: { write: DEFAULT_RELAYS }, contacts: undefined }))
+      if (!live) return
+      setLists(l)
+      const got = await syncPersonNotes(vault, pubkey, l.relays.write).catch(() => 0)
+      if (!live) return
+      const fresh = await readPersonNotes(vault, pubkey, { limit: Math.max(PERSON_PAGE, cached.length) })
+      setNotes(fresh)
+      setEnd(!got && fresh.length < PERSON_PAGE)
+      setStatus("")
+    })().catch(e => live && setStatus(`Couldn't load notes: ${e?.message ?? e}`))
+    return () => { live = false }
+  }, [pubkey])
+
+  // Haven first; their relays only when Haven runs short, as the Following feed does.
+  const older = async () => {
+    const until = notes.at(-1).created_at - 1
+    let more = await readPersonNotes(vault, pubkey, { until })
+    if (more.length < PERSON_PAGE / 2 && navigator.onLine) {
+      setStatus("Fetching older notes…")
+      await syncPersonNotes(vault, pubkey, lists?.relays.write ?? DEFAULT_RELAYS, { until }).catch(() => 0)
+      more = await readPersonNotes(vault, pubkey, { until })
+      setStatus("")
+    }
+    if (!more.length) setEnd(true)
+    setNotes(n => [...n, ...more.filter(m => !n.some(x => x.id === m.id))])
+  }
+
+  const iFollow = account.follows.includes(pubkey)
+  const followsMe = followsOf(lists?.contacts).includes(session.pubkey)
+  const toggle = async () => {
+    setBusy(true); setErr("")
+    try {
+      await setFollow({ vault, signer: ctx.signer, pubkey: session.pubkey, target: pubkey, follow: !iFollow,
+        readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
+      await ctx.reloadAccount()
+    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+  }
+  const label = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : iFollow ? "Unfollowing…" : "Following…") : iFollow ? "Unfollow" : "Follow"
+
   return (
     <main class="screen">
-      <ProfileHeader pubkey={pubkey} you={false} />
-      <p class="empty">Their notes aren't shown here yet.</p>
+      <ProfileHeader pubkey={pubkey} you={false} relation={relation(iFollow, followsMe)} follows={lists?.contacts ? followsOf(lists.contacts).length : null}>
+        <div class="person-actions">
+          {/* Until the user's own list has been read there is nothing safe to build a new one on. */}
+          <button class={iFollow ? "follow-btn on" : "follow-btn"} disabled={busy || !account.loaded} onClick={toggle}>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+              <circle cx="9" cy="8" r="4" /><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7" />{iFollow ? <path d="M17 11h6" /> : <path d="M20 8v6M17 11h6" />}
+            </svg>
+            {label}
+          </button>
+        </div>
+        {err && <p class="error person-error" role="alert">{err}</p>}
+      </ProfileHeader>
+      {status && <div class="status-line">{status}</div>}
+      {notes === null ? <p class="empty">Opening your relay…</p>
+        : !notes.length ? (!status && <p class="empty">No notes found.</p>)
+        : <>
+            {notes.map(n => <NoteCard key={n.id} event={n} />)}
+            {end ? <p class="person-end">That's all the notes their relays have.</p> : <button class="more" onClick={older}>Older notes</button>}
+          </>}
     </main>
   )
 }
