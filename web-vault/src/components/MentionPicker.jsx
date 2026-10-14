@@ -29,18 +29,31 @@ export function uniqueToken(name, pubkey, map) {
 }
 
 const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-const tokenRe = token => new RegExp(`${escape(token)}(?![\\p{L}\\p{N}_])`, "gu")
 
-/** The text with each token still in it turned into nostr:npub…; longest first, so "@Al" can't eat "@Alice". */
-export function toNostr(text, map) {
-  let out = text
-  for (const [token, pk] of Object.entries(map).sort((a, b) => b[0].length - a[0].length)) out = out.replace(tokenRe(token), `nostr:${npubEncode(pk)}`)
-  return out
+/**
+ * One pass over the text for every token, longest first at each spot, so "@Al" never matches inside "@Al·bbbbbbbb" or
+ * "@Alice". A token counts only as a whole word: after the start or a space (as mentionAt opens the picker, so
+ * "bob@Al" stays text), and not followed by a letter, digit, "_", a "·" suffix or a "-2" suffix.
+ * -> { content: text with tokens as nostr:npub…, pubkeys: whose tokens were replaced, in order }
+ */
+export function resolveMentions(text, map) {
+  const tokens = Object.keys(map).sort((a, b) => b.length - a.length)
+  if (!tokens.length) return { content: text, pubkeys: [] }
+  const re = new RegExp(`(?<!\\S)(?:${tokens.map(escape).join("|")})(?![\\p{L}\\p{N}_·]|-\\d)`, "gu")
+  const pubkeys = []
+  const content = text.replace(re, token => {
+    const pk = map[token]
+    if (!pubkeys.includes(pk)) pubkeys.push(pk)
+    return `nostr:${npubEncode(pk)}`
+  })
+  return { content, pubkeys }
 }
 
-/** The people whose token is still in the text: they get p tags. */
-export const mentionedPubkeys = (text, map) =>
-  [...new Set(Object.entries(map).sort((a, b) => b[0].length - a[0].length).filter(([token]) => tokenRe(token).test(text)).map(([, pk]) => pk))]
+/** The text with each token still in it turned into nostr:npub…. */
+export const toNostr = (text, map) => resolveMentions(text, map).content
+
+/** The people whose token resolveMentions replaced: they get p tags, so the tags always match the npubs. */
+export const mentionedPubkeys = (text, map) => resolveMentions(text, map).pubkeys
 
 /** People matching `query`, follows first, then names that start with it, then shorter names (iPhone's ranking). */
 export function rankPeople(query, pubkeys, follows) {

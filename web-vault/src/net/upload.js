@@ -57,7 +57,7 @@ const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
 /**
  * Hash, sign and upload one photo to the first server that takes it. -> { url, sha256, mime, size, server };
- * throws with every server's reason when none did. A server whose answer names another hash is not used.
+ * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
  */
 export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch }) {
   const bytes = new Uint8Array(await file.arrayBuffer())
@@ -71,7 +71,8 @@ export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch
       const res = await fetch(`${server}/upload`, { method: "PUT", headers: { Authorization: auth, "Content-Type": mime }, body: bytes })
       if (!res.ok) { errors.push(`${hostOf(server)}: ${res.headers?.get?.("X-Reason") || `HTTP ${res.status}`}`); continue }
       const d = await res.json()
-      if (d?.sha256 && d.sha256 !== sha256) { errors.push(`${hostOf(server)}: sent back a different file`); continue }
+      // A BUD-02 blob descriptor always names the hash; no hash is as unproven as a wrong one.
+      if (d?.sha256 !== sha256) { errors.push(`${hostOf(server)}: ${d?.sha256 ? "sent back a different file" : "didn't confirm the file's hash"}`); continue }
       const url = typeof d?.url === "string" && serverUrl(d.url) ? d.url : null
       if (!url) { errors.push(`${hostOf(server)}: no link in its answer`); continue }
       return { url, sha256, mime: d.type || mime, size: bytes.length, server }

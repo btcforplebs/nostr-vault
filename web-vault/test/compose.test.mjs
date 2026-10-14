@@ -21,7 +21,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { mentionAt, mentionedPubkeys, rankPeople, toNostr, uniqueToken } = await import("../src/components/MentionPicker.jsx")
+const { mentionAt, mentionedPubkeys, rankPeople, resolveMentions, toNostr, uniqueToken } = await import("../src/components/MentionPicker.jsx")
 const { buildPost, draftKey, draftOf } = await import("../src/screens/ComposeScreen.jsx")
 
 const me = generateSecretKey(), other = generateSecretKey()
@@ -172,4 +172,38 @@ test("sign-out deletes the drafts database with Haven's own", async () => {
   const names = await storeNames(pubkey, idb)
   assert.ok(names.includes(`haven:${pubkey}:drafts`))
   assert.ok(!names.includes(`haven:${pk(other)}:drafts`))
+})
+
+// Review fixes (Tom, PR 699).
+test("a deleted mention leaves no p tag: '@Al' doesn't match inside '@Al·bbbbbbbb' or its '-2' form", () => {
+  const map = { "@Al": A, "@Al·bbbbbbbb": B, "@Al·bbbbbbbb-2": C }
+  for (const [text, want] of [["hi @Al·bbbbbbbb", [B]], ["hi @Al·bbbbbbbb-2", [C]], ["@Al and @Al·bbbbbbbb", [A, B]], ["nobody", []]]) {
+    const { content, pubkeys } = resolveMentions(text, map)
+    assert.deepEqual(pubkeys, want, text)
+    // The p tags are exactly the npubs in the content.
+    assert.deepEqual([...content.matchAll(/nostr:(npub1[a-z0-9]+)/g)].map(m => decode(m[1]).data).filter((v, i, a) => a.indexOf(v) === i), want, text)
+    assert.deepEqual(mentionedPubkeys(text, map), want, text)
+  }
+  const { tags } = buildPost({ text: "hi @Al·bbbbbbbb", mentions: map, photos: [], target: null, parent: null })
+  assert.deepEqual(tags, [["p", B]])
+})
+
+test("a token must start a word: 'bob@Al' and an email stay text", () => {
+  const map = { "@Al": A }
+  assert.deepEqual(resolveMentions("bob@Al, mail me at x@Al", map), { content: "bob@Al, mail me at x@Al", pubkeys: [] })
+  assert.deepEqual(resolveMentions("@Al\n@Al", map).pubkeys, [A])
+  assert.equal(resolveMentions("(@Al)", map).pubkeys.length, 0) // as mentionAt: only after the start or whitespace
+})
+
+test("an upload answer without a sha256 is not used", async () => {
+  const fetch = async url => ok(url.includes("nohash") ? { url: "https://nohash.example/x.png" } : { url: "https://good.example/y.png", sha256: await sha256Hex(new Uint8Array([9])) })
+  const up = await uploadPhoto(photo([9]), { ctx: ctxFor(), servers: ["https://nohash.example", "https://good.example"], fetch })
+  assert.equal(up.server, "https://good.example")
+  await assert.rejects(uploadPhoto(photo([9]), { ctx: ctxFor(), servers: ["https://nohash.example"], fetch }), /nohash\.example: didn't confirm the file's hash/)
+})
+
+test("sign-out deletes the drafts database on browsers without indexedDB.databases() too", async () => {
+  const pubkey = pk(me)
+  const names = await storeNames(pubkey, {}) // Firefox < 126: no databases()
+  assert.ok(names.includes(`haven:${pubkey}:drafts`))
 })

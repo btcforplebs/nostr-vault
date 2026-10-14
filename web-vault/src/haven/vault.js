@@ -53,10 +53,11 @@ export async function startVault({ pubkey, log = () => {} }) {
 // pubkey, /relay/ uses "relay"), and they may still hold old notes, DMs and files. Never "haven:relay:<route>":
 // /relay/ is the same origin, so its stores are in this IndexedDB too. Never another account's either:
 // "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
-// "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go).
+// "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go). Nor is "drafts": Compose's
+// unsent notes (ComposeScreen idbDrafts), only ever under the pubkey, named like the routes so this wipe takes them.
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
 export async function storeNames(pubkey, idb = indexedDB) {
-  const known = ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`])
+  const known = [...ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`]), `haven:${pubkey}:drafts`]
   const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape
   const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => mine.test(n ?? "")) : []
   return [...new Set([...known, ...listed])]
