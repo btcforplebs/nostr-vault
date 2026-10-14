@@ -45,7 +45,7 @@ test("newestList picks the newest of the user's own kind 3s and ignores anyone e
 })
 
 test("guard: no list found means nothing is published", async () => {
-  assert.match(wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true, answered: 1 }), /wasn't found/)
+  assert.match(wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true, answered: 1, asked: 1 }), /wasn't found/)
   let signed = false
   await assert.rejects(run({ target: pk(), follow: true, signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /wasn't found/)
   assert.equal(signed, false, "the signer is never asked")
@@ -74,6 +74,43 @@ test("guard: an answer from purplepag.es alone doesn't count; one of the user's 
   assert.equal(followsOf(r.event).length, 2)
 })
 
+test("guard: one own relay times out, the other answers empty, the vault has an old copy -> refused (Tron's 2-relay case)", async () => {
+  const many = Array.from({ length: 40 }, pk)
+  const old = contacts(many.slice(0, 4), nowS() - 30 * 86400) // a month-old 4-follow copy; the real 40 is on wss://a
+  const vault = fakeVault([old])
+  let signed = false, sent = false
+  const ask = async url => url === "wss://b.example" ? { events: [], answered: true } : { events: [], answered: false }
+  await assert.rejects(run({ vault, readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"], target: pk(), follow: true, known: old, appCount: 4, ask,
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } },
+    publish: urls => { sent = true; return okPublish(urls) } }), /Only 1 of your 2 relays answered/)
+  assert.equal(signed, false)
+  assert.equal(sent, false)
+  assert.deepEqual(vault.outbox.evs, [old])
+})
+
+test("guard: a list from any relay, or every own relay answering, is enough", async () => {
+  const many = Array.from({ length: 40 }, pk)
+  const real = contacts(many, nowS() - 60), old = contacts(many.slice(0, 4), nowS() - 30 * 86400)
+  const relays = { readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"] }
+  // wss://a times out but wss://b holds the real list: built on it.
+  const found = await run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, known: old,
+    ask: async url => url === "wss://b.example" ? { events: [real], answered: true } : { events: [], answered: false } })
+  assert.equal(followsOf(found.event).length, 41)
+  // Both answer, neither has a list: the vault's copy is the newest there is (iOS loadConfirmsList).
+  const small = contacts(many.slice(0, 2), 100)
+  const all = await run({ vault: fakeVault([small]), ...relays, target: pk(), follow: true, ask: relaysAnswer([]) })
+  assert.equal(followsOf(all.event).length, 3)
+})
+
+test("a relay's kind 3 with a forged signature and a 'verified' flag is not taken", async () => {
+  const { verifiedSymbol } = await import("nostr-tools/pure")
+  const many = Array.from({ length: 40 }, pk)
+  const forged = { ...contacts(many.slice(0, 3), nowS() - 10), sig: "00".repeat(64), [verifiedSymbol]: true }
+  const real = contacts(many, nowS() - 3600)
+  const r = await run({ vault: fakeVault([real]), target: pk(), follow: true, ask: relaysAnswer([forged]) })
+  assert.equal(followsOf(r.event).length, 41, "built on the vault's real list, not the forged newer one")
+})
+
 test("askRelay: answered only on the relay's own EOSE, never on a timeout or a dead relay", async t => {
   assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [3] }, 2000), { events: [], answered: false })
   const ev = contacts([pk()], 100)
@@ -88,19 +125,19 @@ test("askRelay: answered only on the relay's own EOSE, never on a timeout or a d
 test("guard: a stale list newer-dated than a much bigger one is refused (most > 10, result < half)", () => {
   const many = Array.from({ length: 40 }, pk), t = pk()
   const big = contacts(many, 100), stale = contacts(many.slice(0, 5), 200)
-  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [big, stale], answered: 1 }), /had 40/)
-  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [stale], appCount: 40, answered: 1 }), /had 40/, "the app's own count counts too")
+  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [big, stale], answered: 1, asked: 1 }), /had 40/)
+  assert.match(wipeGuard({ base: stale, tags: editedTags(stale, t, true), target: t, follow: true, seen: [stale], appCount: 40, answered: 1, asked: 1 }), /had 40/, "the app's own count counts too")
   // Small lists are under the threshold, as on iOS: 10 -> 4 is allowed.
   const ten = contacts(many.slice(0, 10), 100), four = contacts(many.slice(0, 4), 200)
-  assert.equal(wipeGuard({ base: four, tags: editedTags(four, t, true), target: t, follow: true, seen: [ten, four], answered: 1 }), "")
+  assert.equal(wipeGuard({ base: four, tags: editedTags(four, t, true), target: t, follow: true, seen: [ten, four], answered: 1, asked: 1 }), "")
 })
 
 test("guard: one deliberate unfollow always passes, even the last follow; an empty list otherwise never does", () => {
   const a = pk()
   const one = contacts([a], 100)
-  assert.equal(wipeGuard({ base: one, tags: editedTags(one, a, false), target: a, follow: false, seen: [one], answered: 1 }), "")
+  assert.equal(wipeGuard({ base: one, tags: editedTags(one, a, false), target: a, follow: false, seen: [one], answered: 1, asked: 1 }), "")
   const none = contacts([], 100)
-  assert.match(wipeGuard({ base: none, tags: editedTags(none, a, false), target: a, follow: false, seen: [none], answered: 1 }), /empty/)
+  assert.match(wipeGuard({ base: none, tags: editedTags(none, a, false), target: a, follow: false, seen: [none], answered: 1, asked: 1 }), /empty/)
 })
 
 test("follow builds on the newest list (network beats an older vault copy), keeps content, and is newer than it", async () => {

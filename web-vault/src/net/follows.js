@@ -1,7 +1,7 @@
 // Follow / Unfollow: a new kind 3 built on the newest one this browser can find, with the iPhone app's wipe guard
 // (ContactManager.mayPublish). A kind 3 replaces the whole list, so a stale or missing base would wipe the follows:
-// nothing is published unless the user's relays answered and a list was found, and never one that drops most of
-// what the user had.
+// nothing is published unless a list came from the network or every one of the user's relays answered, and never one
+// that drops most of what the user had.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
@@ -12,6 +12,9 @@ const now = () => Math.floor(Date.now() / 1000)
  *  is never dated later than this, so one bad clock can't pin the follow list in the future for every other app. */
 export const MAX_SKEW = 15 * 60
 const ASK_MS = 6000
+
+/** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries, and a relay or a test can set one. */
+const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => verifyEvent({ id, pubkey, created_at, kind, tags, content, sig })
 
 /** The followed pubkeys in a kind 3, in order, once each. */
 export const followsOf = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX.test(t[1] ?? "")).map(t => t[1]))
@@ -55,9 +58,10 @@ export async function askRelay(url, filter, ms = ASK_MS) {
 
 /**
  * The newest kind 3 of `pubkey` from the vault (Haven's outbox), the network and `known` (the list the app holds).
- * `answered`: how many of `relays` (the user's own; purplepag.es is asked too but doesn't count) sent their EOSE.
+ * `asked`: how many of `relays` (the user's own) were asked; `answered`: how many of those sent their EOSE (purplepag.es
+ * is asked too but doesn't count for either). `netFound`: a kind 3 came from a relay, not only from this browser.
  * Nothing found here is written to the vault: a list the guard refuses must not become the app's follows.
- * `ask` is for tests. -> { base, seen: [kind 3], answered }
+ * `ask` is for tests. -> { base, seen: [kind 3], asked, answered, netFound }
  */
 export async function findLatestList({ vault, pubkey, relays, known, ask = askRelay }) {
   const filter = { kinds: [3], authors: [pubkey] }
@@ -67,11 +71,12 @@ export async function findLatestList({ vault, pubkey, relays, known, ask = askRe
     vault.outbox.query(filter).catch(() => []),
     Promise.all(asked.map(url => ask(url, filter).catch(() => ({ events: [], answered: false })))),
   ])
-  const net = replies.flatMap(r => r.events).filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifyEvent(ev))
+  const net = replies.flatMap(r => r.events).filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev))
   const answered = replies.filter((r, i) => r.answered && own.includes(asked[i])).length
   const at = now()
   const seen = [...local, ...net, ...(known ? [known] : [])].filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && ev.created_at < at + MAX_SKEW)
-  return { base: newestList(seen, pubkey, at), seen, answered }
+  const netFound = net.some(ev => ev.created_at < at + MAX_SKEW)
+  return { base: newestList(seen, pubkey, at), seen, asked: own.length, answered, netFound }
 }
 
 /** The tags of `base` with `target` followed or not. Every other tag, and the content, are kept as they were. */
@@ -83,16 +88,20 @@ export function editedTags(base, target, follow) {
 
 /**
  * Why this list may not be published, or "" if it may. The rules, in order:
- *  - none of the user's relays answered: refuse. Then the base can only be this browser's own copy, which may be old,
- *    and the size rule below can't tell (the app's count comes from that same copy). iOS: mayPublishFollowList.
+ *  - no list came from the network and not every one of the user's relays answered: refuse. Then the base can only be
+ *    this browser's own copy, which may be old, and the relay that timed out may hold the real list; the size rule
+ *    below can't tell (the app's count comes from that same copy). iOS: loadConfirmsList.
  *  - no base list found: refuse (a missing list must never be replaced by a one-follow list);
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
  *  - the base itself must not be a shrunken copy: if the most follows any list we saw had (or the app shows) is over
  *    10, the result must keep at least half of it (iOS shouldBlockPublish). This catches a relay that returns an old
  *    or truncated list newer-dated than the real one.
  */
-export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, answered }) {
-  if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
+export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false }) {
+  if (!netFound && !(asked > 0 && answered >= asked)) {
+    if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
+    return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when they're all reachable.`
+  }
   if (!base) return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
   const before = followsOf(base), after = new Set(followsOf({ tags }))
   const single = !follow && before.includes(target) && after.size === before.length - 1
@@ -111,9 +120,9 @@ export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0,
 export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
   if (!HEX.test(target ?? "")) throw new Error("That isn't a profile that can be followed.")
   if (target === pubkey) throw new Error("You can't follow or unfollow yourself.")
-  const { base, seen, answered } = await findLatestList({ vault, pubkey, relays: uniq([...readRelays, ...writeRelays]), known, ask })
+  const { base, seen, asked, answered, netFound } = await findLatestList({ vault, pubkey, relays: uniq([...readRelays, ...writeRelays]), known, ask })
   const tags = editedTags(base, target, follow)
-  const refused = wipeGuard({ base, tags, target, follow, seen, appCount, answered })
+  const refused = wipeGuard({ base, tags, target, follow, seen, appCount, asked, answered, netFound })
   if (refused) throw new Error(refused)
   // Newer than the base, so no relay keeps the old list over this one on a same-second tie. findLatestList only
   // picks a base dated before now + MAX_SKEW, so this is never later than that.
