@@ -240,9 +240,11 @@ final class VaultSearchModel: ObservableObject {
                                          fields: [$0.displayName, $0.name, $0.about, $0.nip05],
                                          query: query)
         }
-        // A pasted key finds its person even when no store holds their
-        // profile yet: the row shows the short npub and opens the profile.
-        if matched.isEmpty, let key = VaultSearchLogic.pubkey(inQuery: query) {
+        // A pasted npub finds its person even when no store holds their
+        // profile yet: the row shows the npub and opens the profile.
+        if matched.isEmpty,
+           let key = VaultSearchLogic.keyOnlyPerson(inQuery: query,
+                                                    hasProfile: { nostrService.profiles[$0] != nil }) {
             matched = [nostrService.profiles[key] ?? FeedProfile(pubkey: key)]
         }
         let filter = SearchBlockFilter(blocked: blocked)

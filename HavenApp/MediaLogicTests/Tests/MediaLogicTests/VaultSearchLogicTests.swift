@@ -112,6 +112,21 @@ final class VaultSearchLogicTests: XCTestCase {
         XCTAssertFalse(VaultSearchLogic.keepsPerson(pubkey: other, fields: ["jack", nil, nil, nil], query: jackHex))
     }
 
+    /// Tron on #680: a note id is 64 hex too. Pasted with no profile behind
+    /// it, it must not become a People row for nobody.
+    func testABareHexEventIdMakesNoPerson() {
+        let eventId = "5c83da77af1dec6d7289834998ad7aafbd9e2191396d75ec3cc27f5a77226f36"
+        XCTAssertNil(VaultSearchLogic.keyOnlyPerson(inQuery: eventId, hasProfile: { _ in false }))
+        XCTAssertEqual(VaultSearchLogic.keyOnlyPerson(inQuery: jackHex, hasProfile: { $0 == jackHex }), jackHex)
+        XCTAssertEqual(VaultSearchLogic.keyOnlyPerson(inQuery: jackNpub, hasProfile: { _ in false }), jackHex)
+        XCTAssertEqual(VaultSearchLogic.keyOnlyPerson(inQuery: "nostr:\(jackNpub)", hasProfile: { _ in false }), jackHex)
+    }
+
+    /// Fullwidth digits are `isHexDigit` too; they are not a key.
+    func testNonASCIIHexDigitsAreNotAKey() {
+        XCTAssertNil(VaultSearchLogic.pubkey(inQuery: String(repeating: "\u{FF11}", count: 64)))
+    }
+
     /// Tron on #641: a short query matched inside the hex key, so "ab"
     /// listed nearly every profile. Only names, about and NIP-05 count.
     func testAShortQueryDoesNotMatchInsideTheKey() {

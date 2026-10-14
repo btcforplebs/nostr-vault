@@ -110,11 +110,11 @@ enum VaultSearchLogic {
         return links
     }
 
+    private static let openers: [Character: Character] = [")": "(", "]": "["]
+
     /// Strips what closes the sentence around a URL. `)` and `]` go only
     /// when the URL has more closers than openers, so "(see https://x.y/a)"
     /// loses its paren and "https://en.wikipedia.org/wiki/Foo_(bar)" keeps it.
-    private static let openers: [Character: Character] = [")": "(", "]": "["]
-
     static func trimmingTrailingPunctuation(_ raw: String) -> String {
         var url = raw
         while let last = url.last {
@@ -137,9 +137,20 @@ enum VaultSearchLogic {
     static func pubkey(inQuery query: String) -> String? {
         var text = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if text.hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
-        if text.count == 64, text.allSatisfy(\.isHexDigit) { return text }
+        if text.count == 64, text.allSatisfy({ $0.isASCII && $0.isHexDigit }) { return text }
         if text.hasPrefix("npub1") { return NpubValidation.hexPubkey(fromNpub: text) }
         return nil
+    }
+
+    /// The key to show a bare People row for when the walk found nobody.
+    /// An npub is unambiguously a key. Bare hex may be a note id (also 64
+    /// hex), so it counts only when a store already holds that profile —
+    /// otherwise the row would be a person who does not exist.
+    static func keyOnlyPerson(inQuery query: String, hasProfile: (String) -> Bool) -> String? {
+        guard let key = pubkey(inQuery: query) else { return nil }
+        var text = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if text.hasPrefix("nostr:") { text = String(text.dropFirst(6)) }
+        return text.hasPrefix("npub1") || hasProfile(key) ? key : nil
     }
 
     /// Whether a profile the relay walk matched belongs under People. A query
