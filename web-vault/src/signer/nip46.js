@@ -3,7 +3,8 @@
 import { BunkerSigner, parseBunkerInput } from "nostr-tools/nip46"
 import { generateSecretKey } from "nostr-tools/pure"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
-import { checkedPubkey } from "../session.js"
+import { checkedPubkey, loadSession, saveSession, rememberAccount } from "../session.js"
+import { seal, unseal } from "./keyring.js"
 
 // The bunker sends this URL, and a hostile bunker link is how a phishing attempt would start, so only web pages
 // are shown. The scheme check is what keeps a javascript: URL out; noopener only cuts the new page off from this one.
@@ -35,14 +36,38 @@ export async function bunkerSignIn(input, pool) {
     await answered(signer.connect())
     pubkey = checkedPubkey(await answered(signer.getPublicKey()))
   } catch (e) { signer.close(); throw e }
-  // The connect secret is single-use; don't keep it.
-  const session = { method: "nip46", pubkey, bunker: { pubkey: bp.pubkey, relays: bp.relays, secret: null }, clientSk: bytesToHex(clientSk) }
-  return { signer: wrap(signer), session }
+  // The connect secret is single-use; don't keep it. The client key is stored sealed (keyring.js), never as hex.
+  let clientSkSealed
+  try { clientSkSealed = await seal(bytesToHex(clientSk), keyStore) } catch (e) { signer.close(); throw e }
+  const session = { method: "nip46", pubkey, bunker: { pubkey: bp.pubkey, relays: bp.relays, secret: null }, clientSkSealed }
+  return { signer: wrap(Promise.resolve(signer)), session }
 }
 
-/** A signer for a saved session. It doesn't contact the bunker until something needs signing. */
-export function bunkerSigner(session, pool) {
-  return wrap(BunkerSigner.fromBunker(hexToBytes(session.clientSk), session.bunker, { pool, onauth: openAuthUrl }))
+// Tests set this to a Map-backed key store; the page uses IndexedDB (keyring.js).
+let keyStore
+export const setKeyStore = ks => { keyStore = ks }
+
+/**
+ * A signer for a saved session. It doesn't contact the bunker until something needs signing. A session saved before
+ * sealing (plain clientSk) is sealed and saved back over the plain one, in the session and in the account list.
+ */
+export function bunkerSigner(session, pool, storage = globalThis.localStorage) {
+  const ready = (async () => {
+    let hex = session.clientSk
+    if (hex) await resealSession(session, storage).catch(() => {}) // next boot tries again; signing still works
+    else hex = await unseal(session.clientSkSealed, keyStore)
+    return BunkerSigner.fromBunker(hexToBytes(hex), session.bunker, { pool, onauth: openAuthUrl })
+  })()
+  ready.catch(() => {}) // reported by whatever signs next, not as an unhandled rejection at boot
+  return wrap(ready)
+}
+
+export async function resealSession(session, storage) {
+  const { clientSk, ...rest } = session
+  const sealed = { ...rest, clientSkSealed: await seal(clientSk, keyStore) }
+  if (loadSession(storage)?.pubkey === session.pubkey) saveSession(sealed, storage)
+  else rememberAccount(sealed, storage)
+  return sealed
 }
 
 // A bunker that's gone (app closed, relay down) never answers, and BunkerSigner waits forever. Give the user time to
@@ -61,12 +86,13 @@ function answered(promise, ms = ANSWER_TIMEOUT_MS) {
 // the sign-out screen also tells the user to revoke the connection in their bunker app.
 const LOGOUT_TIMEOUT_MS = 3000
 
-function wrap(b) {
+// `ready`: the BunkerSigner, once its client key is unsealed.
+function wrap(ready) {
   return {
     method: "nip46",
-    signEvent: t => answered(b.signEvent(t)),
-    close: () => b.close(),
+    signEvent: t => ready.then(b => answered(b.signEvent(t))),
+    close: () => { ready.then(b => b.close(), () => {}) },
     /** -> true if the bunker confirmed it dropped the grant. Always closes the signer. */
-    revoke: () => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()),
+    revoke: () => ready.then(b => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()), () => false),
   }
 }

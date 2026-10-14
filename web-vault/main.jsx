@@ -24,6 +24,7 @@ import { ConversationScreen } from "./src/screens/ConversationScreen.jsx"
 import { PersonScreen } from "./src/screens/PersonScreen.jsx"
 import { VaultScreen } from "./src/screens/VaultScreen.jsx"
 import { SettingsScreen } from "./src/screens/SettingsScreen.jsx"
+import { AccountsScreen } from "./src/screens/AccountsScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
@@ -31,7 +32,7 @@ import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
 import "./src/styles/settings.css"
 
-const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings"]
+const ROUTES = ["feed", "search", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings", "accounts"]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
@@ -143,6 +144,7 @@ function App() {
       {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}
+      {route === "accounts" && <AccountsScreen ctx={ctx} />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {(route === "feed" || route === "profile" && !other) && <PostButton />}
       <TabBar route={other ? "search" : route === "dm" ? "messages" : route} pubkey={session.pubkey} />
