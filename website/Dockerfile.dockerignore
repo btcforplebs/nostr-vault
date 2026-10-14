@@ -1,0 +1,14 @@
+# The build context is the whole repo; send only what the site image builds from.
+*
+!haven-go
+!web-relay
+!web-vault
+!website
+**/node_modules
+**/.DS_Store
+web-vault/dist
+web-relay/public/haven.wasm
+web-relay/src/haven/wasm_exec.js
+# Build outputs: always rebuilt, never taken from a checkout.
+website/relay
+website/vault

@@ -2,10 +2,11 @@ version: '3'
 
 services:
   website:
-    image: nginx:alpine
+    # The pages and the built web apps are baked into the image (Dockerfile); deploy with ./deploy.sh.
+    build:
+      context: ..
+      dockerfile: website/Dockerfile
+    image: nostrvault-website
     ports:
       - "4024:80"
-    volumes:
-      - .:/usr/share/nginx/html
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
