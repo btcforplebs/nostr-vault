@@ -19,11 +19,6 @@ enum LiveArcsSetting {
     static func key(_ ring: GlobeArcs.Ring) -> String {
         "wotLiveArcs." + ring.rawValue
     }
-
-    /// The feeds switched on, read straight from the defaults.
-    static var rings: Set<GlobeArcs.Ring> {
-        Set(GlobeArcs.Ring.allCases.filter { UserDefaults.standard.object(forKey: key($0)) as? Bool ?? true })
-    }
 }
 
 private struct LiveArcsToggle: View {
@@ -227,7 +222,7 @@ final class GlobeArrivalStream: ObservableObject {
     private static func people(_ feed: FeedService, me: String) -> (follows: Set<String>, discover: [String]) {
         let follows = Set(feed.followedPubkeys).union([me])
         let wider = feed.extendedNetworkPubkeys.isEmpty
-            ? feed.feedTrustedPubkeys.sorted() : feed.extendedNetworkPubkeys
+            ? Array(feed.feedTrustedPubkeys) : feed.extendedNetworkPubkeys
         return (follows, Array(wider.lazy.filter { !follows.contains($0) }.prefix(discoverCap)))
     }
 
@@ -270,8 +265,8 @@ final class GlobeArrivalStream: ObservableObject {
                                   onEvent: @escaping ([String: Any]) -> Void) -> (client: WebSocketClient, sink: AnyCancellable) {
         let client = WebSocketClient()
         client.isTemporary = true
+        // WebSocketClient already delivers on the main thread.
         let sink = client.messageSubject
-            .receive(on: DispatchQueue.main)
             .sink { message in
                 guard message.hasPrefix("[\"EVENT\""),
                       let data = message.data(using: .utf8),

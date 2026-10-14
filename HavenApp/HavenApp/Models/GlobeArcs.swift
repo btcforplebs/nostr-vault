@@ -89,8 +89,8 @@ enum GlobeArcs {
             targets.append(key)
             if targets.count == maxTargets { break }
         }
-        // A repost with no one to point at has nothing to fly between.
-        if repostKinds.contains(kind), targets.isEmpty { return nil }
+        // A repost with no p tag (most of them on some relays) has no one to
+        // point at: like any note aimed at no one, it flies into you.
         return Arrival(id: id, author: author, targets: targets)
     }
 

@@ -74,8 +74,21 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(repost?.author, key(1))
         XCTAssertEqual(repost?.targets, [key(2)])
         XCTAssertNotNil(GlobeArcs.arrival(note(2, by: key(1), to: [key(2)], kind: 16), now: now))
-        // Nobody to point at: nothing to fly between.
-        XCTAssertNil(GlobeArcs.arrival(note(3, by: key(1), kind: 6), now: now))
+    }
+
+    func testARepostWithNoPTagFliesIntoYou() {
+        // Most reposts on some relays carry only the e tag: no one to point
+        // at, so like any note aimed at no one it flies into you.
+        for kind in [6, 16] {
+            let repost = GlobeArcs.arrival(note(3 + kind, by: key(1), kind: kind), now: now)
+            XCTAssertEqual(repost?.author, key(1))
+            XCTAssertEqual(repost?.targets, [])
+            var board = GlobeArcs.Board()
+            board.add(repost!)
+            board.step(now: 0, me: me)
+            XCTAssertEqual(board.lines.map(\.to), [me])
+            XCTAssertTrue(board.lines.allSatisfy(\.toMe))
+        }
     }
 
     func testEachFeedSetsOutFromItsOwnShellWidestLast() {
