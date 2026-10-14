@@ -3,9 +3,10 @@ import XCTest
 /// Removing the active account must leave it through
 /// `ConfigService.switchActiveAccount(to: nil)`, not by clearing
 /// `activeAccountNpub` directly. Only the switch posts
-/// `BlockedAccountsUpdated` and detaches the account's NIP-46 signer, and it
-/// only detaches while the account's bunker config still exists, so the
-/// switch has to come before `removeBunkerConfig`.
+/// `BlockedAccountsUpdated` and resets the signing mode. The switch has to
+/// come after `removeBunkerConfig`: that call already detaches the active
+/// signer, and its session drop must land before the owner's connect, which
+/// can share the same signer session key.
 /// The settings view pulls in SwiftUI and the whole app and can't be built
 /// here, so this reads its source.
 final class AccountRemovalSwitchTests: XCTestCase {
@@ -33,16 +34,16 @@ final class AccountRemovalSwitchTests: XCTestCase {
     }
 
     /// Both removal paths (swipe-delete and Remove Account) switch away from
-    /// the account before its bunker config is gone.
-    func testEachRemovalSwitchesAwayBeforeDroppingTheSigner() throws {
+    /// the account only after its bunker config is gone.
+    func testEachRemovalSwitchesAwayAfterDroppingTheSigner() throws {
         let source = try settingsSource()
         let switches = offsets(of: "switchActiveAccount(to: nil)", in: source)
         let removals = offsets(of: "removeBunkerConfig(forNpub:", in: source)
         XCTAssertEqual(removals.count, 2, "expected the swipe-delete and Remove Account paths")
         XCTAssertEqual(switches.count, removals.count)
         for (i, removal) in removals.enumerated() where i < switches.count {
-            XCTAssertLessThan(switches[i], removal, "path \(i) switches after dropping the signer")
-            if i > 0 { XCTAssertGreaterThan(switches[i], removals[i - 1]) }
+            XCTAssertGreaterThan(switches[i], removal, "path \(i) switches before dropping the signer")
+            if i + 1 < removals.count { XCTAssertLessThan(switches[i], removals[i + 1]) }
         }
     }
 }
