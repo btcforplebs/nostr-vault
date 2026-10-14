@@ -2,18 +2,33 @@
 // what comes in is written to the in-page Haven and read back from it.
 import { SimplePool } from "nostr-tools/pool"
 
-export const pool = new SimplePool({ enablePing: true, enableReconnect: true })
+// Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
+export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
 
-export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"]
+const hostOf = url => { try { return new URL(url).hostname.toLowerCase() } catch { return "" } }
+export const isDead = url => DEAD_RELAY_HOSTS.has(hostOf(url))
+
+// Every read, query and publish opens its relays through ensureRelay, so a dead host is refused here and its
+// subscription closes at once instead of holding querySync to its timeout (primal alone 541 ms, + nos.lol 5,002 ms).
+class LivePool extends SimplePool {
+  ensureRelay(url, params) {
+    return isDead(url) ? Promise.reject(new Error(`dead relay skipped: ${url}`)) : super.ensureRelay(url, params)
+  }
+}
+
+export const pool = new LivePool({ enablePing: true, enableReconnect: true })
+
+export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://relay.primal.net"]
 // relay.nostr.band stopped answering (no EOSE, every query held to its timeout) on 2026-10-13.
 export const PROFILE_RELAYS = ["wss://purplepag.es"]
 
-/** Read and write relays from a kind 10002 event (NIP-65), falling back to the defaults. */
+/** Read and write relays from a kind 10002 event (NIP-65), dead hosts dropped, falling back to the defaults. */
 export function relayLists(ev) {
   const read = [], write = []
   for (const t of ev?.tags ?? []) {
     if (t[0] !== "r" || !/^wss?:\/\//.test(t[1] ?? "")) continue
     const url = t[1].replace(/\/+$/, "")
+    if (isDead(url)) continue
     if (t[2] !== "write") read.push(url)
     if (t[2] !== "read") write.push(url)
   }
@@ -25,10 +40,6 @@ export const uniq = a => [...new Set(a)]
 // Where the iPhone app sends a new note: its Write list, or this list when that is empty
 // (HavenConfig.fallbackWriteRelays / RelayConfiguration.directBroadcastRelays).
 export const BROADCAST_RELAYS = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
-// Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
-export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
-
-const hostOf = url => { try { return new URL(url).hostname.toLowerCase() } catch { return "" } }
 const loopbackHost = h => { h = h.replace(/^\[|\]$/g, "").toLowerCase(); return h === "localhost" || h === "::1" || /^127\./.test(h) }
 /** A relay on the machine the browser runs on (the Mac's own vault relay, ws://localhost:3355). */
 export const isLoopback = url => loopbackHost(hostOf(url))
@@ -41,6 +52,6 @@ export const isLoopback = url => loopbackHost(hostOf(url))
  */
 export function publishRelays(writeRelays, pageHost = globalThis.location?.hostname ?? "") {
   const urls = uniq([...writeRelays, ...BROADCAST_RELAYS].map(u => u.trim().replace(/\/+$/, "")).filter(u => /^wss?:\/\//.test(u)))
-  const live = urls.filter(u => !DEAD_RELAY_HOSTS.has(hostOf(u)))
+  const live = urls.filter(u => !isDead(u))
   return { network: live.filter(u => !isLoopback(u)), local: loopbackHost(pageHost) ? live.filter(isLoopback) : [] }
 }
