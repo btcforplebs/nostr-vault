@@ -308,6 +308,7 @@ extension NoteDetailView {
             note: note,
             profile: nostrService.profiles[shown.pubkey],
             displayPubkey: original?.pubkey,
+            original: original,
             depth: depth,
             style: .plain,
             replyCount: replyCount,

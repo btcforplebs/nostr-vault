@@ -153,6 +153,7 @@ struct FeedThreadCard: View {
             note: note,
             profile: profileFor(shown.pubkey),
             displayPubkey: original?.pubkey,
+            original: original,
             depth: entry.depth,
             style: .plain,
             isFocused: note.id == focusedNoteId,
