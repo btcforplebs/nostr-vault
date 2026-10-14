@@ -13,16 +13,28 @@ export function FeedScreen({ ctx }) {
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   const [notes, setNotes] = useState(null)
   const [status, setStatus] = useState("")
+  const [syncing, setSyncing] = useState(false)
 
   const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(PAGE, notes?.length ?? 0) }))
   const sync = async () => {
+    // No follow list yet (still loading, or nobody followed): there is nothing to sync, so nothing is "up to date".
+    if (!follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus("Offline: showing your saved feed")
     setStatus("Syncing…")
+    setSyncing(true)
+    // Show notes as each chunk of follows lands, not after the last one. Reloads queue so an older read can't
+    // land after a newer one.
+    let shown = Promise.resolve(), seen = 0
     try {
-      const n = await syncFeed(vault, follows, relays, { onProgress: p => setStatus(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`) })
+      const n = await syncFeed(vault, follows, relays, { onProgress: p => {
+        setStatus(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
+        if (p.stored > seen) { seen = p.stored; shown = shown.then(reload) }
+      } })
+      await shown
       await reload()
       setStatus(n ? `${n} notes saved to your relay` : "Up to date")
     } catch (e) { setStatus(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
+    finally { setSyncing(false) }
   }
   const older = async () => {
     const until = notes.at(-1)?.created_at - 1
@@ -52,7 +64,7 @@ export function FeedScreen({ ctx }) {
       {status && <div class="status-line">{status}</div>}
       {!follows.length ? <p class="empty">{account.loaded ? "You don't follow anyone yet." : "Loading your follows…"}</p>
         : notes === null ? <p class="empty">Opening your relay…</p>
-        : !notes.length ? <p class="empty">No notes saved yet.</p>
+        : !notes.length ? <p class="empty">{syncing ? "Fetching notes from the people you follow…" : "No notes saved yet."}</p>
         : <>
             {notes.map(n => <NoteCard key={n.id} event={n} />)}
             <button class="more" onClick={older}>Older notes</button>
