@@ -57,7 +57,9 @@ export async function unwrap(wrap, crypto, me) {
     if (seal?.kind !== 13 || !verifyEvent(seal)) return null
     const rumor = JSON.parse(await crypto.decrypt(seal.pubkey, seal.content))
     if (rumor?.kind !== 14 || rumor.pubkey !== seal.pubkey || typeof rumor.content !== "string") return null
-    const peer = rumor.pubkey === me ? pTag(rumor.tags, me) : rumor.pubkey
+    const names = (rumor.tags ?? []).some(t => t[0] === "p" && t[1] === me)
+    // Mine: the other person is the p tag, or me for a note to self. Theirs: a rumor that doesn't name me isn't mine.
+    const peer = rumor.pubkey === me ? (pTag(rumor.tags, me) ?? (names ? me : null)) : names ? rumor.pubkey : null
     if (!peer) return null
     return { id: wrap.id, from: rumor.pubkey, peer, content: rumor.content, at: Number(rumor.created_at) || 0, legacy: false }
   } catch { return null }
@@ -117,15 +119,24 @@ export function resetMessages(pubkey) {
   changed()
 }
 
+/** Wraps opened per round: each costs two extension calls, so a first load of hundreds shows the newest ones first. */
+export const OPEN_BATCH = 8
+
+/** Open `evs` newest first, a batch at a time, telling the screens after each batch. -> how many were added */
 async function take(evs, crypto, me) {
   let added = 0
+  const fresh = []
   for (const ev of evs) {
     if (!ev?.id || opened.has(ev.id) || state.pubkey !== me) continue
-    opened.add(ev.id)
-    const m = ev.kind === 4 ? await openLegacy(ev, crypto, me) : await unwrap(ev, crypto, me)
-    if (m && state.pubkey === me) { state.messages.set(m.id, m); added++ }
+    opened.add(ev.id); fresh.push(ev)
   }
-  if (added) { state = { ...state }; changed() }
+  fresh.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+  for (let i = 0; i < fresh.length && state.pubkey === me; i += OPEN_BATCH) {
+    const got = await Promise.all(fresh.slice(i, i + OPEN_BATCH).map(ev => ev.kind === 4 ? openLegacy(ev, crypto, me) : unwrap(ev, crypto, me)))
+    let n = 0
+    for (const m of got) if (m && state.pubkey === me) { state.messages.set(m.id, m); n++ }
+    if (n) { added += n; state = { ...state }; changed() }
+  }
   return added
 }
 
@@ -190,8 +201,10 @@ export function conversations(messages, blocked = new Set()) {
 export const thread = (messages, peer) => [...messages.values()].filter(m => m.peer === peer).sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
 
 /**
- * Send `text` to `peer` as NIP-17: their wrap to their DM relays, the self-copy to the user's own DM relays and
- * Haven's /chat. Shown at once in the thread. -> { relays: [{ url, ok, message }] }; throws when no relay took it.
+ * Send `text` to `peer` as NIP-17: their wrap to their DM relays, the self-copy to the user's own DM relays (plus
+ * this browser's extra relays) and Haven's /chat. Shown at once in the thread. A note to self is one wrap to my
+ * relays. -> { relays: [{ url, ok, message, to: "them" | "me" }] }; throws when none of the recipient's relays
+ * took their wrap (the self-copy landing somewhere is not delivery).
  */
 export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
   const me = ctx.session.pubkey
@@ -204,15 +217,22 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     dmRelaysFor(peer, lookup, { query, fallback: ctx.account.relays.write }),
     dmRelaysFor(me, lookup, { query, fallback: ctx.account.relays.write }),
   ])
-  const [toThem, toMe] = await Promise.all([wrapFor(rumor, env, peer), wrapFor(rumor, env, me)])
-  const extra = extraRelays()
-  const sends = [
-    ...uniq([...theirs, ...extra]).map(url => [url, toThem]),
-    ...uniq([...mine, ...extra]).map(url => [url, toMe]),
-  ]
-  const results = await Promise.allSettled(sends.map(([url, ev]) => Promise.race([publish([url], ev)[0], timeout(8000)])))
-  const relays = results.map((r, i) => ({ url: sends[i][0], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
-  if (!relays.some(r => r.ok)) throw new Error(`No relay took it (0 of ${relays.length})`)
+  const self = peer === me
+  const toMe = await wrapFor(rumor, env, me)
+  const toThem = self ? toMe : await wrapFor(rumor, env, peer)
+  const send = async (urls, ev, to) => {
+    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev)[0], timeout(8000)])))
+    return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
+  }
+  // Their wrap first: the self-copy goes out only once a recipient relay took theirs, so a refused message never
+  // comes back from my own relay looking sent.
+  const mineUrls = uniq([...mine, ...extraRelays()])
+  const theirSends = await send(self ? mineUrls : uniq(theirs), toThem, "them")
+  if (!theirSends.some(r => r.ok)) {
+    const why = theirSends.map(r => r.message).find(Boolean)
+    throw new Error(`Not delivered: none of their ${theirSends.length} relay${theirSends.length === 1 ? "" : "s"} took it${why ? ` (${why})` : ""}`)
+  }
+  const relays = [...theirSends, ...(self ? [] : await send(mineUrls, toMe, "me"))]
   await (chat ?? chatStore(ctx.vault)).event(toMe).catch(() => {})
   opened.add(toMe.id); opened.add(toThem.id)
   if (state.pubkey === me) { state.messages.set(toMe.id, { id: toMe.id, from: me, peer, content: text, at: rumor.created_at, legacy: false }); state = { ...state }; changed() }

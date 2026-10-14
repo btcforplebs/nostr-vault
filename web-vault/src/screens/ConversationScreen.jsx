@@ -35,7 +35,7 @@ export function ConversationScreen({ ctx, peer }) {
       const { relays } = await sendMessage(ctx, peer, t)
       setText("")
       const ok = relays.filter(r => r.ok).length
-      setStatus(ok === relays.length ? "" : `Sent to ${ok} of ${relays.length} relays`)
+      setStatus(ok === relays.length ? "" : `Sent to ${ok} of ${relays.length} relays`) // delivery to them is checked in sendMessage
     } catch (err) { setStatus(String(err?.message ?? err)) } finally { setBusy(false) }
   }
 
@@ -52,7 +52,9 @@ export function ConversationScreen({ ctx, peer }) {
         {!rows.length && !note && <p class="empty">No messages with {npubEncode(peer).slice(0, 12)}… yet.</p>}
         {rows.map(m => (
           <div key={m.id} class={m.from === me ? "dm-bubble mine" : "dm-bubble"}>
-            <NoteText content={m.content} depth={1} />
+            {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
+                into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), images still show. */}
+            <NoteText content={m.content} depth={1} dm />
             <span class="dm-meta">{ago(m.at)}{m.legacy ? " · NIP-04" : ""}</span>
           </div>
         ))}

@@ -8,7 +8,7 @@ import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
 import {
   cryptoFor, rumorFor, wrapFor, unwrap, openLegacy, dmRelaysFor, extraRelays, loadMessages, getMessages, onMessages, resetMessages,
-  conversations, thread, sendMessage, peerOf, watchMessages, WATCH_SINCE,
+  conversations, thread, sendMessage, peerOf, watchMessages, WATCH_SINCE, OPEN_BATCH,
 } from "../src/net/dms.js"
 
 const A = generateSecretKey(), B = generateSecretKey(), C = generateSecretKey()
@@ -184,9 +184,63 @@ test("sendMessage: their wrap to their DM relays, the self-copy to mine and into
 test("sendMessage throws when no relay took it, and with a bunker sign-in", async () => {
   const publish = () => [Promise.reject(new Error("closed"))]
   resetMessages(pk(A))
-  await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /No relay took it \(0 of 2\)/)
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Not delivered: none of their 1 relay took it \(closed\)/)
   assert.equal(getMessages().messages.size, 0, "not shown as sent")
   await assert.rejects(sendMessage({ ...ctxOf(A), session: { method: "nip46", pubkey: pk(A) } }, pk(B), "x", { chat: fakeChat() }), /bunker/)
+})
+
+test("sendMessage: a DM is not delivered when only the self-copy landed", async () => {
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://their-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  const sent = []
+  const publish = (urls) => { sent.push(urls[0]); return [urls[0].includes("their") ? Promise.reject(new Error("blocked: not in WoT")) : Promise.resolve("ok")] }
+  const chat = fakeChat()
+  resetMessages(pk(A))
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "hi", { crypto: cryptoOf(A), query, chat, publish }), /Not delivered: none of their 1 relay took it \(blocked: not in WoT\)/)
+  assert.equal(getMessages().messages.size, 0, "not shown as sent")
+  assert.equal(chat.stored.length, 0, "no self-copy kept")
+  assert.deepEqual(sent, ["wss://their-haven.example"], "the self-copy was never published, so my relay can't echo it back")
+})
+
+test("sendMessage: this browser's extra relays get the self-copy only; a note to self is one wrap to my relays", async () => {
+  globalThis.localStorage = { getItem: k => (k === "nv-dm-relays" ? "ws://127.0.0.1:1" : null) }
+  try {
+    const sent = []
+    const publish = (urls, ev) => { sent.push([urls[0], ev]); return [Promise.resolve("ok")] }
+    resetMessages(pk(A))
+    const { relays } = await sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish })
+    assert.deepEqual(relays.map(r => [r.url, r.to]), [["wss://write.example", "them"], ["wss://write.example", "me"], ["ws://127.0.0.1:1", "me"]])
+    assert.deepEqual(sent.find(([u]) => u.startsWith("ws://127"))[1].tags, [["p", pk(A)]], "the extra relay got the self-copy")
+
+    sent.length = 0
+    const chat = fakeChat()
+    const r = await sendMessage(ctxOf(A), pk(A), "note to self", { crypto: cryptoOf(A), query: async () => [], chat, publish })
+    assert.deepEqual(r.relays.map(x => [x.url, x.to]), [["wss://write.example", "them"], ["ws://127.0.0.1:1", "them"]])
+    assert.equal(new Set(sent.map(([, ev]) => ev.id)).size, 1, "one wrap")
+    const m = await unwrap(chat.stored[0], cryptoOf(A), pk(A))
+    assert.deepEqual([m.from, m.peer, m.content], [pk(A), pk(A), "note to self"], "a note to self survives reload")
+  } finally { delete globalThis.localStorage }
+})
+
+test("unwrap refuses a rumor that doesn't name me", async () => {
+  const rumor = rumorFor(pk(A), pk(C), "for C")
+  const wrap = await wrapFor(rumor, envOf(A), pk(B)) // sealed and wrapped to B, but the rumor is to C
+  assert.equal(await unwrap(wrap, cryptoOf(B), pk(B)), null)
+})
+
+test("loadMessages opens newest first in batches, telling the screen after each", async () => {
+  const wraps = []
+  for (let i = 0; i < 2 * OPEN_BATCH + 3; i++) wraps.push(await wrapFor(rumorFor(pk(B), pk(A), `m${i}`, 1000 + i), envOf(B), pk(A)))
+  const query = async (relays, f) => (f.kinds[0] === 1059 ? wraps : [])
+  resetMessages(pk(A))
+  const seen = []
+  const off = onMessages(() => seen.push(getMessages().messages.size))
+  await loadMessages(ctxOf(A), ["wss://r.example"], { crypto: cryptoOf(A), query, chat: fakeChat() })
+  off()
+  assert.ok(seen.length >= 3, `screen told per batch, got ${seen.length}`)
+  const counts = seen.filter((n, i) => n !== seen[i - 1])
+  assert.deepEqual(counts.slice(0, 3), [OPEN_BATCH, 2 * OPEN_BATCH, 2 * OPEN_BATCH + 3])
+  assert.equal(getMessages().messages.size, wraps.length)
 })
 
 test("#/dm/<hex> names the peer", () => {

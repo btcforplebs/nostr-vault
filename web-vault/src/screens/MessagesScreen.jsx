@@ -65,7 +65,7 @@ export function MessagesScreen({ ctx }) {
         <button type="submit" class="small" disabled={!to.trim()}>Open</button>
       </form>
       {err && <div class="status-line error">{err}</div>}
-      {!loaded ? <p class="empty">Opening your messages…</p>
+      {!loaded && !list.length ? <p class="empty">Opening your messages…</p>
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
         : list.map(c => (
           <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>

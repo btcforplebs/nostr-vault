@@ -6,7 +6,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { decode, nprofileEncode, noteEncode, neventEncode, naddrEncode } from "nostr-tools/nip19"
+import { decode, npubEncode, nprofileEncode, noteEncode, neventEncode, naddrEncode } from "nostr-tools/nip19"
 
 registerHooks({
   load(url, context, next) {
@@ -27,6 +27,18 @@ function parts(content) {
     .filter(c => c !== "")
     .map(c => (typeof c === "string" ? c : { type: c.type, ...c.props }))
 }
+
+test("in a DM, video links stay links and nostr:npub stays short text; images still show", () => {
+  const npub = npubEncode("ab".repeat(32))
+  const url = "https://x.example/v.mp4"
+  const els = [NoteText({ content: `${url} nostr:${npub} https://x.example/p.png`, dm: true }).props.children].flat().filter(c => typeof c !== "string")
+  assert.deepEqual(els.map(e => e.type), ["a", "span", "img"])
+  assert.equal(els[0].props.href, url, "a link, no <video> preload")
+  assert.equal(els[1].type, "span", "no Mention component, so no profile fetch"); assert.match(els[1].props.children, /^npub1/)
+  // Outside a DM the same text gets a video player and a Mention.
+  const note = [NoteText({ content: `${url} nostr:${npub}` }).props.children].flat().filter(c => typeof c !== "string")
+  assert.deepEqual(note.map(e => e.type), ["video", Mention])
+})
 
 test("plain text is one text part", () => {
   assert.deepEqual(parts("gm nostr"), ["gm nostr"])
