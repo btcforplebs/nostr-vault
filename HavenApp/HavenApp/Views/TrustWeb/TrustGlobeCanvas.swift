@@ -43,6 +43,8 @@ struct TrustGlobeCanvas: View {
     /// The WOT tab's globe: it keeps drifting while on screen. A post's
     /// globe drifts a while after a touch, then sleeps.
     var keepsDrifting = false
+    /// Names under the faces; off on the WOT tab.
+    var showsNames = true
 
     /// The globe shows about this many times `TrustMap`'s face counts: more
     /// pictures overall, not quite double (Logen, 10/14).
@@ -57,8 +59,9 @@ struct TrustGlobeCanvas: View {
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
-    /// A landed note's preview was tapped: the note opens over the globe.
-    @State private var openNote: String?
+    @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
+    @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
+    @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     /// Off when the tab or the post leaves the screen: a drifting globe's
@@ -133,25 +136,24 @@ struct TrustGlobeCanvas: View {
                 }
                 Button("Reset view") { scene.reset() }
             }
-            // Over the gestures, not under them: a tap on a preview opens its
-            // note and never also lands on the face beneath it.
-            .overlay { previews(in: geo.size) }
         }
         .onAppear {
             onScreen = true
             scene.camera.keepsDrifting = keepsDrifting
+            scene.showsNames = showsNames
             scene.reduceMotion = reduceMotion
             scene.focus(layer)
             scene.filter(filterLit)
         }
         .onDisappear { onScreen = false }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .task(id: liveArcs && liveArcsOn) {
+        .task(id: liveArcs && liveArcsOn ? rings : nil) {
             // Listens while the switch is on and the globe is on screen; leaving
-            // the tab cancels this, and coming back starts it again.
+            // the tab cancels this, and coming back starts it again. A feed
+            // switched on or off in My Web reopens it with the new feeds.
             guard liveArcs && liveArcsOn else { return }
             scene.setLiveArcs(true)
-            let token = arrivals.start(me: me)
+            let token = arrivals.start(me: me, rings: rings)
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
             // A quick off and on can start the next run before this one ends.
             if arrivals.stop(token) { scene.setLiveArcs(false) }
@@ -159,12 +161,6 @@ struct TrustGlobeCanvas: View {
         // While the clock is stopped nothing would move them on: they're
         // dropped rather than piling up behind a sheet or another app.
         .onReceive(arrivals.arrived) { if clockAllowed { scene.arrive($0) } }
-        .sheet(item: Binding<IdentifiableString?>(
-            get: { openNote.map { IdentifiableString(id: $0) } },
-            set: { openNote = $0?.id }
-        )) { note in
-            NoteDetailViewWrapper(noteId: note.id, onDismiss: { openNote = nil })
-        }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
@@ -201,14 +197,22 @@ struct TrustGlobeCanvas: View {
     }
 
     /// False while a sheet or another app covers the globe: the clock stops.
-    private var clockAllowed: Bool { onScreen && running && appIsActive && openNote == nil }
+    private var clockAllowed: Bool { onScreen && running && appIsActive }
+
+    /// The feeds whose notes fly, from the My Web dashboard.
+    private var rings: Set<GlobeArcs.Ring> {
+        var on = Set<GlobeArcs.Ring>()
+        if followingOn { on.insert(.following) }
+        if discoverOn { on.insert(.discover) }
+        if globalOn { on.insert(.global) }
+        return on
+    }
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate
-                scene.dismissPreviews()
                 scene.camera.dragging = true
                 scene.camera.drag(dx: value.translation.width - lastDrag.width,
                                   dy: value.translation.height - lastDrag.height, at: now)
@@ -222,22 +226,6 @@ struct TrustGlobeCanvas: View {
                                    at: Date.timeIntervalSinceReferenceDate, reduceMotion: reduceMotion)
                 scene.wake()
             }
-    }
-
-    /// Landed notes beside their faces, above them unless that runs off the top.
-    private func previews(in size: CGSize) -> some View {
-        ZStack {
-            ForEach(scene.previews) { preview in
-                let width = min(240, size.width - 24)
-                let x = min(max(preview.point.x, width / 2 + 12), size.width - width / 2 - 12)
-                let y = preview.point.y > 190 ? preview.point.y - 48 : preview.point.y + 48
-                GlobeNotePreview(avatar: avatar(preview.author, 24), name: name(preview.author),
-                                 text: preview.text) { openNote = preview.id }
-                    .frame(width: width)
-                    .position(x: x, y: y)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
     }
 
     private var magnify: some Gesture {

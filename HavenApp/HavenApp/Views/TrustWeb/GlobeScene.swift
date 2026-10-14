@@ -15,23 +15,12 @@ final class GlobeScene: ObservableObject {
     @Published private(set) var awake = true
     /// Who is drawn with a picture: the core, the author, and the faces.
     @Published private(set) var faceKeys: [String] = []
-    /// Notes whose star just landed, shown for a moment beside the face.
-    @Published private(set) var previews: [NotePreview] = []
     /// A finger is turning the globe, or its flick is still spinning: the
     /// clock runs at full rate. Otherwise drift, settling and arcs draw at
     /// `slowRate`, which is plenty for them and keeps the phone cool.
     @Published private(set) var fullRate = false
     /// Frames a second while nothing is under a finger.
     static let slowRate = 30.0
-
-    struct NotePreview: Identifiable, Equatable {
-        /// The note.
-        let id: String
-        let author: String
-        let text: String
-        /// The face it landed on, on screen when it landed.
-        let point: CGPoint
-    }
 
     /// Pictures are drawn from a symbol this size, scaled to each face.
     static let pictureSize: CGFloat = 64
@@ -67,6 +56,9 @@ final class GlobeScene: ObservableObject {
     private var layerDim = 0.0
     /// Faces drawn with a picture last frame, so they keep their seat.
     private var seated: Set<String> = []
+    /// Names under faces and stars. The WOT tab's globe has none: they
+    /// came and went as it turned (Logen, 10/14). A post's globe keeps them.
+    var showsNames = true
     private var direct = false
     /// Who the core follows, for a direct thread to the traced person.
     private var ring: Set<String> = []
@@ -114,15 +106,11 @@ final class GlobeScene: ObservableObject {
     /// relay, while the bar's switch is on.
     private var board = GlobeArcs.Board()
     private var liveArcs = false
-    /// People drawn with a picture because a line or light is on them.
+    /// People drawn with a picture because a line is on them.
     private var arcKeys: Set<String> = []
     private var arcKeysQueued = false
     /// The frame clock's time, for drawing the arcs where it left them.
     private var now: TimeInterval = 0
-    /// Notes that have had their landing: each gets one preview at most.
-    private var landedNotes: Set<String> = []
-    private var previewsQueued: [NotePreview] = []
-    private var previewFlushQueued = false
 
     // MARK: Data
 
@@ -375,18 +363,9 @@ final class GlobeScene: ObservableObject {
         liveArcs = on
         if !on {
             board.clear()
-            landedNotes = []
-            previews = []
-            previewsQueued = []
             syncArcKeys()
         }
         wake()
-    }
-
-    /// A drag moves the globe out from under the previews: they go.
-    func dismissPreviews() {
-        guard !previews.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.25)) { previews = [] }
     }
 
     /// A note reached the relay: it takes its turn on the globe. The board
@@ -397,17 +376,14 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// Who the arcs need pictures for: the ends of every line and light.
+    /// Who the arcs need pictures for: the ends of every line.
     private var arcPeople: Set<String> {
         var keys = Set(board.lines.flatMap { [$0.from, $0.to] })
-        keys.formUnion(board.pulses.map(\.key))
         keys.remove(center)
         return keys
     }
 
     private func syncArcKeys() {
-        // Forget the landings of notes no line still carries.
-        landedNotes.formIntersection(board.lines.map(\.note))
         let keys = arcPeople
         guard keys != arcKeys else { return }
         arcKeys = keys
@@ -430,7 +406,7 @@ final class GlobeScene: ObservableObject {
             if abs(dimTarget - layerDim) < 0.005 || reduceMotion { layerDim = dimTarget }
         }
         self.now = now
-        let arcsBefore = board.lines.count + board.pulses.count
+        let arcsBefore = board.lines.count
         if let released = board.step(now: now, me: me) {
             // Their pictures, once the note is let on: not for every arrival,
             // most of which a busy queue drops. Not from inside the draw.
@@ -438,7 +414,7 @@ final class GlobeScene: ObservableObject {
                 NostrService.shared.fetchMissingProfiles(for: [released.author] + released.targets)
             }
         }
-        if board.lines.count + board.pulses.count != arcsBefore, !arcKeysQueued {
+        if board.lines.count != arcsBefore, !arcKeysQueued {
             // Not from inside the draw: the pictures publish on the next turn.
             arcKeysQueued = true
             DispatchQueue.main.async { [weak self] in
@@ -602,7 +578,7 @@ final class GlobeScene: ObservableObject {
         enum Slot: Int, CaseIterable { case haze, ring, mutual, hot }
         var buckets = Array(repeating: Array(repeating: Path(), count: Self.levels + 1), count: Slot.allCases.count)
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
-        let namesOut = zoom > 2.2
+        let namesOut = showsNames && zoom > 2.2
         for i in keys.indices where !isFace[i] {
             let a = alpha[i] * weight(i)
             guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
@@ -707,7 +683,7 @@ final class GlobeScene: ObservableObject {
         fill(.hot, accent)
 
         // Live arcs over the stars and threads, under the faces.
-        if !board.lines.isEmpty || !board.pulses.isEmpty { arcPainter(project, k: k, zoom: zoom).drawLines(&context) }
+        if !board.lines.isEmpty { arcPainter(project, k: k, zoom: zoom).drawLines(&context) }
 
         // Faces, back to front: bridges, chain steps and the author.
         var drawn: [(key: String, p: Projected, tint: Color, size: Double, dim: Bool)] = []
@@ -747,7 +723,7 @@ final class GlobeScene: ObservableObject {
             + spots.filter { seats.contains($0.key) }.map { CGRect(x: $0.x - $0.r, y: $0.y - $0.r, width: 2 * $0.r, height: 2 * $0.r) }
         var showLabel = Set<String>()
         let labelCap = zoom < 1.5 ? 9 : 40
-        for face in drawn.reversed() where face.p.depth > 0.15 && !face.dim && seats.contains(face.key) && showLabel.count < labelCap {
+        for face in drawn.reversed() where showsNames && face.p.depth > 0.15 && !face.dim && seats.contains(face.key) && showLabel.count < labelCap {
             let r = face.size * k * face.p.scale * min(zoom, 1.8)
             let box = CGRect(x: face.p.point.x - 46, y: face.p.point.y + r + 2, width: 92, height: 16)
             if face.key == author || !placed.contains(where: { $0.intersects(box) }) {
@@ -783,8 +759,6 @@ final class GlobeScene: ObservableObject {
             }
         }
 
-        if !board.lines.isEmpty { previewLandings(project, size: size) }
-
         if !arcKeys.isEmpty {
             arcPainter(project, k: k, zoom: zoom).drawFaces(&context, seated: seats) { c, key, p, r, tint, opacity in
                 drawFace(&c, key: key, at: p, r: r, tint: tint, opacity: opacity, name: name)
@@ -812,51 +786,15 @@ final class GlobeScene: ObservableObject {
 
     // MARK: Drawing live arcs
 
-    /// Where someone sits for an arc: their star, or on the outer shell where
-    /// their star would be when they aren't on the globe.
-    private func arcPoint(_ key: String) -> SIMD3<Double> {
+    /// Where someone sits for an arc. A star from your follows sets out from
+    /// their own star on the ring. One from Discover or Global sets out from
+    /// that feed's shell, in their direction, so the shells tell the feeds
+    /// apart. Anyone else (who a note is aimed at) sits on their star, or on
+    /// the outer shell when they aren't on the globe.
+    private func arcPoint(_ key: String, setsOutFrom ring: GlobeArcs.Ring?) -> SIMD3<Double> {
+        if let ring, ring != .following { return TrustMap.direction(of: key) * ring.radius }
         if let i = index[key], alpha[i] > 0.05 { return dirs[i] * radius[i] }
         return TrustMap.direction(of: key) * TrustMap.outerRadius
-    }
-
-    /// A star that just landed brings up its note beside the face, unless
-    /// two are already up or it would cover one: the globe stays quiet.
-    private func previewLanding(_ line: GlobeArcs.Line, _ project: Projector, size: CGSize) -> NotePreview? {
-        guard let note = board.notes[line.note], !note.text.isEmpty,
-              let p = project(arcPoint(line.to)), p.depth > -0.2,
-              CGRect(origin: .zero, size: size).insetBy(dx: 20, dy: 80).contains(p.point) else { return nil }
-        let shown = previews + previewsQueued
-        guard shown.count < GlobeArcs.maxPreviews,
-              !shown.contains(where: { abs($0.point.x - p.point.x) < 240 && abs($0.point.y - p.point.y) < 90 })
-        else { return nil }
-        return NotePreview(id: note.id, author: note.author, text: note.text, point: p.point)
-    }
-
-    private func previewLandings(_ project: Projector, size: CGSize) {
-        // Notes to you first, when two land in the same frame.
-        let landed = board.lines
-            .filter { GlobeArcs.hasLanded($0, at: now) && !landedNotes.contains($0.note) }
-            .sorted { $0.toMe && !$1.toMe }
-        for line in landed {
-            landedNotes.insert(line.note)
-            if let preview = previewLanding(line, project, size: size) { previewsQueued.append(preview) }
-        }
-        guard !previewsQueued.isEmpty, !previewFlushQueued else { return }
-        // Not from inside the draw: they publish on the next turn.
-        previewFlushQueued = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.previewFlushQueued = false
-            let queued = self.previewsQueued
-            self.previewsQueued = []
-            guard self.liveArcs else { return }
-            withAnimation(.easeInOut(duration: 0.6)) { self.previews += queued }
-            DispatchQueue.main.asyncAfter(deadline: .now() + GlobeArcs.previewLife) { [weak self] in
-                withAnimation(.easeInOut(duration: 0.9)) {
-                    self?.previews.removeAll { p in queued.contains { $0.id == p.id } }
-                }
-            }
-        }
     }
 
     private func arcPainter(_ project: Projector, k: Double, zoom: Double) -> LiveArcsPainter {
