@@ -4,6 +4,7 @@ import { Avatar } from "./Avatar.jsx"
 import { NoteText } from "./NoteText.jsx"
 import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
+import { ZapButton } from "./ZapButton.jsx"
 import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -16,8 +17,8 @@ export function AuthorName({ pubkey }) {
 
 /** A kind 1 note, or a kind 6 repost shown as the reposted note with a "reposted" line. Floating card, as on iOS
  *  (VaultNoteRow), with the iPhone's action row under it: reply, repost, quote, like. A repost's actions act on the
- *  note inside it. No zap: there's no wallet on the web yet. `memoryOnly`: a stranger's note (Global, Hashtag), so
- *  quotes and @names inside it aren't written to Haven /feed. */
+ *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
+ *  aren't written to Haven /feed. */
 export function NoteCard({ event, memoryOnly = false }) {
   if (event.kind === 6) {
     let inner
@@ -57,7 +58,7 @@ function NoteBody({ event, memoryOnly }) {
   )
 }
 
-/** Reply · Repost · Quote · Like, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up. */
+/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up. */
 function NoteActions({ note }) {
   const ctx = actionContext()
   const [s, setS] = useState(() => actionState(note.id))
@@ -74,6 +75,7 @@ function NoteActions({ note }) {
       <ActionButton label="Repost" doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
       <ActionButton label="Quote" icon={ICONS.quote} onClick={() => compose("quote", note)} />
       <ActionButton label="Like" doneLabel="Liked" kind="like" state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
+      <ZapButton note={note} />
     </div>
   )
 }
