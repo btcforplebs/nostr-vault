@@ -18,6 +18,9 @@ struct GlobalSearchResults {
     var profileCreatedAt: [String: Int64] = [:]
     /// True on the last delivery of a search: every relay has answered.
     var isFinished = false
+    /// A local relay walk hit its deadline before it ran out of events, so
+    /// later kinds or older pages are missing.
+    var isCutShort = false
 }
 
 /// Lightweight signal published when profile metadata changes, so views can
@@ -101,7 +104,9 @@ final class LocalRelaySearchCollector {
 
         guard isNew else { return .event(subId: subId) }
 
-        if kind == 1 {
+        if kind != 0 {
+            // Every kind but profiles is a note: the session asks only for
+            // the kinds its caller searches (kind 1 unless told otherwise).
             if matcher.matchesNote(content: content, tags: tags) {
                 notes[id] = FeedNote(
                     id: id,

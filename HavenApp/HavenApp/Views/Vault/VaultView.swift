@@ -12,13 +12,11 @@ struct VaultView: View {
     @Environment(\.openURL) var inheritedOpenURL
 
     @State var navigationPath = NavigationPath()
-    @State var committedSearch = ""
-    @State var searchScope: SearchScope = .notes
-    /// Whether the search field is showing. `committedSearch` had no control
-    /// anywhere that ever set it — the entire search feature was unreachable.
+    /// Whether the search bar is open. While it is, the Vault shows what
+    /// the search found in place of its list.
     @State var isSearchActive = false
     @State var searchQueryDraft = ""
-    @State var displayProfileResults: [FeedProfile] = []
+    @StateObject var vaultSearch = VaultSearchModel()
     /// The phone and iPad open the Vault tab on "Vault", everything new in
     /// one list. The Mac's relay page has no such list.
     #if os(iOS)
@@ -254,6 +252,16 @@ struct VaultView: View {
     /// toolbar + handlers first, navigation modifiers applied in body.
     private var iOSContent: some View {
         viewContentPlatform
+        // Search takes the bar's place: the toolbar steps aside and the
+        // search bar opens where its magnifying glass was.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if isSearchActive {
+                searchBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 leadingToolbarInline
@@ -266,6 +274,9 @@ struct VaultView: View {
             }
             #endif
         }
+        #if os(iOS)
+        .toolbar(isSearchActive ? .hidden : .automatic, for: .navigationBar)
+        #endif
         // The Mac hosts it under its own header (VaultView+Layout).
         #if os(iOS)
         .filterNoteHost(filterNote)
@@ -347,8 +358,6 @@ struct VaultView: View {
             viewMode: viewMode,
             likesFilter: likesFilter,
             zapsFilter: zapsFilter,
-            committedSearch: committedSearch,
-            searchScope: searchScope,
             contentFilter: contentFilter,
             noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,

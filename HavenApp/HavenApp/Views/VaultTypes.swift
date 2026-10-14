@@ -65,28 +65,6 @@ enum ZapsFilter {
     case myZaps
 }
 
-enum SearchScope: CaseIterable, Equatable {
-    case notes
-    case profiles
-    case hashtags
-
-    var label: String {
-        switch self {
-        case .notes: return "Notes"
-        case .profiles: return "Profiles"
-        case .hashtags: return "Hashtags"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .notes: return "doc.text"
-        case .profiles: return "person.2"
-        case .hashtags: return "number"
-        }
-    }
-}
-
 struct ParsedZapReceipt {
     let senderPubkey: String
     let targetNoteId: String?

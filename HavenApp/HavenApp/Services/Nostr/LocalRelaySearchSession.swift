@@ -6,14 +6,17 @@ import SwiftUI
 
 /// Walks every local relay route to exhaustion for one query.
 ///
-/// One socket per route, two paged subscriptions per socket (kind 1 notes and
-/// kind 0 profiles). A page finishes on its own EOSE, and the whole search
-/// finishes as soon as the last subscription is done — the timeout is only
-/// there for a socket that never answers.
+/// One socket per route, paged subscriptions per socket: kind 0 profiles,
+/// then each note kind (kind 1 unless the caller asks for more). A page
+/// finishes on its own EOSE, and the whole search finishes as soon as the
+/// last subscription is done — the timeout is only there for a socket that
+/// never answers.
 final class LocalRelaySearchSession {
-    /// Fallback for a route that never connects or never EOSEs. Not the normal
-    /// completion path: on-box LMDB answers a page in milliseconds.
-    static let timeout: TimeInterval = 6.0
+    /// Fallback for a route that never connects or never EOSEs, for the
+    /// default walk (profiles and kind 1). Not the normal completion path:
+    /// on-box LMDB answers a page in milliseconds. A walk over more kinds
+    /// gets `LocalRelaySearchPlan.timeout(kindCount:)`.
+    static let timeout: TimeInterval = LocalRelaySearchPlan.timeout(kindCount: 2)
 
     private struct Stream {
         let routeIndex: Int
@@ -35,6 +38,11 @@ final class LocalRelaySearchSession {
     private let queue = DispatchQueue(label: "com.haven.local-relay-search")
     private let collector: LocalRelaySearchCollector
     private let routes: [URL]
+    /// Kinds are walked in this order, one after the other, not at the same
+    /// time: a note matches if its author's profile matched, so the profiles
+    /// have to be known before the notes are read. The extra round trip costs
+    /// milliseconds against an on-box relay.
+    private let kindOrder: [Int]
     private let timeout: TimeInterval
     private let onFinish: (GlobalSearchResults) -> Void
 
@@ -58,14 +66,18 @@ final class LocalRelaySearchSession {
     private var doneRoutes = Set<Int>()
     private var didFinish = false
     private var didStart = false
+    /// The deadline ended the walk, not the relay running dry.
+    private var timedOut = false
 
     init(matcher: LocalSearchMatcher,
          routes: [URL],
-         timeout: TimeInterval = LocalRelaySearchSession.timeout,
+         noteKinds: [Int] = [1],
+         timeout: TimeInterval? = nil,
          onFinish: @escaping (GlobalSearchResults) -> Void) {
         self.collector = LocalRelaySearchCollector(matcher: matcher)
         self.routes = routes
-        self.timeout = timeout
+        self.kindOrder = LocalRelaySearchPlan.kindOrder(noteKinds: noteKinds)
+        self.timeout = timeout ?? LocalRelaySearchPlan.timeout(kindCount: kindOrder.count)
         self.onFinish = onFinish
     }
 
@@ -127,6 +139,7 @@ final class LocalRelaySearchSession {
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self = self else { return }
             if self.failureReason == nil { self.failureReason = "timed out" }
+            if !self.didFinish { self.timedOut = true }
             self.finish()
         }
     }
@@ -141,12 +154,6 @@ final class LocalRelaySearchSession {
 
     // MARK: Private
 
-    /// Kinds are walked in this order, one after the other, not at the same
-    /// time: a note matches if its author's profile matched, so the profiles
-    /// have to be known before the notes are read. The extra round trip costs
-    /// milliseconds against an on-box relay.
-    private static let kindOrder = [0, 1]
-
     /// Opens the first paged subscription on a route that just connected.
     private func openStreams(routeIndex: Int) {
         guard !didFinish, !doneRoutes.contains(routeIndex) else { return }
@@ -154,7 +161,7 @@ final class LocalRelaySearchSession {
         // streams the first time.
         guard activeByRoute[routeIndex] == nil else { return }
         activeByRoute[routeIndex] = 1
-        send(stream: Stream(routeIndex: routeIndex, kind: Self.kindOrder[0], page: 1), until: nil)
+        send(stream: Stream(routeIndex: routeIndex, kind: kindOrder[0], page: 1), until: nil)
     }
 
     private func send(stream: Stream, until: Int64?) {
@@ -198,10 +205,10 @@ final class LocalRelaySearchSession {
             case .done:
                 // This kind is exhausted on this route: move on to the next
                 // kind, and only when there is none is the route finished.
-                if let index = Self.kindOrder.firstIndex(of: stream.kind),
-                   index + 1 < Self.kindOrder.count {
+                if let index = kindOrder.firstIndex(of: stream.kind),
+                   index + 1 < kindOrder.count {
                     send(stream: Stream(routeIndex: stream.routeIndex,
-                                        kind: Self.kindOrder[index + 1],
+                                        kind: kindOrder[index + 1],
                                         page: 1),
                          until: nil)
                 } else {
@@ -248,7 +255,8 @@ final class LocalRelaySearchSession {
     private func finish() {
         guard !didFinish else { return }
         didFinish = true
-        let results = collector.snapshot()
+        var results = collector.snapshot()
+        results.isCutShort = timedOut
         teardown()
         let answered = !answeredRoutes.isEmpty
         onOutcome?(Outcome(answered: answered, reason: answered ? nil : (failureReason ?? "no response")))

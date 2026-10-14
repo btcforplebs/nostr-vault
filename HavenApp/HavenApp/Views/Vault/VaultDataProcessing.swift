@@ -204,36 +204,6 @@ extension VaultView {
         }
     }
 
-    // MARK: - Search Filter
-
-    nonisolated static func applySearchFilter(
-        to events: [NostrEvent],
-        search: String,
-        scope: SearchScope
-    ) -> [NostrEvent] {
-        guard !search.isEmpty else { return events }
-        switch scope {
-        case .notes:
-            return events.filter {
-                $0.content.localizedCaseInsensitiveContains(search)
-            }
-        case .hashtags:
-            let normalizedQuery = search
-                .lowercased()
-                .trimmingCharacters(in: .whitespaces)
-                .replacingOccurrences(of: "#", with: "")
-            return events.filter { event in
-                event.tags.contains { tag in
-                    tag.count >= 2
-                        && tag[0] == "t"
-                        && tag[1].lowercased().contains(normalizedQuery)
-                }
-            }
-        case .profiles:
-            return events
-        }
-    }
-
     // MARK: - Update Display Data
 
     func updateDisplayData() {
@@ -241,8 +211,6 @@ extension VaultView {
         let currentFilter = contentFilter
         let scopeKinds = noteScope.kinds(from: NostrService.relayTabNoteKinds, split: vaultTabHostsMedia)
         let currentRecipesOnly = noteScope == .articles && recipesOnly
-        let currentSearch = committedSearch
-        let currentScope = searchScope
         let currentEvents = nostrService.events
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
@@ -314,7 +282,7 @@ extension VaultView {
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
                     filtered.sort { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = filtered
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
@@ -364,7 +332,7 @@ extension VaultView {
                         return d0 > d1
                     }
 
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = filtered
 
                     let finalRxMap = rxMap
                     let finalReactionDates = latestReaction
@@ -454,7 +422,7 @@ extension VaultView {
                     for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
                     for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = filtered
                     let finalGivenMap = givenMap
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
@@ -493,7 +461,7 @@ extension VaultView {
                         return ta != tb ? ta > tb : a.created_at > b.created_at
                     }
 
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = filtered
 
                     let finalZMap = zMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
@@ -548,7 +516,7 @@ extension VaultView {
                     return repostTargetsShown.insert(target).inserted
                 }
 
-                let result = Self.applySearchFilter(to: deduped, search: currentSearch, scope: currentScope)
+                let result = deduped
 
                 // Compute engagement data (reactions & zaps) for all displayed notes
                 let displaySlice = Array(result.prefix(currentMaxDisplayed))
@@ -632,38 +600,6 @@ extension VaultView {
                     self.quoteMap = finalQtMap
                     self.notesHasLoadedOnce = true
                     self.displayPass &+= 1
-                }
-            }
-
-            // Profile search (independent of view mode)
-            if currentScope == .profiles && !currentSearch.isEmpty {
-                let allProfiles = await MainActor.run { Array(self.nostrService.profiles.values) }
-                let query = currentSearch.lowercased()
-                let matched = allProfiles.filter { profile in
-                    (profile.name?.lowercased().contains(query) ?? false)
-                    || (profile.displayName?.lowercased().contains(query) ?? false)
-                    || (profile.nip05?.lowercased().contains(query) ?? false)
-                    || (profile.about?.lowercased().contains(query) ?? false)
-                }
-                let sorted = matched.sorted { a, b in
-                    let aName = a.bestName.lowercased()
-                    let bName = b.bestName.lowercased()
-                    let aPrefix = aName.hasPrefix(query)
-                    let bPrefix = bName.hasPrefix(query)
-                    if aPrefix != bPrefix { return aPrefix }
-                    return aName < bName
-                }
-                let profileSlice = Array(sorted.prefix(50))
-                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
-                await MainActor.run {
-                    self.displayProfileResults = profileSlice
-                }
-            } else {
-                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
-                await MainActor.run {
-                    if !self.displayProfileResults.isEmpty {
-                        self.displayProfileResults = []
-                    }
                 }
             }
         }

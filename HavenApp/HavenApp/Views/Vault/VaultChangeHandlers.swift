@@ -4,8 +4,6 @@ struct VaultChangeHandlers: ViewModifier {
     let viewMode: ViewMode
     let likesFilter: LikesFilter
     let zapsFilter: ZapsFilter
-    let committedSearch: String
-    let searchScope: SearchScope
     let contentFilter: ContentFilter
     /// Notes, Articles or Highlights, plus the Recipes filter on Articles.
     let noteScopeKey: String
@@ -23,8 +21,6 @@ struct VaultChangeHandlers: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: committedSearch) { _, _ in onResetAndUpdate() }
-            .onChange(of: searchScope) { _, _ in onResetAndUpdate() }
             .onChange(of: contentFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: noteScopeKey) { _, _ in onResetAndUpdate() }
             .onChange(of: likesFilter) { _, _ in onResetAndUpdate() }

@@ -11,8 +11,8 @@ extension VaultView {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 Group {
-                    if searchScope == .profiles && !committedSearch.isEmpty {
-                        profileSearchResults
+                    if isSearchActive {
+                        vaultSearchResults
                     } else if viewMode == .activity {
                         activityList
                     } else if viewMode == .notes {
@@ -26,7 +26,7 @@ extension VaultView {
                     }
                 }
                 .animation(.none, value: viewMode)
-                .id("\(viewMode)-\(searchScope)-\(committedSearch.isEmpty)")
+                .id("\(viewMode)-\(isSearchActive)")
             }
             .padding(.vertical, 16)
             .contentShape(Rectangle())
@@ -409,48 +409,6 @@ extension VaultView {
             }
         }
     }
-
-    // MARK: - Profile Search Results
-
-    @ViewBuilder
-    var profileSearchResults: some View {
-        if displayProfileResults.isEmpty {
-            VStack(spacing: 24) {
-                Image(systemName: "person.2.slash")
-                    .font(.appSystem(size: 48, weight: .thin))
-                    .foregroundStyle(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.havenPurple, Color.havenPurple.opacity(0.5)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                VStack(spacing: 8) {
-                    Text("No profiles found")
-                        .font(.appSystem(size: 18, weight: .bold))
-                        .tracking(0.2)
-                    Text("Try a different search term")
-                        .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .tracking(0.3)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 80)
-        } else {
-            LazyVStack(spacing: 0) {
-                ForEach(displayProfileResults) { profile in
-                    ProfileResultRow(profile: profile)
-                        .onTapGesture {
-                            showingProfilePubkey = profile.pubkey
-                        }
-                    Divider()
-                        .background(Color(red: 0.2, green: 0.2, blue: 0.25))
-                }
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
 }
 
 // MARK: - Notification focus
@@ -486,8 +444,7 @@ extension VaultView {
 
         navigationPath = NavigationPath()
         showingNoteId = nil
-        committedSearch = ""
-        isSearchActive = false
+        closeVaultSearch()
         // A follower alert lands on the Followers list; there is no event to find.
         if request.type == "followers" {
             viewMode = .followers
