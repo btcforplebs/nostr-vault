@@ -26,6 +26,9 @@ DM_PLAN.md
 
 # Build artifacts
 /HavenApp/SilentPaymentsKit/build/
+# Web apps built into the site at deploy time (website/build-web-apps.sh)
+/website/relay/
+/website/vault/
 
 # Go vendor (managed by go modules)
 /haven-go/vendor/

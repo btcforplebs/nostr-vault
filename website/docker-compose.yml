@@ -1,12 +1,12 @@
-version: '3'
-
 services:
   website:
-    # The pages and the built web apps are baked into the image (Dockerfile); deploy with ./deploy.sh.
+    # The pages and the built web apps are baked into the image (Dockerfile). Deploy and roll back with ./deploy.sh.
     build:
       context: ..
       dockerfile: website/Dockerfile
-    image: nostrvault-website
+      args:
+        ALLOW_MISSING_WEB_APPS: ${ALLOW_MISSING_WEB_APPS:-0}
+    image: nostrvault-website:${SITE_TAG:-latest}
     ports:
       - "4024:80"
     restart: unless-stopped

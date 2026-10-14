@@ -1,0 +1,16 @@
+# The repo root is the build context for website/Dockerfile, the repo's only image.
+# A root .dockerignore holds under both BuildKit and the classic builder (DOCKER_BUILDKIT=0),
+# which ignores a <Dockerfile>.dockerignore and would send .git, HavenApp/ and the .env files.
+*
+!haven-go
+!web-relay
+!web-vault
+!website
+**/node_modules
+**/.DS_Store
+web-vault/dist
+web-relay/public/haven.wasm
+web-relay/src/haven/wasm_exec.js
+# Build outputs: always rebuilt, never taken from a checkout.
+website/relay
+website/vault
