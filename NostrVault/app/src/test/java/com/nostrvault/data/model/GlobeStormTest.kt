@@ -204,10 +204,18 @@ class GlobeStormTest {
     }
 
     @Test fun eventOfReturnsTheEventOnlyForAGlobeEvent() {
-        val globe = GlobeRelayLink.eventOf("""["EVENT","arcs-1a2b3c4d",$event]""")
+        val ids = setOf("arcs-1a2b3c4d")
+        val globe = GlobeRelayLink.eventOf("""["EVENT","arcs-1a2b3c4d",$event]""", ids)
         assertNotNull(globe)
         assertEquals(key(1), globe!!["id"]!!.jsonPrimitive.content)
-        assertNull(GlobeRelayLink.eventOf("""["EVENT","feed-wss://relay.example",$event]"""))
-        assertNull(GlobeRelayLink.eventOf("""["EOSE","arcs-1a2b3c4d"]"""))
+        assertNull(GlobeRelayLink.eventOf("""["EVENT","feed-wss://relay.example",$event]""", ids))
+        assertNull(GlobeRelayLink.eventOf("""["EOSE","arcs-1a2b3c4d"]""", ids))
+    }
+
+    /** Two globe links on one socket (the wide REQ and notes to you): each reads only its own answers (Tron, PR 738). */
+    @Test fun eventOfIgnoresAnotherGlobeLinksSubscription() {
+        val mine = setOf("arcs-aaaaaaaa", "arcs-aaaaaaaa-1")
+        assertNull(GlobeRelayLink.eventOf("""["EVENT","arcs-bbbbbbbb",$event]""", mine))
+        assertNotNull(GlobeRelayLink.eventOf("""["EVENT","arcs-aaaaaaaa-1",$event]""", mine))
     }
 }

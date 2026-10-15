@@ -39,6 +39,11 @@ internal class GlobeRelayLink(
     /** The REQ messages, already split under the relay's size cap. */
     val requests: List<String> =
         GlobeArcs.requests(filters, GlobeStorm.SUBSCRIPTION_PREFIX + UUID.randomUUID().toString().take(8))
+    /**
+     * This link's own sub ids. Two links can share one socket (the wide REQ and
+     * the notes-to-you REQ on a read relay): each reads only its own answers.
+     */
+    private val ids: Set<String> = requests.mapNotNullTo(HashSet()) { GlobeStorm.subscriptionOf(it) }
     private var client: WebSocketClient? = null
     /** The globe opened [client] itself: it disconnects it when done. */
     private var owned = false
@@ -86,7 +91,7 @@ internal class GlobeRelayLink(
             scope.launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
                 next.messages.collect { message ->
                     if (!message.contains(prefix)) return@collect
-                    eventOf(message)?.let(onEvent)
+                    eventOf(message, ids)?.let(onEvent)
                 }
             },
             // Sent each time it connects: on first open and on every reconnect.
@@ -115,13 +120,13 @@ internal class GlobeRelayLink(
         const val RECHECK_MS = 2_000L
         private val json = Json { ignoreUnknownKeys = true }
 
-        /** The event of a relay `EVENT` under one of the globe's subscriptions, or null for anything else. */
-        fun eventOf(message: String): JsonObject? {
+        /** The event of a relay `EVENT` under one of [ids] (globe subscriptions), or null for anything else. */
+        fun eventOf(message: String, ids: Set<String>): JsonObject? {
             val array = runCatching { json.parseToJsonElement(message) as? JsonArray }.getOrNull() ?: return null
             if (array.size < 3) return null
             val type = (array[0] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
             val id = (array[1] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
-            if (type != "EVENT" || !GlobeStorm.isGlobeSubscription(type, id)) return null
+            if (type != "EVENT" || id !in ids || !GlobeStorm.isGlobeSubscription(type, id)) return null
             return array[2] as? JsonObject
         }
     }

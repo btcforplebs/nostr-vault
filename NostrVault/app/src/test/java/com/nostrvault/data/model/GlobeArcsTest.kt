@@ -416,4 +416,13 @@ class GlobeArcsTest {
         val sent = requests.flatMap { parse(it).drop(2).map { f -> f as JsonObject } }
         assertEquals(filters, sent)
     }
+
+    /** A relay sending your key in uppercase hex still lands your note on Following, not Global (Tron, PR 738). */
+    @Test fun anUppercaseKeyFromARelayIsStillYours() {
+        val upper = "AB" + key(9).drop(2).uppercase()
+        val loud = arrival(note(1, by = upper))!!
+        assertEquals("ab" + key(9).drop(2), loud.author)
+        assertEquals(GlobeArcs.Ring.FOLLOWING, GlobeArcs.ring(loud.author, follows = setOf("ab" + key(9).drop(2)), discover = emptySet()))
+    }
+
 }

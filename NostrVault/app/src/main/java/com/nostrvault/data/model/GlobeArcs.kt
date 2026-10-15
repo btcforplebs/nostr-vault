@@ -82,13 +82,17 @@ object GlobeArcs {
      */
     fun arrival(
         kind: Int?,
-        id: String?,
-        author: String?,
+        rawId: String?,
+        rawAuthor: String?,
         createdAt: Double?,
         tags: List<List<String>>,
         nowSeconds: Double = System.currentTimeMillis() / 1000.0,
     ): Arrival? {
-        if (kind == null || id == null || author == null) return null
+        if (kind == null || rawId == null || rawAuthor == null) return null
+        // Keys are compared lowercase everywhere (follows, web, you): a relay's
+        // uppercase hex must not land your own note on Global.
+        val id = rawId.lowercase()
+        val author = rawAuthor.lowercase()
         if (kind !in KINDS && kind !in REPOST_KINDS && kind != GlobeLive.REACTION_KIND) return null
         if (!isKey(id) || !isKey(author)) return null
         if (createdAt != null && nowSeconds - createdAt > MAX_AGE) return null
@@ -123,8 +127,8 @@ object GlobeArcs {
     fun arrival(event: JsonObject, nowSeconds: Double = System.currentTimeMillis() / 1000.0): Arrival? =
         arrival(
             kind = (event["kind"] as? JsonPrimitive)?.intOrNull,
-            id = (event["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
-            author = (event["pubkey"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+            rawId = (event["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+            rawAuthor = (event["pubkey"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             createdAt = (event["created_at"] as? JsonPrimitive)?.doubleOrNull,
             tags = tags(event["tags"]),
             nowSeconds = nowSeconds,
