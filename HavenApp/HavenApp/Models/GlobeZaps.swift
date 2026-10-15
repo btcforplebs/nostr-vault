@@ -51,9 +51,11 @@ extension GlobeArcs {
 
     /// A zap request rebuilt from Swift's own reading of it, with exactly
     /// the NIP-01 fields, for the signature check. nil unless every field is
-    /// there with its proper type: a 64-hex id, pubkey and created_at as an
-    /// exact integer (so it renders `1799999990`, never `1.79e+09`), string
-    /// tags and content, and a sig.
+    /// there with its proper type: a 64-hex id and pubkey, string tags and
+    /// content, a sig, and a whole-number created_at. A whole number written
+    /// as a float (`1799999990.0`, `1.79999999e9`) is taken as that integer
+    /// and rendered plainly (`1799999990`), as the verifier reads it; a
+    /// fractional one is refused.
     static func canonicalRequest(_ request: [String: Any]) -> String? {
         guard let id = request["id"] as? String, isKey(id),
               let pubkey = request["pubkey"] as? String, isKey(pubkey),

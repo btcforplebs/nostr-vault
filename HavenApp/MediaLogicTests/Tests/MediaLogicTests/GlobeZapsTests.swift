@@ -82,6 +82,13 @@ final class GlobeZapsTests: XCTestCase {
         request = parsed(signed)
         request["created_at"] = 1_799_999_990.5
         XCTAssertNil(GlobeArcs.canonicalRequest(request))
+        // A whole number written as a float is that integer, rendered plainly:
+        // the honest request rebuilds the same either way.
+        for written in ["1799999990.0", "1.79999999e9"] {
+            let text = signed.replacingOccurrences(of: #""created_at":1799999990"#, with: #""created_at":"# + written)
+            XCTAssertNotEqual(text, signed)
+            XCTAssertEqual(GlobeArcs.canonicalRequest(parsed(text)), rebuilt["signed"]?.0, written)
+        }
         request = parsed(signed)
         request["sig"] = nil
         XCTAssertNil(GlobeArcs.canonicalRequest(request))
