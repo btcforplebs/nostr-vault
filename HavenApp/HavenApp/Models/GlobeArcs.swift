@@ -8,17 +8,13 @@ import simd
 /// feed it came from: your follows from the ring, Discover from the next
 /// shell out, Global from the outer haze (Logen, 10/14).
 enum GlobeArcs {
-    /// Most lines on the globe at once. A new one past this sends the oldest
-    /// on its way out early, so the globe never fills up with lines.
-    static let maxLines = 10
+    /// Most lines on the globe at once: a safety cap, high enough that a
+    /// busy network reads as a storm (Logen, 10/15), low enough that the
+    /// phone keeps drawing smoothly. Past it the widest feed's oldest lines
+    /// are sent on their way out early, Global first.
+    static let maxLines = 300
     /// People one note draws lines to: a reply to a crowd stays a few lines.
     static let maxTargets = 4
-    /// Arrivals waiting their turn. A burst past this drops its oldest:
-    /// the globe shows what is arriving now, not a backlog.
-    static let maxWaiting = 8
-    /// Arrivals are let onto the globe at most this often, so a burst
-    /// reads as a stream rather than a flash.
-    static let spacing: TimeInterval = 0.7
     /// A star travels from its author to its target over this long,
     static let travel: TimeInterval = 2.0
     /// its faint trail fades this long after it lands,
@@ -190,49 +186,86 @@ enum GlobeArcs {
         let landing: Double
     }
 
-    /// Everything live on the globe, and what is waiting to go on.
+    /// Everything live on the globe. Every arrival flies on the next frame:
+    /// there is no queue, only the line cap (Logen, 10/15).
     struct Board {
         private(set) var lines: [Line] = []
+        /// Arrived since the last frame: let on, all of them, at the next.
         private(set) var waiting: [Arrival] = []
-        private var seen: [String] = []
-        private var lastRelease: TimeInterval = -.infinity
+        private var seen: Set<String> = []
+        private var seenOrder: [String] = []
+        /// Ids remembered to drop a note another relay sends again.
+        static let seenCap = 4_096
 
         var isIdle: Bool { lines.isEmpty && waiting.isEmpty }
 
-        /// Queues a note; one already seen (another relay sent it too) is
-        /// skipped. Past the waiting cap the oldest of the widest feed goes,
-        /// so a busy Global never pushes out a note from someone you follow.
+        /// Busy enough that the globe draws at full frame rate.
+        var isBusy: Bool { lines.count + waiting.count >= GlobeArcs.busyLines }
+
+        /// Takes a note in; one already seen (another relay sent it too) is
+        /// skipped. Between two frames at most a cap's worth wait, the
+        /// widest feed's oldest going first, so a busy Global never pushes
+        /// out a note from someone you follow.
         mutating func add(_ arrival: Arrival) {
-            guard !seen.contains(arrival.id) else { return }
-            seen.append(arrival.id)
-            if seen.count > 256 { seen.removeFirst(seen.count - 256) }
+            guard seen.insert(arrival.id).inserted else { return }
+            seenOrder.append(arrival.id)
+            if seenOrder.count > Self.seenCap {
+                let old = seenOrder.count - Self.seenCap
+                for id in seenOrder[..<old] { seen.remove(id) }
+                seenOrder.removeFirst(old)
+            }
             waiting.append(arrival)
-            while waiting.count > GlobeArcs.maxWaiting, let widest = waiting.map(\.ring).max(),
-                  let i = waiting.firstIndex(where: { $0.ring == widest }) {
+            if waiting.count > GlobeArcs.maxLines, let widest = waiting.map(\.ring).max(),
+               let i = waiting.firstIndex(where: { $0.ring == widest }) {
                 waiting.remove(at: i)
             }
         }
 
-        /// Lets the next note on when its turn comes and drops what has faded.
-        /// Returns the note let on, if any.
+        /// Lets every waiting note on and drops what has faded. Returns the
+        /// notes let on.
         @discardableResult
-        mutating func step(now: TimeInterval, me: String) -> Arrival? {
+        mutating func step(now: TimeInterval, me: String) -> [Arrival] {
             lines.removeAll { GlobeArcs.isGone($0, at: now) }
-            guard !waiting.isEmpty, now - lastRelease >= GlobeArcs.spacing else { return nil }
-            let next = waiting.removeFirst()
-            lastRelease = now
-            // Aimed at no one: it flies into you, where your relay is.
-            for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
-                lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
-                                  ring: next.ring, born: now, zap: next.zap, strength: next.strength, sort: next.sort))
+            guard !waiting.isEmpty else { return [] }
+            let released = waiting
+            waiting = []
+            for next in released {
+                // Aimed at no one: it flies into you, where your relay is.
+                for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
+                    lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
+                                      ring: next.ring, born: now, zap: next.zap, strength: next.strength, sort: next.sort))
+                }
             }
-            // Over the cap: the oldest still-standing lines start their fade now.
-            var standing = lines.filter { $0.retired == nil }.count
-            for i in lines.indices where standing > GlobeArcs.maxLines && lines[i].retired == nil {
-                lines[i].retired = now
-                standing -= 1
+            retireOverCap(now: now)
+            return released
+        }
+
+        /// Over the cap, the widest feed's oldest standing lines start their
+        /// fade now: Global gives way first, then Discover, then your follows.
+        private mutating func retireOverCap(now: TimeInterval) {
+            var over = lines.lazy.filter { $0.retired == nil }.count - GlobeArcs.maxLines
+            guard over > 0 else { return }
+            for ring in GlobeArcs.Ring.allCases.reversed() {
+                for i in lines.indices where over > 0 && lines[i].retired == nil && lines[i].ring == ring {
+                    lines[i].retired = now
+                    over -= 1
+                }
+                if over == 0 { return }
             }
-            return next
+        }
+
+        /// Whose pictures to show: the ends of the newest lines, up to
+        /// `limit` people. A storm's hundreds of lines keep their stars;
+        /// only the freshest get faces.
+        func faceKeys(limit: Int, except center: String) -> [String] {
+            var keys: [String] = []
+            for line in lines.reversed() where line.retired == nil {
+                for key in [line.from, line.to] where key != center && !keys.contains(key) {
+                    guard keys.count < limit else { return keys }
+                    keys.append(key)
+                }
+            }
+            return keys
         }
 
         mutating func clear() {

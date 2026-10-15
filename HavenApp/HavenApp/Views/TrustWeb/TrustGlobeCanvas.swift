@@ -58,6 +58,9 @@ struct TrustGlobeCanvas: View {
 
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
+    #if DEBUG
+    @State private var probe = GlobeStormProbe()
+    #endif
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
     @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
@@ -109,19 +112,36 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            // Full rate only under a finger (a drag, its flick, a pinch).
-            // Drift, settling and arcs at 30 fps: the idle globe was the heat.
+            // Full rate only under a finger (a drag, its flick, a pinch) or
+            // in a storm of arrivals. Drift, settling and a few arcs at 30 fps:
+            // the idle globe was the heat.
             TimelineView(.animation(minimumInterval: scene.fullRate || pinchActive ? nil : 1 / GlobeScene.slowRate,
                                     paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
-                    scene.tick(now: timeline.date.timeIntervalSinceReferenceDate)
+                    let now = timeline.date.timeIntervalSinceReferenceDate
+                    #if DEBUG
+                    probe.frame(at: now, lines: { scene.arcsInFlight }) {
+                        scene.tick(now: now)
+                        scene.draw(in: &context, size: size, accent: .orange, name: name)
+                    }
+                    #else
+                    scene.tick(now: now)
                     scene.draw(in: &context, size: size, accent: .orange, name: name)
+                    #endif
                 } symbols: {
                     ForEach(scene.faceKeys, id: \.self) { key in
                         avatar(key, GlobeScene.pictureSize).tag(key)
                     }
                 }
             }
+            #if DEBUG
+            .overlay(alignment: .topLeading) {
+                if liveArcs && liveArcsOn {
+                    GlobeStormReadout(perMinute: arrivals.perMinute, inFlight: scene.arcsInFlight)
+                        .padding(8)
+                }
+            }
+            #endif
             .contentShape(Rectangle())
             .gesture(drag(in: geo.size).simultaneously(with: magnify(in: geo.size)))
             .simultaneousGesture(taps(in: geo.size))

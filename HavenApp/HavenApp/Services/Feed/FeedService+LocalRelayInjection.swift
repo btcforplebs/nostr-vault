@@ -73,6 +73,8 @@ extension FeedService {
     /// Parses an external relay message and injects the event into the local relay.
     /// Called on `processingQueue` — must be thread-safe.
     nonisolated func handleExternalEventInjection(_ msg: String) {
+        // The WOT globe's live arrivals (Global included) never go in your relay.
+        if GlobeArcs.isGlobeMessage(msg) { return }
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               json.count >= 3,
