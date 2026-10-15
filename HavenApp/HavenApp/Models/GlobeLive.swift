@@ -15,7 +15,7 @@ extension GlobeArcs {
     }
 
     /// Which sorts fly. All on unless switched off.
-    struct Show: Equatable {
+    struct Show: Hashable {
         var notes = true
         var replies = true
         var reposts = true
@@ -31,6 +31,15 @@ extension GlobeArcs {
             case .zap: zaps
             }
         }
+
+        /// The kinds to ask relays for by author or for you: notes and
+        /// replies are both kind 1 (and 1111), so either keeps them.
+        var noteKinds: [Int] {
+            (notes || replies ? GlobeArcs.kinds : []) + (reactions ? [GlobeArcs.reactionKind] : [])
+        }
+
+        /// The wide REQ's kinds: the notes' and, with Reposts on, reposts.
+        var wideKinds: [Int] { noteKinds + (reposts ? GlobeArcs.repostKinds : []) }
     }
 
     /// NIP-25 reactions (likes, emoji).

@@ -67,7 +67,9 @@ final class GlobeArrivalStream: ObservableObject {
     /// Opens the connections for the feeds in `rings`; returns the token
     /// that stops them.
     @discardableResult
-    func start(me: String, rings: Set<GlobeArcs.Ring> = Set(GlobeArcs.Ring.allCases)) -> Int {
+    /// A sort switched off in My Web isn't asked for at all (`show`).
+    func start(me: String, rings: Set<GlobeArcs.Ring> = Set(GlobeArcs.Ring.allCases),
+               show: GlobeArcs.Show = .init()) -> Int {
         stop()
         generation += 1
         guard !rings.isEmpty else { return generation }
@@ -82,7 +84,7 @@ final class GlobeArrivalStream: ObservableObject {
         let feed = FeedService.shared
         let relay = RelayProcessManager.shared
         let people = Self.people(feed, me: me)
-        openWide(feed, me: me, rings: rings, people: people)
+        openWide(feed, me: me, rings: rings, people: people, show: show)
         guard rings.contains(.following) else { return generation }
         watch = Publishers.CombineLatest4(feed.$feedMode, feed.$mediaFeedMode, relay.$isRunning, relay.$isBooting)
             .receive(on: DispatchQueue.main)
@@ -93,7 +95,7 @@ final class GlobeArrivalStream: ObservableObject {
                 return carriesFollows && feed.localInboxURL != nil ? .feed : .own(inbox: feed.localInboxURL)
             }
             .removeDuplicates()
-            .sink { [weak self] source in self?.open(source, me: me) }
+            .sink { [weak self] source in self?.open(source, me: me, show: show) }
         return generation
     }
 
@@ -120,13 +122,13 @@ final class GlobeArrivalStream: ObservableObject {
         clients = []
     }
 
-    private func open(_ source: Source, me: String) {
+    private func open(_ source: Source, me: String, show: GlobeArcs.Show) {
         closeSource()
         let feed = FeedService.shared
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         switch source {
         case .feed: watchFeed(feed, me: me, blocked: blocked)
-        case .own(let inbox): ask(feed, inbox: inbox, me: me, blocked: blocked)
+        case .own(let inbox): ask(feed, inbox: inbox, me: me, blocked: blocked, kinds: show.noteKinds)
         }
     }
 
@@ -177,8 +179,10 @@ final class GlobeArrivalStream: ObservableObject {
     /// is up, which keeps strangers out; when it isn't, from the read relays,
     /// where anyone can tag you, so only your web's come through, the same
     /// as Global.
-    private func ask(_ feed: FeedService, inbox: URL?, me: String, blocked: Set<String>) {
-        let note: [String: Any] = ["kinds": GlobeArcs.kinds + [GlobeArcs.reactionKind], "since": Int(Date().timeIntervalSince1970)]
+    private func ask(_ feed: FeedService, inbox: URL?, me: String, blocked: Set<String>, kinds: [Int]) {
+        // An empty kinds list would match everything on some relays.
+        guard !kinds.isEmpty else { return }
+        let note: [String: Any] = ["kinds": kinds, "since": Int(Date().timeIntervalSince1970)]
         let toMe = note.merging(["#p": [me]]) { $1 }
         let authors = Array(Set(feed.followedPubkeys).union([me])).sorted()
         let byAuthors = stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
@@ -219,23 +223,26 @@ final class GlobeArrivalStream: ObservableObject {
     /// made), and the Discover and Global feeds when they're on. Global keeps
     /// to your web, as the Global feed does, unless that is set to Everyone.
     private func openWide(_ feed: FeedService, me: String, rings: Set<GlobeArcs.Ring>,
-                          people: (follows: Set<String>, discover: [String])) {
+                          people: (follows: Set<String>, discover: [String]), show: GlobeArcs.Show) {
         let since = Int(Date().timeIntervalSince1970)
-        let all = GlobeArcs.kinds + GlobeArcs.repostKinds + [GlobeArcs.reactionKind]
+        let all = show.wideKinds
         func byAuthors(_ authors: [String], kinds: [Int]) -> [[String: Any]] {
-            stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
+            guard !kinds.isEmpty else { return [] }
+            return stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
                 ["kinds": kinds, "since": since, "authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]
             }
         }
         var filters: [[String: Any]] = []
-        if rings.contains(.following) { filters += byAuthors(people.follows.sorted(), kinds: GlobeArcs.repostKinds) }
+        if rings.contains(.following), show.reposts {
+            filters += byAuthors(people.follows.sorted(), kinds: GlobeArcs.repostKinds)
+        }
         if rings.contains(.discover) { filters += byAuthors(people.discover, kinds: all) }
-        if rings.contains(.global) { filters.append(["kinds": all, "since": since]) }
-        guard !filters.isEmpty else { return }
+        if rings.contains(.global), !all.isEmpty { filters.append(["kinds": all, "since": since]) }
         // Zap receipts carry the LNURL server's key, not the zapper's, so
         // authors can't pick them out: one small filter for all of them, and
         // each is sorted to its feed by the zapper inside it.
-        filters.append(["kinds": [GlobeArcs.zapKind], "since": since])
+        if show.zaps { filters.append(["kinds": [GlobeArcs.zapKind], "since": since]) }
+        guard !filters.isEmpty else { return }
         let discover = Set(people.discover)
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let trusted = rings.contains(.global) ? feed.globalTrustSet() : nil

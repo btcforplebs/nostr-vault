@@ -70,6 +70,25 @@ final class GlobeLiveTests: XCTestCase {
         XCTAssertFalse(show.allows(.reaction))
     }
 
+    func testASortSwitchedOffIsNotAskedFor() {
+        var show = GlobeArcs.Show()
+        XCTAssertEqual(show.noteKinds, [1, 1111, 7])
+        XCTAssertEqual(show.wideKinds, [1, 1111, 7, 6, 16])
+        show.reactions = false
+        show.reposts = false
+        XCTAssertEqual(show.noteKinds, [1, 1111])
+        XCTAssertEqual(show.wideKinds, [1, 1111])
+        // Notes and replies share kind 1: either keeps it.
+        show.notes = false
+        XCTAssertEqual(show.noteKinds, [1, 1111])
+        show.replies = false
+        XCTAssertEqual(show.noteKinds, [])
+        show.reposts = true
+        XCTAssertEqual(show.wideKinds, [6, 16])
+        // A different set of switches is a different REQ.
+        XCTAssertNotEqual(show, GlobeArcs.Show())
+    }
+
     func testABiggerZapStrikesHarder() {
         let strengths = [0, 21, 1_000, 21_000, 100_000, 10_000_000].map { GlobeArcs.zapStrength(sats: $0) }
         XCTAssertEqual(strengths, strengths.sorted())
