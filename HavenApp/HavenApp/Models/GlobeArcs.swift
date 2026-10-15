@@ -74,11 +74,22 @@ enum GlobeArcs {
         let author: String
         let targets: [String]
         var ring: Ring = .following
+        /// A zap: drawn as a lightning bolt, not a star (`GlobeZaps.swift`).
+        var zap = false
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
     /// without the author. nil for anything that isn't a fresh note or repost.
-    static func arrival(_ event: [String: Any], now: Date = Date()) -> Arrival? {
+    /// A zap receipt flies only with `verifyZap`, which checks the zap
+    /// request's signature (`NostrEventVerifier` in the app); without it,
+    /// a zap draws nothing.
+    static func arrival(_ event: [String: Any], now: Date = Date(),
+                        verifyZap: ((String) -> Bool)? = nil) -> Arrival? {
+        // A zap receipt is signed by the LNURL server: the zapper is inside.
+        if event["kind"] as? Int == zapKind {
+            guard let verifyZap else { return nil }
+            return zap(event, now: now, verify: verifyZap)
+        }
         guard let kind = event["kind"] as? Int, kinds.contains(kind) || repostKinds.contains(kind),
               let id = event["id"] as? String, isKey(id),
               let author = event["pubkey"] as? String, isKey(author) else { return nil }
@@ -136,7 +147,7 @@ enum GlobeArcs {
         follows.contains(author) ? .following : discover.contains(author) ? .discover : .global
     }
 
-    private static func isKey(_ s: String) -> Bool {
+    static func isKey(_ s: String) -> Bool {
         s.utf8.count == 64 && s.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) || (65...70).contains($0) }
     }
 
@@ -152,6 +163,8 @@ enum GlobeArcs {
         let born: TimeInterval
         /// Set when a newer line needs the room: it fades from here.
         var retired: TimeInterval?
+        /// A zap's bolt, with its own quick timeline (`boltStage`).
+        var zap = false
     }
 
     /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
@@ -199,7 +212,7 @@ enum GlobeArcs {
             // Aimed at no one: it flies into you, where your relay is.
             for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
                 lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
-                                  ring: next.ring, born: now))
+                                  ring: next.ring, born: now, zap: next.zap))
             }
             // Over the cap: the oldest still-standing lines start their fade now.
             var standing = lines.filter { $0.retired == nil }.count
@@ -217,6 +230,7 @@ enum GlobeArcs {
     }
 
     static func stage(of line: Line, at now: TimeInterval, reduceMotion: Bool = false) -> Stage {
+        if line.zap { return boltStage(of: line, at: now, reduceMotion: reduceMotion) }
         let age = max(0, now - line.born)
         let head = reduceMotion ? 1 : ease(min(1, age / travel))
         let landed = reduceMotion ? age : age - travel
@@ -238,7 +252,7 @@ enum GlobeArcs {
     /// draw that instant twice, which dropped every star before it flew.
     static func isGone(_ line: Line, at now: TimeInterval) -> Bool {
         if let retired = line.retired, now - retired >= retireFade { return true }
-        return now - line.born >= travel + hold + fade
+        return now - line.born >= (line.zap ? boltLife : travel + hold + fade)
     }
 
     /// True once the star has reached its target.

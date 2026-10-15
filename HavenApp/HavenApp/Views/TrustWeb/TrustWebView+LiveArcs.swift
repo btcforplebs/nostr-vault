@@ -244,12 +244,18 @@ final class GlobeArrivalStream: ObservableObject {
         if rings.contains(.discover) { filters += byAuthors(people.discover, kinds: all) }
         if rings.contains(.global) { filters.append(["kinds": all, "since": since]) }
         guard !filters.isEmpty else { return }
+        // Zap receipts carry the LNURL server's key, not the zapper's, so
+        // authors can't pick them out: one small filter for all of them, and
+        // each is sorted to its feed by the zapper inside it.
+        filters.append(["kinds": [GlobeArcs.zapKind], "since": since])
         let discover = Set(people.discover)
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let trusted = rings.contains(.global) ? feed.globalTrustSet() : nil
         for url in feed.externalRelayURLs.prefix(rings.contains(.global) ? 2 : 3) {
             let wide = Self.subscribe(url, filters: filters) { [weak self] event in
-                guard var arrival = GlobeArcs.arrival(event), !blocked.contains(arrival.author) else { return }
+                // A zap's request must be signed by its zapper.
+                guard var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)),
+                      !blocked.contains(arrival.author) else { return }
                 arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: discover)
                 guard rings.contains(arrival.ring),
                       arrival.ring != .global || (trusted?.contains(arrival.author) ?? true) else { return }
@@ -308,7 +314,10 @@ final class GlobeArrivalStream: ObservableObject {
             let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
             // Every feed in turn, so each shell's stars show.
             let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
-            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: targets, ring: ring))
+            // Every third one a zap, to someone: a bolt rather than a star.
+            let zap = n % 3 == 0
+            let zapped = targets.first ?? people.filter { $0 != author }.randomElement()!
+            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: zap ? [zapped] : targets, ring: ring, zap: zap))
             try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
         }
     }
@@ -361,12 +370,20 @@ struct LiveArcsPainter {
         var tails: [(Path, Double, Double)] = []
         var stars: [(CGPoint, Double)] = []
         var landings: [(CGPoint, GlobeArcs.Stage)] = []
+        var bolts: [GlobeBoltPainter.Shape] = []
         for line in board.lines {
             let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
             guard stage.alpha > 0.01 else { continue }
             let a = place(line.from, line.ring), b = place(line.to, nil)
             func at(_ t: Double) -> GlobeScene.Projected? {
                 project(GlobeArcs.point(from: a, to: b, at: t, facing: facing))
+            }
+            // A zap is a lightning bolt, not a star.
+            if line.zap {
+                if let bolt = GlobeBoltPainter.shape(of: line, stage: stage, now: now, reduceMotion: reduceMotion, at: at) {
+                    bolts.append(bolt)
+                }
+                continue
             }
             // The faint trail it leaves, gone soon after it lands.
             if stage.trail > 0.01 {
@@ -426,6 +443,8 @@ struct LiveArcsPainter {
                            with: .color(color.opacity(0.5 * (1 - stage.landing) * stage.alpha)), lineWidth: 1)
             light(&context, at: p, r: 1.8 * unit, opacity: 0.7 * stage.alpha * breath)
         }
+        // Bolts over the stars: a zap should flash brighter than a note.
+        GlobeBoltPainter.draw(bolts, in: &context, unit: unit)
     }
 
     /// Pictures at the ends of the lines, easing in as a star sets out and
