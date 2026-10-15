@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens
 
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
+import com.nostrvault.data.model.SearchFilter
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,7 +51,8 @@ fun SearchScreen(
     val results by viewModel.results.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val resultFilter by viewModel.resultFilter.collectAsState()
-    val searchScope by viewModel.searchScope.collectAsState()
+    val searchFilter by viewModel.filter.collectAsState()
+    val foundAnything by viewModel.foundAnything.collectAsState()
     val sources by viewModel.sources.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val trendingHashtags by viewModel.trendingHashtags.collectAsState()
@@ -169,25 +171,10 @@ fun SearchScreen(
 
                     Spacer(Modifier.weight(1f))
 
-                    // Trailing pill: search scope (Relay / Global)
+                    // Trailing pill: who/when filter. Search is always Global;
+                    // relay-only search is in the Vault (iOS #642).
                     GlassPill {
-                        SearchScope.entries.forEach { scope ->
-                            val isSelected = scope == searchScope
-                            IconButton(
-                                onClick = { viewModel.setSearchScope(scope) },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = when (scope) {
-                                        SearchScope.RELAY -> NostrVaultIcons.Relay
-                                        SearchScope.GLOBAL -> NostrVaultIcons.Globe
-                                    },
-                                    contentDescription = scope.displayName,
-                                    tint = if (isSelected) colors.primary else SecondaryText,
-                                    modifier = Modifier.size(25.dp),
-                                )
-                            }
-                        }
+                        SearchFilterMenu(filter = searchFilter, onChange = viewModel::setFilter, accent = colors.primary)
                     }
                 }
 
@@ -223,6 +210,7 @@ fun SearchScreen(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                SearchFilterCaption(filter = searchFilter, onClear = { viewModel.setFilter(SearchFilter.ALL) }, accent = colors.primary)
             }
         },
         floatingActionButton = {
@@ -504,7 +492,15 @@ fun SearchScreen(
                                 .fillMaxWidth()
                                 .padding(32.dp),
                         ) {
-                            Text("No results found", color = SecondaryText, fontSize = 15.sp)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("No results found", color = SecondaryText, fontSize = 15.sp)
+                                // The filter, not the query, is what emptied the screen.
+                                if (searchFilter.isActive && foundAnything) {
+                                    TextButton(onClick = { viewModel.setFilter(SearchFilter.ALL) }) {
+                                        Text("Clear filter", color = colors.primary, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
                         }
                     }
                 } else if (!isSearching && !showUsers && !showNotes && !showHashtags && !showLinks) {

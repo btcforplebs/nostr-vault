@@ -10,6 +10,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
+import com.nostrvault.data.model.SearchFilter
 import com.nostrvault.data.model.SearchSourceState
 import com.nostrvault.service.GlobalSearchSession
 import com.nostrvault.relay.HavenBridge
@@ -38,9 +39,11 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * Search screen. Relay scope walks the phone's own store; Global fans out to
- * the phone, the Mac relay and the NIP-50 search relays at once and streams
- * results in as each source answers (see [GlobalSearchSession]).
+ * Search screen. Always Global: the phone's own store, the Mac relay and the
+ * NIP-50 search relays at once, streamed in as each source answers (see
+ * [GlobalSearchSession]). The who/when [SearchFilter] narrows what is shown on
+ * the device and never re-runs the search (iOS #642). The relay-only search
+ * lives in the Vault now.
  */
 
 enum class SearchResultFilter(val displayName: String) {
@@ -49,11 +52,6 @@ enum class SearchResultFilter(val displayName: String) {
     NOTES("Notes"),
     HASHTAGS("Hashtags"),
     LINKS("Links"),
-}
-
-enum class SearchScope(val displayName: String) {
-    RELAY("Relay"),
-    GLOBAL("Global"),
 }
 
 @HiltViewModel
@@ -91,8 +89,13 @@ class SearchViewModel @Inject constructor(
     private val _resultFilter = MutableStateFlow(SearchResultFilter.ALL)
     val resultFilter = _resultFilter.asStateFlow()
 
-    private val _searchScope = MutableStateFlow(SearchScope.RELAY)
-    val searchScope = _searchScope.asStateFlow()
+    /** Who and when: applied on the device to what the search returned. */
+    private val _filter = MutableStateFlow(SearchFilter.ALL)
+    val filter = _filter.asStateFlow()
+
+    /** The search found something, before blocks and the filter: "No results" then offers Clear filter. */
+    private val _foundAnything = MutableStateFlow(false)
+    val foundAnything = _foundAnything.asStateFlow()
 
     /** Per-source status for the running (or last) search: phone, Mac relay, each search relay. */
     private val _sources = MutableStateFlow<List<SearchSourceState>>(emptyList())
@@ -312,29 +315,19 @@ class SearchViewModel @Inject constructor(
         _resultFilter.value = filter
     }
 
-    fun setSearchScope(scope: SearchScope) {
-        if (_searchScope.value == scope) return
-        _searchScope.value = scope
-        searchJob?.cancel()
-        stopSession()
-        val trimmed = _query.value.trim()
-        if (trimmed.length >= 2) {
-            performSearch(_query.value)
-        } else {
-            _results.value = GlobalSearchResults()
-            _isSearching.value = false
-        }
+    /** Narrows what is shown, at once: the results on hand are filtered again, the relays aren't asked. */
+    fun setFilter(filter: SearchFilter) {
+        if (_filter.value == filter) return
+        _filter.value = filter
+        if (session != null) _results.value = visible(rawResults)
     }
 
-    /**
-     * Starts a session for [query] and streams its state into the screen.
-     * Relay = the phone's own store; Global = phone + Mac relay + search relays.
-     */
+    /** Starts a session for [query] (phone + Mac relay + search relays) and streams its state into the screen. */
     private fun performSearch(query: String) {
         stopSession()
         val started = nostrService.startSearch(
             query = query,
-            includeGlobal = _searchScope.value == SearchScope.GLOBAL,
+            includeGlobal = true,
             follows = feedService.followedPubkeys.value.toSet(),
             wot = feedService.webOfTrustForRanking(),
         )
@@ -358,10 +351,13 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun visible(results: GlobalSearchResults): GlobalSearchResults =
-        SearchBlockFilter.apply(results, feedService.blockedHexForActiveAccount()) {
+    private fun visible(results: GlobalSearchResults): GlobalSearchResults {
+        _foundAnything.value = results.profiles.isNotEmpty() || results.notes.isNotEmpty()
+        val unblocked = SearchBlockFilter.apply(results, feedService.blockedHexForActiveAccount()) {
             feedService.findNote(it)?.pubkey
         }
+        return _filter.value.apply(unblocked, nostrService.activeHexPubkey, feedService.followedPubkeys.value.toSet())
+    }
 
     /** Note authors from outside the follow graph have no cached profile yet. */
     private fun requestMissingAuthors(notes: List<FeedNote>) {
@@ -375,6 +371,7 @@ class SearchViewModel @Inject constructor(
         session?.cancel()
         session = null
         rawResults = GlobalSearchResults()
+        _foundAnything.value = false
         _sources.value = emptyList()
     }
 
