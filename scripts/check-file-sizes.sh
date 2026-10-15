@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Enforces the file-size rule in AGENTS.md: a .swift or .kt file, or a .js /
-# .jsx / .mjs file under web-vault/, over 1,000 lines must not grow, and no such
+# .jsx / .mjs file under web-vault/ or web-relay/, over 1,000 lines must not grow, and no such
 # file may grow past 1,000 lines. Built and vendored web files are skipped:
 # node_modules/, dist/, *.min.js and Go's wasm_exec.js.
 # Usage: scripts/check-file-sizes.sh <base-ref>   (default: origin/master)
@@ -15,7 +15,7 @@ lines() { if git cat-file -e "$1" 2>/dev/null; then git show "$1" | wc -l | tr -
 while IFS= read -r f; do
   case "$f" in
     *.swift|*.kt) ;;
-    web-vault/*.js|web-vault/*.jsx|web-vault/*.mjs)
+    web-vault/*.js|web-vault/*.jsx|web-vault/*.mjs|web-relay/*.js|web-relay/*.jsx|web-relay/*.mjs)
       case "$f" in */node_modules/*|*/dist/*|*.min.js|*/wasm_exec.js) continue ;; esac ;;
     *) continue ;;
   esac
