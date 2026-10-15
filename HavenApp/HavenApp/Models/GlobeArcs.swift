@@ -219,6 +219,9 @@ enum GlobeArcs {
     /// The biggest REQ message sent to one relay. Relays cap a message's
     /// size (relay.btcforplebs.com at 128 KB) and refuse a bigger one whole,
     /// with a NOTICE: every filter in it is lost, not just the extra ones.
+    /// Tied to `GlobeArrivalStream.authorsPerFilter` (500): one 500-author
+    /// filter is about 33.5 KB, so this fits one or two. A single filter
+    /// past about 890 authors goes over again and is sent on its own.
     static let maxRequestBytes = 60_000
 
     /// `filters` as REQ messages, each with its own subscription id and
