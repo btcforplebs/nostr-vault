@@ -392,13 +392,30 @@ class LocalNotificationService @Inject constructor(
      * Every kind, as on iOS: a pill while the app is open, a system
      * notification otherwise. A pill that goes unread is filed ([fileMissed]).
      */
-    private fun deliver(banner: InAppBanner) =
+    private fun deliver(banner: InAppBanner) {
+        if (gatheredForReturn(banner)) return
         InAppBannerBus.deliver(banner, { appInForeground }) {
             // Gated when the marker came in, maybe while the app was open: a
             // DM let through as a pill with phone notifications off must not
             // reach the tray because the app left while it decrypted.
             if (mayGoToTray(it)) post(it.id, it.title, it.text, it.type, it.author, it.npub, it.pictureUrl, it.carried)
         }
+    }
+
+    /**
+     * Just back from the background: one bottom pill and one sound for
+     * everything, not a top pill and a sound each ([ReturnPillManager]). True
+     * when [banner] was gathered there and needs no pill of its own.
+     */
+    private fun gatheredForReturn(banner: InAppBanner): Boolean {
+        if (!appInForeground) return false
+        val createdAt = NotificationNote.decode(banner.carried[NotificationNote.EVENT_EXTRA])?.createdAt?.times(1000)
+        return when (ReturnPillManager.gather(banner.type, banner.id, createdAt)) {
+            ReturnPillManager.Gathered.FIRST -> { playPillSound(banner); true }
+            ReturnPillManager.Gathered.ADDED -> true
+            ReturnPillManager.Gathered.NO -> false
+        }
+    }
 
     /** The gate again, as a tray entry: phone notifications and the kind's switch, the app behind. */
     private fun mayGoToTray(banner: InAppBanner): Boolean {
@@ -554,7 +571,9 @@ class LocalNotificationService @Inject constructor(
                 if (!appInForeground) return@withLock postFolded(id, npub, folded)
                 val (title, text) = foldedFollowersText(folded.count)
                 pillFolded[id] = folded
-                InAppBannerBus.deliver(InAppBanner(id, title, text, "followers", "", npub, folded = folded), { appInForeground }) {
+                val banner = InAppBanner(id, title, text, "followers", "", npub, folded = folded)
+                if (gatheredForReturn(banner)) return@withLock
+                InAppBannerBus.deliver(banner, { appInForeground }) {
                     scope.launch { foldedFollowLock.withLock { postFolded(id, npub, folded) } }
                 }
                 // The alert waiting in the tray still counts too, or its
