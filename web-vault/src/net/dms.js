@@ -137,6 +137,7 @@ export function resetMessages(pubkey) {
   state = { pubkey, messages: new Map(), note: "", trouble: "", more: 0, loaded: false }
   opened.clear()
   waiting.clear()
+  refusals.clear()
   changed()
 }
 
@@ -150,68 +151,88 @@ export const openLimit = session => (session?.method === "nip46" ? OPEN_LIMIT.ni
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`
 const setMore = () => { state = { ...state, more: waiting.size } }
 
+/** A message the signer refused this many times is settled like one that isn't the user's (a junk wrap no one can
+ *  open would otherwise be asked about first on every load, ahead of real messages). Try again resets the count. */
+export const MAX_REFUSALS = 2
+const refusals = new Map() // id -> times the signer refused it
+
+// The banner's wording is ours alone: a signer's error text never reaches the screen (a hostile bunker could write
+// "re-authorise at https://…" into it).
+export const TROUBLE_REFUSED = n => `Your signer didn't open ${plural(n, "message")}.`
+export const TROUBLE_UNREACHABLE = "Your signer didn't answer, or its relay couldn't be reached."
+
 /**
- * Open `evs` newest first, a batch at a time, telling the screens after each batch, at most `limit` of them; the rest
- * wait for "Open more". -> { added, asked }
+ * Open `evs` a batch at a time, telling the screens after each batch, at most `limit` of them: never-asked ones first,
+ * newest first, then ones the signer refused before. The rest wait for "Open more". -> { added, asked } (`asked`: how
+ * many the signer was actually asked about)
  * - not the user's (null): stays in `opened`, never asked again;
- * - the signer refused: freed, so a later load or Try again asks again, and `trouble` says how many and why;
+ * - the signer refused: freed to be asked again, until MAX_REFUSALS, then settled; `trouble` says how many;
  * - the signer stopped answering (a bunker that's offline: each request would wait out its timeout): the run stops,
- *   `trouble` says why, and what wasn't opened is asked again next time.
+ *   `trouble` says so, and what wasn't asked is asked next time.
  */
 async function take(evs, crypto, me, { limit = Infinity } = {}) {
-  let added = 0, refused = 0, why = ""
+  let added = 0, refused = 0, asked = 0
   const fresh = []
   for (const ev of evs) {
     if (!ev?.id || opened.has(ev.id) || state.pubkey !== me) continue
     if (!fresh.some(f => f.id === ev.id)) fresh.push(ev)
   }
-  fresh.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+  const tried = ev => (refusals.get(ev.id) ?? 0) > 0
+  fresh.sort((a, b) => tried(a) - tried(b) || (b.created_at ?? 0) - (a.created_at ?? 0))
   const now = fresh.slice(0, limit)
   const moreBefore = state.more
   for (const ev of fresh.slice(limit)) waiting.set(ev.id, ev)
   for (const ev of now) { waiting.delete(ev.id); opened.add(ev.id) }
   setMore()
-  const done = () => {
-    if (refused) state = { ...state, trouble: `Your signer didn't open ${plural(refused, "message")}${why ? ` (${why})` : ""}.` }
-    setMore()
-    if (refused || state.more !== moreBefore) changed()
-    return { added, asked: now.length }
-  }
   for (let i = 0; i < now.length && state.pubkey === me; i += OPEN_BATCH) {
     const batch = now.slice(i, i + OPEN_BATCH)
+    asked += batch.length
     const got = await Promise.all(batch.map(ev => (ev.kind === 4 ? openLegacy(ev, crypto, me) : unwrap(ev, crypto, me)).catch(e => ({ failed: e }))))
-    if (state.pubkey !== me) return { added, asked: now.length }
-    let n = 0, lost = null
+    if (state.pubkey !== me) return { added, asked }
+    let n = 0, lost = false
     got.forEach((m, j) => {
-      if (m?.id) { state.messages.set(m.id, m); n++; return }
+      const id = batch[j].id
+      if (m?.id) { state.messages.set(m.id, m); refusals.delete(id); n++; return }
       if (!m?.failed) return // not the user's: stays in `opened`
-      opened.delete(batch[j].id)
-      if (m.failed.unreachable) lost = m.failed
-      else { refused++; why = String(m.failed.message ?? m.failed) }
+      if (m.failed.unreachable) { opened.delete(id); lost = true; return }
+      refused++
+      const times = (refusals.get(id) ?? 0) + 1
+      refusals.set(id, times)
+      if (times < MAX_REFUSALS) opened.delete(id) // asked again later; at MAX_REFUSALS it stays settled
     })
     added += n
     if (lost) {
       for (const ev of now.slice(i + OPEN_BATCH)) opened.delete(ev.id)
-      state = { ...state, trouble: String(lost.message ?? lost) }
+      state = { ...state, trouble: TROUBLE_UNREACHABLE }
       setMore(); changed()
-      return { added, asked: now.length }
+      return { added, asked }
     }
     if (n) { state = { ...state }; changed() }
   }
-  return done()
+  if (refused) state = { ...state, trouble: TROUBLE_REFUSED(refused) }
+  setMore()
+  if (refused || state.more !== moreBefore) changed()
+  return { added, asked }
 }
 
-/** Try again: everything not open is asked again, the ones the signer refused included. */
+/** Try again: everything not open is asked again, the ones the signer refused (even twice) included. */
 export function forgetUnopened() {
   for (const id of opened) if (!state.messages.has(id)) opened.delete(id)
+  refusals.clear()
   if (state.trouble) { state = { ...state, trouble: "" }; changed() }
 }
 
+// Loading and "Open more" run one at a time, so the same message is never asked about twice at once.
+let running = Promise.resolve()
+const oneAtATime = f => { const r = running.then(f, f); running = r.catch(() => {}); return r }
+
 /** "Open more": the next `limit` waiting messages, newest first. */
-export async function openMore({ session, signer }, { crypto } = {}) {
-  const c = crypto ?? cryptoFor(session, { signer })
-  if (c.reason || !waiting.size) return { added: 0, asked: 0 }
-  return take([...waiting.values()], c, session.pubkey, { limit: openLimit(session) })
+export function openMore({ session, signer }, { crypto } = {}) {
+  return oneAtATime(async () => {
+    const c = crypto ?? cryptoFor(session, { signer })
+    if (c.reason || !waiting.size || state.pubkey !== session.pubkey) return { added: 0, asked: 0 }
+    return take([...waiting.values()], c, session.pubkey, { limit: openLimit(session) })
+  })
 }
 
 /**
@@ -219,7 +240,11 @@ export async function openMore({ session, signer }, { crypto } = {}) {
  * With a signer that can't decrypt, nothing is opened and `note` says why. `query`, `crypto`, `chat` are for tests.
  * -> { stored } wraps newly kept in Haven
  */
-export async function loadMessages({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat } = {}) {
+export function loadMessages(ctx, relays, opts = {}) {
+  return oneAtATime(() => load(ctx, relays, opts))
+}
+
+async function load({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat } = {}) {
   const me = session.pubkey
   if (state.pubkey !== me) resetMessages(me)
   if (state.trouble) { state = { ...state, trouble: "" }; changed() }

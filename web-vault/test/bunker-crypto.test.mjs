@@ -7,7 +7,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
 import { wrap } from "../src/signer/nip46.js"
-import { cryptoFor, rumorFor, wrapFor, unwrap, loadMessages, getMessages, resetMessages, sendMessage, forgetUnopened, openMore, watchMessages, OPEN_BATCH, OPEN_LIMIT, LIVE_PER_MINUTE } from "../src/net/dms.js"
+import { cryptoFor, rumorFor, wrapFor, unwrap, loadMessages, getMessages, resetMessages, sendMessage, forgetUnopened, openMore, watchMessages, OPEN_BATCH, OPEN_LIMIT, LIVE_PER_MINUTE, MAX_REFUSALS, TROUBLE_UNREACHABLE } from "../src/net/dms.js"
 import { decrypterFor, privateBlocks, loadBlocks, getBlocks } from "../src/net/blocks.js"
 
 const A = generateSecretKey(), B = generateSecretKey()
@@ -43,6 +43,7 @@ function fakeChat(seed = []) {
   }
 }
 const offline = async () => { throw new Error("network used") }
+const slow = (chat, ms = 50) => ({ ...chat, query: async f => { await new Promise(r => setTimeout(r, ms)); return chat.query(f) } })
 
 test("a bunker signer offers its nip44 and nip04 as Messages' crypto", async () => {
   const signer = wrap(Promise.resolve(fakeBunker(A)))
@@ -146,7 +147,7 @@ test("a bunker that refuses at first (\"no permission\") loses nothing: the run 
   resetMessages(pk(A))
   await loadMessages(ctx, [], { chat, query: offline })
   assert.equal(getMessages().messages.size, 2, "the first batch of 8 was refused, the last 2 opened")
-  assert.match(getMessages().trouble, /didn't open 8 messages \(no permission\)/)
+  assert.equal(getMessages().trouble, "Your signer didn't open 8 messages.")
   // Try again (MessagesScreen retry): forget what isn't open, load again.
   forgetUnopened()
   assert.equal(getMessages().trouble, "")
@@ -215,4 +216,97 @@ test("the bunker's silence and an unreachable relay are marked; its own errors a
   await assert.rejects(noRelay.crypto.encrypt(pk(B), "x"), e => e.unreachable === true && /Couldn't reach/.test(e.message))
   const refusing = wrap(Promise.resolve({ ...fakeBunker(A), nip44Decrypt: () => Promise.reject(new Error("no")) }))
   await assert.rejects(refusing.crypto.decrypt(pk(B), "x"), e => !e.unreachable && e.message === "no")
+})
+
+// A gift wrap nobody can open: right shape, addressed to A, content that isn't NIP-44 for anyone.
+const junkWrap = (at, i) => finalizeEvent({ kind: 1059, created_at: at, tags: [["p", pk(A)]], content: `junk-${i}-` + "A".repeat(80) }, generateSecretKey())
+
+test("forty junk wraps newer than five real messages don't starve the inbox: real ones open, junk is settled after two refusals", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const real = []
+  for (let i = 0; i < 5; i++) real.push(await wrapFor(rumorFor(pk(B), pk(A), `real${i}`, 1000 + i), benv, pk(A)))
+  const top = Math.max(...real.map(w => w.created_at))
+  const junk = Array.from({ length: OPEN_LIMIT.nip46 }, (_, i) => junkWrap(top + 1000 + i, i))
+  const calls = []
+  const ctx = { vault: {}, session: bunkerSession(A), signer: wrap(Promise.resolve(fakeBunker(A, calls))) }
+  const chat = fakeChat([...junk, ...real])
+  const realOpen = () => [...getMessages().messages.values()].filter(m => m.content.startsWith("real")).length
+  resetMessages(pk(A))
+  const perLoad = []
+  for (let load = 1; load <= 4; load++) {
+    const before = calls.length
+    await loadMessages(ctx, [], { chat, query: offline })
+    perLoad.push({ load, real: realOpen(), asks: calls.length - before })
+  }
+  assert.equal(perLoad[1].real, 5, `all real messages open by the second load: ${JSON.stringify(perLoad)}`)
+  assert.equal(perLoad[3].asks, 0, `junk refused ${MAX_REFUSALS} times is settled, so a later load asks nothing: ${JSON.stringify(perLoad)}`)
+  assert.equal(getMessages().trouble, "", "nothing new was refused on the last load")
+  // Try again resets the counts: the junk is asked about once more.
+  forgetUnopened()
+  const before = calls.length
+  await loadMessages(ctx, [], { chat, query: offline })
+  assert.ok(calls.length - before >= OPEN_LIMIT.nip46 - 5, "Try again asked about the junk again")
+  // ...with its counts reset, so the next load asks once more before it settles again.
+  const before2 = calls.length
+  await loadMessages(ctx, [], { chat, query: offline })
+  assert.ok(calls.length - before2 > 0, "counts were reset by Try again")
+})
+
+test("a signer's own error text never reaches the banner", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const w = await wrapFor(rumorFor(pk(B), pk(A), "hi"), benv, pk(A))
+  const hostile = "Re-authorise at https://evil.example/login"
+  const refusing = { decrypt: async () => { throw new Error(hostile) }, decrypt04: async () => { throw new Error(hostile) }, encrypt: async () => "x" }
+  resetMessages(pk(A))
+  await loadMessages({ vault: {}, session: bunkerSession(A) }, [], { crypto: refusing, chat: fakeChat([w]), query: offline })
+  assert.equal(getMessages().trouble, "Your signer didn't open 1 message.")
+  // Even an error dressed up as our "unreachable" one only ever shows our sentence.
+  const dressed = { ...refusing, decrypt: async () => { throw Object.assign(new Error(hostile), { unreachable: true }) } }
+  resetMessages(pk(A))
+  await loadMessages({ vault: {}, session: bunkerSession(A) }, [], { crypto: dressed, chat: fakeChat([w]), query: offline })
+  assert.equal(getMessages().trouble, TROUBLE_UNREACHABLE)
+  assert.ok(!getMessages().trouble.includes("evil"))
+})
+
+test("Open more while a load is running waits for it: no message is asked about twice", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const wraps = []
+  for (let i = 0; i < OPEN_LIMIT.nip46 + 10; i++) wraps.push(await wrapFor(rumorFor(pk(B), pk(A), `m${i}`, 1000 + i), benv, pk(A)))
+  const bunker = fakeBunker(A)
+  const real = bunker.nip44Decrypt
+  const askedFor = new Map()
+  bunker.nip44Decrypt = async (peer, c) => { askedFor.set(c, (askedFor.get(c) ?? 0) + 1); await new Promise(r => setTimeout(r, 1)); return real(peer, c) }
+  const ctx = { vault: {}, session: bunkerSession(A), signer: wrap(Promise.resolve(bunker)) }
+  resetMessages(pk(A))
+  // Seed "more" with a first load, then start another load and Open more together.
+  await loadMessages(ctx, [], { chat: fakeChat(wraps), query: offline })
+  askedFor.clear()
+  forgetUnopened()
+  const order = []
+  await Promise.all([
+    // A slow /chat read: without the guard, Open more would run (and finish) inside the load.
+    loadMessages(ctx, [], { chat: slow(fakeChat(wraps)), query: offline }).then(() => order.push("load")),
+    openMore(ctx).then(() => order.push("more")),
+  ])
+  assert.deepEqual(order, ["load", "more"], "Open more waits for the running load")
+  assert.ok([...askedFor.values()].every(n => n === 1), "each ciphertext asked about once")
+  assert.equal(getMessages().messages.size, wraps.length)
+})
+
+test("the load's budget is charged only for messages actually asked about", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const local = [], net = []
+  for (let i = 0; i < 10; i++) local.push(await wrapFor(rumorFor(pk(B), pk(A), `l${i}`, 1000 + i), benv, pk(A)))
+  for (let i = 0; i < OPEN_LIMIT.nip46; i++) net.push(await wrapFor(rumorFor(pk(B), pk(A), `n${i}`, 2000 + i), benv, pk(A)))
+  const bunker = fakeBunker(A)
+  const real = bunker.nip44Decrypt
+  let silent = true
+  bunker.nip44Decrypt = (...a) => (silent ? new Promise(() => {}) : real(...a))
+  const ctx = { vault: {}, session: bunkerSession(A), signer: wrap(Promise.resolve(bunker), { ms: 30 }) }
+  resetMessages(pk(A))
+  // /chat: the bunker goes silent on the first batch, so only 8 of its 10 were asked; the network then gets the rest of
+  // the ceiling, not a budget spent on the 2 never asked.
+  const query = async (r, f) => { if (f.kinds[0] === 1059) { silent = false; return net } return [] }
+  await loadMessages(ctx, ["wss://r.example"], { chat: fakeChat(local), query })
+  assert.equal(getMessages().messages.size, OPEN_LIMIT.nip46 - OPEN_BATCH)
 })
