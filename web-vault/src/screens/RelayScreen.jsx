@@ -2,6 +2,7 @@
 // start/stop, seed and owner status). The panel finds its elements by id, so this screen stays mounted.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
+import { signedInWith } from "../session.js"
 import { bytesToHex } from "nostr-tools/utils"
 import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
 import { loadRelayIdentity } from "../../../web-relay/src/fips/node.js"
@@ -72,7 +73,7 @@ export function RelayScreen({ ctx, log }) {
       </section>
       <section class="card">
         <h3>Account</h3>
-        <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
+        <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… {signedInWith(session.method)}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
         <button onClick={ctx.signOut}>Sign out</button>
       </section>
     </main>

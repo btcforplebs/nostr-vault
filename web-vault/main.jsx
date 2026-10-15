@@ -150,7 +150,7 @@ function App() {
       {route === "accounts" && <AccountsScreen ctx={ctx} />}
       {route === "wallet" && <WalletScreen />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
-      {(route === "feed" || route === "profile" && !other) && <PostButton />}
+      {(route === "feed" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       <TabBar route={other ? "search" : route === "dm" ? "messages" : route === "accounts" || route === "wallet" ? "settings" : route} pubkey={session.pubkey} />
       <AuthPrompt />
     </div>

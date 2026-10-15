@@ -3,6 +3,7 @@
 // (#/accounts) and Who Can Reach You the Relay screen's FIPS panel (#/relay).
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
+import { signedInWith } from "../session.js"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
@@ -63,7 +64,7 @@ function Index({ ctx }) {
         <div class="card settings-about">
           <div class="settings-app">Nostr Vault</div>
           <div class="muted small">Version {APP_VERSION} (web)</div>
-          <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 16)}… with {session.method === "nip07" ? "a browser extension" : "a bunker (NIP-46)"}.</div>
+          <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 16)}… {signedInWith(session.method)}.</div>
           <hr />
           <div class="settings-support">Support &amp; Abuse Reporting</div>
           <p class="muted small">To report objectionable content or abusive users, contact the developer via Nostr</p>
