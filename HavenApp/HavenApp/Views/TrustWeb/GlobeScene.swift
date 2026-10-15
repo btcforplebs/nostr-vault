@@ -638,7 +638,7 @@ final class GlobeScene: ObservableObject {
     /// Warm amber for the threads, lighter than the glow behind them.
     private static let threadColor = Color(red: 1, green: 0.66, blue: 0.3)
     /// How bright Everyone's few faces past your follows are drawn.
-    private static let dimFace = 0.55
+    private static let dimFace = 0.8
     /// Star brightness is rounded to this many steps, so each kind of star
     /// is a handful of fills however many people there are. Fine enough that
     /// the faint haze keeps its front-to-back depth.
@@ -810,7 +810,7 @@ final class GlobeScene: ObservableObject {
             if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
-                drawn.append((key, p, Self.hazeColor, 14 - 4 * layerDim, dimLayer))
+                drawn.append((key, p, Self.hazeColor, 14 - 2 * layerDim, dimLayer))
             } else {
                 drawn.append((key, p, accent, 15, false))
             }

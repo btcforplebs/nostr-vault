@@ -422,9 +422,11 @@ enum TrustMap {
     /// Faces on the outer shell when Close or Further out is picked; faces
     /// that would cover another stay stars (`seatFaces`).
     static let layerFaceCount = 100
-    /// With Everyone picked, a few small, dim faces past your follows, so the
-    /// shells aren't faceless; your follows' faces still lead.
-    static let everyoneFaceCount = 15
+    /// With Everyone picked, smaller, dimmer faces past your follows, half on
+    /// the Close (Discover) shell and half further out, so every ring has
+    /// pictures; your follows' faces still lead. Was 15 (27 on the globe),
+    /// which left the Discover ring with one or two (Logen, 10/15).
+    static let everyoneFaceCount = 36
 
     /// Faces past your follows for `layer`; Following has none.
     static func faceCount(for layer: Layer) -> Int {
@@ -438,7 +440,7 @@ enum TrustMap {
     /// Profiles fetched for `layer`'s faces: a wide pool, since many people
     /// further out have no picture.
     static func faceCandidateCount(for layer: Layer) -> Int {
-        layer == .everyone ? everyoneFaceCount * 8 : layerFaceCandidateCount
+        layer == .everyone ? everyoneFaceCount * 6 : layerFaceCandidateCount
     }
 
     /// The people past your follows a layer shows as faces, most vouched
@@ -453,7 +455,17 @@ enum TrustMap {
         let people = layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches).web
         let ranked = people.map { (vouches: vouches?[$0] ?? 0, rank: fraction($0, from: 16), key: $0) }
             .sorted { ($1.vouches, $0.rank, $0.key) < ($0.vouches, $1.rank, $1.key) }
-        return Array(ranked.prefix(count).map(\.key))
+        // Everyone spans both outer shells: most vouched first would put
+        // every face on the Close one. Take the two in turn instead.
+        guard layer == .everyone, vouches != nil else { return Array(ranked.prefix(count).map(\.key)) }
+        let close = ranked.filter { $0.vouches >= closeVouches }.map(\.key)
+        let further = ranked.filter { $0.vouches < closeVouches }.map(\.key)
+        var picked: [String] = []
+        var (i, j) = (0, 0)
+        while picked.count < count, i < close.count || j < further.count {
+            if i < close.count, i <= j || j >= further.count { picked.append(close[i]); i += 1 } else { picked.append(further[j]); j += 1 }
+        }
+        return picked
     }
 
     /// People in each layer, never counting you. `web` is the relay's whole
