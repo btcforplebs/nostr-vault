@@ -59,8 +59,6 @@ struct TrustGlobeCanvas: View {
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
-    /// The bar's 3D / 2D switch. Only the WOT tab's globe lies flat.
-    @AppStorage(GlobeViewSetting.flatKey) private var flatOn = false
     @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
     @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
@@ -122,13 +120,10 @@ struct TrustGlobeCanvas: View {
             .gesture(drag(in: geo.size).simultaneously(with: magnify(in: geo.size)))
             .simultaneousGesture(taps(in: geo.size))
             .accessibilityElement()
-            .accessibilityLabel(Text(liveArcs && flatOn ? "Web of Trust map" : "Web of Trust globe"))
+            .accessibilityLabel(Text("Web of Trust globe"))
             .accessibilityValue(Text(summary))
             .accessibilityHint(Text("Swipe up or down to zoom. Actions go to a person."))
             .accessibilityAdjustableAction { direction in
-                if scene.isFlat {
-                    return scene.pinchFlat(by: direction == .increment ? 1.3 : 1 / 1.3, in: geo.size)
-                }
                 let range = GlobeCamera.zoomRange
                 let step = direction == .increment ? 0.3 : -0.3
                 scene.camera.zoomTarget = min(range.upperBound, max(range.lowerBound, scene.camera.zoomTarget + step))
@@ -143,7 +138,6 @@ struct TrustGlobeCanvas: View {
             }
         }
         .onAppear {
-            scene.setFlat(liveArcs && flatOn)
             onScreen = true
             scene.camera.keepsDrifting = keepsDrifting
             scene.showsNames = showsNames
@@ -173,7 +167,6 @@ struct TrustGlobeCanvas: View {
             scene.trace(to: key, through: focusBridges)
         }
         .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
-        .onChange(of: flatOn) { _, on in scene.setFlat(liveArcs && on) }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -215,7 +208,7 @@ struct TrustGlobeCanvas: View {
         return on
     }
 
-    /// Turns the globe under the finger; on the flat view, moves the disc.
+    /// Turns the globe under the finger.
     private func drag(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
@@ -223,12 +216,7 @@ struct TrustGlobeCanvas: View {
                 let now = Date.timeIntervalSinceReferenceDate
                 let dx = value.translation.width - lastDrag.width, dy = value.translation.height - lastDrag.height
                 scene.camera.dragging = true
-                if scene.isFlat {
-                    scene.pan(dx: dx, dy: dy, in: size)
-                    scene.camera.touch(at: now)
-                } else {
-                    scene.camera.drag(dx: dx, dy: dy, at: now)
-                }
+                scene.camera.drag(dx: dx, dy: dy, at: now)
                 lastDrag = value.translation
                 scene.wake()
             }
@@ -236,28 +224,18 @@ struct TrustGlobeCanvas: View {
                 scene.camera.dragging = false
                 lastDrag = .zero
                 let now = Date.timeIntervalSinceReferenceDate
-                // A flick spins the globe, or carries the map on and slows.
-                if scene.isFlat {
-                    scene.camera.touch(at: now)
-                    scene.fling(vx: value.velocity.width, vy: value.velocity.height)
-                } else {
-                    scene.camera.flick(vx: value.velocity.width, vy: value.velocity.height,
-                                       at: now, reduceMotion: reduceMotion)
-                }
+                // A flick spins the globe.
+                scene.camera.flick(vx: value.velocity.width, vy: value.velocity.height,
+                                   at: now, reduceMotion: reduceMotion)
                 scene.wake()
             }
     }
 
-    /// Zooms the globe's camera, or on the flat view the map itself.
+    /// Zooms the globe's camera.
     private func magnify(in size: CGSize) -> some Gesture {
         MagnifyGesture()
             .updating($pinchActive) { _, active, _ in active = true }
             .onChanged { value in
-                if scene.isFlat {
-                    scene.pinchFlat(by: Double(value.magnification / pinchBase), in: size)
-                    pinchBase = value.magnification
-                    return
-                }
                 let range = GlobeCamera.zoomRange
                 let zoom = scene.camera.zoomTarget * Double(value.magnification / pinchBase)
                 scene.camera.zoomTarget = min(range.upperBound, max(range.lowerBound, zoom))
