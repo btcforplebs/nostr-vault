@@ -66,40 +66,17 @@ extension TrustWebView {
                     .animation(Motion.fade, value: cardPath)
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 8) {
-                // The profile page's words: Unfollow says what the tap does.
-                cardButton(following ? "Unfollow" : "Follow", icon: following ? "person.badge.minus" : "person.badge.plus",
-                           filled: !following) {
-                    FollowActions.toggle(pubkey, name: name(pubkey), isFollowing: following)
+            if opensInWOTTab {
+                // A profile's or a post's globe is a look, not a place to
+                // explore: one button takes them to the WOT tab (Logen, 10/15).
+                cardButton("Open in WoT", icon: "WoTTab", asset: true, filled: true) {
+                    WOTOpenRequest.shared.open(pubkey)
                 }
-                cardButton("Profile", icon: "person.crop.circle", filled: false) { profilePubkey = pubkey }
-                // Already in the middle: there's no further web to move to.
-                if pubkey != centerKey {
-                    cardButton("See their web", short: "Their web", icon: "WoTTab", asset: true, filled: false) {
-                        closeCard()
-                        center(on: pubkey)
-                    }
-                    .accessibilityHint(Text("Puts \(name(pubkey)) in the middle, with the people they follow around them"))
-                }
-                Menu {
-                    Button { messagePubkey = pubkey } label: { Label("Message", systemImage: "message") }
-                    Divider()
-                    Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
-                        Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 40, height: 38)
-                        .background(Capsule().fill(Color.white.opacity(0.08)))
-                        .contentShape(Capsule())
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("More"))
+                .accessibilityHint(Text("Shows \(name(pubkey))'s web in the WOT tab"))
+                .padding(.leading, 4)
+            } else {
+                cardActions(pubkey, following: following, blocked: blocked)
             }
-            .padding(.leading, 4)
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
@@ -109,6 +86,53 @@ extension TrustWebView {
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
+    }
+
+    /// iOS has a WOT tab to send them to; the Mac's globe explores in place.
+    private var opensInWOTTab: Bool {
+        #if os(iOS)
+        !isWOTTab
+        #else
+        false
+        #endif
+    }
+
+    /// Follow, Profile, See their web, and Message and Block behind "…".
+    private func cardActions(_ pubkey: String, following: Bool, blocked: Bool) -> some View {
+        HStack(spacing: 8) {
+            // The profile page's words: Unfollow says what the tap does.
+            cardButton(following ? "Unfollow" : "Follow", icon: following ? "person.badge.minus" : "person.badge.plus",
+                       filled: !following) {
+                FollowActions.toggle(pubkey, name: name(pubkey), isFollowing: following)
+            }
+            cardButton("Profile", icon: "person.crop.circle", filled: false) { profilePubkey = pubkey }
+            // Already in the middle: there's no further web to move to.
+            if pubkey != centerKey {
+                cardButton("See their web", short: "Their web", icon: "WoTTab", asset: true, filled: false) {
+                    closeCard()
+                    center(on: pubkey)
+                }
+                .accessibilityHint(Text("Puts \(name(pubkey)) in the middle, with the people they follow around them"))
+            }
+            Menu {
+                Button { messagePubkey = pubkey } label: { Label("Message", systemImage: "message") }
+                Divider()
+                Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
+                    Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 40, height: 38)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .contentShape(Capsule())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("More"))
+        }
+        .padding(.leading, 4)
     }
 
     /// `short` stands in for `title` when a narrow phone has no room for it.

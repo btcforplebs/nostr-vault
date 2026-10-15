@@ -39,6 +39,9 @@ struct TrustWebView: View {
         var exhausted: Bool
         /// 3-hop routes once "look deeper" ran; nil before.
         var chains: [TrustMap.Chain]?
+        /// Someone else's own web past their follows, once their follows'
+        /// lists came back: the haze, Close shell and faces of their globe.
+        var wider: TrustMap.HazeLayout?
 
         init(center: String, ring: [String], listFound: Bool = true, path: TrustPath) {
             self.center = center
@@ -73,6 +76,12 @@ struct TrustWebView: View {
     /// follows worth a profile fetch (`TrustMap.layerFaceCandidates`).
     @State var layerCandidates: [TrustMap.Layer: [String]] = [:]
     @State var layerPictureLoader: Task<Void, Never>?
+    /// Whose wider web is on its way, for the loading pill.
+    @State var widerLoading: Set<String> = []
+    @State var widerPictureLoader: Task<Void, Never>?
+    /// The picked layer as a lit set (`TrustMap.layerLit`), for someone
+    /// else's globe: it still lights your part of their web.
+    @State var layerLit: Set<String>?
     /// Your wider web, for the search's "In your web" tag.
     @State var web: Set<String> = []
     /// How many of your follows follow each person past them (the relay's
@@ -193,6 +202,7 @@ struct TrustWebView: View {
             myFollows = Set(follows)
             frames[me] = Frame(center: me, ring: follows, path: path)
             if !isWOTTab, author != me { openCard(author) }
+            if isWOTTab { openRequested() }
             nostrService.fetchMissingProfiles(
                 for: [me, author] + TrustMap.spread(frames[me]?.bridges ?? [], count: TrustGlobeCanvas.maxFaces))
             prepareFaces(me)
@@ -217,11 +227,18 @@ struct TrustWebView: View {
             contactsLoading = $0 || !$1
         }
         .onChange(of: query) { _, text in searchRelays(text) }
-        .onChange(of: layer) { _, _ in prepareLayerFaces() }
+        .onChange(of: layer) { _, _ in
+            prepareLayerFaces()
+            relightLayer()
+        }
+        .onChange(of: centerKey) { _, key in if key != me { prepareWiderFaces() } }
         .onReceive(TrustPathService.webChanged) {
             // Every globe, not just the tab's: a follow from a post's or a
             // profile's globe folds them into your web the same way.
             foldInFollows()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in
+            if isWOTTab { openRequested() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wotTabReselected)) { _ in
             guard isWOTTab else { return }

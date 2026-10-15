@@ -128,6 +128,9 @@ struct ContentView: View {
             pendingProfilePubkey = nil
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
+        .modifier(OpensWOTTab(selectedTab: $selectedTab, showingDMInbox: $showingDMInbox,
+                              pendingMentionNoteId: $pendingMentionNoteId,
+                              pendingProfilePubkey: $pendingProfilePubkey))
         .modifier(IPadCommandKeys(selectedTab: $selectedTab))
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
@@ -212,6 +215,24 @@ private struct IPadCommandKeys: ViewModifier {
 /// Every notification that lands in the Vault tab's relay half switches to it. One modifier
 /// rather than a receiver each keeps ContentView's chain inside the type
 /// checker's budget.
+/// "Open in WoT" from a profile's or a post's globe: the WOT tab, with the
+/// sheets this view opened put away (the globe and profiles close themselves).
+private struct OpensWOTTab: ViewModifier {
+    @Binding var selectedTab: Int
+    @Binding var showingDMInbox: Bool
+    @Binding var pendingMentionNoteId: IdentifiableString?
+    @Binding var pendingProfilePubkey: IdentifiableString?
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in
+            selectedTab = 3
+            showingDMInbox = false
+            pendingMentionNoteId = nil
+            pendingProfilePubkey = nil
+        }
+    }
+}
+
 private struct OpensRelayTab: ViewModifier {
     @Binding var selectedTab: Int
     @ObservedObject private var tutorialCenter = TutorialCenter.shared

@@ -9,7 +9,8 @@ extension TrustWebView {
     var ringFaces: [String] {
         guard let frame, let candidates = faceCandidates[frame.center] else { return [] }
         // With a filter on, only people it lights get a face.
-        return TrustMap.pickFaces(candidates, renders: { filterLit?.contains($0) != false && pictureRenders($0) },
+        let lit = globeLit
+        return TrustMap.pickFaces(candidates, renders: { lit?.contains($0) != false && pictureRenders($0) },
                                   count: TrustGlobeCanvas.faces(TrustMap.ringFaceCount))
     }
 
@@ -26,6 +27,59 @@ extension TrustWebView {
         guard let candidates = layerCandidates[layer] else { return [] }
         return TrustMap.pickFaces(candidates, renders: pictureRenders,
                                   count: TrustGlobeCanvas.faces(TrustMap.faceCount(for: layer)))
+    }
+
+    /// Faces past the core's follows: yours by layer on your globe, or on
+    /// someone else's the most vouched of their web.
+    var outerFaces: [String] {
+        guard let frame, frame.center != me else { return layerFaces }
+        guard let candidates = frame.wider?.layerFaces[.everyone] else { return [] }
+        let lit = globeLit
+        return TrustMap.pickFaces(candidates, renders: { lit?.contains($0) != false && pictureRenders($0) },
+                                  count: TrustGlobeCanvas.faces(TrustMap.everyoneFaceCount))
+    }
+
+    /// The haze is the core's own web: yours, or theirs once it loaded.
+    var globeHaze: [String] { centerKey == me ? haze : frame?.wider?.shell ?? [] }
+    var globeCloseHaze: Set<String> { centerKey == me ? closeHaze : frame?.wider?.close ?? [] }
+
+    /// Who the globe leaves lit. Yours: the filters (the layer dims by shell).
+    /// Someone else's: the filters and the layer, both still about you, so
+    /// you can see who in their web is close to you.
+    var globeLit: Set<String>? {
+        guard centerKey != me, let layerLit else { return filterLit }
+        return filterLit.map { $0.intersection(layerLit) } ?? layerLit
+    }
+
+    func relightLayer() {
+        let lit = TrustMap.layerLit(layer, me: me, follows: myFollows, web: web, vouches: vouches)
+        if lit != layerLit { layerLit = lit }
+    }
+
+    /// Their wider web, mapped from their follows' lists, as their globe's
+    /// haze and outer faces.
+    func loadWider(_ pubkey: String) {
+        guard pubkey != me, let ring = frames[pubkey]?.ring, !ring.isEmpty, frames[pubkey]?.wider == nil,
+              widerLoading.insert(pubkey).inserted else { return }
+        let inner = Set(ring).union([pubkey, me, author])
+        Task {
+            let found = await TrustPathService.shared.widerWeb(of: pubkey, ring: ring)
+            guard let found else { widerLoading.remove(pubkey); return }
+            let layout = await Task.detached(priority: .userInitiated) {
+                TrustMap.hazeLayout(graph: found.graph, inner: inner, vouches: found.vouches, me: pubkey,
+                                    follows: Set(ring), wot: true, faceScale: TrustGlobeCanvas.faceScale)
+            }.value
+            frames[pubkey]?.wider = layout
+            widerLoading.remove(pubkey)
+            if centerKey == pubkey { prepareWiderFaces() }
+        }
+    }
+
+    func prepareWiderFaces() {
+        guard let candidates = frame?.wider?.layerFaces[.everyone], !candidates.isEmpty else { return }
+        nostrService.fetchMissingProfiles(for: candidates)
+        widerPictureLoader?.cancel()
+        widerPictureLoader = loadPictures(candidates)
     }
 
     // MARK: - Filters
@@ -128,8 +182,11 @@ extension TrustWebView {
     }
 
     func prepareFaces(_ key: String, forceProfiles: Bool = false) {
-        guard key == author, let ring = frames[key]?.ring else { return }
-        let candidates = TrustMap.faceCandidates(ring, engagement: key == me ? engagement : [:],
+        // Your own globe opened for someone else keeps to the paths to them;
+        // anyone else in the middle gets faces, as you do on your own.
+        guard key == author || key != me, let ring = frames[key]?.ring else { return }
+        // Who you talk with first, on anyone's globe.
+        let candidates = TrustMap.faceCandidates(ring, engagement: engagement,
                                                  count: TrustGlobeCanvas.faces(TrustMap.faceCandidateCount))
         faceCandidates[key] = candidates
         nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
@@ -209,6 +266,7 @@ extension TrustWebView {
                 web = graph
                 vouches = counts
                 if !TrustMap.layers(hasVouches: counts != nil).contains(layer) { layer = .everyone }
+                relightLayer()
             }
         }
     }

@@ -35,3 +35,23 @@ struct WOTTabView: View {
         TrustPath.resolve(author: me, me: me, follows: [], trustGraph: [], contactLists: [])
     }
 }
+
+/// The person "Open in WoT" asked for, kept until the WOT tab's globe takes
+/// them: the tab may not be built yet when the request is made.
+@MainActor
+final class WOTOpenRequest {
+    static let shared = WOTOpenRequest()
+    private var pending: String?
+
+    /// Closes the globe and profiles it came from and shows the WOT tab
+    /// with `pubkey` in the middle.
+    func open(_ pubkey: String) {
+        pending = pubkey
+        NotificationCenter.default.post(name: .havenOpenWOT, object: pubkey)
+    }
+
+    func take() -> String? {
+        defer { pending = nil }
+        return pending
+    }
+}

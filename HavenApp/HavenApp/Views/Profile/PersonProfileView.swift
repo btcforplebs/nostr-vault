@@ -73,6 +73,11 @@ struct PersonProfileView: View, Equatable {
             shopHeader: { EmptyView() }
         )
         .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
+        // "Open in WoT" from a globe over this profile: a profile in a sheet
+        // closes with it, so the WOT tab shows.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in
+            if !embeddedInNavigation { performDismiss() }
+        }
         // Blocking shuts their shop as you block, and unblocking fetches it
         // again, rather than waiting for the next visit. ProfileContent
         // reveals the shop section as its listings change.

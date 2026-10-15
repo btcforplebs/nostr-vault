@@ -128,6 +128,31 @@ final class TrustPathService {
         return follows
     }
 
+    private var widerWebs: [String: (graph: Set<String>, vouches: [String: Int])] = [:]
+
+    /// Someone else's wider web (`TrustMap.widerWeb`): the follow lists of a
+    /// sample of their follows, from the first feed relay and the follow-list
+    /// index at once. Cached for the session; nil when no list came back.
+    func widerWeb(of center: String, ring: [String]) async -> (graph: Set<String>, vouches: [String: Int])? {
+        if let cached = widerWebs[center] { return cached }
+        let sample = TrustMap.widerSample(ring)
+        guard !sample.isEmpty else { return nil }
+        // Kept short per filter: some relays refuse a long authors list.
+        let filters: [[String: Any]] = stride(from: 0, to: sample.count, by: 40).map {
+            let chunk = Array(sample[$0..<min($0 + 40, sample.count)])
+            return ["kinds": [3], "authors": chunk, "limit": chunk.count]
+        }
+        var relays = Array(Self.publicRelays().prefix(1))
+        if let index = URL(string: "wss://purplepag.es"), !relays.contains(index) { relays.append(index) }
+        let lists = await ZapHistoryService.query(filters: filters, relays: relays, timeout: 10)
+        let found = await Task.detached(priority: .userInitiated) {
+            TrustMap.widerWeb(of: center, ring: sample, lists: lists)
+        }.value
+        guard !found.graph.isEmpty else { return nil }
+        widerWebs[center] = found
+        return found
+    }
+
     /// Where one person's follow list is asked for, all at once: the first
     /// feed relays, the index relays, and the relays they publish to. The
     /// feed relays alone missed lists the profile page found: by default
