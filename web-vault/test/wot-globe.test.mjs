@@ -25,7 +25,8 @@ test("each person sits on their layer's shell, in the same place every time, you
 test("faces past your follows: the most linked, taken in turn from both outer shells, added even when capped out", () => {
   const f = Array.from({ length: 12 }, (_, i) => hex("1", i))
   const linkers = new Map([[hex("2", 1), f.slice(0, 12)], [hex("2", 2), f.slice(0, 11)], [hex("3", 1), f.slice(0, 3)], [hex("3", 2), f.slice(0, 1)]])
-  const web = { me: ME, follows: f, extended: [hex("2", 2), hex("2", 1)], further: [hex("3", 2), hex("3", 1)], linkers,
+  // Most linked first, as buildWeb hands them over.
+  const web = { me: ME, follows: f, extended: [hex("2", 1), hex("2", 2)], further: [hex("3", 1), hex("3", 2)], linkers,
     layerOf: pk => (pk[0] === "2" ? "extended" : pk[0] === "3" ? "further" : null) }
   assert.deepEqual(outerFaces(web), [hex("2", 1), hex("3", 1), hex("2", 2), hex("3", 2)])
   assert.deepEqual(outerFaces(web, 3), [hex("2", 1), hex("3", 1), hex("2", 2)])

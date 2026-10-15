@@ -19,12 +19,10 @@ export function direction(pubkey) {
 /** Faces past your follows, as the iPhone's Everyone layer: this many, picked from six times as many candidates
  *  because many people further out have no picture. */
 export const OUTER_FACES = 36, OUTER_CANDIDATES = OUTER_FACES * 6
-/** Candidates for those faces: most linked first, taken in turn from the extended network and further out so both
- *  outer shells get pictures. */
+/** Candidates for those faces: most linked first (buildWeb and filterWeb keep both lists in that order), taken in turn
+ *  from the extended network and further out so both outer shells get pictures. */
 export function outerFaces(web, count = OUTER_CANDIDATES) {
-  const links = pk => web.linkers.get(pk)?.length ?? 0
-  const byLinks = list => [...list].sort((a, b) => links(b) - links(a) || (a < b ? -1 : 1))
-  const ext = byLinks(web.extended), far = byLinks(web.further), out = []
+  const ext = web.extended.slice(0, count), far = web.further.slice(0, count), out = []
   for (let i = 0; out.length < count && (i < ext.length || i < far.length); i++) {
     if (i < ext.length) out.push(ext[i])
     if (i < far.length && out.length < count) out.push(far[i])
