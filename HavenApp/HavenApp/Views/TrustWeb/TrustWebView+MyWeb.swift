@@ -124,7 +124,7 @@ struct MyWebDashboardView: View {
     let onRebuild: () -> Void
 
     /// Live arrivals: the bar's antenna, and which feeds' notes fly.
-    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
     @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
     @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
@@ -165,6 +165,7 @@ struct MyWebDashboardView: View {
                               detail: "The rest of Global, from the outer haze. The most", isOn: $globalOn)
                         .disabled(!liveArcsOn)
                 }
+                LiveArcsShowSection(liveArcsOn: liveArcsOn)
                 DashboardSection(title: "Upkeep") {
                     DashboardRow(icon: "arrow.clockwise", title: "Rebuild your web",
                                  detail: rebuiltText, state: .info) {

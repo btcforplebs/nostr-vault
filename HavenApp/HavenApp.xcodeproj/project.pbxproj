@@ -756,6 +756,7 @@
 		9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */; };
 		9BE8C11AAA3010457C09D71A /* FeedService+Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B41128CC30843928E849EA /* FeedService+Snapshots.swift */; };
 		9C8CDF4B40EC341168A8772B /* MediaCacheService+LocalFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9F7BB78EA4E5E08C3E2F8D /* MediaCacheService+LocalFiles.swift */; };
+		9D081FC794CB7E767D5905DF /* GlobeLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF3B13B96C33F298EC93D3C /* GlobeLive.swift */; };
 		9D36295ACBCF6AA25D9409B3 /* ProfileNoteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83D457E26F0DF095EFF3FAB /* ProfileNoteList.swift */; };
 		9D582A3BB5F004CBF65A8196 /* FeedService+Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B41128CC30843928E849EA /* FeedService+Snapshots.swift */; };
 		9D74848925393F3A0BA89DBC /* RelayMatrixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */; };
@@ -1014,6 +1015,7 @@
 		D22669E69E79BFD66C100FD4 /* TrustWebView+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45654EB66B99DB44F457EAFE /* TrustWebView+Actions.swift */; };
 		D24112B1D463BCFD13AE0579 /* ProfileFeedLoader+Loading.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE90DEB009D5712F5E377FEE /* ProfileFeedLoader+Loading.swift */; };
 		D25C2A65954161799317E919 /* VaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD60255398375B7A8772D93 /* VaultView.swift */; };
+		D26D1F18CFDB421D03397F2F /* LiveArcsShowSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA807189013CB54E8F5DE56 /* LiveArcsShowSection.swift */; };
 		D2EC7D25006F4EF3BAE01BDB /* FeedDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */; };
 		D345A3970B0C13CF6C96F080 /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A89942B12FE776468EDB8C /* PriceService.swift */; };
 		D3487E06957A30CDE910284C /* NWCService+MakeInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D657C19C2BFB504A4167445B /* NWCService+MakeInvoice.swift */; };
@@ -1182,6 +1184,7 @@
 		EFB38495796C7862479E7A23 /* TrustWebView+WOTTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */; };
 		EFE4EE263128163EF65CD063 /* FillYourVaultCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */; };
 		F00A894E046067CFE613FBCE /* ProfileLoaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFAB741BC14D1DD7D596EA9 /* ProfileLoaders.swift */; };
+		F026AFD6E39A3E289A293E56 /* GlobeLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF3B13B96C33F298EC93D3C /* GlobeLive.swift */; };
 		F0A25A9631B2DA7F4906AB39 /* Ping.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C375F066296CAA325CD86CFE /* Ping.mp3 */; };
 		F0FDE2B37884AA6B6C008AA3 /* FeedService+DeletedNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80146D638D2E00F6CDCFB382 /* FeedService+DeletedNotes.swift */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
@@ -1204,6 +1207,7 @@
 		F3C9E614C2F1210872FA3B7B /* DMService+Conversations.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE3815CD7DB160F1716E43F /* DMService+Conversations.swift */; };
 		F3E90A6EC4B6B74680633AE6 /* TrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */; };
 		F3E972D9F89BEADF1D7CB254 /* FullScreenVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2143A07956457447E78679F7 /* FullScreenVideoPlayer.swift */; };
+		F4175A333FE9BC285E25056C /* LiveArcsShowSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA807189013CB54E8F5DE56 /* LiveArcsShowSection.swift */; };
 		F453242408423CC09490129F /* ImportTourStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA03816123BAFD2424954F9 /* ImportTourStep.swift */; };
 		F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */; };
 		F4CD7E0CC46D4D6C982D1F4B /* NostrIntroStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D6D901711AB80C224DA70D6 /* NostrIntroStep.swift */; };
@@ -1784,6 +1788,7 @@
 		B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayDomainSettingsView.swift; sourceTree = "<group>"; };
 		B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		BA06B5C2547C97F781911EC4 /* CommitOnEndTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitOnEndTextField.swift; sourceTree = "<group>"; };
+		BAA807189013CB54E8F5DE56 /* LiveArcsShowSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveArcsShowSection.swift; sourceTree = "<group>"; };
 		BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FIPSDetectionService.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
 		BCB3C0E4C43D7B5971396CBC /* MediaCacheService+MemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+MemoryCache.swift"; sourceTree = "<group>"; };
@@ -1947,6 +1952,7 @@
 		FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDateGrouping.swift; sourceTree = "<group>"; };
 		FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultTopics.swift; sourceTree = "<group>"; };
 		FF7F829220B15EED46D2CA7D /* DMService+LocalInjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+LocalInjection.swift"; sourceTree = "<group>"; };
+		FFF3B13B96C33F298EC93D3C /* GlobeLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeLive.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -2082,6 +2088,7 @@
 				7FDBFD96B130AC27F03D79C2 /* GlobeBoltPainter.swift */,
 				4E2E0E2740A5B3C348F5DE28 /* GlobeScene.swift */,
 				2CFB0B9F42290F34B8AD6C57 /* GlobeSpace.swift */,
+				BAA807189013CB54E8F5DE56 /* LiveArcsShowSection.swift */,
 				CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */,
 				6D36F3CFEC85EB25E524B13D /* TrustPathText.swift */,
 				B5A945B5727F35AAE72E9985 /* TrustWebSheet.swift */,
@@ -2633,6 +2640,7 @@
 				91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */,
 				D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */,
 				5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */,
+				FFF3B13B96C33F298EC93D3C /* GlobeLive.swift */,
 				E8900A988AADA79F41EC5BA9 /* GlobeZaps.swift */,
 				B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */,
 				E3056CC16711F7E38B7FE86D /* HavenConfig.swift */,
@@ -3442,6 +3450,7 @@
 				5FA1579C568CB14E0DB553D3 /* GlobeArcs.swift in Sources */,
 				C9C99A8E5942468C4B4278E3 /* GlobeBoltPainter.swift in Sources */,
 				F71EB0360DE279D578934433 /* GlobeEdge.swift in Sources */,
+				F026AFD6E39A3E289A293E56 /* GlobeLive.swift in Sources */,
 				C61C638C785450F8CCFDB9B7 /* GlobeScene.swift in Sources */,
 				9EECECFF247D8B9673322479 /* GlobeSpace.swift in Sources */,
 				155D1E12488794887FC080D8 /* GlobeZaps.swift in Sources */,
@@ -3487,6 +3496,7 @@
 				2DD420459ECE57ACDD5E1432 /* LinkPreviewCard.swift in Sources */,
 				0C8D6CA3BC04B268F580C95E /* LinkPreviewService.swift in Sources */,
 				DA168364485DBA9AC9FD8385 /* ListingDraft.swift in Sources */,
+				F4175A333FE9BC285E25056C /* LiveArcsShowSection.swift in Sources */,
 				A36D3F7A908A749F7B34206D /* LiveChat.swift in Sources */,
 				BE62A6B14BFD12B691DE6D3F /* LiveChatService.swift in Sources */,
 				20ACAB0CCDD35997C75B68B4 /* LiveFeedService.swift in Sources */,
@@ -4081,6 +4091,7 @@
 				4FD379CC4F37E7B4B7C2F6B0 /* GlobeArcs.swift in Sources */,
 				4CF7AFF6BEB31CF89D9EA563 /* GlobeBoltPainter.swift in Sources */,
 				9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */,
+				9D081FC794CB7E767D5905DF /* GlobeLive.swift in Sources */,
 				B7D3B0FD8FE59052EA736319 /* GlobeScene.swift in Sources */,
 				342880AF34B3F04FD307BDCB /* GlobeSpace.swift in Sources */,
 				FE7FDEC30CD55938FDAB226A /* GlobeZaps.swift in Sources */,
@@ -4126,6 +4137,7 @@
 				79A7B0E3D32383C1DE4C7C92 /* LinkPreviewCard.swift in Sources */,
 				A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */,
 				9157ACB85192A360E8EFA7E7 /* ListingDraft.swift in Sources */,
+				D26D1F18CFDB421D03397F2F /* LiveArcsShowSection.swift in Sources */,
 				DBE997AB3BEB7BE899BB88A9 /* LiveChat.swift in Sources */,
 				D1D3E12AC752528895DC695F /* LiveChatService.swift in Sources */,
 				81092C0D01D5FA1232A9E3A8 /* LiveFeedService.swift in Sources */,

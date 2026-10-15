@@ -9,20 +9,8 @@ extension TrustWebView {
     var liveArcsButton: some View { LiveArcsToggle() }
 }
 
-/// Whether notes fly across the WOT globe as they reach the relay, and from
-/// which feeds. Kept across launches, like Auto-load. The bar's antenna is
-/// the main switch; the My Web dashboard picks the feeds.
-enum LiveArcsSetting {
-    static let key = "wotLiveArcs"
-
-    /// Each feed's own switch. All three start on.
-    static func key(_ ring: GlobeArcs.Ring) -> String {
-        "wotLiveArcs." + ring.rawValue
-    }
-}
-
 private struct LiveArcsToggle: View {
-    @AppStorage(LiveArcsSetting.key) private var on = false
+    @AppStorage(LiveArcsSetting.key) private var on = LiveArcsSetting.defaultOn
 
     var body: some View {
         IconFilterButton(icon: "antenna.radiowaves.left.and.right", tooltip: "Live arrivals",
@@ -190,7 +178,7 @@ final class GlobeArrivalStream: ObservableObject {
     /// where anyone can tag you, so only your web's come through, the same
     /// as Global.
     private func ask(_ feed: FeedService, inbox: URL?, me: String, blocked: Set<String>) {
-        let note: [String: Any] = ["kinds": GlobeArcs.kinds, "since": Int(Date().timeIntervalSince1970)]
+        let note: [String: Any] = ["kinds": GlobeArcs.kinds + [GlobeArcs.reactionKind], "since": Int(Date().timeIntervalSince1970)]
         let toMe = note.merging(["#p": [me]]) { $1 }
         let authors = Array(Set(feed.followedPubkeys).union([me])).sorted()
         let byAuthors = stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
@@ -233,7 +221,7 @@ final class GlobeArrivalStream: ObservableObject {
     private func openWide(_ feed: FeedService, me: String, rings: Set<GlobeArcs.Ring>,
                           people: (follows: Set<String>, discover: [String])) {
         let since = Int(Date().timeIntervalSince1970)
-        let all = GlobeArcs.kinds + GlobeArcs.repostKinds
+        let all = GlobeArcs.kinds + GlobeArcs.repostKinds + [GlobeArcs.reactionKind]
         func byAuthors(_ authors: [String], kinds: [Int]) -> [[String: Any]] {
             stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
                 ["kinds": kinds, "since": since, "authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]
@@ -315,9 +303,12 @@ final class GlobeArrivalStream: ObservableObject {
             // Every feed in turn, so each shell's stars show.
             let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
             // Every third one a zap, to someone: a bolt rather than a star.
-            let zap = n % 3 == 0
+            // Every fourth a reaction: a smaller star, to one person.
+            let zap = n % 3 == 0, reaction = !zap && n % 4 == 0
             let zapped = targets.first ?? people.filter { $0 != author }.randomElement()!
-            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: zap ? [zapped] : targets, ring: ring, zap: zap))
+            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: zap || reaction ? [zapped] : targets, ring: ring,
+                                           zap: zap, sort: zap ? .zap : reaction ? .reaction : .note,
+                                           strength: GlobeArcs.zapStrength(sats: [21, 1_000, 21_000, 100_000].randomElement()!)))
             try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
         }
     }
@@ -344,6 +335,8 @@ struct LiveArcsPainter {
 
     /// Every arrival is a small white star, like the stars of the globe itself.
     static let starColor = Color.white
+    /// A reaction's star beside a note's.
+    static let reactionSize = 0.6
     /// Points along a drawn line: smooth at full zoom, cheap at ten lines.
     private static let arcSamples = 40
     /// Steps in a star's tail, each a little fainter and thinner than the last.
@@ -368,8 +361,8 @@ struct LiveArcsPainter {
         let breath = reduceMotion ? 1 : 0.82 + 0.18 * sin(now * 2 * .pi / 2.6)
         var trails: [(Path, Double)] = []
         var tails: [(Path, Double, Double)] = []
-        var stars: [(CGPoint, Double)] = []
-        var landings: [(CGPoint, GlobeArcs.Stage)] = []
+        var stars: [(CGPoint, Double, Double)] = []
+        var landings: [(CGPoint, GlobeArcs.Stage, Double)] = []
         var bolts: [GlobeBoltPainter.Shape] = []
         for line in board.lines {
             let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
@@ -395,6 +388,8 @@ struct LiveArcsPainter {
                 }
                 trails.append((path, stage.trail))
             }
+            // A reaction's star, tail and landing are smaller than a note's.
+            let size = line.sort == .reaction ? Self.reactionSize : 1
             // In flight: the star and its short tail, brightest at the star.
             if stage.head < 1, let head = at(stage.head) {
                 // Round the back a star dims smoothly, never switches.
@@ -409,13 +404,13 @@ struct LiveArcsPainter {
                         segment.move(to: last)
                         segment.addLine(to: p.point)
                         let f = Double(step) / Double(Self.tailSteps)
-                        tails.append((segment, f * f * stage.alpha * behind, 0.4 + 1.4 * f))
+                        tails.append((segment, f * f * stage.alpha * behind, (0.4 + 1.4 * f) * size))
                     }
                     last = p.point
                 }
-                stars.append((head.point, stage.alpha * behind))
+                stars.append((head.point, stage.alpha * behind, size))
             }
-            if stage.landing > 0, let p = project(b) { landings.append((p.point, stage)) }
+            if stage.landing > 0, let p = project(b) { landings.append((p.point, stage, size)) }
         }
         let color = Self.starColor
         for (path, a) in trails {
@@ -435,13 +430,13 @@ struct LiveArcsPainter {
                                style: StrokeStyle(lineWidth: width, lineCap: .round))
             }
         }
-        for (p, a) in stars { light(&context, at: p, r: 1.8 * unit, opacity: a) }
+        for (p, a, size) in stars { light(&context, at: p, r: 1.8 * size * unit, opacity: a) }
         // Where it lands: a small ring opens once, then a light stays and breathes.
-        for (p, stage) in landings {
-            let r = (5 + 14 * stage.landing) * unit
+        for (p, stage, size) in landings {
+            let r = (5 + 14 * stage.landing) * size * unit
             context.stroke(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
                            with: .color(color.opacity(0.5 * (1 - stage.landing) * stage.alpha)), lineWidth: 1)
-            light(&context, at: p, r: 1.8 * unit, opacity: 0.7 * stage.alpha * breath)
+            light(&context, at: p, r: 1.8 * size * unit, opacity: 0.7 * stage.alpha * breath)
         }
         // Bolts over the stars: a zap should flash brighter than a note.
         GlobeBoltPainter.draw(bolts, in: &context, unit: unit)

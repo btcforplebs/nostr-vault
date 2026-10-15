@@ -64,6 +64,9 @@ final class GlobeZapsTests: XCTestCase {
         XCTAssertEqual(arrival?.author, signedZapper)
         XCTAssertEqual(arrival?.targets, [zapped])
         XCTAssertEqual(arrival?.zap, true)
+        // The signed request's 21,000 msats strike as a 21-sat zap.
+        XCTAssertEqual(arrival?.sort, .zap)
+        XCTAssertEqual(arrival?.strength, GlobeArcs.zapStrength(sats: 21))
         XCTAssertEqual(arrival, GlobeArcs.zap(receipt(signed), now: now, verify: verify))
         // The verifier is handed the request as Swift read it, rebuilt.
         var seen: String?

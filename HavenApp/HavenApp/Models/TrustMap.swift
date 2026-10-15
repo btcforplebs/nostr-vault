@@ -562,6 +562,9 @@ struct GlobeCamera {
     /// timer (Logen, 10/14: "should keep spinning"). Its view stops the
     /// clock when the tab goes, the app is inactive or something covers it.
     var keepsDrifting = false
+    /// The My Web dashboard's Globe spinning switch: off, the globe never
+    /// drifts on its own, on any globe, and its clock sleeps when untouched.
+    var drifts = true
 
     static let zoomRange = 0.8...2.4
     /// How far the camera sits from the middle at zoom 1.
@@ -666,7 +669,7 @@ struct GlobeCamera {
                 spin = .zero
             }
             let idle = now - lastTouch
-            if idle > Self.driftAfter && (keepsDrifting || idle < Self.sleepAfter) {
+            if drifts && idle > Self.driftAfter && (keepsDrifting || idle < Self.sleepAfter) {
                 orientation = simd_normalize(simd_quatd(angle: Self.driftSpeed * dt, axis: SIMD3(0, 1, 0)) * orientation)
             }
         }
@@ -681,6 +684,6 @@ struct GlobeCamera {
     /// keep the frame clock running. False is the cue to let it sleep.
     func wantsFrames(now: TimeInterval, reduceMotion: Bool) -> Bool {
         if dragging || flyTarget != nil || spin != .zero || zoom != zoomTarget { return true }
-        return !reduceMotion && (keepsDrifting || now - lastTouch < Self.sleepAfter)
+        return !reduceMotion && drifts && (keepsDrifting || now - lastTouch < Self.sleepAfter)
     }
 }

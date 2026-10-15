@@ -58,10 +58,16 @@ struct TrustGlobeCanvas: View {
 
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
-    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
     @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
     @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
+    @AppStorage(LiveArcsSetting.key(.note)) private var notesOn = true
+    @AppStorage(LiveArcsSetting.key(.reply)) private var repliesOn = true
+    @AppStorage(LiveArcsSetting.key(.repost)) private var repostsOn = true
+    @AppStorage(LiveArcsSetting.key(.reaction)) private var reactionsOn = true
+    @AppStorage(LiveArcsSetting.key(.zap)) private var zapsOn = true
+    @AppStorage(LiveArcsSetting.spinKey) private var spinOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     /// Off when the tab or the post leaves the screen: a drifting globe's
@@ -140,6 +146,7 @@ struct TrustGlobeCanvas: View {
         .onAppear {
             onScreen = true
             scene.camera.keepsDrifting = keepsDrifting
+            scene.camera.drifts = spinOn
             scene.showsNames = showsNames
             scene.reduceMotion = reduceMotion
             scene.focus(layer)
@@ -160,7 +167,16 @@ struct TrustGlobeCanvas: View {
         }
         // While the clock is stopped nothing would move them on: they're
         // dropped rather than piling up behind a sheet or another app.
-        .onReceive(arrivals.arrived) { if clockAllowed { scene.arrive($0) } }
+        .onReceive(arrivals.arrived) { arrival in
+            // The My Web switches pick which sorts fly.
+            let show = GlobeArcs.Show(notes: notesOn, replies: repliesOn, reposts: repostsOn,
+                                      reactions: reactionsOn, zaps: zapsOn)
+            if clockAllowed, show.allows(arrival.sort) { scene.arrive(arrival) }
+        }
+        .onChange(of: spinOn) { _, on in
+            scene.camera.drifts = on
+            scene.wake()
+        }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
             if let key { scene.turn(to: key) }
