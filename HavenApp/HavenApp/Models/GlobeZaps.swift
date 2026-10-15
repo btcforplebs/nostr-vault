@@ -36,13 +36,37 @@ extension GlobeArcs {
               let data = description.data(using: .utf8),
               let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               request["kind"] as? Int == zapRequestKind,
-              let zapper = (request["pubkey"] as? String)?.lowercased(), isKey(zapper),
+              let zapper = request["pubkey"] as? String, isKey(zapper), zapper == zapper.lowercased(),
               let requestTags = request["tags"] as? [[String]],
               values("p", in: requestTags) == [recipient],
               zapper != recipient,
-              // Last, as the one costly check: the request is the zapper's own.
-              verify(description) else { return nil }
+              // Last, as the one costly check: the request is the zapper's
+              // own. It is checked as Swift read it, rebuilt from the fields
+              // above, never as the raw text: JSON with a key twice reads
+              // first-wins here and last-wins in the verifier, so the raw
+              // text could prove one zapper while Swift drew another.
+              let signed = canonicalRequest(request), verify(signed) else { return nil }
         return Arrival(id: id, author: zapper, targets: [recipient], zap: true)
+    }
+
+    /// A zap request rebuilt from Swift's own reading of it, with exactly
+    /// the NIP-01 fields, for the signature check. nil unless every field is
+    /// there with its proper type: a 64-hex id, pubkey and created_at as an
+    /// exact integer (so it renders `1799999990`, never `1.79e+09`), string
+    /// tags and content, and a sig.
+    static func canonicalRequest(_ request: [String: Any]) -> String? {
+        guard let id = request["id"] as? String, isKey(id),
+              let pubkey = request["pubkey"] as? String, isKey(pubkey),
+              let created = request["created_at"] as? Int,
+              let kind = request["kind"] as? Int,
+              let tags = request["tags"] as? [[String]],
+              let content = request["content"] as? String,
+              let sig = request["sig"] as? String else { return nil }
+        let event: [String: Any] = ["id": id, "pubkey": pubkey, "created_at": created, "kind": kind,
+                                    "tags": tags, "content": content, "sig": sig]
+        guard let data = try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// A bolt's moment: `head` how far it has struck across, then a full
