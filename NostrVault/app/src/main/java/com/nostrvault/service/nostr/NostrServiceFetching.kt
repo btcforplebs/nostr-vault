@@ -78,6 +78,22 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
     }
 
     /**
+     * The note-detail view's relays: local, inbox, then the read and write relays
+     * (replies from other users propagate to feed/blastr relays, not just the
+     * local + inbox relays; iOS NoteDetailView asks the external feed relays so
+     * strangers' replies are actually found). At most eight.
+     */
+    internal fun NostrService.detailRelayUrls(): List<String> {
+        val config = configStore.config.value
+        return buildList {
+            config.nostrURL?.let { add(it) }
+            config.inboxRelays?.let { addAll(it) }
+            addAll(config.readRelays)
+            addAll(config.writeRelays)
+        }.distinct().take(8)
+    }
+
+    /**
      * Shared one-shot query for the note-detail view: temporary clients to
      * the detail relay set (local + inbox + feed/blastr, public fallback),
      * collecting kind-1 events. [onEose] fires on every relay's EOSE with
@@ -94,16 +110,7 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
         verifySignatures: Boolean = false,
         onEose: (List<FeedNote>) -> Unit,
     ) {
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-            // Replies from other users propagate to feed/blastr relays, not just
-            // the local + inbox relays. Mirror iOS (NoteDetailView) which queries
-            // external feed relays so strangers' replies are actually found.
-            addAll(config.readRelays)
-            addAll(config.writeRelays)
-        }.distinct().take(8)
+        val relayUrls = detailRelayUrls()
         if (relayUrls.isEmpty()) { onEose(emptyList()); return }
 
         val subId = "replies-${UUID.randomUUID().toString().take(8)}"

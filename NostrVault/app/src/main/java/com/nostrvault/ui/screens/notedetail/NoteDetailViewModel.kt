@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.liveThreadReplies
 import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -254,6 +255,9 @@ class NoteDetailViewModel @Inject constructor(
                 fetchThreadEngagement()
             }
         }
+        // New replies stream in while the thread is open (iOS keeps its REQ
+        // open past EOSE); a refresh or a new note replaces the subscription.
+        startLiveReplies(rootId, effectiveId, rootCoordinate)
         // Relays that never EOSE must not leave the loading rows up forever.
         viewModelScope.launch {
             kotlinx.coroutines.delay(LOADING_TIMEOUT_MS)
@@ -264,6 +268,20 @@ class NoteDetailViewModel @Inject constructor(
 
         fetchMissingThreadProfiles(foundNote)
         fetchEngagement(effectiveId)
+    }
+
+    private var liveReplies: kotlinx.coroutines.Job? = null
+
+    /** Replies arriving after the thread opened: merged in as they land, their authors' profiles fetched. */
+    private fun startLiveReplies(rootId: String, focusedId: String, rootCoordinate: String?) {
+        liveReplies?.cancel()
+        liveReplies = viewModelScope.launch {
+            nostrService.liveThreadReplies(rootId, focusedId, rootCoordinate).collect { (reply, raw) ->
+                feedService.cacheRawEvent(reply.id, raw)
+                mergeReplies(listOf(reply))
+                if (nostrService.profiles.value[reply.pubkey] == null) nostrService.fetchMissingProfiles(listOf(reply.pubkey))
+            }
+        }
     }
 
     private fun fetchMissingThreadProfiles(foundNote: FeedNote) {
