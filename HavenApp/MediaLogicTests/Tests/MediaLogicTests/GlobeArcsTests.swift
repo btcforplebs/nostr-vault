@@ -45,6 +45,30 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(board.lines.count, 1)
     }
 
+    /// The globe redraws a frame again at the same instant (a face loading
+    /// does it). A star let on that frame is still fading in, and it must
+    /// not be dropped as faded out: it would never fly (Logen, 10/14).
+    func testAStarLetOnSurvivesARedrawAtTheSameInstant() {
+        var board = GlobeArcs.Board()
+        board.add(GlobeArcs.arrival(note(1, by: key(1)), now: now)!)
+        board.step(now: 100, me: me)
+        board.step(now: 100, me: me)
+        XCTAssertEqual(board.lines.count, 1)
+        board.step(now: 100.01, me: me)
+        XCTAssertEqual(board.lines.count, 1)
+    }
+
+    func testAStarIsDroppedOnceItHasFadedOut() {
+        var board = GlobeArcs.Board()
+        board.add(GlobeArcs.arrival(note(1, by: key(1)), now: now)!)
+        board.step(now: 100, me: me)
+        let end = 100 + GlobeArcs.travel + GlobeArcs.hold + GlobeArcs.fade
+        board.step(now: end - 0.05, me: me)
+        XCTAssertEqual(board.lines.count, 1)
+        board.step(now: end + 0.05, me: me)
+        XCTAssertTrue(board.lines.isEmpty)
+    }
+
     func testANoteToNoOneFliesIntoYou() {
         var board = GlobeArcs.Board()
         board.add(GlobeArcs.arrival(note(1, by: key(1)), now: now)!)

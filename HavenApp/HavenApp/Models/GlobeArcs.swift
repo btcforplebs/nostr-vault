@@ -156,7 +156,7 @@ enum GlobeArcs {
         /// Returns the note let on, if any.
         @discardableResult
         mutating func step(now: TimeInterval, me: String) -> Arrival? {
-            lines.removeAll { GlobeArcs.stage(of: $0, at: now).alpha <= 0 }
+            lines.removeAll { GlobeArcs.isGone($0, at: now) }
             guard !waiting.isEmpty, now - lastRelease >= GlobeArcs.spacing else { return nil }
             let next = waiting.removeFirst()
             lastRelease = now
@@ -195,6 +195,14 @@ enum GlobeArcs {
         }
         if age < 0.25 { alpha = min(alpha, age / 0.25) }
         return Stage(head: head, trail: min(trail, alpha), alpha: max(0, alpha), landing: landing)
+    }
+
+    /// True once a line has faded out for good. Not `alpha <= 0`: a line is
+    /// also at 0 the instant it is let on (it fades in), and the globe can
+    /// draw that instant twice, which dropped every star before it flew.
+    static func isGone(_ line: Line, at now: TimeInterval) -> Bool {
+        if let retired = line.retired, now - retired >= retireFade { return true }
+        return now - line.born >= travel + hold + fade
     }
 
     /// True once the star has reached its target.
