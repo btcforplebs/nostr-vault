@@ -46,7 +46,7 @@ struct FeedNoteRow: View {
     @State var trustWebPubkey = ""
     @State var showingReportSheet = false
     @State var showingBlockConfirm = false
-    @State private var showingNoteIdInRow: String?
+    @State var showingNoteIdInRow: String?
     @State var noLightningAddressAlert = false
     @State var showingUserMenu = false
     @State var menuExpanded = false
@@ -98,7 +98,137 @@ struct FeedNoteRow: View {
                 actions.fetchMissingNote(qId)
             }
         }
-        .sheet(item: $zapSheetContext) { context in
+        .environment(\.openURL, OpenURLAction { url in
+            if url.scheme == "nostr" {
+                let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
+                    if let pubkey = QuoteReference.profilePubkey(fromBech32: identifier) {
+                        onProfile?(pubkey)
+                    }
+                    return .handled
+                }
+                if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") || identifier.hasPrefix("naddr1") {
+                    showingNoteIdInRow = identifier
+                    return .handled
+                }
+            }
+            // A #hashtag goes up to the screen that presents hashtag feeds.
+            if HashtagLink.tag(from: url) != nil {
+                inheritedOpenURL(url)
+                return .handled
+            }
+            return .systemAction
+        })
+        // One sheet and one alert for the row, not a presenter per kind:
+        // every row in the feed built all of them, part of the stall when
+        // the feed first draws (Time Profiler, build 36).
+        // Outside the row's openURL, as the broadcast, note and report sheets
+        // were: a link inside a sheet is the sheet's, not the row's.
+        .sheet(item: rowSheet) { sheet in sheetContent(sheet) }
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: trustWebPubkey)
+        .alert(rowAlert?.title ?? "", isPresented: rowAlertShown, presenting: rowAlert) { alert in
+            alertActions(alert)
+        } message: { alert in
+            Text(alert.message)
+        }
+        .contextMenu {
+            if rowData.isOwnNote {
+                Button(role: .destructive) {
+                    showingDeleteConfirm = true
+                } label: {
+                    Label("Delete Post", systemImage: "trash")
+                }
+            }
+        }
+        .onDisappear { showingUserMenu = false; menuExpanded = false; showingParentUserMenu = false; parentMenuExpanded = false }
+    }
+
+}
+
+// MARK: - Sheets and alerts
+
+extension FeedNoteRow {
+    /// The row's one sheet. The flags stay as they were, set all over the
+    /// row; this reads whichever is up.
+    enum RowSheet: Identifiable {
+        case zap(ZapSheetContext)
+        case broadcast
+        case note(String)
+        case report
+
+        var id: String {
+            switch self {
+            case .zap(let context): "zap-\(context.id)"
+            case .broadcast: "broadcast"
+            case .note(let id): "note-\(id)"
+            case .report: "report"
+            }
+        }
+    }
+
+    /// The row's one alert.
+    enum RowAlert {
+        case noLightningAddress, delete, block
+
+        var title: String {
+            switch self {
+            case .noLightningAddress: "No Lightning Address"
+            case .delete: "Delete Post"
+            case .block: "Block User"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .noLightningAddress: "This user hasn't configured a lightning address, so they can't receive zaps."
+            case .delete: "Request deletion of this post? Not all relays honor NIP-09 deletion requests."
+            case .block: "Block this user? Their posts will be hidden from your feed."
+            }
+        }
+    }
+
+    var rowSheet: Binding<RowSheet?> {
+        Binding(
+            get: {
+                if let context = zapSheetContext { return .zap(context) }
+                if showingBroadcastSheet { return .broadcast }
+                if let id = showingNoteIdInRow { return .note(id) }
+                if showingReportSheet { return .report }
+                return nil
+            },
+            set: { sheet in
+                guard sheet == nil else { return }
+                zapSheetContext = nil
+                showingBroadcastSheet = false
+                showingNoteIdInRow = nil
+                showingReportSheet = false
+            }
+        )
+    }
+
+    var rowAlert: RowAlert? {
+        if noLightningAddressAlert { return .noLightningAddress }
+        if showingDeleteConfirm { return .delete }
+        if showingBlockConfirm { return .block }
+        return nil
+    }
+
+    var rowAlertShown: Binding<Bool> {
+        Binding(
+            get: { rowAlert != nil },
+            set: { shown in
+                guard !shown else { return }
+                noLightningAddressAlert = false
+                showingDeleteConfirm = false
+                showingBlockConfirm = false
+            }
+        )
+    }
+
+    @ViewBuilder
+    func sheetContent(_ sheet: RowSheet) -> some View {
+        switch sheet {
+        case .zap(let context):
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
                 if let lud16 = actions.getLightningAddress(zapRecipient) {
                     Task {
@@ -121,64 +251,26 @@ struct FeedNoteRow: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif
-        }
-        .environment(\.openURL, OpenURLAction { url in
-            if url.scheme == "nostr" {
-                let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
-                if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
-                    if let pubkey = QuoteReference.profilePubkey(fromBech32: identifier) {
-                        onProfile?(pubkey)
-                    }
-                    return .handled
-                }
-                if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") || identifier.hasPrefix("naddr1") {
-                    showingNoteIdInRow = identifier
-                    return .handled
-                }
-            }
-            // A #hashtag goes up to the screen that presents hashtag feeds.
-            if HashtagLink.tag(from: url) != nil {
-                inheritedOpenURL(url)
-                return .handled
-            }
-            return .systemAction
-        })
-        .sheet(isPresented: $showingBroadcastSheet) {
+        case .broadcast:
             EventBroadcastSheet(note: note)
+        case .note(let id):
+            NoteDetailViewWrapper(noteId: id, onDismiss: { showingNoteIdInRow = nil })
+        case .report:
+            UGCReportingDialog(eventId: bodySource.id, pubkey: bodySource.pubkey, onDismiss: { showingReportSheet = false }) { }
         }
-        .trustWebPresentation(isPresented: $showingTrustWeb, author: trustWebPubkey)
-        .sheet(item: Binding<IdentifiableString?>(
-            get: { showingNoteIdInRow.map { IdentifiableString(id: $0) } },
-            set: { showingNoteIdInRow = $0?.id }
-        )) { noteId in
-            NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { showingNoteIdInRow = nil })
-        }
-        .alert("No Lightning Address", isPresented: $noLightningAddressAlert) {
+    }
+
+    @ViewBuilder
+    func alertActions(_ alert: RowAlert) -> some View {
+        switch alert {
+        case .noLightningAddress:
             Button("OK", role: .cancel) { }
-        } message: {
-            Text("This user hasn't configured a lightning address, so they can't receive zaps.")
-        }
-        .contextMenu {
-            if rowData.isOwnNote {
-                Button(role: .destructive) {
-                    showingDeleteConfirm = true
-                } label: {
-                    Label("Delete Post", systemImage: "trash")
-                }
-            }
-        }
-        .alert("Delete Post", isPresented: $showingDeleteConfirm) {
+        case .delete:
             Button("Delete", role: .destructive) {
                 actions.deleteNote(note.id)
             }
             Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
-        }
-        .sheet(isPresented: $showingReportSheet) {
-            UGCReportingDialog(eventId: bodySource.id, pubkey: bodySource.pubkey, onDismiss: { showingReportSheet = false }) { }
-        }
-        .alert("Block User", isPresented: $showingBlockConfirm) {
+        case .block:
             Button("Block", role: .destructive) {
                 actions.blockUser(rowData.displayPubkey)
                 ActionToastManager.shared.show(
@@ -188,12 +280,8 @@ struct FeedNoteRow: View {
                 )
             }
             Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Block this user? Their posts will be hidden from your feed.")
         }
-        .onDisappear { showingUserMenu = false; menuExpanded = false; showingParentUserMenu = false; parentMenuExpanded = false }
     }
-
 }
 
 // FeedMediaThumbnail has been replaced by FeedMediaView (see Components/FeedMediaView.swift)
