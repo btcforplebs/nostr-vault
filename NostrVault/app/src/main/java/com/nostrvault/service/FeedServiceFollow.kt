@@ -97,3 +97,131 @@ import com.nostrvault.ui.notification.FollowKind
 
     internal fun readOnlyFollowMessage(follow: Boolean): String =
         "This account is read-only. Add its key to ${if (follow) "follow" else "unfollow"}."
+
+    /** [undo], when given, is offered on the "Followed" pill. */
+    internal fun FeedService.followUserImpl(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = true)) return Result.failure(FollowActionError.ReadOnly)
+        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
+            queueFollowAction(pubkey, follow = true)
+            return Result.failure(FollowActionError.ContactsNotLoaded)
+        }
+        val displayName = profileDisplayName(pubkey)
+        val currentPTags = _followedPubkeys.value.map { listOf("p", it) }
+        val result = contactManager.prepareFollow(
+            pubkey = pubkey,
+            currentPTags = currentPTags,
+            currentPubkeys = _followedPubkeys.value,
+            hasAttemptedLoad = _hasAttemptedContactLoad.value,
+            isLoading = _isLoadingContacts.value,
+            listConfirmed = contactListConfirmed,
+        )
+        return result.fold(
+            onSuccess = { followResult ->
+                val previous = _followedPubkeys.value
+                _followedPubkeys.value = followResult.pubkeys
+                publishContactList(followResult.pubkeys, rollback = previous) {
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
+                }
+                // Re-filter so already-loaded notes from the newly-followed author
+                // surface immediately in the Following feed.
+                recomputeFilteredNotes()
+                // Re-issue the live primary REQ so the new follow's FUTURE notes
+                // stream in without waiting for a full refresh.
+                resubscribePrimaryToConnected()
+                notificationManager.showFollow(displayName, FollowKind.FOLLOWED, undo, pubkey = pubkey)
+                Result.success(Unit)
+            },
+            onFailure = {
+                if (it is ContactManager.FollowActionError.ListUnavailable) {
+                    // Kept queued and retried; never published against an unknown list.
+                    queueFollowAction(pubkey, follow = true)
+                    return Result.failure(it)
+                }
+                // A tap made while the list read empty: it was already done (iOS
+                // resolves .alreadyFollowing as followed).
+                val kind = if (it is ContactManager.FollowActionError.AlreadyFollowing) FollowKind.FOLLOWED
+                else FollowKind.FAILED(it.message ?: "Failed")
+                notificationManager.showFollow(displayName, kind, pubkey = pubkey)
+                Result.failure(it)
+            },
+        )
+    }
+
+    /** [undo], when given, is offered on the "Unfollowed" pill. */
+    internal fun FeedService.unfollowUserImpl(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
+        if (refuseIfReadOnly(pubkey, follow = false)) return Result.failure(FollowActionError.ReadOnly)
+        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
+            queueFollowAction(pubkey, follow = false)
+            return Result.failure(FollowActionError.ContactsNotLoaded)
+        }
+        val displayName = profileDisplayName(pubkey)
+        val currentPTags = _followedPubkeys.value.map { listOf("p", it) }
+        val result = contactManager.prepareUnfollow(
+            pubkey = pubkey,
+            activeAccountHex = nostrService.activeHexPubkey,
+            currentPTags = currentPTags,
+            currentPubkeys = _followedPubkeys.value,
+            hasAttemptedLoad = _hasAttemptedContactLoad.value,
+            isLoading = _isLoadingContacts.value,
+            listConfirmed = contactListConfirmed,
+        )
+        return result.fold(
+            // One deliberate unfollow from a list that loaded is always allowed,
+            // even to 0: prepareUnfollow already refuses a list that didn't load.
+            onSuccess = { followResult ->
+                val previous = _followedPubkeys.value
+                _followedPubkeys.value = followResult.pubkeys
+                publishContactList(followResult.pubkeys, rollback = previous) {
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
+                }
+                // Re-filter so the unfollowed author's notes disappear from the
+                // Following feed immediately (the filter excludes non-follows).
+                recomputeFilteredNotes()
+                // Re-issue the live primary REQ so the relay stops streaming the
+                // unfollowed author's future notes.
+                resubscribePrimaryToConnected()
+                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED, undo, pubkey = pubkey)
+                Result.success(Unit)
+            },
+            onFailure = {
+                if (it is ContactManager.FollowActionError.ListUnavailable) {
+                    // Kept queued and retried; never published against an unknown list.
+                    queueFollowAction(pubkey, follow = false)
+                    return Result.failure(it)
+                }
+                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"), pubkey = pubkey)
+                Result.failure(it)
+            },
+        )
+    }
+
+    internal fun FeedService.restoreContactListImpl(pTags: List<List<String>>, content: String) {
+        val ownerHex = nostrService.activeHexPubkey
+        val whitelistedNpubs = configStore.config.value.whitelistedNpubs ?: emptyList()
+        val contactResult = contactManager.parseContactList(pTags, ownerHex, whitelistedNpubs)
+        _followedPubkeys.value = contactResult.pubkeys
+        contactListContent = content
+        publishContactList(contactResult.pubkeys)
+    }
+
+    /**
+     * Block for the active account. This wrote the legacy flat `blockedNpubs`,
+     * which the feed filter ignores once a per-account list exists, and then
+     * published that stale list as the owner's mute list, dropping anyone
+     * blocked from Settings and, on a second account, signing as the owner.
+     */
+    internal fun FeedService.blockUserImpl(hexPubkey: String) {
+        val npub = nostrService.hexToNpub(hexPubkey) ?: return
+        if (npub in configStore.config.value.blockedForActiveAccount()) return
+        configStore.blockProfile(npub)
+        publishActiveMuteList()
+        _notes.value = _notes.value.filter { it.pubkey != hexPubkey }
+        recomputeFilteredNotes()
+    }
+
+    internal fun FeedService.unblockUserImpl(hexPubkey: String) {
+        val npub = nostrService.hexToNpub(hexPubkey) ?: return
+        if (npub !in configStore.config.value.blockedForActiveAccount()) return
+        configStore.unblockProfile(npub)
+        publishActiveMuteList()
+    }

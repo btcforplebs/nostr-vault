@@ -13,6 +13,8 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
 import com.nostrvault.service.FeedService.Companion.FALLBACK_NOTE_RELAYS
 import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_MAX
 import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
+import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_BATCH_DELAY_MS
+import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
 
     /**
      * Copies the notes among [ids] that are already in the feed into the
@@ -371,4 +373,141 @@ import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    internal fun FeedService.findNoteImpl(id: String): FeedNote? {
+        return noteIndex()[id]
+            ?: _parentNotesCache.value[id]
+            // A reply fetched for a threaded card, opened in place: replying
+            // to it, quoting it or opening its thread resolves it here.
+            ?: _feedThreadReplies.value[id]
+            // Quoted addressable events are keyed by coordinate, so a lookup by
+            // id has to scan them — without this, opening a quoted article
+            // refetches an event already in memory.
+            ?: _quotedAddressCache.value.values.firstOrNull { it.id == id }
+    }
+
+    /**
+     * The note a quote of [id] should cite: the original when [id] names a
+     * kind-6 repost or the original it carries. See [FeedNote.quoteTarget].
+     */
+    internal fun FeedService.quoteTargetImpl(id: String): FeedNote? {
+        val note = findNote(id) ?: return null
+        return FeedNote.quoteTarget(note) { ref ->
+            _notes.value.firstOrNull { it.id == ref && it.kind != 6 }
+                ?: _parentNotesCache.value[ref]?.takeIf { it.id == ref && it.kind != 6 }
+        }
+    }
+
+    /**
+     * Register a note in the supplementary cache so that [findNote] can locate
+     * it even when the note isn't part of the main feed list. Called by
+     * ProfileViewModel and NoteDetailViewModel so ComposeNoteScreen can resolve
+     * reply/quote targets loaded outside the feed.
+     */
+    internal fun FeedService.cacheNoteImpl(note: FeedNote) {
+        if (hidesDeleted(note)) return
+        var updated = _parentNotesCache.value + (note.id to note)
+        // For kind-6 reposts, also cache under the original note's ID so
+        // lookups by effectiveEventId succeed.
+        if (note.effectiveEventId != note.id) {
+            updated = updated + (note.effectiveEventId to note)
+        }
+        _parentNotesCache.value = updated
+    }
+
+    internal fun FeedService.fetchMissingNotesBatchImpl(ids: List<String>) {
+        // A post that arrived through the feed itself can be the parent (or
+        // repost original, or quote) a row is waiting on. Rows read parents
+        // from the cache only, so they kept their skeleton until a relay
+        // answered for a note the phone already had (iOS #302). Checked
+        // before the in-flight filter: the feed often delivers it mid-lookup.
+        val inFeed = adoptFeedNotes(ids)
+        val deleted = markDeletedUnavailable(ids)
+        val now = System.currentTimeMillis()
+        val wanted = ids.filter { id ->
+            if (id in inFeed || id in deleted) return@filter false
+            if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
+            val since = unavailableSince[id] ?: return@filter true
+            now - since >= UNAVAILABLE_RETRY_MS
+        }
+        if (wanted.isEmpty()) return
+        synchronized(noteFetchLock) {
+            noteFetchQueue.addAll(wanted)
+            if (noteFetchFlushJob != null) return
+            noteFetchFlushJob = scope.launch(Dispatchers.IO) {
+                // Drain until nothing new arrived during the wait. The lookups
+                // run outside this job: as children they kept it active for the
+                // whole fetch window, and ids queued meanwhile were never sent.
+                while (true) {
+                    delay(NOTE_FETCH_BATCH_DELAY_MS)
+                    val batch = synchronized(noteFetchLock) {
+                        val b = noteFetchQueue.toList()
+                        noteFetchQueue.clear()
+                        // Cleared under the same lock an enqueue checks, so an
+                        // id added after this either sees the job and is drained,
+                        // or sees null and starts the next one.
+                        if (b.isEmpty()) noteFetchFlushJob = null
+                        b
+                    }
+                    if (batch.isEmpty()) break
+                    noteFetchInFlight.addAll(batch)
+                    for (chunk in batch.chunked(50)) {
+                        scope.launch(Dispatchers.IO) { lookUpNotes(chunk) }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve a quoted-event lookup key to a cached note, if already fetched.
+     *
+     * [identifier] is what `FeedNote.quotedEventIds` holds: a hex event id, or
+     * an `naddr:` coordinate. It used to be decoded from bech32 here as well,
+     * which meant that once the parser started handing out hex this rejected
+     * every key it was given and no quoted note ever resolved. [QuoteRef.key]
+     * is now the only thing that reads a key, on both sides.
+     */
+    internal fun FeedService.quotedNoteForImpl(identifier: String): FeedNote? =
+        when (val key = QuoteRef.key(identifier)) {
+            is QuoteRef.Key.Event -> _parentNotesCache.value[key.hexId] ?: findNote(key.hexId)
+            is QuoteRef.Key.Address -> _quotedAddressCache.value[identifier]
+            null -> null
+        }
+
+    /** Batch-fetch quoted events that aren't cached yet. */
+    internal fun FeedService.fetchMissingQuotedNotesImpl(identifiers: List<String>) {
+        val keys = identifiers.distinct().mapNotNull { id -> QuoteRef.key(id)?.let { id to it } }
+
+        val hexIds = keys.mapNotNull { (_, key) -> (key as? QuoteRef.Key.Event)?.hexId }
+        if (hexIds.isNotEmpty()) fetchMissingNotesBatch(hexIds)
+
+        val coordinates = keys.mapNotNull { (raw, key) ->
+            (key as? QuoteRef.Key.Address)?.let { raw to it.coordinate }
+        }.filter { (raw, _) -> !_quotedAddressCache.value.containsKey(raw) }
+        if (coordinates.isNotEmpty()) fetchQuotedAddressesBatch(coordinates)
+    }
+
+    /**
+     * Fetch one addressable event (a `nostr:naddr1…` link) from the user's own
+     * relays, the same way a quoted naddr is fetched, and wait up to
+     * [timeoutMs] for it. Relays may answer with older revisions first, so it
+     * waits [settleMs] after the first answer and returns the newest.
+     */
+    internal suspend fun FeedService.resolveAddressImpl(coordinate: QuoteRef.Coordinate, timeoutMs: Long = 8_000, settleMs: Long = 600): FeedNote? {
+        val key = QuoteRef.format(coordinate)
+        fetchMissingQuotedNotes(listOf(key))
+        withTimeoutOrNull(timeoutMs) { _quotedAddressCache.first { it.containsKey(key) } } ?: return null
+        delay(settleMs)
+        return _quotedAddressCache.value[key]
+    }
+
+    /** Fetch profiles for the authors of resolved quoted notes that lack one. */
+    internal fun FeedService.fetchMissingQuotedProfilesImpl(identifiers: List<String>) {
+        val missingAuthors = identifiers
+            .mapNotNull { quotedNoteFor(it)?.pubkey }
+            .filter { nostrService.profiles.value[it] == null }
+            .distinct()
+        if (missingAuthors.isNotEmpty()) nostrService.fetchMissingProfiles(missingAuthors)
     }

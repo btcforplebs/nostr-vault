@@ -51,7 +51,7 @@ class FeedService @Inject constructor(
     internal val nostrService: NostrService,
     internal val feedFilterEngine: FeedFilterEngine,
     internal val engagementTracker: EngagementTracker,
-    private val blobNoteIndexStore: BlobNoteIndexStore,
+    internal val blobNoteIndexStore: BlobNoteIndexStore,
     internal val contactManager: ContactManager,
     internal val imageLoader: ImageLoader,
     internal val notificationManager: NotificationManager,
@@ -75,10 +75,10 @@ class FeedService @Inject constructor(
         internal const val FEED_LOAD_TIMEOUT_MS = 20_000L
         internal const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         internal const val NOTE_FETCH_TIMEOUT_MS = 8_000L
-        private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
-        private const val UNAVAILABLE_RETRY_MS = 60_000L
+        internal const val NOTE_FETCH_BATCH_DELAY_MS = 300L
+        internal const val UNAVAILABLE_RETRY_MS = 60_000L
         /** Quiet time after a batch of follows' relay lists before re-planning. */
-        private const val OUTBOX_RELAY_LIST_SETTLE_MS = 5_000L
+        internal const val OUTBOX_RELAY_LIST_SETTLE_MS = 5_000L
         /** Failed connects in a row before a feed relay counts as down. */
         internal const val FEED_RELAY_DOWN_AFTER = 3
 
@@ -156,28 +156,9 @@ class FeedService @Inject constructor(
     internal val _pollStatusFilter = MutableStateFlow(com.nostrvault.data.model.PollStatusFilter.ALL)
     val pollStatusFilter: StateFlow<com.nostrvault.data.model.PollStatusFilter> = _pollStatusFilter.asStateFlow()
 
-    /**
-     * The one rule every Global view follows: your Web of Trust unless the
-     * shield is set to Everyone. Null means everyone. Fails closed like the
-     * Global feed: with no graph yet, nobody passes.
-     */
-    /**
-     * Who counts as inside your network in the Relay tab: the relay's trust
-     * graph plus your current follows. The graph is rebuilt about once a day,
-     * so without the follows someone you just followed stayed "outside".
-     * Empty while the graph isn't loaded, which counts nobody as outside.
-     */
-    fun relayTabTrustedPubkeys(): Set<String> {
-        if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
-    }
+    fun relayTabTrustedPubkeys(): Set<String> = relayTabTrustedPubkeysImpl()
 
-    fun globalTrustSet(): Set<String>? {
-        if (configStore.config.value.globalShowsEveryone) return null
-        if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        // Your follows too, so someone you just followed passes right away.
-        return TrustMap.web(_wotPubkeys.value, _followedPubkeys.value.toSet())
-    }
+    fun globalTrustSet(): Set<String>? = globalTrustSetImpl()
 
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
     val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()
@@ -185,7 +166,7 @@ class FeedService @Inject constructor(
     // Periodic disk-snapshot persistence (crash safety). Persisting only in
     // pauseFeed() loses the whole session when the process is killed without a
     // lifecycle callback; persist at most once a minute while the feed changes.
-    private var snapshotDirty = false
+    internal var snapshotDirty = false
 
     /**
      * hash → note id for every blob this device has seen a note reference.
@@ -197,108 +178,7 @@ class FeedService @Inject constructor(
      */
     val blobNoteIndex: StateFlow<Map<String, String>> = blobNoteIndexStore.index
 
-    init {
-        scope.launch {
-            _notes.drop(1).collect { snapshotDirty = true }
-        }
-        // Which emoji went with each like, and which reactions were removed,
-        // live only in the account's interaction-state file.
-        scope.launch {
-            val key = currentSnapshotKey()
-            val saved = withContext(Dispatchers.IO) {
-                engagementTracker.loadInteractionState(key, fallbackToLegacy = false)
-            }
-            if (currentSnapshotKey() == key) {
-                _myReactions.value = saved.myReactions + _myReactions.value
-                retractedReactionIds = retractedReactionIds + saved.retractedReactionIds
-            }
-        }
-        // Every note that reaches the feed contributes its blob hashes to the
-        // persistent index. `record` skips note ids it has already folded in, so
-        // re-emissions of the same list cost a set lookup per note — up to
-        // MAX_FEED_NOTES of them, so on Default rather than Main.
-        scope.launch(processingDispatcher) {
-            _notes.collect { blobNoteIndexStore.record(it) }
-        }
-        scope.launch {
-            while (isActive) {
-                delay(60_000)
-                if (snapshotDirty && _notes.value.isNotEmpty() && _feedMode.value != FeedMode.POPULAR) {
-                    snapshotDirty = false
-                    persistCurrentSnapshot()
-                }
-            }
-        }
-        // forceReload() (clears notes/follows/extended-network + reconnects) existed
-        // but nothing ever called it on account switch — confirmed bug: the Feed tab
-        // kept showing the previous account's stale notes/follows until they were
-        // naturally evicted or the user manually pulled to refresh. NostrService has
-        // its own separate handleAccountSwitch() for its own state; this is FeedService's
-        // equivalent, mirroring that same observeAccountSwitch() pattern.
-        // The saved switches arrive when the config loads from disk.
-        scope.launch {
-            configStore.config
-                .map { it.showReposts to it.showReplies }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect { recomputeFilteredNotes() }
-        }
-
-        scope.launch {
-            configStore.accountSwitches
-                .collect {
-                    // The new account's list is unknown until its own load
-                    // answers, and a tap queued under the previous account
-                    // must not reach this one.
-                    contactListConfirmed = false
-                    pendingFollowActions.clear()
-                    notificationManager.clearPendingFollows()
-                    forceReload()
-                    // Likes and zaps are the account's own: the previous
-                    // one's showed under Relay > Given (iOS loads them per
-                    // account on switch). No legacy fallback, which would
-                    // hand a new account someone else's.
-                    _likedEventIds.value = emptySet()
-                    _zappedEventIds.value = emptyMap()
-                    _myReactions.value = emptyMap()
-                    retractedReactionIds = emptySet()
-                    // A reaction still being signed belongs to the previous account.
-                    pendingReactionTokens.clear()
-                    val key = currentSnapshotKey()
-                    val saved = withContext(Dispatchers.IO) {
-                        engagementTracker.loadInteractionState(key, fallbackToLegacy = false)
-                    }
-                    if (currentSnapshotKey() == key) {
-                        _likedEventIds.value = _likedEventIds.value + saved.likedEventIds
-                        _zappedEventIds.value = saved.zappedEventIds + _zappedEventIds.value
-                        _myReactions.value = saved.myReactions + _myReactions.value
-                        retractedReactionIds = retractedReactionIds + saved.retractedReactionIds
-                    }
-                }
-        }
-        // Follows' relay lists arrive in batches after the feed is up; once
-        // they settle, ask the new outbox relays (see reconcileOutboxRelays).
-        scope.launch {
-            nostrService.outboxRelays
-                .map { it.size }
-                .distinctUntilChanged()
-                .drop(1)
-                .collectLatest {
-                    delay(OUTBOX_RELAY_LIST_SETTLE_MS)
-                    reconcileOutboxRelays()
-                }
-        }
-        // Blocking someone (from a menu, Settings, or a mute list synced from
-        // another client) must drop their posts now, not when some unrelated
-        // note next arrives.
-        scope.launch {
-            configStore.config
-                .map { it.blockedForActiveAccount() }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect { recomputeFilteredNotes() }
-        }
-    }
+    init { startObservers() }
 
     internal val _filteredNotes = MutableStateFlow<List<FeedNote>>(emptyList())
     val filteredNotes: StateFlow<List<FeedNote>> = _filteredNotes.asStateFlow()
@@ -389,7 +269,7 @@ class FeedService @Inject constructor(
      */
     internal val pendingReactionTokens = HashMap<String, Any>()
 
-    private val _repostedEventIds = MutableStateFlow<Set<String>>(emptySet())
+    internal val _repostedEventIds = MutableStateFlow<Set<String>>(emptySet())
     val repostedEventIds: StateFlow<Set<String>> = _repostedEventIds.asStateFlow()
 
     internal val _zappedEventIds = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -456,7 +336,7 @@ class FeedService @Inject constructor(
      * follow them (the WOT tab's Close layer). Null until the relay's cache
      * carries them.
      */
-    private val _wotVouches = MutableStateFlow<Map<String, Int>?>(null)
+    internal val _wotVouches = MutableStateFlow<Map<String, Int>?>(null)
     val wotVouches: StateFlow<Map<String, Int>?> = _wotVouches.asStateFlow()
 
     /**
@@ -464,7 +344,7 @@ class FeedService @Inject constructor(
      * if it named nobody. Separates "no graph built yet" from "built and
      * empty because you follow nobody". iOS: FeedService.wotCacheRead.
      */
-    private val _wotCacheRead = MutableStateFlow(false)
+    internal val _wotCacheRead = MutableStateFlow(false)
     val wotCacheRead: StateFlow<Boolean> = _wotCacheRead.asStateFlow()
 
     /**
@@ -618,196 +498,21 @@ class FeedService @Inject constructor(
     // Lifecycle
     // ══════════════════════════════════════════════════════════════════
 
-    /**
-     * Cold-launch entry point.
-     * Restores disk snapshot if available, then tops up from relays.
-     */
-    fun startInitialLoad() {
-        if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: mode=${_feedMode.value}")
+    fun startInitialLoad() { startInitialLoadImpl() }
 
-        // Pre-load WOT pubkeys so DISCOVERY and GLOBAL media modes work immediately
-        loadWotPubkeys()
+    fun refresh() { refreshImpl() }
 
-        if (_feedMode.value == FeedMode.POPULAR) {
-            loadPopularFeed()
-            return
-        }
+    fun forceReload() { forceReloadImpl() }
 
-        scope.launch {
-            val restored = restoreFromDiskIfAvailable()
-            if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: snapshot restored=$restored, notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
-            if (restored) {
-                topUpFromRelays()
-            } else {
-                refresh()
-            }
-        }
-    }
+    fun switchMode(mode: FeedMode) { switchModeImpl(mode) }
 
-    fun refresh() {
-        scope.launch {
-            _isLoadingFeed.value = true
-            _connectionStatus.value = "Loading feed..."
-            _connectionColor.value = "yellow"
+    fun setLongFormFeedMode(feed: FeedMode, mode: MediaFeedMode) { setLongFormFeedModeImpl(feed, mode) }
 
-            loadContactList()
+    fun setMediaFeedMode(mode: MediaFeedMode) { setMediaFeedModeImpl(mode) }
 
-            // Global is filtered against the trust graph; pick up one the relay
-            // has written since the last read.
-            if (isGlobalLikeMode()) loadWotPubkeys()
-            // Global's thread replies were fetched under the old list and trust
-            // setting (the shield's switch lands here); Threaded View fetches
-            // them again for the reloaded posts.
-            if (_feedMode.value == FeedMode.GLOBAL) resetFeedThreadReplies()
+    fun pauseFeed() { pauseFeedImpl() }
 
-            when (_feedMode.value) {
-                FeedMode.POPULAR -> loadPopularFeed() // Computed, not streamed: pull to refresh computes it again.
-                FeedMode.DISCOVERY -> {
-                    loadExtendedNetwork()
-                    subscribeToAllRelays()
-                }
-                else -> subscribeToAllRelays()
-            }
-        }
-    }
-
-    fun forceReload() {
-        clearInMemoryFeedState()
-        refresh()
-    }
-
-    fun switchMode(mode: FeedMode) {
-        if (mode == _feedMode.value) return
-        val previousSubId = primaryFeedSubId()
-        captureModeCache(_feedMode.value)
-        _feedMode.value = mode
-
-        // Pending notes are raw, unfiltered for the previous mode — drop them so
-        // the "New Posts" count doesn't carry over stale entries. Live subs for
-        // the new mode will repopulate.
-        _pendingNotes.value = emptyList()
-        resetFeedThreadReplies()
-        val cachedAgeMs = restoreModeCache(mode)
-        when (mode) {
-            FeedMode.POPULAR -> showCachedPopularOrLoad(cachedAgeMs)
-            FeedMode.GLOBAL -> {
-                loadWotPubkeys()
-                subscribeToAllRelays()
-            }
-            FeedMode.DISCOVERY -> {
-                // Discovery keeps only authors in the trust graph, same as Global.
-                loadWotPubkeys()
-                if (needsExtendedNetworkRefresh()) {
-                    scope.launch {
-                        loadExtendedNetwork()
-                        subscribeToAllRelays()
-                    }
-                } else {
-                    subscribeToAllRelays()
-                }
-            }
-            FeedMode.MEDIA -> {
-                // Global media is scoped to the web-of-trust set; make sure it's
-                // populated before subscribing so the author filter isn't empty.
-                if (_mediaFeedMode.value == MediaFeedMode.GLOBAL) loadWotPubkeys()
-                subscribeToAllRelays()
-            }
-            FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> {
-                if (longFormScope() == MediaFeedMode.GLOBAL) loadWotPubkeys()
-                subscribeToAllRelays()
-            }
-            // These feeds run their own queries (Reels, Live, Marketplace,
-            // Hashtags) or read Wavlake (Music). The timeline REQ idles; left
-            // to subscribeToAllRelays, Live/Marketplace/Music sent a REQ with
-            // no author or tag filter, the whole network.
-            FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE,
-            FeedMode.MUSIC, FeedMode.HASHTAGS -> closePrimaryFeedSubscription(previousSubId)
-            else -> subscribeToAllRelays()
-        }
-        recomputeFilteredNotes()
-    }
-
-    /**
-     * Switch the media sub-feed between Following and Global (iOS parity).
-     * Re-subscribes with the new author scope and recomputes the media grid.
-     */
-    /** Following / Global for Articles, Recipes or Polls; re-subscribes like Media. */
-    fun setLongFormFeedMode(feed: FeedMode, mode: MediaFeedMode) {
-        val flow = when (feed) {
-            FeedMode.ARTICLES -> _articlesFeedMode
-            FeedMode.RECIPES -> _recipesFeedMode
-            FeedMode.POLLS -> _pollsFeedMode
-            else -> return
-        }
-        if (flow.value == mode) return
-        flow.value = mode
-        _pendingNotes.value = emptyList()
-        if (mode == MediaFeedMode.GLOBAL) loadWotPubkeys()
-        subscribeToAllRelays()
-        recomputeFilteredNotes()
-    }
-
-    fun setMediaFeedMode(mode: MediaFeedMode) {
-        if (mode == _mediaFeedMode.value) return
-        _mediaFeedMode.value = mode
-
-        // Pending notes were scoped to the previous media filter; drop them so the
-        // "New Posts" count doesn't carry stale entries into the new scope.
-        _pendingNotes.value = emptyList()
-
-        if (mode == MediaFeedMode.GLOBAL) loadWotPubkeys()
-        subscribeToAllRelays()
-        recomputeFilteredNotes()
-    }
-
-    /**
-     * Called when the app is backgrounded.
-     * Persists a snapshot for instant resume and disconnects feed WebSockets
-     * to free network/memory while the relay keeps running via the foreground service.
-     */
-    fun pauseFeed() {
-        if (BuildConfig.DEBUG) Log.d(TAG, "pauseFeed: persisting snapshot and disconnecting feed clients")
-        persistCurrentSnapshot()
-        saveInteractionState()
-        teardownAllFeedClients()
-        _connectionStatus.value = "Paused"
-        _connectionColor.value = "gray"
-    }
-
-    /**
-     * Called when the app returns to the foreground.
-     * Restores the disk snapshot immediately (instant UI), then reconnects to
-     * relay WebSockets in the background to top up with any events that arrived
-     * while backgrounded.
-     */
-    fun resumeFeed() {
-        if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
-
-        // A launch that restores the saved feed never reaches startInitialLoad,
-        // which is otherwise where Global and Discovery get their trust graph.
-        loadWotPubkeys()
-
-        // If we still have notes in memory (brief background), just reconnect —
-        // no need to hit disk or re-fetch contacts at all.
-        if (_notes.value.isNotEmpty()) {
-            if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes still in memory, reconnecting only")
-            // Memory cache may have been evicted while backgrounded — re-warm avatars
-            prewarmAvatarCache(_notes.value)
-            subscribeToAllRelays()
-            return
-        }
-
-        scope.launch {
-            // Notes were evicted (long background / memory trim) — restore from disk
-            val hadSnapshot = restoreFromDiskIfAvailable()
-            if (!hadSnapshot) {
-                refresh()
-                return@launch
-            }
-            // Snapshot restored contacts too — just reconnect, skip loadContactList()
-            subscribeToAllRelays()
-        }
-    }
+    fun resumeFeed() { resumeFeedImpl() }
 
     // ══════════════════════════════════════════════════════════════════
     // Contact list management
@@ -844,87 +549,13 @@ class FeedService @Inject constructor(
         contactManager.mayPublishFollowList(attempted, loading, confirmed)
     }.stateIn(scope, SharingStarted.Eagerly, false)
 
-    /**
-     * Scan configured relays for the owner's historical kind-3 (contact list)
-     * events, collecting every distinct version found. Used by Following Backup
-     * recovery to restore an older following list. Port of iOS queryRelaysForKind3.
-     */
-    /** [ownerHex] is the account whose lists to find; Following Backup can pick one that isn't active. */
-    suspend fun scanRelaysForKind3(ownerHex: String = nostrService.activeHexPubkey): List<Kind3Event> {
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-            config.activeBlastrRelays.let { addAll(it) }
-        }.distinct().take(6)
-        if (relayUrls.isEmpty() || ownerHex.isEmpty()) return emptyList()
-
-        val whitelistedNpubs = config.whitelistedNpubs ?: emptyList()
-        val collected = ConcurrentHashMap<String, Kind3Event>() // keyed by event id
-
-        coroutineScope {
-            relayUrls.map { relayUrl ->
-                launch(Dispatchers.IO) {
-                    val client = WebSocketClient(
-                        url = relayUrl,
-                        scope = scope,
-                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
-                    )
-                    val subId = "k3scan-${UUID.randomUUID().toString().take(8)}"
-                    // Parsed off Main (kind-3s are large); `collected` is concurrent.
-                    val collector = scope.launch(processingDispatcher) {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                    val eventObj = parsed[2].jsonObject
-                                    // Restore republishes this list as yours, so like
-                                    // fetchContactList only the owner's signed kind 3 counts.
-                                    if (!isOwnSignedContactList(eventObj, ownerHex, HavenBridge::verifyEvent)) return@collect
-                                    val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    if (collected.containsKey(id)) return@collect
-                                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
-                                        tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                    } ?: emptyList()
-                                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val pTags = tags.filter { it.firstOrNull() == "p" }
-                                    val pubkeys = contactManager.parseContactList(tags, ownerHex, whitelistedNpubs).pubkeys
-                                    if (pubkeys.isNotEmpty()) {
-                                        collected[id] = Kind3Event(id, createdAt, pubkeys, pTags, content)
-                                    }
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-                    // Cancelled mid-scan (Following Backup switching account),
-                    // the socket and its collector still close.
-                    try {
-                        client.connect()
-                        client.send("[\"REQ\",\"$subId\",{\"kinds\":[3],\"authors\":[\"$ownerHex\"]}]")
-                        delay(CONTACT_LOAD_TIMEOUT_MS)
-                    } finally {
-                        collector.cancel()
-                        client.disconnect()
-                    }
-                }
-            }.joinAll()
-        }
-        return collected.values.sortedByDescending { it.createdAt }
-    }
+    suspend fun scanRelaysForKind3(ownerHex: String = nostrService.activeHexPubkey): List<Kind3Event> = scanRelaysForKind3Impl(ownerHex)
 
     // ══════════════════════════════════════════════════════════════════
     // Extended network (discovery mode)
     // ══════════════════════════════════════════════════════════════════
 
-    /**
-     * How many people the follows bring in: the people they follow, freshly
-     * tallied (an older tally predates the follows just made).
-     */
-    suspend fun countExtendedNetwork(): Int {
-        loadExtendedNetwork()
-        return _extendedNetworkPubkeys.value.size
-    }
+    suspend fun countExtendedNetwork(): Int = countExtendedNetworkImpl()
 
     /** Set by the feed list while a drag or fling is in progress. */
     fun setFeedScrolling(active: Boolean) {
@@ -936,30 +567,7 @@ class FeedService @Inject constructor(
         configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
-    /**
-     * How many staged new posts the current feed would actually show. The raw
-     * pending list is unfiltered, and in Global with the Web of Trust on most
-     * of it is filtered out: counting it raw put "50 new posts" on a pill that
-     * revealed nothing.
-     */
-    fun visiblePendingCount(pending: List<FeedNote>): Int {
-        if (pending.isEmpty()) return 0
-        val config = configStore.config.value
-        val blockedPubkeys = config.blockedForActiveAccount()
-            .mapNotNull { nostrService.npubToHex(it) }.toSet()
-        return if (_feedMode.value == FeedMode.MEDIA) {
-            feedFilterEngine.filterMediaNotes(
-                notes = pending,
-                blocked = blockedPubkeys,
-                wotPubkeys = _wotPubkeys.value,
-                isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
-                globalRequiresTrust = !config.globalShowsEveryone,
-                authorOf = ::authorOf,
-            ).size
-        } else {
-            filterForCurrentFeed(pending, config, blockedPubkeys).size
-        }
-    }
+    fun visiblePendingCount(pending: List<FeedNote>): Int = visiblePendingCountImpl(pending)
 
     /**
      * Detected language per note id ("" = could not be told). Only filled
@@ -968,41 +576,15 @@ class FeedService @Inject constructor(
      */
     internal val noteLanguageCache = ConcurrentHashMap<String, String>()
 
-    /**
-     * Web of Trust / Everyone for Global and Media's Global. Re-filters
-     * straight away, then reloads, so the switch visibly lands both ways:
-     * back to the Web of Trust the untrusted posts go at once instead of
-     * lingering in the list and the new-posts count (iOS #133).
-     */
-    fun setGlobalShowsEveryone(on: Boolean) {
-        if (configStore.config.value.globalShowsEveryone == on) return
-        configStore.update { it.copy(globalShowsEveryone = on) }
-        recomputeFilteredNotes()
-        refresh()
-    }
+    fun setGlobalShowsEveryone(on: Boolean) { setGlobalShowsEveryoneImpl(on) }
 
-    /** Narrow Global to these ISO 639-1 codes; empty shows every language. */
-    fun setGlobalFeedLanguages(codes: List<String>) {
-        configStore.update { it.copy(globalFeedLanguages = codes.distinct()) }
-        recomputeFilteredNotes()
-    }
+    fun setGlobalFeedLanguages(codes: List<String>) { setGlobalFeedLanguagesImpl(codes) }
 
-    fun setShowReposts(show: Boolean) {
-        configStore.update { it.copy(showReposts = show) }
-        recomputeFilteredNotes()
-    }
+    fun setShowReposts(show: Boolean) { setShowRepostsImpl(show) }
 
-    fun setShowReplies(show: Boolean) {
-        configStore.update { it.copy(showReplies = show) }
-        recomputeFilteredNotes()
-    }
+    fun setShowReplies(show: Boolean) { setShowRepliesImpl(show) }
 
-    /** Polls' Open / Closed / All only re-filters: every poll is already loaded. */
-    fun setPollStatusFilter(filter: com.nostrvault.data.model.PollStatusFilter) {
-        if (_pollStatusFilter.value == filter) return
-        _pollStatusFilter.value = filter
-        recomputeFilteredNotes()
-    }
+    fun setPollStatusFilter(filter: com.nostrvault.data.model.PollStatusFilter) { setPollStatusFilterImpl(filter) }
 
     /**
      * Reloads the trust graph whenever the relay rewrites wot_cache.json. The
@@ -1013,144 +595,15 @@ class FeedService @Inject constructor(
      */
     internal var wotCacheObserver: FileObserver? = null
 
-    @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
-
-    fun loadWotPubkeys() {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val config = configStore.config.value
-                config.relayDataDir?.let { watchWotCache(it) }
-                val wotCachePath = config.relayDataDir?.let { "$it/$WOT_CACHE_FILE" }
-                if (wotCachePath != null) {
-                    val file = File(wotCachePath)
-                    if (file.exists()) {
-                        val text = file.readText()
-                        val loaded = FeedFilterEngine.parseWotCache(text, nostrService.activeHexPubkey)
-                        val vouches = TrustMap.vouches(text)
-                        if (loaded == null) {
-                            Log.w(TAG, "WoT cache unreadable: $wotCachePath")
-                            return@launch
-                        }
-                        if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
-                        withContext(Dispatchers.Main.immediate) {
-                            _wotCacheRead.value = true
-                            // Before the graph: its collectors read the vouches straight away.
-                            _wotVouches.value = vouches
-                            if (loaded != _wotPubkeys.value) {
-                                _wotPubkeys.value = loaded
-                                // Global is filtered against this set; notes
-                                // already on screen have to be re-judged.
-                                recomputeFilteredNotes()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "WoT load failed: ${e.message}")
-            }
-        }
-    }
+    fun loadWotPubkeys() { loadWotPubkeysImpl() }
 
     // ══════════════════════════════════════════════════════════════════
     // Following / unfollowing
     // ══════════════════════════════════════════════════════════════════
 
-    /** [undo], when given, is offered on the "Followed" pill. */
-    fun followUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
-        if (refuseIfReadOnly(pubkey, follow = true)) return Result.failure(FollowActionError.ReadOnly)
-        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
-            queueFollowAction(pubkey, follow = true)
-            return Result.failure(FollowActionError.ContactsNotLoaded)
-        }
-        val displayName = profileDisplayName(pubkey)
-        val currentPTags = _followedPubkeys.value.map { listOf("p", it) }
-        val result = contactManager.prepareFollow(
-            pubkey = pubkey,
-            currentPTags = currentPTags,
-            currentPubkeys = _followedPubkeys.value,
-            hasAttemptedLoad = _hasAttemptedContactLoad.value,
-            isLoading = _isLoadingContacts.value,
-            listConfirmed = contactListConfirmed,
-        )
-        return result.fold(
-            onSuccess = { followResult ->
-                val previous = _followedPubkeys.value
-                _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
-                }
-                // Re-filter so already-loaded notes from the newly-followed author
-                // surface immediately in the Following feed.
-                recomputeFilteredNotes()
-                // Re-issue the live primary REQ so the new follow's FUTURE notes
-                // stream in without waiting for a full refresh.
-                resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.FOLLOWED, undo, pubkey = pubkey)
-                Result.success(Unit)
-            },
-            onFailure = {
-                if (it is ContactManager.FollowActionError.ListUnavailable) {
-                    // Kept queued and retried; never published against an unknown list.
-                    queueFollowAction(pubkey, follow = true)
-                    return Result.failure(it)
-                }
-                // A tap made while the list read empty: it was already done (iOS
-                // resolves .alreadyFollowing as followed).
-                val kind = if (it is ContactManager.FollowActionError.AlreadyFollowing) FollowKind.FOLLOWED
-                else FollowKind.FAILED(it.message ?: "Failed")
-                notificationManager.showFollow(displayName, kind, pubkey = pubkey)
-                Result.failure(it)
-            },
-        )
-    }
+    fun followUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> = followUserImpl(pubkey, undo)
 
-    /** [undo], when given, is offered on the "Unfollowed" pill. */
-    fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
-        if (refuseIfReadOnly(pubkey, follow = false)) return Result.failure(FollowActionError.ReadOnly)
-        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
-            queueFollowAction(pubkey, follow = false)
-            return Result.failure(FollowActionError.ContactsNotLoaded)
-        }
-        val displayName = profileDisplayName(pubkey)
-        val currentPTags = _followedPubkeys.value.map { listOf("p", it) }
-        val result = contactManager.prepareUnfollow(
-            pubkey = pubkey,
-            activeAccountHex = nostrService.activeHexPubkey,
-            currentPTags = currentPTags,
-            currentPubkeys = _followedPubkeys.value,
-            hasAttemptedLoad = _hasAttemptedContactLoad.value,
-            isLoading = _isLoadingContacts.value,
-            listConfirmed = contactListConfirmed,
-        )
-        return result.fold(
-            // One deliberate unfollow from a list that loaded is always allowed,
-            // even to 0: prepareUnfollow already refuses a list that didn't load.
-            onSuccess = { followResult ->
-                val previous = _followedPubkeys.value
-                _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
-                }
-                // Re-filter so the unfollowed author's notes disappear from the
-                // Following feed immediately (the filter excludes non-follows).
-                recomputeFilteredNotes()
-                // Re-issue the live primary REQ so the relay stops streaming the
-                // unfollowed author's future notes.
-                resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED, undo, pubkey = pubkey)
-                Result.success(Unit)
-            },
-            onFailure = {
-                if (it is ContactManager.FollowActionError.ListUnavailable) {
-                    // Kept queued and retried; never published against an unknown list.
-                    queueFollowAction(pubkey, follow = false)
-                    return Result.failure(it)
-                }
-                notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"), pubkey = pubkey)
-                Result.failure(it)
-            },
-        )
-    }
+    fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> = unfollowUserImpl(pubkey, undo)
 
     /** Check if a pubkey is in the followed list. */
     fun isFollowing(pubkey: String): Boolean =
@@ -1162,58 +615,22 @@ class FeedService @Inject constructor(
     /** Alias for unfollowUser(), used by ProfileViewModel. */
     fun unfollowPubkey(pubkey: String) { unfollowUser(pubkey) }
 
-    fun restoreContactList(pTags: List<List<String>>, content: String) {
-        val ownerHex = nostrService.activeHexPubkey
-        val whitelistedNpubs = configStore.config.value.whitelistedNpubs ?: emptyList()
-        val contactResult = contactManager.parseContactList(pTags, ownerHex, whitelistedNpubs)
-        _followedPubkeys.value = contactResult.pubkeys
-        contactListContent = content
-        publishContactList(contactResult.pubkeys)
-    }
+    fun restoreContactList(pTags: List<List<String>>, content: String) { restoreContactListImpl(pTags, content) }
 
     // ══════════════════════════════════════════════════════════════════
     // User moderation
     // ══════════════════════════════════════════════════════════════════
 
-    /**
-     * Block for the active account. This wrote the legacy flat `blockedNpubs`,
-     * which the feed filter ignores once a per-account list exists, and then
-     * published that stale list as the owner's mute list, dropping anyone
-     * blocked from Settings and, on a second account, signing as the owner.
-     */
-    fun blockUser(hexPubkey: String) {
-        val npub = nostrService.hexToNpub(hexPubkey) ?: return
-        if (npub in configStore.config.value.blockedForActiveAccount()) return
-        configStore.blockProfile(npub)
-        publishActiveMuteList()
-        _notes.value = _notes.value.filter { it.pubkey != hexPubkey }
-        recomputeFilteredNotes()
-    }
+    fun blockUser(hexPubkey: String) { blockUserImpl(hexPubkey) }
 
-    fun unblockUser(hexPubkey: String) {
-        val npub = nostrService.hexToNpub(hexPubkey) ?: return
-        if (npub !in configStore.config.value.blockedForActiveAccount()) return
-        configStore.unblockProfile(npub)
-        publishActiveMuteList()
-    }
+    fun unblockUser(hexPubkey: String) { unblockUserImpl(hexPubkey) }
 
     fun isBlocked(hexPubkey: String): Boolean {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return false
         return npub in configStore.config.value.blockedForActiveAccount()
     }
 
-    fun applyPendingNotes() {
-        val pending = _pendingNotes.value
-        if (pending.isEmpty()) return
-
-        _notes.value = (pending + _notes.value)
-            .distinctBy { it.id }
-            .sortedByDescending { it.createdAt }
-            .take(MAX_FEED_NOTES)
-        _pendingNotes.value = emptyList()
-        _newNoteCount.value = 0
-        recomputeFilteredNotes()
-    }
+    fun applyPendingNotes() { applyPendingNotesImpl() }
 
     // ── Scroll position tracking ─────────────────────────────────
 
@@ -1261,46 +678,11 @@ class FeedService @Inject constructor(
         noteIndex()
     }
 
-    fun findNote(id: String): FeedNote? {
-        return noteIndex()[id]
-            ?: _parentNotesCache.value[id]
-            // A reply fetched for a threaded card, opened in place: replying
-            // to it, quoting it or opening its thread resolves it here.
-            ?: _feedThreadReplies.value[id]
-            // Quoted addressable events are keyed by coordinate, so a lookup by
-            // id has to scan them — without this, opening a quoted article
-            // refetches an event already in memory.
-            ?: _quotedAddressCache.value.values.firstOrNull { it.id == id }
-    }
+    fun findNote(id: String): FeedNote? = findNoteImpl(id)
 
-    /**
-     * The note a quote of [id] should cite: the original when [id] names a
-     * kind-6 repost or the original it carries. See [FeedNote.quoteTarget].
-     */
-    fun quoteTarget(id: String): FeedNote? {
-        val note = findNote(id) ?: return null
-        return FeedNote.quoteTarget(note) { ref ->
-            _notes.value.firstOrNull { it.id == ref && it.kind != 6 }
-                ?: _parentNotesCache.value[ref]?.takeIf { it.id == ref && it.kind != 6 }
-        }
-    }
+    fun quoteTarget(id: String): FeedNote? = quoteTargetImpl(id)
 
-    /**
-     * Register a note in the supplementary cache so that [findNote] can locate
-     * it even when the note isn't part of the main feed list. Called by
-     * ProfileViewModel and NoteDetailViewModel so ComposeNoteScreen can resolve
-     * reply/quote targets loaded outside the feed.
-     */
-    fun cacheNote(note: FeedNote) {
-        if (hidesDeleted(note)) return
-        var updated = _parentNotesCache.value + (note.id to note)
-        // For kind-6 reposts, also cache under the original note's ID so
-        // lookups by effectiveEventId succeed.
-        if (note.effectiveEventId != note.id) {
-            updated = updated + (note.effectiveEventId to note)
-        }
-        _parentNotesCache.value = updated
-    }
+    fun cacheNote(note: FeedNote) { cacheNoteImpl(note) }
 
     // ══════════════════════════════════════════════════════════════════
     // Note fetching (threading)
@@ -1322,11 +704,11 @@ class FeedService @Inject constructor(
     internal val unavailableSince = ConcurrentHashMap<String, Long>()
 
     /** Ids queued for the next lookup, or being looked up right now. */
-    private val noteFetchQueue = mutableSetOf<String>()
+    internal val noteFetchQueue = mutableSetOf<String>()
     internal val noteFetchInFlight = ConcurrentHashMap.newKeySet<String>()
     /** Guards [noteFetchQueue] and [noteFetchFlushJob] together. */
-    private val noteFetchLock = Any()
-    private var noteFetchFlushJob: Job? = null
+    internal val noteFetchLock = Any()
+    internal var noteFetchFlushJob: Job? = null
 
     /** Authors whose relay list was already requested, so each is asked once. */
     internal val relayListRequested = ConcurrentHashMap.newKeySet<String>()
@@ -1338,105 +720,19 @@ class FeedService @Inject constructor(
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
-    fun fetchMissingNotesBatch(ids: List<String>) {
-        // A post that arrived through the feed itself can be the parent (or
-        // repost original, or quote) a row is waiting on. Rows read parents
-        // from the cache only, so they kept their skeleton until a relay
-        // answered for a note the phone already had (iOS #302). Checked
-        // before the in-flight filter: the feed often delivers it mid-lookup.
-        val inFeed = adoptFeedNotes(ids)
-        val deleted = markDeletedUnavailable(ids)
-        val now = System.currentTimeMillis()
-        val wanted = ids.filter { id ->
-            if (id in inFeed || id in deleted) return@filter false
-            if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
-            val since = unavailableSince[id] ?: return@filter true
-            now - since >= UNAVAILABLE_RETRY_MS
-        }
-        if (wanted.isEmpty()) return
-        synchronized(noteFetchLock) {
-            noteFetchQueue.addAll(wanted)
-            if (noteFetchFlushJob != null) return
-            noteFetchFlushJob = scope.launch(Dispatchers.IO) {
-                // Drain until nothing new arrived during the wait. The lookups
-                // run outside this job: as children they kept it active for the
-                // whole fetch window, and ids queued meanwhile were never sent.
-                while (true) {
-                    delay(NOTE_FETCH_BATCH_DELAY_MS)
-                    val batch = synchronized(noteFetchLock) {
-                        val b = noteFetchQueue.toList()
-                        noteFetchQueue.clear()
-                        // Cleared under the same lock an enqueue checks, so an
-                        // id added after this either sees the job and is drained,
-                        // or sees null and starts the next one.
-                        if (b.isEmpty()) noteFetchFlushJob = null
-                        b
-                    }
-                    if (batch.isEmpty()) break
-                    noteFetchInFlight.addAll(batch)
-                    for (chunk in batch.chunked(50)) {
-                        scope.launch(Dispatchers.IO) { lookUpNotes(chunk) }
-                    }
-                }
-            }
-        }
-    }
+    fun fetchMissingNotesBatch(ids: List<String>) { fetchMissingNotesBatchImpl(ids) }
 
     // ══════════════════════════════════════════════════════════════════
     // Quoted note resolution (embedded nostr:note1/nevent1 previews)
     // ══════════════════════════════════════════════════════════════════
 
-    /**
-     * Resolve a quoted-event lookup key to a cached note, if already fetched.
-     *
-     * [identifier] is what `FeedNote.quotedEventIds` holds: a hex event id, or
-     * an `naddr:` coordinate. It used to be decoded from bech32 here as well,
-     * which meant that once the parser started handing out hex this rejected
-     * every key it was given and no quoted note ever resolved. [QuoteRef.key]
-     * is now the only thing that reads a key, on both sides.
-     */
-    fun quotedNoteFor(identifier: String): FeedNote? =
-        when (val key = QuoteRef.key(identifier)) {
-            is QuoteRef.Key.Event -> _parentNotesCache.value[key.hexId] ?: findNote(key.hexId)
-            is QuoteRef.Key.Address -> _quotedAddressCache.value[identifier]
-            null -> null
-        }
+    fun quotedNoteFor(identifier: String): FeedNote? = quotedNoteForImpl(identifier)
 
-    /** Batch-fetch quoted events that aren't cached yet. */
-    fun fetchMissingQuotedNotes(identifiers: List<String>) {
-        val keys = identifiers.distinct().mapNotNull { id -> QuoteRef.key(id)?.let { id to it } }
+    fun fetchMissingQuotedNotes(identifiers: List<String>) { fetchMissingQuotedNotesImpl(identifiers) }
 
-        val hexIds = keys.mapNotNull { (_, key) -> (key as? QuoteRef.Key.Event)?.hexId }
-        if (hexIds.isNotEmpty()) fetchMissingNotesBatch(hexIds)
+    suspend fun resolveAddress(coordinate: QuoteRef.Coordinate, timeoutMs: Long = 8_000, settleMs: Long = 600): FeedNote? = resolveAddressImpl(coordinate, timeoutMs, settleMs)
 
-        val coordinates = keys.mapNotNull { (raw, key) ->
-            (key as? QuoteRef.Key.Address)?.let { raw to it.coordinate }
-        }.filter { (raw, _) -> !_quotedAddressCache.value.containsKey(raw) }
-        if (coordinates.isNotEmpty()) fetchQuotedAddressesBatch(coordinates)
-    }
-
-    /**
-     * Fetch one addressable event (a `nostr:naddr1…` link) from the user's own
-     * relays, the same way a quoted naddr is fetched, and wait up to
-     * [timeoutMs] for it. Relays may answer with older revisions first, so it
-     * waits [settleMs] after the first answer and returns the newest.
-     */
-    suspend fun resolveAddress(coordinate: QuoteRef.Coordinate, timeoutMs: Long = 8_000, settleMs: Long = 600): FeedNote? {
-        val key = QuoteRef.format(coordinate)
-        fetchMissingQuotedNotes(listOf(key))
-        withTimeoutOrNull(timeoutMs) { _quotedAddressCache.first { it.containsKey(key) } } ?: return null
-        delay(settleMs)
-        return _quotedAddressCache.value[key]
-    }
-
-    /** Fetch profiles for the authors of resolved quoted notes that lack one. */
-    fun fetchMissingQuotedProfiles(identifiers: List<String>) {
-        val missingAuthors = identifiers
-            .mapNotNull { quotedNoteFor(it)?.pubkey }
-            .filter { nostrService.profiles.value[it] == null }
-            .distinct()
-        if (missingAuthors.isNotEmpty()) nostrService.fetchMissingProfiles(missingAuthors)
-    }
+    fun fetchMissingQuotedProfiles(identifiers: List<String>) { fetchMissingQuotedProfilesImpl(identifiers) }
 
     /** Who reacted, zapped and reposted one note. See FeedServiceEngagementDetails.kt. */
     fun fetchEngagementDetails(noteId: String, callback: (EngagementDetails) -> Unit) =
@@ -1466,77 +762,9 @@ class FeedService @Inject constructor(
     /** Alias for loadMore(), used by FeedViewModel. */
     fun loadOlderNotes() = loadMore()
 
-    /**
-     * The reaction button. A tap ([emoji] null) reacts with the default
-     * reaction, or takes the account's reaction back when it has one. A
-     * picked [emoji] (tapback bar or picker) is sent instead, replacing any
-     * other reaction; picking the one already sent takes it back. iOS #322.
-     */
-    fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) {
-        val isLiked = noteId in _likedEventIds.value
-        val current = _myReactions.value[noteId]?.content
-        val change = if (emoji == null) {
-            ReactionChoice.forTap(isLiked, configStore.config.value.defaultReactionEmoji)
-        } else {
-            ReactionChoice.forPick(isLiked, current, emoji)
-        }
-        when (change) {
-            is ReactionChoice.Change.React -> react(noteId, change.content, tags)
-            ReactionChoice.Change.Remove -> removeReaction(noteId)
-        }
-    }
+    fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) { likeNoteImpl(noteId, emoji, tags) }
 
-    /** Repost a note (kind 6 for kind-1 notes, kind 16 + k-tag otherwise, per NIP-18). */
-    fun repostNote(noteId: String) {
-        val existing = _repostedEventIds.value
-        if (noteId in existing) return
-        _repostedEventIds.value = existing + noteId
-
-        scope.launch(Dispatchers.IO) {
-            // NIP-18: always repost the ORIGINAL event, not a repost wrapper. For kind
-            // 6 notes, repostedEventId points to the original kind-1 event (the only
-            // kind this app has ever wrapped in kind 6).
-            val note = findNote(noteId)
-            val originalId = note?.repostedEventId ?: noteId
-            // A bare repost still carries the reposter's pubkey.
-            val originalPubkey = note?.effectiveAuthor
-            val originalKind = note?.effectiveKind ?: 1
-
-            val rawEvent = rawEventCache[originalId] ?: ""
-            val config = configStore.config.value
-            // NIP-18: e tag MUST include a relay URL as its third entry.
-            val relayHint = config.activeFeedRelays.firstOrNull()
-                ?: config.activeBlastrRelays.firstOrNull()
-                ?: (config.nostrURL ?: "")
-
-            // NIP-18: kind 6 is reserved for reposting kind-1 notes. Anything else
-            // (e.g. a kind-30023 long-form article) needs kind 16 with a "k" tag
-            // naming the original kind, or most clients will reject/ignore it.
-            val repostKind = if (originalKind == 1) 6 else 16
-            val tags = buildList {
-                add(listOf("e", originalId, relayHint))
-                originalPubkey?.let { add(listOf("p", it)) }
-                if (repostKind == 16) add(listOf("k", originalKind.toString()))
-            }
-            val event = runCatching { nostrService.signEventAsync(kind = repostKind, content = rawEvent, tags = tags) }
-                .onFailure { Log.e(TAG, "repost not signed: ${it.message}") }.getOrNull()
-            if (event != null) {
-                nostrService.postEvent(event)
-            } else {
-                // Nothing was published — undo the optimistic repost.
-                _repostedEventIds.value = _repostedEventIds.value - noteId
-                val stats = _noteStats.value.toMutableMap()
-                val st = stats[noteId] ?: NoteStats()
-                stats[noteId] = st.copy(repostCount = maxOf(0, st.repostCount - 1))
-                _noteStats.value = stats
-            }
-        }
-
-        val stats = _noteStats.value.toMutableMap()
-        val existing2 = stats[noteId] ?: NoteStats()
-        stats[noteId] = existing2.copy(repostCount = existing2.repostCount + 1)
-        _noteStats.value = stats
-    }
+    fun repostNote(noteId: String) { repostNoteImpl(noteId) }
 
 }
 
