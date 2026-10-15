@@ -4,7 +4,8 @@
 // Read: kind 1059 wraps addressed to the user, and legacy kind 4 from older clients. Wraps are kept in Haven's
 // /chat route (the iPhone's inbox), so they are there offline; kind 4 is not, /chat refuses it.
 // Decrypted text lives only in memory here: nothing decrypted is ever written to Haven, localStorage or the log.
-// Only a NIP-07 extension can decrypt (NIP-44 / NIP-04); the bunker sign-in only signs, so Messages says so.
+// The text is encrypted and decrypted by the signer: a NIP-07 extension's nip44 / nip04, or a NIP-46 bunker's
+// nip44_encrypt / nip44_decrypt / nip04_decrypt (signer/nip46.js bunkerCrypto). The user's key stays with the signer.
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
 import { makeAuthEvent } from "nostr-tools/nip42"
@@ -20,11 +21,13 @@ const now = () => Math.floor(Date.now() / 1000)
 const randomPast = () => now() - Math.floor(Math.random() * 2 * 86400)
 const pTag = (tags, not) => (tags ?? []).find(t => t[0] === "p" && HEX64.test(t[1] ?? "") && t[1] !== not)?.[1] ?? null
 
-/** How this session reads and writes message text. -> extension crypto, or { reason } when it can't decrypt. */
-export function cryptoFor(session, { ext } = {}) {
-  if (session?.method === "nip46") return { reason: "your bunker sign-in only signs, it can't decrypt here yet" }
-  if (session?.method !== "nip07") return { reason: "this sign-in can't decrypt" }
-  return ext ?? extensionCrypto()
+/** How this session reads and writes message text: the signer's crypto (extension or bunker), or { reason } when
+ *  there is none. `ext` is for tests. */
+export function cryptoFor(session, { ext, signer } = {}) {
+  if (session?.method !== "nip07" && session?.method !== "nip46") return { reason: "this sign-in can't decrypt" }
+  if (ext) return ext
+  if (signer?.crypto) return signer.crypto
+  return session.method === "nip07" ? extensionCrypto() : { reason: "your bunker isn't connected" }
 }
 
 /** The kind 14 the other person reads: unsigned, its id computed like any event's. */
@@ -62,7 +65,7 @@ export async function unwrap(wrap, crypto, me) {
     const peer = rumor.pubkey === me ? (pTag(rumor.tags, me) ?? (names ? me : null)) : names ? rumor.pubkey : null
     if (!peer) return null
     return { id: wrap.id, from: rumor.pubkey, peer, content: rumor.content, at: Number(rumor.created_at) || 0, legacy: false }
-  } catch { return null }
+  } catch (e) { if (e?.unreachable) throw e; return null }
 }
 
 /** A legacy kind 4 to or from `me`. -> { id, from, peer, content, at, legacy: true } or null. */
@@ -72,7 +75,7 @@ export async function openLegacy(ev, crypto, me) {
     const peer = ev.pubkey === me ? pTag(ev.tags, me) : ev.pubkey
     if (!peer || (ev.pubkey !== me && pTag(ev.tags) !== me)) return null
     return { id: ev.id, from: ev.pubkey, peer, content: await crypto.decrypt04(peer, ev.content), at: ev.created_at, legacy: true }
-  } catch { return null }
+  } catch (e) { if (e?.unreachable) throw e; return null }
 }
 
 /** Relays a person's DMs go to, as the iPhone picks them: their kind 10050, else their kind 10002 read list,
@@ -106,23 +109,25 @@ export function chatStore(vault) {
 }
 
 // What the screens read: decrypted messages by id, for one account, in memory only.
-let state = { pubkey: null, messages: new Map(), note: "", loaded: false }
-const opened = new Set() // wrap ids already tried (opened or failed), so a refresh doesn't ask the extension again
+let state = { pubkey: null, messages: new Map(), note: "", trouble: "", loaded: false }
+const opened = new Set() // wrap ids already tried (opened or failed), so a refresh doesn't ask the signer again
 const listeners = new Set()
 export const getMessages = () => state
 export function onMessages(cb) { listeners.add(cb); return () => listeners.delete(cb) }
 const changed = () => { for (const cb of listeners) cb() }
 
 export function resetMessages(pubkey) {
-  state = { pubkey, messages: new Map(), note: "", loaded: false }
+  state = { pubkey, messages: new Map(), note: "", trouble: "", loaded: false }
   opened.clear()
   changed()
 }
 
-/** Wraps opened per round: each costs two extension calls, so a first load of hundreds shows the newest ones first. */
+/** Wraps opened per round: each costs two signer calls, so a first load of hundreds shows the newest ones first. */
 export const OPEN_BATCH = 8
 
-/** Open `evs` newest first, a batch at a time, telling the screens after each batch. -> how many were added */
+/** Open `evs` newest first, a batch at a time, telling the screens after each batch. -> how many were added
+ *  A signer that stops answering (a bunker that's offline: each request would wait out its timeout) stops the run:
+ *  `trouble` says why, and what wasn't opened is tried again on the next load. */
 async function take(evs, crypto, me) {
   let added = 0
   const fresh = []
@@ -132,9 +137,16 @@ async function take(evs, crypto, me) {
   }
   fresh.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
   for (let i = 0; i < fresh.length && state.pubkey === me; i += OPEN_BATCH) {
-    const got = await Promise.all(fresh.slice(i, i + OPEN_BATCH).map(ev => ev.kind === 4 ? openLegacy(ev, crypto, me) : unwrap(ev, crypto, me)))
+    const got = await Promise.all(fresh.slice(i, i + OPEN_BATCH).map(ev =>
+      (ev.kind === 4 ? openLegacy(ev, crypto, me) : unwrap(ev, crypto, me)).catch(e => ({ lost: e }))))
     let n = 0
-    for (const m of got) if (m && state.pubkey === me) { state.messages.set(m.id, m); n++ }
+    for (const m of got) if (m?.id && state.pubkey === me) { state.messages.set(m.id, m); n++ }
+    const lost = got.find(m => m?.lost)?.lost
+    if (lost && state.pubkey === me) {
+      for (const ev of fresh.slice(i)) if (!state.messages.has(ev.id)) opened.delete(ev.id)
+      state = { ...state, trouble: String(lost.message ?? lost) }; changed()
+      return added + n
+    }
     if (n) { added += n; state = { ...state }; changed() }
   }
   return added
@@ -145,10 +157,11 @@ async function take(evs, crypto, me) {
  * With a signer that can't decrypt, nothing is opened and `note` says why. `query`, `crypto`, `chat` are for tests.
  * -> { stored } wraps newly kept in Haven
  */
-export async function loadMessages({ vault, session }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat } = {}) {
+export async function loadMessages({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat } = {}) {
   const me = session.pubkey
   if (state.pubkey !== me) resetMessages(me)
-  const c = crypto ?? cryptoFor(session)
+  if (state.trouble) { state = { ...state, trouble: "" }; changed() }
+  const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason) { state = { ...state, note: c.reason, loaded: true }; changed(); return { stored: 0 } }
   const store = chat ?? chatStore(vault)
   await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me)
@@ -174,9 +187,9 @@ export async function loadMessages({ vault, session }, relays, { crypto, query =
 export const WATCH_SINCE = 2 * 86400 + 3600
 
 /** Keep listening for new wraps while a screen is open. `subscribe` is for tests. -> close() */
-export function watchMessages({ vault, session }, relays, { crypto, chat, subscribe = (r, f, o) => pool.subscribe(r, f, o) } = {}) {
+export function watchMessages({ vault, session, signer }, relays, { crypto, chat, subscribe = (r, f, o) => pool.subscribe(r, f, o) } = {}) {
   const me = session.pubkey
-  const c = crypto ?? cryptoFor(session)
+  const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason || !relays.length) return () => {}
   const store = chat ?? chatStore(vault)
   const sub = subscribe(uniq(relays), { kinds: [1059, 4], "#p": [me], since: now() - WATCH_SINCE }, {
@@ -208,7 +221,7 @@ export const thread = (messages, peer) => [...messages.values()].filter(m => m.p
  */
 export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
   const me = ctx.session.pubkey
-  const c = crypto ?? cryptoFor(ctx.session)
+  const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw new Error(`Can't send: ${c.reason}`)
   const env = { signer: ctx.signer, crypto: c, me }
   const rumor = rumorFor(me, peer, text)

@@ -69,8 +69,9 @@ test("a legacy kind 4 opens with NIP-04, either way round", async () => {
   assert.equal(await openLegacy(fromA, cryptoOf(C), pk(C)), null)
 })
 
-test("the bunker sign-in can't decrypt and says so", () => {
-  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }).reason, /bunker/)
+test("with no signer to ask, a sign-in can't decrypt and says so", () => {
+  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }).reason, /bunker isn't connected/)
+  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }, { signer: { signEvent() {} } }).reason, /bunker isn't connected/)
   assert.match(cryptoFor({ method: "other" }).reason, /can't decrypt/)
   assert.equal(cryptoFor({ method: "nip07" }, { ext: "x" }), "x")
 })
@@ -181,7 +182,7 @@ test("sendMessage: their wrap to their DM relays, the self-copy to mine and into
   assert.equal(thread(getMessages().messages, pk(B)).length, 1)
 })
 
-test("sendMessage throws when no relay took it, and with a bunker sign-in", async () => {
+test("sendMessage throws when no relay took it, and with no signer that can encrypt", async () => {
   const publish = () => [Promise.reject(new Error("closed"))]
   resetMessages(pk(A))
   await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Not delivered: none of their 1 relay took it \(closed\)/)

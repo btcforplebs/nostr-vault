@@ -18,9 +18,11 @@ export async function inboxRelays(ctx) {
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
 }
 
-/** Messages state for a screen, loading once and re-rendering as messages land. */
+/** Messages state for a screen, loading once and re-rendering as messages land. `retry` loads again, for when the
+ *  signer stopped answering partway (`trouble`). */
 export function useMessages(ctx) {
   const [m, setM] = useState(getMessages)
+  const [round, setRound] = useState(0)
   useEffect(() => {
     const off = onMessages(() => setM(getMessages()))
     let stop = () => {}
@@ -32,12 +34,22 @@ export function useMessages(ctx) {
       if (live) stop = watchMessages(ctx, relays)
     })()
     return () => { live = false; off(); stop() }
-  }, [ctx.session.pubkey])
-  return m
+  }, [ctx.session.pubkey, round])
+  return { ...m, retry: () => setRound(r => r + 1) }
+}
+
+/** The signer stopped answering while messages were being opened: say so, and offer to ask again. */
+export function SignerTrouble({ trouble, retry }) {
+  if (!trouble) return null
+  return (
+    <div class="status-line error" role="alert">
+      Some messages aren't open yet: {trouble} <button type="button" class="small" onClick={retry}>Try again</button>
+    </div>
+  )
 }
 
 export function MessagesScreen({ ctx }) {
-  const { messages, note, loaded } = useMessages(ctx)
+  const { messages, note, trouble, retry, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
@@ -60,12 +72,13 @@ export function MessagesScreen({ ctx }) {
     <main class="screen">
       <header class="screen-head"><h2>Messages</h2></header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
+      <SignerTrouble trouble={trouble} retry={retry} />
       <form class="dm-new" onSubmit={open}>
         <input value={to} onInput={e => setTo(e.currentTarget.value)} placeholder="New message to npub…" autocapitalize="off" autocorrect="off" spellcheck={false} aria-label="New message to" />
         <button type="submit" class="small" disabled={!to.trim()}>Open</button>
       </form>
       {err && <div class="status-line error">{err}</div>}
-      {!loaded && !list.length ? <p class="empty">Opening your messages…</p>
+      {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
         : list.map(c => (
           <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>

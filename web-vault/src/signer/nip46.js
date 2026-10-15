@@ -75,11 +75,16 @@ export async function resealSession(session, storage) {
 // approve on their signer, then say so instead of leaving the button spinning.
 const ANSWER_TIMEOUT_MS = 60_000
 
+// A signer that didn't answer, or whose relay couldn't be reached, is marked `unreachable`: the request never got a
+// yes or no, so whoever is asking many times in a row (Messages opening a page of wraps) can stop instead of waiting
+// out each one. A bunker's own refusal ("no permission", a ciphertext it can't open) is an ordinary error.
+const unreachable = message => Object.assign(new Error(message), { unreachable: true })
+
 function answered(promise, ms = ANSWER_TIMEOUT_MS) {
   let timer
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Your signer didn't answer within a minute. Check that your bunker app is open and online, then try again.")), ms) })
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(unreachable(`Your signer didn't answer within ${ms >= 60_000 ? "a minute" : `${Math.round(ms / 1000)} seconds`}. Check that your bunker app is open and online, then try again.`)), ms) })
   // The pool rejects with an AggregateError when no bunker relay took the request.
-  const reached = promise.catch(e => { throw e instanceof AggregateError ? new Error("Couldn't reach your signer's relay. Check your connection, then try again.") : e })
+  const reached = promise.catch(e => { throw e instanceof AggregateError ? unreachable("Couldn't reach your signer's relay. Check your connection, then try again.") : e })
   return Promise.race([reached, timeout]).finally(() => clearTimeout(timer))
 }
 
@@ -87,11 +92,28 @@ function answered(promise, ms = ANSWER_TIMEOUT_MS) {
 // the sign-out screen also tells the user to revoke the connection in their bunker app.
 const LOGOUT_TIMEOUT_MS = 3000
 
-// `ready`: the BunkerSigner, once its client key is unsealed.
-function wrap(ready) {
+/**
+ * The bunker's NIP-44 and NIP-04 (NIP-46 nip44_encrypt / nip44_decrypt / nip04_encrypt / nip04_decrypt), in the shape
+ * Messages and the block list use for an extension's (nip07.js extensionCrypto). The user's key stays in the bunker:
+ * each call is one request to it, and it may ask the user to approve. `peer` is the other key of the conversation;
+ * for the user's own lists and DM self-copies it is the user's pubkey.
+ */
+export function bunkerCrypto(ready, ms = ANSWER_TIMEOUT_MS) {
+  const ask = (method, peer, text) => ready.then(b => answered(b[method](peer, text), ms))
+  return {
+    encrypt: (peer, text) => ask("nip44Encrypt", peer, text),
+    decrypt: (peer, ciphertext) => ask("nip44Decrypt", peer, ciphertext),
+    encrypt04: (peer, text) => ask("nip04Encrypt", peer, text),
+    decrypt04: (peer, ciphertext) => ask("nip04Decrypt", peer, ciphertext),
+  }
+}
+
+// `ready`: the BunkerSigner, once its client key is unsealed. Exported for tests, which pass a fake bunker.
+export function wrap(ready, { ms = ANSWER_TIMEOUT_MS } = {}) {
   return {
     method: "nip46",
-    signEvent: t => ready.then(b => answered(b.signEvent(t))),
+    crypto: bunkerCrypto(ready, ms),
+    signEvent: t => ready.then(b => answered(b.signEvent(t), ms)),
     close: () => { ready.then(b => b.close(), () => {}) },
     /** -> true if the bunker confirmed it dropped the grant. Always closes the signer. */
     revoke: () => ready.then(b => answered(b.logout(), LOGOUT_TIMEOUT_MS).then(() => true, () => false).finally(() => b.close()), () => false),

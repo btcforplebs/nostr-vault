@@ -23,12 +23,16 @@ export const isNip04 = s => /\?iv=/.test(s)
 
 /**
  * How this session can open the private part. -> { decrypt: (ciphertext) => Promise<string> } or { reason }.
- * A NIP-07 extension can, if it offers the matching scheme. The bunker sign-in here only signs (src/signer/nip46.js
- * exposes no decrypt), so its private blocks stay closed. `ext` is for tests.
+ * The signer opens it: a bunker through its nip44_decrypt / nip04_decrypt (signer/nip46.js bunkerCrypto), an
+ * extension if it offers the matching scheme. `ext` is for tests.
  */
-export async function decrypterFor(session, { ext } = {}) {
-  if (session?.method === "nip46") return { reason: "your bunker sign-in can't decrypt here yet" }
-  if (session?.method !== "nip07") return { reason: "this sign-in can't decrypt" }
+export async function decrypterFor(session, { ext, signer } = {}) {
+  if (session?.method !== "nip07" && session?.method !== "nip46") return { reason: "this sign-in can't decrypt" }
+  if (!ext && signer?.crypto) {
+    const c = signer.crypto
+    return { decrypt: ct => (isNip04(ct) ? c.decrypt04(session.pubkey, ct) : c.decrypt(session.pubkey, ct)) }
+  }
+  if (session.method === "nip46") return { reason: "your bunker isn't connected" }
   const nostr = ext ?? (await findExtension())
   if (!nostr) return { reason: "your Nostr extension isn't there" }
   return {
@@ -87,13 +91,13 @@ async function apply(pubkey, ev, opener) {
  * Load the block list once per account: Haven's copy first (so offline works), then the network's if it is newer.
  * Later calls for the same account return the same promise. `opener` and `query` are for tests.
  */
-export function loadBlocks({ vault, session }, relays, { opener, query, log } = {}) {
+export function loadBlocks({ vault, session, signer }, relays, { opener, query, log } = {}) {
   const pubkey = session.pubkey
   if (state.pubkey === pubkey && loading) return loading
   state = { pubkey, blocked: new Set(), privateNote: "", eventId: null }
   for (const cb of listeners) cb()
   loading = (async () => {
-    const open = opener ?? (await decrypterFor(session))
+    const open = opener ?? (await decrypterFor(session, { signer }))
     await apply(pubkey, await readBlockList(vault, pubkey), open)
     if (globalThis.navigator?.onLine === false) return
     await apply(pubkey, await refreshBlockList(vault, pubkey, relays, { query, log }), open)

@@ -1,0 +1,156 @@
+// A bunker (NIP-46) sign-in encrypts and decrypts through the bunker, so Messages and the private block list work
+// as they do with an extension. The bunker here is a fake holding a throwaway key: nothing is published, and no real
+// account signs anything.
+import test from "node:test"
+import assert from "node:assert/strict"
+import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
+import * as nip44 from "nostr-tools/nip44"
+import * as nip04 from "nostr-tools/nip04"
+import { wrap } from "../src/signer/nip46.js"
+import { cryptoFor, rumorFor, wrapFor, unwrap, loadMessages, getMessages, resetMessages, sendMessage, OPEN_BATCH } from "../src/net/dms.js"
+import { decrypterFor, privateBlocks, loadBlocks, getBlocks } from "../src/net/blocks.js"
+
+const A = generateSecretKey(), B = generateSecretKey()
+const pk = sk => getPublicKey(sk)
+const plain = ev => JSON.parse(JSON.stringify(ev))
+
+// What a bunker app does with the user's key when asked over NIP-46: each method as BunkerSigner names it.
+function fakeBunker(sk, calls = []) {
+  const key = peer => nip44.getConversationKey(sk, peer)
+  return {
+    calls,
+    signEvent: async t => { calls.push(["sign_event", t.kind]); return finalizeEvent(t, sk) },
+    nip44Encrypt: async (peer, text) => { calls.push(["nip44_encrypt", peer]); return nip44.encrypt(text, key(peer)) },
+    nip44Decrypt: async (peer, c) => { calls.push(["nip44_decrypt", peer]); return nip44.decrypt(c, key(peer)) },
+    nip04Encrypt: async (peer, text) => { calls.push(["nip04_encrypt", peer]); return nip04.encrypt(sk, peer, text) },
+    nip04Decrypt: async (peer, c) => { calls.push(["nip04_decrypt", peer]); return nip04.decrypt(sk, peer, c) },
+    close() {},
+  }
+}
+const bunkerSession = sk => ({ method: "nip46", pubkey: pk(sk), bunker: { pubkey: "e".repeat(64), relays: ["wss://bunker.invalid"] } })
+// What an extension does for B, the other side of the conversation.
+const extOf = sk => ({
+  encrypt: async (peer, t) => nip44.encrypt(t, nip44.getConversationKey(sk, peer)),
+  decrypt: async (peer, c) => nip44.decrypt(c, nip44.getConversationKey(sk, peer)),
+  decrypt04: async (peer, c) => nip04.decrypt(sk, peer, c),
+})
+function fakeChat(seed = []) {
+  const stored = [...seed]
+  return {
+    stored,
+    query: async f => stored.filter(e => (!f.kinds || f.kinds.includes(e.kind)) && (!f["#p"] || e.tags.some(t => t[0] === "p" && f["#p"].includes(t[1])))),
+    event: async ev => { if (ev.kind === 4) return { ok: false, message: "blocked" }; if (!stored.some(e => e.id === ev.id)) stored.push(plain(ev)); return { ok: true, message: "" } },
+  }
+}
+const offline = async () => { throw new Error("network used") }
+
+test("a bunker signer offers its nip44 and nip04 as Messages' crypto", async () => {
+  const signer = wrap(Promise.resolve(fakeBunker(A)))
+  assert.equal(cryptoFor(bunkerSession(A), { signer }), signer.crypto)
+  for (const f of ["encrypt", "decrypt", "encrypt04", "decrypt04"]) assert.equal(typeof signer.crypto[f], "function", f)
+})
+
+test("a message both ways: the bunker seals and opens, the other side uses an extension", async () => {
+  const calls = []
+  const signer = wrap(Promise.resolve(fakeBunker(A, calls)))
+  const env = { signer, crypto: signer.crypto, me: pk(A) }
+  const toB = await wrapFor(rumorFor(pk(A), pk(B), "from the bunker"), env, pk(B))
+  assert.equal((await unwrap(toB, extOf(B), pk(B))).content, "from the bunker")
+  assert.deepEqual(calls, [["nip44_encrypt", pk(B)], ["sign_event", 13]], "the seal is encrypted to B and signed by the bunker")
+
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const toA = await wrapFor(rumorFor(pk(B), pk(A), "to the bunker"), benv, pk(A))
+  calls.length = 0
+  const got = await unwrap(toA, signer.crypto, pk(A))
+  assert.deepEqual({ from: got.from, peer: got.peer, content: got.content }, { from: pk(B), peer: pk(B), content: "to the bunker" })
+  assert.deepEqual(calls.map(c => c[0]), ["nip44_decrypt", "nip44_decrypt"], "wrap, then seal")
+  assert.equal(calls[1][1], pk(B), "the seal is opened against its signer")
+})
+
+test("a legacy kind 4 opens with the bunker's nip04", async () => {
+  const signer = wrap(Promise.resolve(fakeBunker(A)))
+  const old = finalizeEvent({ kind: 4, created_at: 100, tags: [["p", pk(A)]], content: nip04.encrypt(B, pk(A), "old style") }, B)
+  resetMessages(pk(A))
+  await loadMessages({ vault: {}, session: bunkerSession(A), signer }, ["wss://r"], { chat: fakeChat(), query: async (r, f) => (f.kinds.includes(4) && f["#p"] ? [old] : []) })
+  assert.equal(getMessages().messages.get(old.id)?.content, "old style")
+  assert.equal(getMessages().note, "")
+})
+
+test("send and read back with only the bunker: no extension, nothing published", async () => {
+  const signer = wrap(Promise.resolve(fakeBunker(A)))
+  const ctx = { vault: {}, session: bunkerSession(A), signer, account: { relays: { read: ["wss://read.example"], write: ["wss://write.example"] } } }
+  const sent = []
+  const publish = (urls, ev) => { sent.push(ev); return urls.map(() => Promise.resolve("")) }
+  const chat = fakeChat()
+  resetMessages(pk(A))
+  await sendMessage(ctx, pk(B), "hello", { query: async () => [], chat, publish })
+  const theirs = sent.find(e => e.tags.some(t => t[1] === pk(B)))
+  assert.equal((await unwrap(theirs, extOf(B), pk(B))).content, "hello", "B opens what the bunker sent")
+  // A fresh load reads the self-copy back out of /chat through the bunker.
+  resetMessages(pk(A))
+  await loadMessages(ctx, [], { chat, query: offline })
+  assert.deepEqual([...getMessages().messages.values()].map(m => [m.peer, m.content]), [[pk(B), "hello"]])
+})
+
+test("the private block list opens through the bunker, NIP-44 or NIP-04", async () => {
+  const B1 = "b".repeat(64), D1 = "d".repeat(64)
+  const signer = wrap(Promise.resolve(fakeBunker(A)))
+  const c44 = nip44.encrypt(JSON.stringify([["p", B1]]), nip44.getConversationKey(A, pk(A)))
+  const c04 = nip04.encrypt(A, pk(A), JSON.stringify([["p", D1]]))
+  const opener = await decrypterFor(bunkerSession(A), { signer })
+  const list = content => finalizeEvent({ kind: 10000, created_at: 100, tags: [], content }, A)
+  assert.deepEqual(await privateBlocks(list(c44), opener), { pubkeys: [B1], note: "" })
+  assert.deepEqual(await privateBlocks(list(c04), opener), { pubkeys: [D1], note: "" })
+
+  const stored = [finalizeEvent({ kind: 10000, created_at: 200, tags: [["p", "c".repeat(64)]], content: c44 }, A)]
+  const vault = { outbox: { query: async () => stored, event: async () => ({ ok: true, message: "" }) } }
+  await loadBlocks({ vault, session: bunkerSession(A), signer }, [], { query: async () => [] })
+  assert.deepEqual([...getBlocks().blocked].sort(), [B1, "c".repeat(64)])
+  assert.equal(getBlocks().privateNote, "")
+})
+
+test("a bunker that stops answering stops the run after one batch, says why, and a retry opens the rest", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const wraps = []
+  for (let i = 0; i < OPEN_BATCH * 3; i++) wraps.push(await wrapFor(rumorFor(pk(B), pk(A), `m${i}`, 1000 + i), benv, pk(A)))
+  const chat = fakeChat(wraps)
+  const bunker = fakeBunker(A)
+  const real = bunker.nip44Decrypt
+  let asked = 0
+  bunker.nip44Decrypt = () => { asked++; return new Promise(() => {}) } // gone: never answers
+  const signer = wrap(Promise.resolve(bunker), { ms: 30 })
+  resetMessages(pk(A))
+  await loadMessages({ vault: {}, session: bunkerSession(A), signer }, [], { chat, query: offline })
+  const m = getMessages()
+  assert.equal(asked, OPEN_BATCH, "one batch asked, not every wrap waiting out the timeout")
+  assert.match(m.trouble, /didn't answer/)
+  assert.equal(m.messages.size, 0)
+  assert.equal(m.loaded, true)
+
+  bunker.nip44Decrypt = real // back online
+  await loadMessages({ vault: {}, session: bunkerSession(A), signer }, [], { chat, query: offline })
+  assert.equal(getMessages().messages.size, OPEN_BATCH * 3, "the wraps not opened before are asked again")
+  assert.equal(getMessages().trouble, "")
+})
+
+test("a bunker that refuses (an answer, not silence) doesn't stop the run", async () => {
+  const benv = { signer: { signEvent: async t => finalizeEvent(t, B) }, crypto: extOf(B), me: pk(B) }
+  const wraps = []
+  for (let i = 0; i < OPEN_BATCH + 2; i++) wraps.push(await wrapFor(rumorFor(pk(B), pk(A), `m${i}`, 1000 + i), benv, pk(A)))
+  const bunker = fakeBunker(A)
+  let asked = 0
+  bunker.nip44Decrypt = async () => { asked++; throw new Error("permission denied") }
+  resetMessages(pk(A))
+  await loadMessages({ vault: {}, session: bunkerSession(A), signer: wrap(Promise.resolve(bunker), { ms: 1000 }) }, [], { chat: fakeChat(wraps), query: offline })
+  assert.equal(asked, OPEN_BATCH + 2, "every wrap was tried")
+  assert.equal(getMessages().trouble, "")
+})
+
+test("the bunker's silence and an unreachable relay are marked; its own errors aren't", async () => {
+  const silent = wrap(Promise.resolve({ ...fakeBunker(A), nip04Encrypt: () => new Promise(() => {}) }), { ms: 20 })
+  await assert.rejects(silent.crypto.encrypt04(pk(B), "x"), e => e.unreachable === true && /didn't answer/.test(e.message))
+  const noRelay = wrap(Promise.resolve({ ...fakeBunker(A), nip44Encrypt: () => Promise.reject(new AggregateError([], "none")) }))
+  await assert.rejects(noRelay.crypto.encrypt(pk(B), "x"), e => e.unreachable === true && /Couldn't reach/.test(e.message))
+  const refusing = wrap(Promise.resolve({ ...fakeBunker(A), nip44Decrypt: () => Promise.reject(new Error("no")) }))
+  await assert.rejects(refusing.crypto.decrypt(pk(B), "x"), e => !e.unreachable && e.message === "no")
+})
