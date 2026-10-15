@@ -164,11 +164,15 @@ fun ProfileScreen(
         } else emptyList()
     }
     val listState = rememberLazyListState()
-    // Re-tapping the Profile tab scrolls back to the top (iOS MyProfileView).
+    // Re-tapping the Profile tab: back to the top, and fetched fresh, the
+    // iPhone's way to refresh your own profile (iOS MyProfileView).
     if (isTab) {
         LaunchedEffect(Unit) {
             com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.Profile)
-                .collect { listState.animateScrollToItem(0) }
+                .collect {
+                    viewModel.refresh()
+                    listState.animateScrollToItem(0)
+                }
         }
     }
     val density = androidx.compose.ui.platform.LocalDensity.current
