@@ -46,7 +46,7 @@ object GlobeArcs {
     val KINDS = listOf(1, NIP10Thread.COMMENT_KIND)
     /** Reposts (kind 6) and generic reposts (kind 16): the reposter to the person reposted. */
     val REPOST_KINDS = listOf(6, 16)
-    /** NIP-57 zap receipts. Drawn as bolts by the next change; until then they never fly. */
+    /** NIP-57 zap receipts: drawn as bolts ([GlobeZaps]). */
     const val ZAP_KIND = 9735
 
     /** The feed a note came in on, which sets where its star starts. */
@@ -68,8 +68,10 @@ object GlobeArcs {
         val author: String,
         val targets: List<String>,
         val ring: Ring = Ring.FOLLOWING,
-        /** What it is, for the live switches ([GlobeLive]). */
+        /** What it is, for the live switches ([GlobeLive]). A zap is drawn as a bolt ([GlobeZaps]). */
         val sort: Sort = Sort.NOTE,
+        /** How hard a zap's bolt strikes, 0 to 1, by its amount. */
+        val strength: Double = 0.0,
     )
 
     /** What an arrival is (iOS `GlobeArcs.Sort`). */
@@ -78,7 +80,7 @@ object GlobeArcs {
     /**
      * An arrival from a relay event's fields: its `p` tags in order, once each,
      * without the author. Null for anything that isn't a fresh note, reply,
-     * repost or reaction. Zap receipts draw nothing yet.
+     * repost or reaction. Zap receipts go through the JSON overload.
      */
     fun arrival(
         kind: Int?,
@@ -123,9 +125,22 @@ object GlobeArcs {
         return Arrival(id, author, targets, sort = sort)
     }
 
-    /** [arrival] from a relay `EVENT`'s event object. */
-    fun arrival(event: JsonObject, nowSeconds: Double = System.currentTimeMillis() / 1000.0): Arrival? =
-        arrival(
+    /**
+     * [arrival] from a relay `EVENT`'s event object. A zap receipt flies only with
+     * [verifyZap], which checks the zap request's signature
+     * ([com.nostrvault.relay.HavenBridge.verifyEvent] in the app); without it a zap
+     * draws nothing.
+     */
+    fun arrival(
+        event: JsonObject,
+        nowSeconds: Double = System.currentTimeMillis() / 1000.0,
+        verifyZap: ((String) -> Boolean)? = null,
+    ): Arrival? {
+        // A zap receipt is signed by the LNURL server: the zapper is inside.
+        if ((event["kind"] as? JsonPrimitive)?.intOrNull == ZAP_KIND) {
+            return verifyZap?.let { GlobeZaps.zap(event, nowSeconds, it) }
+        }
+        return arrival(
             kind = (event["kind"] as? JsonPrimitive)?.intOrNull,
             rawId = (event["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             rawAuthor = (event["pubkey"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
@@ -133,6 +148,7 @@ object GlobeArcs {
             tags = tags(event["tags"]),
             nowSeconds = nowSeconds,
         )
+    }
 
     /** A relay event's tags as strings; anything malformed is left out. */
     fun tags(element: JsonElement?): List<List<String>> =
@@ -182,9 +198,12 @@ object GlobeArcs {
         /** The feed its note came in on: where its star sets out. */
         val ring: Ring,
         val born: Double,
-        /** What it carries: a reaction's star is smaller. */
+        /** What it carries: a reaction's star is smaller; a zap is a bolt. */
         val sort: Sort,
+        /** How hard a zap's bolt strikes, 0 to 1. */
+        val strength: Double = 0.0,
     ) {
+        val zap: Boolean get() = sort == Sort.ZAP
         /** Set when a newer line needs the room: it fades from here. */
         var retired: Double? = null
     }
@@ -239,7 +258,7 @@ object GlobeArcs {
                 // Aimed at no one: it flies into you, where your relay is.
                 for (target in next.targets.ifEmpty { listOf(me) }) {
                     if (target == next.author) continue
-                    lines += Line(next.id, next.author, target, target == me, next.ring, now, next.sort)
+                    lines += Line(next.id, next.author, target, target == me, next.ring, now, next.sort, next.strength)
                 }
             }
             retireOverCap(now)
@@ -292,6 +311,7 @@ object GlobeArcs {
     }
 
     fun stage(line: Line, now: Double, reduceMotion: Boolean = false): Stage {
+        if (line.zap) return GlobeZaps.boltStage(line, now, reduceMotion)
         val age = maxOf(0.0, now - line.born)
         val head = if (reduceMotion) 1.0 else ease(minOf(1.0, age / TRAVEL))
         val landed = if (reduceMotion) age else age - TRAVEL
@@ -315,7 +335,7 @@ object GlobeArcs {
      */
     fun isGone(line: Line, now: Double): Boolean {
         line.retired?.let { if (now - it >= RETIRE_FADE) return true }
-        return now - line.born >= TRAVEL + HOLD + FADE
+        return now - line.born >= (if (line.zap) GlobeZaps.BOLT_LIFE else TRAVEL + HOLD + FADE)
     }
 
     /** How brightly an endpoint's face shows: in as its line sets out, out as it fades. */

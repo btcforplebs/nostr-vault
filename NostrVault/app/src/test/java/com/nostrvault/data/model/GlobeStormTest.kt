@@ -104,8 +104,7 @@ class GlobeStormTest {
             val filters = GlobeStorm.storm(rings, GlobeLive.Show(), follows, since = 100)
             assertEquals(1, filters.size)
             assertNull(filters[0]["authors"])
-            // Zap receipts (GlobeArcs.zapKind) are left out: zaps don't fly on Android yet.
-            assertEquals(setOf(1, 1111, 7, 6, 16), kindsOf(filters[0]).toSet())
+            assertEquals(setOf(1, 1111, 7, 6, 16, GlobeArcs.ZAP_KIND), kindsOf(filters[0]).toSet())
             assertEquals(100L, filters[0]["since"]!!.jsonPrimitive.long)
         }
     }
@@ -115,15 +114,15 @@ class GlobeStormTest {
         val filters = GlobeStorm.storm(setOf(GlobeArcs.Ring.FOLLOWING), GlobeLive.Show(), follows, since = 100)
         val byAuthor = filters.filter { it["authors"] != null }
         assertEquals(listOf(500, 500, 200), byAuthor.map { (it["authors"] as JsonArray).size })
-        // Skipped: the zap receipts' own authorless filter — zaps don't fly on Android yet.
+        // Zap receipts carry the LNURL server's key: one filter of their own.
+        assertEquals(listOf(listOf(GlobeArcs.ZAP_KIND)), filters.filter { it["authors"] == null }.map(::kindsOf))
     }
 
     @Test fun aSwitchedOffSortIsNeverAskedFor() {
-        // Swift also switches zaps off here; Kotlin's Show has no zaps switch.
-        val show = GlobeLive.Show(reactions = false, reposts = false)
+        val show = GlobeLive.Show(reactions = false, reposts = false, zaps = false)
         val kinds = GlobeStorm.storm(setOf(GlobeArcs.Ring.GLOBAL), show, emptyList(), 0).firstOrNull()?.let(::kindsOf)
         assertEquals(listOf(1, 1111), kinds)
-        val none = GlobeLive.Show(notes = false, replies = false, reposts = false, reactions = false)
+        val none = GlobeLive.Show(notes = false, replies = false, reposts = false, reactions = false, zaps = false)
         assertTrue(GlobeStorm.storm(setOf(GlobeArcs.Ring.GLOBAL), none, emptyList(), 0).isEmpty())
         assertTrue(GlobeStorm.storm(emptySet(), GlobeLive.Show(), emptyList(), 0).isEmpty())
     }

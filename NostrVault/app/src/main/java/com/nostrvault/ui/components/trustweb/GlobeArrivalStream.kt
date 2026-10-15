@@ -7,6 +7,7 @@ import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeLive
 import com.nostrvault.data.model.GlobeStorm
 import com.nostrvault.data.model.MediaFeedMode
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
 import kotlinx.coroutines.Dispatchers
@@ -156,7 +157,7 @@ internal class GlobeArrivalStream(private val feed: FeedService) {
     /**
      * The wider REQ on every one of your read relays: your follows' notes,
      * reposts (the feed shows a repost as the note reposted, so it can't say when
-     * one is made) and reactions, and the Discover and Global feeds when they're
+     * one is made), reactions and zaps, and the Discover and Global feeds when they're
      * on, as one stream sorted here by author ([GlobeStorm.storm]). Global keeps
      * to your web, as the Global feed does, unless that is set to Everyone.
      */
@@ -170,7 +171,8 @@ internal class GlobeArrivalStream(private val feed: FeedService) {
         val trusted = if (GlobeArcs.Ring.GLOBAL in rings) feed.globalTrustSet() else null
         for (url in configStore.config.value.readRelays) {
             links += GlobeRelayLink(url, filters, feed, this) { event ->
-                val parsed = GlobeArcs.arrival(event) ?: return@GlobeRelayLink
+                // A zap's request must be signed by its zapper.
+                val parsed = GlobeArcs.arrival(event, verifyZap = HavenBridge::verifyEvent) ?: return@GlobeRelayLink
                 if (parsed.author in blocked) return@GlobeRelayLink
                 val arrival = parsed.copy(ring = GlobeArcs.ring(parsed.author, follows, discover))
                 if (arrival.ring !in rings) return@GlobeRelayLink

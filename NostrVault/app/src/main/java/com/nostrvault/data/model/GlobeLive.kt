@@ -10,19 +10,20 @@ object GlobeLive {
     /** NIP-25 reactions (likes, emoji). */
     const val REACTION_KIND = 7
 
-    /** Which sorts fly. All on unless switched off. Zaps fly once their bolts are drawn. */
+    /** Which sorts fly. All on unless switched off. */
     data class Show(
         val notes: Boolean = true,
         val replies: Boolean = true,
         val reposts: Boolean = true,
         val reactions: Boolean = true,
+        val zaps: Boolean = true,
     ) {
         fun allows(sort: GlobeArcs.Sort): Boolean = when (sort) {
             GlobeArcs.Sort.NOTE -> notes
             GlobeArcs.Sort.REPLY -> replies
             GlobeArcs.Sort.REPOST -> reposts
             GlobeArcs.Sort.REACTION -> reactions
-            GlobeArcs.Sort.ZAP -> false
+            GlobeArcs.Sort.ZAP -> zaps
         }
 
         /** The kinds to ask relays for by author or for you: notes and replies are both kind 1 (and 1111). */
@@ -75,5 +76,6 @@ object LiveArcsSetting {
         replies = prefs.getBoolean(key(GlobeArcs.Sort.REPLY), true),
         reposts = prefs.getBoolean(key(GlobeArcs.Sort.REPOST), true),
         reactions = prefs.getBoolean(key(GlobeArcs.Sort.REACTION), true),
+        zaps = prefs.getBoolean(key(GlobeArcs.Sort.ZAP), true),
     )
 }

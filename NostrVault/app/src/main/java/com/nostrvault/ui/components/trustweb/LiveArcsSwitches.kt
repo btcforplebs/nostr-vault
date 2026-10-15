@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SettingsInputAntenna
@@ -131,6 +132,8 @@ internal fun LiveArcsSheet(state: LiveArcsState, onDismiss: () -> Unit) {
                 state.show.reposts, enabled = state.on) { state.setSort(GlobeArcs.Sort.REPOST, it) }
             SwitchRow(Icons.Filled.FavoriteBorder, "Reactions", "A smaller star from who reacted to who they reacted to",
                 state.show.reactions, enabled = state.on) { state.setSort(GlobeArcs.Sort.REACTION, it) }
+            SwitchRow(Icons.Filled.Bolt, "Zaps", "A lightning bolt from the zapper. Bigger zaps strike harder",
+                state.show.zaps, enabled = state.on) { state.setSort(GlobeArcs.Sort.ZAP, it) }
         }
     }
 }

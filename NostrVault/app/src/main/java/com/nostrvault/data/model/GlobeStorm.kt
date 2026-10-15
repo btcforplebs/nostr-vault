@@ -96,16 +96,20 @@ object GlobeStorm {
         since: Long,
         authorsPerFilter: Int = AUTHORS_PER_FILTER,
     ): List<JsonObject> {
-        val kinds = show.wideKinds
+        val noteKinds = show.wideKinds
+        val kinds = noteKinds + if (show.zaps) listOf(GlobeArcs.ZAP_KIND) else emptyList()
         // An empty kinds list would match everything on some relays.
         if (kinds.isEmpty() || rings.isEmpty()) return emptyList()
-        fun filter(authors: List<String>?) = buildJsonObject {
+        fun filter(kinds: List<Int>, authors: List<String>?) = buildJsonObject {
             put("kinds", JsonArray(kinds.map { JsonPrimitive(it) }))
             put("since", since)
             if (authors != null) put("authors", JsonArray(authors.map { JsonPrimitive(it) }))
         }
-        if (GlobeArcs.Ring.DISCOVER in rings || GlobeArcs.Ring.GLOBAL in rings) return listOf(filter(null))
-        return follows.chunked(authorsPerFilter).map { filter(it) }
+        if (GlobeArcs.Ring.DISCOVER in rings || GlobeArcs.Ring.GLOBAL in rings) return listOf(filter(kinds, null))
+        // Following only: zap receipts carry the LNURL server's key, so they stay
+        // one authorless filter of their own.
+        val byAuthor = if (noteKinds.isEmpty()) emptyList() else follows.chunked(authorsPerFilter).map { filter(noteKinds, it) }
+        return byAuthor + if (show.zaps) listOf(filter(listOf(GlobeArcs.ZAP_KIND), null)) else emptyList()
     }
 
     /** Most authors one filter names (iOS `GlobeArrivalStream.authorsPerFilter`). */
