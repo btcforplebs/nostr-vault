@@ -10,7 +10,7 @@ final class GlobeArcsTests: XCTestCase {
     private func note(_ n: Int, by author: String, to targets: [String] = [], kind: Int = 1,
                       age: TimeInterval = 5) -> [String: Any] {
         ["id": key(1000 + n), "pubkey": author, "kind": kind,
-         "created_at": now.timeIntervalSince1970 - age, "tags": targets.map { ["p", $0] } + [["e", key(7)]]]
+         "created_at": now.timeIntervalSince1970 - age, "tags": targets.map { ["p", $0] } + [["e", key(7), "", "mention"]]]
     }
 
     func testANoteToYouIsOneLineToYou() {
@@ -18,14 +18,59 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(arrival?.targets, [me])
     }
 
-    func testAReplyIsOneLinePerPersonOnceEachWithoutTheAuthor() {
+    func testANoteNamingSeveralPeopleIsOneLineEachOnceWithoutTheAuthor() {
         let arrival = GlobeArcs.arrival(note(1, by: key(1), to: [key(2), key(3), key(2), key(1)]), now: now)
         XCTAssertEqual(arrival?.targets, [key(2), key(3)])
     }
 
-    func testABigReplyIsCapped() {
+    func testANoteNamingACrowdIsCapped() {
         let arrival = GlobeArcs.arrival(note(1, by: key(1), to: (2...20).map(key)), now: now)
         XCTAssertEqual(arrival?.targets.count, GlobeArcs.maxTargets)
+    }
+
+    private func event(_ n: Int, by author: String, kind: Int, tags: [[String]]) -> [String: Any] {
+        ["id": key(1000 + n), "pubkey": author, "kind": kind, "created_at": now.timeIntervalSince1970 - 5, "tags": tags]
+    }
+
+    func testAReplyFliesToThePersonItAnswersNotTheWholeThread() {
+        // root by 2, replied to by 3; 1 answers 3. NIP-10 tags list the
+        // thread's people, root author first.
+        let tags = [["e", key(50), "", "root", key(2)], ["e", key(51), "", "reply", key(3)],
+                    ["p", key(2)], ["p", key(3)], ["p", key(4)]]
+        let arrival = GlobeArcs.arrival(event(1, by: key(1), kind: 1, tags: tags), now: now)
+        XCTAssertEqual(arrival?.targets, [key(3)])
+        // A direct reply to the root names only the root.
+        let direct = [["e", key(50), "", "root", key(2)], ["p", key(2)], ["p", key(4)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(2, by: key(1), kind: 1, tags: direct), now: now)?.targets, [key(2)])
+        // Older clients leave the pubkey slot empty: the first p, as the feed reads it.
+        let positional = [["e", key(50)], ["e", key(51)], ["p", key(3)], ["p", key(2)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(3, by: key(1), kind: 1, tags: positional), now: now)?.targets, [key(3)])
+    }
+
+    func testANIP22CommentReplyFliesToo() {
+        // Amethyst, Ditto, Coracle and Snort reply to a note with a kind 1111
+        // comment; these never flew.
+        XCTAssertTrue(GlobeArcs.kinds.contains(NIP10Thread.commentKind))
+        let tags = [["E", key(50), "", key(2)], ["K", "1"], ["P", key(2)],
+                    ["e", key(51), "", key(3)], ["k", "1"], ["p", key(3)]]
+        let arrival = GlobeArcs.arrival(event(4, by: key(1), kind: 1111, tags: tags), now: now)
+        XCTAssertEqual(arrival?.author, key(1))
+        XCTAssertEqual(arrival?.targets, [key(3)])
+        // Without the pubkey slot, the lowercase p is the parent's author.
+        let bare = [["E", key(50)], ["K", "1"], ["e", key(51)], ["k", "1"], ["p", key(3)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(5, by: key(1), kind: 1111, tags: bare), now: now)?.targets, [key(3)])
+        // A comment on a video isn't a note reply.
+        let video = [["E", key(52)], ["K", "21"], ["e", key(52)], ["k", "21"], ["p", key(3)]]
+        XCTAssertNil(GlobeArcs.arrival(event(6, by: key(1), kind: 1111, tags: video), now: now))
+    }
+
+    func testAQuoteAndASelfReplyStillFlyToWhoTheyName() {
+        // A quote's e is a mention: it flies to who it names, as before.
+        let quote = [["e", key(50), "", "mention"], ["q", key(50)], ["p", key(2)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(7, by: key(1), kind: 1, tags: quote), now: now)?.targets, [key(2)])
+        // Answering yourself in a thread: the others in it, not you.
+        let selfReply = [["e", key(50), "", "reply", key(1)], ["p", key(1)], ["p", key(2)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(8, by: key(1), kind: 1, tags: selfReply), now: now)?.targets, [key(2)])
     }
 
     func testOnlyFreshNotesArrive() {

@@ -754,6 +754,7 @@
 		9B692850B1F877C9E5E76246 /* RelayProcessManager+Readiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FB368C842D044344C828BA /* RelayProcessManager+Readiness.swift */; };
 		9B7EAB5161D2211D2C606077 /* VaultActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C9495BF4A2CC74326F7221 /* VaultActivity.swift */; };
 		9B8F0ADC8DA2449B457C347A /* RelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */; };
+		9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */; };
 		9BE8C11AAA3010457C09D71A /* FeedService+Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B41128CC30843928E849EA /* FeedService+Snapshots.swift */; };
 		9C8CDF4B40EC341168A8772B /* MediaCacheService+LocalFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9F7BB78EA4E5E08C3E2F8D /* MediaCacheService+LocalFiles.swift */; };
 		9D36295ACBCF6AA25D9409B3 /* ProfileNoteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83D457E26F0DF095EFF3FAB /* ProfileNoteList.swift */; };
@@ -1217,6 +1218,7 @@
 		F60A1E50F7BBC0782BE1A443 /* MediaGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0FC14B3CEA24424481BBA3 /* MediaGalleryView.swift */; };
 		F6CD2A12D44A1062CEA4475F /* ZoomSwipeWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23194264AA64ADEF638EDF8 /* ZoomSwipeWatch.swift */; };
 		F6F032EECDD7BDAE6BA492FB /* OtherResponseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FAD736D401196122276352 /* OtherResponseCard.swift */; };
+		F71EB0360DE279D578934433 /* GlobeEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */; };
 		F72F020F12B14610A2E336D6 /* ArticleReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10BB63071E62D3686FEB781F /* ArticleReaderView.swift */; };
 		F77339F2E80B3F9EFF01B473 /* DeletedPostsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E680C50EB51C30D009823043 /* DeletedPostsStore.swift */; };
 		F7ACEB2AC974E83FA7B89D77 /* FeedService+Relays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B34BEF72503E04EC348EF2B /* FeedService+Relays.swift */; };
@@ -1531,6 +1533,7 @@
 		5E86551C962F13A9A41AB343 /* LockScreenWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidget.swift; sourceTree = "<group>"; };
 		5EF3573CB587310AF650A307 /* BlossomService+ServerUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+ServerUpload.swift"; sourceTree = "<group>"; };
 		5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopularRanking.swift; sourceTree = "<group>"; };
+		5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeEdge.swift; sourceTree = "<group>"; };
 		5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+Delete.swift"; sourceTree = "<group>"; };
 		606AB572251938C1D2B3590A /* HighlightSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightSheet.swift; sourceTree = "<group>"; };
 		60872FCCCF59C889353D525F /* VaultSearchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchLogic.swift; sourceTree = "<group>"; };
@@ -2630,6 +2633,7 @@
 				1A126A53D63DD4442630E87E /* GifItem.swift */,
 				91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */,
 				D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */,
+				5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */,
 				D5439375BD9C7F51F7F36FB8 /* GlobeFlat.swift */,
 				B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */,
 				E3056CC16711F7E38B7FE86D /* HavenConfig.swift */,
@@ -3436,6 +3440,7 @@
 				E22FFB37CAC77A587016D695 /* GlobalSearchLogic.swift in Sources */,
 				F21AC6DF7BE3739513710028 /* GlobalSearchSession.swift in Sources */,
 				5FA1579C568CB14E0DB553D3 /* GlobeArcs.swift in Sources */,
+				F71EB0360DE279D578934433 /* GlobeEdge.swift in Sources */,
 				865DB5DC14F75DDBA3F460ED /* GlobeFlat.swift in Sources */,
 				B72613862F89BB6F8AA27027 /* GlobeFlatDisc.swift in Sources */,
 				C61C638C785450F8CCFDB9B7 /* GlobeScene.swift in Sources */,
@@ -4074,6 +4079,7 @@
 				82F1C518309EE4C29EF8642F /* GlobalSearchLogic.swift in Sources */,
 				7570C4E14AA4FF93C3F233E9 /* GlobalSearchSession.swift in Sources */,
 				4FD379CC4F37E7B4B7C2F6B0 /* GlobeArcs.swift in Sources */,
+				9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */,
 				C9507A0307C6A79A554E7B22 /* GlobeFlat.swift in Sources */,
 				5372F34763692833601075E3 /* GlobeFlatDisc.swift in Sources */,
 				B7D3B0FD8FE59052EA736319 /* GlobeScene.swift in Sources */,

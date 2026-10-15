@@ -100,6 +100,11 @@ final class GlobeScene: ObservableObject {
     private var threadProgress = 1.0
     private var settling = false
     private var lastTick: TimeInterval?
+    /// Each face's seat, fading in and out (`GlobeEdge.seat`), the last
+    /// frame's step, and whether a seat is still fading (keeps the clock up).
+    private var seatFade: [String: Double] = [:]
+    private var lastDt = 0.0
+    private var facesFading = false
     /// The 2D view: the network laid out as a map (`GlobeFlat`). `flatMix`
     /// eases toward the switch, so the globe flattens and rounds out rather
     /// than cutting; `flatCam` is where you are looking on the map.
@@ -443,6 +448,7 @@ final class GlobeScene: ObservableObject {
     func tick(now: TimeInterval) {
         let dt = lastTick.map { min(GlobeCamera.maxStep, max(0, now - $0)) } ?? 0
         lastTick = now
+        lastDt = dt
         camera.step(dt: dt, now: now, reduceMotion: reduceMotion)
         if filterMix < 1 {
             filterMix = min(1, filterMix + dt / Self.filterFade)
@@ -478,7 +484,7 @@ final class GlobeScene: ObservableObject {
         }
         if flatCam.moving { flatCam.step(dt: dt, in: flatSize) }
         let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || flatMix != flatGoal
-            || flatCam.moving
+            || flatCam.moving || facesFading
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -637,6 +643,8 @@ final class GlobeScene: ObservableObject {
     /// is a handful of fills however many people there are. Fine enough that
     /// the faint haze keeps its front-to-back depth.
     private static let levels = 40
+    /// Brightness steps for the threads, front to back.
+    private static let threadBands = 12
 
     func draw(in context: inout GraphicsContext, size: CGSize, accent: Color, name: (String) -> String) {
         guard hasLoaded, let centerIndex = index[center] else { return }
@@ -718,15 +726,18 @@ final class GlobeScene: ObservableObject {
         if let authorP {
             let t = threadProgress
             let leg1 = min(1, t * 2), leg2 = max(0, t * 2 - 1)
-            var glow = Array(repeating: Path(), count: 4), dashed = Path()
-            var strong = Array(repeating: Path(), count: 4), faint = Array(repeating: Path(), count: 4)
-            func band(_ front: Double) -> Int { min(3, Int(front * 4)) }
+            // Fine bands, and a glow that ramps in over several of them, so a
+            // thread turning toward the rim dims in small steps, never pops.
+            let bands = Self.threadBands
+            var glow = Array(repeating: Path(), count: bands), dashed = Path()
+            var strong = Array(repeating: Path(), count: bands), faint = Array(repeating: Path(), count: bands)
+            func band(_ front: Double) -> Int { min(bands - 1, max(0, Int(front * Double(bands)))) }
             if direct {
                 var p = Path()
                 p.move(to: core.point)
                 p.addLine(to: lerp(core.point, authorP.point, t))
-                strong[3].addPath(p)
-                glow[3].addPath(p)
+                strong[bands - 1].addPath(p)
+                glow[bands - 1].addPath(p)
             }
             for key in bridges {
                 guard let i = index[key], alpha[i] > 0.05, let b = project(dirs[i] * radius[i]) else { continue }
@@ -740,10 +751,8 @@ final class GlobeScene: ObservableObject {
                     outer.addLine(to: lerp(b.point, authorP.point, leg2))
                     strong[band(b.front)].addPath(outer)
                 }
-                if b.front > 0.62 {
-                    glow[band(b.front)].addPath(inner)
-                    glow[band(b.front)].addPath(outer)
-                }
+                glow[band(b.front)].addPath(inner)
+                glow[band(b.front)].addPath(outer)
             }
             if t >= 1 {
                 for chain in chains {
@@ -755,19 +764,23 @@ final class GlobeScene: ObservableObject {
                 }
             }
             // Glow brightens toward the front, still in one blurred layer.
+            func bandFront(_ level: Int) -> Double { (Double(level) + 0.5) / Double(bands) }
             func bandAlpha(_ level: Int) -> Double {
-                let front = (Double(level) + 0.5) / 4
+                let front = bandFront(level)
                 return 0.10 + 0.75 * front * front
             }
-            if glow.contains(where: { !$0.isEmpty }) {
+            func glowAlpha(_ level: Int) -> Double {
+                bandAlpha(level) * 0.6 * GlobeEdge.smoothstep(0.45, 0.8, bandFront(level))
+            }
+            if (0..<bands).contains(where: { !glow[$0].isEmpty && glowAlpha($0) > 0.01 }) {
                 context.drawLayer { layer in
                     layer.addFilter(.blur(radius: 5))
-                    for level in 0..<4 where !glow[level].isEmpty {
-                        layer.stroke(glow[level], with: .color(accent.opacity(bandAlpha(level) * 0.6)), lineWidth: 3)
+                    for level in 0..<bands where !glow[level].isEmpty && glowAlpha(level) > 0.01 {
+                        layer.stroke(glow[level], with: .color(accent.opacity(glowAlpha(level))), lineWidth: 3)
                     }
                 }
             }
-            for level in 0..<4 {
+            for level in 0..<bands {
                 let a = bandAlpha(level)
                 if !faint[level].isEmpty {
                     context.stroke(faint[level], with: .color(Self.threadColor.opacity(a * 0.45)), lineWidth: 0.8)
@@ -810,7 +823,7 @@ final class GlobeScene: ObservableObject {
         // Seats: a face only where it covers no other face and not the core;
         // the rest stay stars until the globe turns them some room. Dim faces
         // are seated last and hold no seat, so they never push out a bright one.
-        let front = drawn.reversed().filter { $0.p.depth >= -0.1 || $0.key == author }
+        let front = drawn.reversed().filter { $0.p.depth >= GlobeEdge.faceGone || $0.key == author }
         // Flat, faces never touch: a seat there takes the face and a margin.
         let room = 1 + flatMix * (GlobeFlat.faceRoom / (1 - TrustMap.faceOverlap) - 1)
         let spots = (front.filter { !$0.dim } + front.filter(\.dim)).map {
@@ -836,30 +849,36 @@ final class GlobeScene: ObservableObject {
                 showLabel.insert(face.key)
             }
         }
+        // A seat comes and goes over a quarter second, so a face that loses
+        // its room cross-fades with the star it becomes instead of popping.
+        var fades: [String: Double] = [:]
+        for face in drawn {
+            let seated = seats.contains(face.key)
+            fades[face.key] = GlobeEdge.seat(seatFade[face.key] ?? (seated ? 1 : 0), seated: seated,
+                                             dt: lastDt, reduceMotion: reduceMotion)
+        }
+        facesFading = drawn.contains { fades[$0.key] != (seats.contains($0.key) ? 1 : 0) }
+        seatFade = fades
         for face in drawn {
             let a = min(1, alpha[index[face.key] ?? centerIndex] * weight(index[face.key] ?? centerIndex))
             let faint = layerFaceSet.contains(face.key) && traceTarget == nil ? 1 - (1 - Self.dimFace) * layerDim : 1
             let dim = (0.35 + 0.65 * face.p.front) * a * faint
-            let r = face.size * k * face.p.scale * min(zoom, 1.8)
-            if face.p.depth < -0.1 && face.key != author {
-                // Behind the globe: a warm ember, not a face.
-                let e = 3.2 * face.p.scale * zoom
+            // Rolling toward the rim the face fades and shrinks into the
+            // ember it is round the back; losing its seat, into a star.
+            let edge = face.key == author ? 1 : GlobeEdge.face(depth: face.p.depth)
+            let shown = edge * (fades[face.key] ?? 0)
+            if shown < 0.99 {
+                let e = (3.2 + 0.4 * edge) * face.p.scale * zoom
                 context.fill(Path(ellipseIn: CGRect(x: face.p.point.x - e, y: face.p.point.y - e, width: 2 * e, height: 2 * e)),
-                             with: .color(face.tint.opacity(dim)))
-                continue
+                             with: .color(face.tint.opacity(dim * (1 - shown))))
             }
-            if !seats.contains(face.key) {
-                // No room for its picture here: a bright star in its colour.
-                let e = 3.6 * face.p.scale * zoom
-                context.fill(Path(ellipseIn: CGRect(x: face.p.point.x - e, y: face.p.point.y - e, width: 2 * e, height: 2 * e)),
-                             with: .color(face.tint.opacity(dim)))
-                continue
-            }
-            drawFace(&context, key: face.key, at: face.p.point, r: r, tint: face.tint, opacity: dim, name: name)
+            guard shown > 0.01 else { continue }
+            let r = GlobeEdge.faceRadius(face.size * k * face.p.scale * min(zoom, 1.8), shown: shown)
+            drawFace(&context, key: face.key, at: face.p.point, r: r, tint: face.tint, opacity: dim * shown, name: name)
             if showLabel.contains(face.key) {
                 let text = context.resolve(Text(name(face.key))
                     .font(.system(size: face.key == author ? 14 : 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9 * dim)))
+                    .foregroundColor(.white.opacity(0.9 * dim * shown * GlobeEdge.smoothstep(0.15, 0.35, face.p.depth))))
                 context.draw(text, at: CGPoint(x: face.p.point.x, y: face.p.point.y + r + 10))
             }
         }
