@@ -81,9 +81,12 @@ enum GlobeFlat {
         Double(min(size.width, size.height)) / 2 * 0.96 / rim
     }
 
-    /// How far the disc may be panned: its middle never leaves the screen.
-    static func clamp(_ offset: SIMD2<Double>, in size: CGSize) -> SIMD2<Double> {
-        let x = Double(size.width) / 2, y = Double(size.height) / 2
+    /// How far the disc may be panned. Its middle can reach the screen's
+    /// edge, and zoomed in, its rim on any side can reach the screen's edge.
+    /// `reach` is the disc's radius on screen, zoom included.
+    static func clamp(_ offset: SIMD2<Double>, in size: CGSize, reach: Double) -> SIMD2<Double> {
+        let x = max(Double(size.width) / 2, reach - Double(size.width) / 2)
+        let y = max(Double(size.height) / 2, reach - Double(size.height) / 2)
         return SIMD2(min(x, max(-x, offset.x)), min(y, max(-y, offset.y)))
     }
 }

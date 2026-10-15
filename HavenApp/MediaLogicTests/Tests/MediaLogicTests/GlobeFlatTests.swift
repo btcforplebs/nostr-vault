@@ -89,7 +89,22 @@ final class GlobeFlatTests: XCTestCase {
     func testTheDiscFitsTheScreenAndCantBePannedAway() {
         let size = CGSize(width: 390, height: 844)
         XCTAssertLessThanOrEqual(GlobeFlat.rim * GlobeFlat.unit(for: size) * 2, 390)
-        let far = GlobeFlat.clamp(SIMD2(5_000, -5_000), in: size)
+        let reach = GlobeFlat.rim * GlobeFlat.unit(for: size)
+        let far = GlobeFlat.clamp(SIMD2(5_000, -5_000), in: size, reach: reach)
         XCTAssertEqual(far, SIMD2(195, -422))
+    }
+
+    func testAtFullZoomEveryEdgeOfTheDiscCanBePannedIntoView() {
+        // Zoomed all the way in, the rim at each side must still come onto
+        // the screen: the disc's middle may go as far out as the rim needs.
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 1032, height: 1376)] {
+            let reach = GlobeFlat.rim * GlobeFlat.unit(for: size) * GlobeCamera.zoomRange.upperBound
+            for direction in [SIMD2<Double>(1, 0), SIMD2(-1, 0), SIMD2(0, 1), SIMD2(0, -1)] {
+                let offset = GlobeFlat.clamp(direction * 100_000, in: size, reach: reach)
+                // The far rim, from the screen's middle, reaches the screen's edge.
+                let half = direction.x != 0 ? Double(size.width) / 2 : Double(size.height) / 2
+                XCTAssertGreaterThanOrEqual(simd_dot(offset, direction) - reach, -half - 1e-9, "\(size) \(direction)")
+            }
+        }
     }
 }

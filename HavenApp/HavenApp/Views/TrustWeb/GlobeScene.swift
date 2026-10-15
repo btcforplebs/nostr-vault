@@ -318,7 +318,8 @@ final class GlobeScene: ObservableObject {
 
     /// A drag on the flat view moves the disc under the finger.
     func pan(dx: Double, dy: Double, in size: CGSize) {
-        flatOffset = GlobeFlat.clamp(flatOffset + SIMD2(dx, dy), in: size)
+        let reach = GlobeFlat.rim * GlobeFlat.unit(for: size) * camera.zoom
+        flatOffset = GlobeFlat.clamp(flatOffset + SIMD2(dx, dy), in: size, reach: reach)
     }
 
     var isFlat: Bool { flatTarget }
@@ -637,7 +638,10 @@ final class GlobeScene: ObservableObject {
         var linkEnds: [CGPoint] = []
         for i in keys.indices where !isFace[i] {
             let a = alpha[i] * weight(i)
-            guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
+            guard a > 0.02, let p = project(dirs[i] * radius[i]) else { continue }
+            // A line to someone off screen still crosses it: the stroke clips.
+            if flatMix > 0, coreFollows[i] { linkEnds.append(p.point) }
+            guard view.contains(p.point) else { continue }
             let front = p.front
             let slot: Slot, base: Double, size: Double
             switch kinds[i] {
@@ -650,7 +654,6 @@ final class GlobeScene: ObservableObject {
             }
             let level = Int((min(1, base * a) * Double(Self.levels)).rounded())
             guard level > 0 else { continue }
-            if flatMix > 0, coreFollows[i] { linkEnds.append(p.point) }
             // Flat, the plain stars are smaller, so the web's faces and lines read.
             let r = size * p.scale * zoom * (1 - 0.35 * flatMix)
             buckets[slot.rawValue][min(Self.levels, level)]
