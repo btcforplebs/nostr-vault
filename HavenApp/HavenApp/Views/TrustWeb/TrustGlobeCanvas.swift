@@ -59,6 +59,8 @@ struct TrustGlobeCanvas: View {
     @StateObject private var scene = GlobeScene()
     @StateObject private var arrivals = GlobeArrivalStream()
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = false
+    /// The bar's 3D / 2D switch. Only the WOT tab's globe lies flat.
+    @AppStorage(GlobeViewSetting.flatKey) private var flatOn = false
     @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
     @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
@@ -117,10 +119,10 @@ struct TrustGlobeCanvas: View {
                 }
             }
             .contentShape(Rectangle())
-            .gesture(drag.simultaneously(with: magnify))
+            .gesture(drag(in: geo.size).simultaneously(with: magnify))
             .simultaneousGesture(taps(in: geo.size))
             .accessibilityElement()
-            .accessibilityLabel(Text("Web of Trust globe"))
+            .accessibilityLabel(Text(liveArcs && flatOn ? "Web of Trust map" : "Web of Trust globe"))
             .accessibilityValue(Text(summary))
             .accessibilityHint(Text("Swipe up or down to zoom. Actions go to a person."))
             .accessibilityAdjustableAction { direction in
@@ -138,6 +140,7 @@ struct TrustGlobeCanvas: View {
             }
         }
         .onAppear {
+            scene.setFlat(liveArcs && flatOn)
             onScreen = true
             scene.camera.keepsDrifting = keepsDrifting
             scene.showsNames = showsNames
@@ -167,6 +170,7 @@ struct TrustGlobeCanvas: View {
             scene.trace(to: key, through: focusBridges)
         }
         .onChange(of: focusBridges) { _, bridges in scene.trace(to: focus, through: bridges) }
+        .onChange(of: flatOn) { _, on in scene.setFlat(liveArcs && on) }
         .onChange(of: reduceMotion) { _, reduced in
             scene.reduceMotion = reduced
             if reduced { scene.camera.spin = .zero }
@@ -208,22 +212,34 @@ struct TrustGlobeCanvas: View {
         return on
     }
 
-    private var drag: some Gesture {
+    /// Turns the globe under the finger; on the flat view, moves the disc.
+    private func drag(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .updating($dragActive) { _, active, _ in active = true }
             .onChanged { value in
                 let now = Date.timeIntervalSinceReferenceDate
+                let dx = value.translation.width - lastDrag.width, dy = value.translation.height - lastDrag.height
                 scene.camera.dragging = true
-                scene.camera.drag(dx: value.translation.width - lastDrag.width,
-                                  dy: value.translation.height - lastDrag.height, at: now)
+                if scene.isFlat {
+                    scene.pan(dx: dx, dy: dy, in: size)
+                    scene.camera.touch(at: now)
+                } else {
+                    scene.camera.drag(dx: dx, dy: dy, at: now)
+                }
                 lastDrag = value.translation
                 scene.wake()
             }
             .onEnded { value in
                 scene.camera.dragging = false
                 lastDrag = .zero
-                scene.camera.flick(vx: value.velocity.width, vy: value.velocity.height,
-                                   at: Date.timeIntervalSinceReferenceDate, reduceMotion: reduceMotion)
+                let now = Date.timeIntervalSinceReferenceDate
+                // A flick spins the globe; the disc just stays where it's put.
+                if scene.isFlat {
+                    scene.camera.touch(at: now)
+                } else {
+                    scene.camera.flick(vx: value.velocity.width, vy: value.velocity.height,
+                                       at: now, reduceMotion: reduceMotion)
+                }
                 scene.wake()
             }
     }

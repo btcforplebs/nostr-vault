@@ -14,14 +14,12 @@ extension TrustWebView {
             .hidingSharedToolbarBackground()
             ToolbarItem(placement: .navigationBarTrailing) {
                 ChromeMorphCapsule(alignment: .trailing, isEnabled: false) {
-                    HStack(spacing: 4) {
-                        IconFilterButton(icon: "magnifyingglass", tooltip: "Find someone",
-                                         isSelected: searchOpen, color: .havenPurple) { toggleSearch() }
-                            .tutorialAnchor(TutorialContent.wotSearch)
-                        Divider().frame(height: 20).padding(.horizontal, 4)
-                        ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) }
-                        Divider().frame(height: 20).padding(.horizontal, 4)
-                        liveArcsButton
+                    // Narrower buttons before the bar would fold the whole
+                    // pill into "•••" (an iPhone 17 Pro did, at 36 pt).
+                    ViewThatFits(in: .horizontal) {
+                        trailingPill(buttonWidth: 36, spacing: 4)
+                        trailingPill(buttonWidth: 30, spacing: 0)
+                        trailingPill(buttonWidth: 26, spacing: 0)
                     }
                     .padding(.horizontal, 3)
                     .padding(.vertical, 4)
@@ -39,10 +37,28 @@ extension TrustWebView {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) { ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) } }
             }
+            ToolbarItem(placement: .primaryAction) { GlobeViewToggle() }
             ToolbarItem(placement: .primaryAction) { liveArcsButton }
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Search, the filters, then the 3D / 2D switch and the antenna.
+    private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            IconFilterButton(icon: "magnifyingglass", tooltip: "Find someone",
+                             isSelected: searchOpen, color: .havenPurple) { toggleSearch() }
+                .tutorialAnchor(TutorialContent.wotSearch)
+            Divider().frame(height: 20).padding(.horizontal, spacing == 0 ? 2 : 4)
+            ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) }
+            Divider().frame(height: 20).padding(.horizontal, spacing == 0 ? 2 : 4)
+            GlobeViewToggle()
+            liveArcsButton
+        }
+        .environment(\.filterButtonWidth, buttonWidth)
+    }
+    #endif
 
     var layerCounts: [TrustMap.Layer: Int] {
         TrustMap.layerCounts(me: me, follows: myFollows, web: web, vouches: vouches)
