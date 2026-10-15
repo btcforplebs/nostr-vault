@@ -25,9 +25,10 @@ struct GlobeFlatDisc {
 
     /// The web's lines: you to each person you follow, all in one faint
     /// stroke, and a little brighter to the ones drawn as faces. Only real
-    /// follows are drawn, so every line is a connection that exists. Only
-    /// the lines to people on screen (and to faces whose line crosses it)
-    /// are drawn, so a big map draws only what shows.
+    /// follows are drawn, so every line is a connection that exists. A line
+    /// whose box misses the screen is left out, so a big map draws only what
+    /// shows, and a line to someone just off screen slides in rather than
+    /// popping.
     static func links(_ context: inout GraphicsContext, from core: CGPoint, to stars: [CGPoint],
                       faces: [CGPoint], in view: CGRect, color: Color, opacity: Double) {
         guard opacity > 0.01, !stars.isEmpty || !faces.isEmpty else { return }
@@ -36,9 +37,7 @@ struct GlobeFlatDisc {
                                    width: abs(core.x - p.x) + 1, height: abs(core.y - p.y) + 1))
         }
         var faint = Path(), strong = Path()
-        // Plain follows only when they are on screen: a thousand lines from
-        // far off would only make a starburst.
-        for p in stars where view.contains(p) { faint.move(to: core); faint.addLine(to: p) }
+        for p in stars where shows(p) { faint.move(to: core); faint.addLine(to: p) }
         for p in faces where shows(p) { strong.move(to: core); strong.addLine(to: p) }
         context.stroke(faint, with: .color(color.opacity(0.06 * opacity)), lineWidth: 0.5)
         context.stroke(strong, with: .color(color.opacity(0.22 * opacity)), lineWidth: 0.8)

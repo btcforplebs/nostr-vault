@@ -85,6 +85,15 @@ enum GlobeFlat {
         return max(1_300 * min(1, side / 620), 1.6 * side)
     }
 
+    /// Zoomed in this far, plain stars can be tapped too, not just faces.
+    static let starTapZoom = 1.6
+
+    /// The zoom a tap is judged at: the globe's camera in 3D, the map's in
+    /// 2D, blended while the view changes.
+    static func tapZoom(globe: Double, map: Double, flat: Double) -> Double {
+        globe + (map - globe) * flat
+    }
+
     /// How big stars and faces draw at a map zoom: they shrink as you zoom
     /// out, but less than the map does, so they stay visible.
     static func scale(atZoom zoom: Double) -> Double {
@@ -165,9 +174,11 @@ enum GlobeFlat {
                 let next = offset + velocity * dt
                 let held = clamped(next, in: size)
                 // At the edge it slides along it: the outward part stops.
-                if held != next {
+                if held != next, simd_length(held) > 0 {
                     let out = simd_normalize(held)
                     velocity -= out * max(0, simd_dot(velocity, out))
+                } else if held != next {
+                    velocity = .zero
                 }
                 offset = held
                 velocity *= exp(-dt * Self.decay)

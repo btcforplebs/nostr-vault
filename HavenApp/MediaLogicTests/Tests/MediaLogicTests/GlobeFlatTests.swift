@@ -135,12 +135,28 @@ final class GlobeFlatTests: XCTestCase {
         map.pan(by: SIMD2(-map.offset.x - 900, 0), in: phone)
         map.fling(SIMD2(-50_000, 0))
         XCTAssertEqual(simd_length(map.velocity), GlobeFlat.Camera.maxSpeed, accuracy: 1e-9)
-        while map.moving { map.step(dt: 1 / 60, in: phone) }
+        t = 0
+        while map.moving, t < 10 { map.step(dt: 1 / 60, in: phone); t += 1 / 60 }
+        XCTAssertFalse(map.moving)
         XCTAssertEqual(map.offset.x, -map.limit(in: phone), accuracy: 1e-9)
+    }
+
+    func testPlainStarsTapAtTheZoomOfTheViewYouAreIn() {
+        // 2D: the globe's camera stays at 1, the map pinched to 2.5x: stars tap.
+        var map = GlobeFlat.Camera()
+        map.pinch(by: 2.5, in: phone)
+        XCTAssertGreaterThanOrEqual(GlobeFlat.tapZoom(globe: 1, map: map.zoom, flat: 1), GlobeFlat.starTapZoom)
+        // 2D from a globe zoomed to 1.6, the map out at 0.3x: they don't.
+        map.pinch(by: 0.01, in: phone)
+        XCTAssertEqual(map.zoom, GlobeFlat.Camera.zoomRange.lowerBound)
+        XCTAssertLessThan(GlobeFlat.tapZoom(globe: 1.6, map: map.zoom, flat: 1), GlobeFlat.starTapZoom)
+        // 3D is the globe's zoom, as before.
+        XCTAssertEqual(GlobeFlat.tapZoom(globe: 1.6, map: 0.3, flat: 0), 1.6)
     }
 
     func testAPinchZoomsAboutTheMiddleOfTheScreenAndHomeGoesBackToYou() {
         var map = GlobeFlat.Camera()
+        var t = 0.0
         map.pan(by: SIMD2(300, -200), in: phone)
         // The map point under the middle of the screen stays there.
         let before = -map.offset / map.zoom
@@ -150,7 +166,9 @@ final class GlobeFlatTests: XCTestCase {
         map.pinch(by: 100, in: phone)
         XCTAssertEqual(map.zoom, GlobeFlat.Camera.zoomRange.upperBound)
         map.home()
-        while map.moving { map.step(dt: 1 / 60, in: phone) }
+        t = 0
+        while map.moving, t < 10 { map.step(dt: 1 / 60, in: phone); t += 1 / 60 }
+        XCTAssertFalse(map.moving)
         XCTAssertEqual(map.offset, .zero)
         XCTAssertEqual(map.zoom, 1)
     }

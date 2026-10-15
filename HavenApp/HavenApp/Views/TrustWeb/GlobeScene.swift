@@ -347,7 +347,7 @@ final class GlobeScene: ObservableObject {
     var isFlat: Bool { flatTarget }
 
     func reset() {
-        flatCam.home()
+        if reduceMotion { flatCam = GlobeFlat.Camera() } else { flatCam.home() }
         let target = center == author ? center : author
         camera.fly(to: GlobeCamera.facing(TrustMap.direction(of: target)), at: Date.timeIntervalSinceReferenceDate)
         wake()
@@ -619,7 +619,7 @@ final class GlobeScene: ObservableObject {
             if d < reach, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
-        if best == nil, camera.zoom >= 1.6 {
+        if best == nil, GlobeFlat.tapZoom(globe: camera.zoom, map: flatCam.zoom, flat: flatMix) >= GlobeFlat.starTapZoom {
             for i in keys.indices where !isFace[i] && kinds[i] != .haze && kinds[i] != .closeHaze { consider(i, reach: 16) }
         }
         return best?.key
