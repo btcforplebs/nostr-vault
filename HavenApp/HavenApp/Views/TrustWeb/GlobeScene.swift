@@ -851,7 +851,7 @@ final class GlobeScene: ObservableObject {
         }
         // A seat comes and goes over a quarter second, so a face that loses
         // its room cross-fades with the star it becomes instead of popping.
-        var fades: [String: Double] = [:]
+        var fades = [String: Double](minimumCapacity: drawn.count)
         for face in drawn {
             let seated = seats.contains(face.key)
             fades[face.key] = GlobeEdge.seat(seatFade[face.key] ?? (seated ? 1 : 0), seated: seated,

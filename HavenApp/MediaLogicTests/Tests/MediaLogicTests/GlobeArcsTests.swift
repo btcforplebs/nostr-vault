@@ -47,6 +47,34 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertEqual(GlobeArcs.arrival(event(3, by: key(1), kind: 1, tags: positional), now: now)?.targets, [key(3)])
     }
 
+    func testAReplyWeCantPlaceDoesntFlyIntoYou() {
+        // About a fifth of real replies carry no p tag and no pubkey slot.
+        // They used to have no targets, and the board flies those into you.
+        let marked = [["e", key(50), "", "root"], ["e", key(51), "", "reply"]]
+        XCTAssertNil(GlobeArcs.arrival(event(10, by: key(1), kind: 1, tags: marked), now: now))
+        let positional = [["e", key(50)], ["e", key(51)]]
+        XCTAssertNil(GlobeArcs.arrival(event(11, by: key(1), kind: 1, tags: positional), now: now))
+        let comment = [["E", key(50)], ["K", "1"], ["e", key(51)], ["k", "1"]]
+        XCTAssertNil(GlobeArcs.arrival(event(12, by: key(1), kind: 1111, tags: comment), now: now))
+        // A plain note aimed at no one still lands on you.
+        let plain = GlobeArcs.arrival(event(13, by: key(1), kind: 1, tags: []), now: now)
+        XCTAssertEqual(plain?.targets, [])
+        var board = GlobeArcs.Board()
+        board.add(plain!)
+        board.step(now: 0, me: me)
+        XCTAssertEqual(board.lines.map(\.to), [me])
+    }
+
+    func testAPositionalReplyWithSeveralETagsFliesToTheFirstP() {
+        // Deprecated positional form: the last unmarked e is the parent, and
+        // with no pubkey slot the first p is who it answers.
+        let tags = [["e", key(50)], ["e", key(52)], ["e", key(51)], ["p", key(3)], ["p", key(2)], ["p", key(4)]]
+        XCTAssertEqual(GlobeArcs.arrival(event(14, by: key(1), kind: 1, tags: tags), now: now)?.targets, [key(3)])
+        XCTAssertTrue(GlobeArcs.isReply(kind: 1, tags: tags))
+        // A quote's mention e isn't a parent: not a reply.
+        XCTAssertFalse(GlobeArcs.isReply(kind: 1, tags: [["e", key(50), "", "mention"], ["p", key(2)]]))
+    }
+
     func testANIP22CommentReplyFliesToo() {
         // Amethyst, Ditto, Coracle and Snort reply to a note with a kind 1111
         // comment; these never flew.

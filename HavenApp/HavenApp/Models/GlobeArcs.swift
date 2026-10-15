@@ -91,6 +91,9 @@ enum GlobeArcs {
         if let to = repliedTo(kind: kind, tags: tags), to != author {
             return Arrival(id: id, author: author, targets: [to])
         }
+        // A reply we can't place (no pubkey slot, no p tag) doesn't fly: only
+        // a note aimed at no one lands on you.
+        if isReply(kind: kind, tags: tags), repliedTo(kind: kind, tags: tags) == nil { return nil }
         var targets: [String] = []
         for tag in tags where tag.count > 1 && tag[0] == "p" {
             let key = tag[1].lowercased()
@@ -119,6 +122,12 @@ enum GlobeArcs {
         let e = tags.first { $0.count >= 2 && $0[0] == "e" && $0[1] == parent }
         return key(e.flatMap { $0.count > 4 ? $0[4] : nil })
             ?? key(tags.first { $0.count >= 2 && $0[0] == "p" }?[1])
+    }
+
+    /// True for a note that answers another: a comment on a note, or a
+    /// kind 1 note with a parent `e` tag (a quote's mention isn't one).
+    static func isReply(kind: Int, tags: [[String]]) -> Bool {
+        kind == NIP10Thread.commentKind || (kind == 1 && NIP10Thread.parentEventId(kind: kind, tags: tags) != nil)
     }
 
     /// Which feed a note's author belongs to: yours and your follows' are
