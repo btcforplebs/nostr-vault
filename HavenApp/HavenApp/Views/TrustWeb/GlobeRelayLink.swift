@@ -72,7 +72,7 @@ final class GlobeRelayLink {
         // messages go past here too: only the globe's are read.
         client.messageSubject
             .sink { [weak self] message in
-                guard message.hasPrefix("[\"EVENT\""), GlobeArcs.isGlobeMessage(message),
+                guard GlobeArcs.isGlobeMessage(message),
                       let data = message.data(using: .utf8),
                       let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
                       let event = array[2] as? [String: Any] else { return }

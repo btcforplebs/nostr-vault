@@ -8,9 +8,8 @@ extension FeedService {
     nonisolated func handleFeedMsgBackground(_ msg: String, totalRelays: Int) {
         // The WOT globe's live arrivals share this connection: they're its own.
         if GlobeArcs.isGlobeMessage(msg) { return }
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String else { return }
+        guard let frame = RelayFrame.parse(msg) else { return }
+        let (type, json) = frame
 
         if type == "EOSE" {
             // Only count EOSE from the primary feed subscription (prefix "feed-"),
