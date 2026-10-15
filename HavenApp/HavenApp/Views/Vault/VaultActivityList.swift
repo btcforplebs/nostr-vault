@@ -309,7 +309,7 @@ struct VaultActivityRow: View {
         switch line.kind {
         case .reply: return ("arrowshape.turn.up.left.fill", .havenPurple)
         case .mention: return ("at", .havenPurple)
-        case .quote: return ("quote.bubble.fill", .havenPurple)
+        case .quote: return ("quote.bubble.fill", .blue)
         case .reaction: return ("heart.fill", .pink)
         case .repost: return ("arrow.2.squarepath", Color(red: 0.2, green: 0.8, blue: 0.6))
         case .zap: return ("bolt.fill", .orange)
