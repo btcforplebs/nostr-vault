@@ -68,6 +68,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardScreen
 import com.nostrvault.ui.screens.dashboard.DashboardViewModel
 import com.nostrvault.ui.screens.dashboard.VaultDashboardSheet
 import com.nostrvault.ui.screens.dashboard.connectionDotColor
+import com.nostrvault.ui.screens.vault.LocalOpenVaultSearch
+import com.nostrvault.ui.screens.vault.VaultSearchScreen
 
 /**
  * The Vault tab: what used to be the Media and Relay tabs, in one (iOS
@@ -186,8 +188,21 @@ fun VaultTabScreen(
     }
 
     val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
-    CompositionLocalProvider(LocalVaultMessages provides messages) {
-    if (!showsMedia && showsActivity) {
+    // The Vault's search (iOS VaultSearchBar): over the Vault list and the
+    // relay's lists, not Media. Kept across a note or profile it opens.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val openSearch: (() -> Unit)? = if (showsMedia) null else ({ searchOpen = true })
+    CompositionLocalProvider(LocalVaultMessages provides messages, LocalOpenVaultSearch provides openSearch) {
+    if (searchOpen && !showsMedia) {
+        VaultSearchScreen(
+            nostrService = viewModel.nostrService,
+            feedService = feedService,
+            onProfileClick = onProfileClick,
+            onNoteClick = onNoteClick,
+            onArticleClick = onArticleClick,
+            onClose = { searchOpen = false },
+        )
+    } else if (!showsMedia && showsActivity) {
         halves.SaveableStateProvider("activity") {
             val connectionColor by viewModel.connectionColor.collectAsState()
             VaultActivityScreen(

@@ -44,7 +44,15 @@ fun VaultRightPill(
     filters: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val messages = LocalVaultMessages.current
+    val openSearch = com.nostrvault.ui.screens.vault.LocalOpenVaultSearch.current
     GlassPill(modifier = modifier) {
+        // The Vault's search opens out of this glass (iOS `searchToggleButton`).
+        if (openSearch != null) {
+            IconButton(onClick = openSearch, modifier = Modifier.size(36.dp)) {
+                Icon(NostrVaultIcons.Search, contentDescription = "Search your Vault", tint = SecondaryText,
+                    modifier = Modifier.size(20.dp))
+            }
+        }
         if (messages != null) {
             VaultMessagesButton(messages)
             if (filters != null) {
