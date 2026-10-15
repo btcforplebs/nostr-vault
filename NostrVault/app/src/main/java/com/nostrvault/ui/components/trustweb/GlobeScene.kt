@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
+import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeCamera
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.Vec3
@@ -39,7 +40,7 @@ internal class GlobeScene(
 ) {
     enum class Kind { RING, MUTUAL, HAZE, CLOSE_HAZE, BRIDGE, VIA }
 
-    private class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
+    internal class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
         var radiusTarget = radius
         var alpha = 0.0
         var alphaTarget = 1.0
@@ -61,7 +62,7 @@ internal class GlobeScene(
         val label: Boolean,
     )
 
-    private class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
+    internal class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
         /** 0 at the back of the globe, 1 at the front. */
         val front: Double get() = ((depth + 1.7) / 3.4).coerceIn(0.0, 1.0)
     }
@@ -128,7 +129,7 @@ internal class GlobeScene(
     private var tracedStar: String? = null
 
     private var stars = ArrayList<Star>()
-    private var index = HashMap<String, Star>()
+    internal var index = HashMap<String, Star>()
 
     private var born = 0.0
     private var threadsBorn = 0.0
@@ -260,6 +261,7 @@ internal class GlobeScene(
         val target = traceTarget
         val traced = if (target == null) emptyList() else listOf(target) + traceBridges
         for (key in traced) if (key !in symbols) symbols += key
+        for (key in arcs.keys) if (key !in symbols) symbols += key
         val pictured = (if (target == null) listOf(author) + faces else traced).toHashSet().apply { add(center) }
         for (star in stars) star.isFace = star.key in pictured
         if (faceKeys != symbols) faceKeys = symbols
@@ -409,9 +411,29 @@ internal class GlobeScene(
             threadProgress = ((now - threadsBorn - 0.35) / 0.55).coerceIn(0.0, 1.0)
             if (age > SETTLE_TIME) settle()
         }
+        if (arcs.step(now, me, center)) seatFaces()
         frameCount.longValue++
-        if (!settling && !fading && !camera.wantsFrames(now, reduceMotion)) awake = false
+        val still = !settling && !fading && !camera.wantsFrames(now, reduceMotion)
+        slowFrames = still && !arcs.busy
+        if (still && arcs.idle) awake = false
     }
+
+    // ── Live arcs (GlobeSceneArcs.kt) ────────────────────────────────
+
+    /** Notes flying across the globe as they reach the relay; on for the WOT tab's globe. */
+    internal val arcs = GlobeSceneArcs()
+    /** Only a few arcs move: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
+    var slowFrames = false
+        private set
+    /** This frame's projection and scale, for drawing the arcs where the faces are. */
+    internal var lastProjector: Projector? = null
+    internal var lastK = 1.0
+
+    fun setLiveArcs(on: Boolean) {
+        if (arcs.setOn(on)) { seatFaces(); wake() }
+    }
+
+
 
     /** Everyone's shell faces are small and dim, unless a filter is lighting them. */
     private fun layerDimTarget() = if (dimLayerFaces && filterTo == null) 1.0 else 0.0
@@ -432,8 +454,10 @@ internal class GlobeScene(
     // ── Projection ───────────────────────────────────────────────────
 
     /** One camera's projection, worked out once per frame. */
-    private class Projector(camera: GlobeCamera, w: Float, h: Float, phone: Boolean) {
+    internal class Projector(camera: GlobeCamera, w: Float, h: Float, phone: Boolean) {
         val m = camera.orientation.matrix()
+        /** Toward the viewer, in the globe's own space. */
+        val facing = Vec3(m[6], m[7], m[8])
         val cameraZ = GlobeCamera.DISTANCE / camera.zoom
         val unit = GlobeCamera.unit(w.toDouble(), h.toDouble(), phone)
         val midX = w / 2.0
@@ -714,6 +738,12 @@ internal class GlobeScene(
             tint = if (center == me) GlobeAccent else Color.White, label = true)
         spots = out
         for (spot in out) spotByKey[spot.key] = spot
+        lastProjector = project
+        lastK = k
+        val pictured = seats + center
+        for (spot in arcs.faceSpots(lastTick ?: nowSeconds(), { project.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) }, pictured, center) {
+            GlobeSceneArcs.faceRadius(it, k, zoom, density)
+        }) spotByKey.putIfAbsent(spot.key, spot)
 
         // Names on plain stars once zoomed well in, where they fit.
         if (namesOut) {

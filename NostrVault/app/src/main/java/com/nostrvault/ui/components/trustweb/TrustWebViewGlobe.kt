@@ -76,6 +76,8 @@ internal fun TrustWebViewGlobe(
     closeCard: () -> Unit,
     onMessage: ((String) -> Unit)?,
     center: (String) -> Unit,
+    /** Notes flying in as they reach the relay; null keeps the globe still (a post's globe, or the antenna off). */
+    live: LiveArcsRequest? = null,
 ) {
     Box(if (clip) modifier.clipToBounds() else modifier) {
         TrustGlobe(
@@ -94,6 +96,8 @@ internal fun TrustWebViewGlobe(
             focus = card,
             focusBridges = cardPath?.all.orEmpty(),
             onEmptyTap = onEmptyTap,
+            live = live,
+            onNeedProfiles = { feedService.nostrService.fetchMissingProfiles(it) },
         )
         // The WoT tutorial's first card points at the middle of the
         // globe, you and the faces nearest you. The whole globe is nearly

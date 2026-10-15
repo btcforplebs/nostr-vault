@@ -50,6 +50,7 @@ import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 // ── The globe ────────────────────────────────────────────────────────
@@ -78,6 +79,9 @@ private data class LoadKey(
 
 /** Spinning and turning to a person both take about this long; a new person's globe settles in after it. */
 private const val TURN_DELAY_MS = 380L
+
+/** One frame at 30 fps, for a globe where only a few arcs move (iOS `GlobeScene.slowRate`). */
+private const val SLOW_FRAME_MS = 33L
 
 /** Pictures are laid out at this size and scaled to each face. */
 private const val PICTURE_DP = 64f
@@ -122,6 +126,10 @@ internal fun TrustGlobe(
     onTap: (String) -> Unit,
     /** A tap that lands on no one, e.g. to close the peek card. */
     onEmptyTap: () -> Unit,
+    /** The WOT tab's live arrivals; null for none (a post's globe never has them). */
+    live: LiveArcsRequest? = null,
+    /** Pictures still missing for people the globe shows. */
+    onNeedProfiles: (List<String>) -> Unit = {},
 ) {
     val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
     val scene = remember(phone) { GlobeScene(lite, phone) }
@@ -148,7 +156,29 @@ internal fun TrustGlobe(
         while (true) {
             snapshotFlow { scene.awake }.first { it }
             scene.lastTick = null
-            while (scene.awake) withFrameNanos { scene.tick(it / 1e9) }
+            while (scene.awake) {
+                val started = withFrameNanos { scene.tick(it / 1e9); it }
+                // Only a few arcs moving: 30 fps rather than every frame keeps the phone cool.
+                if (scene.slowFrames) delay(max(0L, SLOW_FRAME_MS - (System.nanoTime() - started) / 1_000_000))
+            }
+        }
+    }
+
+    // Live arrivals: the stream runs while the globe is on screen; off clears the lines.
+    LaunchedEffect(live, active) {
+        scene.setLiveArcs(live != null && active)
+        if (live == null || !active) return@LaunchedEffect
+        live.stream.arrivals(live.me, live.rings, live.show).collect { arrival ->
+            if (live.show.allows(arrival.sort)) scene.arrive(arrival)
+        }
+    }
+
+    // Pictures for who just got a face, an arc's end among them.
+    val currentProfiles by rememberUpdatedState(profiles)
+    LaunchedEffect(scene) {
+        snapshotFlow { scene.faceKeys }.collect { keys ->
+            val missing = keys.filter { currentProfiles[it] == null }
+            if (missing.isNotEmpty()) onNeedProfiles(missing)
         }
     }
 
@@ -273,6 +303,7 @@ internal fun TrustGlobe(
                             key == center && key == me -> accent
                             key == center -> Color.White
                             key == (scene.traceTarget ?: author) -> AuthorTint
+                            key in scene.arcs.keys -> GlobeSceneArcs.FaceTint
                             // The core is the author: these are their follows.
                             center == author && scene.traceTarget == null -> RingColor
                             else -> accent

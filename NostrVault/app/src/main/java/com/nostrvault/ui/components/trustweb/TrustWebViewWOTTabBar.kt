@@ -35,6 +35,7 @@ internal fun TrustWebViewWOTTabBar(
     filters: Set<TrustMap.Filter>,
     onFilter: (TrustMap.Filter) -> Unit,
     filterNote: FilterNoteState,
+    liveArcs: LiveArcsState? = null,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -55,6 +56,7 @@ internal fun TrustWebViewWOTTabBar(
             onList = onList,
             filters = filters,
             onFilter = onFilter,
+            liveArcs = liveArcs,
         )
         if (searchOpen) {
             search()

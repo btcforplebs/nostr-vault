@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import com.nostrvault.ui.components.GlobeScene.Companion.LEVELS
 import com.nostrvault.ui.components.GlobeScene.Slot
+import com.nostrvault.ui.theme.Motion
+import kotlin.math.max
 
 // GlobeScene's drawing: what goes under the faces, and the names over them. Split out of GlobeScene.kt.
 
@@ -88,6 +90,13 @@ import com.nostrvault.ui.components.GlobeScene.Slot
                 join = StrokeJoin.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5 * dp, 4 * dp))))
         }
         fill(Slot.HOT, accent)
+
+        // Live arcs over the stars and threads, under the faces.
+        val arcProjector = lastProjector
+        if (arcProjector != null && arcs.board.lines.isNotEmpty()) {
+            arcs.painter.drawLines(this, arcs.board, lastTick ?: nowSeconds(), Motion.isReduced, max(0.8, lastK) * dp, dp,
+                arcProjector.facing, { arcProjector.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) })
+        }
 
         // A soft tint behind each face, and embers for those behind the globe.
         for (spot in spots) {
