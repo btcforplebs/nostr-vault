@@ -82,6 +82,31 @@ test("a private block refuses when the private part can't be opened, rather than
   await assert.rejects(editedBlockList(list([], "AgAAAA"), { target: B, block: true, isPrivate: true, crypto: refusing, me: ME }), /couldn't be opened \(no\)/)
 })
 
+test("unblocking someone only the private part could hold refuses when it won't open, instead of faking it", async () => {
+  const refusing = { decrypt: async () => { throw new Error("signer said no") }, decrypt04: async () => { throw new Error("signer said no") }, encrypt: async () => "x" }
+  const base = list([["p", A]], seal44([["p", B]]))
+  await assert.rejects(editedBlockList(base, { target: B, block: false, crypto: refusing, me: ME }), /Couldn't unblock: .*signer said no/)
+  await assert.rejects(editedBlockList(base, { target: B, block: false, crypto: null, me: ME }), /Couldn't unblock/)
+  // Someone in the public part still comes out of it; the unreadable private part is kept as it was.
+  const un = await editedBlockList(base, { target: A, block: false, crypto: refusing, me: ME })
+  assert.deepEqual(un.tags, []); assert.equal(un.content, base.content)
+})
+
+test("setBlock: a refused private unblock signs and sends nothing, and the person stays blocked", async () => {
+  const base = list([["p", A]], seal44([["p", B]]), 100)
+  const vault = fakeVault([base])
+  const calls = [], sent = []
+  const bunker = fakeBunker(calls)
+  bunker.nip44Decrypt = async () => { calls.push(["nip44_decrypt"]); throw new Error("signer said no") }
+  const ctx = { ...ctxOf(vault), signer: wrap(Promise.resolve(bunker)) }
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  await assert.rejects(setBlock(ctx, B, { block: false, ask: askWith(), publish: okPublish(sent) }), /Couldn't unblock/)
+  assert.equal(sent.length, 0)
+  assert.ok(!calls.some(c => c[0] === "sign_event"), "not signed")
+  assert.equal(vault.outbox.stored.length, 1)
+})
+
 test("no list yet: the first block starts one", async () => {
   const { tags, content } = await editedBlockList(undefined, { target: B, block: true, crypto: null, me: ME })
   assert.deepEqual(tags, [["p", B]]); assert.equal(content, "")
@@ -176,8 +201,15 @@ test("Report & Block: the report goes out, then the person is blocked; a failed 
   const failed = await reportAndBlock(ctx, { pubkey: B, reason: "spam" }, { publish: okPublish([]), block: async () => { throw new Error("relays down") } })
   assert.deepEqual({ blocked: failed.blocked, blockError: failed.blockError }, { blocked: false, blockError: "relays down" })
 
+  // Already blocked: reported, not blocked again, and not told they were just blocked.
   blocks.length = 0
-  await assert.rejects(reportAndBlock(ctx, { pubkey: C, reason: "spam" }, { publish: urls => urls.map(() => Promise.reject(new Error("x"))), block }), /didn't go out/)
+  await setBlock(ctx, C, { ask: askWith(), publish: okPublish([]) })
+  const again = await reportAndBlock(ctx, { pubkey: C, reason: "spam" }, { publish: okPublish([]), block })
+  assert.deepEqual({ blocked: again.blocked, alreadyBlocked: again.alreadyBlocked }, { blocked: true, alreadyBlocked: true })
+  assert.deepEqual(blocks, [])
+  assert.equal(done.alreadyBlocked, false)
+
+  await assert.rejects(reportAndBlock(ctx, { pubkey: "d".repeat(64), reason: "spam" }, { publish: urls => urls.map(() => Promise.reject(new Error("x"))), block }), /didn't go out/)
   assert.deepEqual(blocks, [], "no block without a report")
   await assert.rejects(reportAndBlock(ctx, { pubkey: ME, reason: "spam" }, { publish: okPublish([]), block }), /yourself/)
 })

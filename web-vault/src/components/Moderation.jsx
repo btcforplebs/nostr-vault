@@ -144,7 +144,7 @@ export function ReportDialog({ ctx, note, pubkey, name, onClose }) {
     return (
       <Dialog label="Reported" onClose={onClose}>
         <h3>Reported</h3>
-        <p class="muted">{done.blocked ? `Thanks. ${name} is blocked, so you won't see them any more.` : `The report went out, but blocking ${name} didn't: ${done.blockError}`}</p>
+        <p class="muted">{done.alreadyBlocked ? `Thanks. You'd already blocked ${name}.` : done.blocked ? `Thanks. ${name} is blocked, so you won't see them any more.` : `The report went out, but blocking ${name} didn't: ${done.blockError}`}</p>
         <div class="mod-row"><button type="button" class="primary" onClick={onClose}>Done</button></div>
       </Dialog>
     )

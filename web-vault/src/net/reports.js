@@ -38,7 +38,7 @@ export function reportTemplate({ note, pubkey, reason, details = "", at = now() 
 /**
  * Report, then block the person. The report must reach a relay first; the block is its own step, so a block that
  * fails still leaves the report sent, and says so. ctx: { vault, signer, session, account }.
- * -> { report: event, blocked: true } or { report, blocked: false, blockError }
+ * -> { report: event, blocked: true, alreadyBlocked } or { report, blocked: false, blockError }
  */
 export async function reportAndBlock(ctx, { note, pubkey, reason, details }, { publish = (urls, ev) => pool.publish(urls, ev), block = setBlock } = {}) {
   const template = reportTemplate({ note, pubkey, reason, details })
@@ -49,8 +49,9 @@ export async function reportAndBlock(ctx, { note, pubkey, reason, details }, { p
   const results = await Promise.allSettled(publish(network, event))
   if (!results.some(r => r.status === "fulfilled")) throw new Error(`The report didn't go out: no relay took it (0 of ${network.length}). Try again.`)
   try {
-    if (!getBlocks().blocked.has(who)) await block(ctx, who, { block: true })
-    return { report: event, blocked: true }
+    if (getBlocks().blocked.has(who)) return { report: event, blocked: true, alreadyBlocked: true }
+    await block(ctx, who, { block: true })
+    return { report: event, blocked: true, alreadyBlocked: false }
   } catch (e) {
     return { report: event, blocked: false, blockError: String(e?.message ?? e) }
   }

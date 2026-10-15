@@ -223,14 +223,18 @@ const withoutP = (tags, target) => tags.filter(t => !(Array.isArray(t) && t[0] =
  * private (words, hashtags, threads, other people), is kept as it was. A public block goes in the tags, which every
  * app reads, the iPhone included; a private one goes in the content, NIP-44 encrypted to the user. Unblocking takes
  * the person out of both. When the private part can't be opened, a public change keeps it as it is, and a change
- * that needs it refuses (throws).
+ * that needs it refuses (throws): a private block, or unblocking someone who isn't in the public part.
  * `crypto` is the signer's (signer.crypto). -> { tags, content }
  */
 export async function editedBlockList(base, { target, block, isPrivate = false, crypto, me }) {
+  const inPublic = (base?.tags ?? []).some(t => Array.isArray(t) && t[0] === "p" && String(t[1] ?? "").toLowerCase() === target)
   const tags = withoutP(base?.tags ?? [], target)
   let content = base?.content ?? ""
   const priv = await openPrivate(base, crypto, me)
   const inPrivate = !priv.reason && priv.tags.some(t => Array.isArray(t) && t[0] === "p" && String(t[1] ?? "").toLowerCase() === target)
+  // Not public and the private part won't open: they can only be on the private part, and republishing it as it is
+  // would leave them blocked while saying they aren't.
+  if (!block && !inPublic && priv.reason) throw new Error(`Couldn't unblock: ${priv.reason}.`)
   if (block && isPrivate) {
     if (priv.reason) throw new Error(`Couldn't block privately: ${priv.reason}.`)
     content = await crypto.encrypt(me, JSON.stringify([...withoutP(priv.tags, target), ["p", target]]))
