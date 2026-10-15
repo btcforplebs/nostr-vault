@@ -75,7 +75,7 @@ struct NoteTranslateButton: View {
                 Color.clear.frame(width: 0, height: 0)
             }
         }
-        .task(id: noteID + content) { detect() }
+        .task(id: noteID + content) { await detect() }
     }
 
     private var button: some View {
@@ -116,12 +116,19 @@ struct NoteTranslateButton: View {
         return name.isEmpty ? "Translate" : "Translate from \(name)"
     }
 
-    private func detect() {
+    /// The cached language at once; otherwise the recognizer runs off the
+    /// main thread. It ran on main for every row as it appeared, part of the
+    /// stall when the feed first draws (Time Profiler, build 36).
+    private func detect() async {
         let key = (noteID + "|" + String(content.count)) as NSString
         if let cached = Self.languageCache.object(forKey: key) {
             detected = cached == Self.noLanguage ? nil : cached as String
         } else {
-            let code = FeedLanguageDetector.detect(FeedLanguageDetector.text(of: content, kind: kind))
+            let content = content, kind = kind
+            let code = await Task.detached(priority: .utility) {
+                FeedLanguageDetector.detect(FeedLanguageDetector.text(of: content, kind: kind))
+            }.value
+            guard !Task.isCancelled else { return }
             Self.languageCache.setObject((code ?? Self.noLanguage as String) as NSString, forKey: key)
             detected = code
         }
