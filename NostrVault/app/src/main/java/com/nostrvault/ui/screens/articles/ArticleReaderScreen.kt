@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.navigation.FloatingNavBarInset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -122,7 +123,9 @@ fun ArticleReaderScreen(
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 20.dp)
+                    // Clear of the bottom bar, which a pushed article keeps.
+                    .padding(bottom = FloatingNavBarInset.height.value),
             )
             isLoading -> Box(
                 contentAlignment = Alignment.Center,

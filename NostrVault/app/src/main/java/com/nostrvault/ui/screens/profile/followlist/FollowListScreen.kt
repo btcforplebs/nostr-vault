@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.profile
 
+import androidx.compose.foundation.layout.PaddingValues
+import com.nostrvault.ui.navigation.FloatingNavBarInset
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -144,7 +146,11 @@ fun FollowListScreen(
         }
         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        // Clear of the bottom bar, which a pushed list keeps.
+        LazyColumn(
+            contentPadding = PaddingValues(bottom = FloatingNavBarInset.height.value),
+            modifier = Modifier.fillMaxSize(),
+        ) {
             if (sections.isEmpty()) {
                 item(key = "empty") {
                     Text(
