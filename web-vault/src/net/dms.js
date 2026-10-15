@@ -321,20 +321,34 @@ export const thread = (messages, peer) => [...messages.values()].filter(m => m.p
  * relays. -> { relays: [{ url, ok, message, to: "them" | "me" }] }; throws when none of the recipient's relays
  * took their wrap (the self-copy landing somewhere is not delivery).
  */
+// What a failed send says. Our sentences only: a signer's or a relay's own error text never reaches the screen (a
+// hostile bunker could write "re-authorise at https://…" into it). An error carrying `fixed` is safe to show.
+export const SEND_FAILED = {
+  signer: "Your signer didn't seal the message, so it wasn't sent.",
+  unreachable: "Your signer didn't answer, or its relay couldn't be reached, so the message wasn't sent.",
+  other: "The message wasn't sent. Try again.",
+}
+const sendError = message => Object.assign(new Error(message), { fixed: true })
+/** What the screen says when a send fails: sendMessage's own sentence, never anyone else's error text. */
+export const sendFailure = err => (err?.fixed ? String(err.message) : SEND_FAILED.other)
+
 export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
-  if (c.reason) throw new Error(`Can't send: ${c.reason}`)
+  if (c.reason) throw sendError(`Can't send: ${c.reason}`)
   const env = { signer: ctx.signer, crypto: c, me }
   const rumor = rumorFor(me, peer, text)
   const lookup = uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS])
   const [theirs, mine] = await Promise.all([
     dmRelaysFor(peer, lookup, { query, fallback: ctx.account.relays.write }),
     dmRelaysFor(me, lookup, { query, fallback: ctx.account.relays.write }),
-  ])
+  ]).catch(() => { throw sendError(SEND_FAILED.other) })
   const self = peer === me
-  const toMe = await wrapFor(rumor, env, me)
-  const toThem = self ? toMe : await wrapFor(rumor, env, peer)
+  let toMe, toThem
+  try {
+    toMe = await wrapFor(rumor, env, me)
+    toThem = self ? toMe : await wrapFor(rumor, env, peer)
+  } catch (e) { throw sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer) }
   const send = async (urls, ev, to) => {
     const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev)[0], timeout(8000)])))
     return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
@@ -343,10 +357,7 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
   // comes back from my own relay looking sent.
   const mineUrls = uniq([...mine, ...extraRelays()])
   const theirSends = await send(self ? mineUrls : uniq(theirs), toThem, "them")
-  if (!theirSends.some(r => r.ok)) {
-    const why = theirSends.map(r => r.message).find(Boolean)
-    throw new Error(`Not delivered: none of their ${theirSends.length} relay${theirSends.length === 1 ? "" : "s"} took it${why ? ` (${why})` : ""}`)
-  }
+  if (!theirSends.some(r => r.ok)) throw sendError(`Not delivered: none of their ${theirSends.length} relay${theirSends.length === 1 ? "" : "s"} took it.`)
   const relays = [...theirSends, ...(self ? [] : await send(mineUrls, toMe, "me"))]
   await (chat ?? chatStore(ctx.vault)).event(toMe).catch(() => {})
   opened.add(toMe.id); opened.add(toThem.id)

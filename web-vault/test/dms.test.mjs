@@ -186,7 +186,7 @@ test("sendMessage: their wrap to their DM relays, the self-copy to mine and into
 test("sendMessage throws when no relay took it, and with no signer that can encrypt", async () => {
   const publish = () => [Promise.reject(new Error("closed"))]
   resetMessages(pk(A))
-  await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Not delivered: none of their 1 relay took it \(closed\)/)
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Error: Not delivered: none of their 1 relay took it\.$/)
   assert.equal(getMessages().messages.size, 0, "not shown as sent")
   await assert.rejects(sendMessage({ ...ctxOf(A), session: { method: "nip46", pubkey: pk(A) } }, pk(B), "x", { chat: fakeChat() }), /bunker/)
 })
@@ -198,7 +198,7 @@ test("sendMessage: a DM is not delivered when only the self-copy landed", async 
   const publish = (urls) => { sent.push(urls[0]); return [urls[0].includes("their") ? Promise.reject(new Error("blocked: not in WoT")) : Promise.resolve("ok")] }
   const chat = fakeChat()
   resetMessages(pk(A))
-  await assert.rejects(sendMessage(ctxOf(A), pk(B), "hi", { crypto: cryptoOf(A), query, chat, publish }), /Not delivered: none of their 1 relay took it \(blocked: not in WoT\)/)
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "hi", { crypto: cryptoOf(A), query, chat, publish }), /Error: Not delivered: none of their 1 relay took it\.$/)
   assert.equal(getMessages().messages.size, 0, "not shown as sent")
   assert.equal(chat.stored.length, 0, "no self-copy kept")
   assert.deepEqual(sent, ["wss://their-haven.example"], "the self-copy was never published, so my relay can't echo it back")
