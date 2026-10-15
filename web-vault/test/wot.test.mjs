@@ -3,20 +3,50 @@
 // published.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPathText, fraction, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
+import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPathText, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
+import { direction } from "../src/net/wot-globe.js"
 
 const hex = (c, i = 0) => (c.repeat(63) + i.toString(16)).slice(-64)
 const ME = hex("e")
 const list = (pubkey, follows, created_at = 1) => ({ kind: 3, pubkey, created_at, tags: follows.map(p => ["p", p]) })
 
-test("fraction matches the iPhone's TrustMap.fraction", () => {
-  // Printed by the Swift function compiled with swiftc, 2026-10-15.
-  const cases = [
-    ["82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2", 0.873802130343],
-    ["3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", 0.462535042549],
-    ["f".repeat(64), 0.331829221221],
-  ]
-  for (const [pk, f16] of cases) assert.ok(Math.abs(fraction(pk, 16) - f16) < 1e-11, pk)
+// Printed by TrustMap.fraction and TrustMap.direction themselves: both functions cut unedited from
+// HavenApp/HavenApp/Models/TrustMap.swift (master b3a1d29c), compiled with swiftc, 2026-10-15.
+// [key, fraction(0), fraction(8), fraction(16), direction x, y, z]. Real keys take the hex path; the rest take each of
+// UInt32(_, radix: 16)'s edges (a "+", a "-0", a "-1", "0x", a space, a non-hex digit) and the FNV-1a fallback over
+// UTF-8 bytes (non-ASCII keys).
+const SWIFT = [
+    ["82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2", 0.508607836440206, 0.169657456921414, 0.170531388139352, -0.749565552128109, -0.040579551406732, -0.660685086157173],
+    ["3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", 0.234142675762996, 0.795215976424515, 0.030023076804355, 0.080280778254543, 0.803084743783447, 0.590431952849030],
+    ["ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 0.999999999767169, 0.999999999767169, 0.999999999767169, 0.000030517578125, -0.000000000000045, 0.999999999534339],
+    ["0000000000000000000000000000000000000000000000000000000000000000", 0.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000, -1.000000000000000],
+    ["ABCDEF0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789", 0.671111047500744, 0.137777777621523, 0.671111047500744, -0.327863795502065, -0.606370825534810, -0.724444444756955],
+    ["not-hex-at-all", 0.122365342918783, 0.137179689947516, 0.504342899890617, 0.494528919014517, 0.478421193836571, -0.725640620104969],
+    ["abc", 0.102659764466807, 0.504342899890617, 0.504342899890617, 0.799051392822830, 0.601199990444158, 0.008685799781233],
+    ["+1234567zzzzzzzzzzzzzzzz", 0.004444444319233, 0.759983853669837, 0.995636613341048, 0.853852884253131, 0.023850269946720, 0.519967707339674],
+    ["-0000000zz", 0.000000000000000, 0.341430393280461, 0.504342899890617, 0.948378995602098, 0.000000000000000, -0.317139213439077],
+    ["1234567g00000000000000000000000000000000000000000000000000000000", 0.207001462578773, 0.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000, -1.000000000000000],
+    ["-0000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0.110754624707624, 0.666666666511446, 0.666666666511446, 0.723589233916896, 0.604406741901023, 0.333333333022892],
+    ["ééééééééabcdef01abcdef01", 0.067330246092752, 0.671111047500744, 0.671111047500744, 0.856783848789860, 0.385753125905191, 0.342222095001489],
+    ["aé", 0.475946544669569, 0.504342899890617, 0.504342899890617, -0.988563940461111, 0.150551959476326, 0.008685799781233],
+    ["0x123456bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 0.070338028017431, 0.733333333162591, 0.733333333162591, 0.799457549900093, 0.378272188309796, 0.466666666325182],
+    [" 1234567cccccccccccccccccccccccccccccccccccccccccccccccccccccccc", 0.435631410451606, 0.799999999813735, 0.799999999813735, -0.735458393578893, 0.314803036455160, 0.599999999627471],
+]
+
+test("fraction and direction match the iPhone's TrustMap, hex path and fallback, from the Swift itself", () => {
+  for (const [pk, f0, f8, f16, x, y, z] of SWIFT) {
+    for (const [off, want] of [[0, f0], [8, f8], [16, f16]]) assert.ok(Math.abs(fraction(pk, off) - want) < 1e-12, `${pk} @${off}: ${fraction(pk, off)} vs ${want}`)
+    const d = direction(pk)
+    for (const [i, want] of [x, y, z].entries()) assert.ok(Math.abs(d[i] - want) < 1e-12, `${pk} direction[${i}]`)
+  }
+})
+
+test("a real key's place is its leading hex digits, as on the phone", () => {
+  assert.equal(fraction("8" + "0".repeat(63), 0), 0.5)
+  assert.equal(fraction("0".repeat(8) + "4" + "0".repeat(55), 8), 0.25)
+  assert.equal(hexPrefix("ffffffff"), 0xffffffff)
+  assert.equal(hexPrefix("-0000001"), null)
+  assert.equal(hexPrefix("abc"), null)
 })
 
 test("the web: follows, extended (followed by EXTENDED_MIN+ follows), further out, who links whom, who follows you", () => {

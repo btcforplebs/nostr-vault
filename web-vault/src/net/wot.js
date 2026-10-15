@@ -168,10 +168,28 @@ export function trustPathText(web, pk, name) {
   return `Followed by ${names[0]}, ${names[1]} and ${rest} other${rest === 1 ? "" : "s"} you follow`
 }
 
-/** A number from 0 to 1 from a pubkey's characters at `offset` on: the iPhone's TrustMap.fraction (FNV-1a over the
- *  hex string's bytes), so a person sits in the same place on the web map as on the phone. */
+/**
+ * A number from 0 to 1 from a pubkey's characters at `offset` on, as the iPhone's TrustMap.fraction does it, so a
+ * person sits in the same place on the web as on the phone: the 8 characters there read as a hex number
+ * (`UInt32(hex, radix: 16)`, which also takes a leading "+", and a "-" when the value is 0), or, when they aren't hex
+ * (only for malformed keys), FNV-1a over the UTF-8 bytes from byte `offset` on. Test fixtures come from the Swift
+ * function itself, compiled from TrustMap.swift.
+ */
 export function fraction(pubkey, offset) {
+  const v = hexPrefix(Array.from(pubkey).slice(offset, offset + 8).join(""))
+  if (v !== null) return v / 4_294_967_296
   let hash = 2_166_136_261
-  for (let i = offset; i < pubkey.length; i++) hash = Math.imul(hash ^ pubkey.charCodeAt(i), 16_777_619) >>> 0
+  const bytes = utf8.encode(pubkey)
+  for (let i = offset; i < bytes.length; i++) hash = Math.imul(hash ^ bytes[i], 16_777_619) >>> 0
   return hash / 4_294_967_296
+}
+const utf8 = new TextEncoder()
+
+/** Swift's UInt32(s, radix: 16) for an 8-character string: the value, or null where Swift gives nil. */
+export function hexPrefix(s) {
+  if (Array.from(s).length !== 8) return null
+  const m = /^([+-]?)([0-9a-fA-F]+)$/.exec(s)
+  if (!m) return null
+  const v = parseInt(m[2], 16)
+  return m[1] === "-" && v !== 0 ? null : v
 }
