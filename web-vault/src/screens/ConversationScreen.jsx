@@ -9,7 +9,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
-import { sendMessage, thread } from "../net/dms.js"
+import { sendMessage, sendFailure, thread } from "../net/dms.js"
 import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
 
 export function ConversationScreen({ ctx, peer }) {
@@ -36,7 +36,7 @@ export function ConversationScreen({ ctx, peer }) {
       setText("")
       const ok = relays.filter(r => r.ok).length
       setStatus(ok === relays.length ? "" : `Sent to ${ok} of ${relays.length} relays`) // delivery to them is checked in sendMessage
-    } catch (err) { setStatus(String(err?.message ?? err)) } finally { setBusy(false) }
+    } catch (err) { setStatus(sendFailure(err)) } finally { setBusy(false) }
   }
 
   return (

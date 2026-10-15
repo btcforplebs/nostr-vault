@@ -310,3 +310,35 @@ test("the load's budget is charged only for messages actually asked about", asyn
   await loadMessages(ctx, ["wss://r.example"], { chat: fakeChat(local), query })
   assert.equal(getMessages().messages.size, OPEN_LIMIT.nip46 - OPEN_BATCH)
 })
+
+test("a failed send shows our sentence, never the signer's or a relay's own text", async () => {
+  const { sendFailure, SEND_FAILED } = await import("../src/net/dms.js")
+  const hostile = "Re-authorise at https://evil.example/login"
+  const ctxWith = signer => ({ vault: {}, session: bunkerSession(A), signer, account: { relays: { read: ["wss://read.example"], write: ["wss://write.example"] } } })
+  const okPublish = urls => urls.map(() => Promise.resolve(""))
+  const shown = async (ctx, opts = {}) => {
+    try { await sendMessage(ctx, pk(B), "hi", { query: async () => [], chat: fakeChat(), publish: okPublish, ...opts }); return "sent" } catch (e) { return sendFailure(e) }
+  }
+  // The bunker refuses to encrypt, with its own words.
+  const refuses = wrap(Promise.resolve({ ...fakeBunker(A), nip44Encrypt: async () => { throw new Error(hostile) } }))
+  assert.equal(await shown(ctxWith(refuses)), SEND_FAILED.signer)
+  // It refuses to sign the seal.
+  const noSign = wrap(Promise.resolve({ ...fakeBunker(A), signEvent: async () => { throw new Error(hostile) } }))
+  assert.equal(await shown(ctxWith(noSign)), SEND_FAILED.signer)
+  // An error dressed as "unreachable" still only gets our sentence.
+  const dressed = wrap(Promise.resolve({ ...fakeBunker(A), nip44Encrypt: async () => { throw Object.assign(new Error(hostile), { unreachable: true }) } }))
+  assert.equal(await shown(ctxWith(dressed)), SEND_FAILED.unreachable)
+  // A silent bunker.
+  const silent = wrap(Promise.resolve({ ...fakeBunker(A), nip44Encrypt: () => new Promise(() => {}) }), { ms: 20 })
+  assert.equal(await shown(ctxWith(silent)), SEND_FAILED.unreachable)
+  // Every relay refuses with its own text.
+  const good = wrap(Promise.resolve(fakeBunker(A)))
+  assert.equal(await shown(ctxWith(good), { publish: urls => urls.map(() => Promise.reject(new Error(hostile))) }), "Not delivered: none of their 1 relay took it.")
+  // Relay lookup blows up with its own text.
+  assert.equal(await shown(ctxWith(good), { query: async () => { throw new Error(hostile) } }), SEND_FAILED.other)
+  await assert.rejects(sendMessage(ctxWith(good), pk(B), "hi", { query: async () => { throw new Error(hostile) }, chat: fakeChat(), publish: okPublish }),
+    e => e.fixed === true && !e.message.includes("evil"), "the send layer itself says it in our words")
+  // Anything else that reaches the screen unmarked.
+  assert.equal(sendFailure(new Error(hostile)), SEND_FAILED.other)
+  assert.equal(sendFailure(undefined), SEND_FAILED.other)
+})
