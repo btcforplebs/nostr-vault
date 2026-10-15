@@ -22,29 +22,36 @@ struct GlobeBoltPainter {
     static func shape(of line: GlobeArcs.Line, stage: GlobeArcs.Stage, now: TimeInterval, reduceMotion: Bool,
                       at: (Double) -> GlobeScene.Projected?) -> Shape? {
         let n = GlobeBolt.segments
-        guard let start = at(0), let whole = at(1), let middle = at(0.5) else { return nil }
+        // Points the camera can't see (zoomed in past them) break the bolt,
+        // the way a star's trail breaks, rather than hiding all of it.
         let points = (0...n).map { at(stage.head * Double($0) / Double(n)) }
-        guard points.allSatisfy({ $0 != nil }) else { return nil }
+        let seen = points.compactMap { $0 }
+        guard seen.count >= 2, let first = seen.first, let last = seen.last else { return nil }
         // Jagged across the screen, in proportion to the whole bolt's length.
-        let length = hypot(whole.point.x - start.point.x, whole.point.y - start.point.y)
+        let whole = at(1)?.point ?? last.point, origin = at(0)?.point ?? first.point
+        let length = hypot(whole.x - origin.x, whole.y - origin.y)
         let seed = GlobeBolt.seed(line.note)
         let frame = GlobeBolt.frame(at: now - line.born, flickers: GlobeArcs.boltFlickers(line, at: now))
         let offsets = GlobeBolt.offsets(seed: seed, frame: frame, reduceMotion: reduceMotion)
-        var jagged: [CGPoint] = []
+        var jagged: [CGPoint?] = []
         for i in 0...n {
-            let p = points[i]!.point
-            let before = points[max(0, i - 1)]!.point, after = points[min(n, i + 1)]!.point
+            guard let p = points[i]?.point else { jagged.append(nil); continue }
+            let before = points[max(0, i - 1)]?.point ?? p, after = points[min(n, i + 1)]?.point ?? p
             let dx = after.x - before.x, dy = after.y - before.y, d = max(0.001, hypot(dx, dy))
             jagged.append(CGPoint(x: p.x - dy / d * offsets[i] * length, y: p.y + dx / d * offsets[i] * length))
         }
-        var shape = Shape(alpha: stage.alpha * GlobeEdge.arc(depth: middle.depth), landing: stage.landing)
-        shape.main.move(to: jagged[0])
-        for p in jagged.dropFirst() { shape.main.addLine(to: p) }
+        let depth = (at(0.5) ?? seen[seen.count / 2]).depth
+        var shape = Shape(alpha: stage.alpha * GlobeEdge.arc(depth: depth), landing: stage.landing)
+        var open = false
+        for p in jagged {
+            guard let p else { open = false; continue }
+            if open { shape.main.addLine(to: p) } else { shape.main.move(to: p); open = true }
+        }
         if stage.head >= 1 { shape.end = jagged[n] }
         // A short fork off the middle third, once the bolt has passed it.
         let fork = GlobeBolt.fork(seed: seed)
-        if !reduceMotion, fork.from < n, Double(fork.from) / Double(n) < stage.head {
-            let a = jagged[fork.from], b = jagged[fork.from + 1]
+        if !reduceMotion, fork.from < n, Double(fork.from) / Double(n) < stage.head,
+           let a = jagged[fork.from], let b = jagged[fork.from + 1] {
             let angle = atan2(b.y - a.y, b.x - a.x) + fork.turn
             let reach = fork.length * length
             let kink = offsets[fork.from] * length * 0.8

@@ -253,7 +253,9 @@ final class GlobeArrivalStream: ObservableObject {
         let trusted = rings.contains(.global) ? feed.globalTrustSet() : nil
         for url in feed.externalRelayURLs.prefix(rings.contains(.global) ? 2 : 3) {
             let wide = Self.subscribe(url, filters: filters) { [weak self] event in
-                guard var arrival = GlobeArcs.arrival(event), !blocked.contains(arrival.author) else { return }
+                // A zap's request must be signed by its zapper.
+                guard var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)),
+                      !blocked.contains(arrival.author) else { return }
                 arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: discover)
                 guard rings.contains(arrival.ring),
                       arrival.ring != .global || (trusted?.contains(arrival.author) ?? true) else { return }

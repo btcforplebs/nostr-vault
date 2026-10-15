@@ -18,9 +18,12 @@ extension GlobeArcs {
     /// A zap receipt as a bolt from the zapper to the person zapped. The
     /// receipt's own pubkey is the LNURL server, so the zapper is the zap
     /// request's (`description`, kind 9734) pubkey. Receipts can be forged:
-    /// one whose request doesn't parse, isn't a 9734, or names someone other
-    /// than the receipt's `p` draws nothing. No amount is read.
-    static func zap(_ event: [String: Any], now: Date = Date()) -> Arrival? {
+    /// one whose request doesn't parse, isn't a 9734, names someone other
+    /// than the receipt's `p`, or fails `verify` (its id and signature,
+    /// checked on the request's own JSON) draws nothing. Without the check
+    /// anyone could draw a bolt from anyone, or pass a stranger off as a
+    /// follow past Global's trust filter. No amount is read.
+    static func zap(_ event: [String: Any], now: Date = Date(), verify: (String) -> Bool) -> Arrival? {
         guard event["kind"] as? Int == zapKind, let id = event["id"] as? String, isKey(id) else { return nil }
         if let created = event["created_at"] as? Double,
            now.timeIntervalSince1970 - created > maxAge { return nil }
@@ -36,7 +39,9 @@ extension GlobeArcs {
               let zapper = (request["pubkey"] as? String)?.lowercased(), isKey(zapper),
               let requestTags = request["tags"] as? [[String]],
               values("p", in: requestTags) == [recipient],
-              zapper != recipient else { return nil }
+              zapper != recipient,
+              // Last, as the one costly check: the request is the zapper's own.
+              verify(description) else { return nil }
         return Arrival(id: id, author: zapper, targets: [recipient], zap: true)
     }
 

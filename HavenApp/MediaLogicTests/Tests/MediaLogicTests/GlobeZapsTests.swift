@@ -8,6 +8,19 @@ final class GlobeZapsTests: XCTestCase {
     private let zapped = String(repeating: "b", count: 64)
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    // Zap requests signed with a throwaway key by go-nostr, the library
+    // behind the app's verifier (`VerifyEventC`), with its verdict on each.
+    private let signedZapper = "ca7e6f6cbaf6579d9b627fba49050b3f25d3221dae89ceb851c318fa747f6f80"
+    private let signed = #"{"kind":9734,"id":"f7ce38f169d572c20977c199e5d11733b9a3c615ab6574fa5a0679ee493af8be","pubkey":"ca7e6f6cbaf6579d9b627fba49050b3f25d3221dae89ceb851c318fa747f6f80","created_at":1799999990,"tags":[["p","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],["amount","21000"],["relays","wss://relay.example"]],"content":"","sig":"bb2d7da898a0557701ffcb02fa2fa86e3da88254b13b2a3d1760e0e9a4a899e472a81542bc712dc274108efc92cfcd63c032f66bbc335ad5818b944516813dc9"}"#
+    private let unsigned = #"{"kind":9734,"id":"f7ce38f169d572c20977c199e5d11733b9a3c615ab6574fa5a0679ee493af8be","pubkey":"ca7e6f6cbaf6579d9b627fba49050b3f25d3221dae89ceb851c318fa747f6f80","created_at":1799999990,"tags":[["p","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],["amount","21000"],["relays","wss://relay.example"]],"content":""}"#
+    private let badSig = #"{"kind":9734,"id":"f7ce38f169d572c20977c199e5d11733b9a3c615ab6574fa5a0679ee493af8be","pubkey":"ca7e6f6cbaf6579d9b627fba49050b3f25d3221dae89ceb851c318fa747f6f80","created_at":1799999990,"tags":[["p","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],["amount","21000"],["relays","wss://relay.example"]],"content":"","sig":"002d7da898a0557701ffcb02fa2fa86e3da88254b13b2a3d1760e0e9a4a899e472a81542bc712dc274108efc92cfcd63c032f66bbc335ad5818b944516813dc9"}"#
+    private let otherSigner = #"{"kind":9734,"id":"f7ce38f169d572c20977c199e5d11733b9a3c615ab6574fa5a0679ee493af8be","pubkey":"ca7e6f6cbaf6579d9b627fba49050b3f25d3221dae89ceb851c318fa747f6f80","created_at":1799999990,"tags":[["p","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],["amount","21000"],["relays","wss://relay.example"]],"content":"","sig":"0ec7ea62382a2b1e891d84584ae4fd8eb96eda011eec1edef5c5b5561f8c77b299a5d069ab38efd93f5b8de7ede8c46516e9995d2f06a5701fd6f47d17cf1f80"}"#
+    /// go-nostr's verdict on each fixture above, as recorded. Anything else
+    /// (the malformed cases, built here) passes, so the shape checks are
+    /// proven on their own rather than hidden behind a failing signature.
+    private var verdicts: [String: Bool] { [signed: true, unsigned: false, badSig: false, otherSigner: false] }
+    private func verify(_ json: String) -> Bool { verdicts[json] ?? true }
+
     private func request(pubkey: String? = nil, kind: Int = 9734, p: [String]? = nil) -> String {
         var r: [String: Any] = ["kind": kind, "content": "", "created_at": 1_799_999_990,
                                 "tags": (p ?? [zapped]).map { ["p", $0] } + [["amount", "21000"]]]
@@ -22,14 +35,29 @@ final class GlobeZapsTests: XCTestCase {
     }
 
     func testAZapFliesFromTheZapperNotTheServerToThePersonZapped() {
-        let arrival = GlobeArcs.arrival(receipt(request()), now: now)
-        XCTAssertEqual(arrival?.author, zapper)
+        let arrival = GlobeArcs.arrival(receipt(signed), now: now, verifyZap: verify)
+        XCTAssertEqual(arrival?.author, signedZapper)
         XCTAssertEqual(arrival?.targets, [zapped])
         XCTAssertEqual(arrival?.zap, true)
-        XCTAssertEqual(arrival, GlobeArcs.zap(receipt(request()), now: now))
+        XCTAssertEqual(arrival, GlobeArcs.zap(receipt(signed), now: now, verify: verify))
+        // The verifier is handed the request exactly as signed.
+        var seen: String?
+        _ = GlobeArcs.zap(receipt(signed), now: now) { seen = $0; return true }
+        XCTAssertEqual(seen, signed)
     }
 
-    func testAForgedOrBrokenReceiptDrawsNothing() {
+    func testAZapWhoseRequestIsntSignedByItsZapperDrawsNothing() {
+        XCTAssertEqual(verdicts[signed], true)
+        for (why, request) in [("unsigned", unsigned), ("garbage signature", badSig),
+                               ("signed by someone else", otherSigner)] {
+            XCTAssertEqual(verdicts[request], false, why)
+            XCTAssertNil(GlobeArcs.arrival(receipt(request), now: now, verifyZap: verify), why)
+        }
+        // With no verifier at all, a zap draws nothing: the check can't be skipped.
+        XCTAssertNil(GlobeArcs.arrival(receipt(signed), now: now))
+    }
+
+    func testABrokenReceiptDrawsNothing() {
         let cases: [(String, [String: Any])] = [
             ("no request", receipt(nil)),
             ("request isn't JSON", receipt("{not json")),
@@ -37,26 +65,26 @@ final class GlobeZapsTests: XCTestCase {
             ("request has no zapper", receipt(request(pubkey: ""))),
             ("request names someone else", receipt(request(p: [me]))),
             ("request names two people", receipt(request(p: [zapped, me]))),
-            ("receipt names two people", receipt(request(), p: [zapped, me])),
+            ("receipt names two people", receipt(signed, p: [zapped, me])),
             ("zapping yourself", receipt(request(p: [zapper]), p: [zapper])),
-            ("bad id", receipt(request(), id: "x")),
+            ("bad id", receipt(signed, id: "x")),
         ]
         for (why, event) in cases {
-            XCTAssertNil(GlobeArcs.arrival(event, now: now), why)
+            XCTAssertNil(GlobeArcs.arrival(event, now: now, verifyZap: verify), why)
         }
         // An old receipt is a relay catching up, not a zap now.
-        var old = receipt(request())
+        var old = receipt(signed)
         old["created_at"] = now.timeIntervalSince1970 - GlobeArcs.maxAge - 1
-        XCTAssertNil(GlobeArcs.arrival(old, now: now))
+        XCTAssertNil(GlobeArcs.arrival(old, now: now, verifyZap: verify))
     }
 
     func testABoltStrikesFlashesAndFadesQuickerThanAStar() {
         var board = GlobeArcs.Board()
-        board.add(GlobeArcs.arrival(receipt(request()), now: now)!)
+        board.add(GlobeArcs.arrival(receipt(signed), now: now, verifyZap: verify)!)
         board.step(now: 0, me: me)
         let line = board.lines[0]
         XCTAssertTrue(line.zap)
-        XCTAssertEqual(line.from, zapper)
+        XCTAssertEqual(line.from, signedZapper)
         XCTAssertEqual(line.to, zapped)
         // Across almost at once, full while it flashes, then an afterglow.
         XCTAssertEqual(GlobeArcs.stage(of: line, at: GlobeArcs.boltStrike).head, 1)

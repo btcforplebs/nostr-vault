@@ -80,9 +80,16 @@ enum GlobeArcs {
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
     /// without the author. nil for anything that isn't a fresh note or repost.
-    static func arrival(_ event: [String: Any], now: Date = Date()) -> Arrival? {
+    /// A zap receipt flies only with `verifyZap`, which checks the zap
+    /// request's signature (`NostrEventVerifier` in the app); without it,
+    /// a zap draws nothing.
+    static func arrival(_ event: [String: Any], now: Date = Date(),
+                        verifyZap: ((String) -> Bool)? = nil) -> Arrival? {
         // A zap receipt is signed by the LNURL server: the zapper is inside.
-        if event["kind"] as? Int == zapKind { return zap(event, now: now) }
+        if event["kind"] as? Int == zapKind {
+            guard let verifyZap else { return nil }
+            return zap(event, now: now, verify: verifyZap)
+        }
         guard let kind = event["kind"] as? Int, kinds.contains(kind) || repostKinds.contains(kind),
               let id = event["id"] as? String, isKey(id),
               let author = event["pubkey"] as? String, isKey(author) else { return nil }
