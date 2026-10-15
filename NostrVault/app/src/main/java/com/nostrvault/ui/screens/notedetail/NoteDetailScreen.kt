@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens
 
+import androidx.compose.foundation.layout.PaddingValues
+import com.nostrvault.ui.navigation.FloatingNavBarInset
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
@@ -432,7 +434,11 @@ fun NoteDetailScreen(
             ) {
             LazyColumn(
                 state = listState,
-                contentPadding = padding,
+                // Clear of the bottom bar, which a pushed note keeps.
+                contentPadding = PaddingValues(
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding() + FloatingNavBarInset.height.value,
+                ),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 // ── Parent chain ────────────────────────────────

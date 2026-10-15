@@ -57,6 +57,23 @@ private val TOP_LEVEL_ROUTES = setOf(
     Screen.WOT.route,
 )
 
+/**
+ * Where the bottom bar shows: the tabs, and the screens iOS pushes inside a
+ * tab (a note, a profile, an article, a follow list), so a tab is one tap
+ * away from a thread as on the iPhone. Sheets on iOS (compose, settings,
+ * messages, a hashtag) cover it. A pushed profile also lets the Profile tab
+ * take you back to your own from someone else's.
+ */
+private val BOTTOM_BAR_ROUTES = TOP_LEVEL_ROUTES + setOf(
+    Screen.Profile.route,
+    Screen.NoteDetail.route,
+    Screen.ArticleReader.route,
+    Screen.AddressLink.route,
+    Screen.FollowList.route,
+)
+
+internal fun showsBottomBar(route: String?): Boolean = route in BOTTOM_BAR_ROUTES
+
 /** True when both ends of the transition are top-level tabs. */
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean {
     val from = initialState.destination.route
@@ -85,17 +102,7 @@ fun NostrVaultNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Bottom bar visible only on top-level tab screens
-    val showBottomBar = currentRoute in listOf(
-        Screen.Feed.route,
-        Screen.Search.route,
-        Screen.Dashboard.route,
-        Screen.WOT.route,
-        PROFILE_TAB_ROUTE,
-        // A pushed profile keeps the bar, so the Profile tab can take you
-        // back to your own from someone else's.
-        Screen.Profile.route,
-    )
+    val showBottomBar = showsBottomBar(currentRoute)
 
     // Fixed at first composition, never the live flag (see setupStartRoute).
     val startDestination = remember { setupStartRoute(isSetupComplete) }
