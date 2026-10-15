@@ -231,7 +231,12 @@ struct TrustWebView: View {
             prepareLayerFaces()
             relightLayer()
         }
-        .onChange(of: centerKey) { _, key in if key != me { prepareWiderFaces() } }
+        // Back onto someone: their faces again, and their web if it failed.
+        .onChange(of: centerKey) { _, key in
+            guard key != me else { return }
+            loadWider(key)
+            prepareWiderFaces()
+        }
         .onReceive(TrustPathService.webChanged) {
             // Every globe, not just the tab's: a follow from a post's or a
             // profile's globe folds them into your web the same way.
