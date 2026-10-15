@@ -28,6 +28,7 @@ import { AccountsScreen } from "./src/screens/AccountsScreen.jsx"
 import { WalletScreen } from "./src/screens/WalletScreen.jsx"
 import { WotScreen } from "./src/screens/WotScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
+import { tabOf } from "./src/components/tabs.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import "./src/styles/app.css"
 import "./src/styles/quotes.css"
@@ -151,7 +152,7 @@ function App() {
       {route === "wallet" && <WalletScreen />}
       <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {(route === "feed" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
-      <TabBar route={other ? "search" : route === "dm" ? "messages" : route === "accounts" || route === "wallet" ? "settings" : route} pubkey={session.pubkey} />
+      <TabBar route={tabOf(route, other)} pubkey={session.pubkey} />
       <AuthPrompt />
     </div>
   )

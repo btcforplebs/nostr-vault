@@ -44,7 +44,7 @@ a.settings-row:hover { background: var(--s2); }
 .vault-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
 .vault-pill.open, .vault-pill:hover { border-color: var(--strong); }
 .vault-menu .vault-pill svg:first-child { color: var(--accent); }
-.vault-pill-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
+.vault-pill-btn { flex: none; padding: 0; min-height: 0; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .vault-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; padding: 6px; display: grid;
   background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / .6); }

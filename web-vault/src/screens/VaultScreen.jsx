@@ -1,5 +1,5 @@
 // The Vault tab (iPhone VaultTabView): a mode pill on the left (Vault · Notes · Articles · Highlights · Media ·
-// Likes · Zaps · Followers, then the Vault Dashboard), and on the right the Messages envelope with the mode's
+// Likes · Zaps · Followers, then the Vault Dashboard), and on the right the Messages envelope, the Dashboard and the mode's
 // filter pill. Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
 // The web's Vault Dashboard is the Relay screen, which already shows the relay's counts and storage.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -30,6 +30,9 @@ const ICONS = {
   dashboard: "M4 4h16v16H4zM4 10h16M10 10v10",
   filter: "M4 6h16M7 12h10M10 18h4",
   envelope: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
+  // The Vault tab's own glyph, as on the phone, where the tab and the Dashboard share one symbol.
+  safe: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3",
+  refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
 }
 const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
@@ -97,13 +100,14 @@ export function VaultScreen({ ctx }) {
           <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
         </Menu>
         <div class="vault-right">
-          <a class="vault-pill-btn" href="#/messages" aria-label="Messages"><Icon d={ICONS.envelope} /></a>
+          <a class="vault-pill-btn" href="#/messages" aria-label="Messages" title="Messages"><Icon d={ICONS.envelope} /></a>
+          <a class="vault-pill-btn" href="#/relay" aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={ICONS.safe} /></a>
           {filters.length > 0 && (
             <Menu label={<><Icon d={ICONS.filter} /><span>{f?.pill ?? f?.title}</span><Chevron /></>} title={`Filter: ${f?.title}`} align="right">
               {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => setFilter(x.id)}>{x.title}</MenuItem>)}
             </Menu>
           )}
-          <button class="small" onClick={load}>Refresh</button>
+          <button class="vault-pill-btn" onClick={load} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
         </div>
       </header>
       {status && <div class="status-line">{status}</div>}
