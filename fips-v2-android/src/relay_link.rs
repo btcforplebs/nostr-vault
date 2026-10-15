@@ -251,6 +251,26 @@ mod tests {
     }
 
     #[test]
+    fn config_has_the_seeds_and_socket_only_when_asked() {
+        let nsec = crate::generate_nsec();
+        let off = crate::config_yaml(&nsec, &crate::StartOptions::default()).unwrap();
+        let cfg: fips::Config = serde_yaml::from_str(&off).unwrap();
+        assert!(!cfg.node.native_api.enabled);
+        assert!(!off.contains("iris.to"), "seeds joined without public_seeds");
+
+        let opts: crate::StartOptions =
+            serde_json::from_value(serde_json::json!({ "public_seeds": true, "relay_socket": "/tmp/nvr-test.sock" })).unwrap();
+        let on = crate::config_yaml(&nsec, &opts).unwrap();
+        let cfg: fips::Config = serde_yaml::from_str(&on).unwrap();
+        assert!(cfg.node.native_api.enabled);
+        assert_eq!(cfg.node.native_api.socket_path, "/tmp/nvr-test.sock");
+        assert!(cfg.node.leaf_only, "the relay link must not make a phone forward");
+        for seed in PUBLIC_SEEDS {
+            assert!(cfg.peers.iter().any(|p| p.npub == seed.npub), "seed {} missing", seed.npub);
+        }
+    }
+
+    #[test]
     fn push_needs_a_running_node_with_the_socket() {
         let one = signed().to_string();
         assert_eq!(relay_push("npub1nope", &one, Duration::from_millis(1)), Err(ERR_BAD_NPUB));
