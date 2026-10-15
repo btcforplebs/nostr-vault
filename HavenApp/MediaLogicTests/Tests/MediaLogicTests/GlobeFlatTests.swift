@@ -65,7 +65,7 @@ final class GlobeFlatTests: XCTestCase {
         XCTAssertLessThan(author.outer, close.outer)
     }
 
-    func testTheDiscTurnsWithTheGlobesDrift() {
+    func testTheMapKeepsTheGlobesTurn() {
         // The idle drift turns the globe about its axis; the flat view turns
         // the same way by the same angle, and its distances stay put.
         let p = TrustMap.direction(of: key(3)) * TrustMap.closeRadius
@@ -86,25 +86,90 @@ final class GlobeFlatTests: XCTestCase {
         XCTAssertTrue(depths.allSatisfy { $0 > 0 })
     }
 
-    func testTheDiscFitsTheScreenAndCantBePannedAway() {
-        let size = CGSize(width: 390, height: 844)
-        XCTAssertLessThanOrEqual(GlobeFlat.rim * GlobeFlat.unit(for: size) * 2, 390)
-        let reach = GlobeFlat.rim * GlobeFlat.unit(for: size)
-        let far = GlobeFlat.clamp(SIMD2(5_000, -5_000), in: size, reach: reach)
-        XCTAssertEqual(far, SIMD2(195, -422))
+    private let phone = CGSize(width: 390, height: 844)
+    private let pad = CGSize(width: 1032, height: 1376)
+
+    func testTheMapIsManyScreensAcrossWithRoomBetweenPeople() {
+        for size in [phone, pad] {
+            let unit = GlobeFlat.unit(for: size)
+            XCTAssertGreaterThan(2 * GlobeFlat.rim * unit, 3 * Double(size.width), "\(size)")
+            // 1,030 follows spread over their zone: on average more than a
+            // face (with its margin) apart at the opening zoom.
+            let zone = GlobeFlat.zone(for: TrustMap.ringRadius)
+            let area = Double.pi * (zone.outer * zone.outer - zone.inner * zone.inner) * unit * unit
+            let k = min(1, Double(min(size.width, size.height)) / 620)
+            let face = 2 * 14 * k * GlobeFlat.scale(atZoom: 1) * GlobeFlat.faceRoom
+            XCTAssertGreaterThan((area / 1_030).squareRoot(), face, "\(size)")
+        }
     }
 
-    func testAtFullZoomEveryEdgeOfTheDiscCanBePannedIntoView() {
-        // Zoomed all the way in, the rim at each side must still come onto
-        // the screen: the disc's middle may go as far out as the rim needs.
-        for size in [CGSize(width: 390, height: 844), CGSize(width: 1032, height: 1376)] {
-            let reach = GlobeFlat.rim * GlobeFlat.unit(for: size) * GlobeCamera.zoomRange.upperBound
-            for direction in [SIMD2<Double>(1, 0), SIMD2(-1, 0), SIMD2(0, 1), SIMD2(0, -1)] {
-                let offset = GlobeFlat.clamp(direction * 100_000, in: size, reach: reach)
-                // The far rim, from the screen's middle, reaches the screen's edge.
-                let half = direction.x != 0 ? Double(size.width) / 2 : Double(size.height) / 2
-                XCTAssertGreaterThanOrEqual(simd_dot(offset, direction) - reach, -half - 1e-9, "\(size) \(direction)")
+    func testTheMapOpensOnYouAndScrollsToItsEdgePlusAMargin() {
+        var map = GlobeFlat.Camera()
+        XCTAssertEqual(map.offset, .zero)
+        XCTAssertEqual(map.zoom, 1)
+        for zoom in [0.3, 1.0, 2.5] {
+            map.zoom = zoom
+            let reach = GlobeFlat.rim * GlobeFlat.unit(for: phone) * zoom + GlobeFlat.Camera.margin
+            let expected = max(0, reach - Double(phone.width) / 2)
+            for direction in [SIMD2<Double>(1, 0), SIMD2(-1, 0), SIMD2(0, 1), SIMD2(0, -1), simd_normalize(SIMD2<Double>(1, 1))] {
+                map.offset = .zero
+                map.pan(by: direction * 100_000, in: phone)
+                // The network's far edge, plus the margin, comes in to the
+                // screen's nearer side, the same distance every way: the
+                // corners past the round network stay out of reach.
+                XCTAssertEqual(simd_length(map.offset), expected, accuracy: 1e-6, "\(zoom) \(direction)")
+                XCTAssertEqual(simd_dot(simd_normalize(map.offset + SIMD2<Double>(1e-12, 0)), direction), 1, accuracy: 1e-6)
             }
         }
+    }
+
+    func testAFlickCarriesOnSlowsAndStopsAtTheEdge() {
+        var map = GlobeFlat.Camera()
+        map.fling(SIMD2(1_500, 0))
+        var t = 0.0
+        while map.moving, t < 10 { map.step(dt: 1 / 60, in: phone); t += 1 / 60 }
+        XCTAssertFalse(map.moving)
+        XCTAssertGreaterThan(map.offset.x, 300)
+        XCTAssertLessThan(t, 3)
+        // Flung hard toward a nearby edge, it stops there. Its speed is capped.
+        map.pan(by: SIMD2(-map.offset.x - 900, 0), in: phone)
+        map.fling(SIMD2(-50_000, 0))
+        XCTAssertEqual(simd_length(map.velocity), GlobeFlat.Camera.maxSpeed, accuracy: 1e-9)
+        t = 0
+        while map.moving, t < 10 { map.step(dt: 1 / 60, in: phone); t += 1 / 60 }
+        XCTAssertFalse(map.moving)
+        XCTAssertEqual(map.offset.x, -map.limit(in: phone), accuracy: 1e-9)
+    }
+
+    func testPlainStarsTapAtTheZoomOfTheViewYouAreIn() {
+        // 2D: the globe's camera stays at 1, the map pinched to 2.5x: stars tap.
+        var map = GlobeFlat.Camera()
+        map.pinch(by: 2.5, in: phone)
+        XCTAssertGreaterThanOrEqual(GlobeFlat.tapZoom(globe: 1, map: map.zoom, flat: 1), GlobeFlat.starTapZoom)
+        // 2D from a globe zoomed to 1.6, the map out at 0.3x: they don't.
+        map.pinch(by: 0.01, in: phone)
+        XCTAssertEqual(map.zoom, GlobeFlat.Camera.zoomRange.lowerBound)
+        XCTAssertLessThan(GlobeFlat.tapZoom(globe: 1.6, map: map.zoom, flat: 1), GlobeFlat.starTapZoom)
+        // 3D is the globe's zoom, as before.
+        XCTAssertEqual(GlobeFlat.tapZoom(globe: 1.6, map: 0.3, flat: 0), 1.6)
+    }
+
+    func testAPinchZoomsAboutTheMiddleOfTheScreenAndHomeGoesBackToYou() {
+        var map = GlobeFlat.Camera()
+        var t = 0.0
+        map.pan(by: SIMD2(300, -200), in: phone)
+        // The map point under the middle of the screen stays there.
+        let before = -map.offset / map.zoom
+        map.pinch(by: 2, in: phone)
+        XCTAssertEqual(map.zoom, 2)
+        XCTAssertEqual(simd_length(-map.offset / map.zoom - before), 0, accuracy: 1e-9)
+        map.pinch(by: 100, in: phone)
+        XCTAssertEqual(map.zoom, GlobeFlat.Camera.zoomRange.upperBound)
+        map.home()
+        t = 0
+        while map.moving, t < 10 { map.step(dt: 1 / 60, in: phone); t += 1 / 60 }
+        XCTAssertFalse(map.moving)
+        XCTAssertEqual(map.offset, .zero)
+        XCTAssertEqual(map.zoom, 1)
     }
 }
