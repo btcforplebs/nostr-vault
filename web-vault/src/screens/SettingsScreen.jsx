@@ -7,6 +7,8 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { UnblockDialog } from "../components/Moderation.jsx"
+import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { syncOwn } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -117,17 +119,34 @@ function Page({ ctx, page }) {
   )
 }
 
-/** People the user blocked (their kind 10000 mute list), read-only here: blocking is done on the phone. */
+/** People the user blocked (their kind 10000 mute list, the one the phone keeps), each with Unblock. Blocking is
+ *  done from a note's or a profile's ⋯ menu. */
 function Blocked({ ctx }) {
-  const { blocked, privateNote } = useBlocks(ctx)
+  const { blocked, privateBlocked, privateNote } = useBlocks(ctx)
   const list = [...blocked]
   useEffect(() => { if (list.length) fetchProfiles(ctx.vault, list, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {}) }, [list.length])
   return (
     <>
-      <p class="settings-note muted small">Your mute list, as the phone keeps it. Blocked people are hidden here; blocking and unblocking are done on the phone for now.{privateNote ? ` Private entries aren't shown: ${privateNote}.` : ""}</p>
-      {list.length ? list.map(pk => <a key={pk} class="person-row" href={`#/profile/${pk}`}><Avatar pubkey={pk} size={40} /><span class="person-names"><AuthorName pubkey={pk} /><span class="person-sub">{npubEncode(pk).slice(0, 20)}…</span></span></a>)
+      <p class="settings-note muted small">Your block list, the same one your phone uses. Blocked people's notes, replies and messages are hidden. Block someone from the ⋯ menu on their note or profile.{privateNote ? ` Private entries aren't shown: ${privateNote}.` : ""}</p>
+      {list.length ? list.map(pk => <BlockedRow key={pk} ctx={ctx} pubkey={pk} isPrivate={privateBlocked?.has(pk)} />)
         : <p class="empty">Nobody is blocked.</p>}
     </>
+  )
+}
+
+function BlockedRow({ ctx, pubkey, isPrivate }) {
+  const [asking, setAsking] = useState(false)
+  const p = useProfile(pubkey)
+  const name = p?.display_name || p?.name || npubEncode(pubkey).slice(0, 12) + "…"
+  return (
+    <div class="person-row blocked-row">
+      <a class="blocked-who" href={`#/profile/${pubkey}`}>
+        <Avatar pubkey={pubkey} size={40} />
+        <span class="person-names"><AuthorName pubkey={pubkey} /><span class="person-sub">{isPrivate ? "Private · " : ""}{npubEncode(pubkey).slice(0, 20)}…</span></span>
+      </a>
+      <button type="button" class="small" onClick={() => setAsking(true)}>Unblock</button>
+      {asking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setAsking(false)} />}
+    </div>
   )
 }
 

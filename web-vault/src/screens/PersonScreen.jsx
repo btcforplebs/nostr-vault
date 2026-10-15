@@ -4,6 +4,10 @@ import { useEffect, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { ZapButton } from "../components/ZapButton.jsx"
+import { MoreMenu, UnblockDialog } from "../components/Moderation.jsx"
+import { useBlocks } from "../components/useBlocks.js"
+import { useProfile } from "../components/useProfile.js"
+import { npubEncode } from "nostr-tools/nip19"
 import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
 import { fetchPersonLists, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
@@ -18,6 +22,11 @@ export function PersonScreen({ ctx, pubkey }) {
   const [end, setEnd] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  const [unblocking, setUnblocking] = useState(false)
+  const { blocked } = useBlocks(ctx)
+  const isBlocked = blocked.has(pubkey)
+  const p = useProfile(pubkey)
+  const name = p?.display_name || p?.name || npubEncode(pubkey).slice(0, 12) + "…"
   const hints = uniq([...account.relays.read, ...DEFAULT_RELAYS])
 
   useEffect(() => {
@@ -80,11 +89,19 @@ export function PersonScreen({ ctx, pubkey }) {
             {label}
           </button>
           <ZapButton pubkey={pubkey} />
+          <MoreMenu pubkey={pubkey} className="more-btn" />
         </div>
         {err && <p class="error person-error" role="alert">{err}</p>}
       </ProfileHeader>
-      {status && <div class="status-line">{status}</div>}
-      {notes === null ? <p class="empty">Opening your relay…</p>
+      {isBlocked && (
+        <div class="blocked-banner" role="status">
+          <span>You blocked {name}, so their notes are hidden.</span>
+          <button type="button" class="small" onClick={() => setUnblocking(true)}>Unblock</button>
+          {unblocking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setUnblocking(false)} />}
+        </div>
+      )}
+      {status && !isBlocked && <div class="status-line">{status}</div>}
+      {isBlocked ? null : notes === null ? <p class="empty">Opening your relay…</p>
         : !notes.length ? (!status && <p class="empty">No notes found.</p>)
         : <>
             {notes.map(n => <NoteCard key={n.id} event={n} />)}
