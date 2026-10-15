@@ -28,6 +28,10 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
             val parsed = json.parseToJsonElement(message).jsonArray
             if (parsed.isEmpty()) return
             val type = parsed[0].jsonPrimitive.contentOrNull ?: return
+            // The WOT globe's REQs ride these connections (GlobeRelayLink): its
+            // answers never reach the feed or your relay.
+            val subId = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull
+            if (subId != null && GlobeStorm.isGlobeSubscription(type, subId)) return
 
             when (type) {
                 "EVENT" -> {

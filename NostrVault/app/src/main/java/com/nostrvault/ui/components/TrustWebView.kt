@@ -127,6 +127,9 @@ internal fun TrustWebContent(
     val tracedCard = rememberLiveTrustPath(card.takeIf { it != author })
     val cardPath = if (card != null && card == author) authorPath else tracedCard
     val feedService = services.feedService()
+    // Live arrivals on the WOT tab's globe: the bar's antenna and its switches.
+    val liveArcs = rememberLiveArcsState()
+    val globeArrivals = remember(feedService) { GlobeArrivalStream(feedService) }
 
     val centerKey = crumbs.last()
     val frame = frames[centerKey]
@@ -595,6 +598,7 @@ internal fun TrustWebContent(
             followsPending = followsPending, mappingWeb = mappingWeb, accent = accent,
             onProfileClick = onProfileClick, openProfile = ::openProfile, feedService = feedService,
             closeCard = ::closeCard, onMessage = onMessage, center = ::center,
+            live = if (isWOTTab && liveArcs.on) LiveArcsRequest(me, liveArcs.rings, liveArcs.show, globeArrivals) else null,
         )
     }
 
@@ -642,6 +646,7 @@ internal fun TrustWebContent(
                 filters = wotFilters.on,
                 onFilter = wotFilters::toggle,
                 filterNote = wotFilters.note,
+                liveArcs = liveArcs,
             )
         }
     } else Column(Modifier.fillMaxSize().safeDrawingPadding()) {

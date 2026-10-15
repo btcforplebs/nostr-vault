@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -81,9 +82,13 @@ internal fun WotTopBar(
     onList: () -> Unit,
     filters: Set<TrustMap.Filter>,
     onFilter: (TrustMap.Filter) -> Unit,
+    /** The live arrivals switches; the antenna sits after the filters. */
+    liveArcs: LiveArcsState? = null,
 ) {
     val accent = LocalNostrVaultColors.current.primary
     var expanded by remember { mutableStateOf(false) }
+    var liveSheet by remember { mutableStateOf(false) }
+    if (liveSheet && liveArcs != null) LiveArcsSheet(liveArcs) { liveSheet = false }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -138,6 +143,14 @@ internal fun WotTopBar(
                         onList()
                     },
                 )
+                if (liveArcs != null) DropdownMenuItem(
+                    text = { Text("Live arrivals…") },
+                    leadingIcon = { Icon(Icons.Filled.SettingsInputAntenna, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        expanded = false
+                        liveSheet = true
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text(if (refreshing) "Rebuilding…" else "Rebuild your web") },
                     leadingIcon = { Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -170,6 +183,7 @@ internal fun WotTopBar(
                     onClick = { onFilter(filter) },
                 )
             }
+            if (liveArcs != null) LiveArcsToggle(liveArcs)
         }
     }
 }

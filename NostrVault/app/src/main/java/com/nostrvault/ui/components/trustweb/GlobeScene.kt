@@ -1,35 +1,19 @@
 package com.nostrvault.ui.components
 
-import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.only
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeCamera
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.Vec3
@@ -50,13 +34,13 @@ import kotlin.math.roundToInt
  */
 internal class GlobeScene(
     /** Draw stars as batched points: the oval paths cost a slow phone a whole frame. */
-    private val lite: Boolean = false,
+    internal val lite: Boolean = false,
     /** Upright on a phone the globe fills the width; tablets keep their framing. */
     private val phone: Boolean = false,
 ) {
     enum class Kind { RING, MUTUAL, HAZE, CLOSE_HAZE, BRIDGE, VIA }
 
-    private class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
+    internal class Star(val key: String, val dir: Vec3, var kind: Kind, var radius: Double) {
         var radiusTarget = radius
         var alpha = 0.0
         var alphaTarget = 1.0
@@ -78,7 +62,7 @@ internal class GlobeScene(
         val label: Boolean,
     )
 
-    private class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
+    internal class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
         /** 0 at the back of the globe, 1 at the front. */
         val front: Double get() = ((depth + 1.7) / 3.4).coerceIn(0.0, 1.0)
     }
@@ -100,7 +84,7 @@ internal class GlobeScene(
     var hasLoaded = false
         private set
     private var reduceMotion = false
-    private var author = ""
+    internal var author = ""
     private var me = ""
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
@@ -145,7 +129,7 @@ internal class GlobeScene(
     private var tracedStar: String? = null
 
     private var stars = ArrayList<Star>()
-    private var index = HashMap<String, Star>()
+    internal var index = HashMap<String, Star>()
 
     private var born = 0.0
     private var threadsBorn = 0.0
@@ -277,6 +261,9 @@ internal class GlobeScene(
         val target = traceTarget
         val traced = if (target == null) emptyList() else listOf(target) + traceBridges
         for (key in traced) if (key !in symbols) symbols += key
+        val arcOnly = arcs.keys.filter { it !in symbols }
+        arcOnlyKeys = arcOnly.toHashSet()
+        symbols += arcOnly
         val pictured = (if (target == null) listOf(author) + faces else traced).toHashSet().apply { add(center) }
         for (star in stars) star.isFace = star.key in pictured
         if (faceKeys != symbols) faceKeys = symbols
@@ -426,9 +413,31 @@ internal class GlobeScene(
             threadProgress = ((now - threadsBorn - 0.35) / 0.55).coerceIn(0.0, 1.0)
             if (age > SETTLE_TIME) settle()
         }
+        if (arcs.step(now, me, center)) seatFaces()
         frameCount.longValue++
-        if (!settling && !fading && !camera.wantsFrames(now, reduceMotion)) awake = false
+        val still = !settling && !fading && !camera.wantsFrames(now, reduceMotion)
+        slowFrames = still && !arcs.busy
+        if (still && arcs.idle) awake = false
     }
+
+    // ── Live arcs (GlobeSceneArcs.kt) ────────────────────────────────
+
+    /** Notes flying across the globe as they reach the relay; on for the WOT tab's globe. */
+    internal val arcs = GlobeSceneArcs()
+    /** Pictured only as a line's end, not as one of the globe's own faces: drawn white. */
+    internal var arcOnlyKeys: Set<String> = emptySet()
+    /** Only a few arcs move: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
+    var slowFrames = false
+        private set
+    /** This frame's projection and scale, for drawing the arcs where the faces are. */
+    internal var lastProjector: Projector? = null
+    internal var lastK = 1.0
+
+    fun setLiveArcs(on: Boolean) {
+        if (arcs.setOn(on)) { seatFaces(); wake() }
+    }
+
+
 
     /** Everyone's shell faces are small and dim, unless a filter is lighting them. */
     private fun layerDimTarget() = if (dimLayerFaces && filterTo == null) 1.0 else 0.0
@@ -449,8 +458,10 @@ internal class GlobeScene(
     // ── Projection ───────────────────────────────────────────────────
 
     /** One camera's projection, worked out once per frame. */
-    private class Projector(camera: GlobeCamera, w: Float, h: Float, phone: Boolean) {
+    internal class Projector(camera: GlobeCamera, w: Float, h: Float, phone: Boolean) {
         val m = camera.orientation.matrix()
+        /** Toward the viewer, in the globe's own space. */
+        val facing = Vec3(m[6], m[7], m[8])
         val cameraZ = GlobeCamera.DISTANCE / camera.zoom
         val unit = GlobeCamera.unit(w.toDouble(), h.toDouble(), phone)
         val midX = w / 2.0
@@ -494,26 +505,26 @@ internal class GlobeScene(
 
     private var preparedFor = LongArray(4) { -1 }
     /** Pixels per dp for the frame last prepared. */
-    private var dpPx = 1f
-    private var originX = 0.0
-    private var originY = 0.0
-    private var coreR = 0.0
-    private var ready = false
+    internal var dpPx = 1f
+    internal var originX = 0.0
+    internal var originY = 0.0
+    internal var coreR = 0.0
+    internal var ready = false
 
     /** Stars bucketed by kind and brightness: one pass, a few fills. */
-    private val buckets = Array(Slot.entries.size) { Array(LEVELS + 1) { Path() } }
-    private val glow = Array(4) { Path() }
-    private val strong = Array(4) { Path() }
-    private val faint = Array(4) { Path() }
-    private val dashed = Path()
-    private var spots: List<Spot> = emptyList()
+    internal val buckets = Array(Slot.entries.size) { Array(LEVELS + 1) { Path() } }
+    internal val glow = Array(4) { Path() }
+    internal val strong = Array(4) { Path() }
+    internal val faint = Array(4) { Path() }
+    internal val dashed = Path()
+    internal var spots: List<Spot> = emptyList()
     private val spotByKey = HashMap<String, Spot>()
-    private val starLabels = ArrayList<Spot>()
+    internal val starLabels = ArrayList<Spot>()
 
-    private enum class Slot { HAZE, RING, MUTUAL, HOT }
+    internal enum class Slot { HAZE, RING, MUTUAL, HOT }
 
     /** Lite: one slot, brightness and whole-pixel diameter, drawn in a single drawPoints call. */
-    private class PointBucket(val slot: Slot, val level: Int, val diameter: Float) {
+    internal class PointBucket(val slot: Slot, val level: Int, val diameter: Float) {
         var xy = FloatArray(64)
         var count = 0
         fun add(x: Float, y: Float) {
@@ -525,8 +536,8 @@ internal class GlobeScene(
     }
     /** Kept between frames and emptied, so a frame allocates nothing once warm. */
     private val pointBuckets = HashMap<Int, PointBucket>()
-    private val pointOrder = ArrayList<PointBucket>()
-    private val pointPaint = android.graphics.Paint().apply {
+    internal val pointOrder = ArrayList<PointBucket>()
+    internal val pointPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         strokeCap = android.graphics.Paint.Cap.ROUND
         style = android.graphics.Paint.Style.STROKE
@@ -731,6 +742,12 @@ internal class GlobeScene(
             tint = if (center == me) GlobeAccent else Color.White, label = true)
         spots = out
         for (spot in out) spotByKey[spot.key] = spot
+        lastProjector = project
+        lastK = k
+        val pictured = seats + center
+        for (spot in arcs.faceSpots(lastTick ?: nowSeconds(), { project.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) }, pictured, center) {
+            GlobeSceneArcs.faceRadius(it, k, zoom, density)
+        }) if (spotByKey[spot.key]?.ember != false) spotByKey[spot.key] = spot
 
         // Names on plain stars once zoomed well in, where they fit.
         if (namesOut) {
@@ -742,118 +759,6 @@ internal class GlobeScene(
                 placed += box
                 starLabels += star
             }
-        }
-    }
-
-    /** Stars, threads, glows and embers: everything under the faces. */
-    fun drawBack(scope: DrawScope, accent: Color) = with(scope) {
-        prepare(size.width, size.height, density)
-        if (!ready) return@with
-        val dp = dpPx
-
-        // Glow behind the core.
-        val glowR = (coreR * 3).toFloat()
-        if (glowR > 0f) {
-            drawCircle(
-                brush = Brush.radialGradient(listOf(accent.copy(alpha = 0.32f), Color.Transparent),
-                    center = Offset(originX.toFloat(), originY.toFloat()), radius = glowR),
-                radius = glowR,
-                center = Offset(originX.toFloat(), originY.toFloat()),
-            )
-        }
-
-        fun fill(slot: Slot, color: Color) {
-            if (lite) {
-                drawIntoCanvas { canvas ->
-                    for (bucket in pointOrder) {
-                        if (bucket.slot != slot || bucket.count == 0) continue
-                        pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
-                        pointPaint.strokeWidth = bucket.diameter
-                        canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
-                    }
-                }
-                return
-            }
-            for (level in 1..LEVELS) {
-                val path = buckets[slot.ordinal][level]
-                if (!path.isEmpty) drawPath(path, color.copy(alpha = level.toFloat() / LEVELS))
-            }
-        }
-        fill(Slot.HAZE, HazeColor)
-        fill(Slot.RING, RingColor)
-        fill(Slot.MUTUAL, Color.White)
-
-        // Glow brightens toward the front. No blur on every Android version,
-        // so two soft strokes stand in for iOS's blurred layer.
-        fun bandAlpha(level: Int): Float {
-            val front = (level + 0.5f) / 4
-            return 0.10f + 0.75f * front * front
-        }
-        for (level in 0 until 4) {
-            if (glow[level].isEmpty) continue
-            val a = bandAlpha(level) * 0.6f
-            drawPath(glow[level], accent.copy(alpha = a * 0.25f), style = Stroke(width = 8 * dp, cap = StrokeCap.Round))
-            drawPath(glow[level], accent.copy(alpha = a * 0.45f), style = Stroke(width = 4 * dp, cap = StrokeCap.Round))
-        }
-        for (level in 0 until 4) {
-            val a = bandAlpha(level)
-            if (!faint[level].isEmpty) drawPath(faint[level], ThreadColor.copy(alpha = a * 0.45f), style = Stroke(width = 0.8f * dp))
-            if (!strong[level].isEmpty) drawPath(strong[level], ThreadColor.copy(alpha = a), style = Stroke(width = 1.3f * dp))
-        }
-        if (!dashed.isEmpty) {
-            drawPath(dashed, ThreadColor.copy(alpha = 0.7f), style = Stroke(width = 1.2f * dp, cap = StrokeCap.Round,
-                join = StrokeJoin.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5 * dp, 4 * dp))))
-        }
-        fill(Slot.HOT, accent)
-
-        // A soft tint behind each face, and embers for those behind the globe.
-        for (spot in spots) {
-            val c = Offset(spot.x.toFloat(), spot.y.toFloat())
-            if (spot.ember) {
-                drawCircle(accent.copy(alpha = spot.alpha.toFloat().coerceIn(0f, 1f)), radius = spot.r.toFloat(), center = c)
-                continue
-            }
-            val r = spot.r.toFloat()
-            if (r <= 0f) continue
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0.6f / 1.9f to spot.tint.copy(alpha = 0.35f * spot.alpha.toFloat()),
-                    1f to Color.Transparent,
-                    center = c, radius = r * 1.9f,
-                ),
-                radius = r * 1.9f,
-                center = c,
-            )
-        }
-    }
-
-    /** Names under the faces, the core, and plain stars once zoomed in. */
-    fun drawLabels(scope: DrawScope, measurer: TextMeasurer, name: (String) -> String) = with(scope) {
-        prepare(size.width, size.height, density)
-        if (!ready) return@with
-        val dp = dpPx
-        fun label(text: String, x: Double, y: Double, sizeSp: Float, weight: FontWeight, alpha: Float) {
-            val layout = measurer.measure(
-                text,
-                TextStyle(color = Color.White, fontSize = sizeSp.sp, fontWeight = weight),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                constraints = Constraints(maxWidth = (120 * dp).roundToInt()),
-            )
-            drawText(layout, topLeft = Offset((x - layout.size.width / 2.0).toFloat(), (y - layout.size.height / 2.0).toFloat()),
-                alpha = alpha.coerceIn(0f, 1f))
-        }
-        for (spot in spots) {
-            if (spot.core || spot.ember || !spot.label) continue
-            val isAuthor = spot.key == (traceTarget ?: author)
-            label(name(spot.key), spot.x, spot.y + spot.r + 10 * dp, if (isAuthor) 14f else 11f, FontWeight.SemiBold,
-                (0.9 * spot.alpha).toFloat())
-        }
-        for (star in starLabels) {
-            label(name(star.key), star.x, star.y + star.r + 8 * dp, 10f, FontWeight.Normal, (0.6 * star.alpha).toFloat())
-        }
-        spots.lastOrNull()?.takeIf { it.core }?.let { core ->
-            label(name(core.key), core.x, core.y + core.r + 11 * dp, 13f, FontWeight.Bold, 1f)
         }
     }
 
