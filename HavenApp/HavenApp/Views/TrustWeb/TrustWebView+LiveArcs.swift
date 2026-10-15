@@ -380,7 +380,8 @@ struct LiveArcsPainter {
             }
             // In flight: the star and its short tail, brightest at the star.
             if stage.head < 1, let head = at(stage.head) {
-                let behind = head.depth > -0.2 ? 1.0 : 0.35
+                // Round the back a star dims smoothly, never switches.
+                let behind = GlobeEdge.arc(depth: head.depth)
                 let start = max(0, stage.head - GlobeArcs.tailLength)
                 var last = at(start)?.point
                 for step in 1...Self.tailSteps {
@@ -438,14 +439,16 @@ struct LiveArcsPainter {
             for key in [line.from, line.to] where a > (shown[key] ?? 0) { shown[key] = a }
             if setsOut[line.from] == nil { setsOut[line.from] = line.ring }
         }
-        let faces = shown.compactMap { key, alpha -> (String, GlobeScene.Projected, Double)? in
+        // A face rolling toward the rim fades and shrinks rather than popping.
+        let faces = shown.compactMap { key, alpha -> (String, GlobeScene.Projected, Double, Double)? in
             guard key != center, !seated.contains(key), alpha > 0.02,
-                  let p = project(place(key, setsOut[key])), p.depth > -0.2 else { return nil }
-            return (key, p, alpha)
+                  let p = project(place(key, setsOut[key])) else { return nil }
+            let edge = GlobeEdge.face(depth: p.depth)
+            return edge > 0.02 ? (key, p, alpha, edge) : nil
         }.sorted { $0.1.depth < $1.1.depth }
-        for (key, p, a) in faces {
-            let r = 13 * k * p.scale * min(zoom, 1.8)
-            face(&context, key, p.point, r, Self.starColor.opacity(0.85), a * (0.4 + 0.6 * p.front))
+        for (key, p, a, edge) in faces {
+            let r = GlobeEdge.faceRadius(13 * k * p.scale * min(zoom, 1.8), shown: edge)
+            face(&context, key, p.point, r, Self.starColor.opacity(0.85), a * edge * (0.4 + 0.6 * p.front))
         }
     }
 }

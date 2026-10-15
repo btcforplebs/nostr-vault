@@ -34,8 +34,10 @@ enum GlobeArcs {
     static let retireFade: TimeInterval = 0.7
     /// A note older than this when it arrives is a relay catching up, not an arrival.
     static let maxAge: TimeInterval = 180
-    /// Notes, replies and quotes.
-    static let kinds = [1]
+    /// Notes, replies and quotes, and NIP-22 comments: Amethyst, Ditto,
+    /// Coracle and Snort send a reply to a note as a kind 1111 comment, and
+    /// the feed takes them in, so leaving them out lost those replies.
+    static let kinds = [1, NIP10Thread.commentKind]
     /// Reposts (kind 6) and generic reposts (kind 16): the reposter to the
     /// person reposted.
     static let repostKinds = [6, 16]
@@ -82,8 +84,18 @@ enum GlobeArcs {
               let author = event["pubkey"] as? String, isKey(author) else { return nil }
         if let created = event["created_at"] as? Double,
            now.timeIntervalSince1970 - created > maxAge { return nil }
+        let tags = event["tags"] as? [[String]] ?? []
+        // Comments on videos, articles and the like aren't conversation.
+        if kind == NIP10Thread.commentKind, !NIP10Thread.isNoteComment(kind: kind, tags: tags) { return nil }
+        // A reply flies to the person it answers, not to everyone in the thread.
+        if let to = repliedTo(kind: kind, tags: tags), to != author {
+            return Arrival(id: id, author: author, targets: [to])
+        }
+        // A reply we can't place (no pubkey slot, no p tag) doesn't fly: only
+        // a note aimed at no one lands on you.
+        if isReply(kind: kind, tags: tags), repliedTo(kind: kind, tags: tags) == nil { return nil }
         var targets: [String] = []
-        for tag in event["tags"] as? [[String]] ?? [] where tag.count > 1 && tag[0] == "p" {
+        for tag in tags where tag.count > 1 && tag[0] == "p" {
             let key = tag[1].lowercased()
             guard isKey(key), key != author, !targets.contains(key) else { continue }
             targets.append(key)
@@ -92,6 +104,30 @@ enum GlobeArcs {
         // A repost with no p tag (most of them on some relays) has no one to
         // point at: like any note aimed at no one, it flies into you.
         return Arrival(id: id, author: author, targets: targets)
+    }
+
+    /// Who a reply answers: the author of the event it replies to. NIP-10
+    /// puts it in the parent `e` tag's fifth slot; a NIP-22 comment in its
+    /// `e` tag's fourth slot and its lowercase `p`. Without that, the first
+    /// `p` tag, the same rule the feed's reply line uses. nil for a note
+    /// that isn't a reply (a quote's `e` is a mention, not a parent).
+    static func repliedTo(kind: Int, tags: [[String]]) -> String? {
+        func key(_ s: String?) -> String? { s.map { $0.lowercased() }.flatMap { isKey($0) ? $0 : nil } }
+        if kind == NIP10Thread.commentKind {
+            let e = tags.first { $0.count >= 2 && $0[0] == "e" }
+            return key(e.flatMap { $0.count > 3 ? $0[3] : nil })
+                ?? key(tags.first { $0.count >= 2 && $0[0] == "p" }?[1])
+        }
+        guard kinds.contains(kind), let parent = NIP10Thread.parentEventId(kind: kind, tags: tags) else { return nil }
+        let e = tags.first { $0.count >= 2 && $0[0] == "e" && $0[1] == parent }
+        return key(e.flatMap { $0.count > 4 ? $0[4] : nil })
+            ?? key(tags.first { $0.count >= 2 && $0[0] == "p" }?[1])
+    }
+
+    /// True for a note that answers another: a comment on a note, or a
+    /// kind 1 note with a parent `e` tag (a quote's mention isn't one).
+    static func isReply(kind: Int, tags: [[String]]) -> Bool {
+        kind == NIP10Thread.commentKind || (kind == 1 && NIP10Thread.parentEventId(kind: kind, tags: tags) != nil)
     }
 
     /// Which feed a note's author belongs to: yours and your follows' are
