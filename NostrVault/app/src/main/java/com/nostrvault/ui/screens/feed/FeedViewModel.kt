@@ -52,6 +52,7 @@ import javax.inject.Inject
 class FeedViewModel @Inject constructor(
     private val feedService: FeedService,
     private val nostrService: NostrService,
+    private val pendingPostManager: com.nostrvault.service.PendingPostManager,
     private val configStore: ConfigStore,
     private val notificationManager: NotificationManager,
     private val zapSendService: ZapSendService,
@@ -641,11 +642,8 @@ class FeedViewModel @Inject constructor(
     /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
     fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch {
-            feedService.repostNote(noteId)
-        }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     /** Feed videos play inline, muted, while on screen (Settings > Advanced > Autoplay Videos). */
     val autoplayVideos: StateFlow<Boolean> = configStore.config
@@ -676,12 +674,8 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    fun deleteNote(noteId: String) {
-        viewModelScope.launch {
-            nostrService.deleteNote(noteId)
-            feedService.removeNote(noteId)
-        }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun deleteNote(noteId: String) = pendingPostManager.startDelete(noteId, nostrService, feedService)
 
     fun isOwnNote(pubkey: String): Boolean {
         return pubkey == nostrService.activeHexPubkey

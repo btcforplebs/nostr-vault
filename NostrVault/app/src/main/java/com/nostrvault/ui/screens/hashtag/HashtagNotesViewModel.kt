@@ -61,6 +61,7 @@ abstract class HashtagNotesViewModel(
     protected val feedService: FeedService,
     private val zapSendService: ZapSendService,
     private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
+    private val pendingPostManager: com.nostrvault.service.PendingPostManager,
 ) : ViewModel() {
 
     companion object {
@@ -650,9 +651,8 @@ abstract class HashtagNotesViewModel(
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch { feedService.repostNote(noteId) }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     fun zapNote(noteId: String, notePubkey: String) {
         viewModelScope.launch {

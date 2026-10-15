@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.nostrvault.ui.components.composeRouteFor
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -228,5 +229,61 @@ class PendingPostManagerTest {
         advanceUntilIdle()
         assertEquals(1, post.published)
         assertTrue(!m.isSending("draft-a"))
+    }
+
+    private fun feed(reposted: Set<String> = emptySet()): FeedService {
+        val feed = mockk<FeedService>(relaxed = true)
+        every { feed.repostedEventIds } returns kotlinx.coroutines.flow.MutableStateFlow(reposted)
+        return feed
+    }
+
+    /** A repost waits out the countdown, so Cancel on the banner undoes it. */
+    @Test fun cancelUndoesARepost() = runTest(dispatcher) {
+        val m = manager()
+        val feed = feed()
+        m.startRepost("n1", feed)
+        runCurrent()
+        assertEquals(PendingPostManager.ActionType.REPOST, m.actionType.value)
+        advanceTimeBy(4_000)
+        verify(exactly = 0) { feed.repostNote(any()) }
+        m.cancel()
+        advanceUntilIdle()
+        verify(exactly = 0) { feed.repostNote(any()) }
+    }
+
+    @Test fun aRepostGoesOutAfterTheCountdown() = runTest(dispatcher) {
+        val m = manager()
+        val feed = feed()
+        m.startRepost("n1", feed)
+        advanceUntilIdle()
+        verify(exactly = 1) { feed.repostNote("n1") }
+        assertTrue(!m.isShowing.value)
+    }
+
+    /** Reposting a note already reposted does nothing, so no banner counts down. */
+    @Test fun anAlreadyRepostedNoteShowsNoBanner() = runTest(dispatcher) {
+        val m = manager()
+        val feed = feed(reposted = setOf("n1"))
+        m.startRepost("n1", feed)
+        advanceUntilIdle()
+        assertNull(m.actionType.value)
+        verify(exactly = 0) { feed.repostNote(any()) }
+    }
+
+    /** A delete waits out the countdown too: Cancel leaves the note on screen. */
+    @Test fun cancelUndoesADelete() = runTest(dispatcher) {
+        val m = manager()
+        var gone = 0
+        m.startDelete { gone++ }
+        runCurrent()
+        assertEquals(PendingPostManager.ActionType.DELETE, m.actionType.value)
+        advanceTimeBy(4_000)
+        m.cancel()
+        advanceUntilIdle()
+        assertEquals(0, gone)
+
+        m.startDelete { gone++ }
+        advanceUntilIdle()
+        assertEquals(1, gone)
     }
 }
