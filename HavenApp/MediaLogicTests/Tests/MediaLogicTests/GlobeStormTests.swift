@@ -28,6 +28,31 @@ final class GlobeStormTests: XCTestCase {
         XCTAssertFalse(GlobeArcs.isGlobeMessage(#"["EVENT","feed-x",{"content":"arcs-"}]"#))
     }
 
+    /// JSON allows any whitespace between tokens, and a relay may send it:
+    /// a globe EVENT the check misses goes into the feed and your relay
+    /// (Tron, 10/15).
+    func testAGlobeMessageIsCaughtWhateverWhitespaceTheRelaySends() {
+        let event = #"{"id":"\#(key(1))","pubkey":"\#(key(2))","kind":1,"created_at":1,"tags":[],"content":"hi","sig":""}"#
+        for gap in ["\t", "\n", "\r\n", " \t\r\n ", String(repeating: " ", count: 64), String(repeating: "\n", count: 50)] {
+            let shown = gap.debugDescription
+            XCTAssertTrue(GlobeArcs.isGlobeMessage("[\(gap)\"EVENT\",\(gap)\"arcs-1a2b3c4d\",\(gap)\(event)]"), "EVENT " + shown)
+            XCTAssertTrue(GlobeArcs.isGlobeMessage("\(gap)[\"EVENT\"\(gap),\"arcs-1a2b3c4d\",\(event)\(gap)]"), "lead " + shown)
+            XCTAssertTrue(GlobeArcs.isGlobeMessage("[\"EOSE\",\(gap)\"arcs-1a2b3c4d\"]"), "EOSE " + shown)
+            XCTAssertTrue(GlobeArcs.isGlobeMessage("[\"CLOSED\",\(gap)\"arcs-1a2b3c4d\",\"\"]"), "CLOSED " + shown)
+            // The feed's own, spaced the same way, stay the feed's.
+            for sub in ["feed-wss://relay.example", "m-1", "rx-2"] {
+                XCTAssertFalse(GlobeArcs.isGlobeMessage("[\(gap)\"EVENT\",\(gap)\"\(sub)\",\(gap)\(event)]"), sub + " " + shown)
+            }
+            XCTAssertFalse(GlobeArcs.isGlobeMessage("[\"NOTICE\",\(gap)\"arcs-1a2b3c4d\"]"), "NOTICE " + shown)
+            XCTAssertFalse(GlobeArcs.isGlobeMessage("[\"EVENT\",\(gap)\"feed-x\",{\"content\":\"arcs-1\"}]"), "content " + shown)
+        }
+        // A sub id the relay escapes is still read as itself.
+        XCTAssertTrue(GlobeArcs.isGlobeMessage(#"["EVENT","arcs\u002d1a2b3c4d",\#(event)]"#))
+        // Not JSON, or not an array: not the globe's.
+        XCTAssertFalse(GlobeArcs.isGlobeMessage(#"["EVENT","arcs-1"#))
+        XCTAssertFalse(GlobeArcs.isGlobeMessage(#"{"EVENT":"arcs-1"}"#))
+    }
+
     func testEveryGlobeRequestIsUnderTheGlobePrefix() {
         let filters: [[String: Any]] = (0..<4).map { n in ["kinds": [1], "authors": (0..<500).map { key($0 + n * 500) }] }
         let requests = GlobeArcs.requests(filters, subId: GlobeArcs.subscriptionPrefix + "abcd1234")

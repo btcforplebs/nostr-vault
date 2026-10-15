@@ -41,12 +41,15 @@ extension GlobeArcs {
     static let subscriptionPrefix = "arcs-"
 
     /// True for a relay message (`EVENT`, `EOSE`, `CLOSED`) that answers one
-    /// of the globe's subscriptions. Reads only the head of the message, so
-    /// the feed pays nothing to parse it.
+    /// of the globe's subscriptions. Parsed as JSON, not matched on its head:
+    /// a relay may put any whitespace between the tokens, or escape the sub
+    /// id, and a globe EVENT missed here goes into the feed and your relay
+    /// (Tron, 10/15).
     static func isGlobeMessage(_ message: String) -> Bool {
-        let head = String(decoding: message.utf8.prefix(40), as: UTF8.self)
-            .filter { $0 != " " }
-        return ["EVENT", "EOSE", "CLOSED"].contains { head.hasPrefix("[\"\($0)\",\"" + subscriptionPrefix) }
+        guard let array = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [Any],
+              array.count >= 2, let type = array[0] as? String, ["EVENT", "EOSE", "CLOSED"].contains(type),
+              let id = array[1] as? String else { return false }
+        return id.hasPrefix(subscriptionPrefix)
     }
 
     /// The `CLOSE` messages that end `requests`' subscriptions: only the
