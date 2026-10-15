@@ -119,13 +119,16 @@ struct TrustGlobeCanvas: View {
                 }
             }
             .contentShape(Rectangle())
-            .gesture(drag(in: geo.size).simultaneously(with: magnify))
+            .gesture(drag(in: geo.size).simultaneously(with: magnify(in: geo.size)))
             .simultaneousGesture(taps(in: geo.size))
             .accessibilityElement()
             .accessibilityLabel(Text(liveArcs && flatOn ? "Web of Trust map" : "Web of Trust globe"))
             .accessibilityValue(Text(summary))
             .accessibilityHint(Text("Swipe up or down to zoom. Actions go to a person."))
             .accessibilityAdjustableAction { direction in
+                if scene.isFlat {
+                    return scene.pinchFlat(by: direction == .increment ? 1.3 : 1 / 1.3, in: geo.size)
+                }
                 let range = GlobeCamera.zoomRange
                 let step = direction == .increment ? 0.3 : -0.3
                 scene.camera.zoomTarget = min(range.upperBound, max(range.lowerBound, scene.camera.zoomTarget + step))
@@ -233,9 +236,10 @@ struct TrustGlobeCanvas: View {
                 scene.camera.dragging = false
                 lastDrag = .zero
                 let now = Date.timeIntervalSinceReferenceDate
-                // A flick spins the globe; the disc just stays where it's put.
+                // A flick spins the globe, or carries the map on and slows.
                 if scene.isFlat {
                     scene.camera.touch(at: now)
+                    scene.fling(vx: value.velocity.width, vy: value.velocity.height)
                 } else {
                     scene.camera.flick(vx: value.velocity.width, vy: value.velocity.height,
                                        at: now, reduceMotion: reduceMotion)
@@ -244,10 +248,16 @@ struct TrustGlobeCanvas: View {
             }
     }
 
-    private var magnify: some Gesture {
+    /// Zooms the globe's camera, or on the flat view the map itself.
+    private func magnify(in size: CGSize) -> some Gesture {
         MagnifyGesture()
             .updating($pinchActive) { _, active, _ in active = true }
             .onChanged { value in
+                if scene.isFlat {
+                    scene.pinchFlat(by: Double(value.magnification / pinchBase), in: size)
+                    pinchBase = value.magnification
+                    return
+                }
                 let range = GlobeCamera.zoomRange
                 let zoom = scene.camera.zoomTarget * Double(value.magnification / pinchBase)
                 scene.camera.zoomTarget = min(range.upperBound, max(range.lowerBound, zoom))

@@ -23,7 +23,7 @@ enum GlobeFlat {
     static let zones = [
         Zone(radius: 0, inner: 0, outer: 0),
         // Your follows are the web: they get most of the disc.
-        Zone(radius: TrustMap.ringRadius, inner: 0.12, outer: 0.64),
+        Zone(radius: TrustMap.ringRadius, inner: 0.06, outer: 0.64),
         Zone(radius: TrustMap.closeRadius, inner: 0.68, outer: 0.83),
         Zone(radius: TrustMap.outerRadius, inner: 0.86, outer: 0.98),
         // Stars leaving the globe drift out past the rim.
@@ -76,17 +76,103 @@ enum GlobeFlat {
         max(0.05, coreDepth - simd_length(p) * depthPerUnit)
     }
 
-    /// Points per unit at zoom 1: the rim sits just inside the shorter side.
+    /// Points per unit at zoom 1: a plane three to four screens across, so
+    /// the people have real space between them and the opening view still
+    /// shows most of your follows. Scaled with the faces (`k` in the scene),
+    /// and never less than a few screens on a big one.
     static func unit(for size: CGSize) -> Double {
-        Double(min(size.width, size.height)) / 2 * 0.96 / rim
+        let side = Double(min(size.width, size.height))
+        return max(1_300 * min(1, side / 620), 1.6 * side)
     }
 
-    /// How far the disc may be panned. Its middle can reach the screen's
-    /// edge, and zoomed in, its rim on any side can reach the screen's edge.
-    /// `reach` is the disc's radius on screen, zoom included.
-    static func clamp(_ offset: SIMD2<Double>, in size: CGSize, reach: Double) -> SIMD2<Double> {
-        let x = max(Double(size.width) / 2, reach - Double(size.width) / 2)
-        let y = max(Double(size.height) / 2, reach - Double(size.height) / 2)
-        return SIMD2(min(x, max(-x, offset.x)), min(y, max(-y, offset.y)))
+    /// How big stars and faces draw at a map zoom: they shrink as you zoom
+    /// out, but less than the map does, so they stay visible.
+    static func scale(atZoom zoom: Double) -> Double {
+        1.25 * min(1.4, max(0.5, zoom.squareRoot()))
+    }
+
+    /// Where you are looking on the map: `offset` is where you (the middle of
+    /// the network) sit, in points from the middle of the screen. A drag
+    /// moves it, a flick carries on and slows, a pinch zooms about the middle
+    /// of the screen, and home glides back to you.
+    struct Camera: Equatable {
+        var offset = SIMD2<Double>(0, 0)
+        var velocity = SIMD2<Double>(0, 0)
+        var zoom = 1.0
+        var homing = false
+
+        static let zoomRange = 0.3...2.5
+        /// Past the network's edge you can scroll this much further.
+        static let margin = 120.0
+        /// How fast a flick dies away, per second.
+        static let decay = 3.5
+        static let maxSpeed = 5_000.0
+
+        /// Still moving on its own: the frame clock keeps running.
+        var moving: Bool { homing || velocity != .zero }
+
+        /// How far you (the network's middle) can be from the middle of the
+        /// screen, in any direction. The network is round, so the limit is
+        /// too: its edge plus `margin` can come in to the screen's nearer
+        /// side, and the empty corners past it stay out of reach.
+        func limit(in size: CGSize) -> Double {
+            let reach = rim * GlobeFlat.unit(for: size) * zoom + Self.margin
+            return max(0, reach - Double(min(size.width, size.height)) / 2)
+        }
+
+        private func clamped(_ p: SIMD2<Double>, in size: CGSize) -> SIMD2<Double> {
+            let l = limit(in: size), d = simd_length(p)
+            return d > l ? p * (l / d) : p
+        }
+
+        mutating func pan(by d: SIMD2<Double>, in size: CGSize) {
+            homing = false
+            velocity = .zero
+            offset = clamped(offset + d, in: size)
+        }
+
+        /// Let go at `v` points a second.
+        mutating func fling(_ v: SIMD2<Double>) {
+            let speed = simd_length(v)
+            velocity = speed > Self.maxSpeed ? v * (Self.maxSpeed / speed) : v
+        }
+
+        /// Zoom by `factor` about the middle of the screen.
+        mutating func pinch(by factor: Double, in size: CGSize) {
+            homing = false
+            let z = min(Self.zoomRange.upperBound, max(Self.zoomRange.lowerBound, zoom * factor))
+            offset *= z / zoom
+            zoom = z
+            offset = clamped(offset, in: size)
+        }
+
+        mutating func home() {
+            velocity = .zero
+            homing = true
+        }
+
+        mutating func step(dt: Double, in size: CGSize) {
+            if homing {
+                let glide = 1 - exp(-dt * 6)
+                offset += (SIMD2(0, 0) - offset) * glide
+                zoom += (1 - zoom) * glide
+                if simd_length(offset) < 0.5, abs(zoom - 1) < 0.002 {
+                    offset = .zero
+                    zoom = 1
+                    homing = false
+                }
+            } else if velocity != .zero {
+                let next = offset + velocity * dt
+                let held = clamped(next, in: size)
+                // At the edge it slides along it: the outward part stops.
+                if held != next {
+                    let out = simd_normalize(held)
+                    velocity -= out * max(0, simd_dot(velocity, out))
+                }
+                offset = held
+                velocity *= exp(-dt * Self.decay)
+                if simd_length(velocity) < 8 { velocity = .zero }
+            }
+        }
     }
 }
