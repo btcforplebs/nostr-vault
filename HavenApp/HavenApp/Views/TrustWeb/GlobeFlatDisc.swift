@@ -1,22 +1,17 @@
 import SwiftUI
 
-/// The flat view's ground: a dark disc with its rings and meridians faintly
-/// drawn, and a lit rim like an ice wall, under the same stars and faces as
-/// the globe. Drawn first, so everything else sits on it.
+/// The flat view's ground: a dark disc, lighter at the middle, with its zones
+/// marked by faint rings at most and a lit rim, under the same stars and
+/// faces as the globe. Drawn first, so everything else sits on it.
 struct GlobeFlatDisc {
     /// The disc's middle on screen.
     let center: CGPoint
-    /// Points per unit of the globe's space, zoom included.
+    /// Points per disc unit, zoom included.
     let unit: Double
-    /// How far the disc has turned, so its meridians turn with the stars.
-    let yaw: Double
     /// 0 to 1 while the globe flattens.
     let opacity: Double
     let ringColor: Color
     let hazeColor: Color
-
-    /// Lines from the middle to the rim, like a flat map's meridians.
-    private static let meridians = 12
 
     func draw(_ context: inout GraphicsContext) {
         guard opacity > 0.01 else { return }
@@ -34,25 +29,13 @@ struct GlobeFlatDisc {
                                                              Color(red: 0.05, green: 0.05, blue: 0.12).opacity(opacity)]),
                                            center: center, startRadius: 0, endRadius: rim))
 
-        // Each shell's band, then a fine line through its middle.
-        let shells: [(Double, Color)] = [(TrustMap.ringRadius, ringColor),
-                                         (TrustMap.closeRadius, hazeColor),
-                                         (TrustMap.outerRadius, hazeColor)]
-        for (radius, color) in shells {
-            let band = 2 * GlobeFlat.bandSpread * radius * unit
-            context.stroke(circle(radius * unit), with: .color(color.opacity(0.045 * opacity)), lineWidth: band)
-            context.stroke(circle(radius * unit), with: .color(color.opacity(0.10 * opacity)), lineWidth: 0.6)
+        // Where one zone gives way to the next: a faint dashed ring.
+        let zones = GlobeFlat.zones
+        for i in 1..<(zones.count - 2) {
+            let edge = (zones[i].outer + zones[i + 1].inner) / 2 * rim
+            context.stroke(circle(edge), with: .color(hazeColor.opacity(0.12 * opacity)),
+                           style: StrokeStyle(lineWidth: 0.6, dash: [2, 5]))
         }
-
-        // Meridians, faint, from just outside the middle to the rim.
-        var spokes = Path()
-        for i in 0..<Self.meridians {
-            let angle = yaw + Double(i) * 2 * .pi / Double(Self.meridians)
-            let dir = CGPoint(x: cos(angle), y: -sin(angle))
-            spokes.move(to: CGPoint(x: center.x + dir.x * 0.32 * unit, y: center.y + dir.y * 0.32 * unit))
-            spokes.addLine(to: CGPoint(x: center.x + dir.x * rim, y: center.y + dir.y * rim))
-        }
-        context.stroke(spokes, with: .color(.white.opacity(0.05 * opacity)), lineWidth: 0.5)
 
         // The rim: a glow in one blurred layer, and a bright edge.
         context.drawLayer { layer in
@@ -60,5 +43,18 @@ struct GlobeFlatDisc {
             layer.stroke(circle(rim), with: .color(ringColor.opacity(0.45 * opacity)), lineWidth: 5)
         }
         context.stroke(circle(rim), with: .color(.white.opacity(0.55 * opacity)), lineWidth: 1.1)
+    }
+
+    /// The web's lines: you to each person you follow, all in one faint
+    /// stroke, and a little brighter to the ones drawn as faces. Only real
+    /// follows are drawn, so every line is a connection that exists.
+    static func links(_ context: inout GraphicsContext, from core: CGPoint, to stars: [CGPoint],
+                      faces: [CGPoint], color: Color, opacity: Double) {
+        guard opacity > 0.01, !stars.isEmpty || !faces.isEmpty else { return }
+        var faint = Path(), strong = Path()
+        for p in stars { faint.move(to: core); faint.addLine(to: p) }
+        for p in faces { strong.move(to: core); strong.addLine(to: p) }
+        context.stroke(faint, with: .color(color.opacity(0.05 * opacity)), lineWidth: 0.5)
+        context.stroke(strong, with: .color(color.opacity(0.22 * opacity)), lineWidth: 0.8)
     }
 }

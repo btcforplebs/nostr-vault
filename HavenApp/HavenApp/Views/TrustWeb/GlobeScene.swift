@@ -106,6 +106,8 @@ final class GlobeScene: ObservableObject {
     private var flatTarget = false
     private var flatMix = 0.0
     private var flatOffset = SIMD2<Double>(0, 0)
+    /// Who the core follows, by star index: the flat view's lines.
+    private var coreFollows: [Bool] = []
     private var sleepQueued = false
 
     /// Live arrival arcs: notes flying across the globe as they reach the
@@ -365,6 +367,7 @@ final class GlobeScene: ObservableObject {
     private func relight() {
         light = TrustMap.StarLight(keys: keys, pinned: Set([center, author]).union(traced),
                                    from: filterFrom, to: filterTo)
+        coreFollows = keys.map { ring.contains($0) }
     }
 
     func wake() {
@@ -609,7 +612,7 @@ final class GlobeScene: ObservableObject {
         let k = min(1, min(size.width, size.height) / 620)
         let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
         guard let core = project(dirs[centerIndex] * radius[centerIndex]) else { return }
-        GlobeFlatDisc(center: project.flatCenter, unit: project.flatUnit, yaw: project.yaw, opacity: flatMix,
+        GlobeFlatDisc(center: project.flatCenter, unit: project.flatUnit, opacity: flatMix,
                       ringColor: Self.ringColor, hazeColor: Self.hazeColor).draw(&context)
         // The trust card's person, if any, takes the author's place.
         let author = traceTarget ?? self.author
@@ -631,6 +634,7 @@ final class GlobeScene: ObservableObject {
         var buckets = Array(repeating: Array(repeating: Path(), count: Self.levels + 1), count: Slot.allCases.count)
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
         let namesOut = showsNames && zoom > 2.2
+        var linkEnds: [CGPoint] = []
         for i in keys.indices where !isFace[i] {
             let a = alpha[i] * weight(i)
             guard a > 0.02, let p = project(dirs[i] * radius[i]), view.contains(p.point) else { continue }
@@ -646,7 +650,9 @@ final class GlobeScene: ObservableObject {
             }
             let level = Int((min(1, base * a) * Double(Self.levels)).rounded())
             guard level > 0 else { continue }
-            let r = size * p.scale * zoom
+            if flatMix > 0, coreFollows[i] { linkEnds.append(p.point) }
+            // Flat, the plain stars are smaller, so the web's faces and lines read.
+            let r = size * p.scale * zoom * (1 - 0.35 * flatMix)
             buckets[slot.rawValue][min(Self.levels, level)]
                 .addEllipse(in: CGRect(x: p.point.x - r, y: p.point.y - r, width: 2 * r, height: 2 * r))
             if namesOut, slot != .haze, p.depth > 0.6, labelled.count < 200 {
@@ -658,6 +664,12 @@ final class GlobeScene: ObservableObject {
                 context.fill(buckets[slot.rawValue][level],
                              with: .color(color.opacity(Double(level) / Double(Self.levels))))
             }
+        }
+        if flatMix > 0 {
+            // The flat view reads as a web: lines from the core to its follows.
+            let faceEnds = faces.compactMap { key in index[key].flatMap { coreFollows[$0] ? position(key, project)?.point : nil } }
+            GlobeFlatDisc.links(&context, from: core.point, to: linkEnds, faces: faceEnds,
+                                color: Self.ringColor, opacity: flatMix)
         }
         fill(.haze, Self.hazeColor)
         fill(.ring, Self.ringColor)
@@ -760,9 +772,11 @@ final class GlobeScene: ObservableObject {
         // the rest stay stars until the globe turns them some room. Dim faces
         // are seated last and hold no seat, so they never push out a bright one.
         let front = drawn.reversed().filter { $0.p.depth >= -0.1 || $0.key == author }
+        // Flat, faces never touch: a seat there takes the face and a margin.
+        let room = 1 + flatMix * (GlobeFlat.faceRoom / (1 - TrustMap.faceOverlap) - 1)
         let spots = (front.filter { !$0.dim } + front.filter(\.dim)).map {
             TrustMap.FaceSpot(key: $0.key, x: $0.p.point.x, y: $0.p.point.y,
-                              r: $0.size * k * $0.p.scale * min(zoom, 1.8))
+                              r: $0.size * k * $0.p.scale * min(zoom, 1.8) * room)
         }
         let dimKeys = Set(drawn.filter(\.dim).map(\.key))
         let seats = TrustMap.seatFaces(spots, always: [author], kept: seated.subtracting(dimKeys),
