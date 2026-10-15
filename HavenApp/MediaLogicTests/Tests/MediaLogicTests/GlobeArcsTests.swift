@@ -114,7 +114,8 @@ final class GlobeArcsTests: XCTestCase {
         board.add(a)
         board.add(a)
         board.step(now: 0, me: me)
-        board.step(now: GlobeArcs.spacing * 2, me: me)
+        board.add(a)
+        board.step(now: 1, me: me)
         XCTAssertEqual(board.lines.count, 1)
     }
 
@@ -241,45 +242,51 @@ final class GlobeArcsTests: XCTestCase {
         var mine = GlobeArcs.arrival(note(0, by: key(1), to: [me]), now: now)!
         mine.ring = .following
         board.add(mine)
-        for n in 1..<40 {
+        board.step(now: 0, me: me)
+        for n in 1...(GlobeArcs.maxLines + 40) {
             var a = GlobeArcs.arrival(note(n, by: key(n + 100)), now: now)!
             a.ring = n % 3 == 0 ? .discover : .global
             board.add(a)
         }
-        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
-        XCTAssertTrue(board.waiting.contains { $0.id == mine.id })
+        board.step(now: 1, me: me)
+        let standing = board.lines.filter { $0.retired == nil }
+        XCTAssertEqual(standing.count, GlobeArcs.maxLines)
+        // Your follow's line stands, though it is the oldest on the globe.
+        XCTAssertTrue(standing.contains { $0.note == mine.id })
         // Global gives way before Discover does.
-        XCTAssertTrue(board.waiting.filter { $0.ring == .discover }.count >= GlobeArcs.maxWaiting - 1)
+        XCTAssertTrue(board.lines.filter { $0.retired != nil }.allSatisfy { $0.ring == .global })
+        XCTAssertEqual(standing.filter { $0.ring == .discover }.count, (GlobeArcs.maxLines + 40) / 3)
     }
 
-    func testArrivalsAreSpacedOut() {
+    /// The storm (Logen, 10/15): every arrival flies at once, no queue.
+    func testEveryArrivalFliesAtOnce() {
         var board = GlobeArcs.Board()
-        board.add(GlobeArcs.arrival(note(1, by: key(1), to: [me]), now: now)!)
-        board.add(GlobeArcs.arrival(note(2, by: key(2), to: [me]), now: now)!)
-        XCTAssertNotNil(board.step(now: 0, me: me))
-        XCTAssertNil(board.step(now: GlobeArcs.spacing / 2, me: me))
-        XCTAssertNotNil(board.step(now: GlobeArcs.spacing, me: me))
-        XCTAssertTrue(board.lines.allSatisfy(\.toMe))
+        for n in 0..<50 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.step(now: 0, me: me).count, 50)
+        XCTAssertEqual(board.lines.count, 50)
+        XCTAssertTrue(board.waiting.isEmpty)
+        XCTAssertTrue(board.isBusy)
     }
 
-    func testABurstKeepsOnlyTheNewestWaiting() {
+    func testABurstBetweenFramesKeepsAtMostACapsWorth() {
         var board = GlobeArcs.Board()
-        for n in 0..<30 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
-        XCTAssertEqual(board.waiting.last?.id, key(1029))
+        for n in 0..<(GlobeArcs.maxLines + 30) { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxLines)
+        XCTAssertEqual(board.waiting.last?.id, key(1000 + GlobeArcs.maxLines + 29))
     }
 
     func testStandingLinesNeverPassTheCap() {
         var board = GlobeArcs.Board()
         var t = 0.0
-        for n in 0..<40 {
-            board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [key(100 + n), key(200 + n)]), now: now)!)
+        for n in 0..<400 {
+            board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [key(1000 + n), key(2000 + n)]), now: now)!)
             board.step(now: t, me: me)
             XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
-            t += GlobeArcs.spacing
+            t += 0.01
         }
         // Retired lines fade out quickly, so what is drawn stays near the cap.
-        XCTAssertLessThanOrEqual(board.lines.count, GlobeArcs.maxLines + 2 * 2)
+        board.step(now: t + GlobeArcs.retireFade, me: me)
+        XCTAssertLessThanOrEqual(board.lines.count, GlobeArcs.maxLines)
     }
 
     func testAStarTravelsLandsAndItsTrailFadesFirst() {
@@ -304,16 +311,15 @@ final class GlobeArcsTests: XCTestCase {
         XCTAssertLessThan(still.trail, 1)
     }
 
-    func testNotesHeldNeverOutgrowTheQueueAndLines() {
+    func testNotesHeldNeverOutgrowTheCap() {
         // A long burst with no frames to move it on (a sheet open, another app
-        // in front): only the newest few wait.
+        // in front): no more than a cap's worth wait.
         var board = GlobeArcs.Board()
-        for n in 0..<200 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
-        XCTAssertEqual(board.waiting.count, GlobeArcs.maxWaiting)
+        for n in 0..<2_000 { board.add(GlobeArcs.arrival(note(n, by: key(n + 1), to: [me]), now: now)!) }
+        XCTAssertEqual(board.waiting.count, GlobeArcs.maxLines)
         // Let on and faded out, they all go.
-        var t = 0.0
-        while !board.waiting.isEmpty { board.step(now: t, me: me); t += GlobeArcs.spacing }
-        board.step(now: t + GlobeArcs.life, me: me)
+        board.step(now: 0, me: me)
+        board.step(now: GlobeArcs.life, me: me)
         XCTAssertTrue(board.isIdle)
     }
 

@@ -6,6 +6,8 @@ extension FeedService {
     /// Called on processingQueue — parses JSON off the main thread, accumulates in background buffers.
     /// A periodic flush delivers batched results to the main thread.
     nonisolated func handleFeedMsgBackground(_ msg: String, totalRelays: Int) {
+        // The WOT globe's live arrivals share this connection: they're its own.
+        if GlobeArcs.isGlobeMessage(msg) { return }
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json[0] as? String else { return }

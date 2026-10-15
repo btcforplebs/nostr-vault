@@ -28,15 +28,17 @@ private struct LiveArcsToggle: View {
 /// subscriptions, which stay open whichever tab is on screen: one stream, no
 /// second set of connections. In every other feed mode the feed carries no
 /// follows' notes, so the globe asks for them itself. Which of the two is
-/// re-picked whenever the feed mode or your device relay changes. Reposts,
-/// Discover and Global come from a second, wider REQ on your read relays.
+/// re-picked whenever the feed mode or your device relay changes. Everything
+/// else comes from one wider REQ on each of your read relays. Every REQ
+/// rides the feed's own open connection to its relay (`GlobeRelayLink`):
+/// the globe opens no connections of its own.
 @MainActor
 final class GlobeArrivalStream: ObservableObject {
     let arrived = PassthroughSubject<GlobeArcs.Arrival, Never>()
     /// Watches what decides the source; lives for the whole start.
     private var watch: AnyCancellable?
-    /// The current source's connections and sinks.
-    private var clients: [WebSocketClient] = []
+    /// The current source's REQs and sinks.
+    private var links: [GlobeRelayLink] = []
     private var cancellables: Set<AnyCancellable> = []
     /// Which start the open connections belong to, so a late stop from an
     /// earlier one leaves a newer one running.
@@ -47,11 +49,14 @@ final class GlobeArrivalStream: ObservableObject {
 
     /// Most authors one filter names.
     private static let authorsPerFilter = 500
-    /// Most Discover authors asked for: three filters' worth.
-    private static let discoverCap = 1_500
-    /// The wider REQ's connections and sinks, apart from the follows' source.
-    private var wideClients: [WebSocketClient] = []
-    private var wideCancellables: Set<AnyCancellable> = []
+    /// The wider REQ on each read relay, apart from the follows' source.
+    private var wideLinks: [GlobeRelayLink] = []
+    #if DEBUG
+    /// Arrivals per minute, for the globe's debug readout.
+    @Published private(set) var perMinute = 0
+    private var meter = GlobeArcs.RateMeter()
+    private var meterTick: Timer?
+    #endif
     /// How far back a note in the feed still counts as just arrived, for
     /// authors whose clocks run a little slow.
     private static let freshWindow: TimeInterval = 60
@@ -74,9 +79,20 @@ final class GlobeArrivalStream: ObservableObject {
         generation += 1
         guard !rings.isEmpty else { return generation }
         #if DEBUG
+        meterTick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let rate = self.meter.perMinute(at: Date.timeIntervalSinceReferenceDate)
+                if rate != self.perMinute { self.perMinute = rate }
+            }
+        }
+        #endif
+        #if DEBUG
         // For looking at the arcs without anyone posting: made-up notes from
         // people on the globe. Nothing is published.
-        if ProcessInfo.processInfo.arguments.contains("-GlobeArcsStub") {
+        // `-GlobeArcsStorm <per second>`: a stress feed, that many a second.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-GlobeArcsStub") || arguments.contains("-GlobeArcsStorm") {
             stub = Task { [weak self] in await self?.runStub(me: me) }
             return generation
         }
@@ -106,20 +122,29 @@ final class GlobeArrivalStream: ObservableObject {
         if let token, token != generation { return false }
         watch = nil
         closeSource()
-        wideCancellables.removeAll()
-        wideClients.forEach { $0.disconnect() }
-        wideClients = []
+        wideLinks.forEach { $0.close() }
+        wideLinks = []
         #if DEBUG
         stub?.cancel()
         stub = nil
+        meterTick?.invalidate()
+        meterTick = nil
         #endif
         return true
     }
 
     private func closeSource() {
         cancellables.removeAll()
-        clients.forEach { $0.disconnect() }
-        clients = []
+        links.forEach { $0.close() }
+        links = []
+    }
+
+    /// Every arrival goes out through here.
+    private func emit(_ arrival: GlobeArcs.Arrival) {
+        #if DEBUG
+        meter.record(arrival.id, at: Date.timeIntervalSinceReferenceDate)
+        #endif
+        arrived.send(arrival)
     }
 
     private func open(_ source: Source, me: String, show: GlobeArcs.Show) {
@@ -157,7 +182,7 @@ final class GlobeArrivalStream: ObservableObject {
                     // A note to you from outside your follows still flies on
                     // Following: your relay's inbox already kept strangers out.
                     arrival.ring = .following
-                    self?.arrived.send(arrival)
+                    self?.emit(arrival)
                 }
                 if seen.count > 256 {
                     let cutoff = Date().addingTimeInterval(-Self.freshWindow)
@@ -172,151 +197,105 @@ final class GlobeArrivalStream: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// The globe's own REQ: yours and your follows' notes from your read
-    /// relays, and notes to you. Relays cap how many authors one filter may
-    /// name, so authors go in filters of up to 500 in the same REQ and every
-    /// one counts. Notes to you come from your device relay's inbox when it
-    /// is up, which keeps strangers out; when it isn't, from the read relays,
-    /// where anyone can tag you, so only your web's come through, the same
-    /// as Global.
+    /// Notes to you, when the feed isn't carrying your follows. Yours and
+    /// your follows' own notes come in on the wider REQ (`openWide`), from
+    /// the same read relays. Notes to you come from your device relay's
+    /// inbox when it is up, which keeps strangers out; when it isn't, from
+    /// the read relays, where anyone can tag you, so only your web's come
+    /// through, the same as Global.
     private func ask(_ feed: FeedService, inbox: URL?, me: String, blocked: Set<String>, kinds: [Int]) {
         // An empty kinds list would match everything on some relays.
         guard !kinds.isEmpty else { return }
-        let note: [String: Any] = ["kinds": kinds, "since": Int(Date().timeIntervalSince1970)]
-        let toMe = note.merging(["#p": [me]]) { $1 }
-        let authors = Array(Set(feed.followedPubkeys).union([me])).sorted()
-        let byAuthors = stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
-            note.merging(["authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]) { $1 }
-        }
-        var plan: [(url: URL, filters: [[String: Any]], trusted: Set<String>?)] = []
-        if let inbox {
-            plan.append((inbox, [toMe], nil))
-            plan += feed.externalRelayURLs.prefix(3).map { ($0, byAuthors, Set(authors)) }
-        } else {
-            let trusted = feed.relayTabTrustedPubkeys().union(authors)
-            plan += feed.externalRelayURLs.prefix(3).map { ($0, byAuthors + [toMe], trusted) }
-        }
-        for (url, filters, trusted) in plan {
-            let client = Self.subscribe(url, filters: filters) { [weak self] event in
+        let toMe: [String: Any] = ["kinds": kinds, "since": Int(Date().timeIntervalSince1970), "#p": [me]]
+        let urls = inbox.map { [$0] } ?? feed.externalRelayURLs
+        let trusted = inbox == nil ? feed.relayTabTrustedPubkeys().union(feed.followedPubkeys).union([me]) : nil
+        for url in urls {
+            links.append(GlobeRelayLink(url: url, filters: [toMe]) { [weak self] event in
                 guard var arrival = GlobeArcs.arrival(event), !blocked.contains(arrival.author),
                       trusted?.contains(arrival.author) ?? true else { return }
                 arrival.ring = .following
-                self?.arrived.send(arrival)
-            }
-            clients.append(client.client)
-            cancellables.insert(client.sink)
+                self?.emit(arrival)
+            })
         }
     }
 
-    /// Who belongs to which feed: you and your follows, then your wider web
-    /// (the Discover feed's people, or your saved web while those aren't
-    /// worked out yet), capped.
-    private static func people(_ feed: FeedService, me: String) -> (follows: Set<String>, discover: [String]) {
+    /// Who belongs to which feed: you and your follows, then all of your
+    /// wider web (the Discover feed's people, or your saved web while those
+    /// aren't worked out yet).
+    private static func people(_ feed: FeedService, me: String) -> (follows: Set<String>, discover: Set<String>) {
         let follows = Set(feed.followedPubkeys).union([me])
         let wider = feed.extendedNetworkPubkeys.isEmpty
-            ? Array(feed.feedTrustedPubkeys) : feed.extendedNetworkPubkeys
-        return (follows, Array(wider.lazy.filter { !follows.contains($0) }.prefix(discoverCap)))
+            ? Set(feed.feedTrustedPubkeys) : Set(feed.extendedNetworkPubkeys)
+        return (follows, wider.subtracting(follows))
     }
 
-    /// The wider REQ on your read relays: your follows' reposts (the feed
-    /// shows a repost as the note reposted, so it can't say when one is
-    /// made), and the Discover and Global feeds when they're on. Global keeps
-    /// to your web, as the Global feed does, unless that is set to Everyone.
+    /// The wider REQ on every one of your read relays: your follows'
+    /// notes, reposts (the feed shows a repost as the note reposted, so it
+    /// can't say when one is made), reactions and zaps, and the Discover and
+    /// Global feeds when they're on, as one stream sorted here by author
+    /// (`GlobeArcs.storm`).
+    /// Global keeps to your web, as the Global feed does, unless that is set
+    /// to Everyone.
     private func openWide(_ feed: FeedService, me: String, rings: Set<GlobeArcs.Ring>,
-                          people: (follows: Set<String>, discover: [String]), show: GlobeArcs.Show) {
-        let since = Int(Date().timeIntervalSince1970)
-        let all = show.wideKinds
-        func byAuthors(_ authors: [String], kinds: [Int]) -> [[String: Any]] {
-            guard !kinds.isEmpty else { return [] }
-            return stride(from: 0, to: authors.count, by: Self.authorsPerFilter).map {
-                ["kinds": kinds, "since": since, "authors": Array(authors[$0..<min($0 + Self.authorsPerFilter, authors.count)])]
-            }
-        }
-        var filters: [[String: Any]] = []
-        if rings.contains(.following), show.reposts {
-            filters += byAuthors(people.follows.sorted(), kinds: GlobeArcs.repostKinds)
-        }
-        if rings.contains(.discover) { filters += byAuthors(people.discover, kinds: all) }
-        if rings.contains(.global), !all.isEmpty { filters.append(["kinds": all, "since": since]) }
-        // Zap receipts carry the LNURL server's key, not the zapper's, so
-        // authors can't pick them out: one small filter for all of them, and
-        // each is sorted to its feed by the zapper inside it.
-        if show.zaps { filters.append(["kinds": [GlobeArcs.zapKind], "since": since]) }
+                          people: (follows: Set<String>, discover: Set<String>), show: GlobeArcs.Show) {
+        // A note the feed's timeline also carries flies once: the board
+        // drops a repeat id.
+        let filters = GlobeArcs.storm(rings: rings, show: show, follows: people.follows.sorted(),
+                                      since: Int(Date().timeIntervalSince1970), authorsPerFilter: Self.authorsPerFilter)
         guard !filters.isEmpty else { return }
-        let discover = Set(people.discover)
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
         let trusted = rings.contains(.global) ? feed.globalTrustSet() : nil
-        for url in feed.externalRelayURLs.prefix(rings.contains(.global) ? 2 : 3) {
-            let wide = Self.subscribe(url, filters: filters) { [weak self] event in
+        for url in feed.externalRelayURLs {
+            wideLinks.append(GlobeRelayLink(url: url, filters: filters) { [weak self] event in
                 // A zap's request must be signed by its zapper.
                 guard var arrival = GlobeArcs.arrival(event, verifyZap: NostrEventVerifier.isValid(json:)),
                       !blocked.contains(arrival.author) else { return }
-                arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: discover)
+                arrival.ring = GlobeArcs.ring(of: arrival.author, follows: people.follows, discover: people.discover)
                 guard rings.contains(arrival.ring),
                       arrival.ring != .global || (trusted?.contains(arrival.author) ?? true) else { return }
-                self?.arrived.send(arrival)
-            }
-            wideClients.append(wide.client)
-            wideCancellables.insert(wide.sink)
+                self?.emit(arrival)
+            })
         }
-    }
-
-    /// One relay connection with one REQ; each event it sends goes to `onEvent`.
-    private static func subscribe(_ url: URL, filters: [[String: Any]],
-                                  onEvent: @escaping ([String: Any]) -> Void) -> (client: WebSocketClient, sink: AnyCancellable) {
-        let client = WebSocketClient()
-        client.isTemporary = true
-        // WebSocketClient already delivers on the main thread.
-        let sink = client.messageSubject
-            .sink { message in
-                guard message.hasPrefix("[\"EVENT\""),
-                      let data = message.data(using: .utf8),
-                      let array = try? JSONSerialization.jsonObject(with: data) as? [Any], array.count >= 3,
-                      let event = array[2] as? [String: Any] else { return }
-                onEvent(event)
-            }
-        client.connect(url: url)
-        // Split, so a relay's size cap can't refuse every filter at once.
-        let requests = GlobeArcs.requests(filters, subId: "arcs-\(UUID().uuidString.prefix(8))")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak client] in
-            guard let client else { return }
-            for text in requests {
-                client.send(text: text)
-            }
-        }
-        return (client, sink)
     }
 
     #if DEBUG
     private func runStub(me: String) async {
+        let storm = UserDefaults.standard.integer(forKey: "GlobeArcsStorm")
         // Real authors from the feed; the lines they draw are made up.
         let feedNotes = FeedService.shared.notes.filter { $0.kind == 1 }
-        let people = Array(Set(FeedService.shared.followedPubkeys + feedNotes.map(\.pubkey)).shuffled().prefix(80))
+        let people = Array(Set(FeedService.shared.followedPubkeys + feedNotes.map(\.pubkey)
+                               + FeedService.shared.extendedNetworkPubkeys.prefix(400)).shuffled().prefix(storm > 0 ? 600 : 80))
         guard people.count > 4 else { return }
         var n = 0
+        // A storm comes in tenths of a second, a tenth of its rate each.
+        let burst = max(1, storm / 10)
         while !Task.isCancelled {
-            n += 1
-            let real = feedNotes.randomElement()
-            let author = real?.pubkey ?? people.randomElement()!
-            // Mostly notes to you; some replies to a few people; some to no one.
-            let targets: [String]
-            switch n % 5 {
-            case 0, 2: targets = [me]
-            case 1: targets = Array(people.filter { $0 != author }.shuffled().prefix(Int.random(in: 2...3)))
-            case 3: targets = [people.filter { $0 != author }.randomElement()!]
-            default: targets = []
+            for _ in 0..<(storm > 0 ? burst : 1) {
+                n += 1
+                let real = feedNotes.randomElement()
+                let author = real?.pubkey ?? people.randomElement()!
+                // Mostly notes to you; some replies to a few people; some to no one.
+                let targets: [String]
+                switch n % 5 {
+                case 0, 2: targets = [me]
+                case 1: targets = Array(people.filter { $0 != author }.shuffled().prefix(Int.random(in: 2...3)))
+                case 3: targets = [people.filter { $0 != author }.randomElement()!]
+                default: targets = []
+                }
+                let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
+                // Every feed in turn, so each shell's stars show.
+                let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
+                // Every third one a zap, to someone: a bolt rather than a star.
+                // Every fourth a reaction: a smaller star, to one person.
+                // A storm is mostly notes and reactions, as the network is.
+                let zap = storm > 0 ? n % 25 == 0 : n % 3 == 0
+                let reaction = !zap && (storm > 0 ? n % 3 == 0 : n % 4 == 0)
+                let zapped = targets.first ?? people.filter { $0 != author }.randomElement()!
+                emit(GlobeArcs.Arrival(id: id, author: author, targets: zap || reaction ? [zapped] : targets, ring: ring,
+                                       zap: zap, sort: zap ? .zap : reaction ? .reaction : .note,
+                                       strength: GlobeArcs.zapStrength(sats: [21, 1_000, 21_000, 100_000].randomElement()!)))
             }
-            let id = (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
-            // Every feed in turn, so each shell's stars show.
-            let ring = GlobeArcs.Ring.allCases[n % GlobeArcs.Ring.allCases.count]
-            // Every third one a zap, to someone: a bolt rather than a star.
-            // Every fourth a reaction: a smaller star, to one person.
-            let zap = n % 3 == 0, reaction = !zap && n % 4 == 0
-            let zapped = targets.first ?? people.filter { $0 != author }.randomElement()!
-            arrived.send(GlobeArcs.Arrival(id: id, author: author, targets: zap || reaction ? [zapped] : targets, ring: ring,
-                                           zap: zap, sort: zap ? .zap : reaction ? .reaction : .note,
-                                           strength: GlobeArcs.zapStrength(sats: [21, 1_000, 21_000, 100_000].randomElement()!)))
-            try? await Task.sleep(for: .milliseconds(Int.random(in: 900...2000)))
+            try? await Task.sleep(for: storm > 0 ? .milliseconds(100) : .milliseconds(Int.random(in: 900...2000)))
         }
     }
     #endif
@@ -344,20 +323,23 @@ struct LiveArcsPainter {
     static let starColor = Color.white
     /// A reaction's star beside a note's.
     static let reactionSize = 0.6
-    /// Points along a drawn line: smooth at full zoom, cheap at ten lines.
-    private static let arcSamples = 40
     /// Steps in a star's tail, each a little fainter and thinner than the last.
     private static let tailSteps = 8
 
-    /// One soft light: a glow with a bright middle.
-    private func light(_ context: inout GraphicsContext, at p: CGPoint, r: Double, opacity: Double) {
-        guard opacity > 0.01 else { return }
-        let color = Self.starColor
-        context.fill(Path(ellipseIn: CGRect(x: p.x - r * 3, y: p.y - r * 3, width: r * 6, height: r * 6)),
-                     with: .radialGradient(Gradient(colors: [color.opacity(0.5 * opacity), .clear]),
-                                           center: p, startRadius: 0, endRadius: r * 3))
-        context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
-                     with: .color(color.opacity(opacity)))
+    /// Paths gathered by how they're drawn: everything at one opacity step
+    /// and width is one fill or stroke, so a storm of hundreds of lines
+    /// costs a few dozen draws, not thousands (`GlobeArcs.band`).
+    private struct Batch {
+        var paths: [Int: Path] = [:]
+        mutating func add(_ key: Int, _ build: (inout Path) -> Void) { build(&paths[key, default: Path()]) }
+    }
+
+    /// Size steps: a note's star, and a reaction's smaller one.
+    private static func sizeIndex(_ line: GlobeArcs.Line) -> Int { line.sort == .reaction ? 1 : 0 }
+    private static func size(_ index: Int) -> Double { index == 1 ? reactionSize : 1 }
+
+    private static func disc(_ path: inout Path, at p: CGPoint, r: Double) {
+        path.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
     }
 
     /// Shooting stars, their faint trails, and the lights where they land:
@@ -366,10 +348,8 @@ struct LiveArcsPainter {
         let unit = max(0.8, k)
         // Lights breathe slowly while they stay.
         let breath = reduceMotion ? 1 : 0.82 + 0.18 * sin(now * 2 * .pi / 2.6)
-        var trails: [(Path, Double)] = []
-        var tails: [(Path, Double, Double)] = []
-        var stars: [(CGPoint, Double, Double)] = []
-        var landings: [(CGPoint, GlobeArcs.Stage, Double)] = []
+        let samples = GlobeArcs.arcSamples(lines: board.lines.count)
+        var trails = Batch(), tails = Batch(), cores = Batch(), glows = Batch(), rings = Batch()
         var bolts: [GlobeBoltPainter.Shape] = []
         for line in board.lines {
             let stage = GlobeArcs.stage(of: line, at: now, reduceMotion: reduceMotion)
@@ -386,17 +366,18 @@ struct LiveArcsPainter {
                 continue
             }
             // The faint trail it leaves, gone soon after it lands.
-            if stage.trail > 0.01 {
-                var path = Path(), open = false
-                let n = Self.arcSamples
-                for s in 0...n {
-                    guard let p = at(stage.head * Double(s) / Double(n)) else { open = false; continue }
-                    if open { path.addLine(to: p.point) } else { path.move(to: p.point); open = true }
+            let trailBand = GlobeArcs.band(stage.trail)
+            if trailBand > 0 {
+                trails.add(trailBand) { path in
+                    var open = false
+                    for s in 0...samples {
+                        guard let p = at(stage.head * Double(s) / Double(samples)) else { open = false; continue }
+                        if open { path.addLine(to: p.point) } else { path.move(to: p.point); open = true }
+                    }
                 }
-                trails.append((path, stage.trail))
             }
             // A reaction's star, tail and landing are smaller than a note's.
-            let size = line.sort == .reaction ? Self.reactionSize : 1
+            let sizeIndex = Self.sizeIndex(line), size = Self.size(sizeIndex)
             // In flight: the star and its short tail, brightest at the star.
             if stage.head < 1, let head = at(stage.head) {
                 // Round the back a star dims smoothly, never switches.
@@ -406,44 +387,68 @@ struct LiveArcsPainter {
                 for step in 1...Self.tailSteps {
                     let t = start + (stage.head - start) * Double(step) / Double(Self.tailSteps)
                     guard let p = at(t) else { last = nil; continue }
-                    if let last {
-                        var segment = Path()
-                        segment.move(to: last)
-                        segment.addLine(to: p.point)
-                        let f = Double(step) / Double(Self.tailSteps)
-                        tails.append((segment, f * f * stage.alpha * behind, (0.4 + 1.4 * f) * size))
+                    let f = Double(step) / Double(Self.tailSteps)
+                    let band = GlobeArcs.band(f * f * stage.alpha * behind)
+                    if let last, band > 0 {
+                        tails.add((band * 16 + step) * 2 + sizeIndex) { path in
+                            path.move(to: last)
+                            path.addLine(to: p.point)
+                        }
                     }
                     last = p.point
                 }
-                stars.append((head.point, stage.alpha * behind, size))
-            }
-            if stage.landing > 0, let p = project(b) { landings.append((p.point, stage, size)) }
-        }
-        let color = Self.starColor
-        for (path, a) in trails {
-            context.stroke(path, with: .color(color.opacity(0.14 * a)),
-                           style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round))
-        }
-        if !tails.isEmpty {
-            // The tails' glow in one blurred layer.
-            context.drawLayer { layer in
-                layer.addFilter(.blur(radius: 2.5))
-                for (segment, a, width) in tails {
-                    layer.stroke(segment, with: .color(color.opacity(0.5 * a)), lineWidth: width + 2)
+                let band = GlobeArcs.band(stage.alpha * behind)
+                if band > 0 {
+                    let r = 1.8 * size * unit
+                    cores.add(band * 2 + sizeIndex) { Self.disc(&$0, at: head.point, r: r) }
+                    glows.add(band * 2 + sizeIndex) { Self.disc(&$0, at: head.point, r: 2 * r) }
                 }
             }
-            for (segment, a, width) in tails {
-                context.stroke(segment, with: .color(color.opacity(0.9 * a)),
-                               style: StrokeStyle(lineWidth: width, lineCap: .round))
+            // Where it lands: a small ring opens once, then a light stays and breathes.
+            if stage.landing > 0, let p = project(b) {
+                let ringBand = GlobeArcs.band(0.5 * (1 - stage.landing) * stage.alpha)
+                if ringBand > 0 {
+                    rings.add(ringBand) { Self.disc(&$0, at: p.point, r: (5 + 14 * stage.landing) * size * unit) }
+                }
+                let band = GlobeArcs.band(0.7 * stage.alpha * breath)
+                if band > 0 {
+                    let r = 1.8 * size * unit
+                    cores.add(band * 2 + sizeIndex) { Self.disc(&$0, at: p.point, r: r) }
+                    glows.add(band * 2 + sizeIndex) { Self.disc(&$0, at: p.point, r: 2 * r) }
+                }
             }
         }
-        for (p, a, size) in stars { light(&context, at: p, r: 1.8 * size * unit, opacity: a) }
-        // Where it lands: a small ring opens once, then a light stays and breathes.
-        for (p, stage, size) in landings {
-            let r = (5 + 14 * stage.landing) * size * unit
-            context.stroke(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
-                           with: .color(color.opacity(0.5 * (1 - stage.landing) * stage.alpha)), lineWidth: 1)
-            light(&context, at: p, r: 1.8 * size * unit, opacity: 0.7 * stage.alpha * breath)
+        let color = Self.starColor
+        for (band, path) in trails.paths {
+            context.stroke(path, with: .color(color.opacity(0.14 * GlobeArcs.bandAlpha(band))),
+                           style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round))
+        }
+        func tailWidth(_ key: Int) -> Double {
+            let step = (key / 2) % 16
+            return (0.4 + 1.4 * Double(step) / Double(Self.tailSteps)) * Self.size(key % 2)
+        }
+        if !tails.paths.isEmpty || !glows.paths.isEmpty {
+            // Every glow, tails' and stars', in one blurred layer.
+            context.drawLayer { layer in
+                layer.addFilter(.blur(radius: 2.5))
+                for (key, path) in tails.paths {
+                    layer.stroke(path, with: .color(color.opacity(0.5 * GlobeArcs.bandAlpha(key / 32))),
+                                 lineWidth: tailWidth(key) + 2)
+                }
+                for (key, path) in glows.paths {
+                    layer.fill(path, with: .color(color.opacity(0.5 * GlobeArcs.bandAlpha(key / 2))))
+                }
+            }
+        }
+        for (key, path) in tails.paths {
+            context.stroke(path, with: .color(color.opacity(0.9 * GlobeArcs.bandAlpha(key / 32))),
+                           style: StrokeStyle(lineWidth: tailWidth(key), lineCap: .round))
+        }
+        for (key, path) in cores.paths {
+            context.fill(path, with: .color(color.opacity(GlobeArcs.bandAlpha(key / 2))))
+        }
+        for (band, path) in rings.paths {
+            context.stroke(path, with: .color(color.opacity(GlobeArcs.bandAlpha(band))), lineWidth: 1)
         }
         // Bolts over the stars: a zap should flash brighter than a note.
         GlobeBoltPainter.draw(bolts, in: &context, unit: unit)
@@ -451,18 +456,19 @@ struct LiveArcsPainter {
 
     /// Pictures at the ends of the lines, easing in as a star sets out and
     /// out as its light fades. Someone already seated as a face keeps their seat.
-    func drawFaces(_ context: inout GraphicsContext, seated: Set<String>,
+    /// Only `pictured` get a face: in a storm, the ends of the newest lines.
+    func drawFaces(_ context: inout GraphicsContext, seated: Set<String>, pictured: Set<String>,
                    face: (inout GraphicsContext, String, CGPoint, Double, Color, Double) -> Void) {
         var shown: [String: Double] = [:]
         var setsOut: [String: GlobeArcs.Ring] = [:]
-        for line in board.lines {
+        for line in board.lines where pictured.contains(line.from) || pictured.contains(line.to) {
             let a = GlobeArcs.faceAlpha(of: line, at: now)
             for key in [line.from, line.to] where a > (shown[key] ?? 0) { shown[key] = a }
             if setsOut[line.from] == nil { setsOut[line.from] = line.ring }
         }
         // A face rolling toward the rim fades and shrinks rather than popping.
         let faces = shown.compactMap { key, alpha -> (String, GlobeScene.Projected, Double, Double)? in
-            guard key != center, !seated.contains(key), alpha > 0.02,
+            guard key != center, !seated.contains(key), pictured.contains(key), alpha > 0.02,
                   let p = project(place(key, setsOut[key])) else { return nil }
             let edge = GlobeEdge.face(depth: p.depth)
             return edge > 0.02 ? (key, p, alpha, edge) : nil

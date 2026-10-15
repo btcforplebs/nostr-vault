@@ -167,9 +167,9 @@ final class GlobeZapsTests: XCTestCase {
         // Reduce Motion: there at once.
         XCTAssertEqual(GlobeArcs.stage(of: line, at: 0.01, reduceMotion: true).head, 1)
         // It shares the stars' cap.
-        for n in 0..<30 {
+        for n in 0..<(GlobeArcs.maxLines + 30) {
             board.add(GlobeArcs.Arrival(id: String(format: "%064x", n + 1), author: zapper, targets: [zapped], zap: true))
-            board.step(now: Double(n + 1) * GlobeArcs.spacing, me: me)
+            board.step(now: Double(n + 1) * 0.01, me: me)
         }
         XCTAssertLessThanOrEqual(board.lines.filter { $0.retired == nil }.count, GlobeArcs.maxLines)
     }

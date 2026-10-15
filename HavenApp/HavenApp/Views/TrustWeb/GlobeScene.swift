@@ -15,9 +15,9 @@ final class GlobeScene: ObservableObject {
     @Published private(set) var awake = true
     /// Who is drawn with a picture: the core, the author, and the faces.
     @Published private(set) var faceKeys: [String] = []
-    /// A finger is turning the globe, or its flick is still spinning: the
-    /// clock runs at full rate. Otherwise drift, settling and arcs draw at
-    /// `slowRate`, which is plenty for them and keeps the phone cool.
+    /// A finger is turning the globe, its flick is still spinning, or a storm
+    /// of arrivals is flying: the clock runs at full rate. Otherwise drift,
+    /// settling and a few arcs draw at `slowRate`, which keeps the phone cool.
     @Published private(set) var fullRate = false
     /// Frames a second while nothing is under a finger.
     static let slowRate = 30.0
@@ -114,6 +114,10 @@ final class GlobeScene: ObservableObject {
     /// People drawn with a picture because a line is on them.
     private var arcKeys: Set<String> = []
     private var arcKeysQueued = false
+    /// When the arc faces last changed: in a storm they change at most
+    /// every `GlobeArcs.faceRefresh`, since each change redraws the pictures.
+    private var arcKeysSynced: TimeInterval = -.infinity
+    private var arcKeysStale = false
     /// The frame clock's time, for drawing the arcs where it left them.
     private var now: TimeInterval = 0
 
@@ -340,8 +344,8 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// A finger on the globe, or the spin it left.
-    private var handsOn: Bool { camera.dragging || camera.spin != .zero }
+    /// A finger on the globe, the spin it left, or a busy sky: full rate.
+    private var handsOn: Bool { camera.dragging || camera.spin != .zero || board.isBusy }
 
     /// Works out each star's lit flags again, after the stars, the core,
     /// the author, the traced path or the filter change.
@@ -381,16 +385,20 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// Who the arcs need pictures for: the ends of every line.
+    /// Lines on the globe now, for the debug readout.
+    var arcsInFlight: Int { board.lines.count }
+
+    /// Who the arcs need pictures for: the ends of the newest lines.
     private var arcPeople: Set<String> {
-        var keys = Set(board.lines.flatMap { [$0.from, $0.to] })
-        keys.remove(center)
-        return keys
+        Set(board.faceKeys(limit: GlobeArcs.maxArcFaces, except: center))
     }
 
     private func syncArcKeys() {
         let keys = arcPeople
         guard keys != arcKeys else { return }
+        // Pictures only for who gets a face, not for every arrival.
+        let joined = keys.subtracting(arcKeys)
+        if !joined.isEmpty { NostrService.shared.fetchMissingProfiles(for: Array(joined)) }
         arcKeys = keys
         seatFaces()
     }
@@ -413,14 +421,12 @@ final class GlobeScene: ObservableObject {
         }
         self.now = now
         let arcsBefore = board.lines.count
-        if let released = board.step(now: now, me: me) {
-            // Their pictures, once the note is let on: not for every arrival,
-            // most of which a busy queue drops. Not from inside the draw.
-            DispatchQueue.main.async {
-                NostrService.shared.fetchMissingProfiles(for: [released.author] + released.targets)
-            }
-        }
-        if board.lines.count != arcsBefore, !arcKeysQueued {
+        let released = board.step(now: now, me: me)
+        if board.lines.count != arcsBefore || !released.isEmpty { arcKeysStale = true }
+        let facesDue = !board.isBusy || now - arcKeysSynced >= GlobeArcs.faceRefresh
+        if arcKeysStale, facesDue, !arcKeysQueued {
+            arcKeysStale = false
+            arcKeysSynced = now
             // Not from inside the draw: the pictures publish on the next turn.
             arcKeysQueued = true
             DispatchQueue.main.async { [weak self] in
@@ -784,7 +790,7 @@ final class GlobeScene: ObservableObject {
         }
 
         if !arcKeys.isEmpty {
-            arcPainter(project, k: k, zoom: zoom).drawFaces(&context, seated: seats) { c, key, p, r, tint, opacity in
+            arcPainter(project, k: k, zoom: zoom).drawFaces(&context, seated: seats, pictured: arcKeys) { c, key, p, r, tint, opacity in
                 drawFace(&c, key: key, at: p, r: r, tint: tint, opacity: opacity, name: name)
             }
         }
