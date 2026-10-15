@@ -57,7 +57,7 @@ class GlobeLiveTest {
         assertEquals(GlobeArcs.Sort.REACTION, reaction?.sort)
         assertEquals(a, reaction?.author)
         assertEquals(listOf(b), reaction?.targets)
-        // Skipped: `reaction?.zap == false` — Arrival has no zap flag on Android yet.
+        assertNotEquals(GlobeArcs.Sort.ZAP, reaction?.sort)
         // One we can't place doesn't fly, so it never lands on you by default.
         assertNull(arrival(event(7, listOf(listOf("e", d)))))
         assertNull(arrival(event(7, listOf(listOf("p", b)))))
@@ -75,11 +75,9 @@ class GlobeLiveTest {
     }
 
     @Test fun theSwitchesPickWhatFlies() {
-        // Sort.ZAP is left out: zaps don't fly on Android yet, so Show never allows it.
-        val flying = GlobeArcs.Sort.entries.filter { it != GlobeArcs.Sort.ZAP }
         var show = GlobeLive.Show()
-        assertTrue(flying.all(show::allows))
-        show = show.copy(replies = false)
+        assertTrue(GlobeArcs.Sort.entries.all(show::allows))
+        show = show.copy(replies = false, zaps = false)
         assertEquals(
             listOf(GlobeArcs.Sort.NOTE, GlobeArcs.Sort.REPOST, GlobeArcs.Sort.REACTION),
             GlobeArcs.Sort.entries.filter(show::allows),
@@ -106,6 +104,27 @@ class GlobeLiveTest {
         assertNotEquals(GlobeLive.Show(), show)
     }
 
-    // Skipped: aBiggerZapStrikesHarder — zap strength and bolts are the next task.
+    @Test fun aBiggerZapStrikesHarder() {
+        val strengths = listOf(0L, 21L, 1_000L, 21_000L, 100_000L, 10_000_000L).map(GlobeZaps::zapStrength)
+        assertEquals(strengths.sorted(), strengths)
+        assertEquals(0.15, strengths.first(), 0.0)
+        assertEquals(1.0, strengths.last(), 0.0)
+        assertEquals(1.0, GlobeZaps.zapStrength(100_000), 0.0)
+        // A strong zap forks twice, a light one once.
+        val seed = GlobeBolt.seed("zap")
+        assertEquals(1, GlobeBolt.forks(seed, 0.2).size)
+        assertEquals(2, GlobeBolt.forks(seed, 0.9).size)
+        // The flicker stutters while it flashes and holds still after.
+        val levels = (0 until 16).map { GlobeBolt.flicker(seed, it) }
+        assertTrue(levels.all { it in 0.55..1.0 })
+        assertTrue(levels.toSet().size > 8)
+        assertEquals(1.0, GlobeBolt.flicker(seed, -1), 0.0)
+        // The board carries the strength to the bolt.
+        val board = GlobeArcs.Board()
+        board.add(GlobeArcs.Arrival("e".repeat(64), a, listOf(b), sort = GlobeArcs.Sort.ZAP, strength = 0.8))
+        board.step(0.0, me)
+        assertEquals(0.8, board.lines.first().strength, 0.0)
+    }
+
     // Skipped: theGlobeHoldsStillWithSpinningOff — the globe spinning setting is not ported.
 }

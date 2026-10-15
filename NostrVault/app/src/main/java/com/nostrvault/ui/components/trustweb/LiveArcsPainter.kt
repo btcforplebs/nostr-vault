@@ -59,12 +59,18 @@ internal class LiveArcsPainter {
         // Lights breathe slowly while they stay.
         val breath = if (reduceMotion) 1.0 else 0.82 + 0.18 * sin(now * 2 * PI / 2.6)
         val samples = GlobeStorm.arcSamples(board.lines.size)
+        val bolts = ArrayList<GlobeBoltPainter.Shape>()
         for (line in board.lines) {
             val stage = GlobeArcs.stage(line, now, reduceMotion)
             if (stage.alpha <= 0.01) continue
             val a = place(line.from, line.ring)
             val b = place(line.to, null)
             fun at(t: Double) = project(GlobeArcs.point(a, b, t, facing))
+            // A zap is a lightning bolt, not a star.
+            if (line.zap) {
+                GlobeBoltPainter.shape(line, stage, now, reduceMotion, ::at)?.let(bolts::add)
+                continue
+            }
             // The faint trail it leaves, gone soon after it lands.
             val trailBand = GlobeStorm.band(stage.trail)
             if (trailBand > 0) {
@@ -145,6 +151,8 @@ internal class LiveArcsPainter {
             drawPath(rings.paths.getValue(band), StarColor.copy(alpha = GlobeStorm.bandAlpha(band).toFloat()),
                 style = Stroke(width = dp))
         }
+        // Bolts over the stars: a zap should flash brighter than a note.
+        GlobeBoltPainter.draw(this, bolts, unit.toFloat())
     }
 
     private fun Path.disc(p: GlobeScene.Projected, r: Double) {
