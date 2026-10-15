@@ -121,7 +121,7 @@ export function FeedScreen({ ctx }) {
       </header>
       <FeedPicker choice={choice} onPick={pick} />
       {status && <div class="status-line">{status}</div>}
-      {privateNote && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
+      {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
       {following
         ? !follows.length ? <p class="empty">{account.loaded ? "You don't follow anyone yet." : "Loading your follows…"}</p>
           : notes === null ? <p class="empty">Opening your relay…</p>

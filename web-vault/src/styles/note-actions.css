@@ -18,6 +18,8 @@
 .note-actions .sent:active, .note-actions [aria-busy]:active { transform: none; }
 .note-actions [aria-busy] { animation: note-action-wait 1s ease-in-out infinite alternate; }
 .note-actions .failed { color: var(--danger); box-shadow: inset 0 0 0 1px rgb(255 69 58 / .5); }
+.note-actions .off { opacity: .35; cursor: not-allowed; }
+.note-actions .off:hover { color: rgb(235 235 245 / .60); }
 @keyframes note-action-wait { to { opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { .note-actions [aria-busy] { animation: none; opacity: .5; } }
 

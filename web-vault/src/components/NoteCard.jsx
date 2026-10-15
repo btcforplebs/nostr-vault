@@ -6,6 +6,7 @@ import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
 import { MoreMenu } from "./Moderation.jsx"
+import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -71,26 +72,28 @@ function NoteActions({ note }) {
     return off
   }, [note.id, !!ctx])
   if (!ctx) return null
+  const off = ctx.signer?.readOnly ? READ_ONLY_SHORT : "" // greyed out with the reason, rather than failing after a tap
   return (
     <div class="note-actions" role="group" aria-label="Note actions">
-      <ActionButton label="Reply" icon={ICONS.reply} onClick={() => compose("reply", note)} />
-      <ActionButton label="Repost" doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
-      <ActionButton label="Quote" icon={ICONS.quote} onClick={() => compose("quote", note)} />
-      <ActionButton label="Like" doneLabel="Liked" kind="like" state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
+      <ActionButton label="Reply" off={off} icon={ICONS.reply} onClick={() => compose("reply", note)} />
+      <ActionButton label="Repost" off={off} doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
+      <ActionButton label="Quote" off={off} icon={ICONS.quote} onClick={() => compose("quote", note)} />
+      <ActionButton label="Like" off={off} doneLabel="Liked" kind="like" state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
       <ZapButton note={note} />
-      <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>
+      {!off && <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>}
     </div>
   )
 }
 
 // state: undefined | "busy" | "sent" | { error }. Sent stays pressed: taking it back (NIP-09) isn't here yet.
-function ActionButton({ label, doneLabel, kind, state, icon, onClick }) {
+function ActionButton({ label, doneLabel, kind, state, icon, onClick, off = "" }) {
   const sent = state === "sent", busy = state === "busy", error = state?.error
-  const name = sent ? doneLabel : error ? `${label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
+  if (off) onClick = undefined
+  const name = off ? `${label}. ${off}` : sent ? doneLabel : error ? `${label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
   return (
-    <button type="button" class={`note-action${kind ? " " + kind : ""}${sent ? " sent" : ""}${error ? " failed" : ""}`}
+    <button type="button" class={`note-action${kind ? " " + kind : ""}${sent ? " sent" : ""}${error ? " failed" : ""}${off ? " off" : ""}`}
       aria-label={name} title={name} aria-pressed={kind ? sent : undefined} aria-busy={busy || undefined}
-      aria-disabled={sent || busy || undefined} onClick={sent || busy ? undefined : onClick}>
+      aria-disabled={sent || busy || !!off || undefined} onClick={sent || busy ? undefined : onClick}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill={sent && kind === "like" ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d={icon} />
       </svg>
