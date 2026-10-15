@@ -4,6 +4,7 @@ import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
+import { ReadOnlySignIn } from "../components/ReadOnlySignIn.jsx"
 import { signerFor } from "../signer/index.js"
 import { checkExtensionAccount } from "../signer/accounts.js"
 import { loadAccounts } from "../session.js"
@@ -59,7 +60,7 @@ function SavedAccount({ account, busy, disabled, onClick }) {
 }
 
 export const accountName = (account, profile) => profile?.name || npubEncode(account.pubkey).slice(0, 16) + "…"
-export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : "Browser extension"
+export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : account.method === "readonly" ? "Read-only" : "Browser extension"
 
 /** The extension button and the bunker field. onSignedIn({ signer, session }). Also the Accounts screen's "Add". */
 export function SignInOptions({ onSignedIn }) {
@@ -84,6 +85,7 @@ export function SignInOptions({ onSignedIn }) {
       <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
+      <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />
       <AuthPrompt />
       {err && <p class="error">{err}</p>}
     </>

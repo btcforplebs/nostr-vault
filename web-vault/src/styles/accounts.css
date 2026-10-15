@@ -19,3 +19,5 @@ button.danger { color: var(--danger); }
 .saved-accounts { display: grid; gap: 8px; text-align: left; }
 .saved-accounts .person-row { width: 100%; margin: 0; }
 .saved-accounts p { margin: 4px 0 0; text-align: center; }
+.readonly-signin { display: contents; }
+.readonly-signin .person-row { width: 100%; margin: 0; }

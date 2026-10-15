@@ -41,6 +41,11 @@ export function sortNotes(events) {
 }
 
 /** People (kind 0) and notes (kind 1) matching text, from the search relays. */
+/** Kind 0 only: the read-only sign-in's "find yourself by name". */
+export async function searchPeople(text, { limit = 20, relays = SEARCH_RELAYS } = {}) {
+  return dedupePeople(await pool.querySync(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 }))
+}
+
 export async function searchNostr(text, { limit = 20, relays = SEARCH_RELAYS } = {}) {
   const [people, notes] = await Promise.all([
     pool.querySync(relays, { kinds: [0], search: text, limit }, { maxWait: 6000 }),
