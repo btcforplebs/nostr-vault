@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import java.util.UUID
 import com.nostrvault.service.FeedService.Companion.TAG
+import com.nostrvault.ui.components.ReactionChoice
 
     /**
      * Leaves [content] as the account's reaction on [noteId], replacing any
@@ -190,5 +191,77 @@ import com.nostrvault.service.FeedService.Companion.TAG
         val stats = _noteStats.value.toMutableMap()
         val existing = stats[noteId] ?: NoteStats()
         stats[noteId] = existing.copy(reactionCount = maxOf(0, existing.reactionCount + by))
+        _noteStats.value = stats
+    }
+
+    /**
+     * The reaction button. A tap ([emoji] null) reacts with the default
+     * reaction, or takes the account's reaction back when it has one. A
+     * picked [emoji] (tapback bar or picker) is sent instead, replacing any
+     * other reaction; picking the one already sent takes it back. iOS #322.
+     */
+    internal fun FeedService.likeNoteImpl(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) {
+        val isLiked = noteId in _likedEventIds.value
+        val current = _myReactions.value[noteId]?.content
+        val change = if (emoji == null) {
+            ReactionChoice.forTap(isLiked, configStore.config.value.defaultReactionEmoji)
+        } else {
+            ReactionChoice.forPick(isLiked, current, emoji)
+        }
+        when (change) {
+            is ReactionChoice.Change.React -> react(noteId, change.content, tags)
+            ReactionChoice.Change.Remove -> removeReaction(noteId)
+        }
+    }
+
+    /** Repost a note (kind 6 for kind-1 notes, kind 16 + k-tag otherwise, per NIP-18). */
+    internal fun FeedService.repostNoteImpl(noteId: String) {
+        val existing = _repostedEventIds.value
+        if (noteId in existing) return
+        _repostedEventIds.value = existing + noteId
+
+        scope.launch(Dispatchers.IO) {
+            // NIP-18: always repost the ORIGINAL event, not a repost wrapper. For kind
+            // 6 notes, repostedEventId points to the original kind-1 event (the only
+            // kind this app has ever wrapped in kind 6).
+            val note = findNote(noteId)
+            val originalId = note?.repostedEventId ?: noteId
+            // A bare repost still carries the reposter's pubkey.
+            val originalPubkey = note?.effectiveAuthor
+            val originalKind = note?.effectiveKind ?: 1
+
+            val rawEvent = rawEventCache[originalId] ?: ""
+            val config = configStore.config.value
+            // NIP-18: e tag MUST include a relay URL as its third entry.
+            val relayHint = config.activeFeedRelays.firstOrNull()
+                ?: config.activeBlastrRelays.firstOrNull()
+                ?: (config.nostrURL ?: "")
+
+            // NIP-18: kind 6 is reserved for reposting kind-1 notes. Anything else
+            // (e.g. a kind-30023 long-form article) needs kind 16 with a "k" tag
+            // naming the original kind, or most clients will reject/ignore it.
+            val repostKind = if (originalKind == 1) 6 else 16
+            val tags = buildList {
+                add(listOf("e", originalId, relayHint))
+                originalPubkey?.let { add(listOf("p", it)) }
+                if (repostKind == 16) add(listOf("k", originalKind.toString()))
+            }
+            val event = runCatching { nostrService.signEventAsync(kind = repostKind, content = rawEvent, tags = tags) }
+                .onFailure { Log.e(TAG, "repost not signed: ${it.message}") }.getOrNull()
+            if (event != null) {
+                nostrService.postEvent(event)
+            } else {
+                // Nothing was published — undo the optimistic repost.
+                _repostedEventIds.value = _repostedEventIds.value - noteId
+                val stats = _noteStats.value.toMutableMap()
+                val st = stats[noteId] ?: NoteStats()
+                stats[noteId] = st.copy(repostCount = maxOf(0, st.repostCount - 1))
+                _noteStats.value = stats
+            }
+        }
+
+        val stats = _noteStats.value.toMutableMap()
+        val existing2 = stats[noteId] ?: NoteStats()
+        stats[noteId] = existing2.copy(repostCount = existing2.repostCount + 1)
         _noteStats.value = stats
     }

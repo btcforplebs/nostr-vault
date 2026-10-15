@@ -72,3 +72,66 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val tags = relays.map { listOf("relay", it) }
         signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
     }
+
+    internal fun NostrService.publishMuteListImpl(accountNpub: String, blockedNpubs: List<String>) {
+        val forceOwner = forceOwnerFor(accountNpub) ?: run {
+            Log.w(TAG, "publishMuteList: ${accountNpub.take(12)} is not the owner or active account; not published")
+            return
+        }
+        val tags = blockedNpubs.mapNotNull { npub ->
+            npubToHex(npub)?.let { listOf("p", it) }
+        }
+        signAndPost(kind = 10000, content = "", tags = tags, forceOwner = forceOwner)
+    }
+
+    internal fun NostrService.publishRelayListImpl(accountNpub: String) {
+        val forceOwner = forceOwnerFor(accountNpub) ?: run {
+            Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
+            return
+        }
+        val tags = configStore.config.value.publicRelayListTags
+        if (tags.isEmpty()) return
+        signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
+    }
+
+    /**
+     * Republishes kind 10050 for the owner account.
+     *
+     * Builds shipped a 10050 leading with 127.0.0.1, making those accounts
+     * undeliverable — senders wrote the gift wrap to their own machine. 10050 is
+     * replaceable, so publishing a clean one overwrites the broken one on every
+     * relay holding it, and from then on *any* sender reaches them, including
+     * ones still running the old build.
+     */
+    internal fun NostrService.republishDMRelayListImpl() {
+        scope.launch(Dispatchers.IO) {
+            runCatching { syncOwnerDMInboxList() }
+                .onFailure { Log.w(TAG, "DM inbox sync failed: ${it.message}") }
+        }
+    }
+
+    /**
+     * Publishes this device's DM inbox list for the owner and stamps it as the
+     * newest change. Call when the Haven relay address changes.
+     */
+    internal fun NostrService.publishOwnerDMInboxListImpl() {
+        configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
+        publishDMRelayList(configStore.config.value.dmInboxRelays)
+    }
+
+    /**
+     * NIP-51: publishes the owner's blocked relay list (kind 10006), the relays
+     * set to Never connect. An empty list is published too, so unblocking the
+     * last relay clears it.
+     */
+    internal fun NostrService.publishBlockedRelayListImpl() {
+        val tags = configStore.config.value.blockedRelays.map { listOf("relay", DMInbox.normalizedRelayURL(it)) }
+        signAndPost(kind = 10006, content = "", tags = tags, forceOwner = true)
+    }
+
+    internal fun NostrService.publishServerListImpl() {
+        val mirrors = configStore.config.value.activeBlossomMirrors
+        if (mirrors.isEmpty()) return
+        val tags = mirrors.map { listOf("server", it) }
+        signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
+    }

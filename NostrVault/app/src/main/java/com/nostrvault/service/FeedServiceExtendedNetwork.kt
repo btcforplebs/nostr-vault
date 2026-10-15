@@ -155,3 +155,12 @@ import com.nostrvault.service.FeedService.Companion.EXTENDED_NETWORK_CHUNK
         val age = if (extendedNetworkWasPartial) PARTIAL_EXTENDED_NETWORK_CACHE_MS else EXTENDED_NETWORK_CACHE_MS
         return System.currentTimeMillis() - lastExtendedNetworkLoadTime > age
     }
+
+    /**
+     * How many people the follows bring in: the people they follow, freshly
+     * tallied (an older tally predates the follows just made).
+     */
+    internal suspend fun FeedService.countExtendedNetworkImpl(): Int {
+        loadExtendedNetwork()
+        return _extendedNetworkPubkeys.value.size
+    }

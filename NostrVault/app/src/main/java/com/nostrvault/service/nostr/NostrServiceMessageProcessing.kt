@@ -11,6 +11,9 @@ import com.nostrvault.service.NostrService.Companion.MAX_EVENTS
 import com.nostrvault.service.NostrService.Companion.MAX_SEEN_IDS
 import com.nostrvault.service.NostrService.Companion.REPLACEABLE_STATE_KINDS
 import com.nostrvault.service.NostrService.Companion.TRIM_SEEN_IDS
+import android.util.Log
+import com.nostrvault.BuildConfig
+import com.nostrvault.service.NostrService.Companion.TAG
 
     internal fun NostrService.processEvent(eventObj: JsonObject, relayUrl: String) {
         val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
@@ -193,4 +196,53 @@ import com.nostrvault.service.NostrService.Companion.TRIM_SEEN_IDS
             "EOSE", "CLOSED" -> true
             else -> false
         }
+    }
+
+    /**
+     * Process a raw relay message. Called from background dispatcher.
+     * Handles EVENT, EOSE, OK, NOTICE, AUTH messages.
+     */
+    internal fun NostrService.processRelayMessageImpl(message: String, relayUrl: String) {
+        try {
+            val parsed = json.parseToJsonElement(message).jsonArray
+            if (parsed.isEmpty()) return
+
+            val type = parsed[0].jsonPrimitive.contentOrNull ?: return
+
+            when (type) {
+                "EVENT" -> {
+                    if (parsed.size < 3) return
+                    val eventObj = parsed[2].jsonObject
+                    processEvent(eventObj, relayUrl)
+                }
+                "EOSE" -> {
+                    if (parsed.size < 2) return
+                    val subId = parsed[1].jsonPrimitive.contentOrNull ?: return
+                    handleEOSE(subId, relayUrl)
+                }
+                "OK" -> {
+                    // Event acceptance acknowledgment — no action needed for now
+                }
+                "NOTICE" -> {
+                    if (parsed.size >= 2) {
+                        val notice = parsed[1].jsonPrimitive.contentOrNull
+                        if (BuildConfig.DEBUG) Log.d(TAG, "NOTICE from $relayUrl: $notice")
+                    }
+                }
+                "AUTH" -> {
+                    // NIP-42 auth challenge — handled by specific services
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse relay message: ${e.message}")
+        }
+    }
+
+    internal fun NostrService.injectEventImpl(event: NostrEvent) {
+        if (!markSeen(event.id)) return
+        val mediaItems = extractMediaURLs(event.content, event.pubkey, event.tags, event.createdAt)
+        bufferLock.withLock {
+            eventBuffer.add(event to mediaItems)
+        }
+        scheduleBufferFlush()
     }

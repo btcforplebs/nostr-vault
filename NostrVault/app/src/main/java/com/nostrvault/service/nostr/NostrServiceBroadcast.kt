@@ -9,6 +9,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import kotlin.concurrent.withLock
 import com.nostrvault.service.NostrService.Companion.TAG
+import com.nostrvault.relay.DMInbox
+import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * Sends [event] to [relays] and reports a single outcome. When every relay
@@ -107,4 +109,115 @@ import com.nostrvault.service.NostrService.Companion.TAG
                 }
             }
         }
+    }
+
+    /**
+     * Publish an event to local relay + smart broadcast to target relays.
+     * With [onBroadcastOutcome], the Blastr broadcast waits for relay `OK`s and
+     * reports once: accepted when one relay takes it, refused when none does
+     * after the retries (see [broadcastConfirmed]). Called on the main thread.
+     */
+    internal fun NostrService.postEventImpl(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
+        val eventJson = serializeEvent(event)
+
+        // 1. Post to local relay
+        scope.launch(Dispatchers.IO) {
+            val localUrl = configStore.config.value.nostrURL
+            if (localUrl != null) {
+                val client = clients[normalizeRelayUrl(localUrl)]
+                    ?: connectToRelay(localUrl, onMessage = {})
+                client?.send("[\"EVENT\",$eventJson]")
+            }
+        }
+
+        // 2. Smart broadcast based on event kind and target
+        val toBlastr: () -> Unit = if (onBroadcastOutcome == null) {
+            { broadcastRawEvent(eventJson) }
+        } else {
+            {
+                scope.launch {
+                    val outcome = broadcastConfirmed(event, configStore.config.value.activeBlastrRelays)
+                    withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
+                }
+            }
+        }
+        scope.launch(Dispatchers.IO) {
+            when (event.kind) {
+                0 -> toBlastr() // Profile → Blastr
+                else -> {
+                    // Extract target pubkey from p-tag and send to their inbox relays
+                    val targetPubkey = event.tags
+                        .firstOrNull { it.size >= 2 && it[0] == "p" }
+                        ?.get(1)
+
+                    if (targetPubkey != null) {
+                        val targetRelays = _relayLists.value[targetPubkey]
+                        if (targetRelays != null) {
+                            for (relayUrl in targetRelays.filter { !it.contains("blastr") }) {
+                                fireAndForgetPublish(eventJson, relayUrl)
+                            }
+                        }
+                    }
+
+                    // Also broadcast to Blastr for visibility
+                    toBlastr()
+                    // A DM relay list (10050) also goes to the DM relays it
+                    // names, where senders look for it (iOS #224).
+                    DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
+                        .filter { !isLoopbackRelay(it) }
+                        .forEach { fireAndForgetPublish(eventJson, it) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Also send [event] to [relayUrl], e.g. diVine's relay for a diVine, and
+     * wait for its OK. Returns whether it accepted and its message; a relay
+     * that never answers within [timeoutMs] counts as not accepted.
+     */
+    internal suspend fun NostrService.publishAwaitingOkImpl(event: NostrEvent, relayUrl: String, timeoutMs: Long = 15_000): Pair<Boolean, String> {
+        if (!isValidRelayUrl(relayUrl)) return false to "bad relay address"
+        val eventJson = serializeEvent(event)
+        return withContext(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            try {
+                withTimeoutOrNull(timeoutMs) {
+                    coroutineScope {
+                        // Listen before connecting; the flow does not replay.
+                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
+                            client.messages.mapNotNull { okReply(it, event.id) }.first()
+                        }
+                        client.connect()
+                        client.send("[\"EVENT\",$eventJson]")
+                        answer.await()
+                    }
+                } ?: (false to "it didn't answer")
+            } finally {
+                client.disconnect()
+            }
+        }
+    }
+
+    /**
+     * Sends [pubkey]'s newest profile (kind 0), exactly as already signed, to
+     * [relayUrl] in the background. diVine's search and author pages only know
+     * profiles that reach its own relay, which otherwise happens only for
+     * people who have used the diVine app. Nothing is signed, so no signer prompt.
+     */
+    internal fun NostrService.sendProfileToImpl(pubkey: String, relayUrl: String) {
+        scope.launch {
+            val profile = fetchNewestReplaceable(kind = 0, pubkey = pubkey, alsoAsk = emptyList()) ?: return@launch
+            publishFireAndForget(profile, listOf(relayUrl))
+        }
+    }
+
+    /**
+     * Also send [event] to [relays] without waiting for their answers, e.g. the
+     * relays a poll names for its votes (iOS broadcastRawEvent extraRelays).
+     */
+    internal fun NostrService.publishFireAndForgetImpl(event: NostrEvent, relays: List<String>) {
+        val eventJson = serializeEvent(event)
+        relays.filter { isValidRelayUrl(it) && !isLoopbackRelay(it) }
+            .forEach { fireAndForgetPublish(eventJson, it) }
     }
