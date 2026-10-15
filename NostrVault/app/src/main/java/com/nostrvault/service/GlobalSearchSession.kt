@@ -101,6 +101,10 @@ class GlobalSearchSession(
         private const val MAC_NOTE_LIMIT = 300
         private const val MAC_PROFILE_LIMIT = 100
 
+        /** A source that timed out, failed or was CLOSED did not walk to its end. */
+        fun isIncomplete(timedOut: Boolean, error: String?, closedReason: String?): Boolean =
+            timedOut || error != null || closedReason != null
+
         /** haven's publicly readable routes: outbox, follows' notes, notes tagging the owner. */
         val READABLE_ROUTES = listOf("", "/feed", "/inbox")
 
@@ -139,6 +143,14 @@ class GlobalSearchSession(
 
     /** A source hit [SOURCE_TIMEOUT_MS]: the results are real, but what it had not reached is missing. */
     @Volatile var timedOut = false
+        private set
+
+    /**
+     * A source did not walk to its end: it timed out, its socket dropped or
+     * failed, or the relay CLOSED a subscription. The results are real, but
+     * whole kinds or pages may be missing.
+     */
+    @Volatile var incomplete = false
         private set
 
     /** The final results, once the session has finished (null before, or if cancelled first). */
@@ -209,6 +221,7 @@ class GlobalSearchSession(
         }
         if (cancelled) return
         if (finished == null) timedOut = true
+        if (isIncomplete(finished == null, outcome.error, outcome.closedReason)) incomplete = true
         val count = synchronized(lock) { sourceKeys[src.id]?.size ?: 0 }
         val status = finalSourceStatus(
             count = count,

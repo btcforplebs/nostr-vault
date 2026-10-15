@@ -255,4 +255,19 @@ class VaultSearchLogicTest {
             assertEquals("$partial", QueryState.Next.Run("ab"), state.typed("ab "))
         }
     }
+
+    /**
+     * A note of one URL and a flood of ")" trims in linear time (Tron, PR 740):
+     * recounting per dropped character took 11.5 s at 120,000 on a desktop JVM.
+     * Quadratic would blow the 5 s limit by far at 200,000.
+     */
+    @Test(timeout = 5_000)
+    fun aFloodOfClosersTrimsInLinearTime() {
+        val n = 200_000
+        assertEquals("https://x.y/", VaultSearchLogic.trimmingTrailingPunctuation("https://x.y/" + ")".repeat(n)))
+        assertEquals("https://x.y/(a)", VaultSearchLogic.trimmingTrailingPunctuation("https://x.y/(a)" + ")".repeat(n)))
+        val links = VaultSearchLogic.links(listOf("n" to "see https://x.y/" + ")]".repeat(n / 2) + "."))
+        assertEquals(listOf("https://x.y/"), links.map { it.url })
+    }
+
 }

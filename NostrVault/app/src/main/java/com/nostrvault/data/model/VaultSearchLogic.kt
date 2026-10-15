@@ -92,17 +92,25 @@ object VaultSearchLogic {
      * and "https://en.wikipedia.org/wiki/Foo_(bar)" keeps it.
      */
     fun trimmingTrailingPunctuation(raw: String): String {
-        var url = raw
-        while (url.isNotEmpty()) {
-            val last = url.last()
+        // Counted once and kept as characters drop: recounting the whole URL per
+        // character was quadratic, and a note of one URL and 100,000 ")" stalled
+        // every search that matched it (Tron, PR 740).
+        val counts = HashMap<Char, Int>()
+        for (c in raw) if (c == '(' || c == ')' || c == '[' || c == ']') counts[c] = (counts[c] ?: 0) + 1
+        var end = raw.length
+        while (end > 0) {
+            val last = raw[end - 1]
             val open = openers[last]
-            url = when {
-                last in ".,;:!?\"'" -> url.dropLast(1)
-                open != null && url.count { it == last } > url.count { it == open } -> url.dropLast(1)
-                else -> return url
+            when {
+                last in ".,;:!?\"'" -> end--
+                open != null && (counts[last] ?: 0) > (counts[open] ?: 0) -> {
+                    counts[last] = (counts[last] ?: 0) - 1
+                    end--
+                }
+                else -> break
             }
         }
-        return url
+        return raw.substring(0, end)
     }
 
     // ── People ──

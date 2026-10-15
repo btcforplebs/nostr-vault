@@ -134,7 +134,7 @@ internal class VaultSearchModel(
         // Show what has matched so far while the walk goes on, then the end.
         walk.state.first { searchState ->
             if (session !== walk) return@first true
-            val result = if (searchState.isRunning) Status.SEARCHING else if (walk.timedOut) Status.CUT_SHORT else Status.DONE
+            val result = statusOf(searchState.isRunning, walk.incomplete)
             if (searchState.isRunning && searchState.results.profiles.isEmpty() && searchState.results.notes.isEmpty()) {
                 return@first false
             }
@@ -192,6 +192,17 @@ internal class VaultSearchModel(
 
     companion object {
         const val DEBOUNCE_MS = 300L
+
+        /**
+         * How a walk stands: still going, or done, or cut short when any route
+         * did not reach its end (a timeout, a dropped socket, a CLOSED), so the
+         * results never read as everything when kinds may be missing.
+         */
+        fun statusOf(isRunning: Boolean, incomplete: Boolean): Status = when {
+            isRunning -> Status.SEARCHING
+            incomplete -> Status.CUT_SHORT
+            else -> Status.DONE
+        }
 
         /**
          * The sections for [query]: the people the query is about (a pasted npub

@@ -5,6 +5,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.VaultSearchLogic
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** [VaultSearchModel.sectionsFor]: what the Vault's search shows for the profiles and notes a walk matched. */
@@ -143,4 +144,18 @@ class VaultSearchModelTest {
         assertEquals(listOf("https://kept.example/a"), r.links.map { it.url })
         assertEquals(listOf("1".repeat(64)), r.links.map { it.noteId })
     }
+
+    /** A walk that did not reach its end never reads as everything (Tron, PR 740). */
+    @Test
+    fun aWalkThatDidNotFinishIsCutShort() {
+        assertEquals(VaultSearchLogic.Status.SEARCHING, VaultSearchModel.statusOf(isRunning = true, incomplete = true))
+        assertEquals(VaultSearchLogic.Status.DONE, VaultSearchModel.statusOf(isRunning = false, incomplete = false))
+        assertEquals(VaultSearchLogic.Status.CUT_SHORT, VaultSearchModel.statusOf(isRunning = false, incomplete = true))
+        // A dropped socket or a CLOSED is as incomplete as a timeout; a clean end is not.
+        assertTrue(com.nostrvault.service.GlobalSearchSession.isIncomplete(timedOut = true, error = null, closedReason = null))
+        assertTrue(com.nostrvault.service.GlobalSearchSession.isIncomplete(timedOut = false, error = "connection closed", closedReason = null))
+        assertTrue(com.nostrvault.service.GlobalSearchSession.isIncomplete(timedOut = false, error = null, closedReason = "auth-required: x"))
+        assertFalse(com.nostrvault.service.GlobalSearchSession.isIncomplete(timedOut = false, error = null, closedReason = null))
+    }
+
 }

@@ -130,8 +130,9 @@ internal fun VaultSearchResults(
 
 /** Why these results may not be everything, when they may not. */
 private fun caveat(status: Status): String? = when (status) {
-    Status.CUT_SHORT -> "The search ran out of time, so older items may be missing."
-    Status.IN_MEMORY -> "Your Vault's relay is still starting, so this covers only what's loaded. Search again in a moment for everything."
+    Status.CUT_SHORT -> "The search didn't finish, so some items may be missing."
+    // Not running covers starting, stopped and not set up alike.
+    Status.IN_MEMORY -> "Your Vault's relay isn't running, so this covers only what's loaded. Search again once it is for everything."
     else -> null
 }
 
