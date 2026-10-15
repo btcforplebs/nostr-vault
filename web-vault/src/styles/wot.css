@@ -1,15 +1,15 @@
-/* The Web of Trust tab (screens/WotScreen.jsx): the map fills the screen under the header, the trust card floats
+/* The Web of Trust tab (screens/WotScreen.jsx): the globe fills the screen under the header, the trust card floats
    above the tab bar, My Web is a list. */
 .screen.wot { max-width: none; display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: 0; }
 .wot-head { gap: 12px; }
 .wot-views { flex: none; margin: 0; }
 .wot-views button { flex: none; min-height: 36px; padding: 0 12px; white-space: nowrap; }
 
-.wot-map { position: relative; flex: 1; min-height: 320px; margin: 0 0 calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom)); overflow: hidden;
+.wot-globe { position: relative; flex: 1; min-height: 320px; margin: 0 0 calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom)); overflow: hidden;
   background: radial-gradient(circle at 50% 50%, rgb(230 115 38 / .06), transparent 60%), var(--bg); }
-.wot-map canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none; }
-.wot-map canvas:active { cursor: grabbing; }
-.wot-map canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.wot-globe canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none; }
+.wot-globe canvas:active { cursor: grabbing; }
+.wot-globe canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .wot-legend { position: absolute; left: var(--gutter); top: 8px; max-width: calc(100% - 2 * var(--gutter) - 64px); display: flex; flex-wrap: wrap; gap: 4px 12px;
   padding: 6px 10px; border-radius: 10px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   color: var(--text-2); font: var(--t-cap); pointer-events: none; }
