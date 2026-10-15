@@ -7,7 +7,13 @@ import {
   faceShown, faceRadius, dotLight, seatFade, seats, hit, IDENTITY, ZOOM_MIN, ZOOM_MAX, MAX_SPIN, FACE_FULL, FACE_GONE,
 } from "../src/net/wot-globe.js"
 
-const hex = (c, i = 0) => (c.repeat(63) + i.toString(16)).slice(-64)
+// Made-up keys spread like real ones: a real key's leading hex digits place it (TrustMap.fraction), so keys sharing a
+// prefix would all sit in one spot. Each (c, i) gives one fixed key.
+const hex = (c, i = 0) => {
+  let h = 2166136261 ^ c.charCodeAt(0), out = ""
+  for (let k = 0; out.length < 64; k++) { h = Math.imul(h ^ (i + k * 40503), 16777619) >>> 0; h ^= h >>> 13; out += h.toString(16).padStart(8, "0") }
+  return out.slice(0, 64)
+}
 const ME = hex("e")
 const W = 390, H = 700
 const settle = (c, reduce = false) => { for (let i = 0; i < 2000 && moving(c); i++) c = step(c, 1 / 60, reduce); return c }

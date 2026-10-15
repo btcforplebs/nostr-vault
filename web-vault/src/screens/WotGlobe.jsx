@@ -7,12 +7,16 @@
 // net/wot-globe.js.
 import { useEffect, useRef } from "preact/hooks"
 import { getProfile, onProfiles } from "../net/profiles.js"
+import { faceCache, FACE_PX } from "../net/face-cache.js"
 import { FURTHER_CAP } from "../net/wot.js"
 import {
   RADIUS, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, direction, home, step, projector, outline,
   faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA,
 } from "../net/wot-globe.js"
 
+/** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
+ *  the rest show their coloured disc a frame or two longer. */
+const LOADS_PER_FRAME = 8
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
 const DOT_COLOUR = { extended: [51, 204, 153, 0.75], further: [255, 255, 255, 0.28] }
 const EMBER = [230, 115, 38, 0.7]
@@ -25,8 +29,11 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
   const fades = useRef(new Map()) // follow pk -> seat fade 0..1
   const fading = useRef(false)
   const frame = useRef(0), last = useRef(0)
-  const images = useRef(new Map()) // picture url -> a small round bitmap of it | "loading" | "failed"
+  // picture url -> a small round bitmap of it | "loading" | "failed"; at most FACE_MAX kept (net/face-cache.js).
+  // A dropped bitmap's pixels are released by shrinking its canvas, not left for the collector.
+  const images = useRef(faceCache({ onDrop: e => { if (typeof e === "object") e.width = e.height = 0 } }))
   const pointers = useRef(new Map())
+  const loadsLeft = useRef(0) // pictures this frame may still start loading
   const gesture = useRef(null)
   const pickedRef = useRef(picked)
   pickedRef.current = picked
@@ -40,6 +47,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
     g.clearRect(0, 0, w, h)
     const k = cam.current, project = projector(k, w, h), reduce = reducedMotion()
+    loadsLeft.current = LOADS_PER_FRAME
+    images.current.frame() // pictures drawn from here on are on screen, and never dropped
     const mx = w / 2, my = h / 2
 
     // The shells' outlines: a faint ring round your follows, a fainter one round the extended network.
@@ -107,7 +116,9 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
         g.beginPath(); g.arc(f.x, f.y, 2.2 * f.r / 11, 0, 2 * Math.PI)
         g.fillStyle = `rgb(${r} ${gr} ${b} / ${a * dotLight(f.depth) * (1 - f.shown)})`; g.fill()
       }
-      if (f.shown > 0.01) face(g, f.pk, f.x, f.y, f.me ? f.r : faceRadius(f.r, f.shown), f.shown * f.alpha, !!f.me)
+      // A picture is loaded only for a face that holds a seat (seats are bounded by the screen); a face fading out
+      // still draws its picture if it's cached, so the cache never thrashes on a big web.
+      if (f.shown > 0.01) face(g, f.pk, f.x, f.y, f.me ? f.r : faceRadius(f.r, f.shown), f.shown * f.alpha, !!f.me, f.me || seated.has(f.pk))
       out.push({ node: f.node, x: f.x, y: f.y, depth: f.depth, r: f.r, shown: f.shown, face: true })
     }
     drawn.current = out
@@ -120,13 +131,14 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     }
   }
 
-  // A face: the profile picture once it has loaded (asked for only when the face shows and is big enough to see), a
+  // A face: the profile picture once it has loaded (asked for only when the face holds a seat and is big enough to see), a
   // coloured disc until then, as Avatar draws it. Each picture is drawn once into a small round bitmap and the frames
   // draw that: a full-size photo scaled down every frame is what makes a big web slow.
-  const face = (g, pk, x, y, r, alpha, ring) => {
+  const face = (g, pk, x, y, r, alpha, ring, load) => {
     const url = getProfile(pk)?.picture
     const img = url && images.current.get(url)
-    if (url && !img && r >= 6) {
+    if (url && !img && load && r >= 6 && loadsLeft.current > 0) {
+      loadsLeft.current--
       images.current.set(url, "loading")
       const im = new Image()
       im.decoding = "async"; im.referrerPolicy = "no-referrer"
@@ -263,8 +275,8 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
   )
 }
 
-/** BITMAP px square, round, cover-cropped: big enough for the largest face at the screen's density. */
-const BITMAP = 96
+/** BITMAP px square, round, cover-cropped (net/face-cache.js FACE_PX). */
+const BITMAP = FACE_PX
 function roundBitmap(im) {
   const c = document.createElement("canvas")
   c.width = c.height = BITMAP
