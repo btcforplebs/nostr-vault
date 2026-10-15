@@ -47,7 +47,8 @@ test("a message wrapped for the other person opens for them, and the self-copy o
   assert.deepEqual(got, { id: toB.id, from: pk(A), peer: pk(A), content: "hello B", at: rumor.created_at, legacy: false })
   const mine = await unwrap(toA, cryptoOf(A), pk(A))
   assert.deepEqual(mine, { id: toA.id, from: pk(A), peer: pk(B), content: "hello B", at: rumor.created_at, legacy: false })
-  assert.equal(await unwrap(toB, cryptoOf(C), pk(C)), null, "not for C")
+  // C's signer can't decrypt B's wrap: that's the signer failing, which unwrap reports rather than hides.
+  await assert.rejects(unwrap(toB, cryptoOf(C), pk(C)), e => e.refused === true)
 })
 
 test("a seal signed by someone else, or a rumor claiming another sender, is refused", async () => {
