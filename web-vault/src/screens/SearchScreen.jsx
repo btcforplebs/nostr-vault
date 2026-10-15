@@ -69,7 +69,7 @@ export function SearchScreen({ ctx, onProfile }) {
   )
 }
 
-function PersonRow({ pubkey, onClick }) {
+export function PersonRow({ pubkey, onClick }) {
   const p = useProfile(pubkey)
   const npub = npubEncode(pubkey)
   const Row = onClick ? "button" : "div" // a button that does nothing is worse than none

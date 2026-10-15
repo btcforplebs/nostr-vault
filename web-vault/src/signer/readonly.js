@@ -30,6 +30,12 @@ export async function resolvePubkey(input, lookup = queryProfile) {
   throw new Error("That isn't an npub or a NIP-05 name.")
 }
 
+/** True when the box names one key (hex, npub, nprofile, nsec) or a NIP-05; anything else is a name to search for. */
+export function namesAKey(input) {
+  const s = String(input ?? "").trim().replace(/^nostr:/i, "")
+  return HEX.test(s) || /^n(pub|profile|sec)1/i.test(s) || /^([\w.+-]+@)?[\w-]+(\.[\w-]+)+$/.test(s)
+}
+
 export async function readonlySignIn(input, lookup) {
   const pubkey = await resolvePubkey(input, lookup)
   return { signer: readonlySigner(), session: { method: "readonly", pubkey } }

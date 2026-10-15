@@ -3,7 +3,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode, nprofileEncode, nsecEncode } from "nostr-tools/nip19"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
-import { resolvePubkey, readonlySignIn, READ_ONLY } from "../src/signer/readonly.js"
+import { resolvePubkey, readonlySignIn, namesAKey, READ_ONLY } from "../src/signer/readonly.js"
 import { signerFor } from "../src/signer/index.js"
 import { saveSession, loadSession, loadAccounts, signedInWith } from "../src/session.js"
 
@@ -55,4 +55,11 @@ test("a read-only session is saved and remembered like any other, and its signer
     await assert.rejects(s.signEvent({ kind: 1, created_at: 0, tags: [], content: "hi" }), { message: READ_ONLY })
   }
   assert.equal(signedInWith("readonly"), "read-only (no signer)")
+})
+
+test("a name is searched; a key or NIP-05 goes straight in", () => {
+  for (const key of [npubEncode(pk), "nostr:" + npubEncode(pk), nprofileEncode({ pubkey: pk }), pk, nsecEncode(generateSecretKey()), "logen@example.com", "example.com", "_@loge.media"])
+    assert.equal(namesAKey(key), true, key)
+  for (const name of ["Logen", "logan detty", "jack", "", "fiatjaf "])
+    assert.equal(namesAKey(name), false, name)
 })

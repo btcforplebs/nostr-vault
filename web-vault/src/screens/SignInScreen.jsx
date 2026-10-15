@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
-import { readonlySignIn } from "../signer/readonly.js"
+import { ReadOnlySignIn } from "../components/ReadOnlySignIn.jsx"
 import { signerFor } from "../signer/index.js"
 import { checkExtensionAccount } from "../signer/accounts.js"
 import { loadAccounts } from "../session.js"
@@ -66,7 +66,6 @@ export const methodLabel = account => account.method === "nip46" ? "Remote signe
 export function SignInOptions({ onSignedIn }) {
   const [hasExt, setHasExt] = useState(false)
   const [bunker, setBunker] = useState("")
-  const [who, setWho] = useState("")
   const [busy, setBusy] = useState("")
   const [err, setErr] = useState("")
   useEffect(() => { findExtension().then(e => setHasExt(!!e)) }, [])
@@ -86,13 +85,7 @@ export function SignInOptions({ onSignedIn }) {
       <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
-      <label class="field">
-        <span>Or just look: your npub or NIP-05 (read-only)</span>
-        <input value={who} onInput={e => setWho(e.currentTarget.value)} placeholder="npub1… or you@example.com" autocapitalize="off" autocorrect="off" spellcheck={false} />
-      </label>
-      <button disabled={!!busy || !who.trim()} onClick={run("readonly", () => readonlySignIn(who))}>
-        {busy === "readonly" ? "Looking you up…" : "Sign in read-only"}
-      </button>
+      <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />
       <AuthPrompt />
       {err && <p class="error">{err}</p>}
     </>
