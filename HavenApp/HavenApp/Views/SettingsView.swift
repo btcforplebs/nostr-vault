@@ -4233,6 +4233,14 @@ struct BrowserRelaySection: View {
                 }
                 Button("Remove browser relay", role: .destructive) { sender.setRelay(nil) }
                     .font(.appCaption)
+            } else if sender.relay != nil {
+                // Set up under another account. It still makes the mesh join the
+                // public seeds, so it must stay removable from here.
+                Text("A browser relay is set up for another account on this phone.")
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+                Button("Remove browser relay", role: .destructive) { sender.setRelay(nil) }
+                    .font(.appCaption)
             } else {
                 HStack {
                     TextField("Paste the page's mesh address", text: $draft)
@@ -4267,7 +4275,7 @@ struct BrowserRelaySection: View {
         } header: {
             Text("Browser Relay")
         } footer: {
-            Text("Your new notes also go to a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins two public mesh servers (fips1 and fips2.iris.to), which see its IP address the way any server does. Nothing is listed in public.")
+            Text("Your new notes also go to a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins two public mesh servers (fips1 and fips2.iris.to), which see its IP address the way any server does. While a browser relay is set up, it joins them whenever the mesh is on, kiosk mode and home vault included. Nothing is listed in public.")
         }
         .sheet(isPresented: $showScanner) {
             QRScannerView(
