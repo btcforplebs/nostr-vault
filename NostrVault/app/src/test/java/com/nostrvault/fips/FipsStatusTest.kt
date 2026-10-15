@@ -113,12 +113,17 @@ class FipsStatusTest {
         val encoded = FipsBridge.encodeOptions(
             FipsStartOptions(
                 peers = listOf("npub1a"), relays = listOf("wss://r"), udpPort = 2121, lan = true,
-                maxServeBytes = 5L shl 30,
+                maxServeBytes = 5L shl 30, publicSeeds = true, relaySocket = "/data/x/nvr.sock",
             )
         )
         val obj = Json.parseToJsonElement(encoded).jsonObject
 
-        assertEquals(setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes"), obj.keys)
+        assertEquals(
+            setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes", "public_seeds", "relay_socket"),
+            obj.keys,
+        )
+        assertEquals("true", obj["public_seeds"]!!.jsonPrimitive.content)
+        assertEquals("/data/x/nvr.sock", obj["relay_socket"]!!.jsonPrimitive.content)
         assertEquals("5368709120", obj["max_serve_bytes"]!!.jsonPrimitive.content)
         assertEquals("npub1a", obj["peers"]!!.jsonArray[0].jsonPrimitive.content)
         assertEquals("2121", obj["udp_port"]!!.jsonPrimitive.content)

@@ -321,6 +321,7 @@
 		89218707D6852D10879EE010 /* PollStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FB94CB9CC1F47E43D8AB15 /* PollStore.swift */; };
 		8986B473114DB9BD028A9EAD /* Bolt11.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC971B12438093F727E8967F /* Bolt11.swift */; };
 		8A8A672CB3CA7E14FE8B7D6B /* NVWidgetKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */; };
+		8A9903724546906D5D2D829A /* BrowserRelaySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */; };
 		8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB15AE080BDC0999543399A /* WebSocketClient.swift */; };
 		8B334441FF49DC33B053C484 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */; };
 		8BCB35219E198FB55A5B9186 /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
@@ -595,6 +596,7 @@
 		FB11668DBEB4020E1CEDBFEA /* NIP88Poll.swift in Sources */ = {isa = PBXBuildFile; fileRef = EABB53459772E6F0C0ACEACE /* NIP88Poll.swift */; };
 		FB131FEF7A8680C64E51C7E9 /* RelayCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E18F538AEEE5F1324B1A390 /* RelayCheck.swift */; };
 		FCCCFD519D53A12A81C43930 /* PendingPostManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665772231EE1D4B0755E95C3 /* PendingPostManager.swift */; };
+		FDBAD23B7919007B1AFF10F6 /* BrowserRelaySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */; };
 		FE0414C0046FC50EA9DD4CFA /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
 		FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
 		FECF50406D03C77725A672F0 /* VaultTopics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */; };
@@ -643,6 +645,7 @@
 		090FAA33204672CD9F7F6431 /* DashboardRelayRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardRelayRow.swift; sourceTree = "<group>"; };
 		093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillYourFeedGuide.swift; sourceTree = "<group>"; };
 		09F904D883705C247E543061 /* RelayLogParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLogParser.swift; sourceTree = "<group>"; };
+		09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserRelaySender.swift; sourceTree = "<group>"; };
 		0B5E98764373253F27F8526F /* VertexReputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexReputation.swift; sourceTree = "<group>"; };
 		0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDashboardView.swift; sourceTree = "<group>"; };
 		0C8B6FCEDA7D89E7935A6C71 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
@@ -1393,6 +1396,7 @@
 			children = (
 				9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */,
 				803F7E83A0267F02449FA666 /* BlossomService.swift */,
+				09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */,
 				1810634848EE1957C7E49DAF /* ConfigService.swift */,
 				4E4EFE6422E6E0A896809308 /* ContactManager.swift */,
 				F8A73E431CE524CF64925E0D /* CredentialStore.swift */,
@@ -1745,6 +1749,7 @@
 				E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */,
 				AB84ADE390F047D2226B293C /* BlossomService.swift in Sources */,
 				BC149F5EF1080D3A330334B6 /* Bolt11.swift in Sources */,
+				8A9903724546906D5D2D829A /* BrowserRelaySender.swift in Sources */,
 				8669D5E967AF7E8F56DAB283 /* BunkerURI.swift in Sources */,
 				F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */,
 				2F01D696DE1AD2109C69A981 /* ComposeView.swift in Sources */,
@@ -2049,6 +2054,7 @@
 				8FEB6F24A3984B98CCF81E56 /* BlossomMediaCache.swift in Sources */,
 				A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */,
 				8986B473114DB9BD028A9EAD /* Bolt11.swift in Sources */,
+				FDBAD23B7919007B1AFF10F6 /* BrowserRelaySender.swift in Sources */,
 				EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */,
 				DDF232D616C179F4250BAA90 /* CachedAsyncImage.swift in Sources */,
 				0EB42E4E52C93FD4809FB152 /* ComposeView.swift in Sources */,

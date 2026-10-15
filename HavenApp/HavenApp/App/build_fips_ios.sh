@@ -31,9 +31,11 @@ if ! command -v cargo >/dev/null; then
     exit 1
 fi
 
-# The fork pin lives in Cargo.toml/Cargo.lock; stack.rs is shared with fips-v2.
+# The fork pin lives in Cargo.toml/Cargo.lock; stack.rs is shared with fips-v2;
+# web-relay-vault is the browser relay link (relay_link.rs).
 CHECKSUM=$(cd "$PROJECT_DIR/.." && cat fips-v2-android/Cargo.toml fips-v2-android/Cargo.lock \
-    fips-v2-android/src/*.rs fips-v2/src/stack.rs | shasum -a 256 | awk '{print $1}')
+    fips-v2-android/src/*.rs fips-v2/src/stack.rs web-relay-vault/Cargo.toml web-relay-vault/src/*.rs \
+    | shasum -a 256 | awk '{print $1}')
 STAMP="${OUT_DIR}/.libnvfips_stamp"
 if [ -f "$LIB" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "${CHECKSUM}-${TARGET}-${IPHONEOS_DEPLOYMENT_TARGET:-17.0}" ]; then
     echo "libnvfips.a unchanged for ${TARGET}, skipping."

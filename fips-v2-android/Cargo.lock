@@ -1124,7 +1124,7 @@ checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
 [[package]]
 name = "fips"
 version = "0.5.2"
-source = "git+https://github.com/btcforplebs/fips?rev=cd0a39c8#cd0a39c842e7e0a4314f853e15a594acf0cb8811"
+source = "git+https://github.com/btcforplebs/fips?rev=dbb6c848#dbb6c848b9bf2c6e92333fd68705cb25d5fdc2a7"
 dependencies = [
  "arc-swap",
  "bech32 0.12.0",
@@ -1185,6 +1185,7 @@ dependencies = [
  "tracing",
  "tracing-android",
  "tracing-subscriber",
+ "web-relay-vault",
  "zeroize",
 ]
 
@@ -2234,6 +2235,12 @@ checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "nvpn-fips-tcp"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72bd33cbaff087f666ffdc42373ea8730912895b9e993a0ed9c1d0219005d6a2"
 
 [[package]]
 name = "once_cell"
@@ -3963,6 +3970,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "web-relay-vault"
+version = "0.1.0"
+dependencies = [
+ "fips",
+ "nvpn-fips-tcp",
+ "serde_json",
 ]
 
 [[package]]

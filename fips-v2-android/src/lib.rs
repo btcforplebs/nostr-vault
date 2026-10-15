@@ -13,6 +13,9 @@
 #[path = "../../fips-v2/src/stack.rs"]
 mod stack;
 
+pub mod relay_link;
+pub use relay_link::relay_push;
+
 use std::net::{Ipv6Addr, SocketAddr};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -43,6 +46,13 @@ pub struct StartOptions {
     /// Stop sharing once this many bytes have gone to the mesh since sharing
     /// was turned on. 0 keeps the default; there is no "unlimited".
     pub max_serve_bytes: u64,
+    /// Also peer with the public seeds in [`relay_link::PUBLIC_SEEDS`]: the
+    /// route a browser relay page is on. Each seed learns this device's public
+    /// IP, as any server it connects to does; nothing is advertised.
+    pub public_seeds: bool,
+    /// Path for the node's datagram API socket, inside the app's sandbox.
+    /// Empty leaves it off, and with it `relay_push`.
+    pub relay_socket: String,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -77,6 +87,8 @@ struct Status {
     /// Sharing was turned off because the mesh pulled `max_serve_bytes`.
     cap_reached: bool,
     max_serve_bytes: u64,
+    /// `relay_push` can run: the datagram API socket is on.
+    relay_link: bool,
 }
 
 #[derive(Serialize)]
@@ -128,6 +140,8 @@ struct Running {
     /// Commands into the node's rx loop (adding a peer at runtime).
     control: tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
     stack_thread: std::thread::JoinHandle<()>,
+    /// The datagram API socket `relay_push` connects through; `None` when off.
+    relay_socket: Option<std::path::PathBuf>,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -151,6 +165,10 @@ pub const ERR_NOT_RUNNING: i32 = -3;
 pub const ERR_ALREADY_EXPORTED: i32 = -4;
 pub const ERR_START: i32 = -5;
 pub const ERR_BAD_NPUB: i32 = -6;
+/// `relay_push` without a datagram API socket (`relay_socket` was empty).
+pub const ERR_RELAY_OFF: i32 = -7;
+/// `relay_push` was handed something that is not a list of signed events.
+pub const ERR_BAD_EVENTS: i32 = -8;
 
 /// Every caller string is decoded or quoted before it reaches the template:
 /// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
@@ -170,7 +188,13 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
             "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
         ));
     }
+    if opts.public_seeds {
+        for seed in relay_link::PUBLIC_SEEDS {
+            peers.push_str(&relay_link::seed_yaml(seed)?);
+        }
+    }
     let peers = if peers.is_empty() { "peers: []\n".to_string() } else { format!("peers:\n{peers}") };
+    let native_api = relay_link::native_api_yaml(&opts.relay_socket)?;
     // The control socket binds under /tmp, which an app sandbox cannot write.
     Ok(Zeroizing::new(format!(
         r#"node:
@@ -179,7 +203,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
   leaf_only: true
   control:
     enabled: false
-  rendezvous:
+{native_api}  rendezvous:
     nostr:
       enabled: true
       advertise: true
@@ -197,6 +221,7 @@ transports:
         nsec = nsec.as_str(),
         lan = opts.lan,
         port = opts.udp_port,
+        native_api = native_api,
     )))
 }
 
@@ -211,6 +236,11 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         return Ok(());
     }
     let yaml = config_yaml(nsec, opts)?;
+    let relay_socket = relay_link::socket_path(&opts.relay_socket)?;
+    if let Some(path) = &relay_socket {
+        // A socket file left by a run that was killed would fail the bind.
+        let _ = std::fs::remove_file(path);
+    }
     let config: Config = serde_yaml::from_str(&yaml).context("mesh config")?;
     drop(yaml);
 
@@ -296,6 +326,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         ctl,
         control,
         stack_thread,
+        relay_socket,
         stop: stop_tx,
         node_thread,
     });
@@ -426,6 +457,9 @@ pub fn stop() {
     let _ = run.stack_thread.join();
     let _ = run.stop.send(());
     let _ = run.node_thread.join();
+    if let Some(path) = &run.relay_socket {
+        let _ = std::fs::remove_file(path);
+    }
     tracing::info!("fips mesh stopped");
 }
 
@@ -443,6 +477,7 @@ pub fn status_json() -> String {
             counters: CountersOut::default(),
             cap_reached: false,
             max_serve_bytes: 0,
+            relay_link: false,
         },
         Some(run) => Status {
             running: true,
@@ -455,6 +490,7 @@ pub fn status_json() -> String {
             counters: CountersOut::from(&run.ctl.counters),
             cap_reached: run.ctl.cap_reached(),
             max_serve_bytes: run.ctl.limits().total_bytes,
+            relay_link: run.relay_socket.is_some(),
         },
     };
     serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())
@@ -563,6 +599,33 @@ mod c_api {
             Ok(url) => {
                 // SAFETY: checked non-null above; the caller owns the slot.
                 unsafe { *url_out = out(url) };
+                0
+            }
+            Err(code) => code,
+        }
+    }
+
+    /// Hand signed events to a browser relay page; see [`relay_push`]. 0 and
+    /// `*result_out` set to the result JSON (free it with `NvFipsFreeString`),
+    /// or a negative code and `*result_out` left alone. Blocks up to
+    /// `timeout_ms`: call it off the main thread.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn NvFipsRelayPush(
+        relay_npub: *const c_char,
+        events_json: *const c_char,
+        timeout_ms: u32,
+        result_out: *mut *mut c_char,
+    ) -> i32 {
+        if result_out.is_null() {
+            return ERR_CONFIG;
+        }
+        let Some(relay) = arg(relay_npub) else { return ERR_BAD_NPUB };
+        let Some(events) = arg(events_json) else { return ERR_BAD_EVENTS };
+        let timeout = Duration::from_millis(timeout_ms.into());
+        match guarded(Err(ERR_START), move || relay_push(&relay, &events, timeout)) {
+            Ok(json) => {
+                // SAFETY: checked non-null above; the caller owns the slot.
+                unsafe { *result_out = out(json) };
                 0
             }
             Err(code) => code,
@@ -686,6 +749,28 @@ mod jni_api {
         let result = match jstr(&mut env, &npub) {
             Some(npub) => guarded(Err(ERR_START), move || ingress(&npub)),
             None => Err(ERR_BAD_NPUB),
+        };
+        out(&mut env, result.unwrap_or_else(|code| code.to_string()))
+    }
+
+    /// The result JSON of [`relay_push`], or a negative code as a string, the
+    /// way `nativeIngress` answers. Blocks up to `timeout_ms`: call it off the
+    /// main thread.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeRelayPush(
+        mut env: JNIEnv,
+        _class: JClass,
+        relay_npub: JString,
+        events_json: JString,
+        timeout_ms: jint,
+    ) -> jstring {
+        let relay = jstr(&mut env, &relay_npub);
+        let events = jstr(&mut env, &events_json);
+        let timeout = Duration::from_millis(timeout_ms.max(0) as u64);
+        let result = match (relay, events) {
+            (None, _) => Err(ERR_BAD_NPUB),
+            (_, None) => Err(ERR_BAD_EVENTS),
+            (Some(relay), Some(events)) => guarded(Err(ERR_START), move || relay_push(&relay, &events, timeout)),
         };
         out(&mut env, result.unwrap_or_else(|code| code.to_string()))
     }
