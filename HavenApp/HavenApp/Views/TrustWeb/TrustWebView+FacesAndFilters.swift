@@ -196,16 +196,9 @@ extension TrustWebView {
         let inner = myFollows.union([me, author])
         let follows = myFollows, me = me, wot = isWOTTab
         Task.detached(priority: .userInitiated) {
-            let shell = TrustMap.haze(graph.subtracting(inner))
-            let close = counts.map { v in Set(shell.filter { (v[$0] ?? 0) >= TrustMap.closeVouches }) } ?? []
-            var layerFaces: [TrustMap.Layer: [String]] = [:]
-            if wot {
-                for layer in [TrustMap.Layer.everyone, .close, .furtherOut] {
-                    layerFaces[layer] = TrustMap.layerFaceCandidates(layer, me: me, follows: follows,
-                                                                     web: graph, vouches: counts,
-                                                                     count: TrustGlobeCanvas.faces(TrustMap.faceCandidateCount(for: layer)))
-                }
-            }
+            let layout = TrustMap.hazeLayout(graph: graph, inner: inner, vouches: counts, me: me, follows: follows,
+                                             wot: wot, faceScale: TrustGlobeCanvas.faceScale)
+            let shell = layout.shell, close = layout.close, layerFaces = layout.layerFaces
             await MainActor.run {
                 if layerFaces != layerCandidates {
                     layerCandidates = layerFaces
