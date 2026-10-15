@@ -1,0 +1,24 @@
+[package]
+name = "web-relay-vault"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Vault side of the browser relay: NIP-01 over TCP/FIPS to a nostrvault.app/relay/ page on FSP port 7447"
+
+# Standalone: not a member of fips-bridge's workspace.
+[workspace]
+
+[features]
+default = ["native"]
+# The native datagram API client: a node's datagram API socket. Our fork
+# builds it on Android and iOS too, which is how the phones' libnvfips
+# (fips-v2-android) reaches the browser relay in-process.
+native = ["dep:fips"]
+
+[dependencies]
+# Pinned: the TS ⇄ Rust interop run (24/24) was against 0.2.5.
+nvpn-fips-tcp = "=0.2.5"
+serde_json = "1"
+# Same rev as fips-v2-android, so the app links one fips.
+fips = { git = "https://github.com/btcforplebs/fips", rev = "dbb6c848", optional = true }

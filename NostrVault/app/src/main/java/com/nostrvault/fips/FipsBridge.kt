@@ -98,6 +98,18 @@ object FipsBridge {
         return result.toIntOrNull()?.let { FipsIngress(error = it) } ?: FipsIngress(url = result)
     }
 
+    /**
+     * Hand signed events (one JSON object or a list) to the browser relay page
+     * [relayNpub] over the mesh. Blocks up to [timeoutMs]: call it off the main
+     * thread. The library's result JSON, or a negative code. Needs a node
+     * started with [FipsStartOptions.relaySocket].
+     */
+    fun relayPush(relayNpub: String, eventsJson: String, timeoutMs: Int = 90_000): FipsRelayPush {
+        if (!isAvailable) return FipsRelayPush(error = ERR_UNAVAILABLE)
+        val result = nativeRelayPush(relayNpub, eventsJson, timeoutMs) ?: return FipsRelayPush(error = ERR_START)
+        return result.toIntOrNull()?.let { FipsRelayPush(error = it) } ?: FipsRelayPush(json = result)
+    }
+
     fun stop() {
         if (isAvailable) nativeStop()
     }
@@ -109,6 +121,8 @@ object FipsBridge {
     const val ERR_ALREADY_EXPORTED = -4
     const val ERR_START = -5
     const val ERR_BAD_NPUB = -6
+    const val ERR_RELAY_OFF = -7
+    const val ERR_BAD_EVENTS = -8
     const val ERR_UNAVAILABLE = -100
 
     private external fun nativeStart(nsec: String, optionsJson: String): Int
@@ -118,8 +132,13 @@ object FipsBridge {
     private external fun nativeUnexport(): Int
     // The URL, or the negative code as text.
     private external fun nativeIngress(npub: String): String?
+    // The result JSON, or the negative code as text.
+    private external fun nativeRelayPush(relayNpub: String, eventsJson: String, timeoutMs: Int): String?
     private external fun nativeStop()
 }
+
+/** [FipsBridge.relayPush]: the library's result [json] on success, else a negative [error]. */
+data class FipsRelayPush(val json: String? = null, val error: Int = 0)
 
 /** [FipsBridge.ingress]: a [url] base on success, else a negative [error]. */
 data class FipsIngress(val url: String? = null, val error: Int = 0)
@@ -136,6 +155,10 @@ data class FipsStartOptions(
     val lan: Boolean = false,
     /** Sharing stops once the mesh has been sent this much. 0 keeps the library default. */
     @SerialName("max_serve_bytes") val maxServeBytes: Long = 0,
+    /** Also peer with the public seeds the browser relay page is on. */
+    @SerialName("public_seeds") val publicSeeds: Boolean = false,
+    /** Datagram API socket inside the app's files dir; empty leaves [FipsBridge.relayPush] off. */
+    @SerialName("relay_socket") val relaySocket: String = "",
 )
 
 /**

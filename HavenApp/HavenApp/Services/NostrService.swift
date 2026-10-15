@@ -1830,6 +1830,8 @@ class NostrService: ObservableObject {
         #if os(iOS)
         // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
         HomeVaultSender.shared.enqueue(eventDict: eventDict)
+        // 1c. A copy for the owner's browser relay (a nostrvault.app page on the mesh), if one is set.
+        BrowserRelaySender.shared.enqueue(eventDict: eventDict)
         #endif
 
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction

@@ -22,6 +22,8 @@ final class FipsMeshService: ObservableObject {
         /// The mesh pulled `max_serve_bytes` and the engine stopped sharing.
         var cap_reached: Bool?
         var max_serve_bytes: UInt64?
+        /// The engine can hand notes to a browser relay page (relay_push).
+        var relay_link: Bool?
 
         struct Counters: Decodable {
             var served_open: UInt64
@@ -250,19 +252,119 @@ final class FipsMeshService: ObservableObject {
         if url != nil { refresh() }
         // The dial failed but the engine may be up: nothing else needs it.
         if url == nil, !kioskActive, !starting, !clientActive { stopEngine() }
-        if url != nil, !kioskActive, !starting, !clientActive {
-            clientActive = true
-            // iOS suspends the engine in the background anyway; stop it cleanly
-            // once the sender has had its background window.
-            clientBackgroundObserver = NotificationCenter.default.addObserver(
-                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
-                    MainActor.assumeIsolated { self?.stopClientIfBackground() }
-                }
+        if url != nil { markClientActive() }
+        return url
+    }
+
+    /// The engine is up as a client (not kiosk mode): stop it once the app has
+    /// been in the background a while.
+    private func markClientActive() {
+        guard !kioskActive, !starting, !clientActive else { return }
+        clientActive = true
+        // iOS suspends the engine in the background anyway; stop it cleanly
+        // once the sender has had its background window.
+        clientBackgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+                MainActor.assumeIsolated { self?.stopClientIfBackground() }
             }
         }
-        return url
+    }
+
+    // MARK: - Browser relay: handing notes to a nostrvault.app relay page
+
+    /// libnvfips: the engine was started without the relay link.
+    nonisolated private static let errRelayOff: Int32 = -7
+
+    /// Start options for every engine start. With a browser relay set up, the
+    /// engine also joins the public seeds (the page's route) and opens its
+    /// datagram API socket, so `relayPush` works whichever start came first.
+    nonisolated static func startOptions(_ base: [String: Any] = [:]) -> String {
+        var options = base
+        if BrowserRelaySender.isOn {
+            options["public_seeds"] = true
+            options["relay_socket"] = relaySocketPath
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: options),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
+    }
+
+    /// Inside the app's tmp dir: short enough for a socket path (libnvfips
+    /// refuses one over 100 bytes; this is about 95).
+    nonisolated private static var relaySocketPath: String {
+        (NSTemporaryDirectory() as NSString).appendingPathComponent("nvr.sock")
+    }
+
+    /// Starts the engine as a client with the relay link, if nothing runs yet,
+    /// so the page can find this phone. Returns this phone's mesh npub.
+    func connectForBrowserRelay() async -> String? {
+        let sharing = kioskActive || starting
+        let previous = engineOp
+        let op = Task.detached(priority: .userInitiated) { () -> Bool in
+            await previous?.value
+            return Self.startClientWithRelayLink(closeDoor: !sharing)
+        }
+        engineOp = Task { _ = await op.value }
+        guard await op.value else {
+            lastError = "The mesh did not start"
+            return nil
+        }
+        markClientActive()
+        refresh()
+        return status?.npub
+    }
+
+    /// Hand signed events to the browser relay page `relayNpub`. The result
+    /// JSON from libnvfips, or an error in plain words. Can take up to
+    /// `timeoutMs` while the page opens its session to this phone.
+    func relayPush(relayNpub: String, eventsJSON: String, timeoutMs: UInt32 = 90_000) async -> Result<String, MeshError> {
+        let sharing = kioskActive || starting
+        let previous = engineOp
+        let op = Task.detached(priority: .userInitiated) { () -> Result<String, MeshError> in
+            await previous?.value
+            guard Self.startClientWithRelayLink(closeDoor: !sharing) else {
+                return .failure(MeshError(message: "The mesh did not start"))
+            }
+            var out: UnsafeMutablePointer<CChar>?
+            let rc = NvFipsRelayPush(relayNpub, eventsJSON, timeoutMs, &out)
+            guard rc == 0, let out else {
+                if rc == Self.errRelayOff {
+                    return .failure(MeshError(message: "Turn kiosk mode off and on again to connect the browser relay"))
+                }
+                return .failure(MeshError(message: "Could not reach the browser relay (\(rc))"))
+            }
+            defer { NvFipsFreeString(out) }
+            return .success(String(cString: out))
+        }
+        engineOp = Task { _ = await op.value }
+        let result = await op.value
+        markClientActive()
+        refresh()
+        return result
+    }
+
+    /// Off the main thread. A running engine without the relay link is
+    /// restarted with it, unless kiosk mode owns it.
+    nonisolated private static func startClientWithRelayLink(closeDoor: Bool) -> Bool {
+        guard let nsec = meshNsec() else { return false }
+        guard NvFipsStart(nsec, startOptions(closeDoor ? ["lan": true] : [:])) == 0 else { return false }
+        if closeDoor { SetMeshServingC(0) }
+        if closeDoor, !engineHasRelayLink() {
+            // Started earlier for the home vault, before a browser relay was set.
+            NvFipsStop()
+            guard NvFipsStart(nsec, startOptions(["lan": true])) == 0 else { return false }
+            SetMeshServingC(0)
+        }
+        return true
+    }
+
+    nonisolated private static func engineHasRelayLink() -> Bool {
+        guard let raw = NvFipsStatusJSON() else { return false }
+        defer { NvFipsFreeString(raw) }
+        let status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
+        return status?.relay_link == true
     }
 
     private func stopClientIfBackground() {
@@ -281,7 +383,7 @@ final class FipsMeshService: ObservableObject {
         // Idempotent: a running engine (kiosk or an earlier client start) is
         // reused. A client offers LAN candidates, so two phones on one Wi-Fi
         // connect (as Android does); kiosk mode restarts without them.
-        guard NvFipsStart(nsec, closeDoor ? #"{"lan":true}"# : "{}") == 0 else { return nil }
+        guard NvFipsStart(nsec, startOptions(closeDoor ? ["lan": true] : [:])) == 0 else { return nil }
         if closeDoor { SetMeshServingC(0) }
         var out: UnsafeMutablePointer<CChar>?
         let rc = NvFipsIngress(meshNpub, &out)
@@ -363,7 +465,7 @@ final class FipsMeshService: ObservableObject {
         }
         // No start-time peers: anyone can reach this vault, and reading
         // another vault adds its npub on demand.
-        let rc = NvFipsStart(nsec, "{\"max_serve_bytes\":\(KioskCapPause.engineServeLimit(limit))}")
+        let rc = NvFipsStart(nsec, startOptions(["max_serve_bytes": KioskCapPause.engineServeLimit(limit)]))
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         // The relay's mesh port listens only while sharing.
         SetMeshServingC(1)

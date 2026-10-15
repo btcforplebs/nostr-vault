@@ -13,8 +13,12 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
-# headed upstream. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "cd0a39c8" }
+# headed upstream, and the datagram API built on Android and iOS (dbb6c848,
+# branch nv/native-api-mobile) for the browser relay link. Back to a jmcorgan/fips tag once they land in a release.
+fips = { git = "https://github.com/btcforplebs/fips", rev = "dbb6c848" }
+# The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
+# datagram API: relay_link.rs.
+web-relay-vault = { path = "../web-relay-vault" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
@@ -34,3 +38,4 @@ tracing-android = "0.2"
 [profile.release]
 lto = "thin"
 strip = true
+
