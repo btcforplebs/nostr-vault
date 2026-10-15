@@ -48,6 +48,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     g.clearRect(0, 0, w, h)
     const k = cam.current, project = projector(k, w, h), reduce = reducedMotion()
     loadsLeft.current = LOADS_PER_FRAME
+    images.current.frame() // pictures drawn from here on are on screen, and never dropped
     const mx = w / 2, my = h / 2
 
     // The shells' outlines: a faint ring round your follows, a fainter one round the extended network.
