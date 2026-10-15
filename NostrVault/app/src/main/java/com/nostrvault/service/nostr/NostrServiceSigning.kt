@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import com.nostrvault.service.NostrService.Companion.TAG
+import com.nostrvault.data.model.PostingAccount
 
     // ══════════════════════════════════════════════════════════════════
     // Event signing
@@ -278,3 +279,46 @@ import com.nostrvault.service.NostrService.Companion.TAG
 /** Pure part of [isReadOnlyAccount]. */
 internal fun isReadOnlySigning(signingMode: String, hasLocalKey: Boolean): Boolean =
     signingMode == "browse" || (signingMode == "local" && !hasLocalKey)
+
+    internal suspend fun NostrService.signEventAsyncImpl(
+        kind: Int,
+        content: String,
+        tags: List<List<String>> = emptyList(),
+        password: String? = null,
+        forceOwner: Boolean = false,
+        lockedTo: PostingAccount.Lock? = null,
+        silentOnly: Boolean = false,
+    ): NostrEvent? {
+        // With [lockedTo], refuse to sign unless that account is still the
+        // active one, and refuse the result unless it carries its key.
+        if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
+        val event = signEventRouted(kind, content, tags, forceOwner, silentOnly)
+        if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
+        return event
+    }
+
+    /**
+     * The account active right now, for `signEventAsync(lockedTo:)`. Take it
+     * when Post is tapped, before any upload.
+     */
+    internal fun NostrService.lockPostingAccountImpl(): PostingAccount.Lock {
+        val cfg = configStore.config.value
+        return PostingAccount.Lock(npub = PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub), hex = activeHexPubkey)
+    }
+
+    /**
+     * Throws [PostingAccount.AccountChangedException] unless [lock] is still
+     * the active account and, once signed, [eventPubkey] is its key.
+     */
+    internal fun NostrService.requireStillPostingAsImpl(lock: PostingAccount.Lock, eventPubkey: String?) {
+        val cfg = configStore.config.value
+        val ok = if (eventPubkey == null) {
+            PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub) == lock.npub
+        } else {
+            PostingAccount.signedAsLocked(lock, cfg.activeAccountNpub, cfg.ownerNpub, eventPubkey)
+        }
+        if (!ok) {
+            Log.w(TAG, "account changed while posting – locked=${lock.npub.take(20)} signed=${eventPubkey?.take(8)}; not publishing")
+            throw PostingAccount.AccountChangedException()
+        }
+    }

@@ -365,3 +365,29 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
         val hexes = npubs.mapNotNull { npubToHex(it) }
         if (hexes.isNotEmpty()) fetchMissingProfiles(hexes)
     }
+
+    /**
+     * Queue pubkeys for batched profile metadata fetch.
+     */
+    internal fun NostrService.fetchMissingProfilesImpl(pubkeys: List<String>, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val currentProfiles = _profiles.value
+        val missing = profileQueueLock.withLock {
+            pubkeys.filter { pk -> shouldFetchProfile(pk, currentProfiles[pk], now, force) }
+                .also { profileFetchQueue.addAll(it) }
+        }
+        if (missing.isEmpty()) return
+
+        scheduleProfileFlush()
+    }
+
+    /**
+     * Shows [profile] for [pubkey] at once, ahead of the relays: your own
+     * edit while it publishes, or what was shown before when that failed.
+     * Null removes the entry.
+     */
+    internal fun NostrService.showLocalProfileImpl(pubkey: String, profile: FeedProfile?) {
+        _profiles.update { if (profile == null) it - pubkey else it + (pubkey to profile) }
+        noteProfileUpdated(pubkey)
+        saveProfilesThrottled()
+    }

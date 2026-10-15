@@ -8,6 +8,10 @@ import com.nostrvault.service.NostrService.Companion.PROFILE_RELAYS
 import com.nostrvault.service.NostrService.Companion.RELAY_LIST_CHUNK
 import com.nostrvault.service.NostrService.Companion.RELAY_LIST_TIMEOUT_MS
 import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
+import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.HavenBridge
+import com.nostrvault.service.NostrService.ReplaceableLookup
+import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     internal fun NostrService.parseRelayListEvent(pubkey: String, tags: List<List<String>>, createdAt: Long) {
         val (readRelays, writeRelays) = profileRepository.parseRelayListTags(tags)
@@ -141,4 +145,117 @@ import com.nostrvault.service.NostrService.Companion.TEMP_CLIENT_DISCONNECT_MS
     internal suspend fun NostrService.fetchNewestDMRelayList(pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): Pair<List<String>, Long>? {
         val winner = fetchNewestReplaceable(10050, pubkey, alsoAsk, timeoutMs) ?: return null
         return profileRepository.parseDMRelayListTags(winner.tags) to winner.createdAt
+    }
+
+    /**
+     * The newest signed replaceable event of [kind] by [pubkey] across the
+     * blastr relays and [alsoAsk], or null if none answered in time. Asks
+     * fresh: the profile caches can hold a list replaced long ago.
+     */
+    internal suspend fun NostrService.fetchNewestReplaceableImpl(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? =
+        lookupNewestReplaceable(kind, pubkey, alsoAsk, timeoutMs).event
+
+    /** [fetchNewestReplaceable], also saying whether "none" was confirmed. */
+    internal suspend fun NostrService.lookupNewestReplaceableImpl(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): ReplaceableLookup {
+        val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
+            .distinct()
+        if (targets.isEmpty()) return ReplaceableLookup(null, 0, 0)
+        val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
+        val answered = java.util.concurrent.atomic.AtomicInteger(0)
+        coroutineScope {
+            targets.map { url ->
+                launch(Dispatchers.IO) {
+                    val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                    try {
+                        withTimeoutOrNull(timeoutMs) {
+                            val subId = "dmlist-${UUID.randomUUID().toString().take(6)}"
+                            val done = CompletableDeferred<Unit>()
+                            val collector = launch {
+                                client.messages.collect { msg ->
+                                    val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                    when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                        "EVENT" -> {
+                                            val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                            val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                            if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
+                                            best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
+                                        }
+                                        "EOSE" -> {
+                                            val ours = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == subId
+                                            if (done.complete(Unit) && ours) answered.incrementAndGet()
+                                        }
+                                        "CLOSED" -> done.complete(Unit)
+                                    }
+                                }
+                            }
+                            launch {
+                                client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"],"limit":1}]""")
+                            }
+                            client.connect()
+                            done.await()
+                            collector.cancel()
+                        }
+                    } finally {
+                        client.disconnect()
+                    }
+                }
+            }.joinAll()
+        }
+        return ReplaceableLookup(best.get(), targets.size, answered.get())
+    }
+
+    /**
+     * [target]'s follower count from Vertex, the source npub.world uses. Null
+     * when Vertex can't answer: no local key (a bunker or Amber would be asked
+     * to sign for every profile opened), no credits, or no answer in time.
+     * The request is signed by the active account and names [target].
+     * Mirrors iOS NostrService.fetchVertexFollowerCount.
+     */
+    internal suspend fun NostrService.fetchVertexFollowerCountImpl(target: String, timeoutMs: Long = 6_000): Int? {
+        val vertex = com.nostrvault.data.model.VertexReputation
+        val now = System.currentTimeMillis()
+        vertexCache.followers(target, now)?.let { return it }
+        if (!vertexCache.shouldAsk(now) || configStore.config.value.activeSigningMode() != "local") return null
+        val request = withContext(Dispatchers.IO) {
+            runCatching { signLocally(vertex.REQUEST_KIND, "", vertex.requestTags(target), forceOwner = false) }.getOrNull()
+        } ?: return null
+
+        val reply = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val client = WebSocketClient(url = vertex.RELAY_URL, scope = this, autoReconnect = false)
+                try {
+                    withTimeoutOrNull(timeoutMs) {
+                        val subId = "vertex-${UUID.randomUUID().toString().take(6)}"
+                        val answer = CompletableDeferred<com.nostrvault.data.model.VertexReputation.Reply>()
+                        val collector = launch {
+                            client.messages.collect { msg ->
+                                val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                if (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull != "EVENT") return@collect
+                                val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                val r = vertex.reply(ev.kind, ev.pubkey, ev.tags, ev.content, request.id, target) ?: return@collect
+                                if (HavenBridge.verifyEvent(obj.toString())) answer.complete(r)
+                            }
+                        }
+                        launch {
+                            client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                            // Listen first, so a fast answer isn't missed.
+                            client.send("""["REQ","$subId",{"kinds":[${vertex.RESULT_KIND},${vertex.FEEDBACK_KIND}],"#e":["${request.id}"]}]""")
+                            client.send("[\"EVENT\",${serializeEvent(request)}]")
+                        }
+                        client.connect()
+                        answer.await().also { collector.cancel() }
+                    }
+                } finally {
+                    client.disconnect()
+                    coroutineContext.cancelChildren()
+                }
+            }
+        } ?: return null // No answer in time says nothing about credits.
+
+        vertexCache.record(reply, target, System.currentTimeMillis())
+        return (reply as? com.nostrvault.data.model.VertexReputation.Reply.Followers)?.count
     }
