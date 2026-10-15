@@ -76,6 +76,24 @@ internal class WotFilters(
         if (ready.isEmpty()) null else TrustMap.lit(ready, matches)
     }
 
+    /** How many [filter] matches; null for Follow you back until the ledger is read. */
+    fun count(filter: TrustMap.Filter): Int? =
+        if (filter == TrustMap.Filter.FOLLOWS_BACK && followsBackLoaded != true) null
+        else matches[filter]?.size ?: 0
+
+    /** The ledger hasn't been read yet. */
+    val followsBackChecking: Boolean get() = followsBackLoaded == null
+
+    /** Reads the follower ledger once, for My Web's Follow you back row. */
+    fun readFollowsBack() {
+        if (followsBackLoaded == null) loadFollowsBack()
+    }
+
+    /** Turns [filter] on; one already on stays on (My Web's rows). */
+    fun turnOn(filter: TrustMap.Filter) {
+        if (filter !in on) toggle(filter)
+    }
+
     fun toggle(filter: TrustMap.Filter) {
         on = if (filter in on) on - filter else on + filter
         if (filter == TrustMap.Filter.FOLLOWS_BACK && filter in on && followsBackLoaded != true) loadFollowsBack()
@@ -97,7 +115,11 @@ internal class WotFilters(
         note.show(FilterNote(if (isOn) tapped.icon else NostrVaultIcons.FilterOff, text))
     }
 
+    private var loadingFollowsBack = false
+
     private fun loadFollowsBack() {
+        if (loadingFollowsBack) return
+        loadingFollowsBack = true
         scope.launch {
             val followers = withContext(Dispatchers.IO) {
                 runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(me)) }.getOrNull()
@@ -105,6 +127,7 @@ internal class WotFilters(
             }
             followsBack = followers.orEmpty()
             followsBackLoaded = followers != null
+            loadingFollowsBack = false
             // The note still says "Checking…": say what it found.
             if (TrustMap.Filter.FOLLOWS_BACK in on && note.note != null) showNote(TrustMap.Filter.FOLLOWS_BACK)
         }

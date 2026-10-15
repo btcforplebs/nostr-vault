@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.nostrvault.ui.navigation.FloatingButtonRow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -84,6 +85,7 @@ internal fun TrustWebContent(
     var failed by remember { mutableStateOf(emptySet<String>()) }
     var deeperFailed by remember { mutableStateOf(emptySet<String>()) }
     var showingList by remember { mutableStateOf(false) }
+    var myWebOpen by remember { mutableStateOf(false) }
     /** Your whole trust graph, for the search's "In your web" tag. */
     var web by remember { mutableStateOf(emptySet<String>()) }
     /**
@@ -648,6 +650,23 @@ internal fun TrustWebContent(
                 filterNote = wotFilters.note,
                 liveArcs = liveArcs,
             )
+            // My Web, where other tabs have Post; it steps aside for a card, the list or search.
+            if (card == null && !searchFocused && !showingList) MyWebButton(
+                onClick = { closeCard(); myWebOpen = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = FloatingButtonRow.rowBottom),
+            )
+            if (myWebOpen) {
+                val rebuilding = refreshState != null
+                val rebuiltAgo = remember(rebuilding) { wotRebuiltAgo(feedService) }
+                MyWebSheet(
+                    numbers = MyWebNumbers(counts, vouches != null, layer, (myFollows - me).size, rebuilding, rebuiltAgo),
+                    filters = wotFilters,
+                    liveArcs = liveArcs,
+                    onLayer = { jump(0); layer = it; myWebOpen = false },
+                    onRebuild = ::refresh,
+                    onDismiss = { myWebOpen = false },
+                )
+            }
         }
     } else Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         TopBar(
@@ -704,6 +723,18 @@ internal fun TrustWebContent(
             onDismiss = { showingList = false },
         )
     }
+}
+
+/** "3 hours ago" for when the relay last saved your web, or null before it ever has. */
+private fun wotRebuiltAgo(feedService: com.nostrvault.service.FeedService): String? {
+    val dir = feedService.configStore.config.value.relayDataDir ?: return null
+    val modified = java.io.File(dir, com.nostrvault.service.FeedService.WOT_CACHE_FILE).lastModified()
+    if (modified <= 0L) return null
+    val now = System.currentTimeMillis()
+    if (now - modified < android.text.format.DateUtils.MINUTE_IN_MILLIS) return "just now"
+    return android.text.format.DateUtils.getRelativeTimeSpanString(
+        modified, now, android.text.format.DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
 }
 
 /** Past this width (tablets) the globe takes the screen and the words move to a side panel. */
