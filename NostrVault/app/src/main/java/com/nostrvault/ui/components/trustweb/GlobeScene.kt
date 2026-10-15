@@ -261,7 +261,9 @@ internal class GlobeScene(
         val target = traceTarget
         val traced = if (target == null) emptyList() else listOf(target) + traceBridges
         for (key in traced) if (key !in symbols) symbols += key
-        for (key in arcs.keys) if (key !in symbols) symbols += key
+        val arcOnly = arcs.keys.filter { it !in symbols }
+        arcOnlyKeys = arcOnly.toHashSet()
+        symbols += arcOnly
         val pictured = (if (target == null) listOf(author) + faces else traced).toHashSet().apply { add(center) }
         for (star in stars) star.isFace = star.key in pictured
         if (faceKeys != symbols) faceKeys = symbols
@@ -422,6 +424,8 @@ internal class GlobeScene(
 
     /** Notes flying across the globe as they reach the relay; on for the WOT tab's globe. */
     internal val arcs = GlobeSceneArcs()
+    /** Pictured only as a line's end, not as one of the globe's own faces: drawn white. */
+    internal var arcOnlyKeys: Set<String> = emptySet()
     /** Only a few arcs move: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
     var slowFrames = false
         private set
@@ -743,7 +747,7 @@ internal class GlobeScene(
         val pictured = seats + center
         for (spot in arcs.faceSpots(lastTick ?: nowSeconds(), { project.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) }, pictured, center) {
             GlobeSceneArcs.faceRadius(it, k, zoom, density)
-        }) spotByKey.putIfAbsent(spot.key, spot)
+        }) if (spotByKey[spot.key]?.ember != false) spotByKey[spot.key] = spot
 
         // Names on plain stars once zoomed well in, where they fit.
         if (namesOut) {

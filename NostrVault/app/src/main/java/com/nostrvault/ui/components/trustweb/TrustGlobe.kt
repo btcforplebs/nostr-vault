@@ -303,7 +303,7 @@ internal fun TrustGlobe(
                             key == center && key == me -> accent
                             key == center -> Color.White
                             key == (scene.traceTarget ?: author) -> AuthorTint
-                            key in scene.arcs.keys -> GlobeSceneArcs.FaceTint
+                            key in scene.arcOnlyKeys -> GlobeSceneArcs.FaceTint
                             // The core is the author: these are their follows.
                             center == author && scene.traceTarget == null -> RingColor
                             else -> accent

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -76,7 +77,7 @@ internal class GlobeArrivalStream(private val feed: FeedService) {
         } finally {
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) { links.forEach { it.close() } }
         }
-    }.flowOn(Dispatchers.Main.immediate)
+    }.buffer(ARRIVAL_BUFFER).flowOn(Dispatchers.Main.immediate)
 
     /**
      * New notes as the feed takes them in: yours, your follows', and those that
@@ -184,6 +185,8 @@ internal class GlobeArrivalStream(private val feed: FeedService) {
         const val FRESH_WINDOW_MS = 60_000L
         /** Fresh ids kept to tell a new note from one already flown. */
         const val SEEN_KEEP = 256
+        /** Arrivals held while the frame clock catches up; the board caps what flies anyway. */
+        const val ARRIVAL_BUFFER = 1_024
     }
 }
 

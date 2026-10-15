@@ -5,6 +5,7 @@ import com.nostrvault.data.model.GlobeStorm
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.service.FeedService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -69,7 +70,8 @@ internal class GlobeRelayLink(
         val next = when {
             shared != null -> shared.also { owned = false; everShared = true }
             everShared -> return
-            else -> WebSocketClient(url = url, scope = scope).also {
+            else -> WebSocketClient(url = url, scope = scope,
+                trustLocalhost = url.contains("localhost") || url.contains("127.0.0.1")).also {
                 owned = true
                 it.connect()
             }
@@ -78,8 +80,10 @@ internal class GlobeRelayLink(
         val prefix = GlobeStorm.SUBSCRIPTION_PREFIX
         jobs = listOf(
             // The feed's own messages go past here too: only the globe's are read.
-            // The cheap contains() keeps a full parse off every feed message.
-            scope.launch(Dispatchers.Default) {
+            // The cheap contains() keeps a full parse off every feed message; an
+            // escaped sub id slips past it and just doesn't fly (the feed still skips it).
+            // Subscribed before the REQ below goes out: messages has no replay.
+            scope.launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
                 next.messages.collect { message ->
                     if (!message.contains(prefix)) return@collect
                     eventOf(message)?.let(onEvent)
