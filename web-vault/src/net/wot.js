@@ -10,33 +10,55 @@ const HEX64 = /^[0-9a-f]{64}$/
 /** How many of your follows must follow someone for them to be in your extended network: the iPhone's cut-off for
  *  the people its relay calls Close (TrustMap.closeVouches). */
 export const EXTENDED_MIN = 10
-/** How many further-out people the map draws, picked by key so the same people show every time (TrustMap.hazeCap).
- *  My Web lists all of them. */
+/** How many people of the extended network, and of further out, the map draws: picked by key so the same people
+ *  show every time (TrustMap.hazeCap). My Web lists all of them. */
 export const FURTHER_CAP = 2_500
+export const EXTENDED_CAP = 2_500
 
-// The follows' contact lists this session: each follow's newest list, asked for once. A follow added later is asked for
-// on its own; nothing already here is downloaded again.
-let listCache = { me: "", lists: new Map(), asked: new Set() }
+// The follows' contact lists this session: each follow's newest list once it has come back. A follow whose list didn't
+// come back (a timeout, a relay that was down) is asked again on a later call, after RETRY_MS, so one bad answer doesn't
+// empty the web and Popular for the session. Requests in flight are shared: Popular and the Web tab loading at once
+// download each list once.
+export const RETRY_MS = 60_000
+let listCache = { me: "", lists: new Map(), tried: new Map(), inflight: new Map() }
 
 /**
  * The newest contact list of each follow, from the profile relay (purplepag.es keeps them; asking every read relay
- * multiplied a 20-50 KB-per-list download by the number of relays). Only follows not asked for yet this session are
- * asked for, in chunks of 250 that go out together. `query` is for tests. -> Map(follow pubkey -> kind 3)
+ * multiplied a 20-50 KB-per-list download by the number of relays), in chunks of 250 that go out together. Asked for:
+ * follows with no list yet, unless one was asked for less than `retryMs` ago (0 asks again now) or is on its way.
+ * `query` and `now` are for tests. -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  if (listCache.me !== me) listCache = { me, lists: new Map(), asked: new Set() }
-  const { lists, asked } = listCache
-  const want = uniq(follows).filter(pk => !asked.has(pk))
-  const chunks = []
-  for (let i = 0; i < want.length; i += 250) chunks.push(want.slice(i, i + 250))
-  const answers = await Promise.all(chunks.map(chunk => query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })))
-  const wanted = new Set(want)
-  for (const ev of answers.flat()) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) lists.set(ev.pubkey, ev)
-  for (const pk of want) asked.add(pk)
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now } = {}) {
+  if (listCache.me !== me) listCache = { me, lists: new Map(), tried: new Map(), inflight: new Map() }
+  const { lists, tried, inflight } = listCache
+  const t = now()
+  const waits = new Set()
+  const want = []
+  for (const pk of uniq(follows)) {
+    if (lists.has(pk)) continue
+    if (inflight.has(pk)) { waits.add(inflight.get(pk)); continue }
+    if (tried.has(pk) && t - tried.get(pk) < retryMs) continue
+    want.push(pk)
+  }
+  for (let i = 0; i < want.length; i += 250) {
+    const chunk = want.slice(i, i + 250), wanted = new Set(chunk)
+    const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })
+      .catch(() => [])
+      .then(evs => {
+        for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) lists.set(ev.pubkey, ev)
+        for (const pk of chunk) { tried.set(pk, t); inflight.delete(pk) }
+      })
+    for (const pk of chunk) inflight.set(pk, job)
+    waits.add(job)
+  }
+  await Promise.all(waits)
   const mine = new Map()
   for (const pk of follows) if (lists.has(pk)) mine.set(pk, lists.get(pk))
   return mine
 }
+
+/** How many of these follows' lists haven't come back (the Web tab says so, and offers to ask again). */
+export const missingLists = follows => uniq(follows).filter(pk => !listCache.lists.has(pk)).length
 
 const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
 
@@ -46,15 +68,16 @@ const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64
  *   linkers: Map(pk -> [the follows who follow them]), followsMe: Set(follows whose list has the user),
  *   layerOf(pk) -> "me" | "follow" | "extended" | "further" | null
  * }
- * Blocked people are left out of the extended and further layers, and nobody is reached through a blocked follow
- * (it stays a follow: you made it). `extendedMin` is for tests.
+ * Blocked people are hidden everywhere, as in the feeds: a blocked follow is left off too, and nobody is reached
+ * through one. (The screen builds the web once and applies blocks with filterWeb, which gives the same result.)
+ * `extendedMin` is for tests.
  */
-export function buildWeb(me, follows, lists, { blocked = new Set(), extendedMin = EXTENDED_MIN } = {}) {
+export function buildWeb(me, allFollows, lists, { blocked = new Set(), extendedMin = EXTENDED_MIN } = {}) {
+  const follows = allFollows.filter(f => !blocked.has(f))
   const followSet = new Set(follows)
   const linkers = new Map()
   const followsMe = new Set()
   for (const f of follows) {
-    if (blocked.has(f)) continue // someone you blocked doesn't vouch for anyone
     for (const pk of followedBy(lists.get(f))) {
       if (pk === me) { followsMe.add(f); continue }
       if (followSet.has(pk) || blocked.has(pk)) continue
@@ -63,7 +86,7 @@ export function buildWeb(me, follows, lists, { blocked = new Set(), extendedMin 
     }
   }
   // Follows link each other too: who of your follows also follows this follow.
-  for (const f of follows) for (const pk of followedBy(lists.get(f))) if (!blocked.has(f) && followSet.has(pk) && pk !== f) {
+  for (const f of follows) for (const pk of followedBy(lists.get(f))) if (followSet.has(pk) && pk !== f) {
     const by = linkers.get(pk)
     if (by) by.push(f); else linkers.set(pk, [f])
   }
@@ -74,14 +97,54 @@ export function buildWeb(me, follows, lists, { blocked = new Set(), extendedMin 
     ;(by.length >= extendedMin ? extended : further).push(pk)
   }
   extended.sort(byLinks); further.sort(byLinks)
-  const layer = new Map([[me, "me"], ...follows.map(f => [f, "follow"]), ...extended.map(p => [p, "extended"]), ...further.map(p => [p, "further"])])
-  return { me, follows: [...follows], extended, further, linkers, followsMe, layerOf: pk => layer.get(pk) ?? null }
+  return assemble(me, follows, extended, further, linkers, followsMe, extendedMin)
 }
 
-/** The further-out people the map draws: up to `cap`, picked by key (TrustMap.haze), so the same people show. */
-export function furtherShown(further, cap = FURTHER_CAP) {
-  if (further.length <= cap) return further
-  return further.map(pk => ({ pk, rank: fraction(pk, 16) })).sort((a, b) => a.rank - b.rank || (a.pk < b.pk ? -1 : 1)).slice(0, cap).map(x => x.pk)
+function assemble(me, follows, extended, further, linkers, followsMe, extendedMin) {
+  const layer = new Map([[me, "me"], ...follows.map(f => [f, "follow"]), ...extended.map(p => [p, "extended"]), ...further.map(p => [p, "further"])])
+  return { me, follows: [...follows], extended, further, linkers, followsMe, extendedMin, layerOf: pk => layer.get(pk) ?? null }
+}
+
+/**
+ * The web with `blocked` people taken out, as buildWeb with those blocks would give it, without reading every list
+ * again: only the people a blocked follow links, and the blocked people themselves, change. `lists` is what the web was
+ * built from.
+ */
+export function filterWeb(web, lists, blocked) {
+  const hit = [...blocked].filter(pk => web.layerOf(pk))
+  if (!hit.length) return web
+  const gone = new Set(hit)
+  const touched = new Set()
+  for (const f of hit) if (web.layerOf(f) === "follow") for (const pk of followedBy(lists.get(f))) touched.add(pk)
+  const linkers = new Map(web.linkers)
+  for (const pk of gone) linkers.delete(pk)
+  for (const pk of touched) {
+    if (gone.has(pk) || !linkers.has(pk)) continue
+    const by = linkers.get(pk).filter(f => !gone.has(f))
+    if (by.length) linkers.set(pk, by); else linkers.delete(pk)
+  }
+  const follows = web.follows.filter(f => !gone.has(f))
+  const keep = pk => !gone.has(pk) && !touched.has(pk)
+  const extended = web.extended.filter(keep), further = web.further.filter(keep)
+  let moved = false
+  for (const pk of touched) {
+    if (gone.has(pk) || web.layerOf(pk) === "follow" || web.layerOf(pk) === "me" || !linkers.has(pk)) continue
+    ;(linkers.get(pk).length >= web.extendedMin ? extended : further).push(pk)
+    moved = true
+  }
+  if (moved) {
+    const byLinks = (a, b) => (linkers.get(b)?.length ?? 0) - (linkers.get(a)?.length ?? 0) || (a < b ? -1 : 1)
+    extended.sort(byLinks); further.sort(byLinks)
+  }
+  const followsMe = new Set([...web.followsMe].filter(f => !gone.has(f)))
+  return assemble(web.me, follows, extended, further, linkers, followsMe, web.extendedMin)
+}
+
+/** The people of a layer the map draws: up to `cap`, picked by key (TrustMap.haze), so the same people show.
+ *  Used for the extended network and further out; My Web lists everyone. */
+export function shownByKey(list, cap = FURTHER_CAP) {
+  if (list.length <= cap) return list
+  return list.map(pk => ({ pk, rank: fraction(pk, 16) })).sort((a, b) => a.rank - b.rank || (a.pk < b.pk ? -1 : 1)).slice(0, cap).map(x => x.pk)
 }
 
 /**

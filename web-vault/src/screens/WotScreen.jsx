@@ -12,7 +12,7 @@ import { BlockDialog } from "../components/Moderation.jsx"
 import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { setFollow } from "../net/follows.js"
-import { followLists, buildWeb, furtherShown, trustPathText, FURTHER_CAP, EXTENDED_MIN } from "../net/wot.js"
+import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPathText, FURTHER_CAP, EXTENDED_CAP, EXTENDED_MIN } from "../net/wot.js"
 import {
   layout, newCamera, moving, pan, fling, zoomBy, home, glideTo, step, visible, hit, sizes, unit, zoneEdges,
 } from "../net/wot-map.js"
@@ -33,22 +33,25 @@ export function WotScreen({ ctx }) {
   const [view, setView] = useState("map") // "map" | "list"
   const [picked, setPicked] = useState(null) // pubkey of the open trust card
   const [centre, setCentre] = useState(null) // pubkey to glide to on the map
+  const [missing, setMissing] = useState(0) // follows whose list didn't come back
+  const [round, setRound] = useState(0) // Try again
 
   useEffect(() => {
     if (!follows.length) { setStatus(""); return }
     if (!navigator.onLine) { setStatus("Your web needs the network: your follows' contact lists aren't kept in this browser."); return }
     let live = true
     setStatus(`Reading your ${follows.length} follows' lists…`)
-    followLists(me, follows)
-      .then(l => { if (live) { setLists(l); setStatus("") } })
-      .catch(e => live && setStatus(`Couldn't read your follows' lists (${e?.message ?? e})`))
+    followLists(me, follows, round ? { retryMs: 0 } : {})
+      .then(l => { if (live) { setLists(l); setMissing(missingLists(follows)); setStatus("") } })
     fetchProfiles(vault, follows, uniq([...account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
     return () => { live = false }
-  }, [me, follows.length])
+  }, [me, follows.length, round])
 
-  const web = useMemo(() => (lists ? buildWeb(me, follows, lists, { blocked }) : null), [lists, follows.length, blocked])
-  const shownFurther = useMemo(() => (web ? furtherShown(web.further) : []), [web])
-  const nodes = useMemo(() => (web ? layout(web, shownFurther) : null), [web, shownFurther])
+  // Built once per set of lists; blocking or unblocking only filters it (buildWeb reads every list, filterWeb doesn't).
+  const built = useMemo(() => (lists ? buildWeb(me, follows, lists) : null), [lists, follows.length])
+  const web = useMemo(() => (built ? filterWeb(built, lists, blocked) : null), [built, blocked])
+  const shown = useMemo(() => (web ? { extended: shownByKey(web.extended, EXTENDED_CAP), further: shownByKey(web.further, FURTHER_CAP) } : null), [web])
+  const nodes = useMemo(() => (web ? layout({ ...web, extended: shown.extended }, shown.further) : null), [web, shown])
 
   const pickFromList = pk => { setPicked(pk); setCentre(pk); setView("map") }
 
@@ -62,10 +65,16 @@ export function WotScreen({ ctx }) {
         </div>
       </header>
       {status && <div class="status-line">{status}</div>}
+      {!status && missing > 0 && web && (
+        <div class="status-line">
+          {missing === 1 ? "1 of your follows' lists didn't arrive" : `${missing} of your follows' lists didn't arrive`}, so part of your web is missing.{" "}
+          <button type="button" class="small" onClick={() => setRound(r => r + 1)}>Try again</button>
+        </div>
+      )}
       {!follows.length ? <p class="empty">{account.loaded ? "Follow someone to see your web: it's built from the people you follow and who they follow." : "Loading your follows…"}</p>
         : !web ? <p class="empty">{status ? "" : "Opening your web…"}</p>
         : view === "map"
-          ? <WotMap web={web} nodes={nodes} picked={picked} onPick={setPicked} centre={centre} onCentred={() => setCentre(null)} hiddenFurther={web.further.length - shownFurther.length} />
+          ? <WotMap web={web} nodes={nodes} picked={picked} onPick={setPicked} centre={centre} onCentred={() => setCentre(null)} capped={web.extended.length > shown.extended.length || web.further.length > shown.further.length} />
           : <MyWeb ctx={ctx} web={web} onPick={pickFromList} />}
       {picked && web && <TrustCard ctx={ctx} web={web} pubkey={picked} onPick={setPicked} onClose={() => setPicked(null)} />}
     </main>
@@ -73,13 +82,13 @@ export function WotScreen({ ctx }) {
 }
 
 /** The map: a canvas drawn only when something changed, and only what's on screen. */
-function WotMap({ web, nodes, picked, onPick, centre, onCentred, hiddenFurther }) {
+function WotMap({ web, nodes, picked, onPick, centre, onCentred, capped }) {
   const box = useRef(null), canvas = useRef(null)
   const cam = useRef(newCamera())
   const size = useRef({ w: 0, h: 0 })
   const drawn = useRef([])
   const frame = useRef(0), last = useRef(0)
-  const images = useRef(new Map()) // picture url -> Image | "loading" | "failed"
+  const images = useRef(new Map()) // picture url -> a small round bitmap of it | "loading" | "failed"
   const pointers = useRef(new Map())
   const gesture = useRef(null)
   const pickedRef = useRef(picked)
@@ -134,23 +143,21 @@ function WotMap({ web, nodes, picked, onPick, centre, onCentred, hiddenFurther }
   }
 
   // A face: the profile picture once it has loaded (asked for only when the face is on screen and big enough to
-  // see), a coloured disc until then, as Avatar draws it.
+  // see), a coloured disc until then, as Avatar draws it. Each picture is drawn once into a small round bitmap, and the
+  // frames draw that: a full-size photo scaled down every frame is what makes a zoomed-out map slow.
   const face = (g, pk, x, y, r, ring) => {
     const url = getProfile(pk)?.picture
-    let img = url && images.current.get(url)
+    const img = url && images.current.get(url)
     if (url && !img && r >= 6) {
       images.current.set(url, "loading")
       const im = new Image()
       im.decoding = "async"; im.referrerPolicy = "no-referrer"
-      im.onload = () => { images.current.set(url, im); request() }
+      im.onload = () => { images.current.set(url, roundBitmap(im)); request() }
       im.onerror = () => images.current.set(url, "failed")
       im.src = url
     }
-    g.save()
-    g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI)
-    if (img instanceof Image) { g.clip(); g.drawImage(img, x - r, y - r, 2 * r, 2 * r) }
-    else { g.fillStyle = `hsl(${parseInt(pk.slice(0, 6), 16) % 360} 45% 35%)`; g.fill() }
-    g.restore()
+    if (img && typeof img === "object") g.drawImage(img, x - r, y - r, 2 * r, 2 * r)
+    else { g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI); g.fillStyle = `hsl(${parseInt(pk.slice(0, 6), 16) % 360} 45% 35%)`; g.fill() }
     g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI)
     g.lineWidth = ring ? 2.5 : 1; g.strokeStyle = ring ? "#e67326" : "rgb(0 0 0 / .6)"; g.stroke()
   }
@@ -273,11 +280,25 @@ function WotMap({ web, nodes, picked, onPick, centre, onCentred, hiddenFurther }
       <div class="wot-legend" aria-hidden="true">
         <span><i class="dot follow" />{web.follows.length} follows</span>
         <span><i class="dot extended" />{web.extended.length} extended</span>
-        <span><i class="dot further" />{web.further.length} further out{hiddenFurther > 0 ? ` (${FURTHER_CAP.toLocaleString()} drawn)` : ""}</span>
+        <span><i class="dot further" />{web.further.length} further out</span>
+        {capped && <span>Up to {FURTHER_CAP.toLocaleString()} of each drawn; My Web lists all</span>}
       </div>
       <button type="button" class="small wot-home" onClick={goHome} aria-label="Back to you">Me</button>
     </div>
   )
+}
+
+/** BITMAP px square, round, cover-cropped: big enough for the largest face at the screen's density. */
+const BITMAP = 96
+function roundBitmap(im) {
+  const c = document.createElement("canvas")
+  c.width = c.height = BITMAP
+  const g = c.getContext("2d")
+  const side = Math.min(im.naturalWidth || BITMAP, im.naturalHeight || BITMAP)
+  const sx = ((im.naturalWidth || side) - side) / 2, sy = ((im.naturalHeight || side) - side) / 2
+  g.beginPath(); g.arc(BITMAP / 2, BITMAP / 2, BITMAP / 2, 0, 2 * Math.PI); g.clip()
+  g.drawImage(im, sx, sy, side, side, 0, 0, BITMAP, BITMAP)
+  return c
 }
 
 /** The trust card: who links you, the trust path, and Profile / Follow / Message / Block. */
