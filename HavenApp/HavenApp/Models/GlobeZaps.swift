@@ -46,7 +46,10 @@ extension GlobeArcs {
               // first-wins here and last-wins in the verifier, so the raw
               // text could prove one zapper while Swift drew another.
               let signed = canonicalRequest(request), verify(signed) else { return nil }
-        return Arrival(id: id, author: zapper, targets: [recipient], zap: true)
+        // The amount the zapper signed for (msats), for how hard it strikes.
+        let msats = requestTags.first { $0.count >= 2 && $0[0] == "amount" }.flatMap { Int($0[1]) }
+        return Arrival(id: id, author: zapper, targets: [recipient], zap: true, sort: .zap,
+                       strength: zapStrength(sats: (msats ?? 0) / 1000))
     }
 
     /// A zap request rebuilt from Swift's own reading of it, with exactly
@@ -133,6 +136,19 @@ enum GlobeBolt {
             let t = Double(i) / Double(segments)
             return random(&state) * reach * sin(t * .pi)
         }
+    }
+
+    /// One fork, or two for a strong zap, each from its own point.
+    static func forks(seed: UInt64, strength: Double) -> [(from: Int, turn: Double, length: Double)] {
+        (0..<(strength >= 0.5 ? 2 : 1)).map { fork(seed: seed &+ UInt64($0) &* 0x9E37_79B9_7F4A_7C15) }
+    }
+
+    /// How bright the bolt is this flicker frame, 0.55 to 1: it stutters
+    /// while it flashes, the way lightning does.
+    static func flicker(seed: UInt64, frame: Int) -> Double {
+        guard frame >= 0 else { return 1 }
+        var state = seed ^ UInt64(bitPattern: Int64(frame)) &* 0xA24B_AED4_963E_E407
+        return 0.775 + 0.225 * random(&state)
     }
 
     /// The fork: which point it leaves from, its turn off the bolt (radians)

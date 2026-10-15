@@ -37,14 +37,13 @@ extension TrustWebView {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) { ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) } }
             }
-            ToolbarItem(placement: .primaryAction) { GlobeViewToggle() }
             ToolbarItem(placement: .primaryAction) { liveArcsButton }
         }
         #endif
     }
 
     #if os(iOS)
-    /// Search, the filters, then the 3D / 2D switch and the antenna.
+    /// Search, the filters, then the antenna.
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
             IconFilterButton(icon: "magnifyingglass", tooltip: "Find someone",
@@ -53,7 +52,6 @@ extension TrustWebView {
             Divider().frame(height: 20).padding(.horizontal, spacing == 0 ? 2 : 4)
             ForEach(TrustMap.Filter.allCases, id: \.self) { filterButton($0) }
             Divider().frame(height: 20).padding(.horizontal, spacing == 0 ? 2 : 4)
-            GlobeViewToggle()
             liveArcsButton
         }
         .environment(\.filterButtonWidth, buttonWidth)

@@ -105,18 +105,6 @@ final class GlobeScene: ObservableObject {
     private var seatFade: [String: Double] = [:]
     private var lastDt = 0.0
     private var facesFading = false
-    /// The 2D view: the network laid out as a map (`GlobeFlat`). `flatMix`
-    /// eases toward the switch, so the globe flattens and rounds out rather
-    /// than cutting; `flatCam` is where you are looking on the map.
-    private var flatTarget = false
-    private var flatMix = 0.0
-    private var flatCam = GlobeFlat.Camera()
-    /// The map doesn't turn: it keeps the globe's turn from when it went flat.
-    private var flatYaw = 0.0
-    /// The canvas's size, for the map's limits between frames.
-    private var flatSize = CGSize(width: 390, height: 844)
-    /// Who the core follows, by star index: the flat view's lines.
-    private var coreFollows: [Bool] = []
     private var sleepQueued = false
 
     /// Live arrival arcs: notes flying across the globe as they reach the
@@ -317,42 +305,7 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// Lays the globe flat, or rounds it back out.
-    func setFlat(_ on: Bool) {
-        guard on != flatTarget else { return }
-        flatTarget = on
-        if on {
-            // Opens on you at the readable zoom, and holds still.
-            flatYaw = GlobeFlat.yaw(of: simd_double3x3(camera.orientation))
-            flatCam = GlobeFlat.Camera()
-        }
-        if reduceMotion || !hasLoaded { flatMix = on ? 1 : 0 }
-        wake()
-    }
-
-    /// A drag on the map moves it under the finger.
-    func pan(dx: Double, dy: Double, in size: CGSize) {
-        flatSize = size
-        flatCam.pan(by: SIMD2(dx, dy), in: size)
-    }
-
-    /// Let go of the map at `vx`, `vy` points a second: it carries on and slows.
-    func fling(vx: Double, vy: Double) {
-        flatCam.fling(reduceMotion ? .zero : SIMD2(vx, vy))
-        wake()
-    }
-
-    /// A pinch on the map zooms it about the middle of the screen.
-    func pinchFlat(by factor: Double, in size: CGSize) {
-        flatSize = size
-        flatCam.pinch(by: factor, in: size)
-        wake()
-    }
-
-    var isFlat: Bool { flatTarget }
-
     func reset() {
-        if reduceMotion { flatCam = GlobeFlat.Camera() } else { flatCam.home() }
         let target = center == author ? center : author
         camera.fly(to: GlobeCamera.facing(TrustMap.direction(of: target)), at: Date.timeIntervalSinceReferenceDate)
         wake()
@@ -388,14 +341,13 @@ final class GlobeScene: ObservableObject {
     }
 
     /// A finger on the globe, or the spin it left.
-    private var handsOn: Bool { camera.dragging || camera.spin != .zero || flatCam.velocity != .zero }
+    private var handsOn: Bool { camera.dragging || camera.spin != .zero }
 
     /// Works out each star's lit flags again, after the stars, the core,
     /// the author, the traced path or the filter change.
     private func relight() {
         light = TrustMap.StarLight(keys: keys, pinned: Set([center, author]).union(traced),
                                    from: filterFrom, to: filterTo)
-        coreFollows = keys.map { ring.contains($0) }
     }
 
     func wake() {
@@ -477,14 +429,7 @@ final class GlobeScene: ObservableObject {
                 self.syncArcKeys()
             }
         }
-        let flatGoal = flatTarget ? 1.0 : 0
-        if flatMix != flatGoal {
-            flatMix += (flatGoal - flatMix) * (1 - exp(-dt * 5))
-            if abs(flatGoal - flatMix) < 0.003 { flatMix = flatGoal }
-        }
-        if flatCam.moving { flatCam.step(dt: dt, in: flatSize) }
-        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || flatMix != flatGoal
-            || flatCam.moving || facesFading
+        let fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || facesFading
         if weights != weightTarget {
             weights += (weightTarget - weights) * (1 - exp(-dt * 8))
             if simd_reduce_max(abs(weightTarget - weights)) < 0.005 { weights = weightTarget }
@@ -500,11 +445,7 @@ final class GlobeScene: ObservableObject {
             threadProgress = min(1, max(0, (now - threadsBorn - 0.35) / 0.55))
             if age > Self.settleTime { settle() }
         }
-        // Flat, the map holds still: only a finger, a zoom or a turn needs frames,
-        // not the globe's idle drift, so an untouched map lets the clock sleep.
-        let cameraWants = flatTarget && flatMix == 1
-            ? camera.dragging || camera.flyTarget != nil || camera.zoom != camera.zoomTarget
-            : camera.wantsFrames(now: now, reduceMotion: reduceMotion)
+        let cameraWants = camera.wantsFrames(now: now, reduceMotion: reduceMotion)
         let still = !settling && !fading && !cameraWants
         if handsOn != fullRate {
             // Not from inside the draw: the rate publishes on the next turn.
@@ -564,41 +505,15 @@ final class GlobeScene: ObservableObject {
         let cameraZ: Double
         let unit: Double
         let mid: CGPoint
-        /// 0 for the globe, 1 for the flat disc, between while it changes.
-        let flat: Double
-        /// The disc's middle and its points per unit, zoom included.
-        let flatCenter: CGPoint
-        let flatUnit: Double
-        let yaw: Double
-        /// How big stars and faces draw on the map.
-        let flatScale: Double
 
-        init(_ camera: GlobeCamera, size: CGSize, flat: Double = 0, map: GlobeFlat.Camera = .init(), yaw: Double = 0) {
+        init(_ camera: GlobeCamera, size: CGSize) {
             turn = simd_double3x3(camera.orientation)
             cameraZ = GlobeCamera.distance / camera.zoom
             unit = GlobeCamera.unit(for: size, phone: GlobeScene.isPhone)
             mid = CGPoint(x: size.width / 2, y: size.height / 2)
-            self.flat = flat
-            flatCenter = CGPoint(x: mid.x + map.offset.x, y: mid.y + map.offset.y)
-            flatUnit = GlobeFlat.unit(for: size) * map.zoom
-            flatScale = GlobeFlat.scale(atZoom: map.zoom)
-            self.yaw = yaw
         }
 
         func callAsFunction(_ p: SIMD3<Double>) -> Projected? {
-            guard flat > 0 else { return round(p) }
-            let q = GlobeFlat.place(p, yaw: yaw)
-            let onDisc = Projected(point: CGPoint(x: flatCenter.x + q.x * flatUnit, y: flatCenter.y - q.y * flatUnit),
-                                   depth: GlobeFlat.depth(p), scale: flatScale)
-            guard flat < 1 else { return onDisc }
-            // Between the two: each star glides from one place to the other.
-            guard let globe = round(p) else { return flat > 0.5 ? onDisc : nil }
-            func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * flat }
-            return Projected(point: CGPoint(x: mix(globe.point.x, onDisc.point.x), y: mix(globe.point.y, onDisc.point.y)),
-                             depth: mix(globe.depth, onDisc.depth), scale: mix(globe.scale, onDisc.scale))
-        }
-
-        private func round(_ p: SIMD3<Double>) -> Projected? {
             let v = turn * p
             let gap = cameraZ - v.z
             // Zoomed in, the outer shell passes the camera: drop what's behind the lens.
@@ -617,7 +532,7 @@ final class GlobeScene: ObservableObject {
     /// Closest front-facing face to a tap, within reach of a fingertip.
     /// Zoomed in, plain stars can be tapped too.
     func hit(_ point: CGPoint, in size: CGSize) -> String? {
-        let project = Projector(camera, size: size, flat: flatMix, map: flatCam, yaw: flatYaw)
+        let project = Projector(camera, size: size)
         var best: (key: String, distance: CGFloat)?
         func consider(_ i: Int, reach: CGFloat) {
             guard alpha[i] * min(1, weight(i)) > 0.5, let p = project(dirs[i] * radius[i]), p.depth > -0.15 else { return }
@@ -625,11 +540,14 @@ final class GlobeScene: ObservableObject {
             if d < reach, d < (best?.distance ?? .infinity) { best = (keys[i], d) }
         }
         for i in keys.indices where isFace[i] { consider(i, reach: 30) }
-        if best == nil, GlobeFlat.tapZoom(globe: camera.zoom, map: flatCam.zoom, flat: flatMix) >= GlobeFlat.starTapZoom {
+        if best == nil, camera.zoom >= Self.starTapZoom {
             for i in keys.indices where !isFace[i] && kinds[i] != .haze && kinds[i] != .closeHaze { consider(i, reach: 16) }
         }
         return best?.key
     }
+
+    /// Zoomed in this far, plain stars can be tapped too, not just faces.
+    static let starTapZoom = 1.6
 
     // MARK: Drawing
 
@@ -648,15 +566,11 @@ final class GlobeScene: ObservableObject {
 
     func draw(in context: inout GraphicsContext, size: CGSize, accent: Color, name: (String) -> String) {
         guard hasLoaded, let centerIndex = index[center] else { return }
-        let project = Projector(camera, size: size, flat: flatMix, map: flatCam, yaw: flatYaw)
-        // The map zooms itself (`flatCam`); flat, the globe's zoom drops out.
-        let zoom = camera.zoom + (1 - camera.zoom) * flatMix
+        let project = Projector(camera, size: size)
+        let zoom = camera.zoom
         let k = min(1, min(size.width, size.height) / 620)
-        flatSize = size
         let view = CGRect(origin: .zero, size: size).insetBy(dx: -8, dy: -8)
         guard let core = project(dirs[centerIndex] * radius[centerIndex]) else { return }
-        GlobeFlatDisc(center: project.flatCenter, unit: project.flatUnit, opacity: flatMix,
-                      hazeColor: Self.hazeColor).draw(&context)
         // The trust card's person, if any, takes the author's place.
         let author = traceTarget ?? self.author
         let bridges = traceTarget == nil ? self.bridges : traceBridges
@@ -677,12 +591,9 @@ final class GlobeScene: ObservableObject {
         var buckets = Array(repeating: Array(repeating: Path(), count: Self.levels + 1), count: Slot.allCases.count)
         var labelled: [(key: String, at: CGPoint, r: Double, a: Double)] = []
         let namesOut = showsNames && zoom > 2.2
-        var linkEnds: [CGPoint] = []
         for i in keys.indices where !isFace[i] {
             let a = alpha[i] * weight(i)
             guard a > 0.02, let p = project(dirs[i] * radius[i]) else { continue }
-            // A line to someone off screen still crosses it: the stroke clips.
-            if flatMix > 0, coreFollows[i] { linkEnds.append(p.point) }
             guard view.contains(p.point) else { continue }
             let front = p.front
             let slot: Slot, base: Double, size: Double
@@ -696,8 +607,7 @@ final class GlobeScene: ObservableObject {
             }
             let level = Int((min(1, base * a) * Double(Self.levels)).rounded())
             guard level > 0 else { continue }
-            // Flat, the plain stars are smaller, so the web's faces and lines read.
-            let r = size * p.scale * zoom * (1 - 0.35 * flatMix)
+            let r = size * p.scale * zoom
             buckets[slot.rawValue][min(Self.levels, level)]
                 .addEllipse(in: CGRect(x: p.point.x - r, y: p.point.y - r, width: 2 * r, height: 2 * r))
             if namesOut, slot != .haze, p.depth > 0.6, labelled.count < 200 {
@@ -709,12 +619,6 @@ final class GlobeScene: ObservableObject {
                 context.fill(buckets[slot.rawValue][level],
                              with: .color(color.opacity(Double(level) / Double(Self.levels))))
             }
-        }
-        if flatMix > 0 {
-            // The flat view reads as a web: lines from the core to its follows.
-            let faceEnds = faces.compactMap { key in index[key].flatMap { coreFollows[$0] ? position(key, project)?.point : nil } }
-            GlobeFlatDisc.links(&context, from: core.point, to: linkEnds, faces: faceEnds, in: view,
-                                color: Self.ringColor, opacity: flatMix)
         }
         fill(.haze, Self.hazeColor)
         fill(.ring, Self.ringColor)
@@ -803,10 +707,8 @@ final class GlobeScene: ObservableObject {
         var drawn: [(key: String, p: Projected, tint: Color, size: Double, dim: Bool)] = []
         // A filter's matches are the point of the filter, so they never dim.
         let dimLayer = dimLayerFaces && filterTo == nil
-        // On the map, only faces near the screen take part: a big map draws what shows.
-        let nearView = view.insetBy(dx: -60, dy: -60)
         for key in faces {
-            guard let p = position(key, project), flatMix < 1 || nearView.contains(p.point) else { continue }
+            guard let p = position(key, project) else { continue }
             if traceTarget == nil, ringFaceSet.contains(key) {
                 drawn.append((key, p, Self.ringColor, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
@@ -824,11 +726,9 @@ final class GlobeScene: ObservableObject {
         // the rest stay stars until the globe turns them some room. Dim faces
         // are seated last and hold no seat, so they never push out a bright one.
         let front = drawn.reversed().filter { $0.p.depth >= GlobeEdge.faceGone || $0.key == author }
-        // Flat, faces never touch: a seat there takes the face and a margin.
-        let room = 1 + flatMix * (GlobeFlat.faceRoom / (1 - TrustMap.faceOverlap) - 1)
         let spots = (front.filter { !$0.dim } + front.filter(\.dim)).map {
             TrustMap.FaceSpot(key: $0.key, x: $0.p.point.x, y: $0.p.point.y,
-                              r: $0.size * k * $0.p.scale * min(zoom, 1.8) * room)
+                              r: $0.size * k * $0.p.scale * min(zoom, 1.8))
         }
         let dimKeys = Set(drawn.filter(\.dim).map(\.key))
         let seats = TrustMap.seatFaces(spots, always: [author], kept: seated.subtracting(dimKeys),

@@ -76,6 +76,10 @@ enum GlobeArcs {
         var ring: Ring = .following
         /// A zap: drawn as a lightning bolt, not a star (`GlobeZaps.swift`).
         var zap = false
+        /// What it is, for the My Web switches (`GlobeLive.swift`).
+        var sort: Sort = .note
+        /// How hard a zap's bolt strikes, 0 to 1, by its amount.
+        var strength = 0.0
     }
 
     /// From a relay `EVENT`'s event: its `p` tags in order, once each,
@@ -90,17 +94,20 @@ enum GlobeArcs {
             guard let verifyZap else { return nil }
             return zap(event, now: now, verify: verifyZap)
         }
-        guard let kind = event["kind"] as? Int, kinds.contains(kind) || repostKinds.contains(kind),
+        guard let kind = event["kind"] as? Int,
+              kinds.contains(kind) || repostKinds.contains(kind) || kind == reactionKind,
               let id = event["id"] as? String, isKey(id),
               let author = event["pubkey"] as? String, isKey(author) else { return nil }
         if let created = event["created_at"] as? Double,
            now.timeIntervalSince1970 - created > maxAge { return nil }
         let tags = event["tags"] as? [[String]] ?? []
+        // A reaction flies to whoever it reacts to, or not at all.
+        if kind == reactionKind { return reaction(id: id, author: author, tags: tags) }
         // Comments on videos, articles and the like aren't conversation.
         if kind == NIP10Thread.commentKind, !NIP10Thread.isNoteComment(kind: kind, tags: tags) { return nil }
         // A reply flies to the person it answers, not to everyone in the thread.
         if let to = repliedTo(kind: kind, tags: tags), to != author {
-            return Arrival(id: id, author: author, targets: [to])
+            return Arrival(id: id, author: author, targets: [to], sort: .reply)
         }
         // A reply we can't place (no pubkey slot, no p tag) doesn't fly: only
         // a note aimed at no one lands on you.
@@ -114,7 +121,8 @@ enum GlobeArcs {
         }
         // A repost with no p tag (most of them on some relays) has no one to
         // point at: like any note aimed at no one, it flies into you.
-        return Arrival(id: id, author: author, targets: targets)
+        let sort: Sort = repostKinds.contains(kind) ? .repost : isReply(kind: kind, tags: tags) ? .reply : .note
+        return Arrival(id: id, author: author, targets: targets, sort: sort)
     }
 
     /// Who a reply answers: the author of the event it replies to. NIP-10
@@ -165,6 +173,10 @@ enum GlobeArcs {
         var retired: TimeInterval?
         /// A zap's bolt, with its own quick timeline (`boltStage`).
         var zap = false
+        /// How hard the bolt strikes, 0 to 1.
+        var strength = 0.0
+        /// What it carries: a reaction's star is smaller.
+        var sort: Sort = .note
     }
 
     /// Where a line is at a moment: its star at `head` (0 at the author, 1 at
@@ -212,7 +224,7 @@ enum GlobeArcs {
             // Aimed at no one: it flies into you, where your relay is.
             for target in next.targets.isEmpty ? [me] : next.targets where target != next.author {
                 lines.append(Line(note: next.id, from: next.author, to: target, toMe: target == me,
-                                  ring: next.ring, born: now, zap: next.zap))
+                                  ring: next.ring, born: now, zap: next.zap, strength: next.strength, sort: next.sort))
             }
             // Over the cap: the oldest still-standing lines start their fade now.
             var standing = lines.filter { $0.retired == nil }.count
