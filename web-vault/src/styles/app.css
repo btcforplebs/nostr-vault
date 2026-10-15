@@ -74,8 +74,12 @@ button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weig
 .screen > button.primary { margin: 0 var(--gutter); width: calc(100% - 2 * var(--gutter)); }
 .result { margin: 16px var(--gutter); padding: 14px; display: grid; gap: 6px; font: var(--t-sub); background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
 
-/* Profile header. */
+/* Profile header. The Wallet and Settings buttons float over the banner and stay put on scroll (the phone's toolbar). */
+.profile-hud { margin-bottom: calc(-48px - max(8px, env(safe-area-inset-top))); pointer-events: none; }
+.profile-hud a { pointer-events: auto; }
+.vault-pill-btn.hud-accent { color: var(--accent); }
 .profile-header { margin-top: calc(-1 * max(12px, env(safe-area-inset-top))); }
+.profile-hud + .profile-header { margin-top: 0; }
 .profile-header .banner { position: relative; height: 200px; background: linear-gradient(135deg, var(--accent-dark), var(--s1)); overflow: hidden; }
 .profile-header .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .profile-header .banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 45%, var(--bg)); }

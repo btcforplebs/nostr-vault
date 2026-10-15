@@ -28,7 +28,7 @@ export const MODES = [
 /** Each mode's filters, named as the phone names them (VaultFilterChoice.name); `pill` is the short form the closed
  *  pill shows when the name is long. The first one is the default. */
 export const FILTERS = {
-  activity: [{ id: "all", title: "Everything" }, { id: "mentions", title: "Mentions" }],
+  activity: [{ id: "all", title: "Everything", pill: "All" }, { id: "mentions", title: "Mentions" }],
   notes: [{ id: "all", title: "All notes", pill: "All" }, { id: "mine", title: "Your notes", pill: "Yours" }, { id: "tagged", title: "Mentions" }],
   articles: [{ id: "all", title: "All articles", pill: "All" }, { id: "recipes", title: "Recipes only", pill: "Recipes" }],
   highlights: [{ id: "all", title: "All highlights", pill: "All" }, { id: "mine", title: "Your highlights", pill: "Yours" }],
