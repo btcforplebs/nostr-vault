@@ -55,6 +55,7 @@ export function rememberAccount(s, storage = localStorage) {
   if (!valid(s)) throw new Error("not an account")
   const list = loadAccounts(storage)
   const at = list.findIndex(a => a.pubkey === s.pubkey)
+  if (at >= 0 && s.method === "readonly" && list[at].method !== "readonly") return // never downgrade a saved signer
   if (at >= 0) list[at] = s
   else list.push(s)
   storage.setItem(ACCOUNTS, JSON.stringify(list))

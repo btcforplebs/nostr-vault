@@ -5,7 +5,7 @@ import { npubEncode, nprofileEncode, nsecEncode } from "nostr-tools/nip19"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { resolvePubkey, readonlySignIn, namesAKey, READ_ONLY } from "../src/signer/readonly.js"
 import { signerFor } from "../src/signer/index.js"
-import { saveSession, loadSession, loadAccounts, signedInWith } from "../src/session.js"
+import { saveSession, loadSession, loadAccounts, rememberAccount, signedInWith } from "../src/session.js"
 
 const pk = getPublicKey(generateSecretKey())
 const noLookup = async () => { throw new Error("should not look up") }
@@ -41,7 +41,7 @@ test("junk and empty input are refused", async () => {
 })
 
 test("a read-only session is saved and remembered like any other, and its signer never signs", async () => {
-  const { signer, session } = await readonlySignIn(npubEncode(pk), noLookup)
+  const { signer, session } = await readonlySignIn(npubEncode(pk), noLookup, [])
   assert.deepEqual(session, { method: "readonly", pubkey: pk })
   const storage = memStorage()
   saveSession(session, storage)
@@ -62,4 +62,36 @@ test("a name is searched; a key or NIP-05 goes straight in", () => {
     assert.equal(namesAKey(key), true, key)
   for (const name of ["Logen", "logan detty", "jack", "", "fiatjaf "])
     assert.equal(namesAKey(name), false, name)
+})
+
+test("a NIP-05 host that never answers gives up with a plain error instead of holding sign-in", async () => {
+  const t0 = Date.now()
+  await assert.rejects(resolvePubkey("slow@example.com", () => new Promise(r => setTimeout(() => r({ pubkey: pk }), 1500)), 50), /slow@example.com didn't answer in 0.05 seconds/)
+  assert.ok(Date.now() - t0 < 1000)
+})
+
+test("a NIP-05 name is looked up in lowercase", async () => {
+  const seen = []
+  assert.equal(await resolvePubkey("Logen@Example.COM", async s => { seen.push(s); return { pubkey: pk } }), pk)
+  assert.deepEqual(seen, ["logen@example.com"])
+})
+
+test("read-only never replaces a saved signer account for the same npub", async () => {
+  const bunker = { method: "nip46", pubkey: pk, bunker: { pubkey: "c".repeat(64), relays: ["wss://r.example"], secret: null }, clientSkSealed: "sealed" }
+  const ext = { method: "nip07", pubkey: pk }
+  for (const saved of [bunker, ext]) {
+    await assert.rejects(readonlySignIn(npubEncode(pk), noLookup, [saved]), /already on this browser/)
+    const storage = memStorage()
+    rememberAccount(saved, storage)
+    rememberAccount({ method: "readonly", pubkey: pk }, storage) // the store guards too
+    assert.deepEqual(loadAccounts(storage), [saved])
+  }
+  // A different npub, or a saved read-only one, is fine; and a signer may replace read-only.
+  const other = getPublicKey(generateSecretKey())
+  assert.equal((await readonlySignIn(npubEncode(pk), noLookup, [{ method: "nip46", pubkey: other }])).session.method, "readonly")
+  assert.equal((await readonlySignIn(npubEncode(pk), noLookup, [{ method: "readonly", pubkey: pk }])).session.method, "readonly")
+  const storage = memStorage()
+  rememberAccount({ method: "readonly", pubkey: pk }, storage)
+  rememberAccount(ext, storage)
+  assert.deepEqual(loadAccounts(storage), [ext])
 })

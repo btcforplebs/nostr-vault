@@ -43,7 +43,7 @@ export function ZapButton({ note, pubkey }) {
 
   if (!ctx) return null
   const sats = total?.sats ?? 0
-  if (wallet.status !== "ready") {
+  if (wallet.status !== "ready" || ctx.signer?.readOnly) { // read-only can't sign the zap request
     if (!sats) return null
     // No wallet to zap from, but the sats others sent still show.
     return <span class="note-action zap-total" role="img" aria-label={`${formatSats(sats)} sats zapped`}><Bolt filled />{formatSats(sats)}</span>
