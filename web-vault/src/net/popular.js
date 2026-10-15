@@ -5,6 +5,7 @@
 // is strangers' data and stays in memory: nothing is written to Haven /feed.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
+import { followLists } from "./wot.js"
 
 export const WINDOW = 24 * 3600 // seconds of engagement asked for
 export const MIN_REACTORS = 3 // distinct trusted people, not counting the author (dvm.go minTrustedReactors)
@@ -89,25 +90,14 @@ export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Da
   }).map(s => s.note)
 }
 
-// The trust set is a few hundred contact lists: built once per follow list this session, memory only.
-let trustCache = { key: "", set: null }
-
 /**
- * The user, their follows and the people their follows follow. Contact lists come from the profile relay only
- * (purplepag.es keeps them): asking every read relay too multiplied the download by the number of relays, at
- * 20-50 KB a list. The chunks go out together. `query` is for tests.
+ * The user, their follows and the people their follows follow: the follows' contact lists (wot.js followLists, shared
+ * with the Web of Trust tab, fetched once per follow list this session). `query` is for tests.
  */
 export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
-  if (trustCache.key === key) return trustCache.set
   const set = new Set([me, ...follows].filter(Boolean))
-  const mine = new Set(follows), newest = new Map()
-  const chunks = []
-  for (let i = 0; i < follows.length; i += 250) chunks.push(follows.slice(i, i + 250))
-  const answers = await Promise.all(chunks.map(chunk => query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })))
-  for (const ev of answers.flat()) if (ev?.kind === 3 && mine.has(ev.pubkey) && !(newest.get(ev.pubkey)?.created_at >= ev.created_at)) newest.set(ev.pubkey, ev)
-  for (const ev of newest.values()) for (const t of ev.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) set.add(t[1])
-  trustCache = { key, set }
+  for (const ev of (await followLists(me, follows, { relays, query })).values())
+    for (const t of ev.tags ?? []) if (t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")) set.add(t[1])
   return set
 }
 
