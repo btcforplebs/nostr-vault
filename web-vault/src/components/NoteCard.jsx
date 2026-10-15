@@ -5,6 +5,7 @@ import { NoteText } from "./NoteText.jsx"
 import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
+import { MoreMenu } from "./Moderation.jsx"
 import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -58,7 +59,8 @@ function NoteBody({ event, memoryOnly }) {
   )
 }
 
-/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up. */
+/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody), then ⋯ (report, block) at the
+ *  far end. Not shown before the app is up. */
 function NoteActions({ note }) {
   const ctx = actionContext()
   const [s, setS] = useState(() => actionState(note.id))
@@ -76,6 +78,7 @@ function NoteActions({ note }) {
       <ActionButton label="Quote" icon={ICONS.quote} onClick={() => compose("quote", note)} />
       <ActionButton label="Like" doneLabel="Liked" kind="like" state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
       <ZapButton note={note} />
+      <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>
     </div>
   )
 }

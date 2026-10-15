@@ -1,0 +1,46 @@
+/* Block, unblock and report (components/Moderation.jsx): the ⋯ menu on notes and profiles, and its dialogs. */
+.more-wrap { position: relative; display: inline-flex; }
+/* On a note the ⋯ sits at the far end of the action row, apart from the actions that do something to the note. */
+.note-actions-end { margin-left: auto; }
+.more-menu { position: absolute; z-index: 8; bottom: calc(100% + 8px); right: 0; min-width: 210px; padding: 6px; display: grid; gap: 2px;
+  border-radius: 14px; background: var(--s1); border: 1px solid var(--strong); box-shadow: 0 8px 24px rgb(0 0 0 / .6); cursor: default; }
+.more-menu button { justify-content: flex-start; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: none;
+  font: var(--t-sub); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more-menu button:hover, .more-menu button:focus-visible { background: var(--s2); }
+.more-menu button.danger { color: var(--danger); }
+/* On a profile the menu is near the top of the screen: it opens downward. */
+.person-actions .more-menu { bottom: auto; top: calc(100% + 8px); }
+/* As tall as the Follow button beside it. */
+.person-actions .more-wrap { align-self: stretch; }
+.person-actions .more-btn { flex: none; width: 44px; height: 100%; min-height: 36px; padding: 0; display: inline-grid; place-items: center;
+  border-radius: 8px; border-color: transparent; background: var(--s2); color: var(--text-2); }
+
+.blocked-banner { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 12px; padding: 12px 14px;
+  border-radius: var(--radius); background: rgb(255 69 58 / .10); border: 1px solid rgb(255 69 58 / .30); font: var(--t-sub); }
+.blocked-banner span { flex: 1; min-width: 0; }
+
+.blocked-row { gap: 10px; }
+.blocked-row .blocked-who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+
+.mod-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--strong);
+  border-radius: 18px; background: var(--s1); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / .7); cursor: default; }
+.mod-dialog::backdrop { background: rgb(0 0 0 / .6); }
+.mod-body { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.mod-body h3 { margin: 0; font: var(--t-title2); }
+.mod-body p { margin: 0; }
+.mod-check { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 12px; background: var(--s2); font: var(--t-sub); }
+.mod-check input { margin-top: 3px; accent-color: var(--accent); }
+.mod-check .small { display: block; margin-top: 4px; }
+.mod-reasons { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
+.mod-reasons legend { padding: 0 0 6px; font: var(--t-headline); }
+.mod-reason { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 10px;
+  background: var(--s2); border: 1px solid transparent; font: var(--t-sub); }
+.mod-reason.on { border-color: var(--accent); }
+.mod-reason input { accent-color: var(--accent); }
+.mod-details { display: grid; gap: 6px; }
+.mod-details textarea { resize: vertical; min-height: 72px; padding: 10px; border-radius: 10px; border: 1px solid var(--hair);
+  background: var(--bg); color: var(--text); font: var(--t-sub); }
+.mod-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.mod-row button { min-height: 44px; padding: 0 18px; }
+button.danger-fill { background: var(--danger); border-color: transparent; color: #fff; font-weight: 700; }
+button.danger-fill:disabled { background: var(--s3); color: var(--text-3); }
