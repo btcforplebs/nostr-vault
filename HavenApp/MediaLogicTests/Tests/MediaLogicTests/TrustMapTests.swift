@@ -384,8 +384,11 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(faces(.close), [key(2), key(3), key(5)])
         XCTAssertEqual(faces(.close, count: 2), [key(2), key(3)])
         XCTAssertEqual(faces(.furtherOut), [key(6), key(4)])
-        // Everyone draws a few from the whole web past your follows; Following keeps your follows' faces.
-        XCTAssertEqual(faces(.everyone), [key(2), key(3), key(5), key(6), key(4)])
+        // Everyone draws from both outer shells in turn, most vouched first in
+        // each, so a short list still puts faces on the Close (Discover) ring
+        // and further out; Following keeps your follows' faces.
+        XCTAssertEqual(faces(.everyone), [key(2), key(6), key(3), key(4), key(5)])
+        XCTAssertEqual(faces(.everyone, count: 2), [key(2), key(6)])
         XCTAssertEqual(faces(.following), [])
     }
 
