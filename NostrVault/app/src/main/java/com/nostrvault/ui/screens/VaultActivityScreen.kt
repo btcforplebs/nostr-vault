@@ -86,6 +86,7 @@ import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.navigation.TabReselect
+import com.nostrvault.ui.theme.InfoBlue
 import com.nostrvault.ui.theme.LikeRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -656,7 +657,7 @@ private fun VaultActivityRow(
 private fun activityStyle(kind: VaultActivity.Kind, primary: Color): Pair<ImageVector, Color> = when (kind) {
     VaultActivity.Kind.REPLY -> NostrVaultIcons.Reply to primary
     VaultActivity.Kind.MENTION -> NostrVaultIcons.At to primary
-    VaultActivity.Kind.QUOTE -> NostrVaultIcons.Quote to primary
+    VaultActivity.Kind.QUOTE -> NostrVaultIcons.Quote to InfoBlue
     VaultActivity.Kind.REACTION -> NostrVaultIcons.HeartFilled to LikeRed
     VaultActivity.Kind.REPOST -> NostrVaultIcons.Repost to RepostGreen
     VaultActivity.Kind.ZAP -> NostrVaultIcons.Zap to ZapOrange
