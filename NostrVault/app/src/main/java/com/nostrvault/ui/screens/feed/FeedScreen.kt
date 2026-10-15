@@ -1,59 +1,29 @@
 package com.nostrvault.ui.screens.feed
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.model.FeedLayoutMode
-import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
-import com.nostrvault.data.model.toNote
-import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.ReelsScope
-import com.nostrvault.ui.navigation.FeedTabPicker
-import com.nostrvault.ui.components.CustomZapSheet
-import com.nostrvault.ui.components.BroadcastSheet
-import com.nostrvault.ui.components.EmojiPickerSheet
-import com.nostrvault.ui.components.RankedCompactNoteCard
-import com.nostrvault.ui.components.CondensedEngagement
-import com.nostrvault.ui.components.TrustWebDialog
-import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.GlassScaffold
-import com.nostrvault.ui.components.UGCReportDialog
-import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
-import com.nostrvault.ui.components.chromeFab
 import com.nostrvault.ui.components.newPostsFold
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
@@ -151,7 +121,8 @@ fun FeedScreen(
     val liveGlobalGate by viewModel.liveGlobalGate.collectAsState()
     val marketLoadFailed by viewModel.marketLoadFailed.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
-    val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
+    // Read by the list rows (FeedNoteList), not here: passed as State so only they recompose.
+    val unavailableNoteIdsState = viewModel.unavailableNoteIds.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
     // subscribe the whole screen to every metadata batch; each feed row narrows
     // its own read below instead.
@@ -159,7 +130,8 @@ fun FeedScreen(
     val isCompact by viewModel.compactModeEnabled.collectAsState()
     val layoutMode by viewModel.layoutMode.collectAsState()
     val isThreaded by viewModel.threadedModeEnabled.collectAsState()
-    val feedThreads by viewModel.feedThreads.collectAsState()
+    val feedThreadsState = viewModel.feedThreads.collectAsState()
+    val feedThreads by feedThreadsState
     val autoLoad by viewModel.autoLoadEnabled.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
     val showReposts by viewModel.showReposts.collectAsState()
@@ -190,10 +162,10 @@ fun FeedScreen(
     // Threaded mode's cards share this same field rather than keeping their own —
     // one selection across both condensed layouts, and it survives a card being
     // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
-    var expandedNoteId by remember { mutableStateOf<String?>(null) }
+    val expandedNote = remember { mutableStateOf<String?>(null) }
+    var expandedNoteId by expandedNote
     // Holds a tapped thread line where it was when the open line above closes.
     val threadLineAnchor = remember(listState) { ThreadLineAnchor(scope, listState) }
-    val density = LocalDensity.current
 
     // Per-thread "show more replies" fold, hoisted for the same reason: a
     // LazyColumn item's own `remember` is dropped when it scrolls out of view.
@@ -213,72 +185,18 @@ fun FeedScreen(
         expandedNoteId = null
     }
 
-    // Batch-fetch all missing parent notes whenever the visible notes list changes.
-    // One REQ with all IDs instead of one REQ per item. The scan walks the
-    // whole feed (up to MAX_FEED_NOTES), so it runs off the main thread;
-    // only the fetch call comes back to it.
-    LaunchedEffect(notes) {
-        val missingIds = withContext(Dispatchers.Default) {
-            // The fetch below first looks the ids up in the feed (iOS #302);
-            // building that index here keeps a 10k-note pass off Main.
-            viewModel.warmNoteIndex()
-            notes.flatMap { note ->
-                // A bare repost's row shows the note it points at.
-                listOfNotNull(note.parentEventId, note.repostedEventId?.takeIf { note.isBareRepost })
-                    .filter { viewModel.parentNoteFor(it) == null }
-            }.distinct()
-        }
-        if (missingIds.isNotEmpty()) {
-            viewModel.fetchMissingParentNotes(missingIds)
-        }
-    }
+    FeedMissingNotesEffects(notes, viewModel)
 
-    // Batch-fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced
-    // by the visible notes. Decoded to hex and fetched via the same path as parents.
-    // Once they resolve, fetch their authors' profiles if not already cached —
-    // collected here rather than keyed on the cache, so a resolving quote does
-    // not recompose the screen.
-    LaunchedEffect(notes) {
-        val quotedIds = withContext(Dispatchers.Default) {
-            notes.flatMap { it.quotedEventIds }.distinct()
-        }
-        if (quotedIds.isEmpty()) return@LaunchedEffect
-        viewModel.fetchMissingQuotedNotes(quotedIds)
-        viewModel.parentNotesCache.collect {
-            viewModel.fetchMissingQuotedProfiles(quotedIds)
-        }
-    }
-
-    // Zap sheet state
-    var zapNoteId by remember { mutableStateOf<String?>(null) }
-    var showNoLightningAddress by remember { mutableStateOf(false) }
-    val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // More menu / delete confirmation state
-    var deleteNoteId by remember { mutableStateOf<String?>(null) }
-    var reportNoteId by remember { mutableStateOf<String?>(null) }
-    var blockNoteId by remember { mutableStateOf<String?>(null) }
-
-    // Emoji picker state
-    var emojiPickerNoteId by remember { mutableStateOf<String?>(null) }
-    val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // Broadcast sheet state
-    var broadcastNoteId by remember { mutableStateOf<String?>(null) }
-    // The post bar's Web of Trust button: the author whose map is open.
-    var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    // The sheets and dialogs a row or the toolbar opens (FeedScreenSheets.kt).
+    val sheets = remember { FeedSheetState() }
     // Compact and threaded lines open the same avatar menu as a full note.
     val feedAvatarMenu = rememberFeedAvatarMenu(viewModel)
-    var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
-    var listingInfoNote by remember { mutableStateOf<FeedNote?>(null) }
-    val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    var showFeedMenuEditor by remember { mutableStateOf(false) }
-
+    var openListing by sheets::openListing
+    var showFeedMenuEditor by sheets::showFeedMenuEditor
     // Reels' Global scope is unmoderated video from the whole network; it sits
     // behind a warning (iOS parity: the same one Media's Global uses there).
     // Global's Everyone scope sits behind the same warning (iOS parity).
-    var showGlobalEveryoneWarning by remember { mutableStateOf(false) }
+    var showGlobalEveryoneWarning by sheets::showGlobalEveryoneWarning
     val reelsScope by viewModel.reelsScope.collectAsState()
 
     // Trigger load-more when near bottom
@@ -317,94 +235,11 @@ fun FeedScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
-    // Tell the feed when a drag or fling is moving the list, so incoming
-    // relay batches wait for it to settle instead of reshaping the list under
-    // the finger; and save the scroll position for snapshot persistence when
-    // it stops. Read through snapshotFlow, not as an effect key: a key read
-    // here recomposed the whole screen at the start and end of every fling.
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            viewModel.setFeedScrolling(scrolling)
-            if (!scrolling) {
-                viewModel.saveScrollPosition(
-                    listState.firstVisibleItemIndex,
-                    listState.firstVisibleItemScrollOffset,
-                )
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose { viewModel.setFeedScrolling(false) }
-    }
+    FeedScrollTrackingEffects(listState, notes, viewModel)
 
-    // Restore scroll position from disk snapshot on cold boot
-    val restoredPosition by viewModel.restoredScrollPosition.collectAsState()
-    LaunchedEffect(restoredPosition, notes) {
-        val pos = restoredPosition ?: return@LaunchedEffect
-        if (notes.isNotEmpty() && pos.index < notes.size) {
-            listState.scrollToItem(pos.index, pos.offset)
-            viewModel.clearRestoredPosition()
-        }
-    }
+    FeedAutoApplyEffect(viewModel, pendingCount = { pendingCount }, autoLoad = { autoLoad }, isAtTop = { isAtTop })
 
-    // Auto-apply pending notes when at top with auto-load enabled.
-    // Uses snapshotFlow so that rapid pendingCount changes don't restart
-    // the effect (unlike LaunchedEffect with pendingCount as a key).
-    LaunchedEffect(Unit) {
-        snapshotFlow { pendingCount > 0 && autoLoad && isAtTop }
-            .collect { shouldApply ->
-                if (shouldApply) {
-                    // Brief debounce to batch rapid arrivals
-                    delay(150)
-                    // Re-check — user may have scrolled away during debounce
-                    if (isAtTop) {
-                        // The reveal effect below performs the scroll once the
-                        // prepend has actually landed in the list — scrolling
-                        // here (even after a fixed delay) races composition and
-                        // strands the new post above the viewport.
-                        viewModel.applyPendingNotes()
-                    }
-                }
-            }
-    }
-
-    // iOS-parity reveal. The keyed LazyColumn anchors the previous top item
-    // whenever notes are prepended, which strands the new notes above the
-    // viewport (only their bottom edge peeks out behind the translucent
-    // toolbar) — SwiftUI's ScrollView doesn't anchor, so iOS reveals new
-    // posts naturally. Watching the first note id is the only reliable
-    // signal that a prepend has actually composed; fixed delays race the
-    // filter-recompute debounce and the frame clock. When the first id
-    // changes while the user is (or just was) at the top, scroll to the
-    // absolute top so the new post lands fully in view below the toolbar.
-    // Also covers replies, which insert directly and bypass pendingNotes.
-    // Threaded mode lists thread cards, not notes: a reply moves its card to
-    // the top without changing notes' first id, so watch the first key the
-    // list actually renders.
-    LaunchedEffect(Unit) {
-        var prevFirstId: String? = null
-        var wasAtTop = true
-        snapshotFlow {
-            val keys = if (isThreaded) feedThreads.map { it.rootId } else notes.map { it.id }
-            keys to isAtTop
-        }
-            .collect { (keys, atTop) ->
-                val firstId = keys.firstOrNull()
-                // Prepend = first key changed but the old first item is still
-                // in the list (a refresh/reload replaces it entirely).
-                val prepended = firstId != null && prevFirstId != null &&
-                    firstId != prevFirstId && prevFirstId in keys
-                if (prepended && (wasAtTop || atTop)) {
-                    // requestScrollToItem wins over the next layout's key
-                    // anchoring. animateScrollToItem could run before that
-                    // layout, see index 0, do nothing, and leave the new
-                    // item above the viewport.
-                    listState.requestScrollToItem(0)
-                }
-                prevFirstId = firstId
-                wasAtTop = atTop
-            }
-    }
+    FeedRevealEffect(listState, isThreaded = { isThreaded }, feedThreads = { feedThreads }, notes = { notes }, isAtTop = { isAtTop })
 
     // Keep your place when switching layouts (iOS PR #130). Expanded and
     // condensed rows are keyed by note id, threaded cards by thread root, so
@@ -438,38 +273,7 @@ fun FeedScreen(
         layoutAnchor = null
     }
 
-    // Hold-the-Feed-tab picker (iOS #239): it shows this feed's mode and
-    // hands its pick here, where the mode lives.
-    LaunchedEffect(feedMode) { FeedTabPicker.shownMode = feedMode }
-    LaunchedEffect(Unit) {
-        FeedTabPicker.request.filterNotNull().collect { mode ->
-            FeedTabPicker.request.value = null
-            if (mode != viewModel.feedMode.value) viewModel.setFeedMode(mode)
-        }
-    }
-
-    // Handle tab re-selection: scroll to top or refresh if already at top
-    LaunchedEffect(Unit) {
-        viewModel.scrollToTopRequest.collect {
-            // Reels has no list to scroll, and the untouched list below it
-            // always reads as "at top" — a reselect must not wipe the viewer's
-            // place by refreshing.
-            if (viewModel.feedMode.value == FeedMode.REELS) return@collect
-            if (viewModel.feedMode.value == FeedMode.HASHTAGS) {
-                if (hashtagsListState.firstVisibleItemIndex == 0 && hashtagsListState.firstVisibleItemScrollOffset == 0) {
-                    hashtagsViewModel.reload()
-                } else {
-                    hashtagsListState.scrollToItem(0)
-                }
-                return@collect
-            }
-            if (isAtTop) {
-                viewModel.refresh()
-            } else {
-                listState.scrollToItem(0) // Instant scroll for better performance
-            }
-        }
-    }
+    FeedTabEffects(feedMode, viewModel, listState, hashtagsListState, hashtagsViewModel, isAtTop = { isAtTop })
 
     // Posts are waiting and either auto-load is off or the user has scrolled
     // away from the top. Never with the pill switched off in Appearance.
@@ -556,60 +360,7 @@ fun FeedScreen(
             )
         },
         floatingActionButton = {
-            // Reading the flag inside this slot keeps recomposition scoped to the
-            // FAB — the feed list never re-renders when it shows/hides.
-            // The FAB folds with the bars, following the finger.
-            val folded by rememberChromeFolded()
-            // Reels has its own reply button, and the rail sits where the FAB would.
-            if (feedMode != FeedMode.REELS) Box(Modifier.chromeFab().blockedWhen(folded).padding(bottom = meterLift)) {
-                // iOS-style gradient "Post" capsule (FeedView compose FAB)
-                val colors = LocalNostrVaultColors.current
-                Surface(
-                    onClick = postAction,
-                    shape = RoundedCornerShape(50),
-                    color = Color.Transparent,
-                    modifier = Modifier
-                        .floatingRowButton()
-                        .shadow(
-                            elevation = 8.dp,
-                            shape = RoundedCornerShape(50),
-                            ambientColor = colors.primary.copy(alpha = 0.35f),
-                            spotColor = colors.primary.copy(alpha = 0.35f),
-                        ),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(colors.primary, colors.primaryLight),
-                                ),
-                                RoundedCornerShape(50),
-                            )
-                            .height(48.dp)
-                            .padding(horizontal = 18.dp),
-                    ) {
-                        Icon(
-                            when (modeComposer) {
-                                com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
-                                com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
-                                com.nostrvault.ui.screens.ModeComposerKind.LISTING -> NostrVaultIcons.Marketplace
-                                else -> NostrVaultIcons.Compose
-                            },
-                            contentDescription = "Compose",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            text = modeComposer?.buttonTitle ?: "Post",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
+            FeedPostButton(feedMode = feedMode, modeComposer = modeComposer, meterLift = meterLift, onPost = postAction)
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -802,172 +553,30 @@ fun FeedScreen(
                     },
                 )
             } else {
-                LazyColumn(
-                    state = listState,
-                    contentPadding = PaddingValues(
-                        top = padding.calculateTopPadding(),
-                        bottom = padding.calculateBottomPadding() + 88.dp + meterLift,
-                    ),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .onGloballyPositioned {
-                            threadLineAnchor.viewportTop = it.positionInRoot().y +
-                                with(density) { padding.calculateTopPadding().toPx() }
-                        },
-                ) {
-                    if (isThreaded) {
-                        items(feedThreads, key = { it.rootId }) { thread ->
-                            FeedThreadCard(
-                                thread = thread,
-                                profileFor = { pubkey -> allProfiles[pubkey] },
-                                profiles = allProfiles,
-                                openNoteId = expandedNoteId,
-                                onOpenNoteChange = { id -> expandedNoteId = id },
-                                isExpanded = threadFolds[thread.rootId] ?: false,
-                                onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
-                                onProfileClick = openProfile,
-                                avatarMenu = feedAvatarMenu,
-                                onTrustWeb = { author -> trustWebAuthor = author },
-                                onOpenThread = { note -> onNoteClick(note.id) },
-                                onFetchMissingNote = viewModel::fetchMissingNote,
-                                rootUnavailable = thread.rootId in unavailableNoteIds,
-                                lineAnchor = threadLineAnchor,
-                                bareRepostDisplay = { note -> rememberBareRepostDisplay(note, viewModel) },
-                                // iOS: 12pt sides in threaded mode, 12pt between rows.
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                expandedRow = { note, _ ->
-                                    FeedFullNoteRow(
-                                        note = note,
-                                        viewModel = viewModel,
-                                        allProfiles = allProfiles,
-                                        onNoteClick = onNoteClick,
-                                        onArticleClick = onArticleClick,
-                                        onProfileClick = openProfile,
-                                        onReply = onReply ?: { _ -> onCompose() },
-                                        onQuote = onQuote ?: {},
-                                        onZap = viewModel::quickZap,
-                                        onLongPressZap = { id -> zapNoteId = id },
-                                        onNoLightningAddress = { showNoLightningAddress = true },
-                                        onBroadcast = { id -> broadcastNoteId = id },
-                                        onTrustWeb = { author -> trustWebAuthor = author },
-                                        onReport = { id -> reportNoteId = id },
-                                        onBlock = { id -> blockNoteId = id },
-                                        onDelete = { id -> deleteNoteId = id },
-                                        onLongPressLike = { id -> emojiPickerNoteId = id },
-                                    )
-                                },
-                            )
-                        }
-                    } else {
-                    items(
-                        items = notes,
-                        key = { it.id },
-                        contentType = { note ->
-                            if (isCompact && expandedNoteId != note.id) "compact" else "full"
-                        }
-                    ) { note ->
-                        val isExpanded = isCompact && expandedNoteId == note.id
-                        val showCompact = isCompact && !isExpanded
-
-                        // Exactly the pubkeys this card can render: its author, the
-                        // reposter, the reply target, and anyone the text mentions.
-                        // Quoted notes and the parent are added below where they resolve.
-                        val headPubkeys = remember(note.id) {
-                            buildList {
-                                add(note.pubkey)
-                                note.repostedBy?.let(::add)
-                                note.replyToPubkey?.let(::add)
-                                addAll(NostrMentions.mentionedPubkeys(note.content))
-                            }.distinct()
-                        }
-
-                        // Remove expensive Crossfade animation for better scroll performance
-                        if (showCompact) {
-                            val (shownNote, repostPlaceholder) = rememberBareRepostDisplay(note, viewModel)
-                            val shownPubkeys = remember(headPubkeys, shownNote.pubkey, shownNote.content) {
-                                (headPubkeys + shownNote.pubkey + NostrMentions.mentionedPubkeys(shownNote.content)).distinct()
-                            }
-                            // derivedStateOf, not a plain read: the computation re-runs on
-                            // every metadata batch, but this row only recomposes when one of
-                            // *its* profiles actually changed. Reading allProfiles directly
-                            // here would rebuild every visible card per batch instead.
-                            val cardProfiles by remember(shownPubkeys) {
-                                derivedStateOf { shownPubkeys.resolveAgainst(allProfiles) }
-                            }
-                            // Same derivedStateOf reasoning: only this row's stats recompose it.
-                            val zapsOnly = LocalZapsOnlyMode.current
-                            val statsState = viewModel.noteStats.collectAsState()
-                            val engagement by remember(note.id, zapsOnly) {
-                                derivedStateOf {
-                                    val stats = statsState.value[note.effectiveEventId]
-                                    CondensedEngagement(
-                                        reactions = if (zapsOnly) 0 else stats?.reactions ?: 0,
-                                        reposts = stats?.reposts ?: 0,
-                                    )
-                                }
-                            }
-                            RankedCompactNoteCard(viewModel.popularRanks, rankId = note.id,
-                                note = shownNote,
-                                profile = cardProfiles[shownNote.pubkey],
-                                profiles = cardProfiles,
-                                repostPlaceholder = repostPlaceholder,
-                                // Read once the original has resolved, which is what recomposes this row.
-                                repostedOriginal = note.repostedEventId
-                                    ?.takeIf { note.isBareRepost && repostPlaceholder == null }
-                                    ?.let { viewModel.parentNotesCache.value[it] },
-                                engagement = engagement,
-                                onNoteClick = { id ->
-                                    // Expand inline first instead of navigating
-                                    expandedNoteId = id
-                                },
-                                onProfileClick = openProfile,
-                                avatarMenu = feedAvatarMenu,
-                                onTrustWeb = { author -> trustWebAuthor = author },
-                                // iOS: 8pt sides for a compact row, 12pt between rows.
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            )
-                        } else {
-                            FeedFullNoteRow(
-                                note = note,
-                                viewModel = viewModel,
-                                allProfiles = allProfiles,
-                                onNoteClick = onNoteClick,
-                                onArticleClick = onArticleClick,
-                                onProfileClick = openProfile,
-                                onReply = onReply ?: { _ -> onCompose() },
-                                onQuote = onQuote ?: {},
-                                onZap = viewModel::quickZap,
-                                onLongPressZap = { id -> zapNoteId = id },
-                                onNoLightningAddress = { showNoLightningAddress = true },
-                                onBroadcast = { id -> broadcastNoteId = id },
-                                onTrustWeb = { author -> trustWebAuthor = author },
-                                onReport = { id -> reportNoteId = id },
-                                onBlock = { id -> blockNoteId = id },
-                                onDelete = { id -> deleteNoteId = id },
-                                onLongPressLike = { id -> emojiPickerNoteId = id },
-                                // iOS: 16pt sides, 12pt between rows.
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                            )
-                        }
-                    }
-                    }
-
-                    if (isLoadingMore) {
-                        item {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    color = LocalNostrVaultColors.current.primary,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                        }
-                    }
-                }
+                FeedNoteList(
+                    viewModel = viewModel,
+                    listState = listState,
+                    padding = padding,
+                    meterLift = meterLift,
+                    threadLineAnchor = threadLineAnchor,
+                    isThreaded = isThreaded,
+                    feedThreadsState = feedThreadsState,
+                    notes = notes,
+                    isCompact = isCompact,
+                    allProfiles = allProfiles,
+                    expandedNote = expandedNote,
+                    threadFolds = threadFolds,
+                    unavailableNoteIdsState = unavailableNoteIdsState,
+                    isLoadingMore = isLoadingMore,
+                    feedAvatarMenu = feedAvatarMenu,
+                    sheets = sheets,
+                    openProfile = openProfile,
+                    onNoteClick = onNoteClick,
+                    onArticleClick = onArticleClick,
+                    onReply = onReply,
+                    onQuote = onQuote,
+                    onCompose = onCompose,
+                )
             }
         }
 
@@ -1001,179 +610,14 @@ fun FeedScreen(
         }
     }
 
-    if (showGlobalEveryoneWarning) {
-        AlertDialog(
-            onDismissRequest = { showGlobalEveryoneWarning = false },
-            title = { Text("Sensitive Content Warning") },
-            text = {
-                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.setGlobalShowsEveryone(true)
-                        showGlobalEveryoneWarning = false
-                    },
-                ) { Text("Proceed", color = ErrorRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGlobalEveryoneWarning = false }) { Text("Cancel") }
-            },
-        )
-    }
-
-
-
-    if (showNoLightningAddress) {
-        AlertDialog(
-            onDismissRequest = { showNoLightningAddress = false },
-            title = { Text("No Lightning Address") },
-            text = { Text("This user hasn't configured a lightning address, so they can't receive zaps.") },
-            confirmButton = {
-                TextButton(onClick = { showNoLightningAddress = false }) { Text("OK") }
-            },
-        )
-    }
-
-    // Custom zap sheet (long-press on the bolt)
-    if (zapNoteId != null) {
-        CustomZapSheet(
-            sheetState = zapSheetState,
-            defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
-            onDismiss = { zapNoteId = null },
-            onZap = { amount ->
-                zapNoteId?.let { viewModel.zapNote(it, amount) }
-                zapNoteId = null
-            },
-        )
-    }
-
-    // Report dialog (NIP-56 reason picker). Reporting also blocks the author,
-    // matching NoteDetailScreen and iOS.
-    val reportTarget = reportNoteId?.let { id -> notes.find { it.id == id || it.effectiveEventId == id } }
-    if (reportTarget != null) {
-        UGCReportDialog(
-            onReport = { reason, description ->
-                viewModel.reportNote(
-                    reportTarget.effectiveEventId,
-                    reportTarget.effectiveAuthor,
-                    reason,
-                    description,
-                )
-                reportNoteId = null
-            },
-            onDismiss = { reportNoteId = null },
-        )
-    }
-
-    // Block confirmation
-    val blockTarget = blockNoteId?.let { id -> notes.find { it.id == id || it.effectiveEventId == id } }
-    if (blockTarget != null) {
-        AlertDialog(
-            onDismissRequest = { blockNoteId = null },
-            title = { Text("Block User") },
-            text = { Text("Block this user? Their posts will be hidden from your feed.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.blockUser(blockTarget.effectiveAuthor)
-                        blockNoteId = null
-                    },
-                ) { Text("Block", color = ErrorRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { blockNoteId = null }) { Text("Cancel") }
-            },
-        )
-    }
-
-    // Delete confirmation dialog
-    if (deleteNoteId != null) {
-        AlertDialog(
-            onDismissRequest = { deleteNoteId = null },
-            title = { Text("Delete Post") },
-            text = { Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    deleteNoteId?.let { viewModel.deleteNote(it) }
-                    deleteNoteId = null
-                }) {
-                    Text("Delete", color = ErrorRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteNoteId = null }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
-
-    // Emoji picker sheet
-    if (emojiPickerNoteId != null) {
-        EmojiPickerSheet(
-            sheetState = emojiSheetState,
-            onDismiss = { emojiPickerNoteId = null },
-            onSelectEmoji = { emoji ->
-                emojiPickerNoteId?.let { viewModel.likeNote(it, emoji) }
-                emojiPickerNoteId = null
-            },
-        )
-    }
-
-    // Broadcast sheet
-    val broadcastNote = broadcastNoteId?.let { id -> notes.find { it.id == id || it.effectiveEventId == id } }
-    if (broadcastNote != null) {
-        BroadcastSheet(
-            note = broadcastNote,
-            sheetState = broadcastSheetState,
-            feedService = viewModel.feedServiceRef,
-            nostrService = viewModel.nostrServiceRef,
-            configStore = viewModel.configStoreRef,
-            onDismiss = { broadcastNoteId = null },
-            onProfileClick = { broadcastNoteId = null; openProfile(it) },
-        )
-    }
-
-    trustWebAuthor?.let { author ->
-        TrustWebDialog(
-            author = author,
-            initialPath = null,
-            onProfileClick = openProfile,
-            onDismiss = { trustWebAuthor = null },
-        )
-    }
-
-    openListing?.let { listing ->
-        MarketListingSheet(
-            listing = listing,
-            seller = allProfiles[listing.pubkey],
-            onOpenSeller = { pubkey -> openListing = null; onProfileClick(pubkey) },
-            onMessageSeller = { openListing = null; onMessageUser(it.pubkey, it.messageToSeller) },
-            onEventInfo = { openListing = null; listingInfoNote = it.toNote() },
-            onDismiss = { openListing = null },
-        )
-    }
-    // Event Info for a listing: listings are not in `notes`, so the feed's
-    // broadcast sheet above cannot find them by id.
-    listingInfoNote?.let { note ->
-        BroadcastSheet(
-            note = note,
-            sheetState = broadcastSheetState,
-            feedService = viewModel.feedServiceRef,
-            nostrService = viewModel.nostrServiceRef,
-            configStore = viewModel.configStoreRef,
-            onDismiss = { listingInfoNote = null },
-            onProfileClick = { listingInfoNote = null; openProfile(it) },
-        )
-    }
-
-    // Edit Feeds: show, hide and reorder the feed picker's feeds (iOS #303).
-    if (showFeedMenuEditor) {
-        FeedMenuEditor(
-            // Hiding the feed you're on would leave the picker without it.
-            onSaved = { hidden -> if (feedMode in hidden) viewModel.setFeedMode(FeedMenuSettings.PINNED) },
-            onDismiss = { showFeedMenuEditor = false },
-        )
-    }
+    FeedScreenSheets(
+        sheets = sheets,
+        viewModel = viewModel,
+        notes = notes,
+        allProfiles = allProfiles,
+        feedMode = feedMode,
+        openProfile = openProfile,
+        onProfileClick = onProfileClick,
+        onMessageUser = onMessageUser,
+    )
 }
