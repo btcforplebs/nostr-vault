@@ -237,6 +237,29 @@ class PendingPostManager @Inject constructor(
     }
 
     /**
+     * Reposts [noteId] when the countdown ends; Cancel on the banner undoes
+     * it. One already reposted needs nothing, so no banner. iOS
+     * startRepost(sourceNote:).
+     */
+    fun startRepost(noteId: String, feedService: FeedService) {
+        if (noteId in feedService.repostedEventIds.value) return
+        startRepost { feedService.repostNote(noteId) }
+    }
+
+    /**
+     * Deletes [noteId] when the countdown ends; Cancel on the banner undoes
+     * it. [onGone] takes the screen's own copy away at the same moment.
+     * iOS startDelete(noteId:).
+     */
+    fun startDelete(noteId: String, nostrService: NostrService, feedService: FeedService, onGone: () -> Unit = {}) {
+        startDelete {
+            onGone()
+            nostrService.deleteNote(noteId)
+            feedService.removeNote(noteId)
+        }
+    }
+
+    /**
      * Hides the countdown banner without touching the pending action — the
      * swipe gesture on the banner. The countdown job and the publish that
      * follows it keep running; this is the opposite of [cancel].

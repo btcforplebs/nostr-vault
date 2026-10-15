@@ -59,6 +59,7 @@ class SearchViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val feedService: FeedService,
+    private val pendingPostManager: com.nostrvault.service.PendingPostManager,
     private val zapSendService: ZapSendService,
     private val interestListService: InterestListService,
     private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
@@ -135,9 +136,8 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch { feedService.repostNote(noteId) }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     fun zapNote(noteId: String, notePubkey: String) {
         viewModelScope.launch {

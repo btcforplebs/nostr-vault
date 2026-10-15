@@ -62,6 +62,7 @@ class ProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val nostrService: NostrService,
     private val feedService: FeedService,
+    private val pendingPostManager: com.nostrvault.service.PendingPostManager,
     private val zapSendService: ZapSendService,
     private val configStore: ConfigStore,
     private val engagementStore: com.nostrvault.service.ProfileEngagementStore,
@@ -758,9 +759,8 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch { feedService.repostNote(noteId) }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
     fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]

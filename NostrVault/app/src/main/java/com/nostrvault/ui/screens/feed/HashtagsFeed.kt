@@ -95,8 +95,9 @@ class HashtagsFeedViewModel @Inject constructor(
     feedService: FeedService,
     zapSendService: ZapSendService,
     notificationManager: com.nostrvault.ui.notification.NotificationManager,
+    pendingPostManager: com.nostrvault.service.PendingPostManager,
     private val interestListService: InterestListService,
-) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService, notificationManager) {
+) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService, notificationManager, pendingPostManager) {
 
     companion object {
         private const val TAG = "HashtagsFeed"

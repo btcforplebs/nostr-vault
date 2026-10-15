@@ -400,9 +400,8 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch { feedService.likeNote(noteId, emoji) }
     }
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch { feedService.repostNote(noteId) }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     // Moderation
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
@@ -424,15 +423,15 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
 
-    /** Deleting a parent or a reply takes it off this screen too; the focused note closes the screen. */
-    fun deleteNote(noteId: String) {
+    /**
+     * After the send-delay countdown, so the banner can undo it. Deleting a
+     * parent or a reply takes it off this screen too, when it goes out; the
+     * focused note closes the screen.
+     */
+    fun deleteNote(noteId: String) = pendingPostManager.startDelete(noteId, nostrService, feedService) {
         _parentNotes.value = FeedNoteRemoval.without(_parentNotes.value, noteId)
         _allReplies.value = FeedNoteRemoval.without(_allReplies.value, noteId)
         _otherResponses.value = FeedNoteRemoval.without(_otherResponses.value, noteId)
-        viewModelScope.launch {
-            nostrService.deleteNote(noteId)
-            feedService.removeNote(noteId)
-        }
     }
 
     fun reportNote(noteId: String, pubkey: String, reason: String, description: String = "") {
