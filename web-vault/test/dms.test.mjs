@@ -47,7 +47,8 @@ test("a message wrapped for the other person opens for them, and the self-copy o
   assert.deepEqual(got, { id: toB.id, from: pk(A), peer: pk(A), content: "hello B", at: rumor.created_at, legacy: false })
   const mine = await unwrap(toA, cryptoOf(A), pk(A))
   assert.deepEqual(mine, { id: toA.id, from: pk(A), peer: pk(B), content: "hello B", at: rumor.created_at, legacy: false })
-  assert.equal(await unwrap(toB, cryptoOf(C), pk(C)), null, "not for C")
+  // C's signer can't decrypt B's wrap: that's the signer failing, which unwrap reports rather than hides.
+  await assert.rejects(unwrap(toB, cryptoOf(C), pk(C)), e => e.refused === true)
 })
 
 test("a seal signed by someone else, or a rumor claiming another sender, is refused", async () => {
@@ -69,8 +70,9 @@ test("a legacy kind 4 opens with NIP-04, either way round", async () => {
   assert.equal(await openLegacy(fromA, cryptoOf(C), pk(C)), null)
 })
 
-test("the bunker sign-in can't decrypt and says so", () => {
-  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }).reason, /bunker/)
+test("with no signer to ask, a sign-in can't decrypt and says so", () => {
+  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }).reason, /bunker isn't connected/)
+  assert.match(cryptoFor({ method: "nip46", pubkey: pk(A) }, { signer: { signEvent() {} } }).reason, /bunker isn't connected/)
   assert.match(cryptoFor({ method: "other" }).reason, /can't decrypt/)
   assert.equal(cryptoFor({ method: "nip07" }, { ext: "x" }), "x")
 })
@@ -181,7 +183,7 @@ test("sendMessage: their wrap to their DM relays, the self-copy to mine and into
   assert.equal(thread(getMessages().messages, pk(B)).length, 1)
 })
 
-test("sendMessage throws when no relay took it, and with a bunker sign-in", async () => {
+test("sendMessage throws when no relay took it, and with no signer that can encrypt", async () => {
   const publish = () => [Promise.reject(new Error("closed"))]
   resetMessages(pk(A))
   await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Not delivered: none of their 1 relay took it \(closed\)/)

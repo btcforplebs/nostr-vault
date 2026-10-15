@@ -54,7 +54,7 @@ test("a private part is decrypted with the matching scheme from the extension", 
 
 test("when the private part can't be read, the note says why and the public part still applies", async () => {
   const bunker = await decrypterFor({ method: "nip46", pubkey: ME })
-  assert.match(bunker.reason, /bunker/)
+  assert.match(bunker.reason, /bunker isn't connected/)
   assert.deepEqual(await privateBlocks(list([], "AgAAAA"), bunker), { pubkeys: [], note: bunker.reason })
   const no44 = await decrypterFor({ method: "nip07", pubkey: ME }, { ext: { nip04: { decrypt: async () => "[]" } } })
   assert.match((await privateBlocks(list([], "AgAAAA"), no44)).note, /NIP44/)

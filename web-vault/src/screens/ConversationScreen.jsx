@@ -10,10 +10,10 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { sendMessage, thread } from "../net/dms.js"
-import { useMessages } from "./MessagesScreen.jsx"
+import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
 
 export function ConversationScreen({ ctx, peer }) {
-  const { messages, note } = useMessages(ctx)
+  const { messages, note, trouble, retry, more } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
@@ -47,6 +47,8 @@ export function ConversationScreen({ ctx, peer }) {
         <a class="small button" href={`#/profile/${peer}`}>Profile</a>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
+      <SignerTrouble trouble={trouble} retry={retry} />
+      <OpenMore ctx={ctx} more={more} />
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
       <div class="dm-thread">
         {!rows.length && !note && <p class="empty">No messages with {npubEncode(peer).slice(0, 12)}… yet.</p>}

@@ -8,7 +8,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
-import { conversations, dmRelaysFor, extraRelays, getMessages, loadMessages, onMessages, watchMessages } from "../net/dms.js"
+import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, watchMessages } from "../net/dms.js"
 
 /** The relays the user's own DMs are read from: their DM inbox list, read list, defaults and this browser's extras. */
 export async function inboxRelays(ctx) {
@@ -18,9 +18,11 @@ export async function inboxRelays(ctx) {
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
 }
 
-/** Messages state for a screen, loading once and re-rendering as messages land. */
+/** Messages state for a screen, loading once and re-rendering as messages land. `retry` asks again for every message
+ *  that isn't open (the signer refused or stopped answering: `trouble`). */
 export function useMessages(ctx) {
   const [m, setM] = useState(getMessages)
+  const [round, setRound] = useState(0)
   useEffect(() => {
     const off = onMessages(() => setM(getMessages()))
     let stop = () => {}
@@ -32,12 +34,41 @@ export function useMessages(ctx) {
       if (live) stop = watchMessages(ctx, relays)
     })()
     return () => { live = false; off(); stop() }
-  }, [ctx.session.pubkey])
-  return m
+  }, [ctx.session.pubkey, round])
+  return { ...m, retry: () => { forgetUnopened(); setRound(r => r + 1) } }
+}
+
+/** Messages past the first load's ceiling, or that came in faster than they're opened live: open the next lot. */
+export function OpenMore({ ctx, more }) {
+  const [busy, setBusy] = useState(false)
+  if (!more) return null
+  const go = async () => { setBusy(true); try { await openMore(ctx) } finally { setBusy(false) } }
+  return (
+    <div class="status-line">
+      {more === 1 ? "1 more message isn't open yet." : `${more} more messages aren't open yet.`}{" "}
+      <button type="button" class="small" disabled={busy} onClick={go}>{busy ? (ctx.session.method === "nip46" ? "Waiting for your signer…" : "Opening…") : "Open more"}</button>
+    </div>
+  )
+}
+
+/** With a bunker, the bunker decrypts and encrypts message text for the page, so it sees that text. Said once, plainly. */
+export function BunkerNote({ ctx }) {
+  if (ctx.session.method !== "nip46") return null
+  return <p class="status-line muted small">Your bunker opens and seals your messages for this page, so the bunker app sees their text.</p>
+}
+
+/** The signer stopped answering while messages were being opened: say so, and offer to ask again. */
+export function SignerTrouble({ trouble, retry }) {
+  if (!trouble) return null
+  return (
+    <div class="status-line error" role="alert">
+      Some messages aren't open yet: {trouble} <button type="button" class="small" onClick={retry}>Try again</button>
+    </div>
+  )
 }
 
 export function MessagesScreen({ ctx }) {
-  const { messages, note, loaded } = useMessages(ctx)
+  const { messages, note, trouble, retry, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
@@ -60,12 +91,15 @@ export function MessagesScreen({ ctx }) {
     <main class="screen">
       <header class="screen-head"><h2>Messages</h2></header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
+      <BunkerNote ctx={ctx} />
+      <SignerTrouble trouble={trouble} retry={retry} />
+      <OpenMore ctx={ctx} more={more} />
       <form class="dm-new" onSubmit={open}>
         <input value={to} onInput={e => setTo(e.currentTarget.value)} placeholder="New message to npub…" autocapitalize="off" autocorrect="off" spellcheck={false} aria-label="New message to" />
         <button type="submit" class="small" disabled={!to.trim()}>Open</button>
       </form>
       {err && <div class="status-line error">{err}</div>}
-      {!loaded && !list.length ? <p class="empty">Opening your messages…</p>
+      {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
         : list.map(c => (
           <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>

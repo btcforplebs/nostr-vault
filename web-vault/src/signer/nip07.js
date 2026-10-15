@@ -17,26 +17,28 @@ export async function extensionSignIn() {
 export function extensionSigner() {
   return {
     method: "nip07",
+    crypto: extensionCrypto(),
     signEvent: async t => (await findExtension())?.signEvent(t) ?? Promise.reject(new Error("Nostr extension is gone")),
   }
 }
 
 /**
- * The extension's NIP-44 and NIP-04 (for Messages). Each call asks the extension, which may prompt the user.
+ * The extension's NIP-44 and NIP-04 (Messages, the private block list). Each call asks the extension, which may prompt the user.
  * `peer` is the other key of the conversation; for a self-copy it is the user's own pubkey.
- * -> { encrypt(peer, text), decrypt(peer, ciphertext), decrypt04(peer, ciphertext) }, each throwing when the
- *    extension is gone or doesn't offer that scheme.
+ * -> { encrypt(peer, text), decrypt(peer, ciphertext), encrypt04(peer, text), decrypt04(peer, ciphertext) }, each
+ *    throwing when the extension is gone or doesn't offer that call.
  */
 export function extensionCrypto() {
-  const need = async scheme => {
+  const call = async (scheme, fn, peer, text) => {
     const ext = await findExtension()
     if (!ext) throw new Error("Nostr extension is gone")
-    if (typeof ext[scheme]?.encrypt !== "function" && typeof ext[scheme]?.decrypt !== "function") throw new Error(`your extension doesn't offer ${scheme.toUpperCase()}`)
-    return ext[scheme]
+    if (typeof ext[scheme]?.[fn] !== "function") throw new Error(`your extension doesn't offer ${scheme.toUpperCase()} ${fn === "encrypt" ? "encryption" : "decryption"}`)
+    return ext[scheme][fn](peer, text)
   }
   return {
-    encrypt: async (peer, text) => (await need("nip44")).encrypt(peer, text),
-    decrypt: async (peer, ciphertext) => (await need("nip44")).decrypt(peer, ciphertext),
-    decrypt04: async (peer, ciphertext) => (await need("nip04")).decrypt(peer, ciphertext),
+    encrypt: (peer, text) => call("nip44", "encrypt", peer, text),
+    decrypt: (peer, ciphertext) => call("nip44", "decrypt", peer, ciphertext),
+    encrypt04: (peer, text) => call("nip04", "encrypt", peer, text),
+    decrypt04: (peer, ciphertext) => call("nip04", "decrypt", peer, ciphertext),
   }
 }
