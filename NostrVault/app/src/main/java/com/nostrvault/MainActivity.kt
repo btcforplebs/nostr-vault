@@ -221,6 +221,8 @@ class MainActivity : FragmentActivity() {
                                     hasCompletedSetup = config.hasCompletedSetup,
                                 )
                             }
+                            // What came in while the app was away: one pill at the bottom, toward the Vault.
+                            com.nostrvault.ui.notification.ReturnPill(Modifier.align(Alignment.BottomEnd))
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }
@@ -393,6 +395,8 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         localNotificationService.appInForeground = false
+        // Nothing more is gathered into a return pill nobody can see.
+        com.nostrvault.service.ReturnPillManager.endReturn()
         // The absence starts now; the feed on screen counts as seen.
         feedActivityNotifier.onBackground()
         MusicPlayer.setAppInForeground(false)
@@ -406,6 +410,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Back from the background (or just launched): what the relay catches
+        // up on now is gathered into one bottom pill (ReturnPillManager).
+        com.nostrvault.service.ReturnPillManager.beginReturn()
         localNotificationService.appInForeground = true
         feedActivityNotifier.onForeground()
         // A live stream another app's sound paused while we were away carries on.
