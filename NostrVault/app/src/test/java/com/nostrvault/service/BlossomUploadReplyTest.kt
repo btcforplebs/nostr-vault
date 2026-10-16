@@ -38,9 +38,12 @@ class BlossomUploadReplyTest {
     }
 
     @Test
-    fun `a descriptor for another blob is not this upload`() {
+    fun `a re-encoded blob uses the server's link`() {
         val other = "c".repeat(64)
-        assertNull(BlossomUploadReply.hostedUrl("""{"url":"https://cdn.example/$other","sha256":"$other"}""", "https://cdn.example", sha, onDeviceRelay = false))
+        assertEquals(
+            "https://cdn.example/$other.jpg",
+            BlossomUploadReply.hostedUrl("""{"url":"https://cdn.example/$other.jpg","sha256":"$other"}""", "https://cdn.example", sha, onDeviceRelay = false),
+        )
     }
 
     @Test

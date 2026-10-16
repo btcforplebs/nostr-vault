@@ -36,9 +36,10 @@ object BlossomUploadReply {
         val uri = try { URI(url) } catch (e: Exception) { return null }
         val scheme = uri.scheme?.lowercase()
         if ((scheme != "https" && scheme != "http") || uri.host.isNullOrEmpty()) return null
-        // A descriptor for some other blob is not this upload.
-        val hash = (obj["sha256"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        if (hash != null && !hash.equals(sha256, ignoreCase = true)) return null
+        // A different sha256 is still this upload: nostr.build re-encodes
+        // some accounts' pictures and files them under the new hash, so
+        // `<server>/<our hash>` is "Not Found" while the descriptor's url
+        // works (2026-10-16). Refusing it left Post waiting forever.
         return url
     }
 

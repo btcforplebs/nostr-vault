@@ -25,10 +25,10 @@ enum BlossomUploadReply {
               url.host != nil else {
             return nil
         }
-        // A descriptor for some other blob is not this upload.
-        if let hash = object["sha256"] as? String, hash.lowercased() != sha256.lowercased() {
-            return nil
-        }
+        // A different sha256 is still this upload: nostr.build re-encodes
+        // some accounts' pictures and files them under the new hash, so
+        // `<server>/<our hash>` is "Not Found" while the descriptor's url
+        // works (2026-10-16). Refusing it left Post waiting forever.
         return url
     }
 
