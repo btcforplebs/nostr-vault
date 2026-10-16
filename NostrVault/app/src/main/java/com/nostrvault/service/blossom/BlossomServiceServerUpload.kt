@@ -83,7 +83,14 @@ import com.nostrvault.service.BlossomService.UploadSource
 
                 val response = client.newCall(request).execute()
                 if (response.isSuccessful) {
-                    return@withContext "$serverUrl/$sha256"
+                    // An outside server must hand back a BUD-02 blob descriptor;
+                    // a bare 200 (a website's home page) is not an upload.
+                    val reply = response.use { it.body?.string() }
+                    BlossomUploadReply.hostedUrl(reply, serverUrl, sha256, BlossomUploadReply.isOnDevice(serverUrl))
+                        ?.let { return@withContext it }
+                    Log.w(TAG, "Mirror $serverUrl answered HTTP ${response.code} without a blob descriptor " +
+                        "(${BlossomUploadReply.describe(reply, response.header("Content-Type"))}) — not a Blossom server address?")
+                    return@withContext null
                 }
 
                 val errorBody = response.body?.string()?.take(500) ?: ""

@@ -275,7 +275,15 @@ private suspend fun BlossomService.putStoredBlob(
     }
     return try {
         copyClient(clientFor(base)).newCall(request).await().use { response ->
-            if (response.isSuccessful) return CopyAttempt.copied
+            if (response.isSuccessful) {
+                // A website that answers every PUT with its home page has not
+                // stored anything (see BlossomUploadReply).
+                val reply = response.body?.string()
+                if (BlossomUploadReply.hostedUrl(reply, base, sha256, BlossomUploadReply.isOnDevice(base)) == null) {
+                    return CopyAttempt.failed("This address answered, but not as a Blossom media server. For nostr.build, use https://blossom.nostr.build.")
+                }
+                return CopyAttempt.copied
+            }
             val said = response.header("X-Reason") ?: response.body?.string()?.take(200)?.trim()
             copyFailure(response.code, said)
         }
